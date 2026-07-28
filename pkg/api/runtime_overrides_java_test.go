@@ -237,17 +237,8 @@ func TestApplyRuntimeOverridesJavaVuserDenylistedVMParameterFailsValidation(t *t
 	o := &RuntimeSettingsOverride{JavaVuser: &RuntimeJavaVuserOverride{
 		AdditionalVMParameters: []string{"-javaagent:/tmp/evil.jar"},
 	}}
-	if err := applyRuntimeOverrides(script, o); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-	issues := dsl.ValidateScriptIssues(script)
-	found := false
-	for _, issue := range issues {
-		if strings.Contains(issue, "additional_vm_parameters") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("denylisted VM parameter passed validation: %#v", issues)
+	err := applyRuntimeOverrides(script, o)
+	if err == nil || !strings.Contains(err.Error(), "additional_vm_parameters") {
+		t.Fatalf("denylisted VM parameter apply error = %v", err)
 	}
 }

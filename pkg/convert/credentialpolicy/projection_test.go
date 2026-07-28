@@ -3,6 +3,7 @@ package credentialpolicy
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -125,6 +126,276 @@ func TestHeaderAndAuthProjectionBoundsWork(t *testing.T) {
 	}, options); err != nil || output != (AuthFields{}) || result.Disposition != Rejected {
 		t.Fatalf("auth byte limit output=%#v result=%#v err=%v", output, result, err)
 	}
+}
+
+func TestPreserveModeAddsRuntimeLocatorsForGovernedDynamicCredentials(t *testing.T) {
+	t.Parallel()
+	options := projectionOptions()
+	options.Mode = Preserve
+	options.TargetField = "body"
+	options.ProvenVars = map[string]struct{}{"response_token": {}}
+	payload := []byte(
+		`{"password":"{{env.IMPORTED_PASSWORD}}","access_token":"{{var.response_token}}"}`,
+	)
+
+	output, result, err := ProjectJSON(payload, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output, payload) {
+		t.Fatalf("dynamic credential body changed: %s", output)
+	}
+	if len(result.Requirements) != 0 {
+		t.Fatalf("dynamic credentials created binding requirements: %#v", result.Requirements)
+	}
+	got := make(map[string]struct{}, len(result.PreservedTargets))
+	for _, target := range result.PreservedTargets {
+		got[target.Field+"\x00"+target.Pointer] = struct{}{}
+	}
+	for _, pointer := range []string{"/password", "/access_token"} {
+		key := "body\x00" + pointer
+		if _, ok := got[key]; !ok {
+			t.Fatalf("preserved targets = %#v, missing %q", result.PreservedTargets, key)
+		}
+	}
+}
+
+func TestPreserveModeAddsRuntimeLocatorForAdapterTrustedTemplate(t *testing.T) {
+	t.Parallel()
+	const trusted = "{{custom.runtime_credential}}"
+	options := projectionOptions()
+	options.Mode = Preserve
+	options.TargetField = "body"
+	options.TrustedWholeValues = map[string]struct{}{trusted: {}}
+
+	output, result, err := ProjectJSON(
+		[]byte(`{"password":"`+trusted+`"}`),
+		options,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(output), `{"password":"`+trusted+`"}`; got != want {
+		t.Fatalf("trusted credential body = %q, want %q", got, want)
+	}
+	if len(result.Requirements) != 0 ||
+		len(result.PreservedTargets) != 1 ||
+		result.PreservedTargets[0].Field != "body" ||
+		result.PreservedTargets[0].Pointer != "/password" {
+		t.Fatalf("trusted credential projection = %#v", result)
+	}
+}
+
+func TestPreserveModeRetainsOverLimitPayloadsAsBlockedDrafts(t *testing.T) {
+	t.Parallel()
+	base := projectionOptions()
+	base.Mode = Preserve
+	base.Limits = Limits{MaxBytes: 8, MaxDepth: 1, MaxValues: 2, MaxParts: 1}
+
+	type projection struct {
+		name    string
+		payload []byte
+		run     func() ([]byte, Result, error)
+	}
+	tests := []projection{
+		{
+			name:    "request body",
+			payload: []byte(`{"password":"body-canary"}`),
+			run: func() ([]byte, Result, error) {
+				return ProjectRequestBody(
+					[]byte(`{"password":"body-canary"}`),
+					"application/json",
+					base,
+				)
+			},
+		},
+		{
+			name:    "JSON bytes",
+			payload: []byte(`{"password":"json-canary"}`),
+			run: func() ([]byte, Result, error) {
+				return ProjectJSON([]byte(`{"password":"json-canary"}`), base)
+			},
+		},
+		{
+			name:    "XML bytes",
+			payload: []byte(`<root><password>xml-canary</password></root>`),
+			run: func() ([]byte, Result, error) {
+				return ProjectXML([]byte(`<root><password>xml-canary</password></root>`), base)
+			},
+		},
+		{
+			name:    "form bytes",
+			payload: []byte(`password=form-canary`),
+			run: func() ([]byte, Result, error) {
+				output, _, result, err := ProjectFormURLEncoded(`password=form-canary`, base)
+				return []byte(output), result, err
+			},
+		},
+		{
+			name:    "GraphQL bytes",
+			payload: []byte(`query { login(password: "graphql-canary") }`),
+			run: func() ([]byte, Result, error) {
+				output, result, err := ProjectGraphQL(GraphQL{
+					Query: []byte(`query { login(password: "graphql-canary") }`),
+				}, base)
+				return output.Query, result, err
+			},
+		},
+		{
+			name:    "multipart wire bytes",
+			payload: []byte("--b\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nmultipart-canary\r\n--b--\r\n"),
+			run: func() ([]byte, Result, error) {
+				return ProjectMultipartWire(
+					[]byte("--b\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nmultipart-canary\r\n--b--\r\n"),
+					"multipart/form-data",
+					"b",
+					base,
+				)
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			output, result, err := test.run()
+			if err != nil {
+				t.Fatalf("projection: %v", err)
+			}
+			if !bytes.Equal(output, test.payload) || result.Disposition != BlockedDraft {
+				t.Fatalf("projection = %q / %#v, want exact blocked draft", output, result)
+			}
+			if !resultHasFinding(result, "import_credential_review_incomplete") {
+				t.Fatalf("findings = %#v, want import_credential_review_incomplete", result.Findings)
+			}
+		})
+	}
+
+	structured := Multipart{
+		Boundary: "b",
+		Parts: []MultipartPart{
+			{Name: "password", Body: []byte("one")},
+			{Name: "password", Body: []byte("two")},
+		},
+	}
+	output, result, err := ProjectMultipart(structured, base)
+	if err != nil {
+		t.Fatalf("ProjectMultipart: %v", err)
+	}
+	if result.Disposition != BlockedDraft || len(output.Parts) != 2 ||
+		string(output.Parts[0].Body) != "one" || string(output.Parts[1].Body) != "two" ||
+		!resultHasFinding(result, "import_credential_review_incomplete") {
+		t.Fatalf("structured multipart = %#v / %#v, want exact blocked clone", output, result)
+	}
+
+	scanLimits := projectionOptions()
+	scanLimits.Mode = Preserve
+	scanLimits.Limits = Limits{MaxBytes: 1024, MaxDepth: 1, MaxValues: 2, MaxParts: 10}
+	scanTests := []projection{
+		{
+			name:    "JSON depth",
+			payload: []byte(`{"outer":{"password":"deep-canary"}}`),
+			run: func() ([]byte, Result, error) {
+				return ProjectJSON([]byte(`{"outer":{"password":"deep-canary"}}`), scanLimits)
+			},
+		},
+		{
+			name:    "XML depth",
+			payload: []byte(`<root><password>deep-canary</password></root>`),
+			run: func() ([]byte, Result, error) {
+				return ProjectXML([]byte(`<root><password>deep-canary</password></root>`), scanLimits)
+			},
+		},
+		{
+			name:    "GraphQL token count",
+			payload: []byte(`query { one two password(value: "token-canary") }`),
+			run: func() ([]byte, Result, error) {
+				output, result, err := ProjectGraphQL(GraphQL{
+					Query: []byte(`query { one two password(value: "token-canary") }`),
+				}, scanLimits)
+				return output.Query, result, err
+			},
+		},
+	}
+	for _, test := range scanTests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			output, result, err := test.run()
+			if err != nil {
+				t.Fatalf("projection: %v", err)
+			}
+			if !bytes.Equal(output, test.payload) || result.Disposition != BlockedDraft ||
+				!resultHasFinding(result, "import_credential_review_incomplete") {
+				t.Fatalf("bounded scan = %q / %#v, want exact blocked draft", output, result)
+			}
+		})
+	}
+}
+
+func resultHasFinding(result Result, code string) bool {
+	for _, finding := range result.Findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func TestProjectRawURLPreserveFailsClosedWhenExactReviewIsImpossible(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid UTF-8 is rejected", func(t *testing.T) {
+		options := projectionOptions()
+		options.Mode = Preserve
+		output, result, err := ProjectRawURL(
+			"https://example.test/?token=bad\xffvalue",
+			options,
+		)
+		if err != nil {
+			t.Fatalf("ProjectRawURL: %v", err)
+		}
+		if output != "" || result.Disposition != Rejected ||
+			len(result.Findings) != 1 ||
+			result.Findings[0].Code != "credential_url_invalid_utf8" {
+			t.Fatalf("invalid UTF-8 projection = %q / %#v, want rejected empty output", output, result)
+		}
+	})
+
+	t.Run("bounded review retains bytes but blocks execution", func(t *testing.T) {
+		options := projectionOptions()
+		options.Mode = Preserve
+		options.Limits = DefaultLimits()
+		options.Limits.MaxBytes = 8
+		raw := "https://example.test/?token=retained"
+		output, result, err := ProjectRawURL(raw, options)
+		if err != nil {
+			t.Fatalf("ProjectRawURL: %v", err)
+		}
+		if output != raw || result.Disposition != BlockedDraft ||
+			len(result.Findings) != 1 ||
+			result.Findings[0].Code != "import_credential_review_incomplete" {
+			t.Fatalf("bounded URL projection = %q / %#v, want byte-exact blocked draft", output, result)
+		}
+	})
+
+	t.Run("malformed URL retains bytes but blocks execution", func(t *testing.T) {
+		options := projectionOptions()
+		options.Mode = Preserve
+		raw := "https://alice:password@example.test/%zz?api_key=token"
+		output, result, err := ProjectRawURL(raw, options)
+		if err != nil {
+			t.Fatalf("ProjectRawURL: %v", err)
+		}
+		if output != raw || result.Disposition != BlockedDraft {
+			t.Fatalf("malformed URL projection = %q / %#v, want byte-exact blocked draft", output, result)
+		}
+		codes := map[string]bool{}
+		for _, finding := range result.Findings {
+			codes[finding.Code] = true
+		}
+		if !codes["credential_url_malformed"] || !codes["import_credential_preserved"] {
+			t.Fatalf("malformed URL findings = %#v", result.Findings)
+		}
+	})
 }
 
 func TestProjectHeadersUnprovenVariableIsNotTrusted(t *testing.T) {
@@ -741,6 +1012,77 @@ func TestProjectXMLSanitizesSensitiveMixedContentAsBlockedDraft(t *testing.T) {
 	assertDisclosureSafe(t, output, result)
 }
 
+func TestProjectXMLPreserveKeepsSensitiveMixedContentAndAddsRuntimeLocator(t *testing.T) {
+	t.Parallel()
+	payload := []byte(
+		`<root><password>before<x token="` +
+			projectionCanary +
+			`"/>after</password></root>`,
+	)
+	options := projectionOptions()
+	options.Mode = Preserve
+	options.RequestKey = "request-1"
+	options.TargetField = "body"
+	output, result, err := ProjectXML(payload, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output, payload) {
+		t.Fatalf("preserved mixed XML changed: %s", output)
+	}
+	if result.Disposition != ExecutableExact ||
+		len(result.PreservedTargets) != 1 ||
+		result.PreservedTargets[0].Field != "body.xml.mixed_content" {
+		t.Fatalf("preserved mixed XML result = %#v", result)
+	}
+	if len(result.Findings) == 0 ||
+		result.Findings[len(result.Findings)-1].Code !=
+			"credential_xml_sensitive_mixed_content_review_required" {
+		t.Fatalf("preserved mixed XML findings = %#v", result.Findings)
+	}
+}
+
+func TestProjectXMLPreserveLocatorsRetainPathAndOccurrence(t *testing.T) {
+	t.Parallel()
+	payload := []byte(
+		`<root><group><password>first</password><password>second</password>` +
+			`</group><other><password>third</password></other>` +
+			`<entry apiKey="fourth"/></root>`,
+	)
+	options := projectionOptions()
+	options.Mode = Preserve
+	options.TargetField = "body"
+	_, result, err := ProjectXML(payload, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string][]int)
+	for _, target := range result.PreservedTargets {
+		got[target.Field+"\x00"+target.Pointer] = append(
+			got[target.Field+"\x00"+target.Pointer],
+			target.Occurrence,
+		)
+	}
+	if !reflect.DeepEqual(
+		got["body.xml.text\x00/root/group/password"],
+		[]int{0, 1},
+	) {
+		t.Fatalf("duplicate element locators = %#v", result.PreservedTargets)
+	}
+	if !reflect.DeepEqual(
+		got["body.xml.text\x00/root/other/password"],
+		[]int{0},
+	) {
+		t.Fatalf("branch-specific element locator = %#v", result.PreservedTargets)
+	}
+	if !reflect.DeepEqual(
+		got["body.xml.attribute\x00/root/entry/@apiKey"],
+		[]int{0},
+	) {
+		t.Fatalf("attribute locator = %#v", result.PreservedTargets)
+	}
+}
+
 func TestProjectXMLSanitizesCredentialsInUnsupportedMarkup(t *testing.T) {
 	t.Parallel()
 	tests := []string{
@@ -761,6 +1103,29 @@ func TestProjectXMLSanitizesCredentialsInUnsupportedMarkup(t *testing.T) {
 			t.Fatalf("unsupported XML credential markup was retained: %s / %#v", output, result)
 		}
 		assertDisclosureSafe(t, output, result)
+	}
+}
+
+func TestProjectXMLPreserveAddsOpaqueLocatorForCredentialMarkup(t *testing.T) {
+	t.Parallel()
+	payload := []byte(
+		`<root><!-- password=` + projectionCanary + ` --><value>kept</value></root>`,
+	)
+	options := projectionOptions()
+	options.Mode = Preserve
+	options.TargetField = "body"
+
+	output, result, err := ProjectXML(payload, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(output, payload) {
+		t.Fatalf("preserved XML changed: %s", output)
+	}
+	if result.Disposition != ExecutableExact ||
+		len(result.PreservedTargets) != 1 ||
+		result.PreservedTargets[0].Field != "body.opaque" {
+		t.Fatalf("preserved XML result = %#v", result)
 	}
 }
 
@@ -855,6 +1220,65 @@ func TestProjectMultipartBoundsHeadersAndMetadata(t *testing.T) {
 	); err != nil || output != nil || result.Disposition != Rejected {
 		t.Fatalf("multipart wire value limit output=%q result=%#v err=%v", output, result, err)
 	}
+}
+
+func TestPreserveFallbacksAlwaysEmitOpaqueExecutableBodyLocator(t *testing.T) {
+	t.Parallel()
+
+	assertOpaque := func(t *testing.T, result Result, field string) {
+		t.Helper()
+		if result.Disposition != BlockedDraft ||
+			len(result.PreservedTargets) != 1 ||
+			result.PreservedTargets[0].Field != field {
+			t.Fatalf("fallback result = %#v, want blocked %q locator", result, field)
+		}
+	}
+
+	t.Run("form limit without sensitive name hint", func(t *testing.T) {
+		options := projectionOptions()
+		options.Mode = Preserve
+		options.TargetField = "body"
+		options.Limits.MaxBytes = 4
+		const input = "ordinary=value"
+		output, _, result, err := ProjectFormURLEncoded(input, options)
+		if err != nil || output != input {
+			t.Fatalf("form fallback = %q / %#v / %v", output, result, err)
+		}
+		assertOpaque(t, result, "body.form.opaque")
+	})
+
+	t.Run("multipart structured limit without sensitive name hint", func(t *testing.T) {
+		options := projectionOptions()
+		options.Mode = Preserve
+		options.TargetField = "body"
+		options.Limits.MaxValues = 1
+		input := Multipart{
+			Boundary: "bounded",
+			Parts: []MultipartPart{{
+				Name:    "ordinary",
+				Headers: []HeaderOccurrence{{Name: "X-Trace", Value: "safe"}},
+				Body:    []byte("kept"),
+			}},
+		}
+		output, result, err := ProjectMultipart(input, options)
+		if err != nil || !reflect.DeepEqual(output, input) {
+			t.Fatalf("multipart fallback = %#v / %#v / %v", output, result, err)
+		}
+		assertOpaque(t, result, "body.opaque")
+	})
+
+	t.Run("xml depth without sensitive name hint", func(t *testing.T) {
+		options := projectionOptions()
+		options.Mode = Preserve
+		options.TargetField = "body"
+		options.Limits.MaxDepth = 1
+		input := []byte("<root><ordinary>kept</ordinary></root>")
+		output, result, err := ProjectXML(input, options)
+		if err != nil || !bytes.Equal(output, input) {
+			t.Fatalf("XML fallback = %q / %#v / %v", output, result, err)
+		}
+		assertOpaque(t, result, "body.opaque")
+	})
 }
 
 func TestProjectMultipartRejectsSensitiveFileAndBadBoundary(t *testing.T) {
@@ -956,6 +1380,72 @@ func TestProjectMultipartDoesNotReuseRequestHeaderExemptionsForPartHeaders(t *te
 		t.Fatalf("multipart part header exemption leaked from request headers: %#v / %#v", output, result)
 	}
 	assertDisclosureSafe(t, []byte(output.Parts[0].Headers[0].Value), result)
+}
+
+func TestProjectMultipartPreserveComposesCredentialLocators(t *testing.T) {
+	t.Parallel()
+	const innerBoundary = "inner-preserved-locator"
+	inner := "--" + innerBoundary + "\r\n" +
+		"Content-Disposition: form-data; name=\"payload\"\r\n" +
+		"Content-Type: application/x-www-form-urlencoded\r\n\r\n" +
+		"ordinary=keep&password=" + projectionCanary + "\r\n" +
+		"--" + innerBoundary + "--\r\n"
+	options := projectionOptions()
+	options.Mode = Preserve
+	options.TargetField = "body"
+	output, result, err := ProjectMultipart(Multipart{
+		Boundary: "outer-preserved-locator",
+		Parts: []MultipartPart{
+			{
+				Name: "headers",
+				Headers: []HeaderOccurrence{{
+					Name:  "Authorization",
+					Value: "Bearer " + projectionCanary,
+				}},
+				Body: []byte("ordinary"),
+			},
+			{
+				Name: "payload",
+				Headers: []HeaderOccurrence{{
+					Name:  "Content-Type",
+					Value: "application/xml",
+				}},
+				Body: []byte(`<root><password>` + projectionCanary + `</password></root>`),
+			},
+			{
+				Name: "nested",
+				Headers: []HeaderOccurrence{{
+					Name:  "Content-Type",
+					Value: "multipart/mixed; boundary=" + innerBoundary,
+				}},
+				Body: []byte(inner),
+			},
+		},
+	}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.Parts[0].Headers[0].Value != "Bearer "+projectionCanary ||
+		!bytes.Equal(output.Parts[1].Body, []byte(`<root><password>`+projectionCanary+`</password></root>`)) ||
+		!bytes.Equal(output.Parts[2].Body, []byte(inner)) {
+		t.Fatalf("preserve projection changed multipart bytes: %#v", output)
+	}
+	fields := make(map[string]TargetRef)
+	for _, target := range result.PreservedTargets {
+		fields[target.Field] = target
+	}
+	for _, field := range []string{
+		"body.multipart.parts[0].headers",
+		"body.multipart.parts[1].body.xml.text",
+		"body.multipart.parts[2].body.multipart.parts[0].body.form",
+	} {
+		if _, ok := fields[field]; !ok {
+			t.Fatalf("preserved targets = %#v, want compositional field %q", result.PreservedTargets, field)
+		}
+	}
+	if target := fields["body.multipart.parts[1].body.xml.text"]; target.Pointer != "/root/password" {
+		t.Fatalf("nested XML target = %#v, want exact path", target)
+	}
 }
 
 func TestProjectMultipartRecursivelyProjectsNestedMultipart(t *testing.T) {
@@ -1069,6 +1559,28 @@ func TestProjectMultipartRejectsUnsafeNeutralStructuredPart(t *testing.T) {
 		}
 		serialized, _ := json.Marshal(output)
 		assertDisclosureSafe(t, serialized, result)
+	}
+}
+
+func TestProjectMultipartPreserveValidatesNeutralStructuredPart(t *testing.T) {
+	t.Parallel()
+	options := projectionOptions()
+	options.Mode = Preserve
+	body := []byte(`{"password":"imported-value"`)
+	output, result, err := ProjectMultipart(Multipart{
+		Boundary: "preserved-nested-boundary",
+		Parts: []MultipartPart{{
+			Name:    "payload",
+			Headers: []HeaderOccurrence{{Name: "Content-Type", Value: "application/json"}},
+			Body:    body,
+		}},
+	}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition != BlockedDraft || len(output.Parts) != 1 ||
+		!bytes.Equal(output.Parts[0].Body, body) {
+		t.Fatalf("malformed preserved nested JSON = %#v / %#v", output, result)
 	}
 }
 

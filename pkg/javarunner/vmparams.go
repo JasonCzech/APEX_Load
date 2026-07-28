@@ -95,6 +95,30 @@ func ValidateVMParameters(parameters []string) []ValidationIssue {
 	return issues
 }
 
+// ValidateVMParametersForExecution applies every JVM argv structural and
+// process-control rule while allowing a literal credential value that was
+// already accepted by a trusted import workflow. Imported credentials cannot
+// be projected into an environment variable or a runtime template without
+// changing the source wire/process semantics, so the durable destination keeps
+// the exact token and the importer records process-table exposure for review.
+//
+// Ordinary authoring and persistence boundaries must continue to call
+// ValidateVMParameters, which additionally rejects sensitive values.
+func ValidateVMParametersForExecution(parameters []string) []ValidationIssue {
+	issues := ValidateVMParameters(parameters)
+	if len(issues) == 0 {
+		return nil
+	}
+	filtered := issues[:0]
+	for _, issue := range issues {
+		if issue.Category == VMParameterSensitiveProperty {
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+	return filtered
+}
+
 func validateVMParameter(parameter string) string {
 	if parameter == "" {
 		return VMParameterEmpty

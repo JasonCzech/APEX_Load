@@ -10,18 +10,22 @@ import (
 )
 
 type BrowserReplayStartRequest struct {
-	GroupName               string                 `json:"group_name,omitempty"`
-	ProjectID               string                 `json:"project_id,omitempty"`
-	ReplaySessionID         string                 `json:"replay_session_id,omitempty"`
-	Variables               map[string]string      `json:"variables,omitempty"`
-	RedactionRules          []engine.RedactionRule `json:"redaction_rules,omitempty"`
-	StartPaused             bool                   `json:"start_paused,omitempty"`
-	Breakpoints             []int                  `json:"breakpoints,omitempty"`
-	Browser                 *dsl.BrowserConfig     `json:"browser,omitempty"`
-	IgnoreThinkTime         *bool                  `json:"ignore_think_time,omitempty"`
-	Script                  *dsl.Script            `json:"script,omitempty"`
-	Preflight               *ReplayPreflight       `json:"-"`
-	SecretResolver          engine.SecretResolver  `json:"-"`
+	GroupName       string                 `json:"group_name,omitempty"`
+	ProjectID       string                 `json:"project_id,omitempty"`
+	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
+	Variables       map[string]string      `json:"variables,omitempty"`
+	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	StartPaused     bool                   `json:"start_paused,omitempty"`
+	Breakpoints     []int                  `json:"breakpoints,omitempty"`
+	Browser         *dsl.BrowserConfig     `json:"browser,omitempty"`
+	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
+	Script          *dsl.Script            `json:"script,omitempty"`
+	Preflight       *ReplayPreflight       `json:"-"`
+	SecretResolver  engine.SecretResolver  `json:"-"`
+	// trustedPreservedImport is server-owned provenance set only for the
+	// unchanged durable script loaded by the canonical stored-script route.
+	// Draft JSON cannot set it.
+	trustedPreservedImport  bool
 	executionContext        context.Context
 	releaseExecutionContext context.CancelFunc
 }
@@ -87,6 +91,13 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+	} else {
+		// The stored-script route may apply only the bounded browser overrides
+		// in applyBrowserReplayOverrides; none can change the target, proxy, or
+		// credential fields. Retain server-owned import trust for that exact
+		// durable script so harmless viewport/device overrides do not replace
+		// an imported password with its disclosure sentinel.
+		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
 	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -107,7 +118,11 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 	}
 	script = applyBrowserReplayOverrides(script, req)
 	var prepared bool
-	script, prepared = prepareTransientExecutableScript(w, script)
+	script, prepared = prepareTransientExecutableScript(
+		w,
+		script,
+		req.trustedPreservedImport,
+	)
 	if !prepared {
 		return
 	}
@@ -115,11 +130,21 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 	if resolvedScript != nil {
 		script = resolvedScript
 	}
-	script, prepared = prepareTransientExecutableScript(w, script)
+	script, prepared = prepareTransientExecutableScript(
+		w,
+		script,
+		req.trustedPreservedImport,
+	)
 	if !prepared {
 		return
 	}
-	issues := append(validateScriptForReplay(script), refIssues...)
+	issues := append(
+		validateScriptForReplayWithImportTrust(
+			script,
+			req.trustedPreservedImport,
+		),
+		refIssues...,
+	)
 	warnings := append(validationWarnings(script), refWarnings...)
 	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)

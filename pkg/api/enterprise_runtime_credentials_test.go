@@ -7,8 +7,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 )
@@ -88,9 +92,28 @@ api_key=` + apiKey + `
 	if response.Code != http.StatusOK {
 		t.Fatalf("import status = %d; body=%s", response.Code, response.Body.String())
 	}
+	var responseFields map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &responseFields); err != nil {
+		t.Fatal(err)
+	}
+	editable := append(
+		append([]byte(nil), responseFields["script"]...),
+		responseFields["scripts"]...,
+	)
 	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if bytes.Contains(response.Body.Bytes(), []byte(canary)) {
-			t.Fatalf("enterprise response disclosed %q: %s", canary, response.Body.String())
+		if !bytes.Contains(editable, []byte(canary)) {
+			t.Fatalf("authorized enterprise editable draft lost %q: %s", canary, editable)
+		}
+	}
+	delete(responseFields, "script")
+	delete(responseFields, "scripts")
+	reviewPayload, err := json.Marshal(responseFields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
+		if bytes.Contains(reviewPayload, []byte(canary)) {
+			t.Fatalf("enterprise result/review surfaces disclosed %q: %s", canary, reviewPayload)
 		}
 	}
 
@@ -112,6 +135,165 @@ api_key=` + apiKey + `
 	}
 	if envelope.SourceSecretSessionID == "" || !envelope.SourceMigrationAllowed {
 		t.Fatalf("protected source session missing: %#v", envelope)
+	}
+}
+
+func TestEnterpriseArchiveUnsupportedProxyCredentialsPersistInertAndProjectMasked(t *testing.T) {
+	const (
+		proxyUser = "unsupported-enterprise-proxy-user-canary-47ad"
+		proxyPass = "unsupported-enterprise-proxy-pass-canary-93e1"
+	)
+	archive := buildEnterpriseRuntimeCredentialArchive(t, map[string]string{
+		"UnsupportedProxy.usr": `[General]
+Type=Web
+RuntimeSettings=default.cfg
+[Actions]
+Action1=Action.c
+`,
+		"Action.c": `Action()
+{
+	web_url("request", "URL=https://example.test/orders", LAST);
+	return 0;
+}
+`,
+		"default.cfg": `[Proxy]
+Mode=automatic
+ProxyUseProxy=1
+ProxyServer=http://proxy.example.test:8080
+ProxyUserName=` + proxyUser + `
+ProxyPassword=` + proxyPass + `
+`,
+	})
+
+	server := NewServer(ServerConfig{})
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+	part, err := writer.CreateFormFile("file", "UnsupportedProxy.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	importRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/enterprise-script-archive",
+		&requestBody,
+	)
+	importRequest.Header.Set("Content-Type", writer.FormDataContentType())
+	importResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(importResponse, importRequest)
+	if importResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"unsupported proxy import status = %d body=%s",
+			importResponse.Code,
+			importResponse.Body.String(),
+		)
+	}
+	var inspection struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(importResponse.Body.Bytes(), &inspection); err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Script.Config.HTTP.ProxyMode != "none" ||
+		inspection.Script.Config.HTTP.Proxy.URL != "" ||
+		inspection.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		inspection.Script.Config.HTTP.Proxy.Password != proxyPass {
+		t.Fatalf(
+			"editable disabled proxy record = %#v",
+			inspection.Script.Config.HTTP,
+		)
+	}
+
+	createBody, err := json.Marshal(map[string]any{"script": inspection.Script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	createRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts",
+		bytes.NewReader(createBody),
+	)
+	createRequest.Header.Set("Content-Type", "application/json")
+	createResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf(
+			"save unsupported proxy draft status = %d body=%s",
+			createResponse.Code,
+			createResponse.Body.String(),
+		)
+	}
+	if strings.Contains(createResponse.Body.String(), proxyUser) ||
+		strings.Contains(createResponse.Body.String(), proxyPass) {
+		t.Fatalf("save response disclosed proxy credentials: %s", createResponse.Body.String())
+	}
+	var created StoredScript
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == "" {
+		t.Fatalf("save response omitted script identity: %s", createResponse.Body.String())
+	}
+	durable, ok := server.runner.GetScript(created.ID)
+	if !ok || durable == nil || durable.Script == nil {
+		t.Fatal("unsupported proxy draft was not saved")
+	}
+	if durable.Script.Config.HTTP.ProxyMode != "none" ||
+		durable.Script.Config.HTTP.Proxy.URL != "" ||
+		durable.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		durable.Script.Config.HTTP.Proxy.Password != proxyPass {
+		t.Fatalf(
+			"durable disabled proxy record lost source credentials: %#v",
+			durable.Script.Config.HTTP,
+		)
+	}
+
+	readRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/scripts/"+durable.ID,
+		nil,
+	)
+	readResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(readResponse, readRequest)
+	if readResponse.Code != http.StatusOK {
+		t.Fatalf("read status = %d body=%s", readResponse.Code, readResponse.Body.String())
+	}
+	if strings.Contains(readResponse.Body.String(), proxyUser) ||
+		strings.Contains(readResponse.Body.String(), proxyPass) ||
+		!strings.Contains(readResponse.Body.String(), maskedScriptSecret) {
+		t.Fatalf("ordinary read did not mask disabled proxy credentials: %s", readResponse.Body.String())
+	}
+
+	exportDir := t.TempDir()
+	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)
+	exportRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/"+durable.ID+"/export",
+		strings.NewReader(`{"filename":"unsupported-proxy.json"}`),
+	)
+	exportRequest.Header.Set("Content-Type", "application/json")
+	exportResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(exportResponse, exportRequest)
+	if exportResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"export status = %d body=%s",
+			exportResponse.Code,
+			exportResponse.Body.String(),
+		)
+	}
+	exported, err := os.ReadFile(filepath.Join(exportDir, "unsupported-proxy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(exported, []byte(proxyUser)) ||
+		bytes.Contains(exported, []byte(proxyPass)) ||
+		!bytes.Contains(exported, []byte(maskedScriptSecret)) {
+		t.Fatalf("script export did not mask disabled proxy credentials: %s", exported)
 	}
 }
 

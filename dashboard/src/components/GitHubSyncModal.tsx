@@ -19,11 +19,13 @@ import {
 import { ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ParameterizationReview from './ParameterizationReview'
+import { importDraftExpiryStatus } from './protectedImportSession'
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
 import { refreshedSecretBindingRequirements } from './secretBindingUtils'
+import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 
 type GitHubSyncModalProps = {
   mode: 'push' | 'import'
@@ -52,6 +54,7 @@ function statusLabel(status: string): string {
 export default function GitHubSyncModal({ mode, config, script, projectId, onClose, onPushed, onImported }: GitHubSyncModalProps) {
   const githubApi = useGitHubApi()
   const scriptApi = useScriptApi()
+  const sourceSecretSessions = useSourceSecretSessionLifecycle(scriptApi.discardImportSecretSession)
 
   const [repos, setRepos] = useState<GitHubRepo[]>([])
   const [repoFullName, setRepoFullName] = useState('')
@@ -75,6 +78,8 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   const [sourceSecretSessionId, setSourceSecretSessionId] = useState('')
   const [sourceSecretSessionExpiresAt, setSourceSecretSessionExpiresAt] = useState('')
   const [sourceSecretMigrationAllowed, setSourceSecretMigrationAllowed] = useState(false)
+  const [importDraftExpiresAt, setImportDraftExpiresAt] = useState('')
+  const [importDraftExpiryNow, setImportDraftExpiryNow] = useState(() => Date.now())
 
   // Push-only status.
   const [status, setStatus] = useState<GitHubScriptStatus | null>(null)
@@ -105,15 +110,14 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
   const closeModal = useCallback(() => {
     if (!modalOpenRef.current) return
-    void secretBindingReviewRef.current?.discardSourceSession()
+    sourceSecretSessions.clear('import')
     modalOpenRef.current = false
     importDraftGenerationRef.current += 1
     browseRequestRef.current += 1
     onClose()
-  }, [onClose])
+  }, [onClose, sourceSecretSessions])
 
   useEffect(() => () => {
-    void secretBindingReviewRef.current?.discardSourceSession()
     modalOpenRef.current = false
     importDraftGenerationRef.current += 1
     browseRequestRef.current += 1
@@ -122,6 +126,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   useModalDialog({ dialogRef, initialFocusRef: repositorySelectRef, onClose: closeModal })
 
   const selectedRepo = useMemo(() => repos.find(repo => repo.full_name === repoFullName), [repos, repoFullName])
+  const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt, importDraftExpiryNow)
 
   const clearImportReview = useCallback(() => {
     setImportDraft(null)
@@ -132,17 +137,31 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
     setSourceSecretSessionId('')
     setSourceSecretSessionExpiresAt('')
     setSourceSecretMigrationAllowed(false)
+    setImportDraftExpiresAt('')
     setParameterizationApplying(false)
   }, [])
 
   const invalidateImportSource = useCallback(() => {
-    void secretBindingReviewRef.current?.discardSourceSession()
+    sourceSecretSessions.clear('import')
     advanceImportDraftGeneration()
     browseRequestRef.current += 1
     clearImportReview()
     setLoading(false)
     setError('')
-  }, [advanceImportDraftGeneration, clearImportReview])
+  }, [advanceImportDraftGeneration, clearImportReview, sourceSecretSessions])
+
+  useEffect(() => {
+    setImportDraftExpiryNow(Date.now())
+    const expiry = Date.parse(importDraftExpiresAt)
+    if (!Number.isFinite(expiry)) return
+    const remaining = expiry - Date.now()
+    if (remaining <= 0) return
+    const timeout = window.setTimeout(
+      () => setImportDraftExpiryNow(Date.now()),
+      Math.min(remaining, 2_147_483_647),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [importDraftExpiresAt])
 
   const previousProjectIdRef = useRef(projectId)
   useEffect(() => {
@@ -268,8 +287,13 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
     requestIsCurrent: () => boolean,
   ) {
     const saved = await scriptApi.createScript(draft, targetProjectId)
-    if (!requestIsCurrent()) return
+    // createScript is the persistence commit point. If the modal is cancelled
+    // or its source changes while that request is in flight, still publish the
+    // returned script so the caller can track and refresh the created record.
+    // Silently dropping this response leaves a real script orphaned in the
+    // destination library.
     onImported?.(saved)
+    if (!requestIsCurrent()) return
     closeModal()
   }
 
@@ -291,6 +315,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       && repoFullNameRef.current === sourceRepoFullName
       && pathRef.current.trim() === sourcePath
       && branchRef.current === sourceBranch
+    sourceSecretSessions.clear('import')
     clearImportReview()
     setLoading(true)
     setError('')
@@ -302,7 +327,11 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         path: sourcePath,
         ref: sourceBranch,
       })
-      if (!requestIsCurrent()) return
+      if (!requestIsCurrent()) {
+        sourceSecretSessions.discardUnaccepted(sourceProjectId, result.source_secret_session_id)
+        return
+      }
+      sourceSecretSessions.replace('import', sourceProjectId, result.source_secret_session_id)
       const draft = result.script as ScriptDefinition | undefined
       if (!draft) {
         setError('GitHub returned no importable script.')
@@ -310,6 +339,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       }
       const parameterization = result.parameterization
       const secretBindingRequirements = result.secret_binding_requirements ?? []
+      setImportDraftExpiresAt(result.import_draft_expires_at || '')
       if (secretBindingRequirements.length > 0 || (parameterization?.suggestions.length ?? 0) > 0) {
         // Keep references and optional parameterization visible in one review step.
         setImportDraft(draft)
@@ -331,6 +361,10 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
   async function doSaveReviewedImport() {
     if (!importDraft) return
+    if (importDraftExpiry?.expired) {
+      setError('This credential-preserving GitHub import draft has expired. Re-import the script before saving.')
+      return
+    }
     const sourceGeneration = importDraftGenerationRef.current
     const sourceProjectId = importProjectIdRef.current
     const sourceDraft = importDraftRef.current || importDraft
@@ -367,6 +401,9 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       setImportDraft(result.script)
       importDraftRef.current = result.script
       setImportSecretBindingRequirements(result.secret_binding_requirements ?? [])
+      if (result.import_draft_expires_at) {
+        setImportDraftExpiresAt(result.import_draft_expires_at)
+      }
     } catch (error: unknown) {
       if (importDraftGenerationRef.current !== sourceGeneration || importProjectIdRef.current !== sourceProjectId) throw error
       const refreshed = refreshedSecretBindingRequirements(error)
@@ -470,7 +507,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                   sourceSecretSessionId={sourceSecretSessionId}
                   sourceSecretSessionExpiresAt={sourceSecretSessionExpiresAt}
                   sourceMigrationAllowed={sourceSecretMigrationAllowed}
-                  disabled={loading || parameterizationApplying}
+                  disabled={loading || parameterizationApplying || importDraftExpiry?.expired === true}
                   onApply={doApplySecretBindings}
                   onPreparedChange={setImportPreparedSecrets}
                 />
@@ -480,19 +517,30 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                   parameterization={importParameterization}
                   script={importDraft}
                   reviewGeneration={`${importDraftGeneration}:${projectId || ''}`}
-                  disabled={loading}
+                  disabled={loading || importDraftExpiry?.expired === true}
                   onApplyingChange={setParameterizationApplying}
-                  onApplied={parameterizedScript => {
+                  onApplied={(parameterizedScript, _diffs, _selectedIds, nextImportDraftExpiresAt) => {
                     secretBindingReviewRef.current?.preserveEditsForNextReviewGeneration()
                     advanceImportDraftGeneration()
                     setImportDraft(parameterizedScript)
                     importDraftRef.current = parameterizedScript
+                    if (nextImportDraftExpiresAt) {
+                      setImportDraftExpiresAt(nextImportDraftExpiresAt)
+                    }
                   }}
                 />
               )}
               {importSecretBindingRequirements.length === 0 && !importParameterization && (
                 <p className="setting-desc" role="status">
                   All redacted values now use secret references. The imported script is ready to save.
+                </p>
+              )}
+              {importDraftExpiry && (
+                <p
+                  className={importDraftExpiry.expired ? 'settings-error-inline' : 'setting-desc'}
+                  role={importDraftExpiry.expired ? 'alert' : 'status'}
+                >
+                  {importDraftExpiry.label}
                 </p>
               )}
             </>
@@ -542,7 +590,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 className="btn btn-primary"
                 type="button"
                 onClick={() => void doSaveReviewedImport()}
-                disabled={loading || parameterizationApplying || importPreparedSecrets?.valid === false}
+                disabled={importDraftExpiry?.expired === true || loading || parameterizationApplying || importPreparedSecrets?.valid === false}
               >
                 {loading
                   ? 'Saving…'

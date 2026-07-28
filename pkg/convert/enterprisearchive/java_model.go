@@ -18,6 +18,11 @@ type javaProgram struct {
 	// same runner class.
 	selectedVuserClassFile string
 	selectedVuserClassName string
+	// vuserSourceSelectionBlocker records a declared lifecycle source that
+	// could not be resolved without basename substitution or ambiguity. When
+	// set, javaVuserClass must not fall back to another Actions class.
+	vuserSourceSelectionBlocker string
+	vuserSourceSelectionRef     string
 }
 
 type javaStringEnv struct {

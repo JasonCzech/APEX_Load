@@ -54,7 +54,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		preApplied = nil
 	}
 
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                result,
 		Script:                augmented.Script,
 		Warnings:              result.Warnings,
@@ -67,7 +67,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		Parameterization:      buildImportParameterization(augmented.Script, preApplied),
 		Preflight:             preflight,
 		ProtectedRequirements: protectedRequirements,
-	}))
+	})
 }
 
 func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, projectID, sourceName, source string, buildNative, agentforce, requireDetected bool) salesforceHARAugmentation {

@@ -27,21 +27,21 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), value) {
-		t.Fatal("converter JSON disclosed a protected credential value")
+	if !strings.Contains(string(publicJSON), value) {
+		t.Fatal("converter JSON lost the executable imported credential")
 	}
 	scriptJSON, err := json.Marshal(result.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(scriptJSON), value) {
-		t.Fatal("projected script retained a protected credential value")
+	if !strings.Contains(string(scriptJSON), value) {
+		t.Fatal("destination script lost the executable imported credential")
 	}
 
 	requirements := result.ProtectedRequirements.Take()
 	defer clearSampleProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != value {
-		t.Fatalf("protected requirements = %#v, want one intact source value", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, preserved credential must not require reentry", requirements)
 	}
 	if result.ProtectedRequirements.Take() != nil {
 		t.Fatal("protected credential requirements were returned more than once")
@@ -75,16 +75,16 @@ func TestUserinfoSurvivesRelativizationUntilCredentialProjection(t *testing.T) {
 		t.Fatalf("actions = %#v, want one request", result.Script.Actions)
 	}
 	action := result.Script.Actions[0]
-	if strings.Contains(action.Target, userinfo) || !strings.Contains(action.Target, "{{secret.") {
-		t.Fatalf("projected target = %q, want governed userinfo", action.Target)
+	if !strings.Contains(action.Target, userinfo) {
+		t.Fatalf("target = %q, want imported userinfo preserved", action.Target)
 	}
-	if action.Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("metadata = %#v, want userinfo review gate", action.Metadata)
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("metadata = %#v, preserved userinfo must not block execution", action.Metadata)
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearSampleProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != userinfo {
-		t.Fatalf("requirements = %#v, want source userinfo", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved userinfo must not require reentry", requirements)
 	}
 }
 

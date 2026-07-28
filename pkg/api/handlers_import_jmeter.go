@@ -327,7 +327,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 	preflight := buildAndAttachMultiScriptImportPreflight(
 		result.Script, result.Scripts, "jmeter", nil, result.Warnings,
 	)
-	writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
 		Script:              result.Script,
@@ -342,7 +342,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		ProtocolCompat:      protocolCompat,
 		Parameterization:    buildMultiScriptParameterization(result.Scripts),
 		Preflight:           preflight,
-	}))
+	})
 }
 
 func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) {
@@ -359,16 +359,18 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Prepare and validate the whole import before the first durable write. This
-	// avoids leaving an early script behind when a later script has invalid secret
-	// bindings or DSL. A deferred compensation guard then covers every subsequent
-	// failure, including scenario validation/persistence.
+	// dedicated, authorized import commit is the trust boundary for retaining the
+	// source's executable credentials: the operator already supplied those bytes,
+	// so replacing them with a secret reference here would make the destination
+	// script require needless re-entry. Ordinary reads and this response are still
+	// disclosure-safe projections.
 	preparedScripts := make([]*dsl.Script, 0, len(req.Scripts))
 	seenScriptNames := make(map[string]struct{}, len(req.Scripts))
 	for i := range req.Scripts {
 		script := req.Scripts[i]
-		safeScript, _, err := applySuggestedSecretBindings(&script, i)
+		safeScript, err := preparePersistentImportedLibraryScript(&script, nil, "jmeter")
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
+			writeError(w, http.StatusBadRequest, "failed to prepare imported script: "+err.Error())
 			return
 		}
 		if issues := validateScript(safeScript); len(issues) > 0 {
@@ -472,7 +474,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 
 	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
 	for _, safeScript := range preparedScripts {
-		stored, err := transaction.createScript(safeScript)
+		stored, err := transaction.createImportedScript(safeScript, "jmeter")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
 			return
@@ -495,7 +497,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	committed = true
 
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"scripts":  storedScripts,
+		"scripts":  maskStoredScripts(storedScripts),
 		"scenario": storedScenario,
 		"count":    len(storedScripts),
 	})

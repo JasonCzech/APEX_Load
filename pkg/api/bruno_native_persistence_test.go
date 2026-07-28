@@ -64,6 +64,39 @@ func TestPreparePersistentBrunoNativeScriptRejectsUngovernedXMLCredential(t *tes
 	}
 }
 
+func TestPreparePersistentBrunoNativeScriptPreservesImportedXMLCredential(t *testing.T) {
+	const password = `quote"-slash\-line
+end`
+	body := `<Envelope><password>` + password + `</password></Envelope>`
+	script := &dsl.Script{
+		ID: "native-imported-inline-secret", Name: "Native imported inline secret", Version: "1", Protocol: "http",
+		GeneratedBy: brunoNativeImporterIdentity,
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "bruno",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "SOAP request", Type: "POST", Method: http.MethodPost, Target: "https://example.test/soap",
+			Body:     body,
+			Metadata: map[string]any{"source_profile": "bruno_native"},
+		}},
+	}
+
+	projected, err := preparePersistentBrunoNativeScript(script)
+	if err != nil {
+		t.Fatalf("prepare imported native script: %v", err)
+	}
+	if got := projected.Actions[0].Body; got != body {
+		t.Fatalf("imported XML body = %q, want %q", got, body)
+	}
+	if masked := maskScriptSecrets(projected); masked == nil ||
+		strings.Contains(masked.Actions[0].Body, password) {
+		t.Fatalf("ordinary read disclosed imported XML credential: %#v", masked)
+	}
+}
+
 func TestPreparePersistentBrunoNativeScriptRejectsUngovernedCredentialSuffix(t *testing.T) {
 	script := &dsl.Script{
 		ID: "native-suffixed-secret", Name: "Native suffixed secret", Version: "1", Protocol: "http",

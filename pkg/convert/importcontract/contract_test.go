@@ -63,10 +63,10 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
 	"har":      "0cb6ed628d2af15b686d376d527a64e0cba0dc8fadedd10d6084763da699d561",
-	"jmeter":   "86d2cb8835bed5a11c0ecfed44beb8f5d561830b2888a6b69bd3fa99a9b16195",
-	"k6":       "47993978bcb8bde01e9f6abbbb2de15007eafacfc146ad41d1c41c66086d8946",
+	"jmeter":   "4dc8ac1a0a6512eb5d6d32a6dfa2b3e1f9911457fa748b274307833f6f854162",
+	"k6":       "ad3473a1f5752e85de836f10dc1577fe47b89cab4dcb12a0c45ca429b0af762c",
 	"openapi":  "a28a2a528a280c9d0c699eab213b3a18ed1eb67a1c77b888370473e22527af6c",
-	"postman":  "12e13ed38965acd71136dffb6822b2e2f8ae1a4c3d93ee27abdac5a43476dea3",
+	"postman":  "84bc234a9d609b99955696e58afa1f7f45f5d07a15dbe7c7fe092f5c36d01947",
 	"raw_http": "12a13efb99fef4e3f9a019881e85d7f47b27775de2e70b235c4796bf9de4736d",
 	"wsdl":     "c5af6f18258b6e4fea868ebbe6f9955e7b7a8665aec504dd9c5995cb06241adf",
 }
@@ -88,6 +88,9 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			}
 			if importer.name == "har" {
 				requireIntentionalDelta(t, "har_request_http_version_fidelity")
+			}
+			if importer.name == "postman" || importer.name == "jmeter" || importer.name == "k6" {
+				requireIntentionalDelta(t, "credential_preserving_import_marker")
 			}
 			if importer.name != "wsdl" {
 				requireIntentionalDelta(t, "http_imports_disable_implicit_traceparent")
@@ -543,13 +546,13 @@ func TestCredentialDispositionContractCharacterizesCurrentDeltas(t *testing.T) {
 		"k6":       k6Result.Script,
 	}
 	wantExecutableCanary := map[string]bool{
-		"postman":  false,
-		"raw_http": false,
-		"har":      false,
-		"jmeter":   false,
-		"openapi":  false,
-		"wsdl":     false,
-		"k6":       false,
+		"postman":  true,
+		"raw_http": true,
+		"har":      true,
+		"jmeter":   true,
+		"openapi":  true,
+		"wsdl":     true,
+		"k6":       true,
 	}
 	requireIntentionalDelta(t, "postman_http_credentials_use_shared_projection")
 	requireIntentionalDelta(t, "jmeter_http_credentials_use_shared_projection")
@@ -565,6 +568,7 @@ func TestCredentialDispositionContractCharacterizesCurrentDeltas(t *testing.T) {
 }
 
 var intentionalDeltaAllowlist = map[string]string{
+	"credential_preserving_import_marker":            "Finalized imported scripts carry a stable policy marker so persistence keeps operator-supplied executable credential values while read projections remain masked.",
 	"postman_http_credentials_use_shared_projection": "Postman HTTP headers, typed auth, and structured bodies now reach the source-neutral credential projector before any compatibility rewriting.",
 	"jmeter_http_credentials_use_shared_projection":  "JMeter HTTP headers and bodies now use the source-neutral credential projector.",
 	"k6_http_credentials_use_shared_projection":      "Static k6 HTTP literals now use the source-neutral credential projector.",

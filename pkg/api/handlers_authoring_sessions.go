@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -78,9 +79,42 @@ type authoringSessionApprovalResponse struct {
 // requirements, while non-executable import evidence is scrubbed before the
 // draft is stored or promoted.
 func prepareAuthoringSessionDraft(w http.ResponseWriter, draft, prior *dsl.Script) (*dsl.Script, bool) {
-	if err := validateJavaVMParameterDisclosureSafety(draft); err != nil {
+	return prepareAuthoringSessionDraftWithImportTrust(w, draft, prior, false)
+}
+
+func prepareAuthoringSessionDraftWithImportTrust(
+	w http.ResponseWriter,
+	draft, prior *dsl.Script,
+	trustedImport bool,
+) (*dsl.Script, bool) {
+	preserveImportedCredentials := trustedImport || isCredentialPreservingImport(prior)
+	if err := validateJavaVMParameterSafety(draft, preserveImportedCredentials); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return nil, false
+	}
+	if isCredentialPreservingImport(prior) {
+		projected, err := preparePersistentLibraryScript(draft, prior)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		return projected, true
+	}
+	if trustedImport {
+		sourceProfile := ""
+		if draft != nil && draft.Metadata != nil && draft.Metadata.Import != nil {
+			sourceProfile = draft.Metadata.Import.Source
+		}
+		projected, err := preparePersistentImportedLibraryScript(
+			draft,
+			nil,
+			sourceProfile,
+		)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		return projected, true
 	}
 	projected := maskScriptSecrets(draft)
 	if projected == nil {
@@ -125,7 +159,48 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	safeDraft, ok := prepareAuthoringSessionDraft(w, &req.Draft, nil)
+	var importAttestationClaim *importDraftAttestationClaim
+	if isCredentialPreservingImport(&req.Draft) {
+		fingerprint, err := fingerprintImportDraftCredentials(&req.Draft)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to validate credential-preserving import draft")
+			return
+		}
+		if fingerprint.HasRawCredentials {
+			if req.IdempotencyKey != "" {
+				replayed, replayErr := s.replayCredentialPreservingAuthoringSessionCreate(
+					w,
+					r,
+					&req,
+				)
+				if replayErr != nil {
+					writeError(w, http.StatusInternalServerError, replayErr.Error())
+					return
+				}
+				if replayed {
+					return
+				}
+			}
+			importAttestationClaim, err = s.claimImportDraftAttestation(r, &req.Draft)
+			if err != nil {
+				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+				return
+			}
+			defer func() {
+				if importAttestationClaim != nil {
+					s.releaseImportDraftAttestation(importAttestationClaim)
+				}
+			}()
+		} else {
+			s.discardImportDraftAttestation(r, &req.Draft)
+		}
+	}
+	safeDraft, ok := prepareAuthoringSessionDraftWithImportTrust(
+		w,
+		&req.Draft,
+		nil,
+		importAttestationClaim != nil,
+	)
 	if !ok {
 		return
 	}
@@ -183,14 +258,98 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 				return
 			}
 			enrichAuthoringSession(existing)
-			s.recordAuditEvent(r, "script.authoring_session.create", "replayed", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name, "source": existing.Source})
+			s.recordAuditEvent(r, "script.authoring_session.create", "replayed", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": disclosureSafeScriptName(existing.Name, existing.Draft), "source": existing.Source})
 			writeJSON(w, http.StatusOK, maskAuthoringSession(existing))
 			return
 		}
 	}
+	if importAttestationClaim != nil {
+		if completeErr := s.completeImportDraftAttestation(importAttestationClaim); completeErr != nil {
+			slog.Warn(
+				"failed to finalize credential-preserving authoring import session",
+				"authoring_session_id", session.ID,
+				"error", completeErr,
+			)
+		} else {
+			importAttestationClaim = nil
+		}
+	}
 	enrichAuthoringSession(session)
-	s.recordAuditEvent(r, "script.authoring_session.create", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
+	s.recordAuditEvent(r, "script.authoring_session.create", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"name": disclosureSafeScriptName(session.Name, session.Draft), "source": session.Source})
 	writeJSON(w, http.StatusCreated, maskAuthoringSession(session))
+}
+
+// replayCredentialPreservingAuthoringSessionCreate handles the response-lost
+// retry after a one-shot import attestation has already been completed. The
+// deterministic idempotency row is compared against the exact, sanitized
+// would-be durable draft before any attempt to reclaim the spent capability.
+// A forged marker can therefore retrieve only the already-authorized session
+// produced by the same request; it cannot establish new preserved credentials.
+func (s *Server) replayCredentialPreservingAuthoringSessionCreate(
+	w http.ResponseWriter,
+	r *http.Request,
+	req *authoringSessionRequest,
+) (bool, error) {
+	if req == nil || strings.TrimSpace(req.IdempotencyKey) == "" {
+		return false, nil
+	}
+	sourceProfile := ""
+	if req.Draft.Metadata != nil && req.Draft.Metadata.Import != nil {
+		sourceProfile = req.Draft.Metadata.Import.Source
+	}
+	safeDraft, err := preparePersistentImportedLibraryScript(
+		&req.Draft,
+		nil,
+		sourceProfile,
+	)
+	if err != nil {
+		return false, nil
+	}
+	sessionSource := normalizeAuthoringSessionSource(req.Source)
+	markImportedJavaVuserAuthoringDraft(safeDraft, sessionSource)
+	reviewState := cloneReviewState(req.ReviewState)
+	delete(reviewState, authoringSessionIdempotencyReviewKey)
+	candidate := &storage.AuthoringSession{
+		ID:          authoringSessionIdempotentID(safeDraft.ProjectID, req.IdempotencyKey),
+		ProjectID:   normalizeProjectID(safeDraft.ProjectID),
+		Source:      sessionSource,
+		Name:        authoringSessionName(req.Name, safeDraft),
+		Status:      normalizeAuthoringSessionStatus(req.Status),
+		Draft:       safeDraft,
+		ReviewState: reviewState,
+	}
+	requestHash := authoringSessionCreateRequestHash(candidate)
+	existing, err := s.loadAuthoringSession(candidate.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !authoringSessionCreateIdempotencyMatches(
+		existing,
+		req.IdempotencyKey,
+		requestHash,
+	) {
+		writeError(
+			w,
+			http.StatusConflict,
+			"idempotency_key was already used for a different authoring-session request",
+		)
+		return true, nil
+	}
+	enrichAuthoringSession(existing)
+	s.recordAuditEvent(
+		r,
+		"script.authoring_session.create",
+		"replayed",
+		"authoring_session",
+		existing.ID,
+		existing.ProjectID,
+		map[string]any{"name": disclosureSafeScriptName(existing.Name, existing.Draft), "source": existing.Source},
+	)
+	writeJSON(w, http.StatusOK, maskAuthoringSession(existing))
+	return true, nil
 }
 
 func (s *Server) handleListAuthoringSessions(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +406,12 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	safeDraft, ok := prepareAuthoringSessionDraft(w, &req.Draft, existing.Draft)
+	safeDraft, ok := prepareAuthoringSessionDraftWithImportTrust(
+		w,
+		&req.Draft,
+		existing.Draft,
+		false,
+	)
 	if !ok {
 		return
 	}
@@ -278,7 +442,7 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		return
 	}
 	enrichAuthoringSession(existing)
-	s.recordAuditEvent(r, "script.authoring_session.update", "success", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name, "source": existing.Source, "status": existing.Status})
+	s.recordAuditEvent(r, "script.authoring_session.update", "success", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": disclosureSafeScriptName(existing.Name, existing.Draft), "source": existing.Source, "status": existing.Status})
 	writeJSON(w, http.StatusOK, maskAuthoringSession(existing))
 }
 
@@ -307,7 +471,7 @@ func (s *Server) handleDeleteAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusConflict, "authoring session changed while it was being deleted")
 		return
 	}
-	s.recordAuditEvent(r, "script.authoring_session.delete", "success", "authoring_session", id, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
+	s.recordAuditEvent(r, "script.authoring_session.delete", "success", "authoring_session", id, session.ProjectID, map[string]any{"name": disclosureSafeScriptName(session.Name, session.Draft), "source": session.Source})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
@@ -356,7 +520,12 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{Session: maskAuthoringSession(session), Script: maskStoredScript(stored), AuthoringHealth: validation.AuthoringHealth})
 		return
 	}
-	safeDraft, ok := prepareAuthoringSessionDraft(w, session.Draft, nil)
+	safeDraft, ok := prepareAuthoringSessionDraftWithImportTrust(
+		w,
+		session.Draft,
+		session.Draft,
+		false,
+	)
 	if !ok {
 		return
 	}
@@ -660,7 +829,23 @@ func prepareAuthoringSessionForPersistence(session *storage.AuthoringSession) er
 	if session.Draft == nil {
 		return nil
 	}
-	projected, err := preparePersistentLibraryScript(session.Draft, nil)
+	var (
+		projected *dsl.Script
+		err       error
+	)
+	if isCredentialPreservingImport(session.Draft) {
+		sourceProfile := ""
+		if session.Draft.Metadata != nil && session.Draft.Metadata.Import != nil {
+			sourceProfile = session.Draft.Metadata.Import.Source
+		}
+		projected, err = preparePersistentImportedLibraryScript(
+			session.Draft,
+			nil,
+			sourceProfile,
+		)
+	} else {
+		projected, err = preparePersistentLibraryScript(session.Draft, nil)
+	}
 	if err != nil {
 		return err
 	}

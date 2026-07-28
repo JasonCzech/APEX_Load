@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
@@ -53,7 +54,11 @@ type Database struct {
 func (d *Database) Name() string { return "database" }
 
 func (d *Database) Init(ctx context.Context, config map[string]any) error {
-	d.driver = normalizeDriver(protocol.ConfigString(config, "database_driver"))
+	configuredDriver := strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "database_driver")))
+	if err := validateDatabaseDriver(configuredDriver); err != nil {
+		return err
+	}
+	d.driver = normalizeDriver(configuredDriver)
 	d.dsn = strings.TrimSpace(protocol.ConfigString(config, "database_dsn"))
 	if d.dsn == "" {
 		// buildProtoConfigWithSecretResolver resolves controller-managed secret
@@ -66,9 +71,6 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	}
 	if d.dsn == "" {
 		return errors.New("database dsn is required")
-	}
-	if err := validateDatabaseDriver(d.driver); err != nil {
-		return err
 	}
 	if len(d.dsn) > hardDatabaseDSNBytes {
 		return fmt.Errorf("database dsn exceeds %d byte limit", hardDatabaseDSNBytes)
@@ -458,6 +460,11 @@ func normalizeDriver(driver string) string {
 	switch driver {
 	case "sqlite3":
 		return "sqlite"
+	case "postgres":
+		// pgx is the bundled PostgreSQL database/sql implementation. Keep the
+		// public DSL spelling "postgres" stable while selecting the registered
+		// runtime driver internally.
+		return "pgx"
 	default:
 		return driver
 	}
@@ -465,7 +472,7 @@ func normalizeDriver(driver string) string {
 
 func validateDatabaseDriver(driver string) error {
 	switch driver {
-	case "sqlite", "postgres", "mysql", "odbc", "oracle":
+	case "sqlite", "sqlite3", "postgres", "mysql", "odbc", "oracle":
 		return nil
 	default:
 		return fmt.Errorf("unsupported database driver: %s", driver)

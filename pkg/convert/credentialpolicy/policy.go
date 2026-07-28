@@ -20,6 +20,10 @@ import (
 type ProjectionMode string
 
 const (
+	// Preserve retains the imported value byte-for-byte in the executable
+	// destination script. Import API projections may mask the value for display,
+	// but persistence and replay keep the operator-supplied credential.
+	Preserve ProjectionMode = "preserve"
 	// Audit preserves the source value. It is intended only for compatibility
 	// migrations whose existing outer disclosure boundary still performs the
 	// projection.
@@ -34,7 +38,7 @@ const (
 // Valid reports whether mode is a supported explicit projection policy.
 func (mode ProjectionMode) Valid() bool {
 	switch mode {
-	case Audit, Redact, SecretReference:
+	case Preserve, Audit, Redact, SecretReference:
 		return true
 	default:
 		return false
@@ -160,7 +164,7 @@ func NewRequirement(spec RequirementSpec) (Requirement, string, error) {
 		projected = existingReference
 	} else {
 		switch spec.Mode {
-		case Audit:
+		case Preserve, Audit:
 			// The requirement is still returned, but no source value is repeated
 			// in its serializable fields.
 		case Redact:

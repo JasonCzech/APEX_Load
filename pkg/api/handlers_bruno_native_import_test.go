@@ -182,8 +182,9 @@ func TestBrunoNativeBatchRetryOmittingCandidateIDsConflictsWithCommittedSubset(t
 	}
 }
 
-func TestBrunoNativeBatchIgnoresUnusedMigrationOptIn(t *testing.T) {
+func TestBrunoNativeBatchAuthorizedMigrationOptInWithoutSecretsStillCommits(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
+	enableSourceSecretMigration(t, server)
 	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, orderedBrunoNativeFiles())
 	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-no-secrets")
 	migrate := true
@@ -201,6 +202,7 @@ func TestBrunoNativeBatchIgnoresUnusedMigrationOptIn(t *testing.T) {
 
 func TestBrunoNativeBatchMigrationOptInIgnoresRequirementWithoutSourceValue(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
+	enableSourceSecretMigration(t, server)
 	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, []brunoInspectJSONFile{
 		{
 			Path:    "demo/opencollection.yaml",
@@ -223,7 +225,8 @@ settings: {followRedirects: true, maxRedirects: 5, timeout: 1000}
 		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
 	}
 	requirement := inspection.Result.SecretRequirements[0]
-	if requirement.Value != "" || requirement.SourceValueAvailable || !requirement.ExistingReference {
+	if requirement.Value != "" || requirement.SourceValueAvailable ||
+		requirement.DestinationValuePreserved || !requirement.ExistingReference {
 		t.Fatalf("non-migratable secret requirement = %#v", requirement)
 	}
 
@@ -552,7 +555,7 @@ variables:
   - {name: password, value: source-password-value}
 http:
   method: POST
-  url: https://example.test/resource
+  url: 'https://example.test/{{secret.PASSWORD}}'
   body:
     type: xml
     data: "<password>{{password}}</password>"
@@ -560,24 +563,72 @@ http:
 		},
 	})
 	candidate := inspection.Result.Scripts[0]
+	preservedRequirements := 0
+	for _, requirement := range candidate.SecretRequirements {
+		if requirement.DestinationValuePreserved {
+			preservedRequirements++
+		}
+	}
+	if preservedRequirements != 1 {
+		t.Fatalf("protected candidate requirement = %#v, want destination preservation evidence", candidate.SecretRequirements)
+	}
 	if strings.Contains(candidate.Script.Actions[0].Body, "source-password-value") {
 		t.Fatalf("public native candidate disclosed its source credential: %q", candidate.Script.Actions[0].Body)
 	}
+	if candidate.Script.Actions[0].Target != "https://example.test/{{secret.PASSWORD}}" {
+		t.Fatalf(
+			"authored lookalike reference changed during inspection: target=%q",
+			candidate.Script.Actions[0].Target,
+		)
+	}
 	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-protected-candidate")
-	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+	migrate := true
+	unauthorized := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
 		ProjectID:       brunoImportTestProject,
 		ImportSessionID: inspection.ImportSessionID,
 		Mode:            "create_native_batch",
 		FolderID:        &folderID,
+		MigrateSecrets:  &migrate,
+	})
+	if unauthorized.Code != http.StatusForbidden ||
+		!strings.Contains(unauthorized.Body.String(), "source secret migration is not allowed") {
+		t.Fatalf("unauthorized native migration status = %d body=%s", unauthorized.Code, unauthorized.Body.String())
+	}
+	if strings.Contains(unauthorized.Body.String(), "source-password-value") {
+		t.Fatalf("unauthorized native migration disclosed the imported credential: %s", unauthorized.Body.String())
+	}
+
+	// The authorization failure is non-consuming. With migration omitted, the
+	// protected source credential is restored into the runnable destination.
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:              brunoImportTestProject,
+		ImportSessionID:        inspection.ImportSessionID,
+		Mode:                   "create_native_batch",
+		FolderID:               &folderID,
+		AcknowledgedFindingIDs: requiredBrunoNativeFindingIDs(candidate),
 	})
 	if response.Code != http.StatusCreated {
 		t.Fatalf("native commit status = %d body=%s", response.Code, response.Body.String())
 	}
 	created := decodeBrunoNativeBatchTestResponse(t, response)
-	body := created.Scripts[0].Actions[0].Body
-	if !strings.Contains(body, "{{secret.") || strings.Contains(body, "[REDACTED]") ||
-		strings.Contains(body, "source-password-value") {
-		t.Fatalf("committed body = %q, want executable governed secret reference", body)
+	responseBody := created.Scripts[0].Actions[0].Body
+	if strings.Contains(responseBody, "source-password-value") {
+		t.Fatalf("commit response disclosed the imported credential: %q", responseBody)
+	}
+	stored, err := store.GetScript(candidate.PlannedScriptID)
+	if err != nil {
+		t.Fatalf("GetScript(%q): %v", candidate.PlannedScriptID, err)
+	}
+	body := stored.Actions[0].Body
+	if body != "<password>source-password-value</password>" ||
+		strings.Contains(body, "{{secret.") || strings.Contains(body, "[REDACTED]") {
+		t.Fatalf("durable destination body = %q, want exact runnable imported body", body)
+	}
+	if stored.Actions[0].Target != "https://example.test/{{secret.PASSWORD}}" {
+		t.Fatalf(
+			"protected credential escaped its exact target: target=%q",
+			stored.Actions[0].Target,
+		)
 	}
 }
 

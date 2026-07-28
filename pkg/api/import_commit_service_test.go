@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
@@ -392,28 +391,16 @@ func TestSharedImportCommitPreservesJSONBodyWireBytesAcrossLegacyRoutes(t *testi
 			if strings.Contains(got, canary) {
 				t.Fatalf("credential remained in response body: %s", got)
 			}
-			start := strings.Index(got, "{{secret.")
-			if start < 0 {
-				t.Fatalf("projected body contains no secret reference: %s", got)
-			}
-			end := strings.Index(got[start:], "}}")
-			if end < 0 {
-				t.Fatalf("projected body contains an incomplete secret reference: %s", got)
-			}
-			reference := got[start : start+end+2]
-			if _, ok := credential.ParseReference(reference); !ok {
-				t.Fatalf("body reference = %q, want governed secret", reference)
-			}
-			want := strings.Replace(body, canary, reference, 1)
-			if got != want {
-				t.Fatalf("response body bytes changed outside credential occurrence:\n got: %q\nwant: %q", got, want)
+			wantProjection := strings.Replace(body, canary, maskedScriptSecret, 1)
+			if got != wantProjection {
+				t.Fatalf("response body bytes changed outside credential occurrence:\n got: %q\nwant: %q", got, wantProjection)
 			}
 			persisted, ok := server.runner.GetScript(scriptID)
 			if !ok || persisted == nil || persisted.Script == nil {
 				t.Fatal("committed script was not persisted")
 			}
-			if persisted.Script.Actions[0].Body != want {
-				t.Fatalf("persisted body bytes changed:\n got: %q\nwant: %q", persisted.Script.Actions[0].Body, want)
+			if persisted.Script.Actions[0].Body != body {
+				t.Fatalf("persisted body bytes changed:\n got: %q\nwant: %q", persisted.Script.Actions[0].Body, body)
 			}
 		})
 	}
@@ -478,19 +465,7 @@ func TestSharedImportCommitProjectsDecodedBase64JSONAcrossLegacyRoutes(t *testin
 			if strings.Contains(string(projectedWire), canary) {
 				t.Fatalf("decoded response body retained credential: %s", projectedWire)
 			}
-			start := strings.Index(string(projectedWire), "{{secret.")
-			if start < 0 {
-				t.Fatalf("decoded response body contains no secret reference: %s", projectedWire)
-			}
-			end := strings.Index(string(projectedWire[start:]), "}}")
-			if end < 0 {
-				t.Fatalf("decoded response body contains an incomplete secret reference: %s", projectedWire)
-			}
-			reference := string(projectedWire[start : start+end+2])
-			if _, ok := credential.ParseReference(reference); !ok {
-				t.Fatalf("body reference = %q, want governed secret", reference)
-			}
-			wantWire := strings.Replace(wireBody, canary, reference, 1)
+			wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
 			if string(projectedWire) != wantWire {
 				t.Fatalf("wire bytes changed outside credential occurrence:\n got: %q\nwant: %q", projectedWire, wantWire)
 			}
@@ -499,8 +474,8 @@ func TestSharedImportCommitProjectsDecodedBase64JSONAcrossLegacyRoutes(t *testin
 				t.Fatal("committed script was not persisted")
 			}
 			persistedAction := persisted.Script.Actions[0]
-			if persistedAction.Body != action.Body || persistedAction.BodyEncoding != "base64" {
-				t.Fatalf("persisted base64 representation differs from response: %#v != %#v", persistedAction, action)
+			if persistedAction.Body != encodedBody || persistedAction.BodyEncoding != "base64" {
+				t.Fatalf("persisted base64 representation lost exact source bytes: %#v", persistedAction)
 			}
 		})
 	}
@@ -557,7 +532,7 @@ func TestSharedImportCommitPreservesDuplicateJSONKeysAsBlockedDraft(t *testing.T
 	}
 }
 
-func TestSharedImportCommitRejectsSensitiveTypedJSONAcrossLegacyRoutes(t *testing.T) {
+func TestSharedImportCommitPreservesSensitiveTypedJSONAcrossLegacyRoutes(t *testing.T) {
 	const typedValue = "867530912345"
 	const body = `{"password":` + typedValue + `}`
 	routes := []struct {
@@ -594,17 +569,24 @@ func TestSharedImportCommitRejectsSensitiveTypedJSONAcrossLegacyRoutes(t *testin
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()
 			server.mux.ServeHTTP(resp, req)
-			if resp.Code != http.StatusBadRequest {
-				t.Fatalf("commit status = %d, want 400 body=%s", resp.Code, resp.Body.String())
-			}
-			if !strings.Contains(resp.Body.String(), "credential_json_sensitive_non_string_unsupported") {
-				t.Fatalf("typed credential rejection omitted stable code: %s", resp.Body.String())
+			if resp.Code != http.StatusCreated {
+				t.Fatalf("commit status = %d, want 201 body=%s", resp.Code, resp.Body.String())
 			}
 			if strings.Contains(resp.Body.String(), typedValue) {
-				t.Fatalf("typed credential leaked through rejection: %s", resp.Body.String())
+				t.Fatalf("typed credential leaked through commit response: %s", resp.Body.String())
 			}
-			if _, ok := server.runner.GetScript(scriptID); ok {
-				t.Fatal("rejected typed credential script was persisted")
+			if !strings.Contains(resp.Body.String(), "import_review_required") {
+				t.Fatalf("typed credential response omitted its disclosure-only review gate: %s", resp.Body.String())
+			}
+			persisted, ok := server.runner.GetScript(scriptID)
+			if !ok || persisted == nil || persisted.Script == nil {
+				t.Fatal("typed credential script was not persisted")
+			}
+			if got := persisted.Script.Actions[0].Body; got != body {
+				t.Fatalf("durable typed credential body = %q, want exact %q", got, body)
+			}
+			if blocker, _ := persisted.Script.Actions[0].Metadata["execution_blocker"].(string); blocker != "" {
+				t.Fatalf("credential alone manufactured a durable execution blocker %q", blocker)
 			}
 		})
 	}
@@ -804,8 +786,17 @@ func TestMaskScriptSecretsFailsClosedForSensitiveTypedJSONBody(t *testing.T) {
 			Body:    `{"password":7}`,
 		}},
 	}
-	if projected := maskScriptSecrets(script); projected != nil {
-		t.Fatalf("typed sensitive JSON became a runnable string projection: %#v", projected.Actions[0])
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		t.Fatal("typed sensitive JSON did not produce a disclosure-safe read projection")
+	}
+	action := projected.Actions[0]
+	if action.Body != maskedScriptSecret ||
+		action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("typed sensitive JSON did not fail closed behind a review gate: %#v", action)
+	}
+	if strings.Contains(action.Body, "7") {
+		t.Fatal("typed sensitive JSON read projection disclosed the source value")
 	}
 }
 
@@ -944,13 +935,19 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 	}
 	stripProtectedImportCredentialMetadata(first)
 	first.ID = protectedImportCreateScriptID("postman", sessionID)
-	first, _, err = finalizeImportCommitScript(first, "postman")
+	first, _, err = finalizeImportCommitScript(first, "postman", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial, err := server.runner.CreateScriptDurable(first)
+	initial, created, err := server.runner.CreateImportedScriptDurableReportingReplay(first, "postman")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !created {
+		t.Fatal("initial interrupted import did not create its durable script")
+	}
+	if durable, loadErr := store.GetScript(first.ID); loadErr != nil || durable == nil {
+		t.Fatalf("initial interrupted import was not durable: script=%#v err=%v", durable, loadErr)
 	}
 
 	claimPath := filepath.Join(artifactDir, ".sessions", sessionID+".claim.json")
@@ -973,11 +970,19 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 	retry.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, retry)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("reconciled retry status = %d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf(
+			"reconciled retry status = %d initial_id=%q expected_id=%q body=%s",
+			response.Code,
+			initial.ID,
+			protectedImportCreateScriptID("postman", sessionID),
+			response.Body.String(),
+		)
 	}
 	var committed struct {
-		StoredScript StoredScript `json:"stored_script"`
+		StoredScript     StoredScript `json:"stored_script"`
+		Created          bool         `json:"created"`
+		IdempotentReplay bool         `json:"idempotent_replay"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &committed); err != nil {
 		t.Fatal(err)
@@ -985,16 +990,13 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 	if committed.StoredScript.ID != initial.ID {
 		t.Fatalf("reconciled script id = %q, want %q", committed.StoredScript.ID, initial.ID)
 	}
-	// Pin the client-visible flags, not just the durable script id. This retry
-	// reconciles rather than replays: the interrupted first attempt never
-	// persisted a row, so the retry genuinely creates one and must say so.
-	//
-	// Note what this does NOT cover. The idempotent_replay=true branch needs a
-	// retry against a commit that already persisted, and after a successful
-	// commit the session claim is completed, so a retry is rejected at claim time
-	// rather than reaching the replay branch. That branch is effectively
-	// unreachable for this path until a durable receipt exists (Phase 5.1) --
-	// which is exactly why completeImportCandidateClaim stays epoch-fenced.
+	if committed.Created || !committed.IdempotentReplay {
+		t.Fatalf("reconciled outcome = created:%t idempotent:%t", committed.Created, committed.IdempotentReplay)
+	}
+	// Pin the client-visible flags, not just the durable script id. The first
+	// attempt persisted the deterministic create-only row and then lost its
+	// claim-completion response. Stale-claim recovery must therefore report an
+	// idempotent replay rather than double-counting the import as a fresh create.
 	var replayFlags struct {
 		Created          bool `json:"created"`
 		IdempotentReplay bool `json:"idempotent_replay"`
@@ -1003,8 +1005,8 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 	if err := json.Unmarshal(response.Body.Bytes(), &replayFlags); err != nil {
 		t.Fatal(err)
 	}
-	if replayFlags.Replaced || !replayFlags.Created || replayFlags.IdempotentReplay {
-		t.Fatalf("reconciled create flags = created:%v idempotent_replay:%v replaced:%v, want true/false/false",
+	if replayFlags.Replaced || replayFlags.Created || !replayFlags.IdempotentReplay {
+		t.Fatalf("reconciled create flags = created:%v idempotent_replay:%v replaced:%v, want false/true/false",
 			replayFlags.Created, replayFlags.IdempotentReplay, replayFlags.Replaced)
 	}
 	scripts, err := store.ListScripts(candidate.ProjectID, nil)
@@ -1016,6 +1018,45 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 	}
 	if err := server.completeImportCandidateClaim(context.Background(), firstClaim); err == nil {
 		t.Fatal("stale first claim unexpectedly completed after reconciliation")
+	}
+}
+
+func TestApplySuggestedImportCommitSecretBindingsPreservesRunnableCredentials(t *testing.T) {
+	const (
+		password = "already-imported-password"
+		token    = "already-imported-token"
+	)
+	script := &dsl.Script{
+		Name:     "Credential fidelity",
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "postman"}},
+		Actions: []dsl.Action{{
+			Name:   "Login",
+			Type:   "request",
+			Method: http.MethodPost,
+			Target: "https://example.test/login?password=" + password,
+			HeaderList: dsl.HeaderList{
+				{Name: "Content-Type", Value: "application/json"},
+				{Name: "Authorization", Value: "Bearer " + token},
+			},
+			Body: `{"password":"` + password + `"}`,
+			Auth: &dsl.AuthConfig{Type: "bearer", Token: token},
+		}},
+	}
+
+	projected, requirements, err := applySuggestedImportCommitSecretBindings(script, 0, "postman")
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := projected.Actions[0]
+	if action.Target != script.Actions[0].Target ||
+		action.HeaderList[1].Value != "Bearer "+token ||
+		action.Body != script.Actions[0].Body ||
+		action.Auth == nil || action.Auth.Token != token {
+		t.Fatalf("import commit changed executable credentials: %#v", action)
+	}
+	if len(requirements) != 0 {
+		t.Fatalf("preserved import requested credential re-entry: %#v", requirements)
 	}
 }
 

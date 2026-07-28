@@ -291,8 +291,8 @@ func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) 
 	if result.Script == nil || result.Script.Protocol != "sap_gui" {
 		t.Fatalf("script = %#v, want SAP GUI draft with external runner gate", result.Script)
 	}
-	if result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" {
-		t.Fatalf("sapgui password = %q, want governed secret reference", result.Script.Config.SAPGUI.Password)
+	if result.Script.Config.SAPGUI.Password != "" {
+		t.Fatalf("sapgui password = %q, want empty when source supplied no password", result.Script.Config.SAPGUI.Password)
 	}
 	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" {
 		t.Fatalf("connection_string = %q, want source SAP GUI connection string", result.Script.Config.SAPGUI.ConnectionString)

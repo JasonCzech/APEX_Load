@@ -51,31 +51,33 @@ const (
 var errBrunoImportSessionExpiredDuringCommit = errors.New("Bruno import session expired before it could be restored")
 
 type brunoImportSession struct {
-	ID                string
-	ProjectID         string
-	Actor             string
-	Result            *brunoconvert.Result
-	RawArtifact       storage.BrunoSourceArtifact
-	SanitizedArtifact storage.BrunoSourceArtifact
-	RevisionID        string
-	SyncScriptID      string
-	CreatedAt         time.Time
-	ExpiresAt         time.Time
-	Timer             *time.Timer
+	ID                      string
+	ProjectID               string
+	Actor                   string
+	Result                  *brunoconvert.Result
+	RawArtifact             storage.BrunoSourceArtifact
+	SanitizedArtifact       storage.BrunoSourceArtifact
+	RevisionID              string
+	SyncScriptID            string
+	NativeCredentialTargets map[string][]brunoconvert.NativeCredentialTarget
+	CreatedAt               time.Time
+	ExpiresAt               time.Time
+	Timer                   *time.Timer
 }
 
 type persistedBrunoImportSession struct {
-	ID                string                      `json:"id"`
-	ProjectID         string                      `json:"project_id"`
-	Actor             string                      `json:"actor"`
-	Result            *brunoconvert.Result        `json:"result"`
-	RawArtifact       storage.BrunoSourceArtifact `json:"raw_artifact"`
-	SanitizedArtifact storage.BrunoSourceArtifact `json:"sanitized_artifact"`
-	RevisionID        string                      `json:"revision_id"`
-	SyncScriptID      string                      `json:"sync_script_id,omitempty"`
-	CreatedAt         time.Time                   `json:"created_at"`
-	ExpiresAt         time.Time                   `json:"expires_at"`
-	SecretValues      map[string]string           `json:"secret_values,omitempty"`
+	ID                      string                                           `json:"id"`
+	ProjectID               string                                           `json:"project_id"`
+	Actor                   string                                           `json:"actor"`
+	Result                  *brunoconvert.Result                             `json:"result"`
+	RawArtifact             storage.BrunoSourceArtifact                      `json:"raw_artifact"`
+	SanitizedArtifact       storage.BrunoSourceArtifact                      `json:"sanitized_artifact"`
+	RevisionID              string                                           `json:"revision_id"`
+	SyncScriptID            string                                           `json:"sync_script_id,omitempty"`
+	NativeCredentialTargets map[string][]brunoconvert.NativeCredentialTarget `json:"native_credential_targets,omitempty"`
+	CreatedAt               time.Time                                        `json:"created_at"`
+	ExpiresAt               time.Time                                        `json:"expires_at"`
+	SecretValues            map[string]string                                `json:"secret_values,omitempty"`
 }
 
 type brunoArtifactSummary struct {
@@ -251,37 +253,80 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// Availability for optional project-secret migration is intentionally
+	// narrower than availability for exact destination replay. Preserve the
+	// latter as a disclosure-safe boolean before the protected payload is
+	// cleared from the in-memory lifecycle copy.
+	retainedSecretValues := make(map[string]bool, len(result.SecretRequirements))
+	for index := range result.SecretRequirements {
+		requirement := &result.SecretRequirements[index]
+		if requirement.Value != "" {
+			retainedSecretValues[requirement.ID] = true
+			requirement.DestinationValuePreserved = true
+		}
+	}
 	nativeMode := strings.EqualFold(strings.TrimSpace(input.Options.OutputMode), brunoconvert.OutputModeNativeRequests)
 	if nativeMode && strings.TrimSpace(syncScriptID) != "" {
 		writeError(w, http.StatusBadRequest, "native Bruno imports are create-only and cannot be synchronized")
 		return
 	}
-	migrationAuthorized := secretstore.SupportsCreate(s.projectSecretStore) && s.sourceSecretMigrationAuthorized(r, input.ProjectID)
+	migrationAuthorized := secretstore.SupportsCreate(s.projectSecretStore) &&
+		s.sourceSecretMigrationAuthorized(r, input.ProjectID)
+	migrationValuesValid := validateBrunoMigrationSecretValues(
+		result.SecretRequirements,
+	) == nil
 	for index := range result.SecretRequirements {
-		available := migrationAuthorized && result.SecretRequirements[index].Value != ""
-		result.SecretRequirements[index].SourceValueAvailable = available
-		if !available {
-			result.SecretRequirements[index].Value = ""
-		}
+		// Source values are retained in the protected one-shot session so the
+		// default commit can restore an exact runnable destination. Authorization
+		// to externalize those values into the project secret store is checked
+		// separately when (and only when) migration is explicitly requested.
+		result.SecretRequirements[index].SourceValueAvailable =
+			migrationAuthorized && migrationValuesValid &&
+				result.SecretRequirements[index].Value != ""
 	}
 	secretAvailability := make(map[string]bool, len(result.SecretRequirements))
 	for _, requirement := range result.SecretRequirements {
 		secretAvailability[requirement.ID] = requirement.SourceValueAvailable
 	}
+	nativeRequirementSeen := make(map[string]bool, len(result.SecretRequirements))
+	nativeRequirementPreserved := make(map[string]bool, len(result.SecretRequirements))
 	for candidateIndex := range result.Scripts {
+		targetedRequirementIDs := make(map[string]bool, len(result.Scripts[candidateIndex].CredentialTargets))
+		for _, target := range result.Scripts[candidateIndex].CredentialTargets {
+			targetedRequirementIDs[target.RequirementID] = true
+		}
 		for requirementIndex := range result.Scripts[candidateIndex].SecretRequirements {
 			requirement := &result.Scripts[candidateIndex].SecretRequirements[requirementIndex]
 			requirement.SourceValueAvailable = secretAvailability[requirement.ID]
+			requirement.DestinationValuePreserved =
+				retainedSecretValues[requirement.ID] && targetedRequirementIDs[requirement.ID]
+			if !nativeRequirementSeen[requirement.ID] {
+				nativeRequirementPreserved[requirement.ID] = requirement.DestinationValuePreserved
+			} else {
+				nativeRequirementPreserved[requirement.ID] =
+					nativeRequirementPreserved[requirement.ID] && requirement.DestinationValuePreserved
+			}
+			nativeRequirementSeen[requirement.ID] = true
 			requirement.Value = ""
+		}
+	}
+	if nativeMode {
+		for index := range result.SecretRequirements {
+			requirement := &result.SecretRequirements[index]
+			requirement.DestinationValuePreserved =
+				nativeRequirementSeen[requirement.ID] && nativeRequirementPreserved[requirement.ID]
 		}
 	}
 	boundedValues, err := boundedBrunoImportSecretValues(result.SecretRequirements)
 	clearStringMap(boundedValues)
 	if err != nil {
-		// Secret migration is optional. Keep the import non-blocking by dropping
-		// every source value when the bounded migration session cannot retain the
-		// full set safely; callers can configure the generated bindings later.
+		// Dropping source values would turn an otherwise runnable import into a
+		// script that asks the operator to re-enter credentials they already
+		// supplied. Reject before publishing artifacts when the protected
+		// session cannot retain the complete bounded set.
 		clearBrunoImportSecretValues(result)
+		writeError(w, http.StatusUnprocessableEntity, "Bruno source credentials exceed the protected import-session limit")
+		return
 	}
 	objects, err := s.brunoArtifactStore()
 	if err != nil {
@@ -426,16 +471,17 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	result.OriginalUpload = nil
 	_, actor, _ := s.resolveAuditActor(r)
 	session := &brunoImportSession{
-		ID:                sessionID,
-		ProjectID:         input.ProjectID,
-		Actor:             actor,
-		Result:            result,
-		RawArtifact:       rawArtifact,
-		SanitizedArtifact: sanitizedArtifact,
-		RevisionID:        revisionID,
-		SyncScriptID:      strings.TrimSpace(syncScriptID),
-		CreatedAt:         now,
-		ExpiresAt:         now.Add(brunoImportSessionTTL),
+		ID:                      sessionID,
+		ProjectID:               input.ProjectID,
+		Actor:                   actor,
+		Result:                  result,
+		RawArtifact:             rawArtifact,
+		SanitizedArtifact:       sanitizedArtifact,
+		RevisionID:              revisionID,
+		SyncScriptID:            strings.TrimSpace(syncScriptID),
+		NativeCredentialTargets: collectBrunoNativeCredentialTargets(result),
+		CreatedAt:               now,
+		ExpiresAt:               now.Add(brunoImportSessionTTL),
 	}
 	if err := s.persistBrunoImportSession(r.Context(), session); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "persist Bruno import session: "+err.Error())
@@ -481,7 +527,7 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	s.recordAuditEvent(r, "script.import.bruno.inspect", "success", "bruno_import_session", session.ID, input.ProjectID, auditDetails)
 	executionPreflight := map[string]any{}
 	if nativeMode {
-		executionPreflight = brunoNativeExecutionPreflight(result)
+		executionPreflight = brunoNativeExecutionPreflight(result, retainedSecretValues)
 	} else {
 		executionPreflight = s.brunoExecutionPreflight(r.Context(), result.Script.Config.Bruno.Sandbox)
 	}
@@ -558,7 +604,10 @@ func (s *Server) brunoExecutionPreflight(ctx context.Context, sandbox string) ma
 	return map[string]any{"ready": len(blockers) == 0, "blockers": blockers}
 }
 
-func brunoNativeExecutionPreflight(result *brunoconvert.Result) map[string]any {
+func brunoNativeExecutionPreflight(
+	result *brunoconvert.Result,
+	retainedSecretValues map[string]bool,
+) map[string]any {
 	type candidateStatus struct {
 		CandidateID string   `json:"candidate_id"`
 		Ready       bool     `json:"ready"`
@@ -571,7 +620,7 @@ func brunoNativeExecutionPreflight(result *brunoconvert.Result) map[string]any {
 		if len(candidate.MissingVariables) > 0 {
 			blockers = append(blockers, "missing_variables")
 		}
-		if len(candidate.SecretRequirements) > 0 {
+		if brunoNativeCandidateNeedsCredentialInput(candidate.SecretRequirements, retainedSecretValues) {
 			blockers = append(blockers, "secret_bindings_required")
 		}
 		if scriptHasPromotionBlocker(candidate.Script) {
@@ -589,6 +638,18 @@ func brunoNativeExecutionPreflight(result *brunoconvert.Result) map[string]any {
 		"blockers":   totalBlockers,
 		"candidates": statuses,
 	}
+}
+
+func brunoNativeCandidateNeedsCredentialInput(
+	requirements []brunoconvert.SecretRequirement,
+	retainedSecretValues map[string]bool,
+) bool {
+	for _, requirement := range requirements {
+		if !requirement.SourceValueAvailable && !retainedSecretValues[requirement.ID] {
+			return true
+		}
+	}
+	return false
 }
 
 func scriptHasPromotionBlocker(script *dsl.Script) bool {
@@ -658,6 +719,10 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
+	migrateSecrets := request.MigrateSecrets != nil && *request.MigrateSecrets
+	if !s.authorizeBrunoSourceSecretMigration(w, r, request.ProjectID, migrateSecrets) {
+		return
+	}
 	brunoStore, ok := s.store.(storage.BrunoImportStore)
 	if !ok || brunoStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")
@@ -719,6 +784,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "Bruno import session has no canonical script")
 		return
 	}
+	markCredentialPreservingImportScript(script)
 	parameterizationApplied := 0
 	if len(request.ParameterizationIDs) > 0 {
 		trusted := buildTrustedImportParameterization(script)
@@ -739,12 +805,10 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 			writeError(w, http.StatusUnprocessableEntity, "failed to apply Bruno parameterization: "+applyErr.Error())
 			return
 		}
-		projected := maskScriptSecrets(parameterized)
-		if projected == nil {
-			writeError(w, http.StatusInternalServerError, "failed to project parameterized Bruno script")
-			return
-		}
-		script = projected
+		// Parameterization changes the executable script and must retain every
+		// unrelated imported credential byte. Disclosure masking belongs only
+		// on response/read projections after the exact durable script is saved.
+		script = parameterized
 		appliedIDs := make(map[string]bool, len(diffs))
 		for _, diff := range diffs {
 			if diff.SuggestionID != "" {
@@ -785,12 +849,21 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		})
 		return
 	}
-	migrateSecrets := request.MigrateSecrets != nil && *request.MigrateSecrets
-	migrationNeeded := migrateSecrets && brunoRequirementsHaveSourceValues(session.Result.SecretRequirements)
-	if migrationNeeded && !s.sourceSecretMigrationAuthorized(r, request.ProjectID) {
-		writeError(w, http.StatusForbidden, "source secret migration is not allowed")
+	preserveSourceCredentials, err := brunoCanonicalPreservesSourceCredentials(
+		session.Result.SecretRequirements,
+		request.SecretBindings,
+		existing,
+		migrateSecrets,
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	runtimeArtifactKind := "sanitized"
+	if preserveSourceCredentials {
+		runtimeArtifactKind = "raw"
+	}
+	migrationNeeded := migrateSecrets && brunoRequirementsHaveSourceValues(session.Result.SecretRequirements)
 	if migrationNeeded && (s.projectSecretStore == nil || !secretstore.SupportsCreate(s.projectSecretStore)) {
 		writeError(w, http.StatusServiceUnavailable, "no atomic create-only project secret provider is configured")
 		return
@@ -966,7 +1039,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 	// artifacts, and revision record in one storage transaction, so they cannot
 	// use TestRunner's ordinary script write. Apply the same final persistence
 	// boundary before handing the canonical script to that transactional store.
-	safeScript, err := preparePersistentLibraryScript(script, existing)
+	safeScript, err := preparePersistentImportedLibraryScript(script, existing, "bruno")
 	if err != nil {
 		sessionRetained, restoreErr := restoreClaimedSession()
 		if len(migrations) > 0 {
@@ -1021,6 +1094,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 		ExpectedActiveRevisionID: expectedActive,
 		RawArtifact:              session.RawArtifact,
 		SanitizedArtifact:        session.SanitizedArtifact,
+		UseRawArtifact:           preserveSourceCredentials,
 		Revision: storage.BrunoSourceRevision{
 			ID:                    session.RevisionID,
 			ParentRevisionID:      parentRevisionID,
@@ -1035,6 +1109,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 				"capabilities":      session.Result.Capabilities,
 				"security_findings": session.Result.SecurityFindings,
 				"native_projection": session.Result.NativeProjection,
+				"runtime_artifact":  runtimeArtifactKind,
 				"secret_store": map[string]any{
 					"provider":         secretStoreProvider(s.projectSecretStore),
 					"migrated":         len(migrations),
@@ -1177,11 +1252,15 @@ func (s *Server) handleCommitBrunoNativeImport(
 		writeError(w, http.StatusBadRequest, "folder_id is required for native Bruno batch imports")
 		return
 	}
+	migrateSecrets := request.MigrateSecrets != nil && *request.MigrateSecrets
 
 	_, actorSubject, _ := s.resolveAuditActor(r)
 	if receipt, receiptErr := nativeStore.GetBrunoNativeImportByIdempotencyKey(request.ImportSessionID, request.ProjectID); receiptErr == nil {
 		if receipt.Batch.CreatedBy != "" && receipt.Batch.CreatedBy != actorSubject {
 			writeError(w, http.StatusForbidden, "native Bruno import receipt belongs to another actor")
+			return
+		}
+		if !s.authorizeBrunoSourceSecretMigration(w, r, request.ProjectID, migrateSecrets) {
 			return
 		}
 		replayRequest, canonicalizeErr := canonicalizeBrunoNativeReceiptRequest(request, receipt)
@@ -1272,6 +1351,9 @@ func (s *Server) handleCommitBrunoNativeImport(
 		return
 	}
 	defer clearBrunoImportSecretValues(session.Result)
+	if !s.authorizeBrunoSourceSecretMigration(w, r, request.ProjectID, migrateSecrets) {
+		return
+	}
 
 	folder, folderErr := s.store.GetFolder(*request.FolderID)
 	if folderErr != nil {
@@ -1372,6 +1454,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		if script.Metadata.Import.Preserved == nil {
 			script.Metadata.Import.Preserved = make(map[string]any)
 		}
+		markCredentialPreservingImportScript(script)
 		script.Metadata.Import.Preserved["native_batch_id"] = session.RevisionID
 		script.Metadata.Import.Preserved["candidate_id"] = candidate.CandidateID
 		script.Metadata.Import.Preserved["sanitized_source_sha256"] = session.SanitizedArtifact.SHA256
@@ -1383,6 +1466,23 @@ func (s *Server) handleCommitBrunoNativeImport(
 			}
 			script.Actions[0].Metadata["execution_blocker"] = "bruno_missing_variables"
 			script.Actions[0].Metadata["missing_variables"] = missingVariables
+		}
+		// The protected session must contain the disclosure-safe script that was
+		// inspected. Imported plaintext is restored later through authenticated
+		// occurrence targets; an unrelated literal smuggled into the session
+		// must not inherit the script-wide credential-preservation policy.
+		for _, action := range script.Actions {
+			if !isBrunoNativeXMLAction(action) {
+				continue
+			}
+			if err := validateBrunoNativeXMLCredentialBindings(action.Body); err != nil {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+					"error":        "native Bruno persistence validation failed",
+					"code":         "bruno_native_persistence_validation_failed",
+					"candidate_id": candidate.CandidateID,
+				})
+				return
+			}
 		}
 		if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
@@ -1403,13 +1503,22 @@ func (s *Server) handleCommitBrunoNativeImport(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	plannedSecretBindings, err := planBrunoNativeSecretBindings(requirements, request.SecretBindings)
+	plannedSecretBindings, plannedCredentialValues, err := planBrunoNativeSecretBindings(
+		requirements,
+		request.SecretBindings,
+		migrateSecrets,
+	)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	for index, script := range scripts {
-		bound, bindErr := applyBrunoNativeSecretBindings(script, plannedSecretBindings)
+		bound, bindErr := applyBrunoNativeCredentialTargets(
+			script,
+			session.NativeCredentialTargets[candidateIDs[index]],
+			selected[index].SecretRequirements,
+			plannedCredentialValues,
+		)
 		if bindErr != nil {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 				"error":        "native Bruno secret binding validation failed",
@@ -1438,12 +1547,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		scripts[index] = safeScript
 	}
 
-	migrateSecrets := request.MigrateSecrets != nil && *request.MigrateSecrets
 	migrationNeeded := migrateSecrets && brunoRequirementsHaveSourceValues(requirements)
-	if migrationNeeded && !s.sourceSecretMigrationAuthorized(r, request.ProjectID) {
-		writeError(w, http.StatusForbidden, "source secret migration is not allowed")
-		return
-	}
 	if migrationNeeded && (s.projectSecretStore == nil || !secretstore.SupportsCreate(s.projectSecretStore)) {
 		writeError(w, http.StatusServiceUnavailable, "no atomic create-only project secret provider is configured")
 		return
@@ -1732,6 +1836,9 @@ func maskBrunoNativeCommitScripts(scripts []*dsl.Script) []*dsl.Script {
 	masked := make([]*dsl.Script, len(scripts))
 	for index, script := range scripts {
 		masked[index] = maskScriptSecrets(script)
+		if brunoNativeResponseHasProjectionGate(masked[index]) {
+			masked[index] = nil
+		}
 		if masked[index] == nil && script != nil {
 			// A legacy receipt can fall back to a subsequently edited script
 			// whose body is no longer safely projectable. Preserve only the
@@ -1751,6 +1858,33 @@ func maskBrunoNativeCommitScripts(scripts []*dsl.Script) []*dsl.Script {
 		}
 	}
 	return masked
+}
+
+func brunoNativeResponseHasProjectionGate(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	var visit func([]dsl.Action) bool
+	visit = func(actions []dsl.Action) bool {
+		for _, action := range actions {
+			review, _ := action.Metadata["import_review"].(map[string]any)
+			source, _ := review["source"].(string)
+			if scriptProjectionResponseGateMarker(action.Metadata) ||
+				strings.EqualFold(strings.TrimSpace(source), "script_projection") {
+				for _, blocker := range executionReviewBlockerCodes(action.Metadata) {
+					if blocker == "import_review_required" {
+						return true
+					}
+				}
+			}
+			if action.Control != nil &&
+				(visit(action.Control.Steps) || visit(action.Control.Else)) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(script.Init) || visit(script.Actions) || visit(script.Teardown)
 }
 
 type brunoNativeReviewRequiredError struct {
@@ -1905,33 +2039,186 @@ func selectedBrunoNativeSecretRequirements(
 	return selected, nil
 }
 
-func applyBrunoNativeSecretBindings(script *dsl.Script, bindings map[string]string) (*dsl.Script, error) {
+func applyBrunoNativeCredentialTargets(
+	script *dsl.Script,
+	targets []brunoconvert.NativeCredentialTarget,
+	requirements []brunoconvert.SecretRequirement,
+	replacements map[string]string,
+) (*dsl.Script, error) {
 	if script == nil {
 		return nil, errors.New("native Bruno script is required")
+	}
+	requirementsByID := make(map[string]brunoconvert.SecretRequirement, len(requirements))
+	for _, requirement := range requirements {
+		requirementID := strings.TrimSpace(requirement.ID)
+		if requirementID == "" {
+			return nil, errors.New("native Bruno credential requirement has no id")
+		}
+		requirementsByID[requirementID] = requirement
 	}
 	payload, err := json.Marshal(script)
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]string, 0, len(bindings))
-	for key := range bindings {
-		keys = append(keys, key)
+	var document any
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return nil, err
 	}
-	sort.Strings(keys)
-	replacements := make([]string, 0, len(keys)*2)
-	for _, key := range keys {
-		replacements = append(replacements, "{{secret."+key+"}}", bindings[key])
+	type rewrite struct {
+		start       int
+		end         int
+		replacement string
 	}
-	// strings.Replacer scans the original payload once and never reprocesses
-	// text emitted by a replacement. This prevents a binding target such as
-	// {{secret.TOKEN}} from being consumed by the TOKEN binding later in the
-	// same operation.
-	encoded := strings.NewReplacer(replacements...).Replace(string(payload))
+	rewritesByPointer := make(map[string][]rewrite)
+	targetCounts := make(map[string]int, len(requirements))
+	for _, target := range targets {
+		requirement, exists := requirementsByID[target.RequirementID]
+		if !exists {
+			return nil, errors.New("native Bruno credential target references a stale requirement")
+		}
+		value, ok := jsonPointerStringValue(document, target.JSONPointer)
+		if !ok {
+			return nil, errors.New("native Bruno credential target no longer references a string")
+		}
+		sum := sha256.Sum256([]byte(value))
+		if fmt.Sprintf("%x", sum[:]) != target.SanitizedSHA256 {
+			return nil, errors.New("native Bruno credential target no longer matches the inspected script")
+		}
+		start, end, ok := brunoNativeStringOccurrenceSpan(
+			value,
+			requirement.Replacement,
+			target.Occurrence,
+		)
+		if !ok {
+			return nil, errors.New("native Bruno credential target occurrence is stale")
+		}
+		targetCounts[target.RequirementID]++
+		replacement, planned := replacements[target.RequirementID]
+		if !planned || replacement == requirement.Replacement {
+			continue
+		}
+		rewritesByPointer[target.JSONPointer] = append(
+			rewritesByPointer[target.JSONPointer],
+			rewrite{start: start, end: end, replacement: replacement},
+		)
+	}
+	for requirementID, replacement := range replacements {
+		requirement, appliesToCandidate := requirementsByID[requirementID]
+		if !appliesToCandidate || replacement == requirement.Replacement {
+			continue
+		}
+		if targetCounts[requirementID] == 0 {
+			return nil, errors.New("native Bruno credential target is unavailable; inspect the source again")
+		}
+	}
+	pointers := make([]string, 0, len(rewritesByPointer))
+	for pointer := range rewritesByPointer {
+		pointers = append(pointers, pointer)
+	}
+	sort.Strings(pointers)
+	for _, pointer := range pointers {
+		value, ok := jsonPointerStringValue(document, pointer)
+		if !ok {
+			return nil, errors.New("native Bruno credential target no longer references a string")
+		}
+		rewrites := rewritesByPointer[pointer]
+		sort.Slice(rewrites, func(i, j int) bool {
+			if rewrites[i].start == rewrites[j].start {
+				return rewrites[i].end > rewrites[j].end
+			}
+			return rewrites[i].start > rewrites[j].start
+		})
+		previousStart := len(value)
+		for _, rewrite := range rewrites {
+			if rewrite.start < 0 || rewrite.end < rewrite.start ||
+				rewrite.end > previousStart {
+				return nil, errors.New("native Bruno credential targets overlap")
+			}
+			value = value[:rewrite.start] + rewrite.replacement + value[rewrite.end:]
+			previousStart = rewrite.start
+		}
+		if !setJSONPointerStringValue(document, pointer, value) {
+			return nil, errors.New("native Bruno credential target could not be updated")
+		}
+	}
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
 	var bound dsl.Script
-	if err := json.Unmarshal([]byte(encoded), &bound); err != nil {
+	if err := json.Unmarshal(encoded, &bound); err != nil {
 		return nil, err
 	}
 	return &bound, nil
+}
+
+func brunoNativeStringOccurrenceSpan(
+	value string,
+	token string,
+	occurrence int,
+) (int, int, bool) {
+	if token == "" || occurrence < 0 {
+		return 0, 0, false
+	}
+	cursor := 0
+	for current := 0; ; current++ {
+		index := strings.Index(value[cursor:], token)
+		if index < 0 {
+			return 0, 0, false
+		}
+		index += cursor
+		if current == occurrence {
+			return index, index + len(token), true
+		}
+		cursor = index + len(token)
+	}
+}
+
+func setJSONPointerStringValue(root any, pointer string, value string) bool {
+	tokens, err := splitJSONPointer(pointer)
+	if err != nil || len(tokens) == 0 {
+		return false
+	}
+	current := root
+	for _, token := range tokens[:len(tokens)-1] {
+		switch typed := current.(type) {
+		case map[string]any:
+			child, exists := typed[token]
+			if !exists {
+				return false
+			}
+			current = child
+		case []any:
+			index, err := strconv.Atoi(token)
+			if err != nil || index < 0 || index >= len(typed) {
+				return false
+			}
+			current = typed[index]
+		default:
+			return false
+		}
+	}
+	last := tokens[len(tokens)-1]
+	switch typed := current.(type) {
+	case map[string]any:
+		if _, ok := typed[last].(string); !ok {
+			return false
+		}
+		typed[last] = value
+		return true
+	case []any:
+		index, err := strconv.Atoi(last)
+		if err != nil || index < 0 || index >= len(typed) {
+			return false
+		}
+		if _, ok := typed[index].(string); !ok {
+			return false
+		}
+		typed[index] = value
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeBrunoNativeCommitRequest(request *brunoCommitRequest) error {
@@ -2106,28 +2393,47 @@ func canonicalizeBrunoNativeReceiptRequest(
 func planBrunoNativeSecretBindings(
 	requirements []brunoconvert.SecretRequirement,
 	requested map[string]string,
-) (map[string]string, error) {
+	migrate bool,
+) (map[string]string, map[string]string, error) {
 	grouped, err := groupedBrunoRequestedBindings(requirements, requested)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	bindings := make(map[string]string, len(requirements))
+	replacements := make(map[string]string, len(requirements))
 	for _, requirement := range requirements {
+		requirementID := strings.TrimSpace(requirement.ID)
+		if requirementID == "" {
+			return nil, nil, errors.New("native Bruno secret requirement has no id")
+		}
 		suggested := strings.TrimSpace(requirement.SuggestedName)
 		if suggested == "" {
-			return nil, fmt.Errorf("native Bruno secret requirement %q has no suggested name", requirement.ID)
+			return nil, nil, fmt.Errorf("native Bruno secret requirement %q has no suggested name", requirement.ID)
 		}
 		name := grouped[suggested]
-		if name == "" {
+		if name == "" && migrate && requirement.Value != "" {
 			name = suggested
+		}
+		if name == "" && requirement.ExistingReference {
+			name = suggested
+		}
+		if name == "" {
+			if requirement.Value != "" {
+				replacements[requirementID] = requirement.Value
+			}
+			// Existing governed references and unresolved source expressions
+			// already remain in the candidate. They require no rewrite here.
+			continue
 		}
 		name, err = engine.NormalizeLogicalSecretName(name)
 		if err != nil || !logicalSecretNamePattern.MatchString(name) {
-			return nil, fmt.Errorf("secret binding for %q must contain 1-249 letters, digits, underscores, dots, or hyphens", requirement.ID)
+			return nil, nil, fmt.Errorf("secret binding for %q must contain 1-249 letters, digits, underscores, dots, or hyphens", requirement.ID)
 		}
-		bindings[suggested] = "{{secret." + name + "}}"
+		reference := "{{secret." + name + "}}"
+		bindings[suggested] = reference
+		replacements[requirementID] = reference
 	}
-	return bindings, nil
+	return bindings, replacements, nil
 }
 
 func equalBrunoNativeSecretBindings(left, right map[string]string) bool {
@@ -2517,13 +2823,28 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusUnprocessableEntity, "Bruno revision has no canonical script snapshot")
 		return
 	}
+	if !isBrunoRollbackRevision(targetRevision) {
+		s.recordAuditEvent(r, "script.import.rollback", "blocked", "script", script.ID, script.ProjectID, map[string]any{
+			"revision_id": targetRevisionID,
+			"reason":      "unsupported_source_format",
+		})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "rollback is currently supported only for Bruno source revisions",
+			"code":  "import_rollback_unsupported_source",
+		})
+		return
+	}
 	// Activation updates the script config directly inside the revision
 	// transaction. Validate the immutable canonical snapshot at the same final
 	// boundary as current imports before allowing a pre-upgrade revision to
 	// become executable. A successful projection cannot differ in executable
 	// config: any credential that projection would redact is rejected as an
 	// unresolved binding before activation.
-	if _, err := preparePersistentLibraryScript(targetRevision.CanonicalScript, script); err != nil {
+	if _, err := preparePersistentImportedLibraryScript(
+		targetRevision.CanonicalScript,
+		script,
+		"bruno",
+	); err != nil {
 		s.recordAuditEvent(r, "script.import.bruno.rollback", "blocked", "script", script.ID, script.ProjectID, map[string]any{
 			"revision_id": targetRevisionID,
 			"reason":      secretBindingsRequiredCode,
@@ -2557,6 +2878,24 @@ func (s *Server) handleRollbackBrunoImport(w http.ResponseWriter, r *http.Reques
 		"revision_id": revision.ID,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"revision": publicBrunoRevision(revision)})
+}
+
+func isBrunoRollbackRevision(revision *storage.BrunoSourceRevision) bool {
+	if revision == nil || revision.CanonicalScript == nil {
+		return false
+	}
+	script := revision.CanonicalScript
+	if script.Metadata != nil && script.Metadata.Import != nil {
+		source := strings.TrimSpace(script.Metadata.Import.Source)
+		if source != "" {
+			return strings.EqualFold(source, "bruno")
+		}
+	}
+	// Canonical Bruno revisions predating import metadata used the Bruno
+	// protocol as their durable source identity. Generic retained HTTP imports
+	// never do, so this preserves legacy rollback without making their
+	// format-neutral revisions eligible for the Bruno-only activation routine.
+	return strings.EqualFold(strings.TrimSpace(script.Protocol), "bruno")
 }
 
 func (s *Server) handlePreviewBrunoProjection(w http.ResponseWriter, r *http.Request) {
@@ -3374,17 +3713,18 @@ func (s *Server) persistBrunoImportSession(ctx context.Context, session *brunoIm
 	}
 	defer clearStringMap(values)
 	envelope := persistedBrunoImportSession{
-		ID:                session.ID,
-		ProjectID:         session.ProjectID,
-		Actor:             session.Actor,
-		Result:            session.Result,
-		RawArtifact:       session.RawArtifact,
-		SanitizedArtifact: session.SanitizedArtifact,
-		RevisionID:        session.RevisionID,
-		SyncScriptID:      session.SyncScriptID,
-		CreatedAt:         session.CreatedAt,
-		ExpiresAt:         session.ExpiresAt,
-		SecretValues:      values,
+		ID:                      session.ID,
+		ProjectID:               session.ProjectID,
+		Actor:                   session.Actor,
+		Result:                  session.Result,
+		RawArtifact:             session.RawArtifact,
+		SanitizedArtifact:       session.SanitizedArtifact,
+		RevisionID:              session.RevisionID,
+		SyncScriptID:            session.SyncScriptID,
+		NativeCredentialTargets: session.NativeCredentialTargets,
+		CreatedAt:               session.CreatedAt,
+		ExpiresAt:               session.ExpiresAt,
+		SecretValues:            values,
 	}
 	data, err := json.Marshal(envelope)
 	if err != nil {
@@ -3427,40 +3767,186 @@ func boundedBrunoImportSecretValues(requirements []brunoconvert.SecretRequiremen
 		if _, duplicate := values[id]; duplicate {
 			return nil, fmt.Errorf("Bruno source credential requirement %q is duplicated", id)
 		}
-		if len(values) >= projectSecretMaxBatchItems {
-			return nil, fmt.Errorf("Bruno source credentials exceed %d-entry session limit", projectSecretMaxBatchItems)
+		entryBytes := len(id) + len(requirement.Value)
+		if total > brunoImportSessionMaxBytes-entryBytes {
+			return nil, fmt.Errorf("Bruno source credentials exceed %d-byte protected session limit", brunoImportSessionMaxBytes)
 		}
-		if len(requirement.Value) > projectSecretMaxValueBytes {
-			return nil, fmt.Errorf("Bruno source credential exceeds %d-byte limit", projectSecretMaxValueBytes)
-		}
-		if total > sourceSecretSessionMaxTotalBytes-len(requirement.Value) {
-			return nil, fmt.Errorf("Bruno source credentials exceed %d-byte session limit", sourceSecretSessionMaxTotalBytes)
-		}
-		total += len(requirement.Value)
+		total += entryBytes
 		values[id] = requirement.Value
 	}
 	return values, nil
 }
 
 func validatePersistedBrunoSecretValues(values map[string]string) error {
-	if len(values) > projectSecretMaxBatchItems {
-		return fmt.Errorf("persisted Bruno source credentials exceed %d-entry session limit", projectSecretMaxBatchItems)
-	}
 	total := 0
 	for rawID, value := range values {
 		id := strings.TrimSpace(rawID)
 		if id == "" || id != rawID {
 			return errors.New("persisted Bruno source credential has an invalid requirement id")
 		}
-		if len(value) > projectSecretMaxValueBytes {
-			return fmt.Errorf("persisted Bruno source credential exceeds %d-byte limit", projectSecretMaxValueBytes)
+		entryBytes := len(id) + len(value)
+		if total > brunoImportSessionMaxBytes-entryBytes {
+			return fmt.Errorf("persisted Bruno source credentials exceed %d-byte protected session limit", brunoImportSessionMaxBytes)
 		}
-		if total > sourceSecretSessionMaxTotalBytes-len(value) {
-			return fmt.Errorf("persisted Bruno source credentials exceed %d-byte session limit", sourceSecretSessionMaxTotalBytes)
-		}
-		total += len(value)
+		total += entryBytes
 	}
 	return nil
+}
+
+// Project-secret migration is optional and keeps the provider's tighter
+// batching/value limits. Those limits must not govern the encrypted import
+// session used to preserve exact runnable destination bytes.
+func validateBrunoMigrationSecretValues(
+	requirements []brunoconvert.SecretRequirement,
+) error {
+	values := make(map[string]string)
+	total := 0
+	for _, requirement := range requirements {
+		if requirement.Value == "" {
+			continue
+		}
+		id := strings.TrimSpace(requirement.ID)
+		if id == "" || id != requirement.ID {
+			return errors.New("Bruno source credential requirement has an invalid id")
+		}
+		if _, duplicate := values[id]; duplicate {
+			return fmt.Errorf("Bruno source credential requirement %q is duplicated", id)
+		}
+		if len(values) >= projectSecretMaxBatchItems {
+			return fmt.Errorf("Bruno source credentials exceed %d-entry migration limit", projectSecretMaxBatchItems)
+		}
+		if len(requirement.Value) > projectSecretMaxValueBytes {
+			return fmt.Errorf("Bruno source credential exceeds %d-byte migration limit", projectSecretMaxValueBytes)
+		}
+		if total > sourceSecretSessionMaxTotalBytes-len(requirement.Value) {
+			return fmt.Errorf("Bruno source credentials exceed %d-byte migration limit", sourceSecretSessionMaxTotalBytes)
+		}
+		total += len(requirement.Value)
+		values[id] = requirement.Value
+	}
+	clearStringMap(values)
+	return nil
+}
+
+func collectBrunoNativeCredentialTargets(
+	result *brunoconvert.Result,
+) map[string][]brunoconvert.NativeCredentialTarget {
+	if result == nil || len(result.Scripts) == 0 {
+		return nil
+	}
+	targets := make(map[string][]brunoconvert.NativeCredentialTarget)
+	for _, candidate := range result.Scripts {
+		if len(candidate.CredentialTargets) == 0 {
+			continue
+		}
+		candidateID := strings.TrimSpace(candidate.CandidateID)
+		targets[candidateID] = append(
+			[]brunoconvert.NativeCredentialTarget(nil),
+			candidate.CredentialTargets...,
+		)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	return targets
+}
+
+func validatePersistedBrunoNativeCredentialTargets(
+	result *brunoconvert.Result,
+	targets map[string][]brunoconvert.NativeCredentialTarget,
+) error {
+	if len(targets) == 0 {
+		return nil
+	}
+	if result == nil ||
+		!strings.EqualFold(strings.TrimSpace(result.OutputMode), brunoconvert.OutputModeNativeRequests) {
+		return errors.New("persisted Bruno credential targets require native request mode")
+	}
+	requirementsByCandidate := make(map[string]map[string]struct{}, len(result.Scripts))
+	for _, candidate := range result.Scripts {
+		candidateID := strings.TrimSpace(candidate.CandidateID)
+		if candidateID == "" {
+			return errors.New("persisted Bruno native candidate has no id")
+		}
+		allowed := make(map[string]struct{}, len(candidate.SecretRequirements))
+		for _, requirement := range candidate.SecretRequirements {
+			allowed[strings.TrimSpace(requirement.ID)] = struct{}{}
+		}
+		requirementsByCandidate[candidateID] = allowed
+	}
+	total := 0
+	for rawCandidateID, candidateTargets := range targets {
+		candidateID := strings.TrimSpace(rawCandidateID)
+		allowed, exists := requirementsByCandidate[candidateID]
+		if !exists || candidateID != rawCandidateID {
+			return errors.New("persisted Bruno credential targets reference an unknown candidate")
+		}
+		seen := make(map[string]struct{}, len(candidateTargets))
+		for _, target := range candidateTargets {
+			total++
+			if total > defaultBrunoImportFileCount {
+				return errors.New("persisted Bruno credential targets exceed the session limit")
+			}
+			requirementID := strings.TrimSpace(target.RequirementID)
+			if _, ok := allowed[requirementID]; !ok || requirementID != target.RequirementID {
+				return errors.New("persisted Bruno credential target references an unknown requirement")
+			}
+			if target.JSONPointer == "" || len(target.JSONPointer) > 4096 {
+				return errors.New("persisted Bruno credential target has an invalid JSON pointer")
+			}
+			tokens, err := splitJSONPointer(target.JSONPointer)
+			if err != nil || !isAllowedBrunoNativeCredentialTargetPointer(tokens) {
+				return errors.New("persisted Bruno credential target has an invalid JSON pointer")
+			}
+			if target.Occurrence < 0 || target.Occurrence > defaultBrunoImportFileCount {
+				return errors.New("persisted Bruno credential target has an invalid occurrence")
+			}
+			if !isCanonicalLowerHexDigest(target.SanitizedSHA256, sha256.Size*2) {
+				return errors.New("persisted Bruno credential target has an invalid digest")
+			}
+			identity := requirementID + "\x00" + target.JSONPointer + "\x00" +
+				strconv.Itoa(target.Occurrence)
+			if _, duplicate := seen[identity]; duplicate {
+				return errors.New("persisted Bruno credential target is duplicated")
+			}
+			seen[identity] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func isAllowedBrunoNativeCredentialTargetPointer(tokens []string) bool {
+	if len(tokens) == 2 && tokens[0] == "config" && tokens[1] == "base_url" {
+		return true
+	}
+	if len(tokens) == 4 && tokens[0] == "config" && tokens[1] == "http" &&
+		tokens[2] == "auth" {
+		switch tokens[3] {
+		case "username", "password", "token", "domain":
+			return true
+		}
+	}
+	if len(tokens) < 3 || tokens[0] != "actions" {
+		return false
+	}
+	if _, err := strconv.Atoi(tokens[1]); err != nil {
+		return false
+	}
+	switch {
+	case len(tokens) == 3 && (tokens[2] == "target" || tokens[2] == "body"):
+		return true
+	case len(tokens) == 4 && tokens[2] == "headers" && tokens[3] != "":
+		return true
+	case len(tokens) == 5 && tokens[2] == "header_list" && tokens[4] == "value":
+		_, err := strconv.Atoi(tokens[3])
+		return err == nil
+	case len(tokens) == 4 && tokens[2] == "auth":
+		switch tokens[3] {
+		case "username", "password", "token", "domain":
+			return true
+		}
+	}
+	return false
 }
 
 func decodePersistedBrunoImportSession(id string, payload []byte) (*brunoImportSession, error) {
@@ -3469,16 +3955,17 @@ func decodePersistedBrunoImportSession(id string, payload []byte) (*brunoImportS
 		return nil, err
 	}
 	session := &brunoImportSession{
-		ID:                id,
-		ProjectID:         envelope.ProjectID,
-		Actor:             envelope.Actor,
-		Result:            envelope.Result,
-		RawArtifact:       envelope.RawArtifact,
-		SanitizedArtifact: envelope.SanitizedArtifact,
-		RevisionID:        envelope.RevisionID,
-		SyncScriptID:      envelope.SyncScriptID,
-		CreatedAt:         envelope.CreatedAt,
-		ExpiresAt:         envelope.ExpiresAt,
+		ID:                      id,
+		ProjectID:               envelope.ProjectID,
+		Actor:                   envelope.Actor,
+		Result:                  envelope.Result,
+		RawArtifact:             envelope.RawArtifact,
+		SanitizedArtifact:       envelope.SanitizedArtifact,
+		RevisionID:              envelope.RevisionID,
+		SyncScriptID:            envelope.SyncScriptID,
+		NativeCredentialTargets: envelope.NativeCredentialTargets,
+		CreatedAt:               envelope.CreatedAt,
+		ExpiresAt:               envelope.ExpiresAt,
 	}
 	if envelope.Result == nil {
 		return session, errors.New("persisted Bruno import session has no result")
@@ -3487,6 +3974,12 @@ func decodePersistedBrunoImportSession(id string, payload []byte) (*brunoImportS
 		return session, errors.New("persisted Bruno import session id does not match its descriptor")
 	}
 	if err := validatePersistedBrunoSecretValues(envelope.SecretValues); err != nil {
+		return session, err
+	}
+	if err := validatePersistedBrunoNativeCredentialTargets(
+		envelope.Result,
+		envelope.NativeCredentialTargets,
+	); err != nil {
 		return session, err
 	}
 	seen := make(map[string]struct{}, len(envelope.Result.SecretRequirements))
@@ -3762,6 +4255,57 @@ func brunoRequirementsHaveSourceValues(requirements []brunoconvert.SecretRequire
 	return false
 }
 
+func (s *Server) authorizeBrunoSourceSecretMigration(
+	w http.ResponseWriter,
+	r *http.Request,
+	projectID string,
+	requested bool,
+) bool {
+	if !requested {
+		return true
+	}
+	if s.sourceSecretMigrationAuthorized(r, projectID) {
+		return true
+	}
+	// This response intentionally contains no requirement names, source paths,
+	// candidate details, or values. Callers reach it only after proving
+	// ownership of the actor/project-bound import session (or committed native
+	// receipt), preserving the import flow's anti-enumeration ordering.
+	writeError(w, http.StatusForbidden, "source secret migration is not allowed")
+	return false
+}
+
+func brunoCanonicalPreservesSourceCredentials(
+	requirements []brunoconvert.SecretRequirement,
+	requested map[string]string,
+	existing *dsl.Script,
+	migrate bool,
+) (bool, error) {
+	if migrate {
+		return false, nil
+	}
+	grouped, err := groupedBrunoRequestedBindings(requirements, requested)
+	if err != nil {
+		return false, err
+	}
+	existingLogical := map[string]string{}
+	if existing != nil {
+		existingLogical = logicalBrunoSecretBindings(existing.Config.Bruno.SecretBindings)
+	}
+	preserved := false
+	for _, requirement := range requirements {
+		if requirement.Value == "" {
+			continue
+		}
+		suggested := strings.TrimSpace(requirement.SuggestedName)
+		if grouped[suggested] != "" || strings.TrimSpace(existingLogical[suggested]) != "" {
+			continue
+		}
+		preserved = true
+	}
+	return preserved, nil
+}
+
 func brunoSecretMatchesRetainedMigration(
 	existingValue string,
 	sourceValue string,
@@ -3831,6 +4375,13 @@ func (s *Server) bindOrMigrateBrunoImportSecrets(
 			if name != "" {
 				requestedExplicitly = true
 			}
+		}
+		if !requestedExplicitly && !migrate && requirement.Value != "" {
+			// The protected source value is already part of the imported
+			// destination. Do not silently bind it to an unrelated configured
+			// secret with the same suggested name, and do not require the
+			// operator to enter the value again.
+			continue
 		}
 		if requestedExplicitly {
 			if store != nil {

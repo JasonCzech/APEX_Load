@@ -1,6 +1,8 @@
 package jmeter
 
 import (
+	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -38,10 +40,8 @@ func TestDetectDatabaseDriverAndDSN(t *testing.T) {
 		wantDSN    string
 		wantOK     bool
 	}{
-		// The cleartext password must never be embedded: it is replaced with the
-		// {{secret.db_password}} governed reference resolved at runtime.
-		{"jdbc:postgresql://db:5432/orders", "postgres", "postgres://app:{{secret.db_password}}@db:5432/orders", true},
-		{"jdbc:mysql://db:3306/shop", "mysql", "app:{{secret.db_password}}@tcp(db:3306)/shop", true},
+		{"jdbc:postgresql://db:5432/orders", "postgres", "postgres://app:pw@db:5432/orders", true},
+		{"jdbc:mysql://db:3306/shop", "mysql", "app:pw@tcp(db:3306)/shop", true},
 		{"jdbc:sqlite:/tmp/test.db", "sqlite", "/tmp/test.db", true},
 		{"jdbc:redis://nope", "", "", false},
 	}
@@ -50,8 +50,8 @@ func TestDetectDatabaseDriverAndDSN(t *testing.T) {
 		if driver != tc.wantDriver || ok != tc.wantOK || (tc.wantOK && dsn != tc.wantDSN) {
 			t.Fatalf("detect(%q) = (%q,%q,%v), want (%q,%q,%v)", tc.url, driver, dsn, ok, tc.wantDriver, tc.wantDSN, tc.wantOK)
 		}
-		if strings.Contains(dsn, "pw") && !strings.Contains(dsn, "{{secret") {
-			t.Fatalf("detect(%q) leaked cleartext password into DSN %q", tc.url, dsn)
+		if tc.wantOK && tc.wantDriver != "sqlite" && !strings.Contains(dsn, "pw") {
+			t.Fatalf("detect(%q) did not retain the imported password in DSN %q", tc.url, dsn)
 		}
 	}
 }
@@ -68,14 +68,14 @@ func TestDetectDatabaseDSNOmitsCredentialsWhenNoPassword(t *testing.T) {
 	}
 }
 
-func TestDetectDatabaseDSNRedactsInlineURLCredentials(t *testing.T) {
+func TestDetectDatabaseDSNRetainsInlineURLCredentials(t *testing.T) {
 	// Credentials embedded directly in the JDBC URL (no separate password
-	// property) must still be stripped from the stored DSN for every driver
-	// branch, and the inline-credential flag must be set so the importer warns.
+	// property) remain usable in the durable DSN, and the inline-credential flag
+	// is set so the importer adds a review item.
 	tests := []struct {
 		name    string
 		url     string
-		secret  string // a cleartext fragment that must NOT appear in the DSN
+		secret  string
 		wantDrv string
 	}{
 		{"oracle thin user/pass@", "jdbc:oracle:thin:scott/tiger@//orahost:1521/svc", "tiger", "oracle"},
@@ -93,29 +93,190 @@ func TestDetectDatabaseDSNRedactsInlineURLCredentials(t *testing.T) {
 			if !inlineCred {
 				t.Fatalf("detect(%q): inlineCred=false, want true (inline credential present)", tc.url)
 			}
-			if strings.Contains(dsn, tc.secret) {
-				t.Fatalf("detect(%q) leaked cleartext credential %q into DSN %q", tc.url, tc.secret, dsn)
-			}
-			if !strings.Contains(dsn, importedDBPasswordSecret) {
-				t.Fatalf("detect(%q) did not substitute the governed secret reference: DSN %q", tc.url, dsn)
+			if !strings.Contains(dsn, tc.secret) {
+				t.Fatalf("detect(%q) did not retain credential %q in DSN %q", tc.url, tc.secret, dsn)
 			}
 		})
 	}
 }
 
-func TestRedactJDBCInlineCredentialsNoCredsIsNoop(t *testing.T) {
+func TestHasJDBCInlineCredentials(t *testing.T) {
 	for _, url := range []string{
 		"oracle:thin:@//orahost:1521/svc",
 		"sqlserver://mssql:1433;databaseName=app",
 		"customdb://host/db",
 	} {
-		out, found := redactJDBCInlineCredentials(url)
-		if found {
-			t.Fatalf("redact(%q): found=true, want false (no credential present)", url)
+		if hasJDBCInlineCredentials(url) {
+			t.Fatalf("hasJDBCInlineCredentials(%q)=true, want false", url)
 		}
-		if out != url {
-			t.Fatalf("redact(%q) mutated a credential-free URL to %q", url, out)
+	}
+}
+
+func TestParseJMeterJDBCConnectionPropertiesUsesDBCPPrecedence(t *testing.T) {
+	properties := parseJMeterJDBCConnectionProperties(
+		"sslmode=disable;flag;sslmode=require;password=first;password=last;",
+	)
+	want := []jmeterJDBCConnectionProperty{
+		{Name: "sslmode", Value: "require"},
+		{Name: "flag", Value: ""},
+		{Name: "password", Value: "last"},
+	}
+	if len(properties) != len(want) {
+		t.Fatalf("properties = %#v, want %#v", properties, want)
+	}
+	for index := range want {
+		if properties[index] != want[index] {
+			t.Fatalf("properties[%d] = %#v, want %#v", index, properties[index], want[index])
 		}
+	}
+}
+
+func TestApplyJMeterJDBCConnectionPropertiesCredentialPrecedence(t *testing.T) {
+	properties := parseJMeterJDBCConnectionProperties(
+		"sslmode=require;user=property-user;password=property-password;sslpassword=ssl-secret",
+	)
+
+	fromProperties, applied := applyJMeterJDBCConnectionProperties(
+		"postgres",
+		"postgres://url-user:url-password@db.example.test/orders?sslmode=disable",
+		properties,
+		false,
+	)
+	if !applied {
+		t.Fatal("PostgreSQL connection properties were not applied")
+	}
+	parsed, err := url.Parse(fromProperties)
+	if err != nil {
+		t.Fatalf("parse property DSN: %v", err)
+	}
+	if parsed.User == nil || parsed.User.Username() != "property-user" {
+		t.Fatalf("property DSN user = %#v, want property-user", parsed.User)
+	}
+	if password, ok := parsed.User.Password(); !ok || password != "property-password" {
+		t.Fatalf("property DSN password = %q, %v, want property-password", password, ok)
+	}
+	if parsed.Query().Get("sslmode") != "require" ||
+		parsed.Query().Get("sslpassword") != "ssl-secret" {
+		t.Fatalf("property DSN query = %#v", parsed.Query())
+	}
+
+	fromExplicit, applied := applyJMeterJDBCConnectionProperties(
+		"postgres",
+		"postgres://explicit-user:explicit-password@db.example.test/orders?sslmode=disable",
+		properties,
+		true,
+	)
+	if !applied {
+		t.Fatal("PostgreSQL non-auth connection properties were not applied")
+	}
+	parsed, err = url.Parse(fromExplicit)
+	if err != nil {
+		t.Fatalf("parse explicit DSN: %v", err)
+	}
+	if parsed.User == nil || parsed.User.Username() != "explicit-user" {
+		t.Fatalf("explicit DSN user = %#v, want explicit-user", parsed.User)
+	}
+	if password, ok := parsed.User.Password(); !ok || password != "explicit-password" {
+		t.Fatalf("explicit DSN password = %q, %v, want explicit-password", password, ok)
+	}
+	if strings.Contains(fromExplicit, "property-user") ||
+		strings.Contains(fromExplicit, "property-password") {
+		t.Fatalf("connectionProperties auth overrode dedicated fields: %q", fromExplicit)
+	}
+	if parsed.Query().Get("sslmode") != "require" ||
+		parsed.Query().Get("sslpassword") != "ssl-secret" {
+		t.Fatalf("explicit DSN query = %#v", parsed.Query())
+	}
+}
+
+func TestConvertJMXJDBCConnectionPropertiesAreAppliedAndPreserved(t *testing.T) {
+	const (
+		connectionProperties = "sslmode=require;application_name=orders;user=property-user;password=property-password;sslpassword=ssl-secret"
+		explicitPassword     = "explicit-password"
+	)
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="DB Properties" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="DB Users" enabled="true"/>
+      <hashTree>
+        <JDBCDataSource testname="Orders Pool" enabled="true">
+          <stringProp name="dataSource">pool1</stringProp>
+          <stringProp name="dbUrl">jdbc:postgresql://db.example.test:5432/orders?sslmode=disable&amp;application_name=old</stringProp>
+          <stringProp name="driver">org.postgresql.Driver</stringProp>
+          <stringProp name="username">explicit-user</stringProp>
+          <stringProp name="password">` + explicitPassword + `</stringProp>
+          <stringProp name="connectionProperties">` + connectionProperties + `</stringProp>
+        </JDBCDataSource>
+        <hashTree/>
+        <JDBCSampler testname="Select Orders" enabled="true">
+          <stringProp name="dataSource">pool1</stringProp>
+          <stringProp name="query">SELECT 1</stringProp>
+          <stringProp name="queryType">Select Statement</stringProp>
+        </JDBCSampler>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "properties.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts = %d, want 1", len(result.Scripts))
+	}
+	script := result.Scripts[0]
+	parsed, err := url.Parse(script.Config.Database.DSN)
+	if err != nil {
+		t.Fatalf("parse imported DSN: %v", err)
+	}
+	if parsed.User == nil || parsed.User.Username() != "explicit-user" {
+		t.Fatalf("imported DSN user = %#v, want explicit-user", parsed.User)
+	}
+	if password, ok := parsed.User.Password(); !ok || password != explicitPassword {
+		t.Fatalf("imported DSN password = %q, %v, want %q", password, ok, explicitPassword)
+	}
+	if got := parsed.Query().Get("sslmode"); got != "require" {
+		t.Fatalf("sslmode = %q, want require", got)
+	}
+	if got := parsed.Query().Get("application_name"); got != "orders" {
+		t.Fatalf("application_name = %q, want orders", got)
+	}
+	if got := parsed.Query().Get("sslpassword"); got != "ssl-secret" {
+		t.Fatalf("sslpassword = %q, want retained credential", got)
+	}
+	if strings.Contains(script.Config.Database.DSN, "property-password") {
+		t.Fatalf("property password overrode dedicated password: %q", script.Config.Database.DSN)
+	}
+	sources, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedJMeterJDBCSourcesKey].([]map[string]string)
+	if len(sources) != 1 ||
+		sources[0]["connection_properties"] != connectionProperties ||
+		sources[0]["password"] != explicitPassword {
+		t.Fatalf("preserved JDBC source = %#v", sources)
+	}
+	sourceReview, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("marshal source review: %v", err)
+	}
+	for _, forbidden := range []string{
+		explicitPassword,
+		"property-password",
+		"ssl-secret",
+	} {
+		if strings.Contains(string(sourceReview), forbidden) {
+			t.Fatalf("source review disclosed JDBC credential %q: %s", forbidden, sourceReview)
+		}
+	}
+	if result.SourceReview == nil ||
+		len(result.SourceReview.SourceFiles) != 1 ||
+		!result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review = %#v, want explicitly redacted JDBC source", result.SourceReview)
+	}
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("generated database script failed validation: %#v", issues)
 	}
 }
 
@@ -174,12 +335,12 @@ func TestConvertJMXJDBCThreadGroupBecomesExecutableDatabaseScript(t *testing.T) 
 	if !strings.Contains(script.Config.Database.DSN, "db.example.com:5432/orders") {
 		t.Fatalf("database dsn = %q, want host+db", script.Config.Database.DSN)
 	}
-	// The cleartext JMX password ("secret") must not leak into the exportable DSL.
-	if strings.Contains(script.Config.Database.DSN, "app:secret@") {
-		t.Fatalf("database dsn = %q leaked the cleartext JMX password", script.Config.Database.DSN)
+	if !strings.Contains(script.Config.Database.DSN, "app:secret@") {
+		t.Fatalf("database dsn = %q, want imported password retained for replay", script.Config.Database.DSN)
 	}
-	if !strings.Contains(script.Config.Database.DSN, "{{secret.db_password}}") {
-		t.Fatalf("database dsn = %q, want password replaced with {{secret.db_password}}", script.Config.Database.DSN)
+	sources, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedJMeterJDBCSourcesKey].([]map[string]string)
+	if len(sources) != 1 || sources[0]["password"] != "secret" {
+		t.Fatalf("preserved JDBC sources = %#v, want exact imported password", sources)
 	}
 	if result.Stats.AdapterRequired < 1 {
 		t.Fatalf("adapter_required stat = %d, want >= 1 (connection)", result.Stats.AdapterRequired)

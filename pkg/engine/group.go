@@ -40,6 +40,9 @@ type GroupConfig struct {
 	rendezvous      *RendezvousCoordinator
 	executionGoals  *ExecutionGoalLimiter
 	dataProvider    *DataProvider
+	// credentialTemplates is computed once during NewMultiGroup and shared
+	// read-only by the group's VUsers.
+	credentialTemplates *importedCredentialTemplatePlan
 }
 
 type ResultSink interface {
@@ -268,6 +271,12 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 		cfg.Groups[i].SecretResolver = resolver
 		values = append(values, runtimeProtocolAuthCompositeValues(cfg.Groups[i].Script, resolver)...)
+		importedValues, credentialTemplates, err := inspectImportedCredentials(cfg.Groups[i].Script)
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] %q: inspect retained import credentials: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
+		}
+		cfg.Groups[i].credentialTemplates = credentialTemplates
+		values = append(values, importedValues...)
 		mergedValues := mergedRuntimeSecretValues(cfg.Groups[i].RedactionConfig, values)
 		key := runtimeSecretValueSetKey(mergedValues)
 		runtimeConfig := runtimeRedactionSets[key]
@@ -1123,19 +1132,21 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		entitledBoundaryCtx = mge.gracefulCtx
 	}
 	vu := &VUser{
-		ID:                -1,
-		TotalVUsers:       group.VUsers,
-		Group:             group.Name,
-		Proto:             vuProto,
-		Script:            group.Script,
-		Metrics:           mge.metrics,
-		ResultSink:        group.ResultSink,
-		RedactionConfig:   group.RedactionConfig,
-		SecretResolver:    group.SecretResolver,
-		Rendezvous:        group.rendezvous,
-		ExecutionGoals:    group.executionGoals,
-		ActionBoundaryCtx: entitledBoundaryCtx,
-		DataProvider:      group.dataProvider,
+		ID:                           -1,
+		TotalVUsers:                  group.VUsers,
+		Group:                        group.Name,
+		Proto:                        vuProto,
+		Script:                       group.Script,
+		Metrics:                      mge.metrics,
+		ResultSink:                   group.ResultSink,
+		RedactionConfig:              group.RedactionConfig,
+		credentialTemplates:          group.credentialTemplates,
+		credentialTemplatesInspected: true,
+		SecretResolver:               group.SecretResolver,
+		Rendezvous:                   group.rendezvous,
+		ExecutionGoals:               group.executionGoals,
+		ActionBoundaryCtx:            entitledBoundaryCtx,
+		DataProvider:                 group.dataProvider,
 	}
 	if phase != "teardown" {
 		vu.PauseControl = mge
@@ -1286,24 +1297,26 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		}()
 
 		vu = &VUser{
-			ID:                   runtimeVUserID,
-			TotalVUsers:          group.VUsers,
-			Group:                group.Name,
-			Proto:                vuProto,
-			Script:               group.Script,
-			Metrics:              mge.metrics,
-			ResultSink:           group.ResultSink,
-			RedactionConfig:      group.RedactionConfig,
-			SecretResolver:       group.SecretResolver,
-			PauseControl:         mge,
-			IterationRateLimiter: group.rateLimiter,
-			Rendezvous:           group.rendezvous,
-			ExecutionGoals:       group.executionGoals,
-			HardStopCtx:          shedCtx,
-			ActionBoundaryCtx:    boundaryCtx,
-			DataProvider:         group.dataProvider,
-			SkipInit:             groupLifecycleAtOnce(group),
-			SkipTeardown:         groupLifecycleAtOnce(group),
+			ID:                           runtimeVUserID,
+			TotalVUsers:                  group.VUsers,
+			Group:                        group.Name,
+			Proto:                        vuProto,
+			Script:                       group.Script,
+			Metrics:                      mge.metrics,
+			ResultSink:                   group.ResultSink,
+			RedactionConfig:              group.RedactionConfig,
+			credentialTemplates:          group.credentialTemplates,
+			credentialTemplatesInspected: true,
+			SecretResolver:               group.SecretResolver,
+			PauseControl:                 mge,
+			IterationRateLimiter:         group.rateLimiter,
+			Rendezvous:                   group.rendezvous,
+			ExecutionGoals:               group.executionGoals,
+			HardStopCtx:                  shedCtx,
+			ActionBoundaryCtx:            boundaryCtx,
+			DataProvider:                 group.dataProvider,
+			SkipInit:                     groupLifecycleAtOnce(group),
+			SkipTeardown:                 groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()
@@ -1535,21 +1548,23 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		}()
 
 		vu = &VUser{
-			ID:                runtimeVUserID,
-			Group:             group.Name,
-			Proto:             vuProto,
-			Script:            iterationScript,
-			Metrics:           mge.metrics,
-			ResultSink:        group.ResultSink,
-			RedactionConfig:   group.RedactionConfig,
-			SecretResolver:    group.SecretResolver,
-			PauseControl:      mge,
-			ExecutionGoals:    group.executionGoals,
-			HardStopCtx:       shedCtx,
-			ActionBoundaryCtx: boundaryCtx,
-			DataProvider:      group.dataProvider,
-			SkipInit:          groupLifecycleAtOnce(group),
-			SkipTeardown:      groupLifecycleAtOnce(group),
+			ID:                           runtimeVUserID,
+			Group:                        group.Name,
+			Proto:                        vuProto,
+			Script:                       iterationScript,
+			Metrics:                      mge.metrics,
+			ResultSink:                   group.ResultSink,
+			RedactionConfig:              group.RedactionConfig,
+			credentialTemplates:          group.credentialTemplates,
+			credentialTemplatesInspected: true,
+			SecretResolver:               group.SecretResolver,
+			PauseControl:                 mge,
+			ExecutionGoals:               group.executionGoals,
+			HardStopCtx:                  shedCtx,
+			ActionBoundaryCtx:            boundaryCtx,
+			DataProvider:                 group.dataProvider,
+			SkipInit:                     groupLifecycleAtOnce(group),
+			SkipTeardown:                 groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()

@@ -13,6 +13,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -173,6 +175,7 @@ func ProjectScriptCredentials(
 	if script == nil || !isHTTPFamilyProtocol(script.Protocol) {
 		return result, nil
 	}
+	fallbackSnapshot := credentialTraversalSnapshot(script)
 	options.SourceProfile = firstNonEmpty(strings.TrimSpace(options.SourceProfile), strings.TrimSpace(script.GeneratedFrom), "import")
 	options.CandidateKey = firstNonEmpty(strings.TrimSpace(options.CandidateKey), options.SourceProfile+":script")
 	options.NamePrefix = firstNonEmpty(strings.TrimSpace(options.NamePrefix), "IMPORT_REQUEST")
@@ -190,15 +193,16 @@ func ProjectScriptCredentials(
 	variableReadiness := AnalyzeVariableReadiness(&provenanceScript, nil)
 	sourceVariables := literalScriptSourceVariables(script, options.SourceProfile)
 	var trustedWholeValues map[string]struct{}
-	runtimeParameterSourcesRedacted := false
 	if options.RuntimeParameterPolicy == RuntimeParametersPreserveGoverned {
 		// LoadRunner parameter files are executable runtime data rather than
-		// declarations of project secrets. Preserve exact whole parameter
-		// references even in credential-shaped fields, while removing source
-		// credential rows from the public draft and attaching a durable gate.
+		// declarations of project secrets. Preserve both their exact whole
+		// references and their imported source values in the executable script.
+		// API/read projections mask those values without changing the stored
+		// runtime data, and masked updates are reconciled against that stored
+		// copy. Removing the values here would make rotating credential tables
+		// impossible to replay without asking the importer to recreate them.
 		sourceVariables = nil
 		trustedWholeValues = trustedScriptParameterValues(script)
-		runtimeParameterSourcesRedacted = redactSensitiveRuntimeParameterValues(script)
 	}
 	// A {{var.*}} reference inside config.base_url is never proven, however well
 	// an extractor's execution path is guaranteed:
@@ -235,25 +239,6 @@ func ProjectScriptCredentials(
 	}
 
 	var findings []importreview.Finding
-	if runtimeParameterSourcesRedacted {
-		_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-			if !runtimeSurfaceIsHTTPRequest(ref) {
-				return nil
-			}
-			findings = append(findings, importreview.Finding{
-				Code:       "credential_parameter_source_redacted",
-				Severity:   diag.Blocker,
-				Element:    "runtime parameter credential source",
-				Detail:     "a credential-named runtime parameter was preserved, but its imported source rows were redacted at the disclosure boundary",
-				ActionPath: ref.Path,
-				Source:     options.SourceProfile,
-				ReasonCode: "credential_parameter_source_redacted",
-				Resolution: "replace the redacted parameter rows with an approved executable data source and remove the gate",
-				Gate:       importreview.GateExecution,
-			})
-			return nil
-		})
-	}
 	projectBaseURLCredentials(
 		script,
 		options,
@@ -306,23 +291,20 @@ func ProjectScriptCredentials(
 		// No unvisited source-controlled request values may be returned after a
 		// bounded-walker failure. Replace the script with a valid review draft;
 		// source evidence remains available through the redacted SourceReview.
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile)
+		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile, fallbackSnapshot)
 		result.AdditionalURLs = nil
 		result.FallbackDraft = true
 		return result, fmt.Errorf("HTTP credential review exceeded the bounded action traversal limit")
 	}
 	if requirementConflict {
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile)
+		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile, fallbackSnapshot)
 		result.AdditionalURLs = nil
 		result.FallbackDraft = true
 		return result, fmt.Errorf("HTTP credential review found conflicting requirement provenance")
 	}
-	removeConsumedLiteralScriptParameters(script, result.Requirements)
-	redactCredentialSourceVariables(script, result.Requirements)
-
 	synchronizeEnterpriseSequenceProvenance(script)
 	if err := importreview.ApplyToScript(script, findings); err != nil {
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile)
+		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile, fallbackSnapshot)
 		result.AdditionalURLs = nil
 		result.FallbackDraft = true
 		return result, fmt.Errorf("attach durable HTTP credential review: %w", err)
@@ -436,6 +418,7 @@ func projectBaseURLCredentials(
 	if strings.TrimSpace(script.Config.BaseURL) == "" {
 		return
 	}
+	rawBaseURL := script.Config.BaseURL
 	source := credentialpolicy.SourceRef{
 		Format:  options.SourceProfile,
 		Pointer: "/config/base_url",
@@ -443,7 +426,7 @@ func projectBaseURLCredentials(
 	projected, projection, err := credentialpolicy.ProjectRawURL(
 		script.Config.BaseURL,
 		credentialpolicy.Options{
-			Mode:               credentialpolicy.SecretReference,
+			Mode:               credentialpolicy.Preserve,
 			Source:             source,
 			RequestKey:         options.CandidateKey + ":base_url",
 			NamePrefix:         options.NamePrefix + "_BASE_URL",
@@ -462,10 +445,18 @@ func projectBaseURLCredentials(
 	} else {
 		script.Config.BaseURL = projected
 	}
+	attachScriptPreservedCredentialTargets(script, projection.PreservedTargets)
 	appendRequirements(projection.Requirements)
-	appendEnterpriseProjectionFindingsForAllRequests(
+	reviewFindings := ReviewCredentialProjection(projection, "HTTP base URL").Findings
+	if err == nil &&
+		projection.Disposition != credentialpolicy.Rejected &&
+		baseURLHasUnresolvableRuntimeTemplate(rawBaseURL) {
+		reviewFindings = append(reviewFindings, baseURLRuntimeTemplateFinding(source))
+		reviewFindings = importreview.NormalizeFindings(reviewFindings)
+	}
+	appendBaseURLProjectionFindings(
 		script,
-		ReviewCredentialProjection(projection, "HTTP base URL").Findings,
+		reviewFindings,
 		findings,
 	)
 }
@@ -493,7 +484,7 @@ func projectAdditionalURLCredentials(
 		projected, projection, err := credentialpolicy.ProjectRawURL(
 			item.Value,
 			credentialpolicy.Options{
-				Mode:               credentialpolicy.SecretReference,
+				Mode:               credentialpolicy.Preserve,
 				Source:             source,
 				RequestKey:         fmt.Sprintf("%s:additional_url:%d", options.CandidateKey, index),
 				NamePrefix:         options.NamePrefix + "_ADDITIONAL_URL",
@@ -539,7 +530,7 @@ func projectOAuthTokenURLCredentials(
 		projected, projection, err := credentialpolicy.ProjectRawURL(
 			surface.raw,
 			credentialpolicy.Options{
-				Mode:               credentialpolicy.SecretReference,
+				Mode:               credentialpolicy.Preserve,
 				Source:             surfaceSource,
 				RequestKey:         scriptOptions.CandidateKey + ":" + ref.Path + surface.requestKeySuffix,
 				NamePrefix:         firstNonEmpty(scriptOptions.NamePrefix, surface.namePrefix),
@@ -564,6 +555,7 @@ func projectOAuthTokenURLCredentials(
 		surface.set(projected)
 	}
 	appendRequirements(aggregate.Requirements)
+	ref.SetMetadata(attachPreservedCredentialTargetsMetadata(ref.Metadata(), aggregate.PreservedTargets))
 	review := ReviewCredentialProjection(aggregate, "OAuth token URL")
 	for _, finding := range review.Findings {
 		finding.ActionPath = ref.Path
@@ -583,7 +575,7 @@ func projectEnterpriseRequestSurface(
 	source := enterpriseSurfaceCredentialSource(ref, scriptOptions.SourceProfile)
 	requestKey := scriptOptions.CandidateKey + ":" + ref.Path
 	options := credentialpolicy.Options{
-		Mode:               credentialpolicy.SecretReference,
+		Mode:               credentialpolicy.Preserve,
 		Source:             source,
 		RequestKey:         requestKey,
 		NamePrefix:         scriptOptions.NamePrefix,
@@ -597,30 +589,26 @@ func projectEnterpriseRequestSurface(
 	targetInput := enterpriseSurfaceTarget(ref)
 	metadata := ref.Metadata()
 	originalURL := ""
-	projectedOriginalURL := ""
 	if metadata != nil {
 		originalURL, _ = metadata["original_url"].(string)
 	}
 	if strings.TrimSpace(originalURL) != "" {
 		urlOptions := options
-		urlOptions.TargetField = ref.Path + ".target"
+		urlOptions.TargetField = ref.Path + ".metadata.original_url"
 		projected, projection, err := credentialpolicy.ProjectRawURL(originalURL, urlOptions)
 		if err != nil || projection.Disposition == credentialpolicy.Rejected {
 			aggregate.Merge(projection)
 			targetInput = "/"
 			metadata["original_url"] = credential.Redacted
-			projectedOriginalURL = credential.Redacted
 			if err != nil {
 				aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_url_projection_failed"))
 			}
 		} else {
 			metadata["original_url"] = projected
-			projectedOriginalURL = projected
-			// The adapter may have made the executable target relative and
-			// thereby removed userinfo or another governed component from this
-			// provenance copy. Retain its protected requirement even when the
-			// remaining target projection is exact; identical target/query
-			// occurrences are de-duplicated by stable requirement ID.
+			// original_url is provenance only. Its disclosure-safe review
+			// findings remain useful, but its locators must never be attached to
+			// the action as if this metadata were the executable target.
+			projection.PreservedTargets = nil
 			aggregate.Merge(projection)
 		}
 		ref.SetMetadata(metadata)
@@ -681,15 +669,29 @@ func projectEnterpriseRequestSurface(
 		if base64Encoded && !deferredBase64Template {
 			decoded, decodeErr := base64.StdEncoding.DecodeString(body)
 			if decodeErr != nil {
-				payload = nil
-				aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_body_encoding_invalid"))
+				// The declared base64 is malformed, so its intended wire bytes
+				// are unknowable. Store the exact imported text using the DSL's
+				// valid base64 representation and gate execution; never replace
+				// credential material with a redaction sentinel.
+				payload = []byte(body)
+				enterpriseSetSurfaceBody(
+					ref,
+					base64.StdEncoding.EncodeToString(payload),
+				)
+				enterpriseSetSurfaceBodyEncoding(ref, "base64")
+				aggregate.Merge(blockedPreservedScriptCredentialProjection(
+					source,
+					"credential_request_body_encoding_invalid",
+					credentialpolicy.TargetRef{
+						RequestKey: requestKey,
+						Field:      ref.Path + ".body.opaque",
+					},
+				))
 			} else {
 				payload = decoded
 			}
 		}
-		if payload == nil {
-			enterpriseSetSurfaceBody(ref, enterpriseRedactedBody(encoding))
-		} else if !deferredBase64Template {
+		if payload != nil && !deferredBase64Template {
 			_, governed := credential.ParseReference(strings.TrimSpace(string(payload)))
 			if !governed {
 				bodyOptions := options
@@ -699,15 +701,23 @@ func projectEnterpriseRequestSurface(
 					enterpriseHeaderValue(headers, "Content-Type"),
 					bodyOptions,
 				)
-				aggregate.Merge(bodyProjection)
 				if bodyErr != nil || bodyProjection.Disposition == credentialpolicy.Rejected {
-					enterpriseSetSurfaceBody(ref, enterpriseRedactedBody(encoding))
-					if bodyErr != nil {
-						aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_body_projection_failed"))
-					}
+					// Preserve the original executable body. A parser failure
+					// is a review gate, not permission to erase a password the
+					// operator already imported.
+					aggregate.Merge(blockedPreservedScriptCredentialProjection(
+						source,
+						"credential_request_body_projection_failed",
+						credentialpolicy.TargetRef{
+							RequestKey: requestKey,
+							Field:      ref.Path + ".body.opaque",
+						},
+					))
 				} else if base64Encoded {
+					aggregate.Merge(bodyProjection)
 					enterpriseSetSurfaceBody(ref, base64.StdEncoding.EncodeToString(projectedBody))
 				} else {
+					aggregate.Merge(bodyProjection)
 					enterpriseSetSurfaceBody(ref, string(projectedBody))
 				}
 			}
@@ -728,35 +738,46 @@ func projectEnterpriseRequestSurface(
 			},
 			authOptions,
 		)
-		aggregate.Merge(authProjection)
 		if authErr != nil || authProjection.Disposition == credentialpolicy.Rejected {
-			auth.Password = credential.Redacted
-			auth.Token = credential.Redacted
-			if authErr != nil {
-				aggregate.Merge(rejectedScriptCredentialProjection(source, "credential_request_auth_projection_failed"))
-			}
+			aggregate.Merge(blockedPreservedScriptCredentialProjection(
+				source,
+				"credential_request_auth_projection_failed",
+				preservedAuthTargets(requestKey, ref.Path, auth)...,
+			))
 		} else {
+			aggregate.Merge(authProjection)
 			auth.Password = projectedAuth.Password
 			auth.Token = projectedAuth.Token
+			switch httpprotocol.NormalizeAuthType(auth.Type) {
+			case httpprotocol.AuthTypeBasic,
+				httpprotocol.AuthTypeBearer,
+				httpprotocol.AuthTypeDigest:
+				if err := httpprotocol.ValidateAuthWireValues(&protocol.AuthConfig{
+					Type:     auth.Type,
+					Username: auth.Username,
+					Password: auth.Password,
+					Token:    auth.Token,
+					Domain:   auth.Domain,
+				}); err != nil {
+					aggregate.Merge(blockedPreservedScriptCredentialProjection(
+						source,
+						"invalid_auth_wire_value",
+						preservedAuthTargets(requestKey, ref.Path, auth)...,
+					))
+				}
+			}
 		}
 		enterpriseSetSurfaceAuth(ref, auth)
 	}
 
 	appendRequirements(aggregate.Requirements)
+	ref.SetMetadata(attachPreservedCredentialTargetsMetadata(ref.Metadata(), aggregate.PreservedTargets))
 	review := ReviewCredentialProjection(aggregate, "imported HTTP request")
 	for _, finding := range review.Findings {
 		finding.ActionPath = ref.Path
 		*findings = append(*findings, finding)
 	}
 	sanitizeEnterpriseURLMetadata(ref)
-	if projectedOriginalURL != "" {
-		metadata = ref.Metadata()
-		if metadata == nil {
-			metadata = make(map[string]any)
-		}
-		metadata["original_url"] = projectedOriginalURL
-		ref.SetMetadata(metadata)
-	}
 }
 
 func enterpriseSurfaceCredentialSource(ref dslwalk.SurfaceRef, sourceProfile string) credentialpolicy.SourceRef {
@@ -796,6 +817,44 @@ func rejectedScriptCredentialProjection(source credentialpolicy.SourceRef, code 
 	}
 }
 
+func blockedPreservedScriptCredentialProjection(
+	source credentialpolicy.SourceRef,
+	code string,
+	targets ...credentialpolicy.TargetRef,
+) credentialpolicy.Result {
+	return credentialpolicy.Result{
+		Disposition: credentialpolicy.BlockedDraft,
+		Findings: []credentialpolicy.Finding{{
+			Code:        code,
+			Source:      source,
+			Disposition: credentialpolicy.BlockedDraft,
+		}},
+		PreservedTargets: append([]credentialpolicy.TargetRef(nil), targets...),
+	}
+}
+
+func preservedAuthTargets(
+	requestKey string,
+	actionPath string,
+	auth dsl.AuthConfig,
+) []credentialpolicy.TargetRef {
+	var targets []credentialpolicy.TargetRef
+	if auth.Password != "" {
+		targets = append(targets, credentialpolicy.TargetRef{
+			RequestKey: requestKey,
+			Field:      actionPath + ".auth.password",
+		})
+	}
+	if auth.Token != "" {
+		targets = append(targets, credentialpolicy.TargetRef{
+			RequestKey: requestKey,
+			Field:      actionPath + ".auth.token",
+			Occurrence: 1,
+		})
+	}
+	return targets
+}
+
 func appendEnterpriseProjectionFindingsForAllRequests(
 	script *dsl.Script,
 	input []importreview.Finding,
@@ -806,6 +865,33 @@ func appendEnterpriseProjectionFindingsForAllRequests(
 	}
 	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		if !runtimeSurfaceIsHTTPRequest(ref) {
+			return nil
+		}
+		for _, finding := range input {
+			finding.ActionPath = ref.Path
+			*findings = append(*findings, finding)
+		}
+		return nil
+	})
+}
+
+func appendBaseURLProjectionFindings(
+	script *dsl.Script,
+	input []importreview.Finding,
+	findings *[]importreview.Finding,
+) {
+	if len(input) == 0 {
+		return
+	}
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		usesBaseURL := false
+		for _, surface := range importURLCredentialSurfaces(ref) {
+			if surface.usesBaseURL {
+				usesBaseURL = true
+				break
+			}
+		}
+		if !usesBaseURL {
 			return nil
 		}
 		for _, finding := range input {
@@ -1150,7 +1236,18 @@ func enterpriseFirstSequenceTarget(action *dsl.Action) string {
 	return ""
 }
 
-func replaceScriptWithCredentialTraversalReviewDraft(script *dsl.Script, sourceProfile string) {
+func credentialTraversalSnapshot(script *dsl.Script) string {
+	if script == nil {
+		return ""
+	}
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(payload)
+}
+
+func replaceScriptWithCredentialTraversalReviewDraft(script *dsl.Script, sourceProfile, snapshot string) {
 	if script == nil {
 		return
 	}
@@ -1175,6 +1272,18 @@ func replaceScriptWithCredentialTraversalReviewDraft(script *dsl.Script, sourceP
 		Resolution: "reduce_or_replace_the_request_tree_and_remove_gate",
 		Gate:       importreview.GateExecution,
 	}})
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	if snapshot != "" {
+		script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"] = snapshot
+	}
 	script.Config.BaseURL = "https://set-base-url.invalid"
 	script.Init = nil
 	script.Actions = []dsl.Action{action}

@@ -310,7 +310,7 @@ func TestProjectAuthModesPreserveInheritanceAndExplicitNoAuth(t *testing.T) {
 	}
 }
 
-func TestUnsupportedAuthFailsClosedWithDurableGate(t *testing.T) {
+func TestUnsupportedAuthRetainsCredentialsBehindDurableGate(t *testing.T) {
 	t.Parallel()
 	draft, err := Project(validBaseScript(), []RequestInput{{
 		Request: Request{
@@ -329,9 +329,11 @@ func TestUnsupportedAuthFailsClosedWithDurableGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	action := draft.Script.Actions[0]
-	if action.Auth == nil || action.Auth.Type != "none" ||
-		action.Auth.Username != "" || action.Auth.Password != "" || action.Auth.Domain != "" {
-		t.Fatalf("unsupported source auth did not become an inert placeholder: %#v", action.Auth)
+	if action.Auth == nil || action.Auth.Type != "ntlm" ||
+		action.Auth.Username != "user" ||
+		action.Auth.Password != "{{secret.NTLM_PASSWORD}}" ||
+		action.Auth.Domain != "example" {
+		t.Fatalf("unsupported source auth did not retain its exact review fields: %#v", action.Auth)
 	}
 	if action.Metadata["execution_blocker"] != "import_review_required" {
 		t.Fatalf("execution gate = %#v", action.Metadata)
@@ -934,6 +936,74 @@ func TestFinalizeScriptDisablesImplicitTraceparentAndPreservesExplicitChoice(t *
 				t.Fatalf("traceparent setting was not normalized to %t", test.expected)
 			}
 		})
+	}
+}
+
+func TestMergePreservedCredentialTargetsMetadataKeepsOccurrences(t *testing.T) {
+	t.Parallel()
+	first := credentialpolicy.TargetRef{
+		RequestKey: "request-1",
+		Field:      "body.json",
+		Pointer:    "/password",
+		Occurrence: 1,
+	}
+	second := credentialpolicy.TargetRef{
+		RequestKey: "request-1",
+		Field:      "body.xml.mixed_content",
+		Pointer:    "/secret",
+		Occurrence: 2,
+	}
+	metadata := map[string]any{
+		dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+			map[string]any{
+				"request_key": first.RequestKey,
+				"field":       first.Field,
+				"pointer":     first.Pointer,
+				"occurrence":  float64(first.Occurrence),
+			},
+		},
+	}
+	merged := MergePreservedCredentialTargetsMetadata(
+		metadata,
+		[]credentialpolicy.TargetRef{first, second},
+	)
+	raw, ok := merged[dsl.ImportPreservedCredentialTargetsMetadataKey].([]credentialpolicy.TargetRef)
+	if !ok {
+		t.Fatalf("merged targets type = %T", merged[dsl.ImportPreservedCredentialTargetsMetadataKey])
+	}
+	if !reflect.DeepEqual(raw, []credentialpolicy.TargetRef{first, second}) {
+		t.Fatalf("merged targets = %#v", raw)
+	}
+}
+
+func TestAttachScriptPreservedCredentialTargetsMergesExistingTargets(t *testing.T) {
+	t.Parallel()
+	existing := credentialpolicy.TargetRef{
+		RequestKey: "script-config",
+		Field:      "config.http.proxy.url.query",
+		Pointer:    "token",
+		Occurrence: 1,
+	}
+	added := credentialpolicy.TargetRef{
+		RequestKey: "script-base-url",
+		Field:      "config.base_url.userinfo",
+		Index:      0,
+	}
+	script := validBaseScript()
+	script.Metadata = &dsl.ScriptMetadata{
+		Import: &dsl.ImportMetadata{
+			Source: "fixture",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{existing},
+			},
+		},
+	}
+
+	attachScriptPreservedCredentialTargets(script, []credentialpolicy.TargetRef{existing, added})
+
+	targets := preservedCredentialTargetsFromMetadata(script.Metadata.Import.Preserved)
+	if !reflect.DeepEqual(targets, []credentialpolicy.TargetRef{existing, added}) {
+		t.Fatalf("script targets = %#v", targets)
 	}
 }
 

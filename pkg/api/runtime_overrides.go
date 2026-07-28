@@ -309,6 +309,16 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 		script.Config.WebRuntime = mergeWebRuntime(script.Config.WebRuntime, *overrides.WebRuntime)
 	}
 	if overrides.JavaVuser != nil {
+		// Scenario overrides are authored at execution time and are not covered
+		// by a source-import attestation. Keep strict credential rejection here
+		// even when the durable base script legitimately preserves imported
+		// credential-bearing JVM arguments.
+		overrideProbe := &dsl.Script{}
+		overrideProbe.Config.JavaVuser.AdditionalVMParameters =
+			append([]string(nil), overrides.JavaVuser.AdditionalVMParameters...)
+		if err := validateJavaVMParameterDisclosureSafety(overrideProbe); err != nil {
+			return err
+		}
 		applyJavaVuserRuntimeOverride(&script.Config.JavaVuser, overrides.JavaVuser)
 	}
 	if overrides.BrowserEmulation != nil {

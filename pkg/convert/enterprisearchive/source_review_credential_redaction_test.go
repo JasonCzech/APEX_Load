@@ -42,6 +42,50 @@ Action()
 	}
 }
 
+func TestDisclosureSafeEnterpriseSourceReviewRedactsPositionalRuntimeCredentials(t *testing.T) {
+	t.Parallel()
+
+	const (
+		jndiPassword = "jndi-neutral-canary-52f1"
+		jdbcPassword = "jdbc-neutral-canary-76a4"
+		jdbcInline   = "jdbc-inline-canary-41e8"
+		sapPassword  = "sap-neutral-canary-98c3"
+	)
+	review := BuildSourceReview(map[string]string{
+		"Actions.java": `
+env.put(Context.PROVIDER_URL, "smf://broker.example.test:55555");
+env.put(Context.SECURITY_CREDENTIALS, "` + jndiPassword + `");
+DriverManager.getConnection("jdbc:postgresql://db.example.test/orders", "perf_user", "` + jdbcPassword + `");
+DriverManager.getConnection("jdbc:postgresql://embedded:` + jdbcInline + `@db.example.test/orders");
+`,
+		"Action.c": `
+sapgui_logon("001", "{User}", "` + sapPassword + `", "EN", LAST);
+sapgui_set_password("wnd[0]/usr/pwdRSYST-BCODE", "` + sapPassword + `", LAST);
+`,
+	}, nil)
+
+	disclosureSafeEnterpriseSourceReview(review)
+
+	payload, err := json.Marshal(review)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	for _, canary := range []string{jndiPassword, jdbcPassword, jdbcInline, sapPassword} {
+		if strings.Contains(string(payload), canary) {
+			t.Fatalf("source review retained positional credential %q: %s", canary, payload)
+		}
+	}
+	for _, safe := range []string{
+		"smf://broker.example.test:55555",
+		"jdbc:postgresql://db.example.test/orders",
+		"001",
+	} {
+		if !strings.Contains(string(payload), safe) {
+			t.Fatalf("source review lost noncredential context %q: %s", safe, payload)
+		}
+	}
+}
+
 func TestRedactEnterpriseCredentialParameterData(t *testing.T) {
 	t.Parallel()
 	const passwordCanary = "parameter-data-password-canary"

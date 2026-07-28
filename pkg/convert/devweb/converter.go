@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
@@ -129,6 +130,12 @@ var (
 			Construct: "dynamic template literal",
 			Detail:    "template literals with JavaScript expressions are not evaluated by the importer; replace dynamic values with explicit APEX data or variables",
 			Regex:     regexp.MustCompile("`[^`]*\\$\\{[^}]+\\}[^`]*`"),
+		},
+		{
+			Element:   "DevWeb residual JavaScript",
+			Construct: "residual JavaScript assignment",
+			Detail:    "JavaScript assignment outside a directly converted SDK construct is not executed by the static importer; replace any behavior it contributes before replay",
+			Regex:     regexp.MustCompile(`(?m)\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=`),
 		},
 	}
 )
@@ -257,8 +264,8 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 		diagnostics.Add(diag.Warning, "DevWeb completeness guard", result.Script.Name, fmt.Sprintf("%d SDK construct(s) were detected but not converted or explicitly skipped", gap))
 	}
 	// Route every HTTP request through the shared credential/request pipeline so
-	// authored credentials are governed at conversion time rather than redacted
-	// at the response boundary. Non-HTTP steps (WebSocket, gRPC, review-only
+	// authored credentials are reviewed consistently while remaining executable
+	// in the destination script. Non-HTTP steps (WebSocket, gRPC, review-only
 	// markers) keep their converter shape: the projector only understands the
 	// HTTP request surface.
 	//
@@ -285,6 +292,34 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 		requirements = append(requirements, report.Requirements...)
 		result.Findings = append(result.Findings, report.Findings...)
 	}
+	markDevWebCredentialPreservingImport(result.Script)
+	residualSource := devWebImportHasResidualBehavior(result)
+	if residualSource {
+		if strings.EqualFold(strings.TrimSpace(result.Script.Protocol), "http") &&
+			strings.TrimSpace(result.Script.Config.BaseURL) == "" {
+			// A review-only placeholder still needs a structurally valid HTTP
+			// draft. The execution gate below guarantees this unroutable host is
+			// never handed to transport.
+			result.Script.Config.BaseURL = "https://missing-base-url.apexload.invalid"
+		}
+		preserveDevWebGatedSource(result.Script, ctx.files)
+		residualFindings := applyDevWebResidualGates(
+			result.Script,
+			sourceFileName,
+		)
+		result.Findings = append(result.Findings, residualFindings...)
+		for index := range sourceMappings {
+			sourceMappings[index].Status = "review_only"
+			sourceMappings[index].SupportMode = "review_required"
+			sourceMappings[index].Notes = "Omitted DevWeb source behavior affects this flow; the generated action remains blocked until the behavior is replaced."
+		}
+	}
+	uniquify.DeduplicateActionNames(result.Script)
+	for index := range sourceMappings {
+		if index < len(result.Script.Actions) {
+			sourceMappings[index].TargetName = result.Script.Actions[index].Name
+		}
+	}
 	result.SecretRequirements = publicDevWebCredentialRequirements(requirements)
 	result.ProtectedRequirements.Store(requirements)
 	for _, finding := range result.Findings {
@@ -292,14 +327,39 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 	}
 
 	result.Unsupported = diagnostics.Items()
-	// Redact the discovered credential values from the source text before it
-	// becomes public review evidence. The projector governed them in the
-	// executable script; the source review is a separate disclosure surface.
+	// Redact discovered credential values from source-review evidence without
+	// changing the executable destination script.
+	credentialDataBindings := devWebCredentialDataBindings(result.Script.Actions)
+	markDevWebCredentialDataBindings(result.Script, credentialDataBindings)
 	reviewFiles := make(map[string]string, len(ctx.files))
+	redactedReviewFiles := make(map[string]struct{})
 	for name, fileContent := range ctx.files {
-		reviewFiles[name] = redactDevWebCredentialValues(fileContent, requirements)
+		redacted, changed := redactDevWebCredentialValues(fileContent, requirements, result.Script.Actions)
+		if dataRedacted, dataChanged := redactDevWebCredentialDataFile(
+			name,
+			redacted,
+			credentialDataBindings,
+		); dataChanged {
+			redacted = dataRedacted
+			changed = true
+		}
+		if residualSource {
+			redacted = disclosureSafeDevWebResidualSource(fileContent)
+			changed = redacted != fileContent
+		}
+		reviewFiles[name] = redacted
+		if changed {
+			redactedReviewFiles[name] = struct{}{}
+		}
 	}
 	result.SourceReview = sourceview.Build(reviewFiles, sourceMappings)
+	if result.SourceReview != nil {
+		for index := range result.SourceReview.SourceFiles {
+			if _, ok := redactedReviewFiles[result.SourceReview.SourceFiles[index].Path]; ok {
+				result.SourceReview.SourceFiles[index].Redacted = true
+			}
+		}
+	}
 	return result, nil
 }
 
@@ -386,6 +446,13 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			stats.Skipped++
 			stats.UnsupportedCalls = append(stats.UnsupportedCalls, "load.WebRequest")
 			diagnostics.Add(diag.Warning, "DevWeb load.WebRequest", devwebLocation(block, match[0]), "WebRequest object literal could not be parsed; request was not converted")
+			steps = append(steps, newDevWebReviewStep(
+				block,
+				match[0],
+				"load.WebRequest",
+				"dynamic_request_shape",
+				"WebRequest object literal could not be parsed statically; recreate the request behavior before execution.",
+			))
 			continue
 		}
 		if requestVar != "" {
@@ -418,6 +485,13 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			stats.Skipped++
 			stats.UnsupportedCalls = append(stats.UnsupportedCalls, "load.WebRequest")
 			diagnostics.Add(diag.Warning, "DevWeb load.WebRequest", devwebLocation(block, call[0]), "WebRequest call does not use a statically parseable object literal; request was not converted")
+			steps = append(steps, newDevWebReviewStep(
+				block,
+				call[0],
+				"load.WebRequest",
+				"dynamic_request_shape",
+				"WebRequest call does not use a statically parseable object literal; recreate the request behavior before execution.",
+			))
 		}
 	}
 	for _, match := range correlationPattern.FindAllStringIndex(block.Body, -1) {
@@ -425,21 +499,13 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			continue
 		}
 		diagnostics.Add(diag.Warning, "DevWeb correlation helper", devwebLocation(block, match[0]), "correlation/extraction helper is not executed by the importer; recreate it with APEX Load extractors before replay")
-		lineContent := extractLine(block.Body, match[0])
-		steps = append(steps, parsedStep{
-			Protocol: "http",
-			Action: dsl.Action{
-				Name:  actionName(block.Name, "correlation_review"),
-				Type:  "review_required",
-				Value: strings.TrimSpace(lineContent),
-				Metadata: map[string]any{
-					"source": "DevWeb correlation helper",
-				},
-			},
-			Function:  "correlation",
-			StartLine: devwebLine(block, match[0]),
-			EndLine:   devwebLine(block, match[0]),
-		})
+		steps = append(steps, newDevWebReviewStep(
+			block,
+			match[0],
+			"DevWeb correlation helper",
+			"unsupported_correlation_helper",
+			"Correlation/extraction helper is not executed by the importer; recreate it with APEX Load extractors before execution.",
+		))
 	}
 	for _, match := range textCheckPattern.FindAllStringSubmatchIndex(block.Body, -1) {
 		if len(match) < 6 || match[2] < 0 || match[4] < 0 {

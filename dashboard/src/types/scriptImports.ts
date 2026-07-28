@@ -120,14 +120,17 @@ export interface ApplyParameterizationResponse {
   script: ScriptDefinition
   diffs: ParameterizationDiff[]
   applied_count: number
+  import_draft_expires_at?: string
   blocked?: boolean
   blocked_reason?: string
   warnings?: string[]
 }
 
-// A redacted credential location that must be replaced with a governed
-// {{secret.NAME}} reference before an imported script can be saved. The
-// original credential value is intentionally unavailable to the client.
+// A credential location presented for operator review. Most imports expose a
+// redacted location that can be replaced with a governed {{secret.NAME}}
+// reference. A server-marked preservation import may instead retain the
+// already-reviewed runtime value unless the operator explicitly selects a
+// project-secret binding.
 export interface SecretBindingRequirement {
   id: string
   path: string
@@ -140,6 +143,7 @@ export interface SecretBindingRequirement {
   script_id?: string
   script_name?: string
   source_value_available?: boolean
+  destination_value_preserved?: boolean
 }
 
 // Multiple requirements may deliberately select the same logical name. That
@@ -162,6 +166,7 @@ export interface ApplySecretBindingsRequest {
 export interface ApplySecretBindingsResponse {
   script: ScriptDefinition
   secret_binding_requirements: SecretBindingRequirement[]
+  import_draft_expires_at?: string
 }
 
 export interface ScriptImportResult<
@@ -201,6 +206,7 @@ export interface ScriptImportResult<
   source_secret_migration_allowed?: boolean
   import_session_id?: string
   expires_at?: string
+  import_draft_expires_at?: string
   preflight?: ReplayPreflight
 }
 

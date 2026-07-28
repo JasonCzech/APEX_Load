@@ -181,7 +181,7 @@ func sanitizeNativeJSONStringBody(sourcePath, body string) (string, []SecretRequ
 						occurrences[identity],
 						scalar,
 					)
-					typed[key] = requirement.Replacement
+					typed[key] = nativeCredentialProjectionReplacement(requirement)
 					requirements = append(requirements, requirement)
 					continue
 				}
@@ -447,7 +447,7 @@ func rewriteNativeJSONCredentialValue(
 		requirement.Value = resolved
 	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return requirement.Replacement
+	return nativeCredentialProjectionReplacement(requirement)
 }
 
 func setNativeJSONStringValue(

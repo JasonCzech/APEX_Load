@@ -523,9 +523,10 @@ func TestHandleImportSample(t *testing.T) {
 	if len(result.Assumptions) != 0 {
 		t.Fatalf("assumptions = %v, want none", result.Assumptions)
 	}
-	if len(result.Unsupported) != 1 ||
-		!strings.Contains(result.Unsupported[0], "source exposed headers as a map") {
-		t.Fatalf("unsupported_elements = %v, want only source_order_unavailable information", result.Unsupported)
+	if len(result.Unsupported) != 2 ||
+		!containsSubstring(result.Unsupported, "imported credential was retained") ||
+		!containsSubstring(result.Unsupported, "source exposed headers as a map") {
+		t.Fatalf("unsupported_elements = %v, want credential review and source_order_unavailable information", result.Unsupported)
 	}
 	if len(result.Summary) != 0 {
 		t.Fatalf("summary = %#v, want empty", result.Summary)
@@ -689,11 +690,11 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Basic [REDACTED]" {
-		t.Fatalf("authorization header = %q, want disclosure-safe redaction even when sanitize_sensitive=false", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Basic dXNlcjpodW50ZXIyc2VjcmV0" {
+		t.Fatalf("authorization header = %q, want exact operator-authorized import value", got)
 	}
-	if strings.Contains(result.Script.Actions[0].Body, passwordValue) || !strings.Contains(result.Script.Actions[0].Body, "[REDACTED]") {
-		t.Fatalf("body = %q, want password redacted even when sanitize_sensitive=false", result.Script.Actions[0].Body)
+	if !strings.Contains(result.Script.Actions[0].Body, passwordValue) {
+		t.Fatalf("body = %q, want exact operator-authorized import value", result.Script.Actions[0].Body)
 	}
 
 	preservedReview, ok := result.Script.Metadata.Import.Preserved["source_review"]
@@ -2309,8 +2310,8 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if len(result.Scripts) != 1 || result.Script == nil || result.Script.Protocol != "sap_gui" {
 		t.Fatalf("scripts/script = %d/%#v, want SAP GUI external-runner draft", len(result.Scripts), result.Script)
 	}
-	if result.Script.Config.SAPGUI.ConnectionString != "[REDACTED]" || result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" {
-		t.Fatalf("sapgui config = %#v, want redacted connection string and governed password", result.Script.Config.SAPGUI)
+	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" || result.Script.Config.SAPGUI.Password != "" {
+		t.Fatalf("sapgui config = %#v, want exact imported connection string and no invented password", result.Script.Config.SAPGUI)
 	}
 	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
 		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)
@@ -5479,6 +5480,9 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	if result.Count != 1 || len(result.Scripts) != 1 || result.Scripts[0].ID == "" {
 		t.Fatalf("unexpected scripts response: %#v", result)
 	}
+	if strings.Contains(resp.Body.String(), "imported-jmeter-token") {
+		t.Fatalf("JMeter save response disclosed imported credential: %s", resp.Body.String())
+	}
 	if result.Scenario == nil || result.Scenario.ScriptCount != 1 {
 		t.Fatalf("expected saved scenario, got %#v", result.Scenario)
 	}
@@ -5487,11 +5491,8 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 		t.Fatal("saved JMeter script was not available")
 	}
 	authorization := stored.Script.Actions[0].Headers["Authorization"]
-	if strings.Contains(authorization, "imported-jmeter-token") || strings.Contains(authorization, maskedScriptSecret) {
-		t.Fatalf("stored JMeter authorization was not converted to a safe secret reference: %q", authorization)
-	}
-	if !strings.Contains(authorization, "{{secret.") {
-		t.Fatalf("stored JMeter authorization = %q, want secret reference", authorization)
+	if authorization != "Bearer imported-jmeter-token" {
+		t.Fatalf("stored JMeter authorization = %q, want exact imported credential", authorization)
 	}
 }
 

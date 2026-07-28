@@ -55,20 +55,18 @@ func TestConvertJMXProjectsArgumentCredentialWithoutSourceDisclosure(t *testing.
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
 	action := result.Scripts[0].Actions[0]
-	if strings.Contains(action.Headers["Authorization"], canary) ||
-		!strings.Contains(action.Headers["Authorization"], "{{secret.") {
-		t.Fatalf("Authorization header = %q, want governed secret", action.Headers["Authorization"])
+	if action.Headers["Authorization"] != "Bearer "+canary {
+		t.Fatalf("Authorization header = %q, want preserved source credential", action.Headers["Authorization"])
 	}
-	if len(result.SecretRequirements) != 1 ||
-		!containsJMeterString(result.SecretRequirements[0].SourceVariableNames, "token") {
-		t.Fatalf("source-variable requirement = %#v", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("source-variable requirements = %#v, want no reentry", result.SecretRequirements)
 	}
-	payload, err := json.Marshal(result)
+	payload, err := json.Marshal(result.SourceReview)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(payload), canary) {
-		t.Fatalf("public conversion disclosed source-variable credential: %s", payload)
+		t.Fatalf("source review disclosed source-variable credential: %s", payload)
 	}
 }
 

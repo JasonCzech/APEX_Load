@@ -1,7 +1,7 @@
 package openapi
 
 import (
-	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -59,10 +59,12 @@ paths:
 			if err != nil {
 				t.Fatalf("Convert returned error: %v", err)
 			}
-			requirements := result.ProtectedRequirements.Take()
-			defer clearOpenAPIProtectedValues(requirements)
-			if len(requirements) != 1 || requirements[0].Value != test.decoded {
-				t.Fatalf("protected requirements = %#v, want decoded credential", requirements)
+			if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+				t.Fatalf("preserved credential unexpectedly requires rebinding: %#v", requirements)
+			}
+			if len(result.Script.Actions) != 1 ||
+				result.Script.Actions[0].Headers["X-Api-Key"] != test.decoded {
+				t.Fatalf("destination script did not preserve decoded credential: %#v", result.Script.Actions)
 			}
 			if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
 				t.Fatalf("source review = %#v, want one source file", result.SourceReview)
@@ -122,10 +124,15 @@ paths:
 			if err != nil {
 				t.Fatalf("Convert returned error: %v", err)
 			}
-			requirements := result.ProtectedRequirements.Take()
-			defer clearOpenAPIProtectedValues(requirements)
-			if len(requirements) == 0 {
-				t.Fatalf("protected requirements = %#v, want block-scalar query credential", requirements)
+			if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+				t.Fatalf("preserved block-scalar credential unexpectedly requires rebinding: %#v", requirements)
+			}
+			if len(result.Script.Actions) != 1 {
+				t.Fatalf("actions = %#v", result.Script.Actions)
+			}
+			decodedTarget, decodeErr := url.QueryUnescape(result.Script.Actions[0].Target)
+			if decodeErr != nil || !strings.Contains(decodedTarget, test.decoded) {
+				t.Fatalf("destination target = %q, want preserved %q", result.Script.Actions[0].Target, test.decoded)
 			}
 			if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
 				t.Fatalf("source review = %#v, want one omitted source marker", result.SourceReview)
@@ -155,34 +162,18 @@ func TestConvertProjectsBaseURLUserinfoAndPercentQueryWithoutPublicDisclosure(t 
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
-	if len(requirements) != 2 {
-		t.Fatalf("protected requirements = %#v, want userinfo and query bindings", requirements)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved base URL credentials unexpectedly require rebinding: %#v", requirements)
 	}
-	if strings.Contains(result.Script.Config.BaseURL, "openapi-pass") ||
-		strings.Contains(result.Script.Config.BaseURL, "openapi%2Dquery") ||
-		!strings.Contains(result.Script.Config.BaseURL, "{{secret.") {
-		t.Fatalf("base URL was not projected safely: %q", result.Script.Config.BaseURL)
+	const wantBaseURL = "https://alice:openapi-pass@api.example.test/root?api_key=openapi%2Dquery"
+	if result.Script.Config.BaseURL != wantBaseURL {
+		t.Fatalf("base URL = %q, want preserved %q", result.Script.Config.BaseURL, wantBaseURL)
 	}
-	if len(result.Script.Actions) != 1 ||
-		result.Script.Actions[0].Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("base URL userinfo did not durably gate the request: %#v", result.Script.Actions)
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Metadata["execution_blocker"] != nil {
+		t.Fatalf("preserved base URL should remain executable: %#v", result.Script.Actions)
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, canary := range []string{
-		`openapi\u002dpass`,
-		"openapi-pass",
-		"openapi%2Dquery",
-		"openapi-query",
-	} {
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("serialized conversion disclosed %q: %s", canary, encoded)
-		}
-	}
+	assertOpenAPISourceReviewRedacted(t, result,
+		`openapi\u002dpass`, "openapi-pass", "openapi%2Dquery", "openapi-query")
 }
 
 func TestConvertProjectsBaseURLCredentialFromRelativeOAuthTokenURL(t *testing.T) {
@@ -206,24 +197,18 @@ func TestConvertProjectsBaseURLCredentialFromRelativeOAuthTokenURL(t *testing.T)
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
-	if len(requirements) != 1 || len(result.Script.Init) != 1 {
-		t.Fatalf("requirements/init = %#v / %#v", requirements, result.Script.Init)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved OAuth base credential unexpectedly requires rebinding: %#v", requirements)
+	}
+	if len(result.Script.Init) != 1 {
+		t.Fatalf("init = %#v", result.Script.Init)
 	}
 	init := result.Script.Init[0]
-	if strings.Contains(init.Target, "oauth-pass") ||
-		!strings.Contains(init.Target, requirements[0].Replacement) ||
+	const wantTokenURL = "https://alice:oauth-pass@api.example.test/oauth/token"
+	if init.Target != wantTokenURL ||
 		init.Params["token_url"] != init.Target ||
-		init.Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("relative OAuth token URL retained an ungoverned base credential: %#v", init)
+		init.Metadata["execution_blocker"] != nil {
+		t.Fatalf("relative OAuth token URL did not preserve executable base credential: %#v", init)
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), `oauth\u002dpass`) ||
-		strings.Contains(string(encoded), "oauth-pass") {
-		t.Fatalf("serialized OAuth conversion disclosed base credential: %s", encoded)
-	}
+	assertOpenAPISourceReviewRedacted(t, result, `oauth\u002dpass`, "oauth-pass")
 }

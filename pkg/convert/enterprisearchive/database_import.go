@@ -3,10 +3,14 @@ package enterprisearchive
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 var sqlStatementPattern = regexp.MustCompile(`(?is)\b(select|insert\s+into|update|delete\s+from|create\s+table|drop\s+table|alter\s+table|exec(?:ute)?|call|begin|commit|rollback)\b[\s\S]*`)
@@ -39,11 +43,63 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 		return nil, fmt.Errorf("no source functions found in action files")
 	}
 
+	var (
+		sawJavaJDBC      bool
+		jdbcConfigSet    bool
+		jdbcReviewReason []string
+		jdbcSourceRefs   []string
+	)
 	for _, fn := range functions {
 		if strings.EqualFold(strings.TrimSpace(fn.Name), "java_sql_connect") {
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.database.dsn", "{{secret.database_dsn}}", "config", "review_only", "Java JDBC connection details were redacted to {{secret.database_dsn}}; bind a governed DSN secret before replay.", SourceFunctionSupportReviewOnly))
-			result.Stats.ReviewOnlyFunctions++
-			recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+			sawJavaJDBC = true
+			sourceRef := databaseSourceRef(fn)
+			connection := fn.javaJDBCConnection
+			reason := ""
+			if connection == nil {
+				reason = "jdbc_connection_arguments_unavailable"
+			} else {
+				reason = strings.TrimSpace(connection.ReviewReason)
+				if strings.TrimSpace(connection.Driver) != "" &&
+					strings.TrimSpace(connection.DSN) != "" {
+					if !jdbcConfigSet {
+						result.Script.Config.Database.Driver = connection.Driver
+						result.Script.Config.Database.DSN = connection.DSN
+						jdbcConfigSet = true
+					} else if result.Script.Config.Database.Driver != connection.Driver ||
+						result.Script.Config.Database.DSN != connection.DSN {
+						reason = "jdbc_connection_configuration_conflict"
+					}
+				} else if reason == "" {
+					reason = "jdbc_connection_configuration_unresolved"
+				}
+			}
+
+			if reason == "" {
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(
+					fn,
+					"config.database.dsn",
+					"retained JDBC connection",
+					"config",
+					"converted",
+					"Java JDBC URL, username, password, and driver semantics were retained in the executable database configuration; ordinary disclosure surfaces mask the DSN.",
+					SourceFunctionSupportExecutable,
+				))
+				result.Stats.ContributorFunctions++
+				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+			} else {
+				jdbcReviewReason = append(jdbcReviewReason, reason)
+				jdbcSourceRefs = append(jdbcSourceRefs, sourceRef)
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(
+					fn,
+					"config.database.dsn",
+					"retained JDBC connection draft",
+					"config",
+					"review_only",
+					"Java JDBC connection material was retained where representable, but the connection shape requires operator repair before execution.",
+					SourceFunctionSupportReviewOnly,
+				))
+				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+			}
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(fn.Name), "java_sql_dynamic") {
@@ -88,11 +144,40 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	// Structure recognized source control flow (and strip the internal flow
 	// tags) just like the HTTP converter.
 	structureSourceControlFlow(result)
+	if len(jdbcReviewReason) > 0 {
+		applyDatabaseImportReviewGate(
+			result.Script,
+			jdbcReviewReason,
+			jdbcSourceRefs,
+		)
+		result.Warnings = append(
+			result.Warnings,
+			"Java JDBC connection behavior requires review; source connection material was retained where representable and every affected database action is blocked until the gate is resolved.",
+		)
+	}
 
 	if opts.RuntimeSettings != nil {
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
-	result.Warnings = append(result.Warnings, "Database DSN was imported as {{secret.database_dsn}}; replace it with a governed connection secret before replay.")
+	switch {
+	case sawJavaJDBC && jdbcConfigSet && len(jdbcReviewReason) == 0:
+		result.Warnings = append(
+			result.Warnings,
+			"Java JDBC connection credentials were retained in the executable destination configuration; review their scope and rotate them under normal operational policy.",
+		)
+	case sawJavaJDBC && jdbcConfigSet:
+		result.Warnings = append(
+			result.Warnings,
+			"Java JDBC connection fields were retained in the blocked destination configuration; repair the adapter or connection conflict without re-entering source credentials.",
+		)
+	case sawJavaJDBC && !jdbcConfigSet:
+		result.Warnings = append(
+			result.Warnings,
+			"Java JDBC connection expressions could not be resolved into a runnable DSN; the draft remains blocked until the retained source behavior is repaired.",
+		)
+	default:
+		result.Warnings = append(result.Warnings, "Database DSN was imported as {{secret.database_dsn}}; replace it with a governed connection secret before replay.")
+	}
 	return result, nil
 }
 
@@ -112,11 +197,86 @@ func appendDatabaseReviewAction(result *ConvertResult, fn ParsedFunction, reason
 	}
 	action.Metadata["review_reason"] = reason
 	action.Metadata["source"] = "java_jdbc_idiom"
+	importreview.ApplyToAction(&action, []importreview.Finding{{
+		Code:       "import_review_required",
+		Severity:   diag.Blocker,
+		Element:    "Java JDBC behavior",
+		Detail:     notes,
+		Location:   databaseSourceRef(fn),
+		Source:     "enterprise_script_archive",
+		ReasonCode: reason,
+		SourceRef:  databaseSourceRef(fn),
+		Resolution: "replace_behavior_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}})
 	actionIndex := actionCountForPhase(result.Script, fn.Phase)
 	appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "review_only", notes, SourceFunctionSupportReviewOnly))
 	appendActionForPhase(result.Script, fn.Phase, action)
-	result.Stats.ReviewOnlyFunctions++
 	recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+}
+
+func applyDatabaseImportReviewGate(
+	script *dsl.Script,
+	reasons []string,
+	sourceRefs []string,
+) {
+	if script == nil {
+		return
+	}
+	reasons = uniqueSortedDatabaseStrings(reasons)
+	sourceRefs = uniqueSortedDatabaseStrings(sourceRefs)
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		findings := make([]importreview.Finding, 0, len(reasons)*max(len(sourceRefs), 1))
+		refs := sourceRefs
+		if len(refs) == 0 {
+			refs = []string{"config.database.dsn"}
+		}
+		for _, reason := range reasons {
+			for _, sourceRef := range refs {
+				findings = append(findings, importreview.Finding{
+					Code:       "import_review_required",
+					Severity:   diag.Blocker,
+					Element:    "Java JDBC connection",
+					Detail:     "The imported JDBC connection cannot execute with exact source semantics until the retained connection behavior is repaired.",
+					Location:   ref.Path,
+					ActionPath: ref.Path,
+					Source:     "enterprise_script_archive",
+					ReasonCode: reason,
+					SourceRef:  sourceRef,
+					Resolution: "replace_behavior_and_remove_gate",
+					Gate:       importreview.GateExecution,
+				})
+			}
+		}
+		importreview.ApplyToAction(ref.Action, findings)
+		return nil
+	})
+}
+
+func databaseSourceRef(fn ParsedFunction) string {
+	file := strings.TrimSpace(fn.Filename)
+	if file == "" {
+		file = "java source"
+	}
+	if fn.LineNumber > 0 {
+		return fmt.Sprintf("%s line %d", file, fn.LineNumber)
+	}
+	return file
+}
+
+func uniqueSortedDatabaseStrings(values []string) []string {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for value := range set {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func convertDatabaseFunction(fn ParsedFunction) (dsl.Action, bool) {

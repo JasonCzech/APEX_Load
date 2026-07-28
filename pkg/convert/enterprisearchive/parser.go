@@ -37,8 +37,10 @@ type ParsedFunction struct {
 	sourceColumn                        int               // 1-based source column used to deduplicate embedded/fallback call discovery
 	sourceOffset                        int               // parser-local byte offset used only for stable evaluation ordering
 	sourceEndOffset                     int               // exclusive parser-local byte offset
+	sourceFunction                      string            // enclosing C function definition; used to preserve lifecycle ownership
 	containsUnsupportedTransactionCall  bool
 	dependsOnUnsupportedTransactionFlow bool
+	javaJDBCConnection                  *javaJDBCConnection
 }
 
 type ParsedCookie struct {
@@ -83,6 +85,7 @@ type SourceActionFile struct {
 	Name     string `json:"name"`
 	Phase    string `json:"phase,omitempty"`
 	Language string `json:"language,omitempty"`
+	Function string `json:"function,omitempty"`
 }
 
 // ProjectConfig holds parsed .usr file settings.
@@ -1039,6 +1042,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 					Name:     value,
 					Phase:    sourceActionPhaseFromUSRKey(key, value),
 					Language: sourceActionLanguage(value),
+					Function: strings.TrimSpace(key),
 				})
 			}
 			if strings.HasSuffix(strings.ToLower(value), ".c") || strings.HasSuffix(strings.ToLower(value), ".java") {
@@ -1089,7 +1093,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 		cfg.ActionFiles = []string{"Action.c"}
 	}
 	if len(cfg.SourceActionFiles) == 0 {
-		cfg.SourceActionFiles = []SourceActionFile{{Name: "Action.c", Phase: "action", Language: "c"}}
+		cfg.SourceActionFiles = []SourceActionFile{{Name: "Action.c", Phase: "action", Language: "c", Function: "Action"}}
 	}
 
 	return cfg, nil

@@ -35,9 +35,16 @@ const (
 	MaxRedactionPolicyBytes      = 256 << 10
 
 	// Runtime secret matchers are derived from write-only values and include
-	// reversible encodings that can appear in retained protocol evidence. Keep
-	// their compiled input bounded independently from the raw secret snapshot.
-	maxRuntimeSecretRedactionPatternBytes = 16 << 20
+	// reversible encodings that can appear in retained protocol evidence. The raw
+	// limits cover one maximum-sized shared-import request plus bounded live
+	// session/config material. Derived spellings consume only the remaining
+	// pattern budget; raw exact values are always admitted first and remain
+	// mandatory.
+	maxRuntimeSecretRedactionPatternBytes = 32 << 20
+	maxRuntimeSecretRedactionRawBytes     = 16 << 20
+	maxRuntimeSecretRedactionValues       = 101_024
+	maxRuntimeSecretRedactionReplacers    = 32
+	maxRuntimeSecretRedactionLayers       = 4
 )
 
 type RedactionRule struct {
@@ -51,8 +58,14 @@ type RedactionConfig struct {
 	compiled               []payloadReplacement
 	secretReplacers        []*strings.Replacer
 	runtimeSecretValues    map[string]struct{}
+	runtimeSecretVariants  map[string]struct{}
+	runtimeSecretRawBytes  int
 	runtimePatternBytes    int
 	runtimeMatcherComplete bool
+	// runtimeParent is an immutable exact-value matcher shared by every VUser.
+	// Per-VUser session/dynamic overlays point at that base instead of copying a
+	// potentially large imported matcher after every cookie or extraction update.
+	runtimeParent *RedactionConfig
 }
 
 var sensitiveSnapshotHeaderNames = map[string]struct{}{
@@ -160,7 +173,13 @@ func (c *RedactionConfig) ScrubText(value string) string {
 // memory-only runtime values. Protocols use this signal to suppress binary
 // evidence (notably screenshots), which cannot be safely text-redacted.
 func (c *RedactionConfig) HasRuntimeSecretMaterial() bool {
-	return c != nil && len(c.runtimeSecretValues) > 0
+	for depth := 0; c != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		if len(c.runtimeSecretValues) > 0 {
+			return true
+		}
+		c = c.runtimeParent
+	}
+	return false
 }
 
 // WithSecretValueRedaction returns a detached runtime-only redaction config
@@ -168,69 +187,120 @@ func (c *RedactionConfig) HasRuntimeSecretMaterial() bool {
 // scrubbed. Values are kept out of Rules so they cannot be serialized into
 // assignments, archives, API responses, or policy snapshots.
 func WithSecretValueRedaction(config *RedactionConfig, values []string) *RedactionConfig {
-	detached, _ := withSecretValueRedaction(config, values, false)
+	detached, _ := withSecretValueRedaction(config, values)
 	return detached
 }
 
-// WithSecretValueRedactionChecked constructs a complete exact-value matcher or
-// fails closed if every reversible spelling cannot fit within the bounded
-// runtime matcher budget. Runtime entry points use this form before executing
-// untrusted protocol code.
+// WithSecretValueRedactionChecked constructs a complete raw exact-value matcher
+// and a bounded set of common reversible spellings. Runtime entry points use
+// this form before executing untrusted protocol code. Optional encoded variants
+// never displace a raw value from the fixed matcher budget.
 func WithSecretValueRedactionChecked(config *RedactionConfig, values []string) (*RedactionConfig, error) {
-	return withSecretValueRedaction(config, values, true)
+	return withSecretValueRedaction(config, values)
 }
 
-func withSecretValueRedaction(config *RedactionConfig, values []string, requireComplete bool) (*RedactionConfig, error) {
-	if config != nil {
-		allPresent := true
-		hasValue := false
-		for _, value := range values {
-			if value == "" {
-				continue
-			}
-			hasValue = true
-			if _, exists := config.runtimeSecretValues[value]; !exists {
-				allPresent = false
-				break
-			}
+func withSecretValueRedaction(config *RedactionConfig, values []string) (*RedactionConfig, error) {
+	existingValues := allRuntimeSecretValues(config)
+	rawBytes := runtimeSecretRawValueBytes(existingValues)
+	if len(existingValues) > maxRuntimeSecretRedactionValues {
+		return nil, fmt.Errorf(
+			"resolved secrets exceed the runtime redaction value limit (%d)",
+			maxRuntimeSecretRedactionValues,
+		)
+	}
+	if rawBytes > maxRuntimeSecretRedactionRawBytes {
+		return nil, errors.New("resolved secrets exceed the runtime redaction raw-value limit")
+	}
+	newValues := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
 		}
-		if (!hasValue && (!requireComplete || config.runtimeMatcherComplete || len(config.runtimeSecretValues) == 0)) ||
-			(hasValue && allPresent && (!requireComplete || config.runtimeMatcherComplete)) {
-			return config, nil
+		if _, exists := existingValues[value]; exists {
+			continue
 		}
+		if _, exists := newValues[value]; exists {
+			continue
+		}
+		if len(existingValues)+len(newValues)+1 > maxRuntimeSecretRedactionValues {
+			return nil, fmt.Errorf(
+				"resolved secrets exceed the runtime redaction value limit (%d)",
+				maxRuntimeSecretRedactionValues,
+			)
+		}
+		if len(value) > maxRuntimeSecretRedactionRawBytes-rawBytes {
+			return nil, errors.New("resolved secrets exceed the runtime redaction raw-value limit")
+		}
+		newValues[value] = struct{}{}
+		rawBytes += len(value)
+	}
+	matcherReady := config != nil &&
+		(len(existingValues) == 0 || hasRuntimeSecretReplacers(config))
+	if len(newValues) == 0 &&
+		(config == nil || matcherReady) {
+		return config, nil
 	}
 
-	unique := make(map[string]struct{}, len(values))
-	if config != nil {
-		for value := range config.runtimeSecretValues {
-			unique[value] = struct{}{}
-		}
+	unique := make(map[string]struct{}, len(existingValues)+len(newValues))
+	for value := range existingValues {
+		unique[value] = struct{}{}
 	}
-	for _, value := range values {
-		if value != "" {
-			unique[value] = struct{}{}
-		}
+	for value := range newValues {
+		unique[value] = struct{}{}
 	}
 	if len(unique) == 0 {
 		return config, nil
 	}
 
-	orderedValues := make([]string, 0, len(unique))
-	for value := range unique {
-		orderedValues = append(orderedValues, value)
+	// Recompile the bounded set as one longest-first matcher. Besides avoiding
+	// cross-chunk substring ambiguity, rebuilding ensures optional variants from
+	// an older snapshot can never consume capacity needed by a newly added raw
+	// value.
+	variants, replacer, patternBytes, complete, err := compileRuntimeSecretReplacement(
+		sortedRuntimeSecretValues(unique),
+		nil,
+		0,
+	)
+	if err != nil {
+		return nil, err
 	}
-	sort.Slice(orderedValues, func(i, j int) bool {
-		if len(orderedValues[i]) == len(orderedValues[j]) {
-			return orderedValues[i] < orderedValues[j]
-		}
-		return len(orderedValues[i]) > len(orderedValues[j])
-	})
+	detached := cloneRedactionPolicy(config)
+	detached.runtimeSecretValues = unique
+	detached.runtimeSecretVariants = variants
+	detached.runtimeSecretRawBytes = rawBytes
+	detached.runtimePatternBytes = patternBytes
+	detached.runtimeMatcherComplete = complete
+	detached.secretReplacers = []*strings.Replacer{replacer}
+	return detached, nil
+}
 
-	variants := make(map[string]struct{}, len(unique)*8)
-	ordered := make([]string, 0, len(unique)*8)
-	patternBytes := 0
+func sortedRuntimeSecretValues(values map[string]struct{}) []string {
+	ordered := make([]string, 0, len(values))
+	for value := range values {
+		ordered = append(ordered, value)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if len(ordered[i]) == len(ordered[j]) {
+			return ordered[i] < ordered[j]
+		}
+		return len(ordered[i]) > len(ordered[j])
+	})
+	return ordered
+}
+
+func compileRuntimeSecretReplacement(
+	values []string,
+	existing map[string]struct{},
+	patternBytes int,
+) (map[string]struct{}, *strings.Replacer, int, bool, error) {
+	variants := make(map[string]struct{}, len(values)*8)
+	ordered := make([]string, 0, len(values)*8)
+	complete := true
 	addVariant := func(variant string, required bool) error {
 		if variant == "" || variant == redactedPayloadValue {
+			return nil
+		}
+		if _, exists := existing[variant]; exists {
 			return nil
 		}
 		if _, exists := variants[variant]; exists {
@@ -239,9 +309,10 @@ func withSecretValueRedaction(config *RedactionConfig, values []string, requireC
 		replacement := runtimeSecretPlaceholder(variant)
 		candidateBytes := len(variant) + len(replacement)
 		if candidateBytes > maxRuntimeSecretRedactionPatternBytes-patternBytes {
-			if requireComplete || required {
+			if required {
 				return errors.New("resolved secrets exceed the runtime redaction matcher limit")
 			}
+			complete = false
 			return nil
 		}
 		patternBytes += candidateBytes
@@ -250,30 +321,17 @@ func withSecretValueRedaction(config *RedactionConfig, values []string, requireC
 		return nil
 	}
 
-	// Raw spellings are mandatory even for the compatibility wrapper. Snapshot
-	// and extraction budgets keep their aggregate material below this ceiling.
-	for _, value := range orderedValues {
+	// Raw spellings are mandatory even for the compatibility wrapper.
+	for _, value := range values {
 		if err := addVariant(value, true); err != nil {
-			return nil, err
+			return nil, nil, patternBytes, false, err
 		}
 	}
-
-	budgetExhausted := false
-	for _, value := range orderedValues {
+	for _, value := range values {
 		for _, variant := range runtimeSecretRedactionVariants(value) {
-			before := len(ordered)
 			if err := addVariant(variant, false); err != nil {
-				return nil, err
+				return nil, nil, patternBytes, false, err
 			}
-			if !requireComplete && len(ordered) == before {
-				if _, exists := variants[variant]; !exists && variant != "" && variant != redactedPayloadValue {
-					budgetExhausted = true
-					break
-				}
-			}
-		}
-		if budgetExhausted {
-			break
 		}
 	}
 	sort.Slice(ordered, func(i, j int) bool {
@@ -286,16 +344,78 @@ func withSecretValueRedaction(config *RedactionConfig, values []string, requireC
 	for _, value := range ordered {
 		replacements = append(replacements, value, runtimeSecretPlaceholder(value))
 	}
+	return variants, strings.NewReplacer(replacements...), patternBytes, complete, nil
+}
+
+func cloneRedactionPolicy(config *RedactionConfig) *RedactionConfig {
 	detached := &RedactionConfig{}
 	if config != nil {
 		detached.Rules = append([]RedactionRule(nil), config.Rules...)
 		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
 	}
-	detached.runtimeSecretValues = unique
-	detached.runtimePatternBytes = patternBytes
-	detached.runtimeMatcherComplete = requireComplete
-	detached.secretReplacers = []*strings.Replacer{strings.NewReplacer(replacements...)}
+	return detached
+}
+
+// withRuntimeSecretValueOverlay attaches a bounded, per-VUser matcher to an
+// immutable shared base. The overlay owns only current dynamic/session values;
+// it never copies the source-import matcher or its raw values.
+func withRuntimeSecretValueOverlay(
+	base *RedactionConfig,
+	values []string,
+) (*RedactionConfig, error) {
+	if len(values) == 0 {
+		return base, nil
+	}
+	runtime, err := withSecretValueRedaction(nil, values)
+	if err != nil {
+		return nil, err
+	}
+	if runtime == nil {
+		return base, nil
+	}
+	if base == nil {
+		return runtime, nil
+	}
+	detached := cloneRedactionPolicy(base)
+	detached.secretReplacers = runtime.secretReplacers
+	detached.runtimeSecretValues = runtime.runtimeSecretValues
+	detached.runtimeSecretVariants = runtime.runtimeSecretVariants
+	detached.runtimeSecretRawBytes = runtime.runtimeSecretRawBytes
+	detached.runtimePatternBytes = runtime.runtimePatternBytes
+	detached.runtimeMatcherComplete = runtime.runtimeMatcherComplete
+	detached.runtimeParent = base
 	return detached, nil
+}
+
+func allRuntimeSecretValues(config *RedactionConfig) map[string]struct{} {
+	values := make(map[string]struct{})
+	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		for value := range config.runtimeSecretValues {
+			if value != "" {
+				values[value] = struct{}{}
+			}
+		}
+		config = config.runtimeParent
+	}
+	return values
+}
+
+func runtimeSecretRawValueBytes(values map[string]struct{}) int {
+	total := 0
+	for value := range values {
+		total += len(value)
+	}
+	return total
+}
+
+func hasRuntimeSecretReplacers(config *RedactionConfig) bool {
+	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		if len(config.secretReplacers) > 0 {
+			return true
+		}
+		config = config.runtimeParent
+	}
+	return false
 }
 
 func runtimeSecretPlaceholder(value string) string {
@@ -307,11 +427,9 @@ func runtimeSecretPlaceholder(value string) string {
 
 func mergedRuntimeSecretValues(config *RedactionConfig, values []string) []string {
 	unique := make(map[string]struct{}, len(values))
-	if config != nil {
-		for value := range config.runtimeSecretValues {
-			if value != "" {
-				unique[value] = struct{}{}
-			}
+	for value := range allRuntimeSecretValues(config) {
+		if value != "" {
+			unique[value] = struct{}{}
 		}
 	}
 	for _, value := range values {
@@ -354,8 +472,11 @@ func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionCo
 		compiled:               append([]payloadReplacement(nil), config.compiled...),
 		secretReplacers:        runtime.secretReplacers,
 		runtimeSecretValues:    runtime.runtimeSecretValues,
+		runtimeSecretVariants:  runtime.runtimeSecretVariants,
+		runtimeSecretRawBytes:  runtime.runtimeSecretRawBytes,
 		runtimePatternBytes:    runtime.runtimePatternBytes,
 		runtimeMatcherComplete: runtime.runtimeMatcherComplete,
+		runtimeParent:          runtime.runtimeParent,
 	}
 	return detached
 }
@@ -682,7 +803,7 @@ func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) ma
 }
 
 func scrubRuntimeSecretEvidenceValue(value any, config *RedactionConfig) any {
-	if config == nil || len(config.secretReplacers) == 0 {
+	if !hasRuntimeSecretReplacers(config) {
 		return value
 	}
 	switch typed := value.(type) {
@@ -804,13 +925,40 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 }
 
 func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
-	if config == nil {
+	if value == "" || !hasRuntimeSecretReplacers(config) {
 		return value
 	}
-	for _, replacer := range config.secretReplacers {
-		value = replacer.Replace(value)
+
+	// Every immutable matcher layer sees the same original evidence. Replacing a
+	// shorter parent value first must not prevent a longer overlay value from
+	// matching (or vice versa), so union their same-width placeholder spans
+	// before exposing the public marker.
+	original := value
+	masked := []byte(value)
+	matched := false
+	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		for _, replacer := range config.secretReplacers {
+			candidate := replacer.Replace(original)
+			if len(candidate) != len(original) {
+				// Runtime replacements are constructed same-width. Ignore an
+				// impossible malformed layer rather than indexing mismatched
+				// evidence; the ordinary scrubbers still run afterwards.
+				continue
+			}
+			for index := range candidate {
+				if candidate[index] != 0 {
+					continue
+				}
+				masked[index] = 0
+				matched = true
+			}
+		}
+		config = config.runtimeParent
 	}
-	return expandRuntimeSecretPlaceholders(value)
+	if !matched {
+		return value
+	}
+	return expandRuntimeSecretPlaceholders(string(masked))
 }
 
 func expandRuntimeSecretPlaceholders(value string) string {

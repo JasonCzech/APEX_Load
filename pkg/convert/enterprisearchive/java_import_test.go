@@ -3,6 +3,8 @@ package enterprisearchive
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -195,8 +197,9 @@ public class Actions {
 	if result.Script.Config.JMS.BrokerURL != "smf://broker.example.com:55555" || result.Script.Config.JMS.MessageVPN != "payments" {
 		t.Fatalf("jms config = %#v, want broker and vpn mapped", result.Script.Config.JMS)
 	}
-	if result.Script.Config.JMS.Password != "{{secret.jms_password}}" || result.Script.Config.JMS.Username != "{{secret.jms_username}}" {
-		t.Fatalf("jms credentials = %#v, want secret templates", result.Script.Config.JMS)
+	if result.Script.Config.JMS.Password != "super-secret" || result.Script.Config.JMS.Username != "loaduser" ||
+		result.Script.Config.JMS.Properties["recorded_security_principal"] != "loaduser@payments" {
+		t.Fatalf("jms credentials = %#v, want imported values retained", result.Script.Config.JMS)
 	}
 	var publish *string
 	var sawConsume bool
@@ -352,8 +355,8 @@ public class Actions {
 	if result.Script.Config.JMS.BrokerURL != "{{var.serverurl}}" || result.Script.Config.JMS.MessageVPN != "{{var.vpnname}}" {
 		t.Fatalf("jms config = %#v, want templated broker/vpn", result.Script.Config.JMS)
 	}
-	if result.Script.Config.JMS.Username != "{{secret.jms_username}}" || result.Script.Config.JMS.TLS == nil || result.Script.Config.JMS.TLS.TrustStoreRef != "gddnsolace.perf.truststore" {
-		t.Fatalf("jms config = %#v, want secret username and truststore", result.Script.Config.JMS)
+	if result.Script.Config.JMS.Username != "{{var.usernamejndi}}" || result.Script.Config.JMS.TLS == nil || result.Script.Config.JMS.TLS.TrustStoreRef != "gddnsolace.perf.truststore" {
+		t.Fatalf("jms config = %#v, want imported username binding and truststore", result.Script.Config.JMS)
 	}
 
 	var publish *dsl.Action
@@ -815,8 +818,14 @@ Action=Actions.java
 	addJavaZipFile(t, zw, "JavaDB/Actions.java", `import java.sql.*;
 
 public class Actions {
+  private static final String JDBC_URL = "jdbc:postgresql://db.example.test/orders";
+  private final String JDBC_USER = "perf_user";
+  private static final String JDBC_PASSWORD = "super-secret";
+
   public int action() throws Throwable {
-    Connection conn = DriverManager.getConnection("jdbc:postgresql://db.example.test/orders", "perf_user", "super-secret");
+    String password = "temporary-password";
+    password = Actions.JDBC_PASSWORD;
+    Connection conn = DriverManager.getConnection(JDBC_URL, this.JDBC_USER, password);
     String sql = "select id, status from orders where id = ?";
     PreparedStatement ps = conn.prepareStatement(sql);
     ps.executeQuery();
@@ -838,6 +847,25 @@ public class Actions {
 	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_jdbc" || result.DetectedProtocol.APEXLoadProtocol != "database" {
 		t.Fatalf("detected = %#v, want Java JDBC", result.DetectedProtocol)
 	}
+	if result.Script.Config.Database.Driver != "postgres" {
+		t.Fatalf("database driver = %q, want postgres", result.Script.Config.Database.Driver)
+	}
+	dsn, err := url.Parse(result.Script.Config.Database.DSN)
+	if err != nil {
+		t.Fatalf("parse retained database DSN: %v", err)
+	}
+	if dsn.User == nil {
+		t.Fatalf("database DSN = %q, want retained JDBC credentials", result.Script.Config.Database.DSN)
+	}
+	password, hasPassword := dsn.User.Password()
+	if dsn.Scheme != "postgres" ||
+		dsn.Host != "db.example.test" ||
+		dsn.Path != "/orders" ||
+		dsn.User.Username() != "perf_user" ||
+		!hasPassword ||
+		password != "super-secret" {
+		t.Fatalf("database DSN = %q, want retained PostgreSQL URL/user/password semantics", result.Script.Config.Database.DSN)
+	}
 	var query *dsl.Action
 	for i := range result.Script.Actions {
 		if result.Script.Actions[i].Type == "db_query" {
@@ -848,9 +876,24 @@ public class Actions {
 	if query == nil || query.Target != "select id, status from orders where id = ?" {
 		t.Fatalf("query action = %#v, want db_query SQL", query)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "java_sql_connect", "config.database.dsn", "review_only")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "java_sql_connect", "config.database.dsn", "converted")
+	reviewPayload, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("marshal source review: %v", err)
+	}
+	for _, forbidden := range []string{"super-secret", "temporary-password"} {
+		if strings.Contains(string(reviewPayload), forbidden) {
+			t.Fatalf("source review disclosed JDBC password material %q: %s", forbidden, reviewPayload)
+		}
+	}
 	if _, ok := javaActionByType(result.Script.Actions, "db_commit"); !ok {
 		t.Fatalf("actions = %#v, want db_commit", result.Script.Actions)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(strings.ToLower(warning), "replace it") ||
+			strings.Contains(strings.ToLower(warning), "re-enter") {
+			t.Fatalf("warning requires operator credential reentry: %q", warning)
+		}
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)
@@ -1366,9 +1409,14 @@ public class Actions {
 	if len(got) != 1 {
 		t.Fatalf("Authorization header_list values = %#v, want exactly one (branches are mutually exclusive)", got)
 	}
-	if !strings.HasPrefix(got[0], "{{secret.") {
-		t.Fatalf("Authorization value = %q, want whole-value governed credential", got[0])
+	if got[0] != "Bearer prod-token" {
+		t.Fatalf("Authorization value = %q, want imported executable header bytes preserved", got[0])
 	}
+	assertEnterpriseCredentialProvenanceRedacted(
+		t,
+		result,
+		[]string{"prod-token", "test-token"},
+	)
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)
 	}

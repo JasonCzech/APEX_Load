@@ -1198,6 +1198,44 @@ func resolveImportProjectIDFromJSON(r *http.Request, _ storage.Store) (string, i
 	return reconcileImportProjectID(r.URL.Query().Get("project_id"), req.ProjectID, "JSON body")
 }
 
+func resolveBridgedBrowserImportProjectID(r *http.Request, store storage.Store) (string, int, string) {
+	var req struct {
+		ProjectID string `json:"project_id,omitempty"`
+		Scripts   []struct {
+			ProjectID string  `json:"project_id,omitempty"`
+			FolderID  *string `json:"folder_id,omitempty"`
+		} `json:"scripts"`
+	}
+	if err := decodeRequestBody(r, &req); err != nil {
+		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
+	}
+	projectID, err := reconcileProjectIDCandidates(
+		r.URL.Query().Get("project_id"),
+		req.ProjectID,
+	)
+	if err != nil {
+		return "", http.StatusBadRequest, "project_id query parameter does not match JSON body project_id"
+	}
+	for _, script := range req.Scripts {
+		projectID, err = reconcileProjectIDCandidates(projectID, script.ProjectID)
+		if err != nil {
+			return "", http.StatusBadRequest, "browser recording scripts belong to different projects"
+		}
+		if script.FolderID == nil {
+			continue
+		}
+		folderProjectID, status, message := resolveFolderProjectIDValue(*script.FolderID, store)
+		if status != 0 {
+			return "", status, message
+		}
+		projectID, err = reconcileProjectIDCandidates(projectID, folderProjectID)
+		if err != nil {
+			return "", http.StatusBadRequest, "browser recording script folder belongs to a different project"
+		}
+	}
+	return normalizeProjectID(projectID), 0, ""
+}
+
 func resolveImportProjectIDFromJSONOrForm(r *http.Request, store storage.Store) (string, int, string) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {

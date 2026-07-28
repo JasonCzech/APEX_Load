@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -15,9 +16,12 @@ func retentionTestStore(t *testing.T) *SQLiteStore {
 		t.Fatalf("create store: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	now := time.Now().UTC()
-	if _, err := store.db.Exec(`INSERT INTO scripts (id, name, protocol, version, project_id, created_at, updated_at)
-		VALUES ('script-1', 'imported', 'http', 1, ?, ?, ?)`, DefaultProjectID, now, now); err != nil {
+	if err := store.SaveScript(&dsl.Script{
+		ID:        "script-1",
+		Name:      "imported",
+		Protocol:  "http",
+		ProjectID: DefaultProjectID,
+	}); err != nil {
 		t.Fatalf("seed script: %v", err)
 	}
 	return store
@@ -33,8 +37,13 @@ func retentionInput(scriptID, projectID, sha string) *ImportSourceRetention {
 			SHA256:       sha,
 			SizeBytes:    128,
 		},
-		SourceFormat:    "openapi",
-		CanonicalScript: &dsl.Script{ID: scriptID, Name: "imported", Protocol: "http"},
+		SourceFormat: "openapi",
+		CanonicalScript: &dsl.Script{
+			ID:        scriptID,
+			Name:      "imported",
+			Protocol:  "http",
+			ProjectID: projectID,
+		},
 	}
 }
 
@@ -95,14 +104,14 @@ func TestRetainImportSourceRejectsCrossProjectScript(t *testing.T) {
 
 	// Nothing may be left behind by the refusal.
 	var revisions int
-	if err := store.db.QueryRow(`SELECT COUNT(*) FROM import_source_revisions`).Scan(&revisions); err != nil {
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM bruno_source_revisions`).Scan(&revisions); err != nil {
 		t.Fatalf("count revisions: %v", err)
 	}
 	if revisions != 0 {
 		t.Fatalf("refused retention still wrote %d revision(s)", revisions)
 	}
 	var artifacts int
-	if err := store.db.QueryRow(`SELECT COUNT(*) FROM import_source_artifacts`).Scan(&artifacts); err != nil {
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM bruno_source_artifacts`).Scan(&artifacts); err != nil {
 		t.Fatalf("count artifacts: %v", err)
 	}
 	if artifacts != 0 {
@@ -153,5 +162,75 @@ func TestRetainImportSourceRequiresSourceFormat(t *testing.T) {
 	input.SourceFormat = "  "
 	if _, err := store.RetainImportSource(input); err == nil {
 		t.Fatal("expected retention to require a source format")
+	}
+}
+
+func TestRetainImportSourceRejectsDelayedStaleActivation(t *testing.T) {
+	store := retentionTestStore(t)
+
+	committedA, err := store.GetScript("script-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	delayedA := retentionInput("script-1", DefaultProjectID, "sha-delayed-a")
+	delayedA.CanonicalScript = committedA
+
+	// Model publication A being delayed after its script commit while a later
+	// replacement B commits and publishes first.
+	startDelayedA := make(chan struct{})
+	delayedAResult := make(chan error, 1)
+	go func() {
+		<-startDelayedA
+		_, retainErr := store.RetainImportSource(delayedA)
+		delayedAResult <- retainErr
+	}()
+
+	committedB := cloneBrunoScript(committedA)
+	committedB.Name = "replacement-b"
+	committedB.Actions = []dsl.Action{{
+		Name:   "B",
+		Type:   "request",
+		Method: "GET",
+		Target: "/b",
+	}}
+	if err := store.SaveScript(committedB); err != nil {
+		t.Fatal(err)
+	}
+	committedB, err = store.GetScript("script-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	retentionB := retentionInput("script-1", DefaultProjectID, "sha-current-b")
+	retentionB.CanonicalScript = committedB
+	currentRevision, err := store.RetainImportSource(retentionB)
+	if err != nil {
+		t.Fatalf("retain current replacement B: %v", err)
+	}
+
+	close(startDelayedA)
+	if err := <-delayedAResult; !errors.Is(err, ErrImportSourceScriptChanged) {
+		t.Fatalf("delayed retention A error = %v, want %v", err, ErrImportSourceScriptChanged)
+	}
+
+	active, err := store.GetActiveBrunoSourceRevision("script-1", DefaultProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.ID != currentRevision.ID {
+		t.Fatalf("delayed A activated revision %q over current B %q", active.ID, currentRevision.ID)
+	}
+	artifact, err := store.GetBrunoSourceArtifact(active.RawArtifactID, DefaultProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if artifact.SHA256 != "sha-current-b" {
+		t.Fatalf("active artifact SHA = %q, want current B", artifact.SHA256)
+	}
+	var artifactCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM bruno_source_artifacts`).Scan(&artifactCount); err != nil {
+		t.Fatal(err)
+	}
+	if artifactCount != 1 {
+		t.Fatalf("stale retention left %d artifacts, want only current B", artifactCount)
 	}
 }

@@ -233,6 +233,16 @@ func wsdlImportReviewMetadata(findings []importreview.Finding, sourcePath, point
 	}
 }
 
+func wsdlExecutionGatingFindings(findings []importreview.Finding) []importreview.Finding {
+	out := make([]importreview.Finding, 0, len(findings))
+	for _, finding := range findings {
+		if finding.Gate == importreview.GateExecution || finding.Severity == diag.Blocker {
+			out = append(out, finding)
+		}
+	}
+	return importreview.NormalizeFindings(out)
+}
+
 func sourceLocation(path, pointer string) string {
 	path = strings.TrimSpace(path)
 	pointer = strings.TrimSpace(pointer)
@@ -277,8 +287,9 @@ func redactWSDLProjectedSecrets(files map[string]string, secrets []wsdlProjected
 		if replacer != nil {
 			content = replacer.Replace(content)
 		}
-		if wsdlXMLContainsDecodedProtectedValue(content, replacer) {
-			content = "<!-- [WSDL SOURCE OMITTED: ENCODED CREDENTIAL VALUE REQUIRES PROTECTED BINDING] -->"
+		if wsdlXMLContainsDecodedProtectedValue(content, replacer) ||
+			wsdlXMLContainsSensitiveURL(content) {
+			content = "<!-- [WSDL SOURCE OMITTED: ENCODED CREDENTIAL VALUE CANNOT BE SAFELY REDACTED IN PLACE] -->"
 		}
 		// Source review is a disclosure surface, including for unused schema
 		// branches that never contribute a generated request and therefore never
@@ -289,6 +300,33 @@ func redactWSDLProjectedSecrets(files map[string]string, secrets []wsdlProjected
 		out[name] = content
 	}
 	return out
+}
+
+func wsdlXMLContainsSensitiveURL(content string) bool {
+	decoder := xml.NewDecoder(strings.NewReader(content))
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			// Conversion already parsed the source document. If the public copy
+			// cannot be decoded, omit it rather than risk overlooking an
+			// alternate XML spelling of a credential-bearing URL.
+			return err != io.EOF
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		for _, attribute := range start.Attr {
+			value := strings.TrimSpace(attribute.Value)
+			if value != "" && scrub.ValueURL(value, scrub.Policy{}) != value {
+				// Re-serializing the XML merely to redact a decoded attribute
+				// would change the operator-facing source review and can miss
+				// entity spellings. Omit this review copy while retaining the
+				// exact credential-bearing URL in the destination script.
+				return true
+			}
+		}
+	}
 }
 
 func wsdlXMLContainsDecodedProtectedValue(content string, replacer *strings.Replacer) bool {

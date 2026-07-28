@@ -104,7 +104,10 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 			}
 			seenRefKeys[script.RefKey] = struct{}{}
 		}
-		if err := validateImportBatchCredentialSafety(script); err != nil {
+		if err := validateImportBatchCredentialSafety(
+			script,
+			commit.TrustPreservedExecutableCredentials,
+		); err != nil {
 			return nil, fmt.Errorf("validate import batch script %d: %w", index+1, err)
 		}
 		batch.ScriptIDs = append(batch.ScriptIDs, script.ID)
@@ -164,7 +167,7 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 	batch.RawArtifactID = rawArtifact.ID
 	batch.SanitizedArtifactID = sanitizedArtifact.ID
 
-	receiptResult, err := tx.Exec(`INSERT INTO import_batches (
+	receiptResult, err := tx.Exec(`INSERT INTO bruno_native_import_batches (
 		id, project_id, source_profile, receipt_version, idempotency_key,
 		request_digest_profile, request_sha256, raw_artifact_id, sanitized_artifact_id,
 		candidate_ids_json, script_ids_json, scripts_json, created_by, created_at
@@ -234,11 +237,15 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 			return nil, ErrImportBatchConcurrentChange
 		}
 	}
-	receiptScriptsJSON, err := json.Marshal(commit.Scripts)
+	receiptScripts, err := disclosureSafeImportBatchReceiptScripts(commit.Scripts)
+	if err != nil {
+		return nil, err
+	}
+	receiptScriptsJSON, err := json.Marshal(receiptScripts)
 	if err != nil {
 		return nil, fmt.Errorf("marshal import batch receipt scripts: %w", err)
 	}
-	result, err := tx.Exec(`UPDATE import_batches SET scripts_json = ? WHERE id = ? AND project_id = ?`,
+	result, err := tx.Exec(`UPDATE bruno_native_import_batches SET scripts_json = ? WHERE id = ? AND project_id = ?`,
 		string(receiptScriptsJSON), batch.ID, batch.ProjectID)
 	if err != nil {
 		return nil, err
@@ -263,6 +270,7 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 }
 
 func cloneImportBatchCommit(commit *ImportBatchCommit) (*ImportBatchCommit, error) {
+	trustPreservedExecutableCredentials := commit.TrustPreservedExecutableCredentials
 	payload, err := json.Marshal(commit)
 	if err != nil {
 		return nil, err
@@ -273,6 +281,7 @@ func cloneImportBatchCommit(commit *ImportBatchCommit) (*ImportBatchCommit, erro
 	if err := decoder.Decode(&clone); err != nil {
 		return nil, err
 	}
+	clone.TrustPreservedExecutableCredentials = trustPreservedExecutableCredentials
 	return &clone, nil
 }
 
@@ -376,7 +385,7 @@ func (s *SQLiteStore) getImportBatchByIdempotencyKey(
 		request_digest_profile, request_sha256,
 		raw_artifact_id, sanitized_artifact_id, candidate_ids_json, script_ids_json, scripts_json,
 		COALESCE(created_by, ''), created_at
-		FROM import_batches WHERE project_id = ? AND idempotency_key = ?`
+		FROM bruno_native_import_batches WHERE project_id = ? AND idempotency_key = ?`
 	args := []any{projectID, idempotencyKey}
 	if filterProfile {
 		query += ` AND source_profile = ?`
@@ -501,7 +510,11 @@ func (s *SQLiteStore) CommitBrunoNativeImport(commit *BrunoNativeImportCommit) (
 		Scripts:           commit.Scripts,
 		RawArtifact:       commit.RawArtifact,
 		SanitizedArtifact: commit.SanitizedArtifact,
-		RefKeyEnv:         commit.RefKeyEnv,
+		// The Bruno adapter is a trusted server-side source adapter. The generic
+		// storage boundary still requires each script's durable preservation
+		// marker before it will retain executable credential literals.
+		TrustPreservedExecutableCredentials: true,
+		RefKeyEnv:                           commit.RefKeyEnv,
 	}
 	result, err := s.CommitImportBatch(generic)
 	if err != nil {

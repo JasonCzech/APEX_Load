@@ -85,11 +85,11 @@ func TestFinalizeScriptGovernsSensitiveURLVariableBeforeExtractor(t *testing.T) 
 	if err != nil {
 		t.Fatalf("FinalizeScript: %v", err)
 	}
-	if got := result.Script.Actions[0].Target; !strings.Contains(got, "{{secret.") {
-		t.Fatalf("unproven target = %q, want governed secret reference", got)
+	if got, want := result.Script.Actions[0].Target, script.Actions[0].Target; got != want {
+		t.Fatalf("unproven target = %q, want imported expression %q", got, want)
 	}
-	if len(result.Requirements) == 0 {
-		t.Fatal("unproven credential variable created no requirement")
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved expression must not require reentry", result.Requirements)
 	}
 }
 
@@ -119,11 +119,13 @@ func TestFinalizeScriptDoesNotTrustStaticParameterAsURLCredentialProvenance(t *t
 	if err != nil {
 		t.Fatalf("FinalizeScript: %v", err)
 	}
-	if got := result.Script.Actions[0].Target; !strings.Contains(got, "{{secret.") {
-		t.Fatalf("static parameter target = %q, want governed secret reference", got)
+	if got, want := result.Script.Actions[0].Target, script.Actions[0].Target; got != want {
+		t.Fatalf("static parameter target = %q, want imported expression %q", got, want)
 	}
-	if len(result.Requirements) != 1 {
-		t.Fatalf("requirements = %#v, want static parameter credential binding", result.Requirements)
+	if len(result.Requirements) != 0 ||
+		len(result.Script.Parameters) != 1 ||
+		result.Script.Parameters[0].Values[0] != "static-token-value" {
+		t.Fatalf("preserved parameter source = %#v / %#v", result.Requirements, result.Script.Parameters)
 	}
 }
 

@@ -42,10 +42,11 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal public converter result: %v", err)
 	}
-	for _, forbidden := range []string{"synthetic-value", "{{secret."} {
-		if strings.Contains(string(publicResult), forbidden) {
-			t.Fatalf("public converter result retained false secret material %q: %s", forbidden, publicResult)
-		}
+	if !strings.Contains(string(publicResult), "synthetic-value") {
+		t.Fatalf("executable converter result lost imported password: %s", publicResult)
+	}
+	if strings.Contains(string(publicResult), "{{secret.") {
+		t.Fatalf("converter result replaced imported password with a binding: %s", publicResult)
 	}
 
 	projected := maskScriptSecrets(result.Script)
@@ -121,8 +122,8 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 		t.Fatalf("password data source was not redacted while preserving its runtime shape: %#v", passwordSource)
 	}
 	requestAction := acmeImportedActionContaining(t, projected, "<soap:Envelope")
-	if !acmeActionHasExecutionBlocker(requestAction, "credential_parameter_source_redacted") {
-		t.Fatalf("password parameter redaction did not leave an explicit replay gate: %#v", requestAction.Metadata)
+	if blocker := requestAction.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("masked read projection unexpectedly changed stored execution policy: %#v", requestAction.Metadata)
 	}
 	if issues := dsl.ValidateScriptIssues(projected); len(issues) != 0 {
 		t.Fatalf("projected script validation issues = %#v", issues)
@@ -232,6 +233,39 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 	if len(responseRequirements) != 0 {
 		t.Fatalf("enterprise archive HTTP import requirements = %#v, want none", responseRequirements)
 	}
+	var editableScript dsl.Script
+	if err := json.Unmarshal(envelope["script"], &editableScript); err != nil {
+		t.Fatalf("decode editable enterprise script: %v", err)
+	}
+	var editablePasswordSource *dsl.DataSource
+	for index := range editableScript.DataSources {
+		if editableScript.DataSources[index].Name == password.DataSource {
+			editablePasswordSource = &editableScript.DataSources[index]
+			break
+		}
+	}
+	if editablePasswordSource == nil ||
+		!strings.Contains(editablePasswordSource.InlineData, "synthetic-value") {
+		t.Fatalf("editable enterprise destination lost imported password bytes: %#v", editableScript.DataSources)
+	}
+	var reviewResult struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(envelope["result"], &reviewResult); err != nil {
+		t.Fatalf("decode enterprise review result: %v", err)
+	}
+	var reviewPasswordSource *dsl.DataSource
+	for index := range reviewResult.Script.DataSources {
+		if reviewResult.Script.DataSources[index].Name == password.DataSource {
+			reviewPasswordSource = &reviewResult.Script.DataSources[index]
+			break
+		}
+	}
+	if reviewPasswordSource == nil ||
+		strings.Contains(reviewPasswordSource.InlineData, "synthetic-value") ||
+		!strings.Contains(reviewPasswordSource.InlineData, maskedScriptSecret) {
+		t.Fatalf("enterprise review copy was not disclosure-safe: %#v", reviewResult.Script.DataSources)
+	}
 	for _, field := range []string{
 		"source_secret_session_id",
 		"source_secret_session_expires_at",
@@ -242,7 +276,7 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 		}
 	}
 
-	savablePayload, err := json.Marshal(projected)
+	savablePayload, err := json.Marshal(&editableScript)
 	if err != nil {
 		t.Fatalf("marshal projected ACME script for save: %v", err)
 	}
@@ -276,8 +310,19 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 		t.Fatalf("saved ACME runtime config = %#v", saved.Config)
 	}
 	savedAction := acmeImportedActionContaining(t, saved, "<soap:Envelope")
-	if !acmeActionHasExecutionBlocker(savedAction, credentialParameterSourceRedactedBlocker) {
-		t.Fatalf("saved ACME script lost its redacted parameter execution gate: %#v", savedAction.Metadata)
+	if blocker := savedAction.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("saved ACME script unexpectedly blocks preserved credentials: %#v", savedAction.Metadata)
+	}
+	var savedPasswordSource *dsl.DataSource
+	for index := range saved.DataSources {
+		if saved.DataSources[index].Name == password.DataSource {
+			savedPasswordSource = &saved.DataSources[index]
+			break
+		}
+	}
+	if savedPasswordSource == nil ||
+		!strings.Contains(savedPasswordSource.InlineData, "synthetic-value") {
+		t.Fatalf("saved ACME script lost executable password source: %#v", saved.DataSources)
 	}
 }
 

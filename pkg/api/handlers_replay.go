@@ -51,6 +51,9 @@ type ReplayScriptRequest struct {
 	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
 	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
 	Script          *dsl.Script            `json:"script,omitempty"`
+	// trustedPreservedImport is server-owned provenance. It is set only when
+	// replaying the unchanged durable script; JSON cannot opt into it.
+	trustedPreservedImport bool
 }
 
 func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -104,6 +107,8 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+	} else {
+		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
 	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -123,7 +128,11 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	}
 	var issues, warnings []string
 	var prepared bool
-	script, issues, warnings, prepared = s.prepareClassicReplayScript(w, script)
+	script, issues, warnings, prepared = s.prepareClassicReplayScript(
+		w,
+		script,
+		req.trustedPreservedImport,
+	)
 	if !prepared {
 		return
 	}
@@ -160,7 +169,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	defer cancelReplay()
 	leaseFailure := watchReplaySessionLease(replayCtx, cancelReplay, leaseSignal)
 
-	report, err := s.runner.ReplayScriptDefinitionContext(replayCtx, script, engine.ReplayOptions{
+	report, err := s.runner.replayScriptDefinitionContext(replayCtx, script, engine.ReplayOptions{
 		ReplaySessionID: replaySessionID,
 		GroupName:       req.GroupName,
 		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: "info", IgnoreThinkTime: ignoreThinkTime},
@@ -178,7 +187,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 			}
 			s.broadcastReplayProgress(replaySessionID, id, normalizeProjectID(script.ProjectID), event)
 		},
-	})
+	}, req.trustedPreservedImport)
 	if fenceErr := replayExecutionFenceError(executionCtx, leaseFailure); fenceErr != nil {
 		writeError(w, http.StatusServiceUnavailable, fenceErr.Error())
 		return
@@ -213,8 +222,17 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 // an object_ref-only browser action to a protocol adapter without a concrete
 // selector, while unresolved refs still participate in the normal preflight
 // response instead of failing later at runtime.
-func (s *Server) prepareClassicReplayScript(w http.ResponseWriter, script *dsl.Script) (*dsl.Script, []string, []string, bool) {
-	preparedScript, prepared := prepareTransientExecutableScript(w, script)
+func (s *Server) prepareClassicReplayScript(
+	w http.ResponseWriter,
+	script *dsl.Script,
+	trustedPreservedImport ...bool,
+) (*dsl.Script, []string, []string, bool) {
+	trusted := len(trustedPreservedImport) > 0 && trustedPreservedImport[0]
+	preparedScript, prepared := prepareTransientExecutableScript(
+		w,
+		script,
+		trusted,
+	)
 	if !prepared {
 		return nil, nil, nil, false
 	}
@@ -222,11 +240,18 @@ func (s *Server) prepareClassicReplayScript(w http.ResponseWriter, script *dsl.S
 	if resolvedScript != nil {
 		preparedScript = resolvedScript
 	}
-	preparedScript, prepared = prepareTransientExecutableScript(w, preparedScript)
+	preparedScript, prepared = prepareTransientExecutableScript(
+		w,
+		preparedScript,
+		trusted,
+	)
 	if !prepared {
 		return nil, nil, nil, false
 	}
-	issues := append(validateScriptForReplay(preparedScript), refIssues...)
+	issues := append(
+		validateScriptForReplayWithImportTrust(preparedScript, trusted),
+		refIssues...,
+	)
 	warnings := append(validationWarnings(preparedScript), refWarnings...)
 	return preparedScript, issues, warnings, true
 }
@@ -745,7 +770,33 @@ func replaySessionLeaseOperationTimeout(ttl time.Duration) time.Duration {
 // persisted, so plaintext credentials and executable sentinels must be
 // converted through the Credentials flow before any session or progress event
 // can observe them.
-func prepareTransientExecutableScript(w http.ResponseWriter, script *dsl.Script) (*dsl.Script, bool) {
+func prepareTransientExecutableScript(
+	w http.ResponseWriter,
+	script *dsl.Script,
+	trustedPreservedImport ...bool,
+) (*dsl.Script, bool) {
+	trusted := len(trustedPreservedImport) > 0 && trustedPreservedImport[0]
+	if trusted {
+		// This path is restricted to an unchanged server-owned durable import
+		// snapshot. Preserve its exact executable values, including JVM argv,
+		// while still rejecting an orphan response sentinel and stripping
+		// non-executable review material before it enters a runtime session.
+		candidate := cloneScriptDefinition(script)
+		if candidate == nil {
+			writeError(w, http.StatusBadRequest, "failed to prepare imported script for replay")
+			return nil, false
+		}
+		stripImportDraftAttestation(candidate)
+		if err := sanitizePersistentImportReviewSurfaces(candidate); err != nil {
+			writeError(w, http.StatusBadRequest, "failed to sanitize imported script review evidence")
+			return nil, false
+		}
+		if err := reconcileMaskedScriptSecrets(candidate, nil); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+		return candidate, true
+	}
 	projected := maskScriptSecrets(script)
 	if projected == nil {
 		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")

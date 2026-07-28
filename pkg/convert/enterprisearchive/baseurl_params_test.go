@@ -68,6 +68,12 @@ func TestResolveTemplatedBaseURL(t *testing.T) {
 			wantBaseURL: "https://host.example.com/mi/",
 		},
 		{
+			name:        "full URL parameter preserves escaped userinfo bytes",
+			baseURL:     "http://{server_url}/mi/",
+			params:      []dsl.Parameter{{Name: "server_url", Type: "list", Values: []string{"https://alice:p%2fword@host.example.com/source?ignored=1"}}},
+			wantBaseURL: "https://alice:p%2fword@host.example.com/mi/",
+		},
+		{
 			name:        "case-insensitive parameter name match",
 			baseURL:     "http://{ServerURL}/mi/",
 			params:      []dsl.Parameter{{Name: "ServerURL", Type: "list", Values: []string{"host.example.com"}}},
@@ -120,4 +126,21 @@ func TestResolveTemplatedBaseURLViaDataSource(t *testing.T) {
 		t.Fatalf("base URL = %q, want resolved from data source", result.Script.Config.BaseURL)
 	}
 	assertBaseURLParseable(t, result.Script.Config.BaseURL)
+}
+
+func TestSameOriginRelativeTargetPreservesWireSignificantURLComponents(t *testing.T) {
+	t.Parallel()
+
+	if got := makeRelative(
+		"https://user:password@example.test/orders",
+		"https://example.test",
+	); got != "https://user:password@example.test/orders" {
+		t.Fatalf("userinfo URL = %q, want absolute executable URL retained", got)
+	}
+	if got := makeRelative(
+		"https://EXAMPLE.test/orders/a%2Fb?signature=a%2Bb",
+		"https://example.test",
+	); got != "/orders/a%2Fb?signature=a%2Bb" {
+		t.Fatalf("encoded target = %q, want raw path/query encoding retained", got)
+	}
 }

@@ -15,11 +15,11 @@ const protectedBrunoNativeXMLBody = "<apexload-native-xml-body/>"
 const brunoNativeImporterIdentity = "apexload-bruno-native-importer"
 
 // preparePersistentBrunoNativeScript applies the ordinary durable-script
-// credential projection without allowing that generic projection to rewrite a
-// Bruno XML payload. Native conversion has already moved credential-valued XML
-// fields to governed {{secret.*}} references. Validate that invariant here,
-// protect the exact body while the rest of the script is projected, and then
-// restore the source bytes unchanged.
+// persistence boundary without allowing any generic response projection to
+// rewrite a Bruno XML payload. Imported credentials intentionally remain in
+// the durable execution copy; ordinary script reads mask them. Protect the
+// exact body while the rest of the script is reconciled, then restore the
+// source bytes unchanged.
 func preparePersistentBrunoNativeScript(script *dsl.Script) (*dsl.Script, error) {
 	if script == nil {
 		return nil, errors.New("native Bruno script is required")
@@ -28,20 +28,23 @@ func preparePersistentBrunoNativeScript(script *dsl.Script) (*dsl.Script, error)
 	if candidate == nil {
 		return nil, errors.New("clone native Bruno script")
 	}
+	preserveImportedCredentials := isCredentialPreservingImport(candidate)
 	protectedBodies := make(map[int]string)
 	for index := range candidate.Actions {
 		action := &candidate.Actions[index]
 		if !isBrunoNativeXMLAction(*action) {
 			continue
 		}
-		if err := validateBrunoNativeXMLCredentialBindings(action.Body); err != nil {
-			return nil, fmt.Errorf("action %q XML body: %w", action.Name, err)
+		if !preserveImportedCredentials {
+			if err := validateBrunoNativeXMLCredentialBindings(action.Body); err != nil {
+				return nil, fmt.Errorf("action %q XML body: %w", action.Name, err)
+			}
 		}
 		protectedBodies[index] = action.Body
 		action.Body = protectedBrunoNativeXMLBody
 	}
 
-	projected, err := preparePersistentLibraryScript(candidate, nil)
+	projected, err := preparePersistentImportedLibraryScript(candidate, nil, "bruno")
 	if err != nil {
 		return nil, err
 	}

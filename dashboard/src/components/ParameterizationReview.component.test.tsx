@@ -140,7 +140,7 @@ describe('ParameterizationReview', () => {
       selected_ids: ['pz_auto'],
       confirm_high_risk: false,
     }))
-    expect(onApplied).toHaveBeenCalledWith(parameterizedScript, expect.any(Array), ['pz_auto'])
+    expect(onApplied).toHaveBeenCalledWith(parameterizedScript, expect.any(Array), ['pz_auto'], undefined)
     expect(container.textContent).toContain('Applied 1 change(s)')
   })
 

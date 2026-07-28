@@ -171,8 +171,7 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	// in the map; keep the ordered HeaderList (which replay prefers over the map) in
 	// sync so the body stays parseable at replay.
 	ex.HeaderList = reconcileMultipartBoundaryInList(ex.HeaderList, ex.Headers)
-	mergeHARCookies(requestData["cookies"], ex.Headers, diagnostics, location)
-	sanitizeReplayHeaders(&ex, diagnostics, location)
+	mergeHARCookies(requestData["cookies"], &ex, diagnostics, location)
 	if startedAt, ok := parseHARStartedAt(item["startedDateTime"]); ok {
 		ex.StartedAt = startedAt
 		ex.HasStartedAt = true
@@ -487,7 +486,7 @@ func harParamsBody(postData map[string]any, headers map[string]string, diagnosti
 		contentType := firstNonEmpty(headerLookup(headers, "Content-Type"), stringValue(postData["mimeType"]))
 		return harMultipartBody(params, multipartBoundaryOrDefault(contentType, defaultHARMultipartBoundary), diagnostics, location)
 	}
-	values := url.Values{}
+	encoded := make([]string, 0, len(params))
 	assets := make([]dsl.DataSource, 0)
 	for _, item := range params {
 		param, ok := item.(map[string]any)
@@ -499,21 +498,18 @@ func harParamsBody(postData map[string]any, headers map[string]string, diagnosti
 			continue
 		}
 		value := stringValue(param["value"])
-		if filename := stringValue(param["fileName"]); filename != "" || value == "" {
+		if filename := stringValue(param["fileName"]); filename != "" {
 			assetName := sanitizeIdentifier(name)
-			if filename == "" {
-				filename = assetName
-			}
 			value = "{{file." + assetName + "}}"
 			assets = append(assets, fileAssetDataSource(assetName, filename, stringValue(param["contentType"])))
 			diagnostics.Add(diag.Warning, "HAR postData.params file", location, "form parameter "+name+" references file content that is not embedded in the HAR; replace the placeholder before replay")
 		}
-		values.Add(name, value)
+		encoded = append(encoded, url.QueryEscape(name)+"="+url.QueryEscape(value))
 	}
 	if !strings.Contains(mimeType, "application/x-www-form-urlencoded") && mimeType != "" {
 		diagnostics.Add(diag.Info, "HAR postData.params", location, "postData.params were serialized as URL-encoded form data because text was absent")
 	}
-	return values.Encode(), assets
+	return strings.Join(encoded, "&"), assets
 }
 
 func harMultipartBody(params []any, boundary string, diagnostics *diag.Collector, location string) (string, []dsl.DataSource) {
@@ -531,10 +527,7 @@ func harMultipartBody(params []any, boundary string, diagnostics *diag.Collector
 		value := stringValue(param["value"])
 		filename := stringValue(param["fileName"])
 		b.WriteString("--" + boundary + "\r\n")
-		if filename != "" || value == "" {
-			if filename == "" {
-				filename = "upload.bin"
-			}
+		if filename != "" {
 			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="` + filename + `"` + "\r\n")
 			contentType := stringValue(param["contentType"])
 			if contentType != "" {
@@ -590,22 +583,41 @@ func applyHARPostDataHeaders(requestData map[string]any, headers map[string]stri
 	}
 }
 
-func mergeHARCookies(value any, headers map[string]string, diagnostics *diag.Collector, location string) {
+func mergeHARCookies(value any, ex *exchange, diagnostics *diag.Collector, location string) {
 	items, ok := value.([]any)
-	if !ok || len(items) == 0 || headers == nil {
+	if !ok || len(items) == 0 || ex == nil || ex.Headers == nil {
 		return
 	}
-	deleteHeader(headers, "Cookie")
-	diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were not replayed verbatim; the runtime cookie jar owns Cookie headers")
-}
 
-func sanitizeReplayHeaders(ex *exchange, diagnostics *diag.Collector, location string) {
-	if ex == nil {
+	for _, header := range ex.HeaderList {
+		if strings.EqualFold(header.Name, "Cookie") {
+			diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were not synthesized because the explicit Cookie header is authoritative for replay")
+			return
+		}
+	}
+	if cookie := headerLookup(ex.Headers, "Cookie"); cookie != "" {
+		ex.HeaderList = append(ex.HeaderList, dsl.HeaderEntry{Name: "Cookie", Value: cookie})
+		diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were not synthesized because the explicit Cookie header is authoritative for replay")
 		return
 	}
-	if headerLookup(ex.Headers, "Cookie") != "" {
-		deleteHeader(ex.Headers, "Cookie")
-		diagnostics.Add(diag.Info, "HAR Cookie header stripped", location, "recorded Cookie header was omitted so replay uses the per-VUser cookie jar")
+
+	cookies := make([]string, 0, len(items))
+	for _, item := range items {
+		cookie, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(cookie["name"])
+		if name == "" {
+			continue
+		}
+		cookies = append(cookies, name+"="+stringValue(cookie["value"]))
 	}
-	ex.HeaderList = filterHeaderList(ex.HeaderList, "Cookie")
+	if len(cookies) == 0 {
+		return
+	}
+	cookieValue := strings.Join(cookies, "; ")
+	ex.Headers["Cookie"] = cookieValue
+	ex.HeaderList = append(ex.HeaderList, dsl.HeaderEntry{Name: "Cookie", Value: cookieValue})
+	diagnostics.Add(diag.Info, "HAR cookies[]", location, "recorded request cookies[] were serialized in source order into a Cookie header for exact replay")
 }

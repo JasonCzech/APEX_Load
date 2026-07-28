@@ -52,7 +52,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		if salesforceAugmentation.Script != result.Script {
 			preApplied = nil
 		}
-		writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 			Result:                result,
 			Script:                salesforceAugmentation.Script,
 			Warnings:              result.Warnings,
@@ -65,7 +65,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 			Parameterization:      buildImportParameterization(salesforceAugmentation.Script, preApplied),
 			Preflight:             preflight,
 			ProtectedRequirements: protectedRequirements,
-		}))
+		})
 		return
 	}
 
@@ -77,7 +77,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
 	attachImportReplayPreflight(result.Script, "har", preflight)
 
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                result,
 		Script:                result.Script,
 		Warnings:              result.Warnings,
@@ -90,7 +90,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
 		Preflight:             preflight,
 		ProtectedRequirements: protectedRequirements,
-	}))
+	})
 }
 
 func salesforceNativeRequested(r *http.Request) bool {

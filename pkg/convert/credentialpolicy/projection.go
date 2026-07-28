@@ -90,6 +90,7 @@ type Options struct {
 	PreGovernedHeaderOccurrences map[int]struct{}
 	TargetField                  string
 	multipartDepth               int
+	preserveSourceExpression     bool
 }
 
 // Result is the common sidecar returned by projection functions.
@@ -97,6 +98,11 @@ type Result struct {
 	Requirements []Requirement `json:"requirements,omitempty"`
 	Findings     []Finding     `json:"findings,omitempty"`
 	Disposition  Disposition   `json:"disposition"`
+	// PreservedTargets contains locators only, never source values. Import
+	// finalizers persist these locators beside the affected executable action
+	// so runtime redaction can recover literal credentials from the durable
+	// request without asking the operator to bind or re-enter them.
+	PreservedTargets []TargetRef `json:"-"`
 }
 
 // Merge combines result sidecars without changing encounter order.
@@ -106,6 +112,7 @@ func (result *Result) Merge(other Result) {
 	}
 	result.Requirements = append(result.Requirements, other.Requirements...)
 	result.Findings = append(result.Findings, other.Findings...)
+	result.PreservedTargets = append(result.PreservedTargets, other.PreservedTargets...)
 	result.Disposition = worseDisposition(result.Disposition, other.Disposition)
 }
 
@@ -210,6 +217,10 @@ func ClassifyWholeTemplate(value string, provenVars map[string]struct{}) (WholeT
 
 func normalizeOptions(options Options) (Options, error) {
 	if options.Mode == "" {
+		// Keep the historical library default for callers outside the import
+		// adapters. Importers that retain executable source values opt in to
+		// Preserve explicitly; an omitted policy must not silently weaken an
+		// existing projection boundary.
 		options.Mode = SecretReference
 	}
 	if !options.Mode.Valid() {
@@ -269,6 +280,65 @@ func exactResult() Result {
 	return Result{Disposition: ExecutableExact}
 }
 
+func preserved(source SourceRef, code string) Result {
+	if strings.TrimSpace(code) == "" {
+		code = "import_credential_preserved"
+	}
+	disposition := ExecutableExact
+	if code == "import_credential_review_incomplete" {
+		// The value remains byte-exact, but bounded classification did not
+		// inspect it completely. It must not be executable until reviewed.
+		disposition = BlockedDraft
+	}
+	return Result{
+		Disposition: disposition,
+		Findings: []Finding{{
+			Code:        code,
+			Source:      source,
+			Disposition: disposition,
+		}},
+	}
+}
+
+func preservedPayloadResult(payload []byte, options Options) Result {
+	if containsSensitiveNameHintWithOptions(payload, options) {
+		return preserved(options.Source, "import_credential_preserved")
+	}
+	return exactResult()
+}
+
+// preservedOpaquePayloadResult retains source bytes that a structured parser
+// could not inspect safely. The opaque locator deliberately names the complete
+// executable body instead of inventing a JSON/XML pointer that the runtime
+// could not verify. This lets runtime disclosure redaction protect the retained
+// bytes without making the operator re-enter them.
+func preservedOpaquePayloadResult(payload []byte, options Options, code string) Result {
+	result := blocked(options.Source, code)
+	if len(payload) == 0 {
+		return result
+	}
+	result.Merge(preservedOpaqueTargetResult(options))
+	return result
+}
+
+// preservedOpaqueTargetResult marks an exact executable body whose structured
+// representation was retained without complete inspection. The locator is
+// deliberately emitted regardless of a bounded name-hint scan: the fallback
+// exists precisely because classification was incomplete, so absence of a hint
+// is not proof that no literal credential remains.
+func preservedOpaqueTargetResult(options Options) Result {
+	item := preserved(options.Source, "import_credential_preserved")
+	field := strings.TrimSuffix(strings.TrimSpace(options.TargetField), ".")
+	if field == "" {
+		field = "body"
+	}
+	item.PreservedTargets = append(item.PreservedTargets, TargetRef{
+		RequestKey: options.RequestKey,
+		Field:      field + ".opaque",
+	})
+	return item
+}
+
 func blocked(source SourceRef, code string) Result {
 	return Result{
 		Disposition: BlockedDraft,
@@ -320,11 +390,24 @@ func projectSensitiveScalar(value, name string, source SourceRef, target TargetR
 	sourceExpression := value
 	value, sourceVariableNames := MaterializeSourceVariables(value, options)
 	if _, trusted := options.TrustedWholeValues[strings.TrimSpace(value)]; trusted {
-		return value, exactResult(), nil
+		result := exactResult()
+		if options.Mode == Preserve {
+			result.PreservedTargets = append(result.PreservedTargets, target)
+		}
+		return value, result, nil
 	}
 	kind, templateName := ClassifyWholeTemplate(value, options.ProvenVars)
 	switch kind {
 	case TemplateSecret:
+		if options.Mode == Preserve {
+			// A pre-governed secret reference is already runnable and does not
+			// represent a literal retained credential or a new binding.
+			reference, err := credential.Reference(templateName)
+			if err != nil {
+				return "", Result{}, err
+			}
+			return reference, exactResult(), nil
+		}
 		requirement, projected, err := NewRequirement(RequirementSpec{
 			Key:                 name,
 			Label:               name,
@@ -347,7 +430,19 @@ func projectSensitiveScalar(value, name string, source SourceRef, target TargetR
 	case TemplateEnv, TemplateDynamic:
 		// Already governed environment values and response-derived variables
 		// remain executable. They do not carry source migration material.
-		return value, exactResult(), nil
+		//
+		// Preserve-mode imports still need a value-free locator. The runtime
+		// cannot know the resolved env/var value while the durable script is
+		// inspected, and structured request bodies are not otherwise scanned
+		// wholesale after interpolation. Recording the affected field lets the
+		// execution boundary add the exact resolved value to its memory-only
+		// redaction matcher without changing the wire request or asking the
+		// operator to bind the credential again.
+		result := exactResult()
+		if options.Mode == Preserve {
+			result.PreservedTargets = append(result.PreservedTargets, target)
+		}
+		return value, result, nil
 	case TemplateUnproven:
 		// A variable-looking token is not trusted merely because of its syntax.
 		// Govern the complete value instead of leaving a potentially static
@@ -355,6 +450,19 @@ func projectSensitiveScalar(value, name string, source SourceRef, target TargetR
 		templateName = ""
 	}
 	_ = templateName
+	if options.Mode == Preserve {
+		// A literal imported credential is already present in the operator's
+		// source and must remain runnable in the destination script. It is a
+		// review finding, not a binding requirement: emitting a requirement
+		// here would make the UI ask the operator to re-enter a value that was
+		// deliberately retained.
+		result := preserved(source, "import_credential_preserved")
+		result.PreservedTargets = append(result.PreservedTargets, target)
+		if options.preserveSourceExpression {
+			return sourceExpression, result, nil
+		}
+		return value, result, nil
+	}
 	requirement, projected, err := NewRequirement(RequirementSpec{
 		Key:                 name,
 		Label:               name,
@@ -393,7 +501,8 @@ func projectSensitiveScalar(value, name string, source SourceRef, target TargetR
 	}
 	result := exactResult()
 	result.Requirements = append(result.Requirements, requirement)
-	if options.Mode == Audit {
+	switch options.Mode {
+	case Audit:
 		result.Merge(blocked(source, "import_credentials_unmanaged"))
 	}
 	return projected, result, nil
@@ -538,12 +647,20 @@ func ProjectHeaders(input []HeaderOccurrence, options Options) ([]HeaderOccurren
 		return nil, Result{}, err
 	}
 	if len(input) > options.Limits.MaxValues {
+		if options.Mode == Preserve {
+			return append([]HeaderOccurrence(nil), input...),
+				preserved(options.Source, "import_credential_review_incomplete"), nil
+		}
 		return nil, rejected(options.Source, "credential_header_count_limit_exceeded"), nil
 	}
 	totalBytes := 0
 	for _, header := range input {
 		size := len(header.Name) + len(header.Value)
 		if size > options.Limits.MaxBytes-totalBytes {
+			if options.Mode == Preserve {
+				return append([]HeaderOccurrence(nil), input...),
+					preserved(options.Source, "import_credential_review_incomplete"), nil
+			}
 			return nil, rejected(options.Source, "credential_header_size_limit_exceeded"), nil
 		}
 		totalBytes += size
@@ -655,6 +772,9 @@ func ProjectAuth(input AuthFields, options Options) (AuthFields, Result, error) 
 	authBytes := len(input.Type) + len(input.Username) + len(input.Password) +
 		len(input.Token) + len(input.Domain)
 	if authBytes > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return input, preserved(options.Source, "import_credential_review_incomplete"), nil
+		}
 		return AuthFields{}, rejected(options.Source, "credential_auth_size_limit_exceeded"), nil
 	}
 	out := input
@@ -689,20 +809,41 @@ func ProjectAuth(input AuthFields, options Options) (AuthFields, Result, error) 
 	return out, result, nil
 }
 
-// ProjectRawURL preserves authored query ordering and raw escaping. Sensitive
-// query values are governed as complete values. Userinfo and credential-like
-// fragments are sanitized but blocked because runtime URL parsing can alter
-// their encoding or semantics.
+// ProjectRawURL preserves authored query ordering and raw escaping. Preserve
+// mode retains valid, bounded URL bytes and reports credential-bearing values
+// for review without requiring re-entry. Other modes govern sensitive query
+// values as complete values and block userinfo or credential-like fragments
+// when runtime URL parsing could alter their encoding or semantics.
 func ProjectRawURL(raw string, options Options) (string, Result, error) {
 	options, err := normalizeOptions(options)
 	if err != nil {
 		return "", Result{}, err
 	}
 	if len(raw) > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return raw, preserved(options.Source, "import_credential_review_incomplete"), nil
+		}
 		return "", rejected(options.Source, "credential_url_limit_exceeded"), nil
 	}
 	if !utf8.ValidString(raw) {
+		// Go strings can hold invalid UTF-8, but JSON persistence cannot round
+		// trip those bytes. Returning this as an exact preserved URL would
+		// silently serialize replacement runes and change wire semantics.
 		return "", rejected(options.Source, "credential_url_invalid_utf8"), nil
+	}
+	if options.Mode == Preserve {
+		options.preserveSourceExpression = true
+		if !ValidRawURL(raw, options) {
+			result := blocked(options.Source, "credential_url_malformed")
+			if strings.Contains(raw, "@") ||
+				containsSensitiveNameHintWithOptions([]byte(raw), options) {
+				result.Merge(preserved(options.Source, "import_credential_preserved"))
+			}
+			return raw, result, nil
+		}
+		// Continue through the offset-preserving parser for valid URLs. In
+		// Preserve mode projectSensitiveScalar leaves every byte untouched but
+		// records the exact component locator required by runtime redaction.
 	}
 	result := exactResult()
 	projected := raw
@@ -741,7 +882,9 @@ func ProjectRawURL(raw string, options Options) (string, Result, error) {
 			}
 			projected = projected[:start] + replacement + projected[end:]
 			result.Merge(item)
-			result.Merge(blocked(options.Source, "credential_url_userinfo_review_required"))
+			if options.Mode != Preserve {
+				result.Merge(blocked(options.Source, "credential_url_userinfo_review_required"))
+			}
 		}
 	}
 
@@ -783,18 +926,39 @@ func ProjectRawURL(raw string, options Options) (string, Result, error) {
 			}
 			projected = projected[:fragment+1] + replacement
 			result.Merge(item)
-			result.Merge(blocked(options.Source, "credential_url_fragment_review_required"))
+			if options.Mode != Preserve {
+				result.Merge(blocked(options.Source, "credential_url_fragment_review_required"))
+			}
 		}
 	}
 	return projected, result, nil
 }
 
 func urlComponentTarget(options Options, component string) string {
-	prefix := strings.TrimSuffix(strings.TrimSpace(options.TargetField), ".")
+	return appendTargetField(options.TargetField, "url", component)
+}
+
+// appendTargetField composes an executable-field locator without discarding
+// an enclosing structured-body path. Multipart bodies can nest arbitrarily
+// (within the configured depth bound), so every child projector must retain
+// the complete outer part chain for runtime redaction.
+func appendTargetField(existing, fallback string, segments ...string) string {
+	prefix := strings.Trim(strings.TrimSpace(existing), ".")
 	if prefix == "" {
-		prefix = "url"
+		prefix = strings.Trim(strings.TrimSpace(fallback), ".")
 	}
-	return prefix + "." + component
+	for _, segment := range segments {
+		segment = strings.Trim(strings.TrimSpace(segment), ".")
+		if segment == "" {
+			continue
+		}
+		if prefix == "" {
+			prefix = segment
+		} else {
+			prefix += "." + segment
+		}
+	}
+	return prefix
 }
 
 // ParseFormURLEncoded parses an encoded form without collapsing order,
@@ -841,7 +1005,13 @@ func ParseFormURLEncoded(raw string, options Options) ([]FormField, error) {
 // ProjectFormURLEncoded projects an encoded form while retaining exact raw
 // bytes for every nonsensitive field.
 func ProjectFormURLEncoded(raw string, options Options) (string, []FormField, Result, error) {
-	return projectFormURLEncoded(raw, options, "form")
+	targetField := strings.Trim(strings.TrimSpace(options.TargetField), ".")
+	if targetField == "" {
+		targetField = "form"
+	} else {
+		targetField = appendTargetField(targetField, "", "form")
+	}
+	return projectFormURLEncoded(raw, options, targetField)
 }
 
 func projectFormURLEncoded(raw string, options Options, targetField string) (string, []FormField, Result, error) {
@@ -849,9 +1019,31 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 	if err != nil {
 		return "", nil, Result{}, err
 	}
+	if options.Mode == Preserve {
+		if len(raw) > options.Limits.MaxBytes ||
+			strings.Count(raw, "&")+1 > options.Limits.MaxValues {
+			opaqueOptions := options
+			opaqueOptions.TargetField = targetField
+			return raw, nil,
+				preservedOpaquePayloadResult(
+					[]byte(raw),
+					opaqueOptions,
+					"import_credential_review_incomplete",
+				), nil
+		}
+	}
 	fields, err := ParseFormURLEncoded(raw, options)
 	if err != nil {
 		code := "credential_form_malformed"
+		if options.Mode == Preserve {
+			opaqueOptions := options
+			opaqueOptions.TargetField = targetField
+			return raw, nil, preservedOpaquePayloadResult(
+				[]byte(raw),
+				opaqueOptions,
+				code,
+			), nil
+		}
 		if containsSensitiveNameHintWithOptions([]byte(raw), options) {
 			return "", nil, rejected(options.Source, code), nil
 		}
@@ -952,6 +1144,11 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 		return Multipart{}, Result{}, err
 	}
 	if len(input.Parts) > options.Limits.MaxParts {
+		if options.Mode == Preserve {
+			result := blocked(options.Source, "import_credential_review_incomplete")
+			result.Merge(preservedOpaqueTargetResult(options))
+			return cloneMultipart(input), result, nil
+		}
 		return Multipart{}, rejected(options.Source, "credential_multipart_part_limit_exceeded"), nil
 	}
 	if strings.TrimSpace(input.Boundary) == "" {
@@ -965,6 +1162,11 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 	for _, part := range input.Parts {
 		totalValues += len(part.Headers)
 		if totalValues > options.Limits.MaxValues {
+			if options.Mode == Preserve {
+				result := blocked(options.Source, "import_credential_review_incomplete")
+				result.Merge(preservedOpaqueTargetResult(options))
+				return cloneMultipart(input), result, nil
+			}
 			return Multipart{}, rejected(options.Source, "credential_multipart_value_limit_exceeded"), nil
 		}
 		size := len(part.Body)
@@ -987,6 +1189,11 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 			size += len(part.ContentType)
 		}
 		if size > options.Limits.MaxBytes-totalBytes {
+			if options.Mode == Preserve {
+				result := blocked(options.Source, "import_credential_review_incomplete")
+				result.Merge(preservedOpaqueTargetResult(options))
+				return cloneMultipart(input), result, nil
+			}
 			return Multipart{}, rejected(options.Source, "credential_multipart_size_limit_exceeded"), nil
 		}
 		totalBytes += size
@@ -1000,7 +1207,11 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 		out.Parts[index].Body = append([]byte(nil), part.Body...)
 		headerOptions := options
 		headerOptions.Source = chooseSource(part.Source, options.Source)
-		headerOptions.TargetField = fmt.Sprintf("multipart.parts[%d].headers", index)
+		headerOptions.TargetField = appendTargetField(
+			options.TargetField,
+			"",
+			fmt.Sprintf("multipart.parts[%d].headers", index),
+		)
 		// Request-header occurrence indexes have no relationship to indexes
 		// inside an individual MIME part. Carrying this exemption into part
 		// headers would let a pre-governed top-level header suppress projection
@@ -1034,11 +1245,11 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 			continue
 		}
 		source := chooseSource(part.Source, options.Source)
-		if part.FileName != "" {
+		if options.Mode != Preserve && part.FileName != "" {
 			result.Merge(rejected(source, "credential_multipart_sensitive_file_unsupported"))
 			continue
 		}
-		if !utf8.Valid(part.Body) {
+		if options.Mode != Preserve && !utf8.Valid(part.Body) {
 			result.Merge(rejected(source, "credential_multipart_sensitive_binary_unsupported"))
 			continue
 		}
@@ -1046,7 +1257,15 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 			string(part.Body),
 			sensitiveName,
 			source,
-			TargetRef{RequestKey: options.RequestKey, Field: "multipart.body", Index: index},
+			TargetRef{
+				RequestKey: options.RequestKey,
+				Field: appendTargetField(
+					options.TargetField,
+					"",
+					fmt.Sprintf("multipart.parts[%d].body", index),
+				),
+				Index: index,
+			},
 			index,
 			options,
 		)
@@ -1060,6 +1279,19 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 		return Multipart{}, result, nil
 	}
 	return out, result, nil
+}
+
+func cloneMultipart(input Multipart) Multipart {
+	out := Multipart{
+		Boundary: input.Boundary,
+		Parts:    make([]MultipartPart, len(input.Parts)),
+	}
+	for index, part := range input.Parts {
+		out.Parts[index] = part
+		out.Parts[index].Headers = append([]HeaderOccurrence(nil), part.Headers...)
+		out.Parts[index].Body = append([]byte(nil), part.Body...)
+	}
+	return out
 }
 
 func multipartPartHasDynamicHeader(part MultipartPart) bool {
@@ -1108,7 +1340,11 @@ func projectMultipartPartBody(
 		nestedOptions.Source.Pointer,
 		"/multipart/parts/"+strconv.Itoa(index)+"/body",
 	)
-	nestedOptions.TargetField = fmt.Sprintf("multipart.parts[%d].body", index)
+	nestedOptions.TargetField = appendTargetField(
+		options.TargetField,
+		"",
+		fmt.Sprintf("multipart.parts[%d].body", index),
+	)
 	_, _, inferredMultipart := inferMultipartWireType(body)
 	if kind == "multipart" || inferredMultipart {
 		nestedOptions.multipartDepth++
@@ -1175,24 +1411,67 @@ func ProjectGraphQL(input GraphQL, options Options) (GraphQL, Result, error) {
 	}
 	result := exactResult()
 	if len(input.Query)+len(input.Variables) > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return out, preservedOpaquePayloadResult(
+				append(append([]byte(nil), input.Query...), input.Variables...),
+				options,
+				"import_credential_review_incomplete",
+			), nil
+		}
 		return GraphQL{}, rejected(options.Source, "credential_graphql_limit_exceeded"), nil
 	}
 	containsLiteral, scanCode := scanGraphQLCredentialLiteral(input.Query, options)
 	if scanCode != "" {
+		if options.Mode == Preserve && strings.HasSuffix(scanCode, "_limit_exceeded") {
+			result.Merge(preservedOpaquePayloadResult(
+				input.Query,
+				options,
+				"import_credential_review_incomplete",
+			))
+			return out, result, nil
+		}
+		if options.Mode == Preserve && scanCode == "credential_graphql_malformed_sensitive" {
+			result.Merge(preservedOpaquePayloadResult(input.Query, options, scanCode))
+			return out, result, nil
+		}
 		return GraphQL{}, rejected(options.Source, scanCode), nil
 	}
 	if containsLiteral {
-		return GraphQL{}, rejected(options.Source, "credential_graphql_inline_literal_unsupported"), nil
+		if options.Mode == Preserve {
+			item := preserved(options.Source, "import_credential_preserved")
+			targetField := strings.TrimSuffix(strings.TrimSpace(options.TargetField), ".")
+			if targetField == "" {
+				targetField = "graphql"
+			}
+			item.PreservedTargets = append(item.PreservedTargets, TargetRef{
+				RequestKey: options.RequestKey,
+				Field:      targetField + ".query",
+			})
+			result.Merge(item)
+		} else {
+			return GraphQL{}, rejected(options.Source, "credential_graphql_inline_literal_unsupported"), nil
+		}
 	}
 	if len(bytes.TrimSpace(input.Variables)) == 0 {
 		return out, result, nil
 	}
-	variables, variableResult, err := ProjectJSON(input.Variables, options)
+	variableOptions := options
+	targetField := strings.TrimSuffix(strings.TrimSpace(options.TargetField), ".")
+	if targetField == "" {
+		targetField = "graphql"
+	}
+	variableOptions.TargetField = targetField + ".variables"
+	variables, variableResult, err := ProjectJSON(input.Variables, variableOptions)
 	if err != nil {
 		return GraphQL{}, Result{}, err
 	}
 	out.Variables = variables
 	result.Merge(variableResult)
+	if options.Mode == Preserve &&
+		containsSensitiveNameHintWithOptions(input.Query, options) &&
+		len(result.Findings) == 0 {
+		result.Merge(preserved(options.Source, "import_credential_preserved"))
+	}
 	return out, result, nil
 }
 
@@ -1297,9 +1576,25 @@ func ProjectXML(payload []byte, options Options) ([]byte, Result, error) {
 		return nil, Result{}, err
 	}
 	if len(payload) > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"import_credential_review_incomplete",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_xml_limit_exceeded"), nil
 	}
 	if !utf8.Valid(payload) {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"credential_xml_invalid_utf8",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_xml_invalid_utf8"), nil
 	}
 	decoder := xml.NewDecoder(bytes.NewReader(payload))
@@ -1348,6 +1643,14 @@ func ProjectXML(payload []byte, options Options) ([]byte, Result, error) {
 }
 
 func malformedXMLProjection(payload []byte, options Options) ([]byte, Result, error) {
+	if options.Mode == Preserve {
+		result := preservedOpaquePayloadResult(
+			payload,
+			options,
+			"credential_xml_malformed",
+		)
+		return append([]byte(nil), payload...), result, nil
+	}
 	if containsSensitiveNameHintWithOptions(payload, options) {
 		return nil, rejected(options.Source, "credential_xml_malformed"), nil
 	}
@@ -1356,6 +1659,7 @@ func malformedXMLProjection(payload []byte, options Options) ([]byte, Result, er
 
 type xmlFrame struct {
 	name       string
+	path       string
 	sensitive  bool
 	suppressed bool
 	hasChild   bool
@@ -1371,6 +1675,13 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 	var replacements []replacement
 	var stack []xmlFrame
 	values := 0
+	targetOccurrences := make(map[string]int)
+	nextTargetOccurrence := func(field, pointer string) int {
+		key := field + "\x00" + pointer
+		occurrence := targetOccurrences[key]
+		targetOccurrences[key] = occurrence + 1
+		return occurrence
+	}
 	for cursor := 0; cursor < len(payload); {
 		openRelative := bytes.IndexByte(payload[cursor:], '<')
 		if openRelative < 0 {
@@ -1411,6 +1722,30 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 				stack[len(stack)-1].hasChild = true
 			}
 			if !suppressed && containsSensitiveNameHintWithOptions(tag, options) {
+				if options.Mode == Preserve {
+					item := preserved(options.Source, "import_credential_preserved")
+					targetField := strings.TrimSuffix(
+						strings.TrimSpace(options.TargetField),
+						".",
+					)
+					if targetField == "" {
+						targetField = "body"
+					}
+					// Comments, CDATA, processing instructions, and
+					// directives do not expose a type-safe scalar offset.
+					// Keep the exact XML executable, but register the whole
+					// body as a value-free opaque runtime-redaction target.
+					item.PreservedTargets = append(
+						item.PreservedTargets,
+						TargetRef{
+							RequestKey: options.RequestKey,
+							Field:      targetField + ".opaque",
+						},
+					)
+					result.Merge(item)
+					cursor = closeIndex + 1
+					continue
+				}
 				// Comments, CDATA, processing instructions, and directives do not
 				// expose schema-typed scalar offsets. Preserve a valid XML draft
 				// while removing the complete ambiguous markup payload.
@@ -1432,6 +1767,42 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 			stack = stack[:len(stack)-1]
 			if frame.sensitive {
 				if frame.hasChild {
+					if options.Mode == Preserve {
+						// Mixed content cannot be replaced by a scalar binding
+						// without changing the XML wire shape. Preserve the
+						// operator's exact request, attach a value-free locator
+						// for runtime redaction, and surface a review finding.
+						// Credential retention by itself must not make the
+						// imported destination unrunnable.
+						item := preserved(
+							frame.source,
+							"credential_xml_sensitive_mixed_content_review_required",
+						)
+						targetField := strings.TrimSuffix(
+							strings.TrimSpace(options.TargetField),
+							".",
+						)
+						if targetField == "" {
+							targetField = "body"
+						}
+						field := appendTargetField(
+							targetField,
+							"",
+							"xml.mixed_content",
+						)
+						item.PreservedTargets = append(
+							item.PreservedTargets,
+							TargetRef{
+								RequestKey: options.RequestKey,
+								Field:      field,
+								Pointer:    frame.path,
+								Occurrence: nextTargetOccurrence(field, frame.path),
+							},
+						)
+						result.Merge(item)
+						cursor = closeIndex + 1
+						continue
+					}
 					// Markup-bearing XML cannot be replaced by a runtime string
 					// binding without changing XML structure or escaping. Keep a
 					// valid disclosure-safe draft, but do not create a migratable
@@ -1444,19 +1815,30 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 					result.Merge(blocked(frame.source, "credential_xml_sensitive_mixed_content_review_required"))
 				} else if frame.hasContent {
 					start, end := trimByteRange(payload, frame.textStart, frame.textEnd)
+					field := appendTargetField(
+						options.TargetField,
+						"",
+						"xml.text",
+					)
 					projected, item, err := projectSensitiveScalar(
 						string(payload[start:end]),
 						frame.name,
 						frame.source,
-						TargetRef{RequestKey: options.RequestKey, Field: "xml.text", Pointer: "/" + frame.name},
-						values,
+						TargetRef{
+							RequestKey: options.RequestKey,
+							Field:      field,
+							Pointer:    frame.path,
+						},
+						nextTargetOccurrence(field, frame.path),
 						options,
 					)
 					if err != nil {
 						return nil, Result{}, err
 					}
 					values++
-					replacements = append(replacements, replacement{start: start, end: end, value: []byte(projected)})
+					if options.Mode != Preserve {
+						replacements = append(replacements, replacement{start: start, end: end, value: []byte(projected)})
+					}
 					result.Merge(item)
 				}
 			}
@@ -1468,6 +1850,14 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 			return nil, Result{}, err
 		}
 		if len(stack) >= options.Limits.MaxDepth {
+			if options.Mode == Preserve {
+				return append([]byte(nil), payload...),
+					preservedOpaquePayloadResult(
+						payload,
+						options,
+						"import_credential_review_incomplete",
+					), nil
+			}
 			return nil, rejected(options.Source, "credential_xml_depth_limit_exceeded"), nil
 		}
 		if len(stack) > 0 {
@@ -1481,6 +1871,10 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 			}
 		}
 		source := options.Source
+		elementPath := "/" + xmlLocalName(name)
+		if len(stack) > 0 {
+			elementPath = strings.TrimRight(stack[len(stack)-1].path, "/") + elementPath
+		}
 		elementSensitiveName, elementSensitive := governedSensitiveName(name, options)
 		if !elementSensitive {
 			elementSensitiveName, elementSensitive = xmlNamedCredential(
@@ -1498,27 +1892,49 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 			if suppressed || attr.namespace || !sensitive {
 				continue
 			}
+			field := appendTargetField(
+				options.TargetField,
+				"",
+				"xml.attribute",
+			)
+			pointer := elementPath + "/@" + xmlLocalName(attr.name)
 			projected, item, err := projectSensitiveScalar(
 				string(payload[attr.valueStart:attr.valueEnd]),
 				sensitiveName,
 				source,
-				TargetRef{RequestKey: options.RequestKey, Field: "xml.attribute", Pointer: "/@" + attr.name, Index: attrIndex},
-				values,
+				TargetRef{
+					RequestKey: options.RequestKey,
+					Field:      field,
+					Pointer:    pointer,
+					Index:      attrIndex,
+				},
+				nextTargetOccurrence(field, pointer),
 				options,
 			)
 			if err != nil {
 				return nil, Result{}, err
 			}
 			values++
-			replacements = append(replacements, replacement{start: attr.valueStart, end: attr.valueEnd, value: []byte(projected)})
+			if options.Mode != Preserve {
+				replacements = append(replacements, replacement{start: attr.valueStart, end: attr.valueEnd, value: []byte(projected)})
+			}
 			result.Merge(item)
 		}
 		if values > options.Limits.MaxValues {
+			if options.Mode == Preserve {
+				return append([]byte(nil), payload...),
+					preservedOpaquePayloadResult(
+						payload,
+						options,
+						"import_credential_review_incomplete",
+					), nil
+			}
 			return nil, rejected(options.Source, "credential_xml_value_limit_exceeded"), nil
 		}
 		if !selfClosing {
 			stack = append(stack, xmlFrame{
 				name:       firstNonEmpty(elementSensitiveName, xmlLocalName(name)),
+				path:       elementPath,
 				sensitive:  !suppressed && elementSensitive,
 				suppressed: suppressed,
 				contentAt:  closeIndex + 1,

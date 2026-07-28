@@ -6,6 +6,58 @@ import (
 	"time"
 )
 
+const (
+	// ImportPreservedRuntimeArtifactKey records which protected source artifact
+	// a compatibility runtime executes. API projections use it to avoid
+	// disclosing a raw artifact identifier while retaining the durable
+	// reference internally.
+	ImportPreservedRuntimeArtifactKey = "runtime_source_artifact"
+	// ImportPreservedCredentialPolicyKey marks a server-produced import draft
+	// whose durable execution copy must retain authored credential values.
+	ImportPreservedCredentialPolicyKey = "import_value_policy"
+	// ImportPreservedCredentialPolicyPreserve is the only recognized policy
+	// value. Keeping the value explicit makes older imported metadata inert.
+	ImportPreservedCredentialPolicyPreserve = "preserve"
+	// ImportHeaderFidelityMetadataKey identifies the inert, execution-gated
+	// record of source header occurrences that the HTTP runtime cannot send.
+	ImportHeaderFidelityMetadataKey = "import_header_fidelity"
+	// ImportHeaderFidelityPreservedNameBase64Key and
+	// ImportHeaderFidelityPreservedValueBase64Key carry the exact authored
+	// name/value bytes for a runtime-incompatible occurrence. They are base64 so
+	// arbitrary source bytes survive JSON persistence; API projections replace
+	// both fields with a fixed masked payload.
+	ImportHeaderFidelityPreservedNameBase64Key  = "preserved_name_base64"
+	ImportHeaderFidelityPreservedValueBase64Key = "preserved_value_base64"
+	// ImportMultipartFidelityMetadataKey identifies the inert,
+	// execution-gated record of structured multipart fields that the HTTP
+	// runtime cannot serialize. It reuses the preserved name/value byte keys
+	// above so the disclosure and masked-write boundaries treat both fidelity
+	// envelopes consistently.
+	ImportMultipartFidelityMetadataKey = "import_multipart_fidelity"
+	// ImportPreservedCredentialParameterNamesKey records source-variable names
+	// whose values feed an executable credential surface despite having a
+	// neutral name. Response projection uses this server-produced provenance to
+	// mask the corresponding parameter values and data-source cells without
+	// removing them from the durable replay copy.
+	ImportPreservedCredentialParameterNamesKey = "credential_parameter_names"
+	// ImportPreservedCredentialTargetsMetadataKey records disclosure-safe
+	// locators for literal credential values intentionally retained in an
+	// imported executable action. The runtime resolves these locators from the
+	// action immediately before execution so errors, snapshots, and diagnostics
+	// can redact the retained values without replacing them in the request.
+	ImportPreservedCredentialTargetsMetadataKey = "import_credential_targets"
+	// ImportPreservedJMeterJDBCSourcesKey retains the exact JDBC Connection
+	// Configuration fields needed to repair an adapter-required database import.
+	// It is inert runtime metadata and every ordinary disclosure projection masks
+	// the complete envelope.
+	ImportPreservedJMeterJDBCSourcesKey = "jmeter_jdbc_sources"
+	// ImportPreservedEnterpriseUnsupportedProxySourceKey retains an exact,
+	// base64-encoded source proxy record when its endpoint cannot be represented
+	// in executable HTTP config. The proxy stays disabled and review-gated; the
+	// protected record avoids forcing the operator to re-enter its credentials.
+	ImportPreservedEnterpriseUnsupportedProxySourceKey = "enterprise_unsupported_proxy_source"
+)
+
 type Script struct {
 	ID            string          `json:"id"`
 	RefKey        string          `json:"ref_key,omitempty"`

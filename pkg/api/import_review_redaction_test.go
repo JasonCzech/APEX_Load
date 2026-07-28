@@ -169,7 +169,7 @@ func TestEnterpriseImportResponseRedactsRecordedResourceURLCredentials(t *testin
 	}
 }
 
-func TestPostmanImportRedactsShortCustomSensitiveHeaderEverywhere(t *testing.T) {
+func TestPostmanImportKeepsEditableCredentialButMasksReviewCopies(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	const secret = "v9Q!"
 	payload := map[string]any{
@@ -198,11 +198,36 @@ func TestPostmanImportRedactsShortCustomSensitiveHeaderEverywhere(t *testing.T) 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), secret) {
-		t.Fatalf("Postman response disclosed short custom sensitive header: %s", response.Body.String())
+	var envelope map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(response.Body.String(), maskedScriptSecret) {
-		t.Fatalf("Postman response omitted redaction sentinel: %s", response.Body.String())
+	editable, ok := envelope["script"].(map[string]any)
+	if !ok {
+		t.Fatalf("editable script = %T", envelope["script"])
+	}
+	editableActions, _ := editable["actions"].([]any)
+	editableAction, _ := editableActions[0].(map[string]any)
+	editableHeaders, _ := editableAction["headers"].(map[string]any)
+	if got := editableHeaders["X-Auth-Token"]; got != secret {
+		t.Fatalf("editable destination header = %#v, want source bytes", got)
+	}
+
+	result, _ := envelope["result"].(map[string]any)
+	reviewScript, _ := result["script"].(map[string]any)
+	reviewActions, _ := reviewScript["actions"].([]any)
+	reviewAction, _ := reviewActions[0].(map[string]any)
+	reviewHeaders, _ := reviewAction["headers"].(map[string]any)
+	if got := reviewHeaders["X-Auth-Token"]; got != maskedScriptSecret {
+		t.Fatalf("review/result destination header = %#v, want masked copy", got)
+	}
+	sourceReview, err := json.Marshal(envelope["source_review"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sourceReview, []byte(secret)) ||
+		!bytes.Contains(sourceReview, []byte(maskedScriptSecret)) {
+		t.Fatalf("source review was not disclosure-safe: %s", sourceReview)
 	}
 }
 

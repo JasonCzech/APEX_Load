@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -46,112 +45,6 @@ func trustedScriptParameterValues(script *dsl.Script) map[string]struct{} {
 		return nil
 	}
 	return trusted
-}
-
-// redactSensitiveRuntimeParameterValues preserves the runtime parameter and
-// its data-source shape, but removes credential rows from the public draft.
-// It intentionally scans every parameter, including unused parameters and
-// values in otherwise policy-neutral request locations.
-func redactSensitiveRuntimeParameterValues(script *dsl.Script) bool {
-	if script == nil {
-		return false
-	}
-	bindings := make([]scriptCredentialDataBinding, 0)
-	changed := false
-	for index := range script.Parameters {
-		parameter := &script.Parameters[index]
-		if !credential.SensitiveName(parameter.Name) {
-			continue
-		}
-		for valueIndex, value := range parameter.Values {
-			if value == credential.Redacted {
-				continue
-			}
-			parameter.Values[valueIndex] = credential.Redacted
-			changed = true
-		}
-		if source := strings.TrimSpace(parameter.DataSource); source != "" {
-			bindings = append(bindings, scriptCredentialDataBinding{
-				source: source,
-				column: strings.TrimSpace(parameter.Column),
-			})
-		}
-	}
-	return redactCredentialDataSourceColumns(script, bindings) || changed
-}
-
-func redactCredentialDataSourceColumns(
-	script *dsl.Script,
-	bindings []scriptCredentialDataBinding,
-) bool {
-	if script == nil || len(bindings) == 0 {
-		return false
-	}
-	protected := make(map[string][]string, len(bindings))
-	for _, binding := range bindings {
-		source := strings.ToLower(strings.TrimSpace(binding.source))
-		column := strings.TrimSpace(binding.column)
-		if source == "" || column == "" {
-			continue
-		}
-		protected[source] = append(protected[source], column)
-	}
-
-	changed := false
-	for sourceIndex := range script.DataSources {
-		source := &script.DataSources[sourceIndex]
-		requiredColumns := protected[strings.ToLower(strings.TrimSpace(source.Name))]
-		if len(requiredColumns) == 0 || source.InlineData == "" {
-			continue
-		}
-		columns, rows, delimiter, ok := parseCredentialDataSourceForColumns(
-			*source,
-			requiredColumns,
-		)
-		if !ok {
-			source.InlineData = credential.Redacted
-			source.Encoding = ""
-			changed = true
-			continue
-		}
-		redactedIndexes := make(map[int]struct{}, len(requiredColumns))
-		for _, column := range requiredColumns {
-			if index := uniqueFoldedColumnIndex(columns, column); index >= 0 {
-				redactedIndexes[index] = struct{}{}
-			}
-		}
-		for rowIndex := range rows {
-			for columnIndex := range redactedIndexes {
-				if columnIndex >= len(rows[rowIndex]) {
-					continue
-				}
-				rows[rowIndex][columnIndex] = credential.Redacted
-				changed = true
-			}
-		}
-		records := rows
-		if source.FirstRowHeader {
-			records = append([][]string{columns}, rows...)
-		}
-		var output bytes.Buffer
-		writer := csv.NewWriter(&output)
-		writer.Comma = delimiter
-		writer.WriteAll(records)
-		if err := writer.Error(); err != nil {
-			source.InlineData = credential.Redacted
-			source.Encoding = ""
-			changed = true
-			continue
-		}
-		source.InlineData = output.String()
-		source.Encoding = ""
-		// A detected delimiter must become explicit when the data-source type
-		// default would otherwise parse the rewritten rows differently.
-		if dsl.ResolveDataSourceDelimiter(*source, source.InlineData) != delimiter {
-			source.Delimiter = string(delimiter)
-		}
-	}
-	return changed
 }
 
 func parseCredentialDataSourceForColumns(

@@ -153,7 +153,7 @@ func rewriteNativeXMLCredentials(
 			value,
 		)
 		rewritten.WriteString(body[cursor:span.start])
-		rewritten.WriteString(requirement.Replacement)
+		rewritten.WriteString(nativeCredentialProjectionReplacement(requirement))
 		cursor = span.end
 		requirements = append(requirements, requirement)
 	}
@@ -168,7 +168,7 @@ func rewriteNativeXMLCredentials(
 	// credential-bearing CDATA, comments, processing instructions, and
 	// directives that do not have a safe Bruno binding representation.
 	projected, result, err := credentialpolicy.ProjectXML([]byte(projectedBody), credentialpolicy.Options{
-		Mode:               credentialpolicy.SecretReference,
+		Mode:               credentialpolicy.Preserve,
 		Source:             credentialpolicy.SourceRef{Format: "bruno", Path: sourcePath, Pointer: bodyPointer},
 		RequestKey:         sourcePath,
 		NamePrefix:         "BRUNO",
@@ -186,6 +186,26 @@ func rewriteNativeXMLCredentials(
 				"shared XML credential policy found a scalar not covered by Bruno identity projection",
 			)
 		}
+	}
+	for _, finding := range result.Findings {
+		if finding.Code != "import_credential_preserved" {
+			continue
+		}
+		// Credential-looking content inside CDATA/comments/directives has no
+		// safe scalar offset. Govern the complete authored XML body as one
+		// reversible occurrence: the sanitized bundle and inspection draft keep
+		// only the placeholder, while the protected requirement restores the
+		// exact original body during the default commit. Explicit
+		// externalization may bind the same whole body without changing bytes.
+		requirement := nativeXMLSecretRequirement(
+			sourcePath,
+			bodyPointer,
+			"body",
+			"payload",
+			1,
+			body,
+		)
+		return nativeCredentialProjectionReplacement(requirement), []SecretRequirement{requirement}, false, nil
 	}
 	reviewRequired := result.Disposition == credentialpolicy.BlockedDraft
 	projectedBody = string(projected)
@@ -378,7 +398,7 @@ func rewriteNativeXMLCredentialValue(
 		requirement.Value = resolved
 	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return requirement.Replacement
+	return nativeCredentialProjectionReplacement(requirement)
 }
 
 func setNativeXMLCredentialValue(

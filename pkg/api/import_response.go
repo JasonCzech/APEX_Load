@@ -39,7 +39,26 @@ type scriptImportResponseOptions struct {
 	// are attached to an encrypted source-secret migration session when one is
 	// available and are never serialized into the response.
 	ProtectedRequirements []credentialpolicy.Requirement
+	// SkipDraftAttestation is reserved for import endpoints that have already
+	// committed the server-owned conversion before building their response.
+	// Those responses replace the editable draft with a masked StoredScript, so
+	// issuing a second one-shot save capability would only consume capacity.
+	SkipDraftAttestation bool
+	// RecordingSessionID is trusted server-only lineage for a proxy recording
+	// preview. It lets subsequent server-owned binding/parameterization
+	// mutations retain baseline provenance without accepting a client-supplied
+	// recording ID as proof.
+	RecordingSessionID string
+	// RecordingSnapshotDigest binds lineage to the immutable request/response
+	// snapshot used for the preview, so a still-live recording cannot acquire
+	// new baseline observations between preview and save.
+	RecordingSnapshotDigest string
+	// draftAttestationExpiresAt is populated only by the server-side response
+	// builder. It is never accepted from converter or client input.
+	draftAttestationExpiresAt time.Time
 }
+
+const importDraftResponseFailureKey = "__apexload_import_draft_response_failure"
 
 type scriptImportReviewSection struct {
 	Key      string   `json:"key"`
@@ -62,13 +81,14 @@ type scriptImportRepairSuggestion struct {
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
-	// Script projection already recursively sanitizes client-extensible review
-	// subtrees and redacts executable credential fields. Running the generic
-	// evidence scrubber over the projected script again would collapse
-	// structured fields such as config.http.auth into a scalar, breaking both
-	// the DSL shape and requirement-to-source-value alignment.
-	scripts := maskScriptResponseValue(opts.Scripts)
-	script := maskScriptResponseValue(opts.Script)
+	// Import routes are project-authorized authoring boundaries. Preserve the
+	// executable destination script exactly as converted so an operator who
+	// already supplied a password does not lose it or have to enter it again.
+	// Stored-script reads and heterogeneous review/result payloads continue to
+	// use maskScriptResponseValue below; only the editable destination draft is
+	// returned intact here.
+	scripts := credentialPreservingImportResponseValue(opts.Scripts)
+	script := credentialPreservingImportResponseValue(opts.Script)
 	if isNilImportValue(scripts) {
 		if !isNilImportValue(opts.Script) {
 			scripts = []any{script}
@@ -76,9 +96,26 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 			scripts = []any{}
 		}
 	}
-	secretBindingRequirements := secretBindingRequirementsForImportScripts(scripts)
+	// Credential requirements are optional migration/rebinding affordances for
+	// a credential-preserving import draft. Discover them from the independent
+	// disclosure projection while returning the editable executable draft
+	// unchanged to the already-authorized importing operator.
+	projectedScripts := maskScriptResponseValue(scripts)
+	secretBindingRequirements := secretBindingRequirementsForImportScripts(projectedScripts)
+	secretBindingRequirements = annotateSecretBindingDestinationValues(
+		secretBindingRequirements,
+		scripts,
+		projectedScripts,
+	)
 	if !hasScriptJSONNode(scripts) && !isNilImportValue(script) {
-		secretBindingRequirements = secretBindingRequirementsForImportScripts([]any{script})
+		rawScripts := []any{script}
+		projectedScripts = maskScriptResponseValue(rawScripts)
+		secretBindingRequirements = secretBindingRequirementsForImportScripts(projectedScripts)
+		secretBindingRequirements = annotateSecretBindingDestinationValues(
+			secretBindingRequirements,
+			rawScripts,
+			projectedScripts,
+		)
 	}
 
 	warnings := sanitizeImportReviewStrings(opts.Warnings)
@@ -147,6 +184,87 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	}
 
 	return response
+}
+
+func credentialPreservingImportResponseValue(value any) any {
+	raw := importResponseRawScriptValue(value)
+	markCredentialPreservingImportJSON(raw)
+	return sanitizeCredentialPreservingImportScriptNodes(raw)
+}
+
+// sanitizeCredentialPreservingImportScriptNodes keeps executable destination
+// fields byte-faithful while applying the independent disclosure boundary for
+// metadata.import.preserved review evidence and explicit review-only actions.
+func sanitizeCredentialPreservingImportScriptNodes(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		if isScriptJSONObject(typed) {
+			payload, err := json.Marshal(typed)
+			if err != nil {
+				return nil
+			}
+			var script dsl.Script
+			if err := json.Unmarshal(payload, &script); err != nil {
+				return nil
+			}
+			if err := sanitizePersistentImportReviewSurfaces(&script); err != nil {
+				return nil
+			}
+			projected, err := scriptAsJSONValue(&script)
+			if err != nil {
+				return nil
+			}
+			return projected
+		}
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			out[key] = sanitizeCredentialPreservingImportScriptNodes(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for index, child := range typed {
+			out[index] = sanitizeCredentialPreservingImportScriptNodes(child)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func markCredentialPreservingImportJSON(value any) {
+	switch typed := value.(type) {
+	case []any:
+		for _, child := range typed {
+			markCredentialPreservingImportJSON(child)
+		}
+	case map[string]any:
+		if isScriptJSONObject(typed) {
+			metadata, _ := typed["metadata"].(map[string]any)
+			if metadata == nil {
+				return
+			}
+			importMetadata, _ := metadata["import"].(map[string]any)
+			if importMetadata == nil {
+				return
+			}
+			source, _ := importMetadata["source"].(string)
+			if strings.TrimSpace(source) == "" {
+				return
+			}
+			preserved, _ := importMetadata["preserved"].(map[string]any)
+			if preserved == nil {
+				preserved = make(map[string]any)
+				importMetadata["preserved"] = preserved
+			}
+			preserved[dsl.ImportPreservedCredentialPolicyKey] =
+				dsl.ImportPreservedCredentialPolicyPreserve
+			return
+		}
+		for _, child := range typed {
+			markCredentialPreservingImportJSON(child)
+		}
+	}
 }
 
 // sanitizeImportResponseValue applies both script projection and correlation
@@ -431,8 +549,24 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 			}
 		}
 	}
+	// Protected requirement descriptors are part of the editable destination
+	// draft. Attach them before fingerprinting the draft so a mixed import
+	// (an exact inline credential plus an independently bindable reference)
+	// can be saved unchanged with the capability returned by this response.
+	if !opts.SkipDraftAttestation {
+		if err := s.attachImportDraftAttestations(r, &opts); err != nil {
+			// Never publish an exact credential-bearing draft that the operator
+			// cannot subsequently save. The writer recognizes this private
+			// marker and replaces the entire response, including any fields a
+			// handler may add later, with a value-free retryable error.
+			return map[string]any{importDraftResponseFailureKey: true}
+		}
+	}
 
 	response := newScriptImportResponse(opts)
+	if !opts.draftAttestationExpiresAt.IsZero() {
+		response["import_draft_expires_at"] = opts.draftAttestationExpiresAt
+	}
 	projectID, projectMatches := sourceSecretProjectIDForRequest(r, opts)
 	if s != nil {
 		response["secret_store"] = s.projectSecretCapabilities(projectID)
@@ -467,7 +601,7 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	sessionID, err := s.registerSourceSecretSession(r, projectID, values)
 	if err != nil {
 		warnings, _ := response["warnings"].([]string)
-		response["warnings"] = append(warnings, "Detected credential values could not be retained for optional migration; configure the generated secret references manually.")
+		response["warnings"] = append(warnings, optionalCredentialMigrationUnavailableWarning)
 		return response
 	}
 	if sessionID == "" {
@@ -481,6 +615,34 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	response["source_secret_session_expires_at"] = time.Now().UTC().Add(sourceSecretSessionTTL)
 	response["source_secret_migration_allowed"] = true
 	return response
+}
+
+// writeScriptImportResponse writes an import response that may contain an
+// operator-authorized credential-bearing draft or an opaque protected-session
+// capability. Such responses must never be retained by shared or browser
+// caches.
+func writeScriptImportResponse(w http.ResponseWriter, status int, response map[string]any) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	if failed, _ := response[importDraftResponseFailureKey].(bool); failed {
+		w.Header().Set("Retry-After", "5")
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"error":     "credential-preserving import draft could not be secured; retry the import",
+			"code":      "import_draft_attestation_unavailable",
+			"retryable": true,
+		})
+		return
+	}
+	writeJSON(w, status, response)
+}
+
+func (s *Server) writeScriptImportResponseWithSourceSecrets(
+	w http.ResponseWriter,
+	r *http.Request,
+	status int,
+	opts scriptImportResponseOptions,
+) {
+	writeScriptImportResponse(w, status, s.newScriptImportResponseWithSourceSecrets(r, opts))
 }
 
 // Secret parameterization is represented by the guided Credentials workflow.

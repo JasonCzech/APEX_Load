@@ -50,6 +50,11 @@ type SecretBindingRequirement struct {
 	ScriptID             string `json:"script_id,omitempty"`
 	ScriptName           string `json:"script_name,omitempty"`
 	SourceValueAvailable bool   `json:"source_value_available,omitempty"`
+	// DestinationValuePreserved is server-derived occurrence evidence. It means
+	// the editable destination candidate still contains the imported executable
+	// value at this exact requirement path; it is independent of whether an
+	// optional source-secret migration session is available.
+	DestinationValuePreserved bool `json:"destination_value_preserved,omitempty"`
 }
 
 type secretBindingSelection struct {
@@ -272,6 +277,9 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 			if isImportProvenanceMetadataPath(childPath) {
 				continue
 			}
+			if isImportCredentialLocatorMetadataPath(childPath) {
+				continue
+			}
 			discoverRedactedValues(typed[key], childPath, ctx, scriptIndex, scriptID, scriptName, out)
 		}
 	case []any:
@@ -297,6 +305,20 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 			}, sourceValue: typed})
 		}
 	}
+}
+
+func isImportCredentialLocatorMetadataPath(path string) bool {
+	tokens, err := splitJSONPointer(path)
+	if err != nil || len(tokens) < 2 {
+		return false
+	}
+	for index := 0; index+1 < len(tokens); index++ {
+		if tokens[index] == "metadata" &&
+			tokens[index+1] == dsl.ImportPreservedCredentialTargetsMetadataKey {
+			return true
+		}
+	}
+	return false
 }
 
 // isRuntimeDataTableJSONPath reports whether path addresses the inline rows of
@@ -647,6 +669,39 @@ func replaceRedactedOccurrence(value string, occurrence int, replacement string)
 }
 
 func applySecretBindings(script *dsl.Script, scriptIndex int, bindings []secretBindingSelection) (*dsl.Script, []SecretBindingRequirement, error) {
+	return applySecretBindingsWithResolver(
+		script,
+		scriptIndex,
+		bindings,
+		applyRedactedSecretBindings,
+	)
+}
+
+type redactedSecretBindingResolver func(
+	*dsl.Script,
+	int,
+	[]secretBindingSelection,
+) (*dsl.Script, []SecretBindingRequirement, error)
+
+func applyCredentialPreservingSecretBindings(
+	script *dsl.Script,
+	scriptIndex int,
+	bindings []secretBindingSelection,
+) (*dsl.Script, []SecretBindingRequirement, error) {
+	return applySecretBindingsWithResolver(
+		script,
+		scriptIndex,
+		bindings,
+		applyPreservedRedactedSecretBindings,
+	)
+}
+
+func applySecretBindingsWithResolver(
+	script *dsl.Script,
+	scriptIndex int,
+	bindings []secretBindingSelection,
+	resolveRedacted redactedSecretBindingResolver,
+) (*dsl.Script, []SecretBindingRequirement, error) {
 	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
 		return nil, nil, err
 	}
@@ -658,7 +713,7 @@ func applySecretBindings(script *dsl.Script, scriptIndex int, bindings []secretB
 	if err := validateJavaVMParameterDisclosureSafety(protectedResolved); err != nil {
 		return nil, nil, err
 	}
-	resolved, legacyRemaining, err := applyRedactedSecretBindings(protectedResolved, scriptIndex, legacyBindings)
+	resolved, legacyRemaining, err := resolveRedacted(protectedResolved, scriptIndex, legacyBindings)
 	if err != nil {
 		var stale *staleSecretBindingRequirementsError
 		if errors.As(err, &stale) {
@@ -934,6 +989,143 @@ func applyRedactedSecretBindings(script *dsl.Script, scriptIndex int, bindings [
 	return projected, remaining, nil
 }
 
+// applyPreservedRedactedSecretBindings performs an operator-selected migration
+// against the exact authenticated import draft. It replaces only the selected
+// projected occurrence and leaves every other imported value byte-for-byte
+// intact. When the disclosure projection cannot be uniquely aligned with the
+// original scalar, the operation fails instead of canonicalizing or guessing.
+func applyPreservedRedactedSecretBindings(
+	script *dsl.Script,
+	scriptIndex int,
+	bindings []secretBindingSelection,
+) (*dsl.Script, []SecretBindingRequirement, error) {
+	if script == nil {
+		return nil, nil, fmt.Errorf("script is required")
+	}
+	projectedInput := maskScriptSecrets(script)
+	if projectedInput == nil {
+		return nil, nil, fmt.Errorf("failed to project script for secret binding")
+	}
+	rawRoot, err := scriptAsJSONValue(script)
+	if err != nil {
+		return nil, nil, err
+	}
+	projectedRoot, err := scriptAsJSONValue(projectedInput)
+	if err != nil {
+		return nil, nil, err
+	}
+	requirements := discoverSecretBindingRequirementsValue(projectedRoot, scriptIndex)
+	known := make(map[string]SecretBindingRequirement, len(requirements))
+	for _, requirement := range requirements {
+		known[requirement.ID] = requirement
+	}
+
+	selected := make(map[string]string, len(bindings))
+	for _, binding := range bindings {
+		id := strings.TrimSpace(binding.RequirementID)
+		if id == "" {
+			return nil, nil, fmt.Errorf("binding requirement_id is required")
+		}
+		if _, duplicate := selected[id]; duplicate {
+			return nil, nil, fmt.Errorf("binding requirement_id %q is duplicated", id)
+		}
+		if _, ok := known[id]; !ok {
+			return nil, requirements, &staleSecretBindingRequirementsError{requirements: requirements}
+		}
+		name, normalizeErr := engine.NormalizeLogicalSecretName(binding.SecretName)
+		if normalizeErr != nil || !logicalSecretNamePattern.MatchString(name) {
+			return nil, nil, fmt.Errorf("secret_name for %q must contain 1-249 letters, digits, underscores, dots, or hyphens", id)
+		}
+		selected[id] = name
+	}
+
+	replacementsByPath := make(map[string]map[int]string, len(selected))
+	for id, name := range selected {
+		requirement := known[id]
+		if replacementsByPath[requirement.Path] == nil {
+			replacementsByPath[requirement.Path] = make(map[int]string)
+		}
+		replacementsByPath[requirement.Path][requirement.Occurrence] =
+			"{{secret." + name + "}}"
+	}
+	for path, replacements := range replacementsByPath {
+		rawValue, rawOK := jsonPointerString(rawRoot, path)
+		projectedValue, projectedOK := jsonPointerString(projectedRoot, path)
+		if !rawOK || !projectedOK {
+			return nil, requirements, &staleSecretBindingRequirementsError{requirements: requirements}
+		}
+		removed, aligned := extractLinearlyProjectedRedactions(rawValue, projectedValue)
+		if !aligned {
+			return nil, requirements, fmt.Errorf(
+				"selected credential at %s cannot be rebound without changing imported wire bytes; preserve the destination value or re-import with a governed source reference",
+				path,
+			)
+		}
+		parts := strings.Split(projectedValue, maskedScriptSecret)
+		if len(parts) != len(removed)+1 {
+			return nil, requirements, &staleSecretBindingRequirementsError{requirements: requirements}
+		}
+		var rebuilt strings.Builder
+		rebuilt.Grow(len(rawValue))
+		rebuilt.WriteString(parts[0])
+		for occurrence, sourceValue := range removed {
+			if replacement, ok := replacements[occurrence]; ok {
+				rebuilt.WriteString(replacement)
+			} else {
+				rebuilt.WriteString(sourceValue)
+			}
+			rebuilt.WriteString(parts[occurrence+1])
+		}
+		if !setJSONPointerStringValue(rawRoot, path, rebuilt.String()) {
+			return nil, requirements, &staleSecretBindingRequirementsError{requirements: requirements}
+		}
+	}
+
+	payload, err := json.Marshal(rawRoot)
+	if err != nil {
+		return nil, nil, err
+	}
+	var result dsl.Script
+	if err := json.Unmarshal(payload, &result); err != nil {
+		return nil, nil, err
+	}
+	projectedResult := maskScriptSecrets(&result)
+	if projectedResult == nil {
+		return nil, nil, fmt.Errorf("failed to project resolved script")
+	}
+	remaining := discoverSecretBindingRequirements(projectedResult, scriptIndex)
+	rawResult, err := scriptAsJSONValue(&result)
+	if err != nil {
+		return nil, nil, err
+	}
+	projectedResultRoot, err := scriptAsJSONValue(projectedResult)
+	if err != nil {
+		return nil, nil, err
+	}
+	for index := range remaining {
+		requirement := &remaining[index]
+		rawValue, rawOK := jsonPointerString(rawResult, requirement.Path)
+		projectedValue, projectedOK := jsonPointerString(
+			projectedResultRoot,
+			requirement.Path,
+		)
+		if !rawOK || !projectedOK {
+			continue
+		}
+		values, aligned := extractProjectedRedactions(rawValue, projectedValue)
+		if !aligned || requirement.Occurrence < 0 ||
+			requirement.Occurrence >= len(values) {
+			continue
+		}
+		requirement.DestinationValuePreserved =
+			!strings.EqualFold(
+				strings.TrimSpace(values[requirement.Occurrence]),
+				maskedScriptSecret,
+			)
+	}
+	return &result, remaining, nil
+}
+
 func applySuggestedSecretBindings(script *dsl.Script, scriptIndex int) (*dsl.Script, []SecretBindingRequirement, error) {
 	masked := maskScriptSecrets(script)
 	if masked == nil {
@@ -1021,6 +1213,49 @@ func secretBindingRequirementsForImportScripts(value any) []SecretBindingRequire
 	return result
 }
 
+func annotateSecretBindingDestinationValues(
+	requirements []SecretBindingRequirement,
+	rawScripts any,
+	projectedScripts any,
+) []SecretBindingRequirement {
+	if len(requirements) == 0 {
+		return requirements
+	}
+	rawNodes := make([]map[string]any, 0)
+	projectedNodes := make([]map[string]any, 0)
+	collectScriptJSONNodes(rawScripts, &rawNodes)
+	collectScriptJSONNodes(projectedScripts, &projectedNodes)
+	for index := range requirements {
+		requirement := &requirements[index]
+		scriptIndex := requirement.ScriptIndex
+		if scriptIndex < 0 || scriptIndex >= len(rawNodes) ||
+			scriptIndex >= len(projectedNodes) {
+			continue
+		}
+		rawValue, rawOK := jsonPointerString(rawNodes[scriptIndex], requirement.Path)
+		projectedValue, projectedOK := jsonPointerString(
+			projectedNodes[scriptIndex],
+			requirement.Path,
+		)
+		if !rawOK || !projectedOK {
+			continue
+		}
+		values, aligned := extractProjectedRedactions(rawValue, projectedValue)
+		if !aligned || requirement.Occurrence < 0 ||
+			requirement.Occurrence >= len(values) {
+			continue
+		}
+		sourceValue := values[requirement.Occurrence]
+		// An authored sentinel is an unresolved credential, not evidence that the
+		// destination retained a source value. All other uniquely aligned source
+		// segments remain in the credential-preserving candidate. Portable
+		// {{secret.*}} references are not projected into requirements at all.
+		requirement.DestinationValuePreserved =
+			!strings.EqualFold(strings.TrimSpace(sourceValue), maskedScriptSecret)
+	}
+	return requirements
+}
+
 func hasScriptJSONNode(value any) bool {
 	nodes := make([]map[string]any, 0, 1)
 	collectScriptJSONNodes(value, &nodes)
@@ -1057,7 +1292,28 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	resolved, remaining, err := applySecretBindings(req.Script, req.ScriptIndex, req.Bindings)
+	var mutationClaim *importDraftAttestationClaim
+	if isCredentialPreservingImport(req.Script) {
+		var claimErr error
+		mutationClaim, claimErr = s.claimImportDraftMutation(r, req.Script)
+		if claimErr != nil {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": "credential-preserving import draft is invalid or expired; run the import again",
+				"code":  "import_draft_attestation_invalid",
+			})
+			return
+		}
+		defer func() {
+			if mutationClaim != nil {
+				s.releaseImportDraftAttestation(mutationClaim)
+			}
+		}()
+	}
+	resolver := applySecretBindings
+	if mutationClaim != nil {
+		resolver = applyCredentialPreservingSecretBindings
+	}
+	resolved, remaining, err := resolver(req.Script, req.ScriptIndex, req.Bindings)
 	if err != nil {
 		var stale *staleSecretBindingRequirementsError
 		if errors.As(err, &stale) {
@@ -1074,10 +1330,30 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 	if remaining == nil {
 		remaining = []SecretBindingRequirement{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"script":                      maskScriptResponseValue(resolved),
+	var expiresAt any
+	if mutationClaim != nil {
+		rotatedExpiry, rotateErr := s.completeImportDraftMutation(r, mutationClaim, resolved)
+		if rotateErr != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error":     "credential-preserving import draft could not be secured; retry the import",
+				"code":      "import_draft_attestation_unavailable",
+				"retryable": true,
+			})
+			return
+		}
+		mutationClaim = nil
+		if !rotatedExpiry.IsZero() {
+			expiresAt = rotatedExpiry
+		}
+	}
+	response := map[string]any{
+		"script":                      resolved,
 		"secret_binding_requirements": remaining,
-	})
+	}
+	if expiresAt != nil {
+		response["import_draft_expires_at"] = expiresAt
+	}
+	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
 func writeSecretBindingsRequired(w http.ResponseWriter, requirements []SecretBindingRequirement) {

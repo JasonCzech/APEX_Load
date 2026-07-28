@@ -53,3 +53,22 @@ func TestValidateSAPGUIRequiresSecretPassword(t *testing.T) {
 		t.Fatalf("issues = %v, want SAP GUI password secret issue", issues)
 	}
 }
+
+func TestValidateSAPGUIAllowsTrustedImportedPassword(t *testing.T) {
+	script := &Script{
+		Name:     "Imported SAPGUI",
+		Protocol: "sap_gui",
+		Metadata: &ScriptMetadata{Import: &ImportMetadata{
+			Source: "enterprise_script_archive",
+			Preserved: map[string]any{
+				ImportPreservedCredentialPolicyKey: ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Config:  ScriptConfig{SAPGUI: SAPGUIConfig{Password: "recorded-password"}},
+		Actions: []Action{{Name: "SetUser", Type: "sapgui_set", Target: "wnd[0]/usr/txtRSYST-BNAME", Value: "perfuser"}},
+	}
+
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, want retained imported password accepted", issues)
+	}
+}

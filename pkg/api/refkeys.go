@@ -276,7 +276,12 @@ func (tr *TestRunner) backfillScriptRefKeysLocked() {
 				}
 			} else {
 				stored.Script.RefKey = proposedRefKey
-				err = tr.saveStoredScript(stored.Script)
+				err = tr.saveStoredScriptWithImportTrust(
+					stored.Script,
+					stored.Script,
+					false,
+					"",
+				)
 			}
 			if err != nil {
 				slog.Warn("failed to persist script reference key", "script_id", stored.ID, "error", err)

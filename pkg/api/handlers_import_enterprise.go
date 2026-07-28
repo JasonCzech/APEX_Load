@@ -543,7 +543,7 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 
 func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) {
 	if result == nil {
-		writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{}))
+		s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{})
 		return
 	}
 	protectedRequirements := result.ProtectedRequirements.Take()
@@ -580,7 +580,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		result.Script, scripts, "enterprise_script_archive", nil, warnings,
 	)
 
-	writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
 		Result:                result,
 		Scripts:               scripts,
 		Script:                result.Script,
@@ -599,7 +599,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		Parameterization:      parameterization,
 		ProtectedRequirements: protectedRequirements,
 		Preflight:             preflight,
-	}))
+	})
 }
 
 func enterpriseArchiveImportWarnings(result *enterprisearchive.ConvertResult) []string {

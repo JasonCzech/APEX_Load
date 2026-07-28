@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../hooks/apiClient'
-import EnterpriseArchiveImport, { containsExecutableRedaction } from './EnterpriseArchiveImport'
+import EnterpriseArchiveImport from './EnterpriseArchiveImport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -14,6 +14,7 @@ const apiMock = {
   importEnterpriseArchive: vi.fn(),
   validateEnterpriseArchiveImport: vi.fn(),
   createScript: vi.fn(),
+  deleteScript: vi.fn(),
   createAuthoringSession: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   getBrowserReplaySession: vi.fn(),
@@ -36,50 +37,6 @@ vi.mock('./LinkedCodePane', () => ({
     <pre aria-label={ariaLabel}>{value}</pre>
   ),
 }))
-
-describe('enterprise archive executable redaction guard', () => {
-  it('exempts only known action provenance fields and still scans executable metadata', () => {
-    const safeProvenance = {
-      name: 'Imported request',
-      type: 'http_request',
-      metadata: {
-        original_url: 'https://example.test/[REDACTED]',
-        source_transaction: '[REDACTED]',
-        source_path: '[REDACTED]',
-        source_step_id: '[REDACTED]',
-        source_profile: '[REDACTED]',
-        source_uid: '[REDACTED]',
-        asyncapi_operation: '[REDACTED]',
-        ' SOURCE_PATH ': '[REDACTED]',
-      },
-    }
-    expect(containsExecutableRedaction({
-      name: 'Imported',
-      actions: [safeProvenance],
-    })).toBe(false)
-    expect(containsExecutableRedaction({
-      name: 'Imported',
-      actions: [{
-        ...safeProvenance,
-        metadata: {
-          ...safeProvenance.metadata,
-          wire_property: '[REDACTED]',
-        },
-      }],
-    })).toBe(true)
-    expect(containsExecutableRedaction({
-      name: 'Imported',
-      metadata: {
-        import: {
-          preserved: {
-            recorded_resource_urls: ['https://example.test/[REDACTED]'],
-          },
-        },
-      },
-      actions: [safeProvenance],
-    })).toBe(true)
-  })
-})
 
 const sourceReviewFixture = {
   source_files: [
@@ -105,6 +62,37 @@ const sourceReviewFixture = {
       notes: 'Converted to a generated APEX Load action.',
     },
   ],
+}
+
+function executableEnterpriseResult(script: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return {
+    scripts: [script],
+    script,
+    warnings: [],
+    unsupported_elements: [],
+    assumptions: [],
+    review_sections: [],
+    repair_suggestions: [],
+    summary: {
+      project_file: 'Login.usr',
+      unsupported_function_count: 0,
+      migration_readiness: {
+        score_pct: 100,
+        blocked: false,
+        summary: 'No migration blockers.',
+        policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+      },
+    },
+    stats: {
+      total_functions: 1,
+      converted_actions: 1,
+      extractors: 0,
+      think_times: 0,
+      transactions: 0,
+      skipped: 0,
+    },
+    ...extra,
+  }
 }
 
 function cssRule(css: string, selector: string) {
@@ -367,6 +355,7 @@ describe('EnterpriseArchiveImport', () => {
       created_at: '2026-05-17T00:00:00Z',
       script,
     }))
+    apiMock.deleteScript.mockResolvedValue({ deleted: 'saved-script' })
     apiMock.createAuthoringSession.mockResolvedValue({
       id: 'review-session',
       name: 'SAP GUI review artifact',
@@ -432,6 +421,43 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists a legitimate exact [REDACTED] literal when no structural credential requirement is present', async () => {
+    const exactScript = {
+      name: 'Literal Redacted Marker',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test' },
+      actions: [{
+        name: 'Post marker',
+        type: 'request',
+        method: 'POST',
+        target: '/markers',
+        body: 'status=[REDACTED]',
+      }],
+    }
+    const result = executableEnterpriseResult(exactScript)
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(result)
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(result)
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
+    })
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['zip'], 'literal-marker.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ body: 'status=[REDACTED]' })],
+    }), 'project-1', undefined)
   })
 
   it('opens the archive picker from the keyboard-accessible dropzone', async () => {
@@ -952,13 +978,219 @@ describe('EnterpriseArchiveImport', () => {
       actions: [expect.objectContaining({ body: 'password={{secret.LOGIN_PASSWORD}}' })],
     }), 'project-1', undefined)
     expect(findButton(container, 'Saving...')?.disabled).toBe(true)
+    const assertionOption = Array.from(container.querySelectorAll<HTMLLabelElement>('.lr-checkbox'))
+      .find(label => label.textContent?.includes('Add default status_code assertions'))
+      ?.querySelector<HTMLInputElement>('input')
+    await act(async () => {
+      assertionOption?.click()
+    })
     await act(async () => {
       resolveSave?.({
         id: 'saved-redacted', name: resolvedScript.name, protocol: resolvedScript.protocol,
         version: resolvedScript.version, created_at: '2026-05-17T00:00:00Z', script: resolvedScript,
       })
       await Promise.resolve()
+      await Promise.resolve()
     })
+    expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-redacted')
+  })
+
+  it('auto-saves a converted batch item when its imported credential remains runnable', async () => {
+    const onImported = vi.fn()
+    const importedScript = {
+      name: 'Runnable Enterprise Login',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=imported-runtime-password',
+      }],
+    }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(executableEnterpriseResult(importedScript, {
+      source_secret_session_id: 'enterprise-auto-source-session',
+      secret_binding_requirements: [{
+        id: 'login-password',
+        path: '/actions/0/body',
+        label: 'Login — Password',
+        context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD',
+        script_index: 0,
+        script_name: importedScript.name,
+        destination_value_preserved: true,
+      }],
+    }))
+
+    await act(async () => root.render(
+      <EnterpriseArchiveImport projectId="project-1" onImported={onImported} />,
+    ))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['zip-content'], 'login.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'enterprise-auto-source-session',
+    })
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ body: 'password=imported-runtime-password' })],
+    }), 'project-1', undefined)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ name: importedScript.name })],
+    }))
+    expect(container.textContent).not.toContain('Resolve the redacted credential bindings before saving')
+  })
+
+  it('manually saves a reviewed conversion without replacing a preserved imported credential', async () => {
+    const importedScript = {
+      name: 'Reviewed Enterprise Login',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=imported-runtime-password&user=alice',
+      }],
+    }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(executableEnterpriseResult(importedScript, {
+      secret_binding_requirements: [{
+        id: 'login-password',
+        path: '/actions/0/body',
+        label: 'Login — Password',
+        context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD',
+        script_index: 0,
+        script_name: importedScript.name,
+        destination_value_preserved: true,
+      }],
+      parameterization: {
+        suggestions: [{
+          id: 'parameterize-user',
+          kind: 'data_param',
+          var_name: 'LOGIN_USER',
+          replacement: '{{var.LOGIN_USER}}',
+          confidence: 0.9,
+          rule_id: 'test',
+          rationale: 'Imported username can be parameterized.',
+          auto_apply: false,
+          high_risk: false,
+          pre_applied: false,
+        }],
+        summary: {
+          total: 1,
+          by_kind: { data_param: 1 },
+          auto_apply_count: 0,
+          review_count: 1,
+          high_risk_count: 0,
+          pre_applied_count: 0,
+        },
+      },
+    }))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['zip-content'], 'reviewed-login.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+    await flushPromises()
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Review parameterization suggestions before saving')
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({
+        body: 'password=imported-runtime-password&user=alice',
+      })],
+    }), 'project-1', undefined)
+  })
+
+  it('saves a validated credential-preserving draft before opening the persisted editor', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const importedScript = {
+      name: 'Validated Enterprise Login',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=imported-runtime-password',
+      }],
+    }
+    const importResult = executableEnterpriseResult(importedScript, {
+      import_draft_expires_at: '2099-07-26T12:30:00Z',
+      secret_binding_requirements: [{
+        id: 'login-password',
+        path: '/actions/0/body',
+        label: 'Login — Password',
+        context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD',
+        script_index: 0,
+        script_name: importedScript.name,
+        destination_value_preserved: true,
+      }],
+    })
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(importResult)
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(importResult)
+
+    await act(async () => root.render(
+      <EnterpriseArchiveImport
+        projectId="project-1"
+        onImported={onImported}
+        onEdit={onEdit}
+      />,
+    ))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['zip-content'], 'validated-login.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+
+    await clickButton(findButton(container, 'Save And Open In Visual Editor')!)
+    await flushPromises()
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ body: 'password=imported-runtime-password' })],
+    }), 'project-1', undefined)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ name: importedScript.name })],
+    }))
+    expect(onEdit).not.toHaveBeenCalled()
   })
 
   it('reviews bindings for the selected script while migrating the archive-wide source session', async () => {
@@ -2521,6 +2753,213 @@ describe('EnterpriseArchiveImport', () => {
     expect(onImported.mock.calls[0][0].scripts).toHaveLength(2)
   })
 
+  it('keeps a mixed ready-and-review queue mounted while refreshing saved ready scripts', async () => {
+    const onImported = vi.fn()
+    const readyScript = {
+      name: 'Ready Lane',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://ready.example.test' },
+      actions: [{ name: 'Ready', type: 'request', method: 'GET', target: '/' }],
+    }
+    const reviewedScript = {
+      name: 'Reviewed Lane',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://review.example.test' },
+      actions: [{ name: 'Review', type: 'request', method: 'POST', target: '/review' }],
+    }
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => (
+      file.name === 'ready.zip'
+        ? executableEnterpriseResult(readyScript)
+        : executableEnterpriseResult(reviewedScript, {
+            parameterization: {
+              suggestions: [{
+                id: 'review-user',
+                kind: 'data_param',
+                var_name: 'USER',
+                replacement: '{{var.USER}}',
+                confidence: 0.8,
+                rule_id: 'test',
+                rationale: 'Review this parameter.',
+                auto_apply: false,
+                high_risk: false,
+                pre_applied: false,
+              }],
+              summary: {
+                total: 1,
+                by_kind: { data_param: 1 },
+                auto_apply_count: 0,
+                review_count: 1,
+                high_risk_count: 0,
+                pre_applied_count: 0,
+              },
+            },
+          })
+    ))
+
+    await act(async () => root.render(<EnterpriseArchiveImport onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['ready'], 'ready.zip', { type: 'application/zip' }),
+          new File(['review'], 'review.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert 2 Enterprise Script Archives')!)
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      scripts: [expect.objectContaining({ name: readyScript.name })],
+      stayInImportReview: true,
+    }))
+    expect(container.textContent).toContain('2 ZIP files queued')
+    expect(container.querySelector('.script-import-review-preview pre')?.textContent).toContain(reviewedScript.name)
+    expect(findButton(container, 'Save to Script Library')).toBeDefined()
+
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(onImported).toHaveBeenCalledTimes(2)
+    expect(onImported.mock.calls[1][0]).toEqual(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ name: readyScript.name }),
+        expect.objectContaining({ name: reviewedScript.name }),
+      ],
+    }))
+    expect(onImported.mock.calls[1][0].stayInImportReview).toBeUndefined()
+  })
+
+  it('tracks each generated lane until every reviewed script has been saved', async () => {
+    const onImported = vi.fn()
+    const first = {
+      name: 'Generated Lane A',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://multi.example.test' },
+      actions: [{ name: 'A', type: 'request', method: 'GET', target: '/a' }],
+    }
+    const second = {
+      name: 'Generated Lane B',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://multi.example.test' },
+      actions: [{ name: 'B', type: 'request', method: 'GET', target: '/b' }],
+    }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      ...executableEnterpriseResult(first, {
+        parameterization: {
+          suggestions: [{
+            id: 'review-lanes',
+            kind: 'data_param',
+            var_name: 'LANE',
+            replacement: '{{var.LANE}}',
+            confidence: 0.8,
+            rule_id: 'test',
+            rationale: 'Review the generated lanes.',
+            auto_apply: false,
+            high_risk: false,
+            pre_applied: false,
+          }],
+          summary: {
+            total: 1,
+            by_kind: { data_param: 1 },
+            auto_apply_count: 0,
+            review_count: 1,
+            high_risk_count: 0,
+            pre_applied_count: 0,
+          },
+        },
+      }),
+      script: first,
+      scripts: [first, second],
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['multi'], 'multi.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    await flushPromises()
+
+    expect(onImported).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      scripts: [expect.objectContaining({ name: first.name })],
+      stayInImportReview: true,
+    }))
+    expect(container.querySelector('.script-import-review-preview pre')?.textContent).toContain(second.name)
+    expect(container.textContent).toContain('Generated Lane A')
+    expect(container.textContent).toContain('Saved')
+
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(onImported.mock.calls[1][0].scripts).toEqual([
+      expect.objectContaining({ name: first.name }),
+      expect.objectContaining({ name: second.name }),
+    ])
+    expect(onImported.mock.calls[1][0].stayInImportReview).toBeUndefined()
+  })
+
+  it('discards a protected source session when its nonselected queue item is removed', async () => {
+    const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
+    const secondFile = new File(['beta'], 'beta.zip', { type: 'application/zip' })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => (
+      executableEnterpriseResult({
+        name: file.name,
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: '' },
+        actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+      }, {
+        source_secret_session_id: `${file.name}-source-session`,
+        source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+      })
+    ))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [firstFile, secondFile],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    expect(container.querySelector('.lr-file-row.active')?.textContent).toContain(firstFile.name)
+    await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="Remove beta.zip"]')!)
+    await flushPromises()
+
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledTimes(1)
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'beta.zip-source-session',
+    })
+    expect(container.textContent).toContain(firstFile.name)
+    expect(container.textContent).not.toContain(secondFile.name)
+  })
+
   it('announces import progress and failed queue item details', async () => {
     const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
     const failedFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
@@ -2651,7 +3090,7 @@ describe('EnterpriseArchiveImport', () => {
               connection_string: 'ASHOST=sap.example.test SYSNR=00',
               client: '100',
               username: 'APEXUSER',
-              password: '{{secret.sapgui_password}}',
+              password: 'imported-sap-password',
               session_behavior: 'reuse',
             },
           },
@@ -2689,7 +3128,7 @@ describe('EnterpriseArchiveImport', () => {
             connection_string: 'ASHOST=sap.example.test SYSNR=00',
             client: '100',
             username: 'APEXUSER',
-            password: '{{secret.sapgui_password}}',
+            password: 'imported-sap-password',
             session_behavior: 'reuse',
           },
         },
@@ -2754,6 +3193,16 @@ describe('EnterpriseArchiveImport', () => {
         },
       ],
       repair_suggestions: [],
+      secret_binding_requirements: [{
+        id: 'sapgui-password',
+        path: '/config/sapgui/password',
+        label: 'SAP GUI password',
+        context: 'External-runner credential',
+        suggested_name: 'SAPGUI_PASSWORD',
+        script_index: 0,
+        script_name: 'SAP GUI Draft',
+        destination_value_preserved: true,
+      }],
       summary: {
         import_mode: 'external_runner_required',
         source_review: sapSourceReview,
@@ -2829,6 +3278,9 @@ describe('EnterpriseArchiveImport', () => {
       }),
       draft: expect.objectContaining({
         protocol: 'sap_gui',
+        config: expect.objectContaining({
+          sapgui: expect.objectContaining({ password: 'imported-sap-password' }),
+        }),
         actions: expect.arrayContaining([
           expect.objectContaining({ type: 'sapgui_set' }),
         ]),

@@ -813,15 +813,18 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Fill " + stepLabel(step)
 		action.Type = "browser_fill"
 		action.Value = step.Value
-		if step.Masked || step.MarkSecret {
+		if step.Masked {
 			key := secretEnvKey(step)
 			action.Value = "{{env." + key + "}}"
-			reason := "filled a password input; the value was masked at capture"
-			if !step.Masked {
-				reason = "was marked as a secret"
-			}
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"step %d %s — provide it at runtime via {{env.%s}}", step.Seq, reason, key))
+				"step %d filled a password input; the value was masked at capture — provide it at runtime via {{env.%s}}", step.Seq, key))
+		} else if step.MarkSecret {
+			// Marking a captured value as sensitive is a disclosure/review
+			// instruction, not permission to destroy the executable value. The
+			// durable imported script retains it while ordinary API projections
+			// mask it.
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"step %d was marked as a secret; the captured value was preserved for replay and should be reviewed", step.Seq))
 		} else if step.MarkParam {
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
 				"step %d was marked as a data parameter; review it in the parameterization step", step.Seq))
@@ -1035,6 +1038,9 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	}
 	if step.Masked {
 		action.Metadata["source_masked_secret"] = true
+	}
+	if step.MarkSecret {
+		action.Metadata["source_marked_secret"] = true
 	}
 	if len(step.TargetCandidates) > 0 {
 		action.Metadata["source_target_selector_candidates"] = step.TargetCandidates

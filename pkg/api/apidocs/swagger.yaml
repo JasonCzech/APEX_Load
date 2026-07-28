@@ -924,6 +924,8 @@ components:
       properties:
         context:
           type: string
+        destination_value_preserved:
+          type: boolean
         existing_reference:
           type: boolean
         id:
@@ -7679,26 +7681,52 @@ paths:
                 end_seq:
                   type: integer
                   format: int64
+                expected_script_count:
+                  type: integer
+                  format: int64
                 max_think_time_ms:
                   type: integer
                   format: int64
                 name:
                   type: string
+                parameterization_selections:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      script_index:
+                        type: integer
+                        format: int64
+                      selected_ids:
+                        type: array
+                        items:
+                          type: string
                 parameterize:
                   type: boolean
+                secret_bindings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      requirement_id:
+                        type: string
+                      script_index:
+                        type: integer
+                        format: int64
+                      secret_name:
+                        type: string
                 split_at_transactions:
                   type: boolean
                 start_seq:
                   type: integer
                   format: int64
       responses:
-        "201":
-          description: Created
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -7782,13 +7810,12 @@ paths:
                   type: integer
                   format: int64
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -21504,13 +21531,12 @@ paths:
                 parameterize:
                   type: boolean
       responses:
-        "201":
-          description: Created
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -21575,13 +21601,12 @@ paths:
                 parameterize:
                   type: boolean
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -21602,6 +21627,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
           content:
             application/json:
               schema:
@@ -49074,13 +49105,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -49278,13 +49308,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -49372,6 +49401,57 @@ paths:
       tags:
         - Scripts
       x-handler: handleBrokerConfigSupportMatrix
+  /api/v1/scripts/import/browser-recorder/attest:
+    post:
+      summary: Attest Bridged Browser Recording Import
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleAttestBridgedBrowserRecordingImport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project_id:
+                  type: string
+                scripts:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: dsl.Script'
+                    additionalProperties: true
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      tags:
+        - Scripts
+      x-handler: handleAttestBridgedBrowserRecordingImport
   /api/v1/scripts/import/bruno/commit:
     post:
       summary: Commit Bruno Import
@@ -49664,13 +49744,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -49971,13 +50050,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -50079,13 +50157,12 @@ paths:
               description: Handler-defined JSON request object.
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -50145,13 +50222,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -50474,13 +50550,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -50588,13 +50663,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51282,34 +51356,12 @@ paths:
                     description: 'Go type: paramize.Suggestion'
                     additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  applied_count:
-                    type: integer
-                    format: int64
-                  blocked:
-                    type: boolean
-                  blocked_reason:
-                    type: string
-                  diffs:
-                    type: array
-                    items:
-                      type: object
-                      description: 'Go type: paramize.Diff'
-                      additionalProperties: true
-                  script:
-                    type: object
-                    description: 'Go type: dsl.Script'
-                    additionalProperties: true
-                  warnings:
-                    type: array
-                    items:
-                      type: string
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51369,13 +51421,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51573,13 +51624,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51650,13 +51700,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51764,13 +51813,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51847,13 +51895,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "201":
-          description: Created
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -51930,13 +51977,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -52021,13 +52067,12 @@ paths:
                   type: string
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -52116,13 +52161,12 @@ paths:
               description: 'Go type: sample.ImportRequest'
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -52270,13 +52314,12 @@ paths:
                   format: binary
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -52739,13 +52782,12 @@ paths:
               description: Handler-defined JSON request object.
               additionalProperties: true
       responses:
-        "200":
-          description: OK
+        2XX:
+          description: Successful response; exact status is selected by the handler.
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -52766,6 +52808,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:

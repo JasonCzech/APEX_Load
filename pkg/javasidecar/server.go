@@ -1280,7 +1280,7 @@ func (s *Server) prepareRuntime(ctx context.Context, settings RuntimeSettings) (
 	if err := s.credentialCheck(); err != nil {
 		return preparedRuntime{}, &safeFailure{code: "ambient_credentials_detected"}
 	}
-	if issues := javarunner.ValidateVMParameters(settings.AdditionalVMParameters); len(issues) > 0 {
+	if issues := javarunner.ValidateVMParametersForExecution(settings.AdditionalVMParameters); len(issues) > 0 {
 		issue := issues[0]
 		failure := &safeFailure{code: "vm_parameter_" + issue.Category}
 		if issue.Index >= 0 {
@@ -1471,6 +1471,7 @@ func (s *Server) verifyHarness(ctx context.Context, prepared preparedRuntime) *s
 	}
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
 		JavaMajor:   prepared.jdk.Major,
+		VMFamily:    prepared.jdk.VMFamily,
 		HarnessJar:  prepared.harnessJar,
 		HarnessMain: defaultHarnessMain,
 		HarnessArgs: []string{"--health"},
@@ -1549,6 +1550,7 @@ func (s *Server) runHarness(ctx context.Context, prepared preparedRuntime, comma
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
 		VMParameters:         prepared.vmParameters,
 		JavaMajor:            prepared.jdk.Major,
+		VMFamily:             prepared.jdk.VMFamily,
 		HarnessJar:           prepared.harnessJar,
 		ScriptClasspath:      prepared.scriptClasspath,
 		SharedClasspath:      prepared.sharedClasspath,

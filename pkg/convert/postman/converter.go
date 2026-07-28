@@ -185,15 +185,47 @@ type environmentVariable struct {
 }
 
 type auth struct {
-	Type   string          `json:"type"`
-	Bearer []keyValueEntry `json:"bearer"`
-	Basic  []keyValueEntry `json:"basic"`
-	Digest []keyValueEntry `json:"digest"`
-	NTLM   []keyValueEntry `json:"ntlm"`
-	APIKey []keyValueEntry `json:"apikey"`
-	OAuth2 []keyValueEntry `json:"oauth2"`
-	AWSV4  []keyValueEntry `json:"awsv4"`
-	Hawk   []keyValueEntry `json:"hawk"`
+	Type       string                     `json:"type"`
+	Bearer     []keyValueEntry            `json:"bearer"`
+	Basic      []keyValueEntry            `json:"basic"`
+	Digest     []keyValueEntry            `json:"digest"`
+	NTLM       []keyValueEntry            `json:"ntlm"`
+	APIKey     []keyValueEntry            `json:"apikey"`
+	OAuth2     []keyValueEntry            `json:"oauth2"`
+	AWSV4      []keyValueEntry            `json:"awsv4"`
+	Hawk       []keyValueEntry            `json:"hawk"`
+	RawEntries map[string][]keyValueEntry `json:"-"`
+}
+
+func (a *auth) UnmarshalJSON(data []byte) error {
+	type authWire auth
+	var decoded authWire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	decoded.RawEntries = make(map[string][]keyValueEntry)
+	for key, payload := range raw {
+		if strings.EqualFold(key, "type") {
+			continue
+		}
+		var entries []keyValueEntry
+		if err := json.Unmarshal(payload, &entries); err == nil {
+			decoded.RawEntries[strings.ToLower(strings.TrimSpace(key))] = entries
+		}
+	}
+	*a = auth(decoded)
+	return nil
+}
+
+func (a *auth) entriesForType() []keyValueEntry {
+	if a == nil {
+		return nil
+	}
+	return a.RawEntries[strings.ToLower(strings.TrimSpace(a.Type))]
 }
 
 type postmanURL struct {
@@ -360,6 +392,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	eventSourceRedacted := false
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
+		preservePostmanEventSources(result.Script, item)
 
 		// Extract JS scripts to virtual review files
 		for i, ev := range item.Events {
@@ -433,11 +466,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Stats.Extractors += len(result.Script.Actions[i].Extractors)
 	}
 	credentialVariableNames := requestPipeline.consumedSourceVariableNames()
-	result.Script.Parameters, result.Script.DataSources = removePostmanProtectedSourceVariables(
-		result.Script.Parameters,
-		result.Script.DataSources,
-		credentialVariableNames,
-	)
+	if len(credentialVariableNames) > 0 &&
+		result.Script.Metadata != nil &&
+		result.Script.Metadata.Import != nil {
+		if result.Script.Metadata.Import.Preserved == nil {
+			result.Script.Metadata.Import.Preserved = make(map[string]any)
+		}
+		result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialParameterNamesKey] =
+			append([]string(nil), credentialVariableNames...)
+	}
 	result.Stats.VariablesDetected = len(result.Script.Parameters)
 	result.Summary.Variables = parameterNames(result.Script.Parameters)
 	finalization, err := requestPipeline.FinalizeScript(result.Script)
@@ -467,6 +504,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		sources[sourceFileName] = "// [POSTMAN SOURCE OMITTED: VARIABLE GRAPH REQUIRES REVIEW]"
 	}
 	protectedSourceRedacted := maskPostmanProtectedSourceValues(sources, protectedRequirements)
+	protectedSourceRedacted = requestPipeline.redactSourceReviewBodies(sources) ||
+		protectedSourceRedacted
 	protectedSourceRedacted = maskPostmanSourceVariableValues(
 		sources,
 		credentialVariableNames,
@@ -556,7 +595,7 @@ func collectionVariables(vars []variable) map[string]string {
 		if v.Disabled || strings.TrimSpace(v.Key) == "" {
 			continue
 		}
-		out[v.Key] = strings.TrimSpace(fmt.Sprint(v.Value))
+		out[v.Key] = fmt.Sprint(v.Value)
 	}
 	return out
 }
@@ -581,7 +620,7 @@ func environmentVariables(content string, diagnostics *diag.Collector) map[strin
 		if v.Enabled != nil && !*v.Enabled {
 			continue
 		}
-		out[v.Key] = strings.TrimSpace(fmt.Sprint(v.Value))
+		out[v.Key] = fmt.Sprint(v.Value)
 	}
 	if len(out) > 0 && diagnostics != nil {
 		diagnostics.Add(diag.Info, "Postman environment", convertutil.FirstNonEmpty(env.Name, "environment"), fmt.Sprintf("imported %d environment value(s)", len(out)))
@@ -729,6 +768,39 @@ func containsString(values []string, candidate string) bool {
 		}
 	}
 	return false
+}
+
+func preservePostmanEventSources(script *dsl.Script, item requestItem) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	existing, _ := script.Metadata.Import.Preserved["postman_event_sources"].([]map[string]string)
+	for index, event := range item.Events {
+		if len(event.Script.Exec) == 0 || !postmanEventRequiresReview(event) {
+			continue
+		}
+		existing = append(existing, map[string]string{
+			"source_ref": fmt.Sprintf("%s / event[%d]", postmanItemLocation(item), index),
+			"listen":     event.Listen,
+			"script":     strings.Join(event.Script.Exec, "\n"),
+		})
+	}
+	if len(existing) != 0 {
+		script.Metadata.Import.Preserved["postman_event_sources"] = existing
+	}
+}
+
+func postmanEventRequiresReview(event event) bool {
+	script := strings.Join(event.Script.Exec, "\n")
+	if strings.EqualFold(strings.TrimSpace(event.Listen), "test") {
+		if postmanSafeStatusTestPattern.MatchString(script) || postmanCorrelationScriptFullyTranslated(event) {
+			return false
+		}
+	}
+	return true
 }
 
 var postmanSetPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']*)["']\s*\)`)
@@ -1470,9 +1542,9 @@ func reportUnsupportedPostmanAuth(value *auth, diagnostics *diag.Collector, loca
 	}
 	switch strings.ToLower(strings.TrimSpace(value.Type)) {
 	case "ntlm":
-		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" auth is not replayable by the HTTP runtime; it was preserved as review-only metadata and no runnable auth override was emitted")
+		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" auth is not replayable by the HTTP runtime; its source fields were retained behind an execution gate for operator translation")
 	case "awsv4", "hawk":
-		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" request signing cannot be executed during import; translate the signing flow before replay")
+		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" request signing cannot be executed during import; its source fields were retained behind an execution gate for operator translation")
 	}
 }
 
@@ -1503,17 +1575,80 @@ func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *aut
 		}
 	case "ntlm", "awsv4", "hawk":
 		reportUnsupportedPostmanAuth(effective, diagnostics, location)
-		if action.Metadata != nil {
-			action.Metadata["postman_auth_review_only"] = effective.Type
-		}
+		retainUnsupportedPostmanAuth(action, effective, vars, diagnostics, location)
 	default:
 		if diagnostics != nil {
-			diagnostics.Add(diag.Warning, "Postman auth", location, "auth type "+effective.Type+" was not converted")
+			diagnostics.Add(diag.Warning, "Postman auth", location, "auth type "+effective.Type+" requires review; its source fields were retained behind an execution gate")
 		}
-		if action.Metadata != nil {
-			action.Metadata["postman_auth_review_only"] = effective.Type
+		retainUnsupportedPostmanAuth(action, effective, vars, diagnostics, location)
+	}
+}
+
+func retainUnsupportedPostmanAuth(
+	action *dsl.Action,
+	value *auth,
+	vars postmanVariableLookup,
+	diagnostics *diag.Collector,
+	location string,
+) {
+	if action == nil || value == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = make(map[string]any)
+	}
+	sourceType := strings.ToLower(strings.TrimSpace(value.Type))
+	action.Metadata["postman_auth_review_only"] = sourceType
+
+	entries := value.entriesForType()
+	sourceFields := make([]map[string]any, 0, len(entries))
+	for _, entry := range entries {
+		field := map[string]any{
+			"type":     "source_credential",
+			"name":     entry.Key,
+			"value":    rewriteVariablesWithContext(entry.Value, vars, diagnostics, location),
+			"disabled": entry.Disabled,
+		}
+		sourceFields = append(sourceFields, field)
+	}
+	if len(sourceFields) > 0 {
+		// These are durable, non-executable source fields. Each entry carries an
+		// explicit credential semantic marker so ordinary script projections mask
+		// its value even when Postman used an unfamiliar field name.
+		action.Metadata["postman_auth_source_fields"] = sourceFields
+	}
+
+	config := dsl.AuthConfig{Type: sourceType}
+	switch sourceType {
+	case "ntlm":
+		config.Username = postmanAuthEntryValue(entries, vars, diagnostics, location, "username", "user")
+		config.Password = postmanAuthEntryValue(entries, vars, diagnostics, location, "password", "pass")
+		config.Domain = postmanAuthEntryValue(entries, vars, diagnostics, location, "domain")
+	case "hawk":
+		config.Username = postmanAuthEntryValue(entries, vars, diagnostics, location, "authId", "id")
+		config.Password = postmanAuthEntryValue(entries, vars, diagnostics, location, "authKey", "key")
+	}
+	action.Auth = &config
+}
+
+func postmanAuthEntryValue(
+	entries []keyValueEntry,
+	vars postmanVariableLookup,
+	diagnostics *diag.Collector,
+	location string,
+	keys ...string,
+) string {
+	for _, entry := range entries {
+		if entry.Disabled {
+			continue
+		}
+		for _, key := range keys {
+			if strings.EqualFold(strings.TrimSpace(entry.Key), key) {
+				return rewriteVariablesWithContext(entry.Value, vars, diagnostics, location)
+			}
 		}
 	}
+	return ""
 }
 
 func applyPostmanAPIKey(action *dsl.Action, value *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string) {
@@ -1525,9 +1660,9 @@ func applyPostmanAPIKey(action *dsl.Action, value *auth, vars postmanVariableLoo
 			action.Metadata = make(map[string]any)
 		}
 		action.Metadata["postman_auth_review_only"] = "apikey"
-		// Carry source migration material only through the typed credential
-		// surface. The shared projector moves it into the protected requirement
-		// and replaces this unsupported auth mode with an inert no-auth draft.
+		// Carry the exact source value through the typed credential surface. The
+		// shared projector keeps it on the durable blocked draft so the importing
+		// operator can correct the placement without re-entering the API key.
 		action.Auth = &dsl.AuthConfig{
 			Type:  "postman_apikey",
 			Token: secret,
@@ -1609,24 +1744,51 @@ func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *dia
 	case "", "noauth", "inherit":
 		return dsl.AuthConfig{}
 	case "bearer":
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.Bearer, "token", vars, diagnostics, location), "{{env.API_TOKEN}}")}
+		token, ok := authCredentialValuePresent(value.Bearer, "token", vars, diagnostics, location)
+		if !ok {
+			token = "{{env.API_TOKEN}}"
+		}
+		return dsl.AuthConfig{Type: "bearer", Token: token}
 	case "basic":
+		username, usernamePresent := authValuePresent(value.Basic, "username", vars, diagnostics, location)
+		if !usernamePresent {
+			username = "{{env.API_USERNAME}}"
+		}
+		password, passwordPresent := authCredentialValuePresent(value.Basic, "password", vars, diagnostics, location)
+		if !passwordPresent {
+			password = "{{env.API_PASSWORD}}"
+		}
 		return dsl.AuthConfig{
 			Type:     "basic",
-			Username: convertutil.FirstNonEmpty(authValue(value.Basic, "username", vars, diagnostics, location), "{{env.API_USERNAME}}"),
-			Password: convertutil.FirstNonEmpty(authCredentialValue(value.Basic, "password", vars, diagnostics, location), "{{env.API_PASSWORD}}"),
+			Username: username,
+			Password: password,
 		}
 	case "digest":
+		username, usernamePresent := authValuePresent(value.Digest, "username", vars, diagnostics, location)
+		if !usernamePresent {
+			username = "{{env.API_USERNAME}}"
+		}
+		password, passwordPresent := authCredentialValuePresent(value.Digest, "password", vars, diagnostics, location)
+		if !passwordPresent {
+			password = "{{env.API_PASSWORD}}"
+		}
 		return dsl.AuthConfig{
 			Type:     "digest",
-			Username: convertutil.FirstNonEmpty(authValue(value.Digest, "username", vars, diagnostics, location), "{{env.API_USERNAME}}"),
-			Password: convertutil.FirstNonEmpty(authCredentialValue(value.Digest, "password", vars, diagnostics, location), "{{env.API_PASSWORD}}"),
+			Username: username,
+			Password: password,
 		}
 	case "oauth2":
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "OAuth2 auth was represented as a bearer token placeholder; review token acquisition before replay")
 		}
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.OAuth2, "accessToken", vars, diagnostics, location), authCredentialValue(value.OAuth2, "access_token", vars, diagnostics, location), "{{env.API_TOKEN}}")}
+		token, ok := authCredentialValuePresent(value.OAuth2, "accessToken", vars, diagnostics, location)
+		if !ok {
+			token, ok = authCredentialValuePresent(value.OAuth2, "access_token", vars, diagnostics, location)
+		}
+		if !ok {
+			token = "{{env.API_TOKEN}}"
+		}
+		return dsl.AuthConfig{Type: "bearer", Token: token}
 	default:
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "auth type "+value.Type+" was not converted")
@@ -1636,23 +1798,33 @@ func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *dia
 }
 
 func authValue(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
+	value, _ := authValuePresent(entries, key, vars, diagnostics, location)
+	return value
+}
+
+func authValuePresent(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) (string, bool) {
 	for _, entry := range entries {
 		if entry.Disabled {
 			continue
 		}
 		if strings.EqualFold(entry.Key, key) {
-			return rewriteVariablesWithContext(entry.Value, vars, diagnostics, location)
+			return rewriteVariablesWithContext(entry.Value, vars, diagnostics, location), true
 		}
 	}
-	return ""
+	return "", false
 }
 
 func authCredentialValue(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
-	// Retain literal credentials until the shared EffectiveRequest projector
-	// creates a deterministic requirement and moves the value into the protected
-	// import-session handoff. sanitizeSensitive=false is handled by Audit mode
-	// in postmanRequestPipeline rather than by this source adapter.
-	return authValue(entries, key, vars, diagnostics, location)
+	value, _ := authCredentialValuePresent(entries, key, vars, diagnostics, location)
+	return value
+}
+
+func authCredentialValuePresent(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) (string, bool) {
+	// Retain literal credentials through the shared EffectiveRequest projector.
+	// API response projection masks ordinary reads and reviews, while the
+	// authorized import draft and durable destination remain executable without
+	// a second credential-entry step.
+	return authValuePresent(entries, key, vars, diagnostics, location)
 }
 
 func parameterNames(params []dsl.Parameter) []string {

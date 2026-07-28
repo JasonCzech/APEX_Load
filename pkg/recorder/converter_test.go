@@ -1206,7 +1206,7 @@ func TestConvertSessionWithOptions_Parameterize(t *testing.T) {
 				URL:         "http://example.com/login",
 				Path:        "/login",
 				Host:        "example.com",
-				Body:        "username=demo&password=s3cret&remember=1",
+				Body:        "username=demo&password=s3cret%2Bvalue&remember=1",
 				ContentType: "application/x-www-form-urlencoded",
 				StatusCode:  200,
 			},
@@ -1240,11 +1240,11 @@ func TestConvertSessionWithOptions_Parameterize(t *testing.T) {
 			t.Fatalf("expected column %q in inline data %q", col, ds.InlineData)
 		}
 	}
-	if strings.Contains(ds.InlineData, "s3cret") {
-		t.Fatalf("generated data source leaked recorded password: %q", ds.InlineData)
+	if !strings.Contains(ds.InlineData, "s3cret%2Bvalue") {
+		t.Fatalf("generated data source discarded or re-encoded captured password: %q", ds.InlineData)
 	}
-	if !strings.Contains(ds.InlineData, "__REPLACE_WITH_SECRET__") {
-		t.Fatalf("generated data source should seed password column with a placeholder, got %q", ds.InlineData)
+	if strings.Contains(ds.InlineData, "__REPLACE_WITH_SECRET__") {
+		t.Fatalf("generated data source still requires password re-entry: %q", ds.InlineData)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
 	secretColumns, ok := preserved["recorded_input_secret_columns"].([]string)

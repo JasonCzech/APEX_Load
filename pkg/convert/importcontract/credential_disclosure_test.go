@@ -18,20 +18,17 @@ import (
 
 const disclosureCanary = "import-disclosure-canary-7Q4Z"
 
-// TestPublicConversionResultsNeverDiscloseAuthoredCredentials is the
+// TestConversionReviewResultsNeverDiscloseAuthoredCredentials is the
 // cross-importer disclosure contract.
 //
-// The existing credential contract checks only executable material, and that is
-// not where credentials actually escaped: DevWeb governed the header correctly
-// in the script while the raw value survived in source_review, because the
-// shared scrubber's patterns do not match a vendor-prefixed name like
-// X-Api-Key. Serializing the ENTIRE public result and searching for the canary
-// is what catches that class — source review, stats, summaries, findings,
-// correlation samples and any future field, without having to enumerate them.
+// The executable destination intentionally retains values the importing
+// operator already supplied. Every non-executable copy—source review, stats,
+// summaries, findings, correlation samples and future review fields—must remain
+// disclosure-safe.
 //
-// Source values legitimately travel in ProtectedRequirements, which is
-// json:"-" and therefore never part of this payload.
-func TestPublicConversionResultsNeverDiscloseAuthoredCredentials(t *testing.T) {
+// Source values may also travel in ProtectedRequirements for explicit
+// externalization; that field is json:"-" and never part of this payload.
+func TestConversionReviewResultsNeverDiscloseAuthoredCredentials(t *testing.T) {
 	tests := []struct {
 		name    string
 		convert func(t *testing.T) any
@@ -205,9 +202,46 @@ export default function () {
 			if err != nil {
 				t.Fatalf("marshal public result: %v", err)
 			}
-			if strings.Contains(string(payload), disclosureCanary) {
-				t.Fatalf("public conversion result disclosed an authored credential:\n%s", payload)
+			if !strings.Contains(string(payload), disclosureCanary) {
+				t.Fatalf("destination script did not retain the imported credential:\n%s", payload)
+			}
+			var decoded any
+			if err := json.Unmarshal(payload, &decoded); err != nil {
+				t.Fatalf("decode public result: %v", err)
+			}
+			reviewOnly := stripExecutableScriptNodes(decoded)
+			reviewPayload, err := json.Marshal(reviewOnly)
+			if err != nil {
+				t.Fatalf("marshal review-only result: %v", err)
+			}
+			if strings.Contains(string(reviewPayload), disclosureCanary) {
+				t.Fatalf("conversion review material disclosed an authored credential:\n%s", reviewPayload)
 			}
 		})
+	}
+}
+
+func stripExecutableScriptNodes(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		_, hasProtocol := typed["protocol"].(string)
+		_, hasConfig := typed["config"].(map[string]any)
+		_, hasActions := typed["actions"].([]any)
+		if hasProtocol && hasConfig && hasActions {
+			return "<executable-destination-script>"
+		}
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			out[key] = stripExecutableScriptNodes(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for index, child := range typed {
+			out[index] = stripExecutableScriptNodes(child)
+		}
+		return out
+	default:
+		return value
 	}
 }

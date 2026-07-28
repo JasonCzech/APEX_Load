@@ -1052,6 +1052,12 @@ describe("RecordingStudio", () => {
       container.querySelectorAll<HTMLButtonElement>("button"),
     ).find((button) => button.textContent?.trim() === "Saving...");
     expect(pendingSave?.disabled).toBe(true);
+    const parameterizeInputs = container.querySelector<HTMLInputElement>(
+      ".rec-convert-option input[type='checkbox']",
+    );
+    await act(async () => {
+      parameterizeInputs?.click();
+    });
     await act(async () => {
       resolveSave?.({
         id: "script-1",
@@ -1065,6 +1071,11 @@ describe("RecordingStudio", () => {
     await flushPromises();
 
     expect(apiMock.convertRecording).not.toHaveBeenCalled();
+    expect(onImported).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scripts: [expect.objectContaining({ id: "script-1" })],
+      }),
+    );
     expect(apiMock.createScript).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "Checkout Preview",
@@ -1079,7 +1090,7 @@ describe("RecordingStudio", () => {
       null,
       "rec-1",
     );
-    expect(container.textContent).toContain(
+    expect(container.textContent).not.toContain(
       'Script "Checkout Preview" created with 1 correlations detected',
     );
     expect(onImported).toHaveBeenCalledWith(
@@ -1335,6 +1346,101 @@ describe("RecordingStudio", () => {
     expect(onImported).toHaveBeenCalled();
   });
 
+  it("saves a preservation-marked recorder draft without masking its imported credential", async () => {
+    const onImported = vi.fn();
+    const onEdit = vi.fn();
+    const preservedScript = {
+      name: "Runnable Credential Preview",
+      version: "1.0.0",
+      protocol: "http",
+      project_id: "proj-1",
+      config: { base_url: "https://shop.example.com" },
+      metadata: {
+        import: {
+          source: "recorder",
+          preserved: { import_value_policy: "preserve" },
+        },
+      },
+      actions: [
+        {
+          name: "Login",
+          type: "request",
+          method: "POST",
+          target: "/login",
+          headers: { Authorization: "Bearer imported-runtime-token" },
+        },
+      ],
+    };
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: preservedScript,
+      scripts: [preservedScript],
+      import_draft_expires_at: "2099-07-26T12:30:00Z",
+      correlations: [],
+      warnings: [],
+      secret_binding_requirements: [
+        {
+          id: "login-token",
+          path: "/actions/0/headers/Authorization",
+          occurrence: 0,
+          label: "Authorization credential",
+          context: "Login",
+          suggested_name: "LOGIN_TOKEN",
+          replacement: "Bearer {{secret.LOGIN_TOKEN}}",
+          destination_value_preserved: true,
+        },
+      ],
+    });
+
+    await act(async () => {
+      root.render(
+        <RecordingStudio
+          activeProject={{ id: "proj-1", name: "Web" } as any}
+          onImported={onImported}
+          onEdit={onEdit}
+        />,
+      );
+    });
+    await flushPromises();
+    await openProxyAdvanced(container);
+    const reviewButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Review Script",
+    );
+    await act(async () => {
+      reviewButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain("Preserved in script");
+    expect(container.textContent).toContain("0 to configure later");
+    expect(container.textContent).not.toContain("Save with 1 secret to configure");
+    const saveButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("button"),
+    ).find(
+      (button) =>
+        button.textContent?.trim() === "Save And Open In Visual Editor",
+    );
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled();
+    expect(apiMock.createScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actions: [
+          expect.objectContaining({
+            headers: { Authorization: "Bearer imported-runtime-token" },
+          }),
+        ],
+      }),
+      "proj-1",
+      null,
+      "rec-1",
+    );
+    expect(onImported).toHaveBeenCalled();
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
   it("locks recording parameterization while credentials are being prepared for the editor", async () => {
     const maskedScript = {
       name: "Credential Parameterization Preview",
@@ -1430,7 +1536,11 @@ describe("RecordingStudio", () => {
   });
 
   it("ignores a late recorder credential result after a newer conversion", async () => {
-    const buildResult = (name: string, requirements: unknown[]) => ({
+    const buildResult = (
+      name: string,
+      requirements: unknown[],
+      sourceSecretSessionId?: string,
+    ) => ({
       script: {
         name,
         version: "1.0.0",
@@ -1444,6 +1554,7 @@ describe("RecordingStudio", () => {
       correlations: [],
       warnings: [],
       secret_binding_requirements: requirements,
+      source_secret_session_id: sourceSecretSessionId,
     });
     const requirement = {
       id: "auth",
@@ -1453,8 +1564,12 @@ describe("RecordingStudio", () => {
       suggested_name: "API_TOKEN",
     };
     apiMock.previewRecordingConversion
-      .mockResolvedValueOnce(buildResult("Generation A", [requirement]))
-      .mockResolvedValueOnce(buildResult("Generation B", []));
+      .mockResolvedValueOnce(
+        buildResult("Generation A", [requirement], "recording-source-a"),
+      )
+      .mockResolvedValueOnce(
+        buildResult("Generation B", [], "recording-source-b"),
+      );
     let resolveApply: ((value: unknown) => void) | undefined;
     apiMock.applySecretBindings.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -1498,6 +1613,10 @@ describe("RecordingStudio", () => {
     expect(container.textContent).toContain("Generation B");
     expect(container.textContent).not.toContain("Resolved A");
     expect(apiMock.createScript).not.toHaveBeenCalled();
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: "proj-1",
+      source_secret_session_id: "recording-source-a",
+    });
   });
 
   it("treats preview scripts with empty ids as unsaved drafts", async () => {

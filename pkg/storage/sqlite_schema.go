@@ -333,7 +333,7 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
-		`CREATE TABLE IF NOT EXISTS import_source_artifacts (
+		`CREATE TABLE IF NOT EXISTS bruno_source_artifacts (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL REFERENCES projects(id),
 			artifact_kind TEXT NOT NULL,
@@ -347,14 +347,14 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			UNIQUE(project_id, artifact_kind, sha256)
 		)`,
-		`CREATE TABLE IF NOT EXISTS import_source_revisions (
+		`CREATE TABLE IF NOT EXISTS bruno_source_revisions (
 			id TEXT PRIMARY KEY,
 			script_id TEXT NOT NULL REFERENCES scripts(id),
 			project_id TEXT NOT NULL REFERENCES projects(id),
-			parent_revision_id TEXT REFERENCES import_source_revisions(id),
+			parent_revision_id TEXT REFERENCES bruno_source_revisions(id),
 			active_flag INTEGER NOT NULL DEFAULT 0,
-			raw_artifact_id TEXT NOT NULL REFERENCES import_source_artifacts(id),
-			sanitized_artifact_id TEXT NOT NULL REFERENCES import_source_artifacts(id),
+			raw_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+			sanitized_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
 			-- Whether sanitized_artifact_id points at a genuinely sanitized
 			-- document. Formats that retain source raw-only satisfy the NOT NULL
 			-- constraint by pointing both columns at the raw artifact, so this
@@ -375,7 +375,7 @@ func schemaCreateTableStatements() []string {
 			created_by TEXT,
 			created_at DATETIME NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS import_batches (
+		`CREATE TABLE IF NOT EXISTS bruno_native_import_batches (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL REFERENCES projects(id),
 			source_profile TEXT NOT NULL DEFAULT 'bruno_native',
@@ -383,8 +383,8 @@ func schemaCreateTableStatements() []string {
 			idempotency_key TEXT NOT NULL,
 			request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1',
 			request_sha256 TEXT NOT NULL,
-			raw_artifact_id TEXT NOT NULL REFERENCES import_source_artifacts(id),
-			sanitized_artifact_id TEXT NOT NULL REFERENCES import_source_artifacts(id),
+			raw_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+			sanitized_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
 			candidate_ids_json TEXT NOT NULL,
 			script_ids_json TEXT NOT NULL,
 			scripts_json TEXT NOT NULL DEFAULT '[]',
@@ -1070,7 +1070,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		// this runs -- see backfillSanitizedSourceAvailability. Doing it in that
 		// order means a database interrupted between the two steps withholds a
 		// download it could have served, rather than serving one it should not.
-		{name: "import_source_revisions.sanitized_available", query: `ALTER TABLE import_source_revisions ADD COLUMN sanitized_available INTEGER NOT NULL DEFAULT 0`},
+		{name: "bruno_source_revisions.sanitized_available", query: `ALTER TABLE bruno_source_revisions ADD COLUMN sanitized_available INTEGER NOT NULL DEFAULT 0`},
 		{name: "scheduler_leases.generation", query: `ALTER TABLE scheduler_leases ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`},
 		{name: "scenario_schedule_occurrences.revision", query: `ALTER TABLE scenario_schedule_occurrences ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "scenario_schedule_occurrences.transition_token", query: `ALTER TABLE scenario_schedule_occurrences ADD COLUMN transition_token TEXT`},
@@ -1215,10 +1215,10 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "runtime_secret_provisioning_attempts.audit_actor_type", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_type TEXT NOT NULL DEFAULT 'system'`},
 		{name: "runtime_secret_provisioning_attempts.audit_actor_subject", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_subject TEXT NOT NULL DEFAULT 'controller:test-creation'`},
 		{name: "runtime_secret_provisioning_attempts.audit_actor_display_name", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_display_name TEXT NOT NULL DEFAULT ''`},
-		{name: "import_batches.source_profile", query: `ALTER TABLE import_batches ADD COLUMN source_profile TEXT NOT NULL DEFAULT 'bruno_native'`},
-		{name: "import_batches.receipt_version", query: `ALTER TABLE import_batches ADD COLUMN receipt_version INTEGER NOT NULL DEFAULT 1`},
-		{name: "import_batches.request_digest_profile", query: `ALTER TABLE import_batches ADD COLUMN request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1'`},
-		{name: "import_batches.scripts_json", query: `ALTER TABLE import_batches ADD COLUMN scripts_json TEXT NOT NULL DEFAULT '[]'`},
+		{name: "bruno_native_import_batches.source_profile", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN source_profile TEXT NOT NULL DEFAULT 'bruno_native'`},
+		{name: "bruno_native_import_batches.receipt_version", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN receipt_version INTEGER NOT NULL DEFAULT 1`},
+		{name: "bruno_native_import_batches.request_digest_profile", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1'`},
+		{name: "bruno_native_import_batches.scripts_json", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN scripts_json TEXT NOT NULL DEFAULT '[]'`},
 	}
 }
 
@@ -1272,11 +1272,11 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_import_sessions_project_expiry ON grafana_import_sessions(project_id, expires_at)`, "idx_grafana_import_sessions_project_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboard_snapshots_project ON grafana_dashboard_snapshots(project_id)`, "idx_grafana_dashboard_snapshots_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
-	{`CREATE INDEX IF NOT EXISTS idx_import_artifacts_project_hash ON import_source_artifacts(project_id, artifact_kind, sha256)`, "idx_import_artifacts_project_hash"},
-	{`CREATE INDEX IF NOT EXISTS idx_import_revisions_script_created ON import_source_revisions(script_id, created_at)`, "idx_import_revisions_script_created"},
-	{`CREATE INDEX IF NOT EXISTS idx_import_revisions_project_active ON import_source_revisions(project_id, active_flag)`, "idx_import_revisions_project_active"},
-	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_import_revisions_one_active ON import_source_revisions(script_id, project_id) WHERE active_flag = 1`, "idx_import_revisions_one_active"},
-	{`CREATE INDEX IF NOT EXISTS idx_import_batches_project_created ON import_batches(project_id, created_at)`, "idx_import_batches_project_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_artifacts_project_hash ON bruno_source_artifacts(project_id, artifact_kind, sha256)`, "idx_bruno_artifacts_project_hash"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_script_created ON bruno_source_revisions(script_id, created_at)`, "idx_bruno_revisions_script_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_project_active ON bruno_source_revisions(project_id, active_flag)`, "idx_bruno_revisions_project_active"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_bruno_revisions_one_active ON bruno_source_revisions(script_id, project_id) WHERE active_flag = 1`, "idx_bruno_revisions_one_active"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_native_batches_project_created ON bruno_native_import_batches(project_id, created_at)`, "idx_bruno_native_batches_project_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_project_secrets_project_updated ON project_secrets(project_id, updated_at)`, "idx_project_secrets_project_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_project_secret_provider_metadata_project_updated ON project_secret_provider_metadata(project_id, updated_at)`, "idx_project_secret_provider_metadata_project_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_protected_source_secret_sessions_expiry ON protected_source_secret_sessions(expires_at)`, "idx_protected_source_secret_sessions_expiry"},
@@ -1301,10 +1301,10 @@ var schemaIndexes = []schemaIndex{
 }
 
 func (s *SQLiteStore) init() error {
-	// Must precede schemaCreateTableStatements: those CREATE the new names, and
-	// creating them first would strand the rows still held under the old ones.
-	// See sqlite_import_table_renames.go.
-	if err := s.renameLegacyImportTables(); err != nil {
+	// Import tables retain their original Bruno-era physical names. Detect a
+	// database already mutated by the short-lived format-neutral rename before
+	// CREATE TABLE can silently create empty legacy tables beside it.
+	if err := s.validateImportPhysicalTableLayout(); err != nil {
 		return err
 	}
 	for _, q := range schemaCreateTableStatements() {
@@ -1313,7 +1313,7 @@ func (s *SQLiteStore) init() error {
 		}
 	}
 	if s.db.dialect == storeDialectPostgres {
-		if _, err := s.db.Exec(`ALTER TABLE import_source_artifacts ALTER COLUMN size_bytes TYPE BIGINT`); err != nil {
+		if _, err := s.db.Exec(`ALTER TABLE bruno_source_artifacts ALTER COLUMN size_bytes TYPE BIGINT`); err != nil {
 			return fmt.Errorf("migrate import artifact size to BIGINT: %w", err)
 		}
 	}

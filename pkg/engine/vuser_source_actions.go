@@ -74,7 +74,12 @@ func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	return controller.ClearCookies(ctx)
+	if err := controller.ClearCookies(ctx); err != nil {
+		return err
+	}
+	// Retain the former live values through this action's evidence, then retire
+	// them under the bounded session history at the next action boundary.
+	return vu.stageRuntimeCredentialSessionSnapshot(nil)
 }
 
 // browserEmulationNewUserEachIteration reports whether browser emulation's
@@ -142,14 +147,14 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 	if err != nil {
 		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
 	}
-	redactionConfig, err := WithSecretValueRedactionChecked(vu.RedactionConfig, []string{token.AccessToken})
-	if err != nil {
+	if err := vu.replaceRuntimeCredentialScope(
+		"oauth:"+strings.ToLower(strings.TrimSpace(saveAs)),
+		[]string{token.AccessToken},
+	); err != nil {
 		return fmt.Errorf("http_oauth2_token %q: prepare token redaction: %s", action.Name, scrubSensitiveText(err.Error()))
 	}
 	// Install the exact matcher before the token becomes visible to templates,
 	// logs, protocol actions, or retained evidence.
-	vu.RedactionConfig = redactionConfig
-	vu.runtimeRedaction.Store(redactionConfig)
 	vu.ensureVariables()
 	writeVariableAlias := func(key, value string) {
 		vu.Variables[key] = value
@@ -1119,6 +1124,13 @@ func (vu *VUser) setSourceVariable(name string, value string) {
 	resolved := vu.interpolate(value)
 	vu.Variables[name] = resolved
 	vu.Variables[strings.ToLower(name)] = resolved
+	if vu.importedCredentialVariableName(name) ||
+		vu.importedCredentialVariableName(strings.ToLower(name)) {
+		_ = vu.replaceRuntimeCredentialScope(
+			"source_variable:"+strings.ToLower(name),
+			[]string{resolved},
+		)
+	}
 }
 
 func sourceActionFunction(action dsl.Action) string {

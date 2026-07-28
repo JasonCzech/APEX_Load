@@ -64,6 +64,40 @@ func TestCommitBrunoImportPersistsAtomicRevisionAndRejectsStaleWriter(t *testing
 	}
 }
 
+func TestCommitBrunoImportCanExecuteProtectedRawArtifact(t *testing.T) {
+	store := newBrunoImportTestStore(t)
+	commit := brunoImportCommitFixture(
+		"script-bruno-raw-runtime",
+		"project-bruno",
+		"revision-raw-runtime",
+		"artifact-raw-runtime",
+		"artifact-sanitized-runtime",
+		"sha-raw-runtime",
+		"sha-sanitized-runtime",
+	)
+	commit.UseRawArtifact = true
+
+	result, err := store.CommitBrunoImport(commit)
+	if err != nil {
+		t.Fatalf("CommitBrunoImport: %v", err)
+	}
+	if got := result.Script.Config.Bruno.BundleRef; got != "artifact://artifact-raw-runtime" {
+		t.Fatalf("runtime bundle ref = %q", got)
+	}
+	if got := result.Script.Config.Bruno.BundleSHA256; got != "sha-raw-runtime" {
+		t.Fatalf("runtime bundle digest = %q", got)
+	}
+	if result.Revision.RawArtifactID != "artifact-raw-runtime" ||
+		result.Revision.SanitizedArtifactID != "artifact-sanitized-runtime" ||
+		!result.Revision.SanitizedAvailable {
+		t.Fatalf("revision artifacts = %#v", result.Revision)
+	}
+	policy, _ := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey].(string)
+	if policy != "raw" {
+		t.Fatalf("runtime artifact marker = %q", policy)
+	}
+}
+
 func TestActivateBrunoSourceRevisionRollsBackBindingAndPreservesTuning(t *testing.T) {
 	store := newBrunoImportTestStore(t)
 	first := brunoImportCommitFixture("script-rollback", "project-bruno", "revision-1", "artifact-raw-1", "artifact-sanitized-1", "sha-raw-1", "sha-sanitized-1")
@@ -81,6 +115,11 @@ func TestActivateBrunoSourceRevisionRollsBackBindingAndPreservesTuning(t *testin
 	second.Script.Config.Pacing = dsl.PacingConfig{Type: "fixed_delay", DelayMs: 900}
 	second.Script.Config.Log = dsl.LogConfig{Level: "extended"}
 	second.Script.Config.Bruno.SecretBindings = map[string]string{"TOKEN": "bound/token"}
+	second.Script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+		Source:    "bruno",
+		Preserved: map[string]any{"operator_note": "retain"},
+	}}
+	second.UseRawArtifact = true
 	if _, err := store.CommitBrunoImport(second); err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +143,39 @@ func TestActivateBrunoSourceRevisionRollsBackBindingAndPreservesTuning(t *testin
 	}
 	if got := rolledBack.Config.Bruno.SecretBindings["TOKEN"]; got != "bound/token" {
 		t.Fatalf("secret binding = %q, want bound/token", got)
+	}
+	if rolledBack.Metadata == nil || rolledBack.Metadata.Import == nil {
+		t.Fatalf("rolled-back metadata = %#v", rolledBack.Metadata)
+	}
+	if _, exists := rolledBack.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey]; exists {
+		t.Fatalf("sanitized revision retained raw runtime marker: %#v", rolledBack.Metadata.Import.Preserved)
+	}
+	if got := rolledBack.Metadata.Import.Preserved["operator_note"]; got != "retain" {
+		t.Fatalf("unrelated import metadata = %#v, want operator note preserved", rolledBack.Metadata.Import.Preserved)
+	}
+
+	revision, err = store.ActivateBrunoSourceRevision("script-rollback", "project-bruno", "revision-2", "revision-1")
+	if err != nil {
+		t.Fatalf("ActivateBrunoSourceRevision(raw): %v", err)
+	}
+	if !revision.Active || revision.ID != "revision-2" {
+		t.Fatalf("activated raw revision = %+v", revision)
+	}
+	restoredRaw, err := store.GetScript("script-rollback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restoredRaw.Config.Bruno.BundleRef != "artifact://artifact-raw-2" {
+		t.Fatalf("restored raw bundle = %q", restoredRaw.Config.Bruno.BundleRef)
+	}
+	if restoredRaw.Metadata == nil || restoredRaw.Metadata.Import == nil {
+		t.Fatalf("restored raw metadata = %#v", restoredRaw.Metadata)
+	}
+	if got := restoredRaw.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey]; got != "raw" {
+		t.Fatalf("restored raw runtime marker = %#v, want raw", got)
+	}
+	if restoredRaw.Config.Pacing.DelayMs != 900 || restoredRaw.Config.Log.Level != "extended" {
+		t.Fatalf("APEX tuning changed after raw restore: pacing=%+v log=%+v", restoredRaw.Config.Pacing, restoredRaw.Config.Log)
 	}
 }
 

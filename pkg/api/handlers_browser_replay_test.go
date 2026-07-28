@@ -301,6 +301,65 @@ func TestHandleStartBrowserReplayRejectsNonBrowserScript(t *testing.T) {
 	}
 }
 
+func TestHandleStartBrowserReplayUsesDurableRetainedImportCredential(t *testing.T) {
+	const password = "browser-import-retained-password"
+	server := NewServer(ServerConfig{})
+	source := &dsl.Script{
+		ID:       "browser-retained-import",
+		Name:     "Browser retained import",
+		Protocol: "browser",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{Browser: dsl.BrowserConfig{
+			Engine: "chromium",
+			HTTPCredentials: dsl.BrowserHTTPCredentials{
+				Username: "operator",
+				Password: password,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "Open private page",
+			Type:   "browser_navigate",
+			Target: "https://origin.example.test/private",
+		}},
+	}
+	if _, _, err := server.runner.CreateImportedScriptDurableReportingReplay(source, "enterprise_script_archive"); err != nil {
+		t.Fatalf("create imported browser script: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"start_paused": true,
+		"browser": map[string]any{
+			"viewport": map[string]any{"width": 1200, "height": 800},
+		},
+	})
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/"+source.ID+"/browser-replay/sessions",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s, want retained import replay accepted", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), password) {
+		t.Fatalf("browser replay response disclosed retained password: %s", resp.Body.String())
+	}
+	var payload BrowserReplayStartResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode replay response: %v", err)
+	}
+	session, ok := server.browserReplay.Get(payload.ReplaySessionID)
+	if !ok || session == nil {
+		t.Fatal("browser replay session was not retained")
+	}
+	if _, ok := server.browserReplay.Stop(payload.ReplaySessionID); !ok {
+		t.Fatal("stop browser replay returned not found")
+	}
+}
+
 func TestHandleStartBrowserReplayScriptRejectsStoredProjectMismatch(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	stored := server.runner.StoreScript(&dsl.Script{

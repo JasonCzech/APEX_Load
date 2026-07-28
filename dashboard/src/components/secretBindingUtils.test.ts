@@ -5,6 +5,7 @@ import { type ScriptDefinition } from '../types/scripts'
 import {
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
+  requirementsPreserveDestinationValues,
   secretBindingRequirementsForScript,
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
@@ -24,6 +25,24 @@ function requirement(id: string, scriptIndex?: number): SecretBindingRequirement
 }
 
 describe('secret binding requirement scoping', () => {
+  it('preserves only when the server marks every exact requirement occurrence', () => {
+    const preserved = {
+      ...requirement('preserved'),
+      destination_value_preserved: true,
+    }
+
+    expect(requirementsPreserveDestinationValues([preserved])).toBe(true)
+    expect(requirementsPreserveDestinationValues([
+      preserved,
+      { ...requirement('second'), destination_value_preserved: true },
+    ])).toBe(true)
+    expect(requirementsPreserveDestinationValues([
+      preserved,
+      requirement('unmarked'),
+    ])).toBe(false)
+    expect(requirementsPreserveDestinationValues([])).toBe(false)
+  })
+
   it('selects requirements for the active generated script', () => {
     const requirements = [requirement('first', 0), requirement('second', 1)]
 

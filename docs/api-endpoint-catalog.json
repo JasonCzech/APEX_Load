@@ -3534,6 +3534,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/browser-recorder/attest",
+      "operationId": "handleAttestBridgedBrowserRecordingImport",
+      "summary": "Attest Bridged Browser Recording Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/bruno/commit",
       "operationId": "handleCommitBrunoImport",
       "summary": "Commit Bruno Import",

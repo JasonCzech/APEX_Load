@@ -162,6 +162,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Script.Config.BaseURL = "https://missing-base-url.apexload.invalid"
 	}
 	residualLines := detectK6ResidualSource(content, requests)
+	if len(residualLines) > 0 && result.Script.Metadata != nil &&
+		result.Script.Metadata.Import != nil {
+		// Keep the exact, inert JavaScript in the durable destination whenever
+		// the constrained adapter cannot reproduce all behavior. Execution is
+		// still gated, but an authorized operator can repair it without finding
+		// the original file or re-entering credentials embedded in the source.
+		result.Script.Metadata.Import.Preserved["k6_gated_source"] = content
+	}
 	for idx, req := range requests {
 		if missingBaseURL {
 			req.ReviewReasons = uniqueSortedK6Strings(append(req.ReviewReasons, "missing_base_url"))
@@ -255,12 +263,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	for _, item := range finalized.Diagnostics {
 		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 	}
-	reviewContent := redactK6CredentialValues(req.Content, finalized.Requirements)
+	reviewContent, credentialReviewRedacted := redactK6CredentialValues(req.Content, finalized.Requirements, requests)
 	reviewContent, residualReviewRedacted := disclosureSafeK6SourceReview(reviewContent, len(residualLines) != 0)
 	result.SecretRequirements = publicK6CredentialRequirements(finalized.Requirements)
 	result.Unsupported = diagnostics.Items()
 	result.SourceReview = sourceview.Build(map[string]string{reqFileName(result): reviewContent}, sourceMappings)
-	if residualReviewRedacted {
+	if credentialReviewRedacted || residualReviewRedacted {
 		markK6SourceReviewRedacted(result.SourceReview, reqFileName(result))
 	}
 	return result, nil
@@ -607,14 +615,17 @@ func parseK6RequestOptions(options string) (map[string]string, []string) {
 			reasons = append(reasons, "unsupported_request_options")
 			continue
 		}
+		// JavaScript object literals use the last property occurrence. Replace
+		// the complete header object instead of merging duplicate `headers`
+		// properties, otherwise values from an overridden object can reach the
+		// imported wire request.
+		headers = nil
 		parsedHeaders, ok := parseK6StringMap(valueExpression)
 		if !ok {
 			reasons = append(reasons, "dynamic_headers_expression")
 			continue
 		}
-		for name, value := range parsedHeaders {
-			headers[name] = value
-		}
+		headers = parsedHeaders
 	}
 	if len(headers) == 0 {
 		headers = nil

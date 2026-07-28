@@ -27,8 +27,11 @@ func TestConvertJMXDoesNotDiscloseEntityEncodedCredentialInSourceReview(t *testi
 	if err != nil {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
-	if len(result.SecretRequirements) != 1 {
-		t.Fatalf("secret requirements = %#v, want one projected header credential", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("secret requirements = %#v, preserved credential should need no reentry", result.SecretRequirements)
+	}
+	if got := result.Scripts[0].Actions[0].Headers["X-Api-Key"]; got != "jmeter-secret" {
+		t.Fatalf("destination header = %q, want decoded imported value", got)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
 		t.Fatalf("source review = %#v, want one source file", result.SourceReview)

@@ -1,8 +1,13 @@
 package postman
 
 import (
+	"bytes"
+	"encoding/json"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"mime"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -11,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -30,6 +36,8 @@ type postmanRequestPipeline struct {
 	provenVariables    map[string]struct{}
 	sourceVariables    map[string]credentialpolicy.SourceVariable
 	sourceDependencies map[string][]string
+	sourceReviewNames  map[string]struct{}
+	sourceReviewBodies map[string]string
 	reports            []requestimport.Report
 }
 
@@ -59,11 +67,13 @@ func newPostmanRequestPipeline(
 		}
 	}
 	pipeline := &postmanRequestPipeline{
-		sanitizeSensitive: sanitizeSensitive,
-		registry:          credentialpolicy.NewNameRegistry(),
-		provenVariables:   make(map[string]struct{}),
-		sourceVariables:   sourceVariables,
-		reports:           make([]requestimport.Report, 0),
+		sanitizeSensitive:  sanitizeSensitive,
+		registry:           credentialpolicy.NewNameRegistry(),
+		provenVariables:    make(map[string]struct{}),
+		sourceVariables:    sourceVariables,
+		sourceReviewNames:  make(map[string]struct{}),
+		sourceReviewBodies: make(map[string]string),
+		reports:            make([]requestimport.Report, 0),
 	}
 	if len(dependencySets) > 0 {
 		pipeline.sourceDependencies = make(map[string][]string, len(dependencySets[0]))
@@ -84,6 +94,7 @@ func (pipeline *postmanRequestPipeline) FinalizeAction(
 		return dsl.Action{}, fmt.Errorf("Postman request pipeline is required")
 	}
 	request := postmanEffectiveRequest(index, item, source)
+	pipeline.collectSourceReviewCredentialEvidence(item)
 	if request.Body.Kind == requestimport.BodyMultipart {
 		multipart, err := parsePostmanMultipart(
 			request.Body.Payload,
@@ -107,10 +118,7 @@ func (pipeline *postmanRequestPipeline) FinalizeAction(
 			})
 		}
 	}
-	mode := credentialpolicy.SecretReference
-	if !pipeline.sanitizeSensitive {
-		mode = credentialpolicy.Audit
-	}
+	mode := credentialpolicy.Preserve
 	projectorVariables := clonePostmanVariableSet(pipeline.provenVariables)
 	sheltered := shelterPostmanTemplates(&request, pipeline.provenVariables, pipeline.sourceVariables)
 	projected, report, err := requestimport.FinalizeAction(request, requestimport.FinalizeOptions{
@@ -138,9 +146,6 @@ func (pipeline *postmanRequestPipeline) FinalizeAction(
 		return dsl.Action{}, err
 	}
 	restorePostmanTemplates(&projected, source, sheltered)
-	if !pipeline.sanitizeSensitive && reportContainsFinding(report, "import_credentials_unmanaged") {
-		attachPostmanUnmanagedCredentialReview(&projected, postmanItemLocation(item))
-	}
 	pipeline.reports = append(pipeline.reports, report)
 	// A response capture becomes dynamic only after its producing request has
 	// executed. Register it after projecting this action so a same-named static
@@ -159,6 +164,9 @@ func (pipeline *postmanRequestPipeline) consumedSourceVariableNames() []string {
 		return nil
 	}
 	seen := make(map[string]struct{})
+	for name := range pipeline.sourceReviewNames {
+		seen[name] = struct{}{}
+	}
 	for _, report := range pipeline.reports {
 		for _, requirement := range report.Requirements {
 			for _, name := range requirement.SourceVariableNames {
@@ -192,6 +200,309 @@ func (pipeline *postmanRequestPipeline) consumedSourceVariableNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func (pipeline *postmanRequestPipeline) collectSourceReviewCredentialEvidence(item requestItem) {
+	if pipeline == nil {
+		return
+	}
+	recordReferences := func(value string) {
+		for _, match := range variablePattern.FindAllStringSubmatch(value, -1) {
+			if len(match) != 2 {
+				continue
+			}
+			if name := normalizeVariableName(match[1]); name != "" {
+				pipeline.sourceReviewNames[name] = struct{}{}
+			}
+		}
+	}
+	for _, header := range item.Request.Header {
+		if credential.SensitiveHeader(header.Key) || credential.SensitiveName(header.Key) {
+			recordReferences(header.Value)
+		}
+	}
+	for _, candidate := range []*auth{item.InheritedAuth, item.Request.Auth} {
+		if candidate == nil {
+			continue
+		}
+		for _, entries := range [][]keyValueEntry{
+			candidate.Bearer,
+			candidate.Basic,
+			candidate.Digest,
+			candidate.NTLM,
+			candidate.OAuth2,
+			candidate.AWSV4,
+			candidate.Hawk,
+		} {
+			for _, entry := range entries {
+				if credential.SensitiveName(entry.Key) {
+					recordReferences(entry.Value)
+				}
+			}
+		}
+		for _, entry := range candidate.APIKey {
+			if strings.EqualFold(strings.TrimSpace(entry.Key), "value") {
+				recordReferences(entry.Value)
+			}
+		}
+	}
+	effectiveURL := rawURL(item.Request.URL)
+	collectPostmanCredentialURLReferences(effectiveURL, recordReferences)
+	for _, match := range variablePattern.FindAllStringSubmatch(effectiveURL, -1) {
+		if len(match) != 2 {
+			continue
+		}
+		name := normalizeVariableName(match[1])
+		sourceVariable, ok := pipeline.sourceVariables[name]
+		if !ok {
+			continue
+		}
+		_, projection, err := credentialpolicy.ProjectRawURL(
+			sourceVariable.Value,
+			credentialpolicy.Options{
+				Mode:        credentialpolicy.SecretReference,
+				Source:      sourceVariable.Source,
+				RequestKey:  "postman_source_review",
+				TargetField: "url",
+			},
+		)
+		if err == nil && (len(projection.Requirements) > 0 ||
+			len(projection.Findings) > 0) {
+			pipeline.sourceReviewNames[name] = struct{}{}
+		}
+	}
+	if item.Request.Body == nil {
+		return
+	}
+	recordBody := func(value string) {
+		if value == "" {
+			return
+		}
+		if redacted := scrub.RedactCredentialBody(value); redacted != value {
+			pipeline.sourceReviewBodies[value] = redacted
+		}
+	}
+	recordBody(item.Request.Body.Raw)
+	collectPostmanCredentialBodyReferences(
+		item.Request.Body.Raw,
+		postmanRequestContentType(item.Request.Header),
+		recordReferences,
+	)
+	for _, entry := range item.Request.Body.URLEncoded {
+		if !entry.Disabled && credential.SensitiveName(entry.Key) {
+			recordReferences(entry.Value)
+		}
+	}
+	for _, entry := range item.Request.Body.FormData {
+		if !entry.Disabled && credential.SensitiveName(entry.Key) {
+			recordReferences(entry.Value)
+		}
+	}
+	if item.Request.Body.GraphQL != nil {
+		recordBody(item.Request.Body.GraphQL.Variables)
+		collectPostmanCredentialBodyReferences(
+			item.Request.Body.GraphQL.Variables,
+			"application/json",
+			recordReferences,
+		)
+	}
+}
+
+func postmanRequestContentType(headers []header) string {
+	for _, entry := range headers {
+		if !entry.Disabled && strings.EqualFold(strings.TrimSpace(entry.Key), "Content-Type") {
+			return entry.Value
+		}
+	}
+	return ""
+}
+
+// collectPostmanCredentialURLReferences associates neutral source-variable
+// names with credential-bearing URL components. Preserve mode intentionally
+// emits no binding requirement, so this source provenance is what lets the
+// public SourceReview hide the declaration value without changing the
+// executable target.
+func collectPostmanCredentialURLReferences(raw string, record func(string)) {
+	if strings.TrimSpace(raw) == "" || record == nil {
+		return
+	}
+	authorityStart := 0
+	if scheme := strings.Index(raw, "://"); scheme >= 0 {
+		authorityStart = scheme + 3
+	} else if strings.HasPrefix(raw, "//") {
+		authorityStart = 2
+	}
+	authorityEnd := len(raw)
+	if end := strings.IndexAny(raw[authorityStart:], "/?#"); end >= 0 {
+		authorityEnd = authorityStart + end
+	}
+	if at := strings.LastIndex(raw[authorityStart:authorityEnd], "@"); at >= 0 {
+		record(raw[authorityStart : authorityStart+at])
+	}
+
+	queryStart := strings.IndexByte(raw, '?')
+	if queryStart >= 0 {
+		queryEnd := len(raw)
+		if fragment := strings.IndexByte(raw[queryStart+1:], '#'); fragment >= 0 {
+			queryEnd = queryStart + 1 + fragment
+		}
+		for _, pair := range strings.Split(raw[queryStart+1:queryEnd], "&") {
+			name, value, _ := strings.Cut(pair, "=")
+			decodedName, err := url.QueryUnescape(name)
+			if err == nil && credential.SensitiveName(decodedName) {
+				if decodedValue, decodeErr := url.QueryUnescape(value); decodeErr == nil {
+					record(decodedValue)
+				} else {
+					record(value)
+				}
+			}
+		}
+	}
+	if fragment := strings.IndexByte(raw, '#'); fragment >= 0 {
+		// URL fragments are never transported by HTTP, but signed/auth callback
+		// material is commonly placed there in authored collections. Mask any
+		// referenced declaration in the review copy conservatively.
+		record(raw[fragment+1:])
+	}
+}
+
+func collectPostmanCredentialBodyReferences(
+	raw string,
+	contentType string,
+	record func(string),
+) {
+	if strings.TrimSpace(raw) == "" || record == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(raw)
+	mediaType, _, _ := mime.ParseMediaType(strings.TrimSpace(contentType))
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	switch {
+	case strings.Contains(mediaType, "json"),
+		strings.HasPrefix(trimmed, "{"),
+		strings.HasPrefix(trimmed, "["):
+		collectPostmanJSONCredentialReferences([]byte(raw), record)
+	case strings.Contains(mediaType, "xml"), strings.HasPrefix(trimmed, "<"):
+		collectPostmanXMLCredentialReferences([]byte(raw), record)
+	case mediaType == "application/x-www-form-urlencoded":
+		collectPostmanFormCredentialReferences(raw, record)
+		return
+	}
+	// Duplicate keys and malformed declared structured content cannot always be
+	// associated with one decoded node. If the bounded disclosure scrubber
+	// recognizes credential structure, mask every referenced declaration rather
+	// than risk retaining a value from a collapsed/ambiguous occurrence.
+	if scrub.RedactCredentialBody(raw) != raw {
+		record(raw)
+	}
+}
+
+func collectPostmanJSONCredentialReferences(payload []byte, record func(string)) bool {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return false
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return false
+	}
+	var walk func(any, string, bool)
+	walk = func(node any, name string, inheritedSensitive bool) {
+		sensitive := inheritedSensitive || credential.SensitiveName(name)
+		switch typed := node.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				walk(child, key, sensitive)
+			}
+		case []any:
+			for _, child := range typed {
+				walk(child, name, sensitive)
+			}
+		case string:
+			if sensitive {
+				record(typed)
+			}
+		}
+	}
+	walk(value, "", false)
+	return true
+}
+
+func collectPostmanXMLCredentialReferences(payload []byte, record func(string)) bool {
+	decoder := xml.NewDecoder(bytes.NewReader(payload))
+	sensitiveDepth := 0
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return true
+		}
+		if err != nil {
+			return false
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			if sensitiveDepth > 0 || credential.SensitiveName(typed.Name.Local) {
+				sensitiveDepth++
+			}
+			for _, attr := range typed.Attr {
+				if sensitiveDepth > 0 || credential.SensitiveName(attr.Name.Local) {
+					record(attr.Value)
+				}
+			}
+		case xml.CharData:
+			if sensitiveDepth > 0 {
+				record(string(typed))
+			}
+		case xml.EndElement:
+			if sensitiveDepth > 0 {
+				sensitiveDepth--
+			}
+		}
+	}
+}
+
+func collectPostmanFormCredentialReferences(raw string, record func(string)) {
+	for _, pair := range strings.Split(raw, "&") {
+		name, value, _ := strings.Cut(pair, "=")
+		decodedName, err := url.QueryUnescape(name)
+		if err == nil && credential.SensitiveName(decodedName) {
+			if decodedValue, decodeErr := url.QueryUnescape(value); decodeErr == nil {
+				record(decodedValue)
+			} else {
+				record(value)
+			}
+		}
+	}
+}
+
+func (pipeline *postmanRequestPipeline) redactSourceReviewBodies(
+	sources map[string]string,
+) bool {
+	if pipeline == nil || len(sources) == 0 || len(pipeline.sourceReviewBodies) == 0 {
+		return false
+	}
+	changed := false
+	for name, source := range sources {
+		redactedSource := source
+		for raw, redacted := range pipeline.sourceReviewBodies {
+			rawJSON, rawErr := json.Marshal(raw)
+			redactedJSON, redactedErr := json.Marshal(redacted)
+			if rawErr == nil && redactedErr == nil {
+				redactedSource = strings.ReplaceAll(
+					redactedSource,
+					string(rawJSON),
+					string(redactedJSON),
+				)
+			}
+			redactedSource = strings.ReplaceAll(redactedSource, raw, redacted)
+		}
+		if redactedSource != source {
+			sources[name] = redactedSource
+			changed = true
+		}
+	}
+	return changed
 }
 
 func (pipeline *postmanRequestPipeline) FinalizeScript(script *dsl.Script) (*postmanFinalization, error) {
@@ -487,34 +798,6 @@ func restorePostmanTemplates(action *dsl.Action, source dsl.Action, shelter post
 		if source.Auth != nil && strings.EqualFold(strings.TrimSpace(source.Auth.Type), "noauth") {
 			action.Auth.Type = source.Auth.Type
 		}
-	}
-}
-
-func reportContainsFinding(report requestimport.Report, code string) bool {
-	for _, finding := range report.Findings {
-		if finding.Code == code {
-			return true
-		}
-	}
-	return false
-}
-
-func attachPostmanUnmanagedCredentialReview(action *dsl.Action, sourceRef string) {
-	if action == nil {
-		return
-	}
-	if action.Metadata == nil {
-		action.Metadata = make(map[string]any)
-	}
-	if _, exists := action.Metadata["import_review"]; exists {
-		return
-	}
-	action.Metadata["import_review"] = map[string]any{
-		"version":      1,
-		"source":       "postman",
-		"reason_codes": []string{"unmanaged_credentials"},
-		"source_refs":  []string{sourceRef},
-		"resolution":   "project_credentials_and_remove_gate",
 	}
 }
 

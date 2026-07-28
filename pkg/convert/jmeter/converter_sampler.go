@@ -96,9 +96,12 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		action.Auth = &auth
 	}
 	if reviewAuth, ok := reviewAuthForSampler(ctx.auths, absoluteURL, rawPath); ok {
-		// Explicit no-auth prevents a review-gated, unsupported source scheme
-		// from accidentally inheriting an executable script-level credential.
-		action.Auth = &dsl.AuthConfig{Type: httpprotocol.AuthTypeNone}
+		// The execution gate prevents transport while the exact source fields
+		// remain available for an operator to translate without credential
+		// re-entry. An explicit unsupported override also prevents inheritance
+		// from an executable script-level credential.
+		retained := reviewAuth.Config
+		action.Auth = &retained
 		applyJMeterAuthReviewGate(action, reviewAuth, location)
 	}
 	if timeout := samplerTimeoutMs(element); timeout > 0 {

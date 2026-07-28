@@ -1544,7 +1544,14 @@ func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByt
 						decoded = value
 					}
 					if parameterizedSecretField.MatchString(key) {
-						sampleValues[col] = "__REPLACE_WITH_SECRET__"
+						// Parameterization changes where the captured value is
+						// read from; it must not silently discard a password the
+						// operator already supplied. The durable imported data
+						// row retains the source-encoded bytes because template
+						// substitution writes directly back into the query/form
+						// wire shape. Response projection uses
+						// recorded_input_secret_columns to mask these cells.
+						sampleValues[col] = value
 						secretColumns[col] = true
 					} else {
 						sampleValues[col] = decoded
@@ -1620,7 +1627,7 @@ func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByt
 		sort.Strings(names)
 		ensureRecorderImportPreserved(script, sourceName)["recorded_input_secret_columns"] = names
 		warnings = append(warnings, fmt.Sprintf(
-			"Secret-like recorded input field(s) were seeded with placeholders instead of captured values (%s).",
+			"Secret-like recorded input field(s) retain their captured values for replay and should be reviewed (%s).",
 			strings.Join(names, ", "),
 		))
 	}

@@ -304,6 +304,7 @@ export interface components {
     };
     "BrunoSecretRequirement": {
       "context": string;
+      "destination_value_preserved"?: boolean;
       "existing_reference"?: boolean;
       "id": string;
       "key": string;
@@ -1924,16 +1925,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": {
-            "applied_count"?: number;
-            "blocked"?: boolean;
-            "blocked_reason"?: string;
-            "diffs"?: Array<Record<string, unknown>>;
-            "script"?: Record<string, unknown>;
-            "warnings"?: Array<string>;
-          };
+          "application/json": unknown;
         };
       };
       "400": {
@@ -2163,9 +2157,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -2184,6 +2178,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -2420,6 +2419,42 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleAttestBridgedBrowserRecordingImport": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "project_id"?: string;
+          "scripts"?: Array<Record<string, unknown>>;
+        };
+      };
+    };
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -3250,18 +3285,28 @@ export interface operations {
         "application/json": {
           "also_create_http_script"?: boolean;
           "end_seq"?: number;
+          "expected_script_count"?: number;
           "max_think_time_ms"?: number;
           "name"?: string;
+          "parameterization_selections"?: Array<{
+            "script_index"?: number;
+            "selected_ids"?: Array<string>;
+          }>;
           "parameterize"?: boolean;
+          "secret_bindings"?: Array<{
+            "requirement_id"?: string;
+            "script_index"?: number;
+            "secret_name"?: string;
+          }>;
           "split_at_transactions"?: boolean;
           "start_seq"?: number;
         };
       };
     };
     responses: {
-      "201": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -3319,9 +3364,9 @@ export interface operations {
       };
     };
     responses: {
-      "201": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -17729,9 +17774,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -17777,9 +17822,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -17825,9 +17870,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -17927,9 +17972,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18013,9 +18058,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18201,9 +18246,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18300,9 +18345,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18351,9 +18396,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18398,9 +18443,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18448,9 +18493,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18498,9 +18543,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18555,9 +18600,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18593,9 +18638,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -18634,9 +18679,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -24162,9 +24207,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -24503,9 +24548,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -24524,6 +24569,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -28693,9 +28743,9 @@ export interface operations {
       };
     };
     responses: {
-      "201": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -35980,9 +36030,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -36030,9 +36080,9 @@ export interface operations {
       };
     };
     responses: {
-      "200": {
+      "2XX": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -37560,6 +37610,9 @@ export interface paths {
   };
   "/api/v1/scripts/import/broker-config/support-matrix": {
     "get": operations["handleBrokerConfigSupportMatrix"];
+  };
+  "/api/v1/scripts/import/browser-recorder/attest": {
+    "post": operations["handleAttestBridgedBrowserRecordingImport"];
   };
   "/api/v1/scripts/import/bruno/commit": {
     "post": operations["handleCommitBrunoImport"];

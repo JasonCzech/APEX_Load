@@ -9,11 +9,12 @@ import {
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ParameterizationReview from './ParameterizationReview'
-import { protectedImportExpiryLabel } from './protectedImportSession'
+import { importDraftExpiryStatus, protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
+import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 import './ScriptImportReview.css'
 
 const severityRank: Record<string, number> = {
@@ -56,7 +57,12 @@ interface Props {
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
   parameterization?: Parameterization
-  onParameterizationApplied?: (script: ScriptDefinition, diffs: ParameterizationDiff[], selectedIds: string[]) => void
+  onParameterizationApplied?: (
+    script: ScriptDefinition,
+    diffs: ParameterizationDiff[],
+    selectedIds: string[],
+    importDraftExpiresAt?: string,
+  ) => void
   secretBindingRequirements?: SecretBindingRequirement[]
   sourceMigrationRequirements?: SecretBindingRequirement[]
   preserveSourceSessionAfterApply?: boolean
@@ -66,6 +72,7 @@ interface Props {
   sourceSecretSessionExpiresAt?: string
   sourceSecretMigrationAllowed?: boolean
   protectedImportSessionExpiresAt?: string
+  importDraftExpiresAt?: string
   onSourceSecretSessionSettled?: (
     sourceSecretSessionId: string,
     migrationSelections: SecretBindingSelection[],
@@ -106,6 +113,7 @@ export default function ScriptImportReview({
   sourceSecretSessionExpiresAt,
   sourceSecretMigrationAllowed = false,
   protectedImportSessionExpiresAt,
+  importDraftExpiresAt,
   onSourceSecretSessionSettled,
   credentialReviewRef,
   onCredentialsPreparedChange,
@@ -122,11 +130,13 @@ export default function ScriptImportReview({
   children,
 }: Props) {
   const hasUnresolvedSecretBindings = secretBindingRequirements.length > 0
+  const allRemainingRequirementsPreserveValues = requirementsPreserveDestinationValues(secretBindingRequirements)
   const internalBindingReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const bindingReviewRef = credentialReviewRef || internalBindingReviewRef
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
+  const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const parameterizationApplyingRef = useRef(false)
   const credentialActionRequestRef = useRef<CredentialActionRequest | null>(null)
   const credentialActionRequestIdRef = useRef(0)
@@ -135,8 +145,12 @@ export default function ScriptImportReview({
   currentReviewIdentityRef.current = reviewIdentity
   const currentHasUnresolvedSecretBindingsRef = useRef(hasUnresolvedSecretBindings)
   currentHasUnresolvedSecretBindingsRef.current = hasUnresolvedSecretBindings
+  const currentRemainingRequirementsPreserveValuesRef = useRef(allRemainingRequirementsPreserveValues)
+  currentRemainingRequirementsPreserveValuesRef.current = allRemainingRequirementsPreserveValues
   const defaultConfigureLaterCount = useMemo(
-    () => new Set(secretBindingRequirements.map(requirement => {
+    () => new Set(secretBindingRequirements.filter(requirement => (
+      requirement.destination_value_preserved !== true
+    )).map(requirement => {
       const name = requirement.suggested_name?.trim()
       if (!name) return ''
       const scope = typeof requirement.script_index === 'number'
@@ -153,6 +167,8 @@ export default function ScriptImportReview({
   const credentialsValid = !hasUnresolvedSecretBindings || (preparedSecrets?.valid ?? true)
   const credentialHandlerUnavailable = hasUnresolvedSecretBindings && !onSecretBindingsApply
   const configureLaterCount = preparedSecrets?.configureLaterCount ?? defaultConfigureLaterCount
+  const selectedBindingCount = preparedSecrets?.selectedBindingCount
+    ?? secretBindingRequirements.filter(requirement => requirement.destination_value_preserved !== true).length
   const deferredSaveLabel = /^Save to Script Library$/i.test(saveLabel) ? 'Save' : saveLabel
   const resolvedSaveLabel = hasUnresolvedSecretBindings && configureLaterCount > 0
     ? `${deferredSaveLabel} with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure`
@@ -188,10 +204,13 @@ export default function ScriptImportReview({
       return
     }
 
-    if (request.phase !== 'awaiting-resolution' || hasUnresolvedSecretBindings) return
+    if (
+      request.phase !== 'awaiting-resolution'
+      || (hasUnresolvedSecretBindings && !allRemainingRequirementsPreserveValues)
+    ) return
     clearCredentialAction()
     request.handler?.()
-  }, [clearCredentialAction, hasUnresolvedSecretBindings, reviewIdentity])
+  }, [allRemainingRequirementsPreserveValues, clearCredentialAction, hasUnresolvedSecretBindings, reviewIdentity])
 
   useEffect(() => {
     if (hasUnresolvedSecretBindings) return
@@ -207,6 +226,16 @@ export default function ScriptImportReview({
   useEffect(() => {
     handleParameterizationApplyingChange(false)
   }, [handleParameterizationApplyingChange, parameterization, reviewIdentity])
+
+  useEffect(() => {
+    const expiry = Date.parse(importDraftExpiresAt || '')
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return
+    const timeout = window.setTimeout(
+      () => setImportDraftExpiryGeneration(current => current + 1),
+      Math.min(expiry - Date.now() + 10, 2_147_483_647),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [importDraftExpiresAt, importDraftExpiryGeneration])
 
   useEffect(() => () => {
     credentialActionRequestIdRef.current += 1
@@ -243,7 +272,7 @@ export default function ScriptImportReview({
   }, [onSecretBindingsApply, reportInternalReviewBusy, reviewIdentity])
 
   const runAction = async (action: CredentialAction) => {
-    if (parameterizationApplyingRef.current || reviewBusy) return
+    if (importDraftExpired || parameterizationApplyingRef.current || reviewBusy) return
     if (!hasUnresolvedSecretBindings) {
       if (action === 'save') onSave?.()
       if (action === 'edit') onEdit?.()
@@ -266,11 +295,22 @@ export default function ScriptImportReview({
       clearCredentialAction()
       return
     }
+    if (selectedBindingCount === 0) {
+      clearCredentialAction()
+      request.handler?.()
+      return
+    }
     // onApply normally moves the review to a requirements-free render. If it
     // completed synchronously without doing so, keep the action queued for the
     // exact same review generation instead of firing against stale props.
     if (request.phase === 'applying') request.phase = 'awaiting-resolution'
-    if (request.phase === 'awaiting-resolution' && !currentHasUnresolvedSecretBindingsRef.current) {
+    if (
+      request.phase === 'awaiting-resolution'
+      && (
+        !currentHasUnresolvedSecretBindingsRef.current
+        || currentRemainingRequirementsPreserveValuesRef.current
+      )
+    ) {
       clearCredentialAction()
       request.handler?.()
     }
@@ -296,6 +336,8 @@ export default function ScriptImportReview({
     return a.title.localeCompare(b.title)
   })
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
+  const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
+  const importDraftExpired = importDraftExpiry?.expired === true
 
   return (
     <div className="script-import-review">
@@ -309,8 +351,12 @@ export default function ScriptImportReview({
             <button
               className="btn btn-secondary"
               onClick={() => { void runAction('edit') }}
-              disabled={parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
-              title={!credentialsValid ? 'Enter valid secret reference names before editing this draft.' : undefined}
+              disabled={importDraftExpired || parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              title={importDraftExpired
+                ? 'Re-run the import to obtain a fresh credential-preserving draft before editing.'
+                : !credentialsValid
+                  ? 'Enter valid secret reference names before editing this draft.'
+                  : undefined}
             >
               {credentialAction === 'edit' ? 'Preparing editor...' : resolvedEditLabel}
             </button>
@@ -319,7 +365,8 @@ export default function ScriptImportReview({
             <button
               className="btn btn-primary"
               onClick={() => { void runAction('save') }}
-              disabled={saving || saveDisabled || parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={importDraftExpired || saving || saveDisabled || parameterizationApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              title={importDraftExpired ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.' : undefined}
             >
               {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : resolvedSaveLabel}
             </button>
@@ -330,6 +377,12 @@ export default function ScriptImportReview({
       {protectedSessionLabel && (
         <div className="script-import-review-session" role="status">
           {protectedSessionLabel} Credential bindings and parameterization selections remain protected; other draft edits switch to the compatibility commit path.
+        </div>
+      )}
+
+      {importDraftExpiry && (
+        <div className="script-import-review-session" role={importDraftExpiry.expired ? 'alert' : 'status'}>
+          {importDraftExpiry.label}
         </div>
       )}
 
@@ -347,7 +400,7 @@ export default function ScriptImportReview({
           onSourceSessionSettled={onSourceSecretSessionSettled}
           onApply={applySecretBindings}
           onPreparedChange={setPreparedSecrets}
-          disabled={parameterizationApplying || reviewBusy}
+          disabled={importDraftExpired || parameterizationApplying || reviewBusy}
         />
       )}
 
@@ -365,11 +418,11 @@ export default function ScriptImportReview({
           script={script}
           scriptName={script.name}
           reviewGeneration={reviewGeneration}
-          disabled={saving || reviewBusy || credentialAction !== null}
+          disabled={importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleParameterizationApplyingChange}
-          onApplied={(parameterizedScript, diffs, selectedIds) => {
+          onApplied={(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt) => {
             bindingReviewRef.current?.preserveEditsForNextReviewGeneration()
-            onParameterizationApplied(parameterizedScript, diffs, selectedIds)
+            onParameterizationApplied(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt)
           }}
         />
       )}

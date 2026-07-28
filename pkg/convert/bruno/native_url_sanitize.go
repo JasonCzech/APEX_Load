@@ -104,7 +104,7 @@ func sanitizeNativeURLCredentials(
 					document,
 					file.nativeAliasGroups,
 					pointer,
-					requirement.Replacement,
+					nativeCredentialProjectionReplacement(requirement),
 				); err != nil {
 					return nil, nil, 0, fmt.Errorf("write sanitized native query parameter in %q: %w", file.Path, err)
 				}
@@ -184,7 +184,7 @@ func sanitizeNativeRawURL(
 			index+1,
 			rawValue,
 		)
-		parts[index] = rawName + "=" + requirement.Replacement
+		parts[index] = rawName + "=" + nativeCredentialProjectionReplacement(requirement)
 		requirements = append(requirements, requirement)
 		changed = true
 	}
@@ -436,7 +436,7 @@ func rewriteNativeComposedURLCredential(
 		requirement.Value = resolved
 	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return requirement.Replacement, complete
+	return nativeCredentialProjectionReplacement(requirement), complete
 }
 
 func setNativeURLQueryValue(

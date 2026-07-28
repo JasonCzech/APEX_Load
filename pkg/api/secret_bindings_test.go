@@ -972,8 +972,21 @@ func TestImportResponseIncludesProjectedMultiScriptSecretRequirements(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "inline-password") || strings.Contains(string(encoded), "inline-token") || strings.Contains(string(encoded), "evidence-only-password") {
-		t.Fatalf("import response leaked inline secret: %s", encoded)
+	if !strings.Contains(string(encoded), "inline-password-a") ||
+		!strings.Contains(string(encoded), "inline-token-a") ||
+		!strings.Contains(string(encoded), "inline-password-b") {
+		t.Fatalf("authorized editable drafts lost imported credentials: %s", encoded)
+	}
+	delete(response, "script")
+	delete(response, "scripts")
+	reviewEncoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reviewEncoded), "inline-password") ||
+		strings.Contains(string(reviewEncoded), "inline-token") ||
+		strings.Contains(string(reviewEncoded), "evidence-only-password") {
+		t.Fatalf("import review surface leaked inline secret: %s", reviewEncoded)
 	}
 }
 

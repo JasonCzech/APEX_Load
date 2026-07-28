@@ -1,13 +1,22 @@
 package storage
 
 import (
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+const ImportSourceCommitFenceMetadataKey = "protected_source_commit_fence_v1"
+
+var ErrImportSourceScriptChanged = errors.New("import source retention target script changed")
 
 // ImportSourceRetention records the source a non-Bruno importer wants kept
 // alongside a script that has already been created.
@@ -27,7 +36,12 @@ type ImportSourceRetention struct {
 	SourceFormat         string
 	CompatibilityVersion string
 	CanonicalScript      *dsl.Script
-	CreatedBy            string
+	// ExpectedScriptFingerprint fences source activation to the exact
+	// committed script content that produced CanonicalScript. Callers may omit
+	// it for compatibility; RetainImportSource derives the same fingerprint
+	// from CanonicalScript and still enforces the live-row comparison.
+	ExpectedScriptFingerprint string
+	CreatedBy                 string
 }
 
 // ImportSourceRetentionStore is optional, matching BrunoImportStore, so
@@ -60,6 +74,16 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 	if err := normalizeBrunoArtifact(&retention.Artifact, projectID, "raw"); err != nil {
 		return nil, err
 	}
+	canonicalFingerprint, err := ImportSourceScriptFingerprint(retention.CanonicalScript)
+	if err != nil {
+		return nil, fmt.Errorf("fingerprint retained import source script: %w", err)
+	}
+	expectedFingerprint := strings.ToLower(strings.TrimSpace(retention.ExpectedScriptFingerprint))
+	if expectedFingerprint == "" {
+		expectedFingerprint = canonicalFingerprint
+	} else if expectedFingerprint != canonicalFingerprint {
+		return nil, errors.New("import source retention fingerprint does not match canonical script")
+	}
 
 	revision := BrunoSourceRevision{
 		ID:                   uuid.NewString(),
@@ -79,16 +103,38 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 	}
 	defer tx.Rollback()
 
-	// Confirm the script exists in this project before writing a revision for
-	// it. The foreign key would catch a missing script, but not one that lives
-	// in a different project, which would silently attach retained source to
-	// another tenant's script.
-	var storedProjectID string
-	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM scripts WHERE id = ?`, scriptID).Scan(&storedProjectID); err != nil {
-		return nil, errors.New("import source retention target script not found")
+	// Retention is a second durable boundary after the script commit. Lock the
+	// live script before reading it, then keep that lock through revision
+	// activation so delayed publication A cannot become active after script B
+	// has replaced it. SQLite's no-op update obtains the write reservation
+	// before the read; PostgreSQL uses a row lock.
+	if s.db.dialect != storeDialectPostgres {
+		result, lockErr := tx.Exec(`UPDATE scripts SET id = id WHERE id = ?`, scriptID)
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		if affected, rowsErr := result.RowsAffected(); rowsErr != nil {
+			return nil, rowsErr
+		} else if affected != 1 {
+			return nil, errors.New("import source retention target script not found")
+		}
 	}
-	if normalizeProjectID(storedProjectID) != projectID {
+	liveScript, err := loadImportSourceRetentionScriptTx(tx, scriptID, s.db.dialect == storeDialectPostgres)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("import source retention target script not found")
+		}
+		return nil, err
+	}
+	if normalizeProjectID(liveScript.ProjectID) != projectID {
 		return nil, errors.New("import source retention target script belongs to another project")
+	}
+	liveFingerprint, err := ImportSourceScriptFingerprint(liveScript)
+	if err != nil {
+		return nil, fmt.Errorf("fingerprint live import source script: %w", err)
+	}
+	if liveFingerprint != expectedFingerprint {
+		return nil, ErrImportSourceScriptChanged
 	}
 
 	artifact, err := saveBrunoArtifactTx(tx, &retention.Artifact)
@@ -100,11 +146,11 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 	revision.SanitizedAvailable = false
 
 	var previousActiveID string
-	if err := tx.QueryRow(`SELECT id FROM import_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
+	if err := tx.QueryRow(`SELECT id FROM bruno_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
 		scriptID, projectID).Scan(&previousActiveID); err == nil {
 		revision.ParentRevisionID = previousActiveID
 	}
-	if _, err := tx.Exec(`UPDATE import_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`,
+	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`,
 		scriptID, projectID); err != nil {
 		return nil, err
 	}
@@ -113,7 +159,7 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`INSERT INTO import_source_revisions (
+	if _, err := tx.Exec(`INSERT INTO bruno_source_revisions (
 		id, script_id, project_id, parent_revision_id, active_flag, raw_artifact_id, sanitized_artifact_id,
 		sanitized_available, source_format, compatibility_version, identity_map_json, import_options_json, dependency_snapshot_ref,
 		security_profile_json, change_summary_json, secret_bindings_json, canonical_script_json, created_by, created_at
@@ -130,4 +176,68 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 		return nil, err
 	}
 	return cloneBrunoRevision(&revision), nil
+}
+
+// ImportSourceScriptFingerprint returns the stable content identity used to
+// bind a retained source revision to its committed script. Volatile storage
+// fields are excluded, as is the self-describing commit fence itself. Every
+// executable and review-relevant script field remains covered.
+func ImportSourceScriptFingerprint(script *dsl.Script) (string, error) {
+	if script == nil {
+		return "", errors.New("script is required")
+	}
+	source, err := json.Marshal(script)
+	if err != nil {
+		return "", fmt.Errorf("marshal script for fingerprint: %w", err)
+	}
+	var clone dsl.Script
+	if err := json.Unmarshal(source, &clone); err != nil {
+		return "", fmt.Errorf("clone script for fingerprint: %w", err)
+	}
+	clone.RefKey = ""
+	clone.CreatedAt = time.Time{}
+	clone.UpdatedAt = time.Time{}
+	if clone.Metadata != nil && clone.Metadata.Import != nil &&
+		clone.Metadata.Import.Preserved != nil {
+		delete(clone.Metadata.Import.Preserved, ImportSourceCommitFenceMetadataKey)
+	}
+	payload, err := json.Marshal(&clone)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func loadImportSourceRetentionScriptTx(tx *storeTx, scriptID string, lock bool) (*dsl.Script, error) {
+	query := `SELECT id, COALESCE(ref_key, ''), name, protocol, version, COALESCE(project_id, ''), folder_id, COALESCE(generated_by, ''), COALESCE(generated_from, ''), COALESCE(metadata_json, '{}'), COALESCE(config, '{}'), COALESCE(data_sources, '[]'), COALESCE(parameters, '[]'), COALESCE(init, '[]'), COALESCE(actions, '[]'), COALESCE(teardown, '[]'), created_at, updated_at
+		FROM scripts WHERE id = ?`
+	if lock {
+		query += ` FOR UPDATE`
+	}
+	var script dsl.Script
+	var metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string
+	err := tx.QueryRow(query, scriptID).Scan(
+		&script.ID, &script.RefKey, &script.Name, &script.Protocol, &script.Version,
+		&script.ProjectID, &script.FolderID,
+		&script.GeneratedBy, &script.GeneratedFrom,
+		&metadataJSON, &configJSON, &dataSourcesJSON, &parametersJSON, &initJSON, &actionsJSON, &teardownJSON,
+		&script.CreatedAt, &script.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := decodeStoredScriptJSON(
+		&script,
+		metadataJSON,
+		configJSON,
+		dataSourcesJSON,
+		parametersJSON,
+		initJSON,
+		actionsJSON,
+		teardownJSON,
+	); err != nil {
+		return nil, fmt.Errorf("decode import source retention script %s: %w", scriptID, err)
+	}
+	return &script, nil
 }

@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 )
 
-func TestProtectedCredentialRequirementsTransferFromSampleConverter(t *testing.T) {
+func TestImportedCredentialRemainsRunnableWhileHARReviewIsRedacted(t *testing.T) {
 	const value = "har-protected-canary-7096f94f"
 	result, err := Convert([]byte(`{
 	  "log":{"entries":[{
@@ -25,25 +23,22 @@ func TestProtectedCredentialRequirementsTransferFromSampleConverter(t *testing.T
 		t.Fatal(err)
 	}
 
-	publicJSON, err := json.Marshal(result)
+	if result.Script == nil || len(result.Script.Actions) != 1 ||
+		!strings.Contains(result.Script.Actions[0].Body, value) {
+		t.Fatalf("destination script did not retain imported credential: %#v", result.Script)
+	}
+	reviewJSON, err := json.Marshal(result.SourceReview)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), value) {
-		t.Fatal("HAR converter JSON disclosed a protected credential value")
+	if strings.Contains(string(reviewJSON), value) {
+		t.Fatal("HAR source review disclosed an imported credential value")
 	}
 	requirements := result.ProtectedRequirements.Take()
-	defer clearHARProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != value {
-		t.Fatalf("protected requirements = %#v, want one transferred source value", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("runnable imported credential unexpectedly requires re-entry: %#v", requirements)
 	}
 	if result.ProtectedRequirements.Take() != nil {
 		t.Fatal("protected credential requirements were returned more than once")
-	}
-}
-
-func clearHARProtectedValues(requirements []credentialpolicy.Requirement) {
-	for index := range requirements {
-		requirements[index].Value = ""
 	}
 }

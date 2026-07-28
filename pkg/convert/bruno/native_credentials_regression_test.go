@@ -650,7 +650,7 @@ http:
 	}
 }
 
-func TestInspectNativeSanitizesAndGatesCredentialMarkupInNeutralXML(t *testing.T) {
+func TestInspectNativePreservesCredentialMarkupInRunnableDraft(t *testing.T) {
 	const sourceCredential = "xml-markup-credential-canary-5f72"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
@@ -670,20 +670,16 @@ http:
 	candidate := result.Scripts[0]
 	action := candidate.Script.Actions[0]
 	if strings.Contains(action.Body, sourceCredential) ||
-		!strings.Contains(action.Body, nativeXMLReviewMarker) ||
-		!hasNativeDiagnostic(candidate.Diagnostics, "bruno_xml_unsupported_markup_review_required") ||
-		action.Metadata["review_gate"] != "bruno_xml_unsupported_markup_review_required" {
-		t.Fatalf("credential-bearing XML markup was not sanitized and gated: %#v", candidate)
+		len(candidate.SecretRequirements) != 1 ||
+		candidate.SecretRequirements[0].Value != `<Envelope><![CDATA[password=`+sourceCredential+`]]></Envelope>` ||
+		action.Body != candidate.SecretRequirements[0].Replacement ||
+		strings.Contains(action.Body, nativeXMLReviewMarker) ||
+		hasNativeDiagnostic(candidate.Diagnostics, "bruno_xml_unsupported_markup_review_required") ||
+		action.Metadata["review_gate"] != nil {
+		t.Fatalf("credential-bearing XML markup was not reversibly protected for commit: %#v", candidate)
 	}
 	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
 		t.Fatal("sanitized XML source retained credential-bearing markup")
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(encoded, []byte(sourceCredential)) {
-		t.Fatalf("public Bruno inspection result disclosed XML markup credential: %s", encoded)
 	}
 }
 

@@ -17,7 +17,7 @@ func seedRevisionPrerequisites(t *testing.T, store *SQLiteStore) {
 		t.Fatalf("seed script: %v", err)
 	}
 	for _, artifact := range []struct{ id, kind string }{{"artifact-raw", "raw"}, {"artifact-sanitized", "sanitized"}} {
-		if _, err := store.db.Exec(`INSERT INTO import_source_artifacts
+		if _, err := store.db.Exec(`INSERT INTO bruno_source_artifacts
 			(id, project_id, artifact_kind, backend_key, sha256, size_bytes, encryption_json, lifecycle_state, created_at)
 			VALUES (?, ?, ?, ?, ?, 1, '{}', 'active', ?)`,
 			artifact.id, DefaultProjectID, artifact.kind, "key/"+artifact.id, "sha-"+artifact.id, now); err != nil {
@@ -42,7 +42,7 @@ func seedRevisionRow(t *testing.T, store *SQLiteStore, id, rawArtifactID, saniti
 		values += ", ?"
 		args = append(args, *sanitizedAvailable)
 	}
-	if _, err := store.db.Exec(`INSERT INTO import_source_revisions (`+columns+`) VALUES (`+values+`)`, args...); err != nil {
+	if _, err := store.db.Exec(`INSERT INTO bruno_source_revisions (`+columns+`) VALUES (`+values+`)`, args...); err != nil {
 		t.Fatalf("seed revision %s: %v", id, err)
 	}
 }
@@ -50,7 +50,7 @@ func seedRevisionRow(t *testing.T, store *SQLiteStore, id, rawArtifactID, saniti
 func sanitizedAvailableFor(t *testing.T, store *SQLiteStore, id string) int {
 	t.Helper()
 	var value int
-	if err := store.db.QueryRow(`SELECT sanitized_available FROM import_source_revisions WHERE id = ?`, id).Scan(&value); err != nil {
+	if err := store.db.QueryRow(`SELECT sanitized_available FROM bruno_source_revisions WHERE id = ?`, id).Scan(&value); err != nil {
 		t.Fatalf("read sanitized_available for %s: %v", id, err)
 	}
 	return value

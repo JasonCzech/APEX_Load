@@ -7,7 +7,7 @@ import (
 )
 
 // TestArtifactSweepCoversEveryArtifactReference derives the set of columns that
-// reference import_source_artifacts from the schema itself and requires each one
+// reference bruno_source_artifacts from the schema itself and requires each one
 // to appear in the orphan sweep.
 //
 // deleteUnreferencedImportArtifactsSQL states this as a rule for whoever adds
@@ -30,13 +30,13 @@ func TestArtifactSweepCoversEveryArtifactReference(t *testing.T) {
 
 	var referencing []string
 	for _, spec := range specs {
-		if !strings.EqualFold(spec.references, "import_source_artifacts") {
+		if !strings.EqualFold(spec.references, "bruno_source_artifacts") {
 			continue
 		}
 		referencing = append(referencing, strings.ToLower(spec.table)+"."+strings.ToLower(spec.column))
 	}
 	if len(referencing) == 0 {
-		t.Fatal("no foreign keys onto import_source_artifacts were found; the schema or the parser changed " +
+		t.Fatal("no foreign keys onto bruno_source_artifacts were found; the schema or the parser changed " +
 			"in a way that makes this test vacuous rather than passing")
 	}
 
@@ -53,7 +53,7 @@ func TestArtifactSweepCoversEveryArtifactReference(t *testing.T) {
 	}
 	sort.Strings(missing)
 	if len(missing) > 0 {
-		t.Fatalf("these columns reference import_source_artifacts but are absent from the orphan sweep, "+
+		t.Fatalf("these columns reference bruno_source_artifacts but are absent from the orphan sweep, "+
 			"so deleting a script would remove artifacts they still point at: %s\n\nsweep:\n%s",
 			strings.Join(missing, ", "), deleteUnreferencedImportArtifactsSQL)
 	}

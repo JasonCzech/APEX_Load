@@ -38,6 +38,18 @@ type assignmentStageDecision struct {
 	err               error
 }
 
+func assignmentPreservesImportedCredentials(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		return false
+	}
+	policy, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string)
+	return strings.EqualFold(
+		strings.TrimSpace(policy),
+		dsl.ImportPreservedCredentialPolicyPreserve,
+	)
+}
+
 // assignmentRuntimePreflightError distinguishes a generator-specific runtime
 // incompatibility from ordinary admission rejections. AssignWork exposes this
 // condition as gRPC FailedPrecondition after rolling the staged reservation
@@ -824,9 +836,17 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			}
 		}
 	}
-	if issues := dsl.ValidateScriptIssues(&script); len(issues) > 0 {
+	validationIssues := dsl.ValidateScriptIssues(&script)
+	if assignmentPreservesImportedCredentials(&script) {
+		// Assignments originate from the controller's durable script snapshot.
+		// A server-attested import may retain exact credential-bearing JVM argv;
+		// the trusted validator still rejects every structural/process-control
+		// option violation.
+		validationIssues = dsl.ValidateScriptIssuesWithPreservedImportCredentials(&script)
+	}
+	if len(validationIssues) > 0 {
 		const maxValidationMessageBytes = 16 << 10
-		message := strings.Join(issues, "; ")
+		message := strings.Join(validationIssues, "; ")
 		if len(message) > maxValidationMessageBytes {
 			message = boundedtext.TruncateUTF8(message, maxValidationMessageBytes-len("...[truncated]")) + "...[truncated]"
 		}
@@ -866,6 +886,14 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, secretBundleValues(request.GetSecretBundle()))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
+	}
+	importedCredentialValues, err := engine.ImportedCredentialValues(&script)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "inspect retained import credentials")
+	}
+	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, importedCredentialValues)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "prepare retained import credential redaction: %v", err)
 	}
 	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
 	preflight, preflightErr := engine.PreflightScriptRuntime(ctx, &script, runtimeSecrets)

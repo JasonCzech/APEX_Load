@@ -1647,6 +1647,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	}
 
 	scriptCopy := *script.Script
+	credentialContextBase := cloneScriptDefinition(script.Script)
 	// Runtime HAR capture and retention must use the same centrally managed
 	// directory. Override any script-supplied path before local or distributed
 	// execution so scripts cannot select arbitrary filesystem locations.
@@ -1699,7 +1700,19 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		if err := applyRuntimeOverrides(&scriptCopy, executionRuntimeSettings); err != nil {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
 		}
-		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
+		if isCredentialPreservingImport(credentialContextBase) {
+			if err := validatePreservedImportCredentialEdits(
+				&scriptCopy,
+				credentialContextBase,
+			); err != nil {
+				return TestGroup{}, engine.GroupConfig{}, fmt.Errorf(
+					"group[%d]: runtime override is unsafe for retained imported credentials: %w",
+					index,
+					err,
+				)
+			}
+		}
+		if issues := validateStoredExecutionScript(&scriptCopy); len(issues) > 0 {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 		}
 	}
@@ -1718,7 +1731,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		}
 	}
 	if len(scriptCopy.Actions) == 0 {
-		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
+		if issues := validateStoredExecutionScript(&scriptCopy); len(issues) > 0 {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 		}
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script must have at least one action", index)

@@ -404,6 +404,63 @@ Action=` + test.actionPointer,
 	}
 }
 
+func TestConvertZipPreservesOnePhysicalCSourceAcrossLifecyclePhases(t *testing.T) {
+	files := map[string]string{
+		"SharedLifecycle.usr": `[General]
+Type=Web
+[Actions]
+InitAction=Lifecycle.c
+Action=Lifecycle.c
+EndAction=Lifecycle.c
+`,
+		"Lifecycle.c": `int InitAction()
+{
+	web_url("init request", "URL=https://example.test/init", LAST);
+	return 0;
+}
+
+int Action()
+{
+	web_url("action request", "URL=https://example.test/action", LAST);
+	return 0;
+}
+
+int EndAction()
+{
+	web_url("teardown request", "URL=https://example.test/teardown", LAST);
+	return 0;
+}
+`,
+	}
+	result, err := ConvertZip(buildSourceZip(t, files), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	if result.Script == nil {
+		t.Fatal("missing script")
+	}
+	phases := []struct {
+		name    string
+		actions []dsl.Action
+		target  string
+	}{
+		{name: "init", actions: result.Script.Init, target: "/init"},
+		{name: "action", actions: result.Script.Actions, target: "/action"},
+		{name: "teardown", actions: result.Script.Teardown, target: "/teardown"},
+	}
+	for _, phase := range phases {
+		if len(phase.actions) != 1 || phase.actions[0].Target != phase.target {
+			t.Fatalf("%s actions = %#v, want exactly %q", phase.name, phase.actions, phase.target)
+		}
+		if phase.actions[0].Metadata["execution_blocker"] == cSourceParseFailureCode {
+			t.Fatalf("%s action was incorrectly source-gated: %#v", phase.name, phase.actions[0].Metadata)
+		}
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("DSL validation issues = %#v", issues)
+	}
+}
+
 func TestMalformedTransactionFallbackWorkAndEvidenceAreBounded(t *testing.T) {
 	var source strings.Builder
 	source.WriteString("Action()\n{\n")

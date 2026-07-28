@@ -17,6 +17,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
+const optionalCredentialMigrationUnavailableWarning = "Optional Project Secret migration is unavailable; the imported destination retains its credential values and remains runnable."
+
 const protectedImportCredentialMetadataKey = "protected_credential_requirements_v1"
 
 type protectedImportCredentialLocation struct {
@@ -174,7 +176,7 @@ func (s *Server) attachProtectedImportCredentialMigration(
 	sessionID, err := s.registerSourceSecretSession(r, projectID, values)
 	if err != nil {
 		warnings, _ := response["warnings"].([]string)
-		response["warnings"] = append(warnings, "Detected credential values could not be retained for optional migration; configure the generated secret references manually.")
+		response["warnings"] = append(warnings, optionalCredentialMigrationUnavailableWarning)
 		return public
 	}
 	if strings.TrimSpace(sessionID) == "" {

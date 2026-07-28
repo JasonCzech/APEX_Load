@@ -119,12 +119,13 @@ func rewriteNativeComposedCredential(
 		requirement.Value = resolved
 	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return requirement.Replacement, complete
+	return nativeCredentialProjectionReplacement(requirement), complete
 }
 
 func applyNativeProjectedVariableSecrets(
 	files []sourceFile,
 	requirements []SecretRequirement,
+	useProjectionMarkers bool,
 ) ([]sourceFile, int, error) {
 	type replacement struct {
 		path        string
@@ -180,13 +181,17 @@ func applyNativeProjectedVariableSecrets(
 				identity := expandedTarget.Path + "\x00" + pointerIdentity + "\x00" +
 					expandedTarget.Kind + "\x00" + expandedTarget.Selector + "\x00" +
 					strconv.Itoa(expandedTarget.Index)
+				replacementValue := requirement.Replacement
+				if useProjectionMarkers {
+					replacementValue = nativeCredentialProjectionReplacement(requirement)
+				}
 				plan := replacement{
 					path:        expandedTarget.Path,
 					pointer:     expandedTarget.Pointer,
 					kind:        expandedTarget.Kind,
 					selector:    expandedTarget.Selector,
 					index:       expandedTarget.Index,
-					replacement: requirement.Replacement,
+					replacement: replacementValue,
 				}
 				if existing, duplicate := plansByTarget[identity]; duplicate {
 					// One authored variable may feed several independently governed

@@ -19,7 +19,12 @@ interface Props {
   reviewGeneration?: string | number
   disabled?: boolean
   onApplyingChange?: (applying: boolean) => void
-  onApplied: (script: ScriptDefinition, diffs: ParameterizationDiff[], selectedIds: string[]) => void
+  onApplied: (
+    script: ScriptDefinition,
+    diffs: ParameterizationDiff[],
+    selectedIds: string[],
+    importDraftExpiresAt?: string,
+  ) => void
 }
 
 const kindLabels: Record<string, string> = {
@@ -180,7 +185,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
           selfAppliedSourceIdentityRef.current = null
         }
       }, 0)
-      onApplied(response.script, response.diffs ?? [], selectedIds)
+      onApplied(response.script, response.diffs ?? [], selectedIds, response.import_draft_expires_at)
     } catch (err: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(err, 'Failed to apply parameterization'))
     } finally {

@@ -62,6 +62,12 @@ type ImportBatchCommit struct {
 	Scripts           []*dsl.Script
 	RawArtifact       ImportSourceArtifact
 	SanitizedArtifact ImportSourceArtifact
+	// TrustPreservedExecutableCredentials is a server-owned commit capability.
+	// It is intentionally excluded from JSON so a serialized commit or client
+	// payload cannot manufacture permission to persist authored credential
+	// literals. Storage still requires every accepted script to carry the
+	// importer-issued preserved-credential marker.
+	TrustPreservedExecutableCredentials bool `json:"-"`
 	// RefKeyEnv is the environment segment used when the transaction assigns
 	// reference keys to scripts that do not already have one.
 	RefKeyEnv string

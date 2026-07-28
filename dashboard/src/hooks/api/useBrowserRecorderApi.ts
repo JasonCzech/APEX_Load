@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { type StoredScript } from '../../types'
-import { type RecorderImportResult } from '../../types/scriptImports'
+import {
+  type RecorderImportResult,
+  type SecretBindingSelection,
+} from '../../types/scriptImports'
 import { API_ORIGIN, apiFetch, request, trimTrailingSlash } from '../apiClient'
 import {
   bridgeFetch,
@@ -132,6 +135,15 @@ export type BrowserRecorderConvertRequest = {
   split_at_transactions?: boolean
   also_create_http_script?: boolean
   parameterize?: boolean
+  // Save-only override applied to the fresh server conversion before its
+  // create transaction. The script index binds each opaque requirement ID to
+  // the same generated script reviewed in the preview.
+  secret_bindings?: Array<SecretBindingSelection & { script_index: number }>
+  // Value-free choices re-derived and applied by the server inside the atomic
+  // create transaction.
+  parameterization_selections?: Array<{ script_index: number; selected_ids: string[] }>
+  // Fences a changed preview/save conversion shape before persistence.
+  expected_script_count?: number
 }
 
 // The server-side convert endpoint persists the converted script(s) inside one
@@ -306,6 +318,15 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
+  const attestBridgedBrowserRecordingImport = useCallback(
+    (scripts: RecorderImportResult['scripts'], projectId?: string) =>
+      request<RecorderImportResult>('/scripts/import/browser-recorder/attest', {
+        method: 'POST',
+        body: JSON.stringify({ scripts, project_id: projectId }),
+      }),
+    [],
+  )
+
   const setBrowserRecordingSection = useCallback(
     (id: string, section: string) =>
       recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}/section`, {
@@ -431,6 +452,7 @@ export function useBrowserRecorderApi() {
       addBrowserRecordingNote,
       previewBrowserRecordingConversion,
       convertBrowserRecording,
+      attestBridgedBrowserRecordingImport,
       setBrowserRecordingSection,
       setBrowserRecordingPickMode,
       deleteLastBrowserRecordingStep,
@@ -464,6 +486,7 @@ export function useBrowserRecorderApi() {
       addBrowserRecordingNote,
       previewBrowserRecordingConversion,
       convertBrowserRecording,
+      attestBridgedBrowserRecordingImport,
       setBrowserRecordingSection,
       setBrowserRecordingPickMode,
       deleteLastBrowserRecordingStep,

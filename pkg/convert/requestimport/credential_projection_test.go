@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 func TestFinalizeActionProjectsBase64BodyAgainstWireBytes(t *testing.T) {
@@ -61,6 +62,306 @@ func TestFinalizeActionProjectsBase64BodyAgainstWireBytes(t *testing.T) {
 	}
 	if len(result.Requirements) != 1 || result.Requirements[0].Replacement != replacement {
 		t.Fatalf("final requirements = %#v", result.Requirements)
+	}
+}
+
+func TestFinalizeActionPreserveRetainsInvalidUTF8JSONAsBlockedBase64(t *testing.T) {
+	t.Parallel()
+
+	wireBody := []byte("{\"password\":\"invalid-utf8-canary-73d1")
+	wireBody = append(wireBody, 0xff, '"', '}')
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:    "invalid-utf8-json",
+		Name:   "Invalid UTF-8 JSON",
+		Method: "POST",
+		Target: "/login",
+		Body: Body{
+			Kind:      BodyJSON,
+			MediaType: "application/json",
+			Payload:   wireBody,
+			Encoding:  BodyEncodingText,
+		},
+		Source: SourceRef{Format: "fixture", Pointer: "/request/body"},
+	}, FinalizeOptions{
+		Credentials: &CredentialProjectionOptions{Mode: credentialpolicy.Preserve},
+		ActionPath:  "actions[0]",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("body encoding = %q, want exact-byte base64 storage", action.BodyEncoding)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(action.Body)
+	if err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, wireBody) {
+		t.Fatalf("decoded body = %q, want exact imported bytes %q", decoded, wireBody)
+	}
+	if report.Disposition != BlockedDraft || len(report.Requirements) != 0 ||
+		action.Metadata["execution_blocker"] == nil {
+		t.Fatalf("action/report = %#v / %#v, want blocked retained draft", action, report)
+	}
+	targets := preservedCredentialTargetsFromMetadata(action.Metadata)
+	if len(targets) == 0 ||
+		!strings.HasSuffix(targets[len(targets)-1].Field, ".opaque") {
+		t.Fatalf("credential locators = %#v, want opaque body locator", targets)
+	}
+
+	script := validBaseScript()
+	script.Actions = []dsl.Action{action}
+	result, err := FinalizeScript(script, []Report{report}, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript: %v", err)
+	}
+	if len(result.ValidationIssues) != 0 || result.Disposition != BlockedDraft ||
+		result.Readiness.ReplayReady {
+		t.Fatalf("final result = %#v, want valid blocked draft", result)
+	}
+}
+
+func TestFinalizeActionPreserveFormLimitCarriesOpaqueRuntimeLocator(t *testing.T) {
+	t.Parallel()
+
+	const sourceBody = "ordinary=exact-uninspected-form-value"
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:    "bounded-form",
+		Name:   "Bounded form",
+		Method: "POST",
+		Target: "/submit",
+		Body: Body{
+			Kind:      BodyFormURLEncoded,
+			MediaType: "application/x-www-form-urlencoded",
+			Payload:   []byte(sourceBody),
+		},
+		Source: SourceRef{Format: "fixture", Pointer: "/request/body"},
+	}, FinalizeOptions{
+		Credentials: &CredentialProjectionOptions{
+			Mode:   credentialpolicy.Preserve,
+			Limits: credentialpolicy.Limits{MaxBytes: 8},
+		},
+		ActionPath: "actions[0]",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if action.Body != sourceBody || report.Disposition != BlockedDraft ||
+		len(report.Requirements) != 0 {
+		t.Fatalf("form action/report = %#v / %#v", action, report)
+	}
+	targets := preservedCredentialTargetsFromMetadata(action.Metadata)
+	if len(targets) != 1 || targets[0].Field != "body.form.opaque" {
+		t.Fatalf("form fallback locators = %#v", targets)
+	}
+	if action.Metadata["execution_blocker"] == nil {
+		t.Fatalf("form fallback is not execution-gated: %#v", action.Metadata)
+	}
+}
+
+func TestFinalizeActionPreserveRetainsInvalidMultipartFieldsInInertEnvelope(t *testing.T) {
+	t.Parallel()
+
+	const (
+		invalidName        = "X-Bad\rName"
+		invalidValue       = "bad\r\nInjected: one"
+		invalidDisposition = "form-data; name=\"unterminated"
+		invalidContentType = "text/plain\r\nInjected: two"
+		bodyCanary         = "multipart-preserve-body-canary-73a2"
+	)
+	requestSource := SourceRef{Format: "fixture", Path: "multipart.json", Pointer: "/request"}
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:    "invalid-multipart-fields",
+		Name:   "Invalid multipart fields",
+		Method: "POST",
+		Target: "/upload",
+		Body: Body{
+			Kind:      BodyMultipart,
+			MediaType: "multipart/form-data",
+			Multipart: &MultipartBody{
+				Boundary: "fixture-boundary",
+				Parts: []MultipartPart{{
+					Name:        "ordinary",
+					ContentType: invalidContentType,
+					Headers: HeaderList{
+						{Name: invalidName, Value: "one", Source: SourceRef{Pointer: "/parts/0/headers/0"}},
+						{Name: "X-Bad", Value: invalidValue, Source: SourceRef{Pointer: "/parts/0/headers/1"}},
+						{Name: "Content-Disposition", Value: invalidDisposition, Source: SourceRef{Pointer: "/parts/0/headers/2"}},
+					},
+					Data:   []byte(bodyCanary),
+					Source: SourceRef{Pointer: "/parts/0"},
+				}},
+			},
+			Source: requestSource,
+		},
+		Source: requestSource,
+	}, FinalizeOptions{
+		Credentials: &CredentialProjectionOptions{Mode: credentialpolicy.Preserve},
+		ActionPath:  "actions[0]",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if report.Disposition != BlockedDraft || len(report.Requirements) != 0 ||
+		action.Metadata["execution_blocker"] == nil {
+		t.Fatalf("multipart action/report = %#v / %#v", action, report)
+	}
+	for _, invalid := range []string{invalidName, invalidValue, invalidDisposition, invalidContentType} {
+		if strings.Contains(action.Body, invalid) {
+			t.Fatalf("invalid multipart field remained executable: %q", invalid)
+		}
+	}
+
+	marker, ok := action.Metadata[ImportMultipartFidelityMetadataKey].(map[string]any)
+	if !ok {
+		t.Fatalf("missing multipart fidelity envelope: %#v", action.Metadata)
+	}
+	fields := metadataObjectValues(marker[multipartFidelityFieldName])
+	if len(fields) != 4 {
+		t.Fatalf("multipart fidelity fields = %#v, want four ordered omissions", fields)
+	}
+	expected := []struct {
+		field string
+		name  string
+		value string
+	}{
+		{field: "header", name: invalidName, value: "one"},
+		{field: "header", name: "X-Bad", value: invalidValue},
+		{field: "content_disposition", name: "Content-Disposition", value: invalidDisposition},
+		{field: "content_type", value: invalidContentType},
+	}
+	for index, want := range expected {
+		if got, _ := fields[index]["field"].(string); got != want.field {
+			t.Fatalf("multipart fidelity field %d = %q, want %q", index, got, want.field)
+		}
+		decode := func(key string) string {
+			raw, _ := fields[index][key].(string)
+			decoded, decodeErr := base64.StdEncoding.DecodeString(raw)
+			if decodeErr != nil {
+				t.Fatalf("decode multipart field %d %s: %v", index, key, decodeErr)
+			}
+			return string(decoded)
+		}
+		if want.name != "" && decode(dsl.ImportHeaderFidelityPreservedNameBase64Key) != want.name {
+			t.Fatalf("multipart fidelity field %d lost exact name", index)
+		}
+		if decode(dsl.ImportHeaderFidelityPreservedValueBase64Key) != want.value {
+			t.Fatalf("multipart fidelity field %d lost exact value", index)
+		}
+	}
+
+	script := validBaseScript()
+	script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "fixture"}}
+	script.Actions = []dsl.Action{action}
+	finalized, err := FinalizeScript(script, []Report{report}, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript: %v", err)
+	}
+	if len(finalized.ValidationIssues) != 0 || finalized.Readiness.ReplayReady {
+		t.Fatalf("multipart draft validation/readiness = %#v", finalized)
+	}
+	disclosed, err := scriptdisclosure.Project(finalized.Script)
+	if err != nil {
+		t.Fatalf("project disclosure: %v", err)
+	}
+	disclosedJSON, err := json.Marshal(disclosed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, exact := range []string{
+		base64.StdEncoding.EncodeToString([]byte(invalidName)),
+		base64.StdEncoding.EncodeToString([]byte(invalidValue)),
+		base64.StdEncoding.EncodeToString([]byte(invalidDisposition)),
+		base64.StdEncoding.EncodeToString([]byte(invalidContentType)),
+		bodyCanary,
+	} {
+		if strings.Contains(string(disclosedJSON), exact) {
+			t.Fatalf("disclosure projection retained exact multipart source material: %s", disclosedJSON)
+		}
+	}
+}
+
+func TestFinalizeActionPreserveRetainsMalformedAuthWithoutReentry(t *testing.T) {
+	t.Parallel()
+
+	const token = "retained-auth-canary-61c2\r\nInjected: yes"
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:    "invalid-auth",
+		Name:   "Invalid auth",
+		Method: "GET",
+		Target: "/orders",
+		Auth: Auth{
+			Mode:   AuthBearer,
+			Token:  token,
+			Source: SourceRef{Format: "fixture", Pointer: "/request/auth"},
+		},
+		Source: SourceRef{Format: "fixture", Pointer: "/request"},
+	}, FinalizeOptions{
+		Credentials: &CredentialProjectionOptions{Mode: credentialpolicy.Preserve},
+		ActionPath:  "actions[0]",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if action.Auth == nil || action.Auth.Type != httpprotocol.AuthTypeBearer ||
+		action.Auth.Token != token {
+		t.Fatalf("auth = %#v, want exact retained token", action.Auth)
+	}
+	if report.Disposition != BlockedDraft || len(report.Requirements) != 0 ||
+		action.Metadata["execution_blocker"] == nil {
+		t.Fatalf("action/report = %#v / %#v, want blocked retained auth", action, report)
+	}
+	targets := preservedCredentialTargetsFromMetadata(action.Metadata)
+	found := false
+	for _, target := range targets {
+		found = found || strings.HasSuffix(target.Field, "auth.token")
+	}
+	if !found {
+		t.Fatalf("credential locators = %#v, want auth token locator", targets)
+	}
+	script := validBaseScript()
+	script.Actions = []dsl.Action{action}
+	result, err := FinalizeScript(script, []Report{report}, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript: %v", err)
+	}
+	if len(result.ValidationIssues) != 0 || result.Disposition != BlockedDraft ||
+		result.Script.Actions[0].Auth == nil ||
+		result.Script.Actions[0].Auth.Token != token {
+		t.Fatalf("durable auth result = %#v, want exact blocked credential", result)
+	}
+}
+
+func TestFinalizeActionPreserveCarriesDynamicBodyCredentialRuntimeLocator(t *testing.T) {
+	t.Parallel()
+
+	const body = `{"password":"{{env.IMPORTED_PASSWORD}}"}`
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:    "dynamic-password",
+		Name:   "Dynamic password",
+		Method: "POST",
+		Target: "/login",
+		Body: Body{
+			Kind:      BodyJSON,
+			MediaType: "application/json",
+			Payload:   []byte(body),
+		},
+		Source: SourceRef{Format: "fixture", Pointer: "/request"},
+	}, FinalizeOptions{
+		Credentials: &CredentialProjectionOptions{Mode: credentialpolicy.Preserve},
+		ActionPath:  "actions[0]",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if action.Body != body || len(report.Requirements) != 0 {
+		t.Fatalf("dynamic body/action report = %#v / %#v", action, report)
+	}
+	targets := preservedCredentialTargetsFromMetadata(action.Metadata)
+	if len(targets) != 1 ||
+		targets[0].Field != "body" ||
+		targets[0].Pointer != "/password" {
+		t.Fatalf("runtime credential locators = %#v", targets)
 	}
 }
 

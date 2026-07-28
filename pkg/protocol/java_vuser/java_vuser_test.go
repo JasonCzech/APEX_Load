@@ -1733,11 +1733,11 @@ func TestCommandArgsHarnessJarOnlyUsesJar(t *testing.T) {
 	}
 }
 
-func TestCommandArgsLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
+func TestCommandArgsLegacyHotSpotUsesCompatibleCrashArtifactSink(t *testing.T) {
 	j := &JavaVuser{cfg: configuration{
 		RunnerCommand: "java",
 		HarnessJar:    "/opt/apex/harness.jar",
-		ResolvedJDK:   &javarunner.ResolvedJDK{Major: 8},
+		ResolvedJDK:   &javarunner.ResolvedJDK{Major: 8, VMFamily: javarunner.JavaVMHotSpot},
 	}}
 	args, err := j.commandArgs(runCommand{ClassName: "Actions", Method: "full_lifecycle"})
 	if err != nil {
@@ -1749,6 +1749,28 @@ func TestCommandArgsLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
 	}
 	if !strings.Contains(joined, "-XX:-HeapDumpOnOutOfMemoryError") {
 		t.Fatalf("legacy Java 8 args lost compatible heap-dump suppression: %q", joined)
+	}
+	if !strings.Contains(joined, "-XX:ErrorFile="+os.DevNull) {
+		t.Fatalf("legacy Java 8 args lack compatible crash-log suppression: %q", joined)
+	}
+}
+
+func TestCommandArgsOpenJ9UsesNativeDumpSuppression(t *testing.T) {
+	j := &JavaVuser{cfg: configuration{
+		RunnerCommand: "java",
+		HarnessJar:    "/opt/apex/harness.jar",
+		ResolvedJDK:   &javarunner.ResolvedJDK{Major: 17, VMFamily: javarunner.JavaVMOpenJ9},
+	}}
+	args, err := j.commandArgs(runCommand{ClassName: "Actions", Method: "full_lifecycle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "-Xdump:none") {
+		t.Fatalf("OpenJ9 args lack native dump suppression: %q", joined)
+	}
+	if strings.Contains(joined, "CreateCoredumpOnCrash") || strings.Contains(joined, "ErrorFile=") {
+		t.Fatalf("OpenJ9 args include HotSpot-only crash options: %q", joined)
 	}
 }
 
@@ -1792,7 +1814,7 @@ func TestJavaVuserInitPreservesExactVMParametersAndClasspathOrder(t *testing.T) 
 	var runner JavaVuser
 	err := runner.Init(context.Background(), map[string]any{
 		"java_vuser_classpath":                []any{"/script/classes", "/script/app.jar"},
-		"java_vuser_additional_vm_parameters": []any{"-Xmx512m", "-Dlabel=hello world"},
+		"java_vuser_additional_vm_parameters": []any{"-Xmx512m", "-Ddatabase.password=imported-password"},
 		"java_vuser_use_xbootclasspath":       true,
 		"java_vuser_dedicated_class_loader":   true,
 	})
@@ -1803,7 +1825,7 @@ func TestJavaVuserInitPreservesExactVMParametersAndClasspathOrder(t *testing.T) 
 	if strings.Join(runner.cfg.Classpath, "\x00") != strings.Join(wantClasspath, "\x00") {
 		t.Fatalf("effective classpath = %#v, want script entries before operator entries %#v", runner.cfg.Classpath, wantClasspath)
 	}
-	if got := runner.cfg.AdditionalVMParameters; len(got) != 2 || got[1] != "-Dlabel=hello world" {
+	if got := runner.cfg.AdditionalVMParameters; len(got) != 2 || got[1] != "-Ddatabase.password=imported-password" {
 		t.Fatalf("VM parameters = %#v, want exact tokens", got)
 	}
 	if !runner.cfg.UseXBootClasspath || !runner.cfg.DedicatedClassLoader {

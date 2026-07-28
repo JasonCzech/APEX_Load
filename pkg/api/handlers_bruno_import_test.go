@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -29,8 +30,66 @@ import (
 
 const brunoImportTestProject = "project-bruno-api"
 
-func TestBrunoImportIgnoresUnusedMigrationOptIn(t *testing.T) {
+func TestBrunoNativePreflightTreatsProtectedSourceCredentialAsRunnable(t *testing.T) {
+	const requirementID = "source-password"
+	result := &brunoconvert.Result{
+		Scripts: []brunoconvert.NativeScriptCandidate{{
+			CandidateID: "request-1",
+			Script: &dsl.Script{
+				Name: "Request", Protocol: "http",
+				Actions: []dsl.Action{{Name: "GET", Type: "request", Method: http.MethodGet, Target: "https://example.test"}},
+			},
+			SecretRequirements: []brunoconvert.SecretRequirement{{
+				ID: requirementID,
+			}},
+		}},
+	}
+
+	decode := func(value map[string]any) struct {
+		Ready      bool `json:"ready"`
+		Blockers   int  `json:"blockers"`
+		Candidates []struct {
+			Ready    bool     `json:"ready"`
+			Blockers []string `json:"blockers"`
+		} `json:"candidates"`
+	} {
+		t.Helper()
+		payload, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded struct {
+			Ready      bool `json:"ready"`
+			Blockers   int  `json:"blockers"`
+			Candidates []struct {
+				Ready    bool     `json:"ready"`
+				Blockers []string `json:"blockers"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(payload, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
+
+	missing := decode(brunoNativeExecutionPreflight(result, nil))
+	if missing.Ready || missing.Blockers != 1 ||
+		len(missing.Candidates) != 1 ||
+		!stringSliceContainsEqualFold(missing.Candidates[0].Blockers, "secret_bindings_required") {
+		t.Fatalf("missing protected credential preflight = %#v", missing)
+	}
+
+	retained := decode(brunoNativeExecutionPreflight(result, map[string]bool{requirementID: true}))
+	if !retained.Ready || retained.Blockers != 0 ||
+		len(retained.Candidates) != 1 || !retained.Candidates[0].Ready ||
+		len(retained.Candidates[0].Blockers) != 0 {
+		t.Fatalf("retained protected credential preflight = %#v", retained)
+	}
+}
+
+func TestBrunoImportAuthorizedMigrationOptInWithoutSecretsStillCommits(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
+	enableSourceSecretMigration(t, server)
 	inspection := inspectBrunoJSON(t, server, []byte(`info: {name: No Secrets, type: http}
 http: {method: GET, url: https://example.test}
 `), "")
@@ -48,6 +107,7 @@ http: {method: GET, url: https://example.test}
 
 func TestBrunoImportMigrationOptInIgnoresRequirementWithoutSourceValue(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
+	enableSourceSecretMigration(t, server)
 	inspection := inspectBrunoJSON(t, server, []byte(`info: {name: Existing Secret, type: http}
 http:
   method: GET
@@ -60,7 +120,8 @@ http:
 		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
 	}
 	requirement := inspection.Result.SecretRequirements[0]
-	if requirement.Value != "" || requirement.SourceValueAvailable || !requirement.ExistingReference {
+	if requirement.Value != "" || requirement.SourceValueAvailable ||
+		requirement.DestinationValuePreserved || !requirement.ExistingReference {
 		t.Fatalf("non-migratable secret requirement = %#v", requirement)
 	}
 
@@ -426,7 +487,7 @@ http:
 	}
 }
 
-func TestBrunoRollbackBlocksPreUpgradeRevisionWithPlaintextSecretBinding(t *testing.T) {
+func TestBrunoRollbackRestoresPreUpgradeRevisionCredentialWithoutReentry(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	const (
 		scriptID     = "legacy-bruno-rollback"
@@ -479,18 +540,18 @@ func TestBrunoRollbackBlocksPreUpgradeRevisionWithPlaintextSecretBinding(t *test
 		"/api/v1/scripts/"+url.PathEscape(scriptID)+"/bruno-imports/rollback",
 		bytes.NewReader(payload),
 	))
-	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), secretBindingsRequiredCode) {
+	if response.Code != http.StatusOK {
 		t.Fatalf("rollback status = %d body=%s", response.Code, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), legacySecret) {
-		t.Fatalf("rollback error disclosed legacy secret: %s", response.Body.String())
+		t.Fatalf("rollback response disclosed legacy secret: %s", response.Body.String())
 	}
 	active, err := store.GetActiveBrunoSourceRevision(scriptID, brunoImportTestProject)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if active.ID != "safe-revision" {
-		t.Fatalf("active revision = %q, want safe-revision", active.ID)
+	if active.ID != "legacy-revision" {
+		t.Fatalf("active revision = %q, want legacy-revision", active.ID)
 	}
 	stored, err := store.GetScript(scriptID)
 	if err != nil {
@@ -500,8 +561,127 @@ func TestBrunoRollbackBlocksPreUpgradeRevisionWithPlaintextSecretBinding(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(legacySecret)) {
-		t.Fatalf("blocked rollback restored legacy secret: %s", encoded)
+	if !bytes.Contains(encoded, []byte(legacySecret)) {
+		t.Fatalf("rollback did not restore the operator-owned legacy credential: %s", encoded)
+	}
+}
+
+func TestBrunoRevisionActivationSynchronizesRawArtifactMasking(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	const scriptID = "bruno-runtime-artifact-activation"
+
+	commitFixture := func(revisionID, rawID, sanitizedID string, useRaw bool) *storage.BrunoImportCommit {
+		return &storage.BrunoImportCommit{
+			Script: &dsl.Script{
+				ID: scriptID, Name: "Bruno runtime artifact", Version: "1.0.0",
+				Protocol: "bruno", ProjectID: brunoImportTestProject,
+				Actions: []dsl.Action{{Name: "Run", Type: "bruno_run", Target: "."}},
+			},
+			RawArtifact: storage.BrunoSourceArtifact{
+				ID: rawID, ArtifactKind: "raw", BackendKey: "objects/" + rawID,
+				SHA256: "sha-" + rawID, SizeBytes: 1,
+			},
+			SanitizedArtifact: storage.BrunoSourceArtifact{
+				ID: sanitizedID, ArtifactKind: "sanitized", BackendKey: "objects/" + sanitizedID,
+				SHA256: "sha-" + sanitizedID, SizeBytes: 1,
+			},
+			UseRawArtifact: useRaw,
+			Revision: storage.BrunoSourceRevision{
+				ID: revisionID, SourceFormat: "bruno", CreatedBy: "test",
+			},
+		}
+	}
+	activate := func(targetRevisionID, expectedRevisionID string) {
+		t.Helper()
+		payload, err := json.Marshal(map[string]string{
+			"revision_id":                 targetRevisionID,
+			"expected_active_revision_id": expectedRevisionID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(
+			http.MethodPost,
+			"/api/v1/scripts/"+url.PathEscape(scriptID)+"/bruno-imports/rollback",
+			bytes.NewReader(payload),
+		))
+		if response.Code != http.StatusOK {
+			t.Fatalf("activate %s status = %d body=%s", targetRevisionID, response.Code, response.Body.String())
+		}
+	}
+	readProjected := func() (*StoredScript, string) {
+		t.Helper()
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(
+			http.MethodGet,
+			"/api/v1/scripts/"+url.PathEscape(scriptID),
+			nil,
+		))
+		if response.Code != http.StatusOK {
+			t.Fatalf("get script status = %d body=%s", response.Code, response.Body.String())
+		}
+		var stored StoredScript
+		if err := json.Unmarshal(response.Body.Bytes(), &stored); err != nil {
+			t.Fatal(err)
+		}
+		return &stored, response.Body.String()
+	}
+
+	sanitized := commitFixture(
+		"revision-sanitized",
+		"artifact-raw-sanitized-revision",
+		"artifact-sanitized-revision",
+		false,
+	)
+	if _, err := store.CommitBrunoImport(sanitized); err != nil {
+		t.Fatalf("commit sanitized revision: %v", err)
+	}
+	current, err := store.GetScript(scriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := commitFixture(
+		"revision-raw",
+		"artifact-raw-revision",
+		"artifact-sanitized-raw-revision",
+		true,
+	)
+	raw.ExpectedScriptUpdatedAt = &current.UpdatedAt
+	raw.ExpectedActiveRevisionID = "revision-sanitized"
+	raw.Script.CreatedAt = current.CreatedAt
+	if _, err := store.CommitBrunoImport(raw); err != nil {
+		t.Fatalf("commit raw revision: %v", err)
+	}
+
+	activate("revision-sanitized", "revision-raw")
+	projectedSanitized, sanitizedBody := readProjected()
+	if got := projectedSanitized.Script.Config.Bruno.BundleRef; got != "artifact://artifact-sanitized-revision" {
+		t.Fatalf("sanitized revision bundle ref = %q", got)
+	}
+	if strings.Contains(sanitizedBody, maskedScriptSecret) {
+		t.Fatalf("sanitized revision remained masked after raw marker was cleared: %s", sanitizedBody)
+	}
+
+	activate("revision-raw", "revision-sanitized")
+	projectedRaw, rawBody := readProjected()
+	if got := projectedRaw.Script.Config.Bruno.BundleRef; got != maskedScriptSecret {
+		t.Fatalf("raw revision projected bundle ref = %q, want masked", got)
+	}
+	if strings.Contains(rawBody, "artifact-raw-revision") ||
+		strings.Contains(rawBody, "sha-artifact-raw-revision") {
+		t.Fatalf("raw revision response disclosed protected artifact references: %s", rawBody)
+	}
+	durableRaw, err := store.GetScript(scriptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := durableRaw.Config.Bruno.BundleRef; got != "artifact://artifact-raw-revision" {
+		t.Fatalf("durable raw revision bundle ref = %q", got)
+	}
+	if durableRaw.Metadata == nil || durableRaw.Metadata.Import == nil ||
+		durableRaw.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey] != "raw" {
+		t.Fatalf("durable raw runtime marker = %#v", durableRaw.Metadata)
 	}
 }
 
@@ -530,12 +710,18 @@ http:
 	}
 	response := commitBrunoImport(t, server, request)
 	script := decodeCommittedBrunoScript(t, response.Body.Bytes())
-	wantBinding := "{{secret." + requirement.SuggestedName + "}}"
-	if got := script.Config.Bruno.SecretBindings[requirement.SuggestedName]; got != wantBinding {
-		t.Fatalf("deferred binding = %q, want %q", got, wantBinding)
-	}
 	if strings.Contains(response.Body.String(), "literal-token") {
 		t.Fatal("deferred commit response disclosed the source credential")
+	}
+	durable, err := server.store.GetScript(script.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeSource := readCommittedBrunoRuntimeSource(t, server, durable); !bytes.Contains(runtimeSource, []byte("literal-token")) {
+		t.Fatal("durable imported runtime source lost the exact bearer token")
+	}
+	if got := durable.Config.Bruno.SecretBindings[requirement.SuggestedName]; got != "" {
+		t.Fatalf("migration-disabled import unexpectedly replaced the source credential with %q", got)
 	}
 	if _, _, err := server.projectSecretStore.Get(context.Background(), brunoImportTestProject, requirement.SuggestedName); !errors.Is(err, secretstore.ErrNotFound) {
 		t.Fatalf("deferred commit unexpectedly created a secret: %v", err)
@@ -557,7 +743,8 @@ http:
 	}
 	requirement := inspect.Result.SecretRequirements[0]
 	if !requirement.ExistingReference || requirement.SuggestedName != "API_TOKEN" ||
-		requirement.SourceValueAvailable || requirement.Value != "" {
+		requirement.SourceValueAvailable || requirement.DestinationValuePreserved ||
+		requirement.Value != "" {
 		t.Fatalf("existing reference requirement = %#v", requirement)
 	}
 
@@ -604,6 +791,7 @@ func TestGroupedBrunoRequestedBindingsRejectsConflictingDuplicateReferenceTarget
 
 func TestBrunoImportCommitPersistsSelectedServerDerivedParameterization(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
+	const retainedCredential = "bruno-parameterized-retained-token-8f31"
 	inspect := inspectBrunoJSON(t, server, []byte(`info: {name: Parameterized, type: http}
 http:
   method: GET
@@ -616,6 +804,12 @@ http:
 			t.Fatalf("inspect session has no canonical action: %#v", session)
 		}
 		session.Result.Script.Actions[0].Target = "/users?user_id=12345"
+		session.Result.Script.Actions[0].Headers = map[string]string{
+			"Authorization": "Bearer " + retainedCredential,
+		}
+		session.Result.Script.Actions[0].HeaderList = dsl.HeaderList{
+			{Name: "Authorization", Value: "Bearer " + retainedCredential},
+		}
 		trusted := buildTrustedImportParameterization(session.Result.Script)
 		for _, suggestion := range trusted.Suggestions {
 			if suggestion.VarName == "user_id" {
@@ -644,6 +838,12 @@ http:
 	}
 	if len(stored.DataSources) != 1 || len(stored.Parameters) != 1 {
 		t.Fatalf("stored Bruno parameter material = data_sources:%#v parameters:%#v", stored.DataSources, stored.Parameters)
+	}
+	if got := stored.Actions[0].HeaderList[0].Value; got != "Bearer "+retainedCredential {
+		t.Fatalf("stored Bruno credential = %q, want exact imported value", got)
+	}
+	if strings.Contains(response.Body.String(), retainedCredential) {
+		t.Fatalf("Bruno commit response disclosed retained credential: %s", response.Body.String())
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
@@ -696,7 +896,7 @@ http:
 	}
 }
 
-func TestBrunoImportCommitAppliesDurableSecretBoundary(t *testing.T) {
+func TestBrunoImportCommitAppliesCredentialBoundaries(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	source := []byte(`info: {name: Safe, type: http}
 http:
@@ -717,7 +917,7 @@ http:
 		server.storeBrunoImportSession(session)
 	}
 
-	t.Run("rejects executable plaintext", func(t *testing.T) {
+	t.Run("preserves imported executable plaintext", func(t *testing.T) {
 		inspect := inspectBrunoJSON(t, server, source, "")
 		rewriteSession(t, inspect.ImportSessionID, func(session *brunoImportSession) {
 			if session.Result == nil || session.Result.Script == nil || len(session.Result.Script.Actions) == 0 {
@@ -731,18 +931,19 @@ http:
 			ImportSessionID: inspect.ImportSessionID,
 			Mode:            "create",
 		})
-		if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), secretBindingsRequiredCode) {
+		if response.Code != http.StatusCreated {
 			t.Fatalf("commit status = %d body=%s", response.Code, response.Body.String())
 		}
 		if strings.Contains(response.Body.String(), "bruno-plaintext-never-store") {
-			t.Fatalf("commit error disclosed plaintext credential: %s", response.Body.String())
+			t.Fatalf("commit response disclosed plaintext credential: %s", response.Body.String())
 		}
 		scripts, err := store.ListScripts(brunoImportTestProject, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(scripts) != 0 {
-			t.Fatalf("blocked Bruno commit persisted scripts: %#v", scripts)
+		if len(scripts) != 1 ||
+			scripts[0].Actions[0].Headers["Authorization"] != "Bearer bruno-plaintext-never-store" {
+			t.Fatalf("imported Bruno credential was not retained in the runnable destination: %#v", scripts)
 		}
 	})
 
@@ -812,8 +1013,8 @@ http:
 	}
 }
 
-func TestBrunoImportDefaultOffPolicyDefersExplicitMigrationWithoutDisclosure(t *testing.T) {
-	server, _, _ := newBrunoImportAPITestServer(t)
+func TestBrunoImportDefaultOffPolicyRejectsExplicitMigrationAndPreservesByDefault(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
 	source := []byte(`info: {name: Secret, type: http}
 http:
   method: GET
@@ -827,12 +1028,18 @@ http:
 	if inspect.Result.SecretRequirements[0].SourceValueAvailable {
 		t.Fatal("source value was advertised while migration policy was disabled")
 	}
+	if !inspect.Result.SecretRequirements[0].DestinationValuePreserved {
+		t.Fatal("inspect response did not mark the protected destination credential as preserved")
+	}
 	inspectPayload, err := json.Marshal(inspect)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(inspectPayload, []byte("default-off-literal-token")) {
 		t.Fatal("inspect response disclosed the source credential")
+	}
+	if !bytes.Contains(inspectPayload, []byte(`"destination_value_preserved":true`)) {
+		t.Fatalf("inspect response omitted destination preservation contract: %s", inspectPayload)
 	}
 
 	migrateSecrets := true
@@ -842,17 +1049,65 @@ http:
 		Mode:            "create",
 		MigrateSecrets:  &migrateSecrets,
 	})
-	if response.Code != http.StatusCreated {
-		t.Fatalf("commit status = %d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusForbidden ||
+		!strings.Contains(response.Body.String(), "source secret migration is not allowed") {
+		t.Fatalf("unauthorized migration status = %d body=%s", response.Code, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), "default-off-literal-token") {
-		t.Fatal("deferred migration response disclosed the source credential")
+		t.Fatal("unauthorized migration response disclosed the source credential")
 	}
 	requirement := inspect.Result.SecretRequirements[0]
 	if _, _, err := server.projectSecretStore.Get(
 		context.Background(), brunoImportTestProject, requirement.SuggestedName,
 	); !errors.Is(err, secretstore.ErrNotFound) {
-		t.Fatalf("deferred migration unexpectedly created a secret: %v", err)
+		t.Fatalf("unauthorized migration unexpectedly created a secret: %v", err)
+	}
+
+	// Authorization failure does not consume the actor/project-bound session.
+	// Omitting migration preserves the credential in the runnable destination
+	// without asking the operator to enter it again.
+	response = commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspect.ImportSessionID,
+		Mode:            "create",
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("default-preservation commit status = %d body=%s", response.Code, response.Body.String())
+	}
+	committed := decodeCommittedBrunoScript(t, response.Body.Bytes())
+	stored, err := store.GetScript(committed.ID)
+	if err != nil {
+		t.Fatalf("load default-preservation script: %v", err)
+	}
+	if stored.Metadata == nil || stored.Metadata.Import == nil ||
+		stored.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey] != "raw" {
+		t.Fatalf("default-preservation runtime marker = %#v, want raw", stored.Metadata)
+	}
+	artifactID := strings.TrimPrefix(stored.Config.Bruno.BundleRef, "artifact://")
+	artifact, err := store.GetBrunoSourceArtifact(artifactID, brunoImportTestProject)
+	if err != nil {
+		t.Fatalf("load default-preservation artifact: %v", err)
+	}
+	reader, _, err := server.brunoArtifacts.Open(context.Background(), importartifact.OpenRequest{
+		BackendKey: artifact.BackendKey,
+		ProjectID:  artifact.ProjectID,
+		Kind:       artifact.ArtifactKind,
+		SHA256:     artifact.SHA256,
+		SizeBytes:  artifact.SizeBytes,
+	})
+	if err != nil {
+		t.Fatalf("open default-preservation artifact: %v", err)
+	}
+	runtimeSource, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil || closeErr != nil {
+		t.Fatalf("read default-preservation artifact: read=%v close=%v", readErr, closeErr)
+	}
+	if !bytes.Contains(runtimeSource, []byte("default-off-literal-token")) {
+		t.Fatal("default-preservation runtime artifact did not retain the imported credential")
+	}
+	if strings.Contains(response.Body.String(), "default-off-literal-token") {
+		t.Fatal("default-preservation response disclosed the source credential")
 	}
 }
 
@@ -1303,12 +1558,9 @@ func TestBoundedBrunoImportSecretValues(t *testing.T) {
 		requirements []brunoconvert.SecretRequirement
 		wantError    string
 	}{
-		{name: "maximum value", requirements: requirements(1, projectSecretMaxValueBytes)},
-		{name: "value too large", requirements: requirements(1, projectSecretMaxValueBytes+1), wantError: "byte limit"},
-		{name: "maximum aggregate", requirements: requirements(sourceSecretSessionMaxTotalBytes/projectSecretMaxValueBytes, projectSecretMaxValueBytes)},
-		{name: "aggregate too large", requirements: append(requirements(sourceSecretSessionMaxTotalBytes/projectSecretMaxValueBytes, projectSecretMaxValueBytes), brunoconvert.SecretRequirement{ID: "overflow", Value: "x"}), wantError: "session limit"},
-		{name: "maximum entries", requirements: requirements(projectSecretMaxBatchItems, 1)},
-		{name: "too many entries", requirements: requirements(projectSecretMaxBatchItems+1, 1), wantError: "entry session limit"},
+		{name: "project secret value limit does not constrain preservation", requirements: requirements(1, projectSecretMaxValueBytes+1)},
+		{name: "duplicate id", requirements: []brunoconvert.SecretRequirement{{ID: "duplicate", Value: "one"}, {ID: "duplicate", Value: "two"}}, wantError: "duplicated"},
+		{name: "invalid id", requirements: []brunoconvert.SecretRequirement{{ID: " invalid", Value: "one"}}, wantError: "invalid id"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1326,10 +1578,11 @@ func TestBoundedBrunoImportSecretValues(t *testing.T) {
 	}
 }
 
-func TestBrunoImportDropsOversizedMigrationValueWithoutBlockingDeferredImport(t *testing.T) {
+func TestBrunoImportPreservesValueTooLargeForOptionalMigration(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
-	source := []byte("info: {name: Oversized, type: http}\nhttp:\n  method: GET\n  url: https://example.test\n  auth:\n    type: bearer\n    token: " + strings.Repeat("x", projectSecretMaxValueBytes+1) + "\n")
+	credentialValue := strings.Repeat("x", projectSecretMaxValueBytes+1)
+	source := []byte("info: {name: Oversized, type: http}\nhttp:\n  method: GET\n  url: https://example.test\n  auth:\n    type: bearer\n    token: " + credentialValue + "\n")
 	inspect := inspectBrunoJSON(t, server, source, "")
 	t.Cleanup(func() { server.deleteBrunoImportSession(inspect.ImportSessionID) })
 	if len(inspect.Result.SecretRequirements) != 1 {
@@ -1337,6 +1590,24 @@ func TestBrunoImportDropsOversizedMigrationValueWithoutBlockingDeferredImport(t 
 	}
 	if inspect.Result.SecretRequirements[0].SourceValueAvailable {
 		t.Fatal("oversized source credential was retained for migration")
+	}
+	migrateSecrets := false
+	response := commitBrunoImport(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspect.ImportSessionID,
+		Mode:            "create",
+		MigrateSecrets:  &migrateSecrets,
+	})
+	script := decodeCommittedBrunoScript(t, response.Body.Bytes())
+	durable, err := server.store.GetScript(script.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeSource := readCommittedBrunoRuntimeSource(t, server, durable); !bytes.Contains(runtimeSource, []byte(credentialValue)) {
+		t.Fatal("durable imported runtime source lost the oversized bearer token")
+	}
+	if strings.Contains(response.Body.String(), credentialValue) {
+		t.Fatal("commit response disclosed the oversized source credential")
 	}
 }
 
@@ -1617,9 +1888,38 @@ func TestBrunoImportMultipartDirectoryAndUnsafePath(t *testing.T) {
 	}
 }
 
-func TestApplyBrunoNativeSecretBindingsDoesNotCascade(t *testing.T) {
+func brunoNativeCredentialTargetForTest(
+	t *testing.T,
+	script *dsl.Script,
+	requirementID string,
+	pointer string,
+	occurrence int,
+) brunoconvert.NativeCredentialTarget {
+	t.Helper()
+	payload, err := json.Marshal(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document any
+	if err := json.Unmarshal(payload, &document); err != nil {
+		t.Fatal(err)
+	}
+	value, ok := jsonPointerStringValue(document, pointer)
+	if !ok {
+		t.Fatalf("target pointer %q is not a string", pointer)
+	}
+	sum := sha256.Sum256([]byte(value))
+	return brunoconvert.NativeCredentialTarget{
+		RequirementID:   requirementID,
+		JSONPointer:     pointer,
+		Occurrence:      occurrence,
+		SanitizedSHA256: fmt.Sprintf("%x", sum[:]),
+	}
+}
+
+func TestApplyBrunoNativeCredentialTargetsDoesNotCascade(t *testing.T) {
 	script := &dsl.Script{
-		Name:     "binding cascade",
+		Name:     "{{secret.PASSWORD}}",
 		Protocol: "http",
 		Actions: []dsl.Action{{
 			Name: "request",
@@ -1630,10 +1930,23 @@ func TestApplyBrunoNativeSecretBindingsDoesNotCascade(t *testing.T) {
 			},
 		}},
 	}
-	bound, err := applyBrunoNativeSecretBindings(script, map[string]string{
-		"PASSWORD": "{{secret.TOKEN}}",
-		"TOKEN":    "{{secret.FINAL_TOKEN}}",
-	})
+	requirements := []brunoconvert.SecretRequirement{
+		{ID: "password", SuggestedName: "PASSWORD", Replacement: "{{secret.PASSWORD}}"},
+		{ID: "token", SuggestedName: "TOKEN", Replacement: "{{secret.TOKEN}}"},
+	}
+	targets := []brunoconvert.NativeCredentialTarget{
+		brunoNativeCredentialTargetForTest(t, script, "password", "/actions/0/header_list/0/value", 0),
+		brunoNativeCredentialTargetForTest(t, script, "token", "/actions/0/header_list/1/value", 0),
+	}
+	bound, err := applyBrunoNativeCredentialTargets(
+		script,
+		targets,
+		requirements,
+		map[string]string{
+			"password": "{{secret.TOKEN}}",
+			"token":    "{{secret.FINAL_TOKEN}}",
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1642,6 +1955,142 @@ func TestApplyBrunoNativeSecretBindingsDoesNotCascade(t *testing.T) {
 	}
 	if got := bound.Actions[0].HeaderList[1].Value; got != "{{secret.FINAL_TOKEN}}" {
 		t.Fatalf("TOKEN binding = %q", got)
+	}
+	if bound.Name != "{{secret.PASSWORD}}" {
+		t.Fatalf("credential target binding escaped into unrelated script name %q", bound.Name)
+	}
+}
+
+func TestAllowedBrunoNativeCredentialTargetPointers(t *testing.T) {
+	for _, test := range []struct {
+		pointer string
+		want    bool
+	}{
+		{pointer: "/config/base_url", want: true},
+		{pointer: "/config/http/auth/password", want: true},
+		{pointer: "/actions/0/target", want: true},
+		{pointer: "/actions/0/body", want: true},
+		{pointer: "/actions/0/headers/X~1Password", want: true},
+		{pointer: "/actions/0/header_list/2/value", want: true},
+		{pointer: "/actions/0/auth/token", want: true},
+		{pointer: "/name", want: false},
+		{pointer: "/metadata/import/preserved/source", want: false},
+		{pointer: "/actions/0/metadata/source_path", want: false},
+		{pointer: "/actions/not-an-index/body", want: false},
+		{pointer: "/actions/0/header_list/not-an-index/value", want: false},
+	} {
+		t.Run(test.pointer, func(t *testing.T) {
+			tokens, err := splitJSONPointer(test.pointer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := isAllowedBrunoNativeCredentialTargetPointer(tokens); got != test.want {
+				t.Fatalf("allowed = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPlanBrunoNativeSecretBindingsPreservesSourceValueByDefault(t *testing.T) {
+	const value = "quote\"-slash\\-line\nend"
+	requirements := []brunoconvert.SecretRequirement{{
+		ID: "requirement-password", SuggestedName: "PASSWORD", Replacement: "{{secret.PASSWORD}}",
+		Value: value, SourceValueAvailable: true,
+	}}
+
+	bindings, replacements, err := planBrunoNativeSecretBindings(requirements, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 0 || replacements["requirement-password"] != value {
+		t.Fatalf("default plan bindings=%#v replacements=%#v", bindings, replacements)
+	}
+	script := &dsl.Script{
+		Name: "preserved", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "request", Type: "request",
+			HeaderList: dsl.HeaderList{{Name: "X-Password", Value: "{{secret.PASSWORD}}"}},
+		}},
+	}
+	targets := []brunoconvert.NativeCredentialTarget{
+		brunoNativeCredentialTargetForTest(
+			t,
+			script,
+			"requirement-password",
+			"/actions/0/header_list/0/value",
+			0,
+		),
+	}
+	preserved, err := applyBrunoNativeCredentialTargets(
+		script,
+		targets,
+		requirements,
+		replacements,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := preserved.Actions[0].HeaderList[0].Value; got != value {
+		t.Fatalf("preserved value = %q, want %q", got, value)
+	}
+}
+
+func TestPlanBrunoNativeSecretBindingsExternalizesOnlyWhenRequested(t *testing.T) {
+	requirements := []brunoconvert.SecretRequirement{{
+		ID: "requirement-password", SuggestedName: "PASSWORD", Replacement: "{{secret.PASSWORD}}",
+		Value: "source-password", SourceValueAvailable: true,
+	}}
+	for _, test := range []struct {
+		name      string
+		requested map[string]string
+		migrate   bool
+		want      string
+	}{
+		{name: "explicit", requested: map[string]string{"requirement-password": "PROJECT_PASSWORD"}, want: "{{secret.PROJECT_PASSWORD}}"},
+		{name: "migration", migrate: true, want: "{{secret.PASSWORD}}"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			bindings, replacements, err := planBrunoNativeSecretBindings(requirements, test.requested, test.migrate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bindings["PASSWORD"] != test.want ||
+				replacements["requirement-password"] != test.want {
+				t.Fatalf("bindings=%#v replacements=%#v, want %q", bindings, replacements, test.want)
+			}
+		})
+	}
+}
+
+func TestBrunoCanonicalPartialExternalizationKeepsRawRuntimeFallback(t *testing.T) {
+	requirements := []brunoconvert.SecretRequirement{
+		{ID: "first", SuggestedName: "FIRST", Value: "first-source-value"},
+		{ID: "second", SuggestedName: "SECOND", Value: "second-source-value"},
+	}
+	preserveRaw, err := brunoCanonicalPreservesSourceCredentials(
+		requirements,
+		map[string]string{"first": "PROJECT_FIRST"},
+		nil,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preserveRaw {
+		t.Fatal("partial externalization discarded the unbound imported credential")
+	}
+
+	preserveRaw, err = brunoCanonicalPreservesSourceCredentials(
+		requirements,
+		map[string]string{"first": "PROJECT_FIRST", "second": "PROJECT_SECOND"},
+		nil,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preserveRaw {
+		t.Fatal("fully externalized canonical import unexpectedly selected the raw runtime bundle")
 	}
 }
 
@@ -2188,6 +2637,52 @@ func decodeCommittedBrunoScript(t *testing.T, payload []byte) *storageScriptAlia
 		t.Fatalf("commit response has no script: %s", payload)
 	}
 	return response.Script
+}
+
+func readCommittedBrunoRuntimeSource(
+	t *testing.T,
+	server *Server,
+	script *dsl.Script,
+) []byte {
+	t.Helper()
+	if server == nil || script == nil {
+		t.Fatal("server and committed Bruno script are required")
+	}
+	if script.Metadata == nil || script.Metadata.Import == nil ||
+		script.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey] != "raw" {
+		t.Fatalf("committed Bruno runtime marker = %#v, want raw", script.Metadata)
+	}
+	artifactID := strings.TrimPrefix(script.Config.Bruno.BundleRef, "artifact://")
+	brunoStore, ok := server.store.(storage.BrunoImportStore)
+	if !ok {
+		t.Fatal("test store does not implement Bruno import storage")
+	}
+	artifact, err := brunoStore.GetBrunoSourceArtifact(
+		artifactID,
+		normalizeProjectID(script.ProjectID),
+	)
+	if err != nil {
+		t.Fatalf("load committed Bruno runtime artifact: %v", err)
+	}
+	reader, _, err := server.brunoArtifacts.Open(
+		context.Background(),
+		importartifact.OpenRequest{
+			BackendKey: artifact.BackendKey,
+			ProjectID:  artifact.ProjectID,
+			Kind:       artifact.ArtifactKind,
+			SHA256:     artifact.SHA256,
+			SizeBytes:  artifact.SizeBytes,
+		},
+	)
+	if err != nil {
+		t.Fatalf("open committed Bruno runtime artifact: %v", err)
+	}
+	payload, readErr := io.ReadAll(reader)
+	closeErr := reader.Close()
+	if readErr != nil || closeErr != nil {
+		t.Fatalf("read committed Bruno runtime artifact: read=%v close=%v", readErr, closeErr)
+	}
+	return payload
 }
 
 type storageScriptAlias = struct {

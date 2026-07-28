@@ -119,7 +119,7 @@ func TestConvertJMXTranslatesScriptAndPreservesArbitrary(t *testing.T) {
 	}
 	script := result.Scripts[0]
 	// The arbitrary source becomes a durable review placeholder before the HTTP
-	// request; no JVM source is copied into either action.
+	// request; the inert import metadata retains it for the authorized operator.
 	if len(script.Actions) != 2 || script.Actions[0].Type != "review_required" || script.Actions[1].Type != "GET" {
 		t.Fatalf("actions = %#v, want review placeholder + HTTP GET", script.Actions)
 	}
@@ -127,8 +127,8 @@ func TestConvertJMXTranslatesScriptAndPreservesArbitrary(t *testing.T) {
 		t.Fatalf("review placeholder metadata = %#v", script.Actions[0].Metadata)
 	}
 	preserved, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
-	if len(preserved) == 0 || strings.Contains(strings.Join(preserved, "\n"), "api.fetch") {
-		t.Fatalf("expected disclosure-safe jsr223 marker, got %#v", script.Metadata.Import.Preserved["jsr223_sources"])
+	if len(preserved) == 0 || !strings.Contains(strings.Join(preserved, "\n"), `def token = api.fetch(); vars.put("kept", token)`) {
+		t.Fatalf("expected exact gated JSR223 source, got %#v", script.Metadata.Import.Preserved["jsr223_sources"])
 	}
 	if result.Stats.ReviewRequired < 1 {
 		t.Fatalf("review_required stat = %d, want >= 1", result.Stats.ReviewRequired)

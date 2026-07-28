@@ -119,10 +119,23 @@ func (vu *VUser) evalConditionEvidence(cond *dsl.Condition) (bool, ConditionEvid
 // evaluated value, with the run's exact-value redaction applied as a final
 // boundary in case secret material arrived through an indirect variable.
 func (vu *VUser) conditionEvidenceOperand(raw, resolved string) string {
-	if conditionOperandContainsSensitiveReference(raw) {
+	if vu.runtimeCredentialRedactionError() != nil {
+		return redactedPayloadValue
+	}
+	if conditionOperandContainsSensitiveReference(raw) ||
+		vu.conditionOperandContainsImportedCredentialReference(raw) {
 		return scrubSensitiveTextWithConfig(raw, vu.RedactionConfig)
 	}
 	return scrubSensitiveTextWithConfig(resolved, vu.RedactionConfig)
+}
+
+func (vu *VUser) conditionOperandContainsImportedCredentialReference(value string) bool {
+	for _, match := range scriptTemplateReferencePattern.FindAllStringSubmatch(value, -1) {
+		if len(match) >= 2 && vu.importedCredentialTemplateExpression(match[1]) {
+			return true
+		}
+	}
+	return false
 }
 
 func conditionOperandContainsSensitiveReference(value string) bool {

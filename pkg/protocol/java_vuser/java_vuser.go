@@ -356,7 +356,7 @@ func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if issues := javarunner.ValidateVMParameters(vmParameters); len(issues) > 0 {
+	if issues := javarunner.ValidateVMParametersForExecution(vmParameters); len(issues) > 0 {
 		return fmt.Errorf("java_vuser %w", issues[0])
 	}
 	selection := strings.TrimSpace(stringValue(cfg, "java_vuser_jdk_selection"))
@@ -2325,6 +2325,7 @@ func (j *JavaVuser) commandArgs(cmd runCommand) ([]string, error) {
 		plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
 			VMParameters:         j.cfg.AdditionalVMParameters,
 			JavaMajor:            resolvedJavaMajor(j.cfg.ResolvedJDK),
+			VMFamily:             resolvedJavaVMFamily(j.cfg.ResolvedJDK),
 			HarnessJar:           j.cfg.HarnessJar,
 			ScriptClasspath:      j.cfg.ScriptClasspath,
 			SharedClasspath:      sharedClasspath,
@@ -2364,6 +2365,13 @@ func resolvedJavaMajor(jdk *javarunner.ResolvedJDK) int {
 		return 0
 	}
 	return jdk.Major
+}
+
+func resolvedJavaVMFamily(jdk *javarunner.ResolvedJDK) javarunner.JavaVMFamily {
+	if jdk == nil {
+		return javarunner.JavaVMUnknown
+	}
+	return jdk.VMFamily
 }
 
 func (j *JavaVuser) decorateRunCommand(command *runCommand) {

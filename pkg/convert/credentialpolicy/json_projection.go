@@ -28,9 +28,25 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 		return nil, Result{}, nil, err
 	}
 	if len(payload) > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"import_credential_review_incomplete",
+				), nil, nil
+		}
 		return nil, rejected(options.Source, "credential_json_limit_exceeded"), nil, nil
 	}
 	if !utf8.Valid(payload) {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"credential_json_invalid_utf8",
+				), nil, nil
+		}
 		return nil, rejected(options.Source, "credential_json_invalid_utf8"), nil, nil
 	}
 	parser := jsonProjectionParser{
@@ -43,6 +59,15 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_empty"), nil, nil
 	}
 	if err := parser.parseValue("", "", 0, false); err != nil {
+		if options.Mode == Preserve {
+			result := parser.result
+			result.Merge(preservedOpaquePayloadResult(
+				payload,
+				options,
+				"credential_json_malformed",
+			))
+			return append([]byte(nil), payload...), result, nil, nil
+		}
 		if containsSensitiveNameHintWithOptions(payload, options) {
 			return nil, rejected(options.Source, "credential_json_malformed_sensitive"), nil, nil
 		}
@@ -50,6 +75,14 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 	}
 	parser.skipSpace()
 	if parser.index != len(payload) {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"credential_json_trailing_value",
+				), nil, nil
+		}
 		if containsSensitiveNameHintWithOptions(payload[parser.index:], options) || len(parser.replacements) > 0 {
 			return nil, rejected(options.Source, "credential_json_trailing_value_sensitive"), nil, nil
 		}
@@ -78,12 +111,21 @@ func (parser *jsonProjectionParser) parseValue(
 	captureGraphQLQuery bool,
 ) error {
 	if depth > parser.options.Limits.MaxDepth {
-		parser.result.Merge(rejected(parser.options.Source, "credential_json_depth_limit_exceeded"))
+		if parser.options.Mode == Preserve {
+			parser.result.Merge(preserved(parser.options.Source, "import_credential_review_incomplete"))
+		} else {
+			parser.result.Merge(rejected(parser.options.Source, "credential_json_depth_limit_exceeded"))
+		}
 		return errors.New("JSON depth limit exceeded")
 	}
 	parser.values++
+	valueIndex := parser.values - 1
 	if parser.values > parser.options.Limits.MaxValues {
-		parser.result.Merge(rejected(parser.options.Source, "credential_json_value_limit_exceeded"))
+		if parser.options.Mode == Preserve {
+			parser.result.Merge(preserved(parser.options.Source, "import_credential_review_incomplete"))
+		} else {
+			parser.result.Merge(rejected(parser.options.Source, "credential_json_value_limit_exceeded"))
+		}
 		return errors.New("JSON value limit exceeded")
 	}
 	parser.skipSpace()
@@ -94,12 +136,36 @@ func (parser *jsonProjectionParser) parseValue(
 	switch parser.payload[parser.index] {
 	case '{':
 		if sensitiveName != "" {
-			parser.result.Merge(rejected(parser.options.Source, "credential_json_sensitive_object_unsupported"))
+			if parser.options.Mode == Preserve {
+				item := preserved(parser.options.Source, "import_credential_preserved")
+				item.PreservedTargets = append(item.PreservedTargets, TargetRef{
+					RequestKey: parser.options.RequestKey,
+					Field:      firstNonEmpty(parser.options.TargetField, "json"),
+					Pointer:    pointer,
+					Index:      valueIndex,
+					Occurrence: valueIndex,
+				})
+				parser.result.Merge(item)
+			} else {
+				parser.result.Merge(rejected(parser.options.Source, "credential_json_sensitive_object_unsupported"))
+			}
 		}
 		return parser.parseObject(pointer, depth+1)
 	case '[':
 		if sensitiveName != "" {
-			parser.result.Merge(rejected(parser.options.Source, "credential_json_sensitive_array_unsupported"))
+			if parser.options.Mode == Preserve {
+				item := preserved(parser.options.Source, "import_credential_preserved")
+				item.PreservedTargets = append(item.PreservedTargets, TargetRef{
+					RequestKey: parser.options.RequestKey,
+					Field:      firstNonEmpty(parser.options.TargetField, "json"),
+					Pointer:    pointer,
+					Index:      valueIndex,
+					Occurrence: valueIndex,
+				})
+				parser.result.Merge(item)
+			} else {
+				parser.result.Merge(rejected(parser.options.Source, "credential_json_sensitive_array_unsupported"))
+			}
 		}
 		return parser.parseArray(pointer, depth+1)
 	case '"':
@@ -133,15 +199,17 @@ func (parser *jsonProjectionParser) parseValue(
 		if err != nil {
 			return err
 		}
-		encoded, err := json.Marshal(projected)
-		if err != nil {
-			return errors.New("projected JSON string could not be encoded")
+		if parser.options.Mode != Preserve {
+			encoded, err := json.Marshal(projected)
+			if err != nil {
+				return errors.New("projected JSON string could not be encoded")
+			}
+			parser.replacements = append(parser.replacements, replacement{
+				start: valueStart,
+				end:   end,
+				value: encoded,
+			})
 		}
-		parser.replacements = append(parser.replacements, replacement{
-			start: valueStart,
-			end:   end,
-			value: encoded,
-		})
 		parser.result.Merge(item)
 		return nil
 	case 't':
@@ -162,7 +230,19 @@ func (parser *jsonProjectionParser) parseValue(
 		}
 	}
 	if sensitiveName != "" {
-		parser.result.Merge(rejected(parser.options.Source, "credential_json_sensitive_non_string_unsupported"))
+		if parser.options.Mode == Preserve {
+			item := preserved(parser.options.Source, "import_credential_preserved")
+			item.PreservedTargets = append(item.PreservedTargets, TargetRef{
+				RequestKey: parser.options.RequestKey,
+				Field:      firstNonEmpty(parser.options.TargetField, "json"),
+				Pointer:    pointer,
+				Index:      valueIndex,
+				Occurrence: valueIndex,
+			})
+			parser.result.Merge(item)
+		} else {
+			parser.result.Merge(rejected(parser.options.Source, "credential_json_sensitive_non_string_unsupported"))
+		}
 	}
 	return nil
 }

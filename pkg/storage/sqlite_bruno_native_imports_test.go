@@ -129,7 +129,7 @@ func TestCommitBrunoNativeImportSharesContentAddressedArtifactsAcrossBatches(t *
 		t.Fatalf("deduplicated artifact ids = %q/%q", result.Batch.RawArtifactID, result.Batch.SanitizedArtifactID)
 	}
 	var count int
-	if err := store.db.QueryRow(`SELECT COUNT(*) FROM import_source_artifacts WHERE project_id = ?`, "project-bruno").Scan(&count); err != nil {
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM bruno_source_artifacts WHERE project_id = ?`, "project-bruno").Scan(&count); err != nil {
 		t.Fatalf("count Bruno artifacts: %v", err)
 	}
 	if count != 2 {
@@ -190,7 +190,7 @@ func TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch(t *testing.T) {
 		t.Helper()
 		var count int
 		if err := store.db.QueryRow(
-			`SELECT COUNT(*) FROM import_source_artifacts WHERE id IN ('native-raw','native-sanitized')`,
+			`SELECT COUNT(*) FROM bruno_source_artifacts WHERE id IN ('native-raw','native-sanitized')`,
 		).Scan(&count); err != nil {
 			t.Fatalf("count artifacts: %v", err)
 		}

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,12 +25,15 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importsession"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // importSessionCapacityRetryAfterSeconds is the hint sent with a 429 when
 // protected import session capacity is exhausted. Sessions are short-lived, so
 // a short retry is usually enough.
 const importSessionCapacityRetryAfterSeconds = 5
+
+const importSourceRetentionPendingCode = "import_source_retention_pending"
 
 // importSessionClaimStatus maps a protected-import-session claim failure to its
 // HTTP status. It is shared by every format that uses the commit service, so
@@ -178,12 +183,19 @@ func (s *Server) applyProtectedImportFolderOverride(candidate *dsl.Script, overr
 	return 0, nil
 }
 
-func finalizeImportCommitScript(script *dsl.Script, sourceProfile string) (*dsl.Script, *ReplayPreflight, error) {
+func finalizeImportCommitScript(
+	script *dsl.Script,
+	sourceProfile string,
+	preserveImportedCredentials bool,
+) (*dsl.Script, *ReplayPreflight, error) {
 	finalized, err := requestimport.FinalizeScript(script, nil, requestimport.FinalizeOptions{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to finalize imported script: %w", err)
 	}
 	script = finalized.Script
+	if !preserveImportedCredentials {
+		stripCredentialPreservingImportPolicy(script)
+	}
 	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
 	attachImportReplayPreflight(script, sourceProfile, preflight)
 	return script, preflight, nil
@@ -209,6 +221,7 @@ func applySuggestedImportCommitSecretBindings(
 	if working == nil {
 		return nil, nil, errors.New("failed to clone import script")
 	}
+	_ = scriptIndex
 
 	dynamicOnly := cloneScriptDefinition(working)
 	if dynamicOnly == nil {
@@ -234,7 +247,7 @@ func applySuggestedImportCommitSecretBindings(
 			return nil
 		}
 		options := credentialpolicy.Options{
-			Mode:        credentialpolicy.SecretReference,
+			Mode:        credentialpolicy.Preserve,
 			Source:      credentialpolicy.SourceRef{Format: sourceProfile, Path: ref.Path, Pointer: "/body"},
 			RequestKey:  ref.Path,
 			NamePrefix:  firstNonEmpty(ref.Name(), "request"),
@@ -263,6 +276,12 @@ func applySuggestedImportCommitSecretBindings(
 		if result.Disposition == credentialpolicy.BlockedDraft {
 			applyImportCommitBodyReviewGate(ref, sourceProfile, result)
 		}
+		if len(result.PreservedTargets) > 0 {
+			ref.SetMetadata(requestimport.MergePreservedCredentialTargetsMetadata(
+				ref.Metadata(),
+				result.PreservedTargets,
+			))
+		}
 		protectedBodies[ref.Path] = body.encode(projected)
 		// Keep the body out of the generic free-text projection. It is restored
 		// by stable traversal path after every other executable field is masked
@@ -273,15 +292,16 @@ func applySuggestedImportCommitSecretBindings(
 		return nil, nil, err
 	}
 
-	masked, requirements, err := applySuggestedSecretBindings(working, scriptIndex)
-	if err != nil {
-		return nil, requirements, err
-	}
+	// The import already contains the operator-supplied executable values.
+	// Keep non-body fields intact as well; projecting them through
+	// applySuggestedSecretBindings would replace headers, auth, and URLs with
+	// unconfigured {{secret.*}} references and make the committed script
+	// unrunnable until the operator re-entered the same values.
 	if len(protectedBodies) == 0 {
-		return masked, requirements, nil
+		return working, nil, nil
 	}
 	restored := 0
-	if err := dslwalk.Walk(masked, func(ref dslwalk.SurfaceRef) error {
+	if err := dslwalk.Walk(working, func(ref dslwalk.SurfaceRef) error {
 		body, ok := protectedBodies[ref.Path]
 		if !ok {
 			return nil
@@ -290,12 +310,23 @@ func applySuggestedImportCommitSecretBindings(
 		restored++
 		return nil
 	}); err != nil {
-		return nil, requirements, err
+		return nil, nil, err
 	}
 	if restored != len(protectedBodies) {
-		return nil, requirements, errors.New("request body projection lost an action surface")
+		return nil, nil, errors.New("request body projection lost an action surface")
 	}
-	return masked, requirements, nil
+	return working, nil, nil
+}
+
+func stripCredentialPreservingImportPolicy(script *dsl.Script) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		script.Metadata.Import.Preserved == nil {
+		return
+	}
+	delete(
+		script.Metadata.Import.Preserved,
+		dsl.ImportPreservedCredentialPolicyKey,
+	)
 }
 
 func importCommitSurfaceBody(ref dslwalk.SurfaceRef) (string, bool) {
@@ -436,6 +467,9 @@ func applyImportCommitBodyReviewGate(
 ) {
 	codes := importCommitCredentialFindingCodes(result, credentialpolicy.BlockedDraft)
 	if len(codes) == 0 {
+		codes = importCommitCredentialFindingCodes(result, credentialpolicy.Rejected)
+	}
+	if len(codes) == 0 {
 		codes = []string{"credential_body_review_required"}
 	}
 	findings := make([]importreview.Finding, 0, len(codes))
@@ -479,6 +513,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	var candidateClaim *importsession.Claim
 	var candidateLease *importCandidateClaimLease
 	var candidateRequirements []credentialpolicy.Requirement
+	var draftAttestationClaim *importDraftAttestationClaim
 	// candidateSource is unredacted uploaded source. It is zeroed on every exit
 	// path, including the error ones, so it does not outlive the request.
 	var candidateSource []byte
@@ -487,6 +522,9 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 		clear(candidateSource)
 		if candidateClaim != nil {
 			s.releaseImportCandidateClaim(candidateClaim)
+		}
+		if draftAttestationClaim != nil {
+			s.releaseImportDraftAttestation(draftAttestationClaim)
 		}
 	}()
 	if strings.TrimSpace(req.ImportSessionID) != "" {
@@ -542,6 +580,58 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 			return
 		}
 		script = candidate
+	} else {
+		// The legacy client-submitted draft path remains supported, but caller
+		// JSON is not importer trust. Only the opaque, one-shot attestation
+		// embedded by an authenticated inspection response may authorize exact
+		// executable credential preservation.
+		if importDraftAttestationToken(script) != "" {
+			claim, claimErr := s.claimImportDraftAttestation(r, script)
+			if claimErr == nil &&
+				claim != nil &&
+				strings.EqualFold(
+					strings.TrimSpace(claim.Profile),
+					strings.TrimSpace(spec.sourceProfile),
+				) {
+				draftAttestationClaim = claim
+				candidateSource = claim.RawSource
+				claim.RawSource = nil
+			} else if claim != nil {
+				s.releaseImportDraftAttestation(claim)
+			}
+		}
+		// Whether the claim succeeded or not, the capability is request-scoped
+		// and must never become durable provenance. An invalid/foreign marker
+		// simply falls through to ordinary strict persistence below.
+		stripImportDraftAttestation(script)
+	}
+	// This handler is itself the authenticated importer boundary. Legacy
+	// clients that submit the converted script directly (without a protected
+	// session) must retain the credentials the importing operator already
+	// supplied, just like protected-session clients do. The durable
+	// preservation marker is still established only by the server-side
+	// imported-script persistence path below; a marker forged on an ordinary
+	// script create/update remains untrusted.
+	credentialPreservingImportCommit := true
+	protectedImportCommit := candidateClaim != nil || draftAttestationClaim != nil
+	protectedSourceCommitOwner := ""
+	if len(candidateSource) > 0 {
+		if _, retentionEnabled := s.store.(storage.ImportSourceRetentionStore); retentionEnabled {
+			switch {
+			case candidateClaim != nil:
+				protectedSourceCommitOwner = protectedImportSourceCommitOwnerDigest(
+					spec.sourceProfile,
+					"session",
+					candidateClaim.ID,
+				)
+			case draftAttestationClaim != nil:
+				protectedSourceCommitOwner = protectedImportSourceCommitOwnerDigest(
+					spec.sourceProfile,
+					"draft_attestation",
+					draftAttestationClaim.Token,
+				)
+			}
+		}
 	}
 	safeScript, _, err := applySuggestedImportCommitSecretBindings(script, 0, spec.sourceProfile)
 	if err != nil {
@@ -550,6 +640,9 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	}
 	script = safeScript
 	stripProtectedImportCredentialMetadata(script)
+	// A commit fence is server-owned retry state. Imported or caller-submitted
+	// metadata can never nominate its owner or script fingerprint.
+	stripProtectedImportSourceCommitFence(script)
 
 	mode, replaceMode, err := normalizeImportCommitModes(*req, spec)
 	if err != nil {
@@ -564,11 +657,55 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 			// must address the same create-only row instead of allocating a second
 			// script ID.
 			script.ID = protectedImportCreateScriptID(spec.sourceProfile, candidateClaim.ID)
+		} else if draftAttestationClaim != nil &&
+			strings.TrimSpace(script.ID) == "" {
+			// The attestation token is the legacy path's stable create identity.
+			// A stale protected-claim recovery after an ambiguous response must
+			// address the same create-only row.
+			script.ID = protectedImportCreateScriptID(
+				spec.sourceProfile,
+				draftAttestationClaim.Token,
+			)
 		}
-		script, preflight, err := finalizeImportCommitScript(script, spec.sourceProfile)
+		script, preflight, err := finalizeImportCommitScript(
+			script,
+			spec.sourceProfile,
+			credentialPreservingImportCommit,
+		)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if protectedSourceCommitOwner != "" {
+			projected, projectionErr := preparePersistentImportedLibraryScript(
+				script,
+				nil,
+				spec.sourceProfile,
+			)
+			if projectionErr != nil {
+				writeError(w, http.StatusBadRequest, projectionErr.Error())
+				return
+			}
+			if strings.TrimSpace(projected.Version) == "" {
+				projected.Version = "1"
+			}
+			scriptFingerprint, fingerprintErr := storage.ImportSourceScriptFingerprint(projected)
+			if fingerprintErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to fingerprint imported script")
+				return
+			}
+			fence, fenceErr := newProtectedImportSourceCommitFence(
+				protectedSourceCommitOwner,
+				spec.sourceProfile,
+				candidateSource,
+				scriptFingerprint,
+			)
+			if fenceErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to prepare protected import source commit")
+				return
+			}
+			attachProtectedImportSourceCommitFence(projected, fence)
+			script = projected
 		}
 		diff := openAPIImportDiff{Mode: "create", Added: len(script.Actions)}
 		if req.DryRun {
@@ -581,26 +718,90 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				return
 			}
 		}
-		stored, createdNow, err := s.runner.CreateScriptDurableReportingReplay(script)
+		if draftAttestationClaim != nil {
+			if err := s.assertImportDraftAttestationOwned(draftAttestationClaim); err != nil {
+				writeError(w, http.StatusConflict, "import draft attestation lease was lost before commit")
+				return
+			}
+		}
+		var stored *StoredScript
+		var createdNow bool
+		if credentialPreservingImportCommit {
+			stored, createdNow, err = s.runner.CreateImportedScriptDurableReportingReplay(
+				script,
+				spec.sourceProfile,
+			)
+		} else {
+			stored, createdNow, err = s.runner.CreateScriptDurableReportingReplay(script)
+		}
 		if err != nil {
 			if errors.Is(err, errScriptConcurrentChange) {
 				writeError(w, http.StatusConflict, err.Error())
 				return
 			}
+			if errors.Is(err, errScriptCredentialBindingsRequired) {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
 			return
 		}
-		if candidateClaim != nil {
+		if protectedImportCommit {
 			// Retain before completing the claim. Completion releases the session
 			// object that holds the only copy of the raw source, so the order here
 			// is what makes retention possible at all rather than a preference.
 			_, actor, _ := s.resolveAuditActor(r)
-			s.retainProtectedImportSource(r.Context(), stored.Script, spec.sourceProfile, candidateSource, actor)
-			candidateLease.stop()
-			if err := s.completeImportCandidateClaim(r.Context(), candidateClaim); err != nil {
-				slog.Error("failed to finalize committed import session", "source", spec.sourceProfile, "session_id", req.ImportSessionID, "error", err)
+			if !s.retainProtectedImportSource(
+				r.Context(),
+				stored.Script,
+				spec.sourceProfile,
+				candidateSource,
+				actor,
+				!createdNow,
+			) {
+				s.recordAuditEvent(
+					r,
+					"script.import."+spec.auditProfile+".source_retention_pending",
+					"partial",
+					"script",
+					stored.ID,
+					stored.ProjectID,
+					map[string]any{"committed": true},
+				)
+				// The script row is already durable, so report that state
+				// explicitly and leave the claim releasable for a same-session
+				// reconciliation retry. Consuming the claim here would destroy
+				// the last source copy.
+				retryInstruction := "retry with the same import_session_id"
+				if draftAttestationClaim != nil {
+					retryInstruction = "retry the same attested import draft"
+				}
+				spec.writeResponse(w, http.StatusServiceUnavailable, map[string]any{
+					"error":      "script committed but protected import source retention is pending; " + retryInstruction,
+					"code":       importSourceRetentionPendingCode,
+					"committed":  true,
+					"retryable":  true,
+					"script_id":  stored.ID,
+					"project_id": stored.ProjectID,
+				})
+				return
 			}
-			candidateClaim = nil
+			if candidateClaim != nil {
+				candidateLease.stop()
+				if err := s.completeImportCandidateClaim(r.Context(), candidateClaim); err != nil {
+					slog.Error("failed to finalize committed import session", "source", spec.sourceProfile, "session_id", req.ImportSessionID, "error", err)
+				}
+				// Completion failure is ambiguous. Keep the claim fenced for
+				// stale-claim reconciliation instead of releasing it as though
+				// the durable commit had failed.
+				candidateClaim = nil
+			}
+			if draftAttestationClaim != nil {
+				if err := s.completeImportDraftAttestation(draftAttestationClaim); err != nil {
+					slog.Error("failed to finalize committed import draft attestation", "source", spec.sourceProfile, "script_id", stored.ID, "error", err)
+				}
+				draftAttestationClaim = nil
+			}
 		}
 		// A retry after an interrupted commit resolves to the same deterministic
 		// script id and create-only persistence hands the existing row back
@@ -614,7 +815,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 			status = http.StatusOK
 			auditOutcome = "create.idempotent_replay"
 		}
-		s.recordAuditEvent(r, "script.import."+spec.auditProfile+"."+auditOutcome, "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
+		s.recordAuditEvent(r, "script.import."+spec.auditProfile+"."+auditOutcome, "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script)})
 		spec.writeResponse(w, status, map[string]any{
 			"scripts":           maskStoredScripts([]*StoredScript{stored}),
 			"script":            maskScriptSecrets(stored.Script),
@@ -642,7 +843,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 		writeError(w, http.StatusNotFound, "target script not found")
 		return
 	}
-	if candidateClaim != nil &&
+	if protectedImportCommit &&
 		normalizeProjectID(existing.ProjectID) != normalizeProjectID(script.ProjectID) {
 		// A protected candidate is scoped to the project captured at
 		// inspection time. Do not let replace-mode identity preservation
@@ -654,6 +855,81 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	}
 	if !requireAuthorizedProjectMatch(w, r, existing.ProjectID) {
 		return
+	}
+	retentionOnlyReplay := false
+	var sourceCommitPredecessors []string
+	if protectedSourceCommitOwner != "" {
+		fence, exists, fenceErr := readProtectedImportSourceCommitFence(existing.Script)
+		if fenceErr != nil {
+			writeError(w, http.StatusConflict, "target script has invalid protected import source commit state")
+			return
+		}
+		if !exists || fence.OwnerDigest != protectedSourceCommitOwner {
+			alreadyPublished, publishedErr := s.retainedImportSourceCommitOwnerWasPublished(
+				existing.ID,
+				existing.ProjectID,
+				protectedSourceCommitOwner,
+				spec.sourceProfile,
+				candidateSource,
+			)
+			if publishedErr != nil {
+				writeError(w, http.StatusConflict, "could not safely reconcile the protected import source commit")
+				return
+			}
+			if alreadyPublished ||
+				(exists && protectedImportSourceCommitFenceContainsOwner(
+					fence,
+					protectedSourceCommitOwner,
+				)) {
+				writeError(w, http.StatusConflict, "target script changed after the protected import replacement committed")
+				return
+			}
+		}
+		if exists {
+			currentFingerprint, fingerprintErr := storage.ImportSourceScriptFingerprint(existing.Script)
+			if fingerprintErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to fingerprint target script")
+				return
+			}
+			fenceStillCurrent := currentFingerprint == fence.ScriptFingerprint
+			if fence.OwnerDigest == protectedSourceCommitOwner {
+				if !fenceStillCurrent ||
+					!strings.EqualFold(fence.SourceProfile, spec.sourceProfile) ||
+					fence.SourceSizeBytes != int64(len(candidateSource)) {
+					writeError(w, http.StatusConflict, "target script changed after the protected import replacement committed")
+					return
+				}
+				sourceSum := sha256.Sum256(candidateSource)
+				if fence.SourceSHA256 != hex.EncodeToString(sourceSum[:]) {
+					writeError(w, http.StatusConflict, "protected import source no longer matches the committed replacement")
+					return
+				}
+				// The prior request crossed the script commit boundary. This
+				// retry may only reconcile its retained source; it must never
+				// project the old candidate over a later target revision.
+				retentionOnlyReplay = true
+			} else {
+				sourceCommitPredecessors = append(
+					sourceCommitPredecessors,
+					fence.SupersededOwnerDigests...,
+				)
+				activeSourceMatches := s.retainedImportSourceCommitFenceMatchesActive(
+					existing.ID,
+					existing.ProjectID,
+					fence,
+				)
+				if fenceStillCurrent && !activeSourceMatches {
+					writeError(w, http.StatusConflict, "target script has another protected import source retention pending")
+					return
+				}
+				if !fenceStillCurrent && !activeSourceMatches {
+					sourceCommitPredecessors = append(
+						sourceCommitPredecessors,
+						fence.OwnerDigest,
+					)
+				}
+			}
+		}
 	}
 	expectedUpdatedAt := existing.Script.UpdatedAt
 	expectedActionGraphDigest, err := scriptCorrelationActionGraphDigest(existing.Script)
@@ -672,10 +948,72 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	// Re-imports may replace content but may never relocate a script or erase
 	// its durable identity/creation metadata.
 	preserveReplacedScriptIdentity(next, existing.Script)
-	next, preflight, err := finalizeImportCommitScript(next, spec.sourceProfile)
+	next, preflight, err := finalizeImportCommitScript(
+		next,
+		spec.sourceProfile,
+		credentialPreservingImportCommit,
+	)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	replacementAlreadyApplied := retentionOnlyReplay
+	if credentialPreservingImportCommit {
+		// Compare the exact trusted-import projection that persistence would
+		// write. The stored first attempt contains the server-owned preservation
+		// marker, while the recovered session candidate intentionally does not;
+		// comparing the pre-projection candidate would therefore miss an
+		// already-committed replacement and bump ref-key/version metadata again.
+		projectedNext, projectionErr := preparePersistentImportedLibraryScript(
+			next,
+			existing.Script,
+			spec.sourceProfile,
+		)
+		if projectionErr != nil {
+			writeError(w, http.StatusBadRequest, projectionErr.Error())
+			return
+		}
+		if !retentionOnlyReplay && protectedSourceCommitOwner != "" {
+			if strings.TrimSpace(projectedNext.Version) == "" {
+				projectedNext.Version = strings.TrimSpace(existing.Script.Version)
+			}
+			if strings.TrimSpace(projectedNext.Version) == "" {
+				projectedNext.Version = "1"
+			}
+			scriptFingerprint, fingerprintErr := storage.ImportSourceScriptFingerprint(projectedNext)
+			if fingerprintErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to fingerprint imported script")
+				return
+			}
+			fence, fenceErr := newProtectedImportSourceCommitFence(
+				protectedSourceCommitOwner,
+				spec.sourceProfile,
+				candidateSource,
+				scriptFingerprint,
+				sourceCommitPredecessors...,
+			)
+			if fenceErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to prepare protected import source commit")
+				return
+			}
+			attachProtectedImportSourceCommitFence(projectedNext, fence)
+			next = projectedNext
+		} else if !retentionOnlyReplay {
+			if protectedSourceCommitOwner == "" {
+				existingFence, exists, fenceErr := readProtectedImportSourceCommitFence(existing.Script)
+				if fenceErr != nil {
+					writeError(w, http.StatusConflict, "target script has invalid protected import source commit state")
+					return
+				}
+				if exists {
+					attachProtectedImportSourceCommitFence(projectedNext, existingFence)
+				}
+			}
+			replacementAlreadyApplied = equivalentCreateOnlyScript(
+				existing.Script,
+				projectedNext,
+			)
+		}
 	}
 	if req.DryRun {
 		spec.writeResponse(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})
@@ -688,34 +1026,102 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 			return
 		}
 	}
-	updated, ok, err := s.runner.UpdateScriptDurableInProjectIfUnchanged(
-		targetID,
-		next,
-		authorizedProjectOr(r, existing.ProjectID),
-		expectedUpdatedAt,
-		expectedActionGraphDigest,
-	)
-	if err != nil {
-		if errors.Is(err, errScriptConcurrentChange) {
-			writeError(w, http.StatusConflict, err.Error())
+	if draftAttestationClaim != nil {
+		if err := s.assertImportDraftAttestationOwned(draftAttestationClaim); err != nil {
+			writeError(w, http.StatusConflict, "import draft attestation lease was lost before commit")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
-		return
 	}
-	if !ok {
+	updated := existing
+	updateOK := true
+	if !replacementAlreadyApplied {
+		if credentialPreservingImportCommit {
+			updated, updateOK, err = s.runner.UpdateImportedScriptDurableInProjectIfUnchanged(
+				targetID,
+				next,
+				authorizedProjectOr(r, existing.ProjectID),
+				expectedUpdatedAt,
+				expectedActionGraphDigest,
+				spec.sourceProfile,
+			)
+		} else {
+			updated, updateOK, err = s.runner.UpdateScriptDurableInProjectIfUnchanged(
+				targetID,
+				next,
+				authorizedProjectOr(r, existing.ProjectID),
+				expectedUpdatedAt,
+				expectedActionGraphDigest,
+			)
+		}
+		if err != nil {
+			if errors.Is(err, errScriptConcurrentChange) {
+				writeError(w, http.StatusConflict, err.Error())
+				return
+			}
+			if errors.Is(err, errScriptCredentialBindingsRequired) {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
+			return
+		}
+	}
+	if !updateOK {
 		writeError(w, http.StatusNotFound, "target script not found")
 		return
 	}
-	if candidateClaim != nil {
-		candidateLease.stop()
-		if err := s.completeImportCandidateClaim(r.Context(), candidateClaim); err != nil {
-			slog.Error("failed to finalize committed import session", "source", spec.sourceProfile, "session_id", req.ImportSessionID, "error", err)
+	if protectedImportCommit {
+		// Replacement is a new committed source revision just as creation is.
+		// Retain it before completing the one-shot claim that owns the only raw
+		// upload copy.
+		_, actor, _ := s.resolveAuditActor(r)
+		if !s.retainProtectedImportSource(
+			r.Context(),
+			updated.Script,
+			spec.sourceProfile,
+			candidateSource,
+			actor,
+			replacementAlreadyApplied,
+		) {
+			s.recordAuditEvent(
+				r,
+				"script.import."+spec.auditProfile+".source_retention_pending",
+				"partial",
+				"script",
+				updated.ID,
+				updated.ProjectID,
+				map[string]any{"committed": true, "replace_mode": replaceMode},
+			)
+			retryInstruction := "retry with the same import_session_id"
+			if draftAttestationClaim != nil {
+				retryInstruction = "retry the same attested import draft"
+			}
+			spec.writeResponse(w, http.StatusServiceUnavailable, map[string]any{
+				"error":      "script replacement committed but protected import source retention is pending; " + retryInstruction,
+				"code":       importSourceRetentionPendingCode,
+				"committed":  true,
+				"retryable":  true,
+				"script_id":  updated.ID,
+				"project_id": updated.ProjectID,
+			})
+			return
 		}
-		candidateClaim = nil
+		if candidateClaim != nil {
+			candidateLease.stop()
+			if err := s.completeImportCandidateClaim(r.Context(), candidateClaim); err != nil {
+				slog.Error("failed to finalize committed import session", "source", spec.sourceProfile, "session_id", req.ImportSessionID, "error", err)
+			}
+			candidateClaim = nil
+		}
+		if draftAttestationClaim != nil {
+			if err := s.completeImportDraftAttestation(draftAttestationClaim); err != nil {
+				slog.Error("failed to finalize committed import draft attestation", "source", spec.sourceProfile, "script_id", updated.ID, "error", err)
+			}
+			draftAttestationClaim = nil
+		}
 	}
 	s.recordAuditEvent(r, "script.import."+spec.auditProfile+".replace", "success", "script", updated.ID, updated.ProjectID, map[string]any{
-		"name":         updated.Name,
+		"name":         disclosureSafeScriptName(updated.Name, updated.Script),
 		"replace_mode": replaceMode,
 	})
 	spec.writeResponse(w, http.StatusOK, map[string]any{

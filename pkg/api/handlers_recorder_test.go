@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -80,11 +81,41 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	if len(result.SecretBindingRequirements) == 0 {
 		t.Fatalf("preview secret requirements = %#v", result.SecretBindingRequirements)
 	}
-	if strings.Contains(resp.Body.String(), "preview-secret") {
-		t.Fatalf("preview disclosed recorded credential: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "preview-secret") {
+		t.Fatalf("authorized import preview discarded recorded credential: %s", resp.Body.String())
 	}
 	if got := len(server.runner.ListScripts()); got != 0 {
 		t.Fatalf("preview stored %d scripts, want 0", got)
+	}
+
+	var previewEnvelope struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &previewEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	if !isCredentialPreservingImport(&previewEnvelope.Script) ||
+		importDraftAttestationToken(&previewEnvelope.Script) == "" {
+		t.Fatalf("preview lacks server-owned credential-preserving save proof: %#v", previewEnvelope.Script.Metadata)
+	}
+	savePayload, err := json.Marshal(map[string]any{"script": previewEnvelope.Script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(savePayload))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(saveResp, saveReq)
+	if saveResp.Code != http.StatusCreated {
+		t.Fatalf("preview save status = %d body=%s", saveResp.Code, saveResp.Body.String())
+	}
+	if strings.Contains(saveResp.Body.String(), "preview-secret") {
+		t.Fatalf("stored-script response disclosed preview credential: %s", saveResp.Body.String())
+	}
+	stored := server.runner.ListScripts()
+	if len(stored) != 1 || stored[0] == nil || stored[0].Script == nil ||
+		stored[0].Script.Actions[0].Headers["Authorization"] != "Bearer preview-secret" {
+		t.Fatalf("preview save discarded captured credential: %#v", stored)
 	}
 }
 
@@ -156,6 +187,12 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if strings.Contains(resp.Body.String(), "recorded-secret") || strings.Contains(resp.Body.String(), "hunter2") {
 		t.Fatalf("stored conversion response disclosed source credentials: %s", resp.Body.String())
 	}
+	server.importDraftAttestationMu.Lock()
+	attestationCount := len(server.importDraftAttestations)
+	server.importDraftAttestationMu.Unlock()
+	if attestationCount != 0 {
+		t.Fatalf("already-committed recording response retained %d unused draft attestation(s)", attestationCount)
+	}
 	storedScript, ok := server.runner.GetScript(payload.Script.ID)
 	if !ok || storedScript == nil || storedScript.Script == nil {
 		t.Fatalf("stored script %q was unavailable", payload.Script.ID)
@@ -164,12 +201,23 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(storedJSON), "recorded-secret") || strings.Contains(string(storedJSON), "hunter2") ||
-		strings.Contains(string(storedJSON), scrub.Redacted) {
-		t.Fatalf("stored script contains credential material or an executable sentinel: %s", storedJSON)
+	if !strings.Contains(string(storedJSON), "recorded-secret") || !strings.Contains(string(storedJSON), "hunter2") {
+		t.Fatalf("durable imported script discarded recorded credentials: %s", storedJSON)
 	}
-	if !strings.Contains(string(storedJSON), "{{secret.") {
-		t.Fatalf("stored script has no governed secret references: %s", storedJSON)
+	if strings.Contains(string(storedJSON), "{{secret.") || strings.Contains(string(storedJSON), scrub.Redacted) {
+		t.Fatalf("durable imported script requires credential re-entry or contains a sentinel: %s", storedJSON)
+	}
+	if !isCredentialPreservingImport(storedScript.Script) {
+		t.Fatalf("stored script lacks server-owned import preservation policy: %#v", storedScript.Script.Metadata)
+	}
+	readReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+payload.Script.ID, nil)
+	readResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(readResp, readReq)
+	if readResp.Code != http.StatusOK {
+		t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
+	}
+	if strings.Contains(readResp.Body.String(), "recorded-secret") || strings.Contains(readResp.Body.String(), "hunter2") {
+		t.Fatalf("ordinary stored-script read disclosed recorded credentials: %s", readResp.Body.String())
 	}
 	record, err := server.store.GetScriptRecording(payload.Script.ID)
 	if err != nil {
@@ -201,6 +249,76 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	}
 	if len(correlationObservations) != 1 || !strings.Contains(correlationObservations[0].ResponseBody, "csrf-recorded") {
 		t.Fatalf("decrypted correlation observations = %#v, want dynamic response value preserved for correlation", correlationObservations)
+	}
+}
+
+func TestHandleConvertRecordingParameterizationPreservesCapturedPassword(t *testing.T) {
+	server := recordingTestServer(t)
+	session, err := server.recorder.StartSessionForProject(
+		"rec-parameterized-secret",
+		"Parameterized Login",
+		"p1",
+		recorder.SessionFilters{},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.BaseURL = "https://shop.example.com"
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq:         1,
+		Method:      http.MethodPost,
+		URL:         "https://shop.example.com/login",
+		Path:        "/login",
+		Body:        "username=demo&password=parameterized-captured-password",
+		ContentType: "application/x-www-form-urlencoded",
+		StatusCode:  http.StatusOK,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/recorder/rec-parameterized-secret/convert",
+		bytes.NewBufferString(`{"name":"Parameterized Login","parameterize":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "parameterized-captured-password") {
+		t.Fatalf("saved-import response disclosed captured password: %s", resp.Body.String())
+	}
+
+	var payload struct {
+		Script struct {
+			ID string `json:"id"`
+		} `json:"script"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := server.runner.GetScript(payload.Script.ID)
+	if !ok || stored == nil || stored.Script == nil || len(stored.Script.DataSources) != 1 {
+		t.Fatalf("durable parameterized script = %#v", stored)
+	}
+	source := stored.Script.DataSources[0]
+	if !strings.Contains(source.InlineData, "parameterized-captured-password") ||
+		strings.Contains(source.InlineData, "__REPLACE_WITH_SECRET__") {
+		t.Fatalf("durable parameterized data = %q, want captured password without re-entry placeholder", source.InlineData)
+	}
+	if !strings.Contains(stored.Script.Actions[0].Body, "{{data.recorded_inputs.password}}") {
+		t.Fatalf("parameterized body = %q", stored.Script.Actions[0].Body)
+	}
+
+	readReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+payload.Script.ID, nil)
+	readResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(readResp, readReq)
+	if readResp.Code != http.StatusOK {
+		t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
+	}
+	if strings.Contains(readResp.Body.String(), "parameterized-captured-password") {
+		t.Fatalf("ordinary stored-script read disclosed parameterized password: %s", readResp.Body.String())
 	}
 }
 

@@ -32,7 +32,7 @@ func TestValidateImportedJavaVMParametersAllowsSafeOpaqueValuesWithoutNormalizat
 	}
 }
 
-func TestParseRuntimeCfgRejectsUnsafeJavaVMArgumentsWithoutPartialSiblings(t *testing.T) {
+func TestParseRuntimeCfgPreservesCredentialsButRejectsUnsafeJavaVMOptions(t *testing.T) {
 	const (
 		passwordCanary = "short-secret"
 		apiKeyCanary   = "api-key-canary"
@@ -41,46 +41,53 @@ func TestParseRuntimeCfgRejectsUnsafeJavaVMArgumentsWithoutPartialSiblings(t *te
 		urlCanary      = "userinfo-password-canary"
 	)
 	tests := []struct {
-		name    string
-		content string
-		canary  string
+		name      string
+		content   string
+		canary    string
+		sensitive bool
 	}{
 		{
 			name: "password property",
 			content: `[JavaVM:Options]
 Java_VM_Params=-Xmx512m -Dservice.password=` + passwordCanary,
-			canary: passwordCanary,
+			canary:    passwordCanary,
+			sensitive: true,
 		},
 		{
 			name: "api key in numbered alias row",
 			content: `[JavaVM:Options]
 Java_VM_Params=-Xmx512m
 AdditionalVmParams_extra_arg_1=-Dapi.key=` + apiKeyCanary,
-			canary: apiKeyCanary,
+			canary:    apiKeyCanary,
+			sensitive: true,
 		},
 		{
 			name: "private key property",
 			content: `[Java:Options]
 AdditionalVmParams=-Dprivate_key=` + privateCanary,
-			canary: privateCanary,
+			canary:    privateCanary,
+			sensitive: true,
 		},
 		{
 			name: "neutral high entropy property",
 			content: `[JavaVM]
 VmParams=-Dlabel=` + entropyCanary,
-			canary: entropyCanary,
+			canary:    entropyCanary,
+			sensitive: true,
 		},
 		{
 			name: "neutral credential URL property",
 			content: `[Java Environment Settings]
 ExtraVmParams="-Dendpoint=https://runner:` + urlCanary + `@example.test/service"`,
-			canary: urlCanary,
+			canary:    urlCanary,
+			sensitive: true,
 		},
 		{
 			name: "neutral credential URL fragment",
 			content: `[JavaVM:Options]
 Java_VM_Params=-Dendpoint=https://example.test/service#token=` + urlCanary,
-			canary: urlCanary,
+			canary:    urlCanary,
+			sensitive: true,
 		},
 		{
 			name: "unsafe process option",
@@ -258,25 +265,47 @@ Java_VM_Params=-Xmx512m -XX:PauseAtStartupFile=/tmp/pause -XX:+PauseAtStartup`,
 			name: "arbitrary option carries high entropy",
 			content: `[JavaVM:Options]
 Java_VM_Params=-Xopaque:` + entropyCanary,
-			canary: entropyCanary,
+			canary:    entropyCanary,
+			sensitive: true,
 		},
 		{
 			name: "literal redaction sentinel is ambiguous",
 			content: `[JavaVM:Options]
 Java_VM_Params=-Dlabel=` + credential.Redacted,
 			// The disclosure sentinel is the intended preserved value.
-			canary: "",
+			canary:    "",
+			sensitive: true,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			rc := ParseRuntimeCfg(test.content)
-			if len(rc.JavaVMAdditionalParameters) != 0 {
-				t.Fatalf("partially retained executable arguments: %#v", rc.JavaVMAdditionalParameters)
-			}
-			if len(rc.javaVMParameterRejections) == 0 ||
-				rc.JavaVMParametersParseError == "" {
-				t.Fatalf("rejections/error = %#v / %q, want value-free rejection", rc.javaVMParameterRejections, rc.JavaVMParametersParseError)
+			if test.sensitive {
+				if len(rc.JavaVMAdditionalParameters) == 0 {
+					t.Fatalf("credential-bearing executable arguments were removed: %#v", rc)
+				}
+				if len(rc.javaVMParameterExposureReviews) == 0 ||
+					len(rc.javaVMParameterRejections) != 0 ||
+					rc.JavaVMParametersParseError != "" {
+					t.Fatalf(
+						"exposure/rejections/error = %#v / %#v / %q, want non-blocking exposure review",
+						rc.javaVMParameterExposureReviews,
+						rc.javaVMParameterRejections,
+						rc.JavaVMParametersParseError,
+					)
+				}
+				if test.canary != "" &&
+					!strings.Contains(strings.Join(rc.JavaVMAdditionalParameters, "\n"), test.canary) {
+					t.Fatalf("executable arguments lost canary: %#v", rc.JavaVMAdditionalParameters)
+				}
+			} else {
+				if len(rc.JavaVMAdditionalParameters) != 0 {
+					t.Fatalf("partially retained structurally unsafe arguments: %#v", rc.JavaVMAdditionalParameters)
+				}
+				if len(rc.javaVMParameterRejections) == 0 ||
+					rc.JavaVMParametersParseError == "" {
+					t.Fatalf("rejections/error = %#v / %q, want value-free rejection", rc.javaVMParameterRejections, rc.JavaVMParametersParseError)
+				}
 			}
 			serialized, err := json.Marshal(rc.RuntimeIssues)
 			if err != nil {
@@ -296,7 +325,7 @@ Java_VM_Params=-Dlabel=` + credential.Redacted,
 	}
 }
 
-func TestConvertZipDirectRuntimeOverrideClearsOnlyJavaUnsafeVMArguments(t *testing.T) {
+func TestConvertZipDirectRuntimeOverridePreservesCredentialWithNonBlockingReview(t *testing.T) {
 	const canary = "direct-runtime-override-password"
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)
@@ -323,26 +352,97 @@ Action=Actions.java
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 0 {
-		t.Fatalf("direct unsafe VM override survived: %#v", got)
+	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 2 ||
+		got[0] != "-Xmx512m" || got[1] != "-Dservice.password="+canary {
+		t.Fatalf("direct imported VM override = %#v, want exact source argv", got)
 	}
-	if len(result.Script.Actions) == 0 ||
-		result.Script.Actions[0].Metadata["execution_blocker"] != javaVMParameterExecutionBlocker {
-		t.Fatalf("direct unsafe VM override did not gate Java action: %#v", result.Script.Actions)
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved[dsl.ImportPreservedCredentialPolicyKey] !=
+		dsl.ImportPreservedCredentialPolicyPreserve {
+		t.Fatalf("JVM credential preservation policy = %#v", preserved)
+	}
+	targetsPayload, err := json.Marshal(
+		preserved[dsl.ImportPreservedCredentialTargetsMetadataKey],
+	)
+	if err != nil {
+		t.Fatalf("marshal JVM credential locators: %v", err)
+	}
+	if !strings.Contains(
+		string(targetsPayload),
+		"config.java_vuser.additional_vm_parameters.opaque",
+	) {
+		t.Fatalf("JVM credential locator was discarded: %s", targetsPayload)
+	}
+	if len(result.Script.Actions) == 0 {
+		t.Fatal("direct imported VM override has no Java action")
+	}
+	if blocker := result.Script.Actions[0].Metadata["execution_blocker"]; blocker == javaVMParameterExecutionBlocker {
+		t.Fatalf("credential-only VM override received execution blocker: %#v", result.Script.Actions[0].Metadata)
+	}
+	review, _ := result.Script.Actions[0].Metadata["java_vm_parameter_review"].(map[string]any)
+	if review["reason_code"] != javaVMParameterExposureReviewCode ||
+		review["value_preserved"] != true ||
+		review["execution_blocker"] != false {
+		t.Fatalf("direct VM exposure review = %#v", review)
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
-	if strings.Contains(string(payload), canary) || strings.Contains(string(payload), "{{secret.") {
-		t.Fatalf("direct runtime override leaked/projected secret in result: %s", payload)
+	if !strings.Contains(string(payload), canary) || strings.Contains(string(payload), "{{secret.") {
+		t.Fatalf("direct runtime override did not retain exact destination credential: %s", payload)
+	}
+	reviewPayload, err := json.Marshal([]any{result.ReviewArtifact, result.SourceReview, result.Warnings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reviewPayload), canary) {
+		t.Fatalf("review evidence leaked direct runtime credential: %s", reviewPayload)
 	}
 	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
 		t.Fatalf("direct VM override created a provisionable requirement: %#v", requirements)
 	}
 }
 
-func TestJavaVMParameterGateDoesNotAffectNonJavaScriptInMixedResult(t *testing.T) {
+func TestConvertZipDirectRuntimeOverrideStillBlocksUnsafeJavaVMOption(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	addJavaZipFile(t, writer, "JavaOverride/JavaOverride.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, writer, "JavaOverride/Actions.java", `public class Actions {
+  public int action() throws Throwable { return 0; }
+}`)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(archive.Bytes(), ConvertOptions{
+		RuntimeSettings: &dsl.ScriptConfig{
+			JavaVuser: dsl.JavaVuserConfig{
+				AdditionalVMParameters: []string{"-Xmx512m", "-javaagent:/tmp/untrusted.jar"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 0 {
+		t.Fatalf("structurally unsafe VM override survived: %#v", got)
+	}
+	if len(result.Script.Actions) == 0 ||
+		result.Script.Actions[0].Metadata["execution_blocker"] != javaVMParameterExecutionBlocker {
+		t.Fatalf("structurally unsafe VM override did not gate Java action: %#v", result.Script.Actions)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "structurally unsafe") {
+		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+}
+
+func TestJavaVMCredentialReviewDoesNotGateOrAffectNonJavaScriptInMixedResult(t *testing.T) {
 	javaScript := &dsl.Script{
 		Protocol: "java_vuser",
 		Config: dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
@@ -367,15 +467,20 @@ func TestJavaVMParameterGateDoesNotAffectNonJavaScriptInMixedResult(t *testing.T
 
 	applyJavaVMParameterRejectionReview(result, result.Scripts, runtimeCfg, "default.cfg")
 
-	if javaScript.Actions[0].Metadata["execution_blocker"] != javaVMParameterExecutionBlocker {
-		t.Fatalf("Java action gate = %#v", javaScript.Actions[0].Metadata)
+	if javaScript.Actions[0].Metadata["execution_blocker"] == javaVMParameterExecutionBlocker {
+		t.Fatalf("Java credential received execution gate = %#v", javaScript.Actions[0].Metadata)
+	}
+	review, _ := javaScript.Actions[0].Metadata["java_vm_parameter_review"].(map[string]any)
+	if review["reason_code"] != javaVMParameterExposureReviewCode ||
+		review["value_preserved"] != true {
+		t.Fatalf("Java action review = %#v", javaScript.Actions[0].Metadata)
 	}
 	if httpScript.Actions[0].Metadata != nil {
 		t.Fatalf("non-Java script received Java VM gate: %#v", httpScript.Actions[0].Metadata)
 	}
 }
 
-func TestConvertZipUnsafeJavaVMArgumentIsOmittedRedactedAndDurablyBlocked(t *testing.T) {
+func TestConvertZipCredentialJavaVMArgumentsRemainExactWithDisclosureSafeReview(t *testing.T) {
 	const (
 		passwordCanary = "java-vm-password-canary"
 		apiKeyCanary   = "java-vm-api-key-canary"
@@ -407,18 +512,28 @@ AdditionalVmParams_extra_arg_1=-Dapi.key=`+apiKeyCanary+`
 	if result.Script == nil || result.Script.Protocol != "java_vuser" {
 		t.Fatalf("script = %#v, want java_vuser", result.Script)
 	}
-	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 0 {
-		t.Fatalf("executable Java VM argv = %#v, want fail-closed empty list", got)
+	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 3 ||
+		got[0] != "-Xmx512m" ||
+		got[1] != "-Dservice.password="+passwordCanary ||
+		got[2] != "-Dapi.key="+apiKeyCanary {
+		t.Fatalf("executable Java VM argv = %#v, want exact imported list", got)
 	}
 	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
 		t.Fatalf("Java VM argument created provisionable secret requirements: %#v", requirements)
 	}
 	if len(result.Script.Actions) == 0 {
-		t.Fatal("Java Vuser draft has no action to carry the durable gate")
+		t.Fatal("Java Vuser draft has no action to carry durable review evidence")
 	}
 	for index := range result.Script.Actions {
-		if result.Script.Actions[index].Metadata["execution_blocker"] != javaVMParameterExecutionBlocker {
-			t.Fatalf("actions[%d] gate = %#v, want %q", index, result.Script.Actions[index].Metadata, javaVMParameterExecutionBlocker)
+		metadata := result.Script.Actions[index].Metadata
+		if metadata["execution_blocker"] == javaVMParameterExecutionBlocker {
+			t.Fatalf("actions[%d] credential-only gate = %#v", index, metadata)
+		}
+		review, _ := metadata["java_vm_parameter_review"].(map[string]any)
+		if review["reason_code"] != javaVMParameterExposureReviewCode ||
+			review["value_preserved"] != true ||
+			review["execution_blocker"] != false {
+			t.Fatalf("actions[%d] review = %#v", index, metadata)
 		}
 	}
 	payload, err := json.Marshal(result)
@@ -426,15 +541,29 @@ AdditionalVmParams_extra_arg_1=-Dapi.key=`+apiKeyCanary+`
 		t.Fatalf("marshal result: %v", err)
 	}
 	for _, canary := range []string{passwordCanary, apiKeyCanary} {
-		if strings.Contains(string(payload), canary) {
-			t.Fatalf("converter JSON retained Java VM canary %q", canary)
+		if !strings.Contains(string(payload), canary) {
+			t.Fatalf("converter destination script lost Java VM canary %q", canary)
 		}
 	}
 	if strings.Contains(string(payload), "{{secret.") {
 		t.Fatalf("Java VM rejection produced a provisionable secret reference: %s", payload)
 	}
-	if !strings.Contains(string(payload), credential.Redacted) ||
-		!strings.Contains(string(payload), javaVMParameterExecutionBlocker) {
-		t.Fatalf("converter JSON omitted redaction/blocker evidence: %s", payload)
+	reviewPayload, err := json.Marshal([]any{
+		result.ReviewArtifact,
+		result.SourceReview,
+		result.Warnings,
+		result.Script.Actions[0].Metadata,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{passwordCanary, apiKeyCanary} {
+		if strings.Contains(string(reviewPayload), canary) {
+			t.Fatalf("review evidence retained Java VM canary %q: %s", canary, reviewPayload)
+		}
+	}
+	if !strings.Contains(string(reviewPayload), credential.Redacted) ||
+		!strings.Contains(string(reviewPayload), javaVMParameterExposureReviewCode) {
+		t.Fatalf("converter review omitted redaction/exposure evidence: %s", reviewPayload)
 	}
 }

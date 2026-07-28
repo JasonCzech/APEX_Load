@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -482,9 +482,9 @@ func TestHTTPDigestRetryDeduplicatesJarCookiesAndRetainsChallengeCookie(t *testi
 		"auth_username": "alice",
 		"auth_password": "secret",
 	})
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookiejar.New(): %v", err)
+	jar, ok := runtime.client.Jar.(*boundedCookieJar)
+	if !ok {
+		t.Fatalf("runtime cookie jar = %T, want boundedCookieJar", runtime.client.Jar)
 	}
 	target, err := url.Parse("https://example.test/private")
 	if err != nil {
@@ -535,6 +535,12 @@ func TestHTTPDigestRetryDeduplicatesJarCookiesAndRetainsChallengeCookie(t *testi
 	}
 	if attempts != 2 || !result.Success {
 		t.Fatalf("attempts = %d, result = %#v; want successful authenticated retry", attempts, result)
+	}
+	if !result.RuntimeCredentialValuesSnapshot {
+		t.Fatal("digest cookie values were not marked as a complete snapshot")
+	}
+	if got, want := result.RuntimeCredentialValues, []string{"nonce-bound", "three"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("digest runtime credential values = %#v, want %#v", got, want)
 	}
 }
 

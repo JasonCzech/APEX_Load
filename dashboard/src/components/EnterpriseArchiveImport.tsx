@@ -24,10 +24,12 @@ import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
 import {
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
+  requirementsPreserveDestinationValues,
   secretBindingRequirementsForScript,
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
+import { credentialPreservingImportDraftRequiresSave } from './protectedImportSession'
 import './EnterpriseArchiveImport.css'
 
 interface ImportMetadata {
@@ -53,53 +55,6 @@ function getSummaryList(values?: string[]) {
 
 function isBrowserImport(script: ScriptDefinition | null): boolean {
   return script?.protocol === 'browser'
-}
-
-const NON_EXECUTABLE_ACTION_METADATA_KEYS = new Set([
-  'original_url',
-  'source_transaction',
-  'source_path',
-  'source_step_id',
-  'source_profile',
-  'source_uid',
-])
-
-function actionMetadataKeyIsProvenance(key: string): boolean {
-  const normalized = key.trim().toLowerCase()
-  return NON_EXECUTABLE_ACTION_METADATA_KEYS.has(normalized) || normalized.startsWith('asyncapi_')
-}
-
-// Preserved source review intentionally contains scrubbed evidence. Only a
-// sentinel in executable script state should block opening/saving the draft.
-export function containsExecutableRedaction(
-  value: unknown,
-  depth = 0,
-  actionMetadata = false,
-): boolean {
-  if (typeof value === 'string') return value.includes('[REDACTED]')
-  if (Array.isArray(value)) return value.some(child => containsExecutableRedaction(child, depth + 1, false))
-  if (!value || typeof value !== 'object') return false
-  const record = value as Record<string, unknown>
-  return Object.entries(record).some(([key, child]) => {
-    if (actionMetadata && actionMetadataKeyIsProvenance(key)) return false
-    // Only root script metadata is non-executable preserved evidence. Action
-    // metadata is executable for protocols such as Kafka and JMS, which copy it
-    // onto wire headers/properties. The converter provenance fields above and
-    // AsyncAPI import metadata are evidence-only, but every other action
-    // metadata key remains governed.
-    if (depth === 0 && key === 'metadata') return containsRecordedResourceRedaction(child)
-    const childIsActionMetadata = key === 'metadata' && typeof record.type === 'string'
-    return containsExecutableRedaction(child, depth + 1, childIsActionMetadata)
-  })
-}
-
-function containsRecordedResourceRedaction(metadata: unknown): boolean {
-  if (!metadata || typeof metadata !== 'object') return false
-  const imported = (metadata as Record<string, unknown>).import
-  if (!imported || typeof imported !== 'object') return false
-  const preserved = (imported as Record<string, unknown>).preserved
-  if (!preserved || typeof preserved !== 'object') return false
-  return containsExecutableRedaction((preserved as Record<string, unknown>).recorded_resource_urls, 1)
 }
 
 function isEnterpriseArchiveZipFile(file: File) {
@@ -330,6 +285,45 @@ function getEnterpriseArchiveResultScripts(result: EnterpriseArchiveImportResult
   return result.script ? [result.script] : []
 }
 
+function enterpriseArchiveResultScriptIsSaved(item: EnterpriseArchiveImportQueueItem, scriptIndex: number): boolean {
+  return Object.prototype.hasOwnProperty.call(item.savedResultScripts, scriptIndex)
+}
+
+function firstUnsavedEnterpriseArchiveResultScriptIndex(item: EnterpriseArchiveImportQueueItem): number {
+  const scripts = getEnterpriseArchiveResultScripts(item.result)
+  const pendingIndex = scripts.findIndex((_script, index) => !enterpriseArchiveResultScriptIsSaved(item, index))
+  return pendingIndex >= 0 ? pendingIndex : 0
+}
+
+function findFirstPendingEnterpriseArchiveSelection(
+  items: readonly EnterpriseArchiveImportQueueItem[],
+): { itemId: string; scriptIndex: number } | null {
+  for (const item of items) {
+    const scripts = getEnterpriseArchiveResultScripts(item.result)
+    const pendingIndex = scripts.findIndex((_script, index) => !enterpriseArchiveResultScriptIsSaved(item, index))
+    if (pendingIndex >= 0) {
+      return { itemId: item.id, scriptIndex: pendingIndex }
+    }
+    if (
+      item.status === 'queued'
+      || item.status === 'validating'
+      || item.status === 'validated'
+      || item.status === 'converting'
+      || item.status === 'failed'
+      || (item.status === 'converted' && scripts.length === 0)
+    ) {
+      return { itemId: item.id, scriptIndex: 0 }
+    }
+  }
+  return null
+}
+
+function collectSavedEnterpriseArchiveScripts(items: readonly EnterpriseArchiveImportQueueItem[]): StoredScript[] {
+  return items.flatMap(item => Object.entries(item.savedResultScripts)
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([, script]) => script))
+}
+
 function enterpriseArchiveImportStatusLabel(status: EnterpriseArchiveImportQueueStatus) {
   switch (status) {
     case 'validating':
@@ -381,6 +375,8 @@ function buildEnterpriseArchiveImportQueueItem(file: File, id: string): Enterpri
     replayProjectId: '',
     reviewGeneration: 0,
     reviewOptionsIdentity: '',
+    savedResultScripts: {},
+    sourceSecretProjectId: '',
   }
 }
 
@@ -450,6 +446,8 @@ interface EnterpriseArchiveImportQueueItem {
   replayProjectId: string
   reviewGeneration: number
   reviewOptionsIdentity: string
+  savedResultScripts: Record<number, StoredScript>
+  sourceSecretProjectId: string
 }
 
 type EnterpriseArchiveSupportMatrixSection = {
@@ -755,6 +753,8 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
 
 export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
+  const apiRef = useRef(api)
+  apiRef.current = api
   const fileRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
   const supplementalFileRef = useRef<HTMLInputElement>(null)
@@ -826,6 +826,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const importItemsRef = useRef(importItems)
   importItemsRef.current = importItems
   const settledSourceSecretSelectionsRef = useRef(new Map<string, SecretBindingSelection[]>())
+  const discardedSourceSecretSessionsRef = useRef(new Set<string>())
+  const sourceSecretSessionDiscardsRef = useRef(new Map<string, Promise<void>>())
   const selectedItemIdRef = useRef(selectedItem?.id || '')
   selectedItemIdRef.current = selectedItem?.id || ''
   const selectedResultScriptIndexRef = useRef(selectedResultScriptIndex)
@@ -834,11 +836,59 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   reviewProjectIdRef.current = projectId
   const optionsRef = useRef(options)
   optionsRef.current = options
-  const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
-    const invalidatesSelectedReview = !itemIds || itemIds.includes(selectedItemIdRef.current)
-    if (invalidatesSelectedReview) {
-      void credentialReviewRef.current?.discardSourceSession()
+  const sourceSecretSessionKey = useCallback(
+    (sourceProjectId: string, sessionId: string) => `${sourceProjectId}\u0000${sessionId}`,
+    [],
+  )
+  const markSourceSecretSessionSettled = useCallback((sourceProjectId: string, sessionId: string) => {
+    if (!sourceProjectId || !sessionId) return
+    discardedSourceSecretSessionsRef.current.add(sourceSecretSessionKey(sourceProjectId, sessionId))
+  }, [sourceSecretSessionKey])
+  const discardSourceSecretSession = useCallback((
+    sourceProjectId: string,
+    sessionId: string,
+  ): Promise<void> => {
+    if (!sourceProjectId || !sessionId) return Promise.resolve()
+    const key = sourceSecretSessionKey(sourceProjectId, sessionId)
+    if (discardedSourceSecretSessionsRef.current.has(key)) return Promise.resolve()
+    const existing = sourceSecretSessionDiscardsRef.current.get(key)
+    if (existing) return existing
+
+    const discard = apiRef.current.discardImportSecretSession({
+      project_id: sourceProjectId,
+      source_secret_session_id: sessionId,
+    }).then(() => {
+      discardedSourceSecretSessionsRef.current.add(key)
+    }).catch(() => {
+      // Source sessions are protected and expire server-side. Keep a failed
+      // discard retryable so a later lifecycle boundary can try again.
+    }).finally(() => {
+      sourceSecretSessionDiscardsRef.current.delete(key)
+    })
+    sourceSecretSessionDiscardsRef.current.set(key, discard)
+    return discard
+  }, [sourceSecretSessionKey])
+  const discardQueuedSourceSecretSessions = useCallback((
+    items: readonly EnterpriseArchiveImportQueueItem[] = importItemsRef.current,
+    itemIds?: readonly string[],
+  ): Promise<void> => {
+    const selectedIds = itemIds ? new Set(itemIds) : null
+    const seen = new Set<string>()
+    const discards: Promise<void>[] = []
+    for (const item of items) {
+      if (selectedIds && !selectedIds.has(item.id)) continue
+      const sessionId = item.result?.source_secret_session_id || ''
+      const sourceProjectId = item.sourceSecretProjectId || reviewProjectIdRef.current || ''
+      if (!sessionId || !sourceProjectId) continue
+      const key = sourceSecretSessionKey(sourceProjectId, sessionId)
+      if (seen.has(key)) continue
+      seen.add(key)
+      discards.push(discardSourceSecretSession(sourceProjectId, sessionId))
     }
+    return Promise.all(discards).then(() => undefined)
+  }, [discardSourceSecretSession, sourceSecretSessionKey])
+  const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
+    void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
     operationGenerationRef.current += 1
     const ids = itemIds || importItemsRef.current.map(item => item.id)
     ids.forEach(id => {
@@ -859,7 +909,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     if (invalidatesActiveReviewArtifactSave) {
       setReviewArtifactSaving(false)
     }
-  }, [])
+  }, [discardQueuedSourceSecretSessions])
+  useEffect(() => () => {
+    void discardQueuedSourceSecretSessions(importItemsRef.current)
+  }, [discardQueuedSourceSecretSessions])
   const previousProjectIdRef = useRef(projectId)
   useEffect(() => {
     if (previousProjectIdRef.current === projectId) return
@@ -882,6 +935,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayScriptIndex: -1,
       replayProjectId: '',
       reviewGeneration: item.reviewGeneration + 1,
+      savedResultScripts: {},
+      sourceSecretProjectId: '',
     })))
   }, [invalidateOperationScopes, projectId])
   const selectedHARFile = selectedItem?.harFile ?? null
@@ -947,6 +1002,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     setReviewArtifactSaving(Boolean(activeSave))
   }, [activeResultScriptIndex, projectId, reviewScope, selectedItem?.id, selectedItem?.reviewGeneration])
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
+  const selectedResultScriptSaved = Boolean(
+    selectedItem
+    && enterpriseArchiveResultScriptIsSaved(selectedItem, activeResultScriptIndex),
+  )
   // Source-secret sessions may be archive-wide and single-use, but requirements
   // and editor/save readiness are script-specific. A credential needed by one
   // generated lane must not block an unrelated lane.
@@ -954,6 +1013,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const secretBindingRequirements = importedScript
     ? secretBindingRequirementsForScript(archiveSecretBindingRequirements, activeResultScriptIndex, importedScript)
     : []
+  const editRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
+    result,
+    importedScript,
+    secretBindingRequirements,
+  )
   const latestPreparedReviewRef = useRef({
     itemId: selectedItem?.id || '',
     generation: selectedItem?.reviewGeneration ?? -1,
@@ -1117,18 +1181,26 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const saveRequiresBrowserReplay = executableImport && browserReplayNeedsRerun
   const primarySaveDisabled = saveBlockedByProtocolGate
     ? (!reviewArtifact || reviewArtifactSaving || !reviewMatchesCurrentOptions)
-    : (saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress || !reviewMatchesCurrentOptions)
+    : (
+        selectedResultScriptSaved
+        || saveBlockedByMigrationPolicy
+        || replayValidationLoading
+        || browserReplayInProgress
+        || !reviewMatchesCurrentOptions
+      )
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving
       ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
       : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
     : (reviewMode === 'validation'
       ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive')
+      : (selectedResultScriptSaved
+      ? 'Saved to Script Library'
       : (browserReplayInProgress
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
           ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
-          : 'Save to Script Library')))
+          : 'Save to Script Library'))))
   const replayActionLabel = replayValidationLoading
     ? 'Starting Draft Browser Replay...'
     : (browserReplayInProgress
@@ -1201,6 +1273,58 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     setImportItems(items => items.map(item => item.id === itemId ? { ...item, ...patch } : item))
   }
 
+  const publishSavedEnterpriseArchiveScripts = async (
+    nextItems: EnterpriseArchiveImportQueueItem[],
+    newlySavedScripts: StoredScript[],
+    pendingNotice: string,
+    completedNotice: string,
+  ) => {
+    // Keep the ref in lockstep with the committed snapshot because the caller
+    // may immediately choose the next pending generated lane before React
+    // renders this state update.
+    importItemsRef.current = nextItems
+    setImportItems(nextItems)
+    const pending = findFirstPendingEnterpriseArchiveSelection(nextItems)
+    if (pending) {
+      setSelectedItemId(pending.itemId)
+      setSelectedResultScriptIndex(pending.scriptIndex)
+      setNotice(pendingNotice)
+      if (newlySavedScripts.length > 0) {
+        onImported?.({
+          scripts: newlySavedScripts,
+          stayInImportReview: true,
+        })
+      }
+      return
+    }
+
+    await discardQueuedSourceSecretSessions(nextItems)
+    const allSavedScripts = collectSavedEnterpriseArchiveScripts(nextItems)
+    if (allSavedScripts.length > 0 && onImported) {
+      onImported({ scripts: allSavedScripts })
+      return
+    }
+    setNotice(completedNotice)
+  }
+
+  const rollbackStaleCreatedScripts = async (scripts: readonly StoredScript[]) => {
+    const retained: StoredScript[] = []
+    for (const script of [...scripts].reverse()) {
+      if (!script.id) {
+        retained.push(script)
+        continue
+      }
+      try {
+        await api.deleteScript(script.id)
+      } catch {
+        // A committed script that could not be rolled back must be reported so
+        // the caller can refresh the library instead of losing track of it.
+        retained.push(script)
+      }
+    }
+    if (retained.length > 0) onImported?.({ scripts: retained.reverse() })
+  }
+
   const replaceOptionsAndInvalidate = (nextOptions: ImportOptions) => {
     invalidateOperationScopes()
     optionsRef.current = nextOptions
@@ -1222,6 +1346,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           replayScriptIndex: -1,
           replayProjectId: '',
           reviewGeneration: item.reviewGeneration + 1,
+          savedResultScripts: {},
+          sourceSecretProjectId: '',
         }
       : { ...item, replayValidationLoading: false }))
   }
@@ -1230,10 +1356,6 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const preparedReview = latestPreparedReviewRef.current
     if (!preparedReview.importedScript) return null
     if (preparedReview.secretBindingRequirements.length === 0) {
-      if (containsExecutableRedaction(preparedReview.importedScript)) {
-        setError('This draft still contains a redacted credential sentinel and cannot be opened as executable script. Configure a governed secret reference first.')
-        return null
-      }
       return preparedReview.importedScript
     }
     if (editorActionInFlightRef.current) return null
@@ -1262,11 +1384,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       const committed = await credentialReviewRef.current.commit()
       if (!committed || !requestIsCurrent()) return null
       const currentReview = latestPreparedReviewRef.current
-      if (currentReview.secretBindingRequirements.length > 0) return null
-      if (currentReview.importedScript && containsExecutableRedaction(currentReview.importedScript)) {
-        setError('This draft still contains a redacted credential sentinel and cannot be opened as executable script. Configure a governed secret reference first.')
-        return null
-      }
+      if (
+        currentReview.secretBindingRequirements.length > 0
+        && !requirementsPreserveDestinationValues(currentReview.secretBindingRequirements)
+      ) return null
       return currentReview.importedScript
     } finally {
       editorActionInFlightRef.current = false
@@ -1276,21 +1397,45 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
 
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
     if (!onEdit || combinedJavaVuserGate) return
+    if (editRequiresCredentialPreservingSave) {
+      if (!onImported) {
+        setError('Save this credential-preserving import before opening it in the Visual Editor.')
+        return
+      }
+      if (reviewMode === 'validation') {
+        void convertValidatedItems(validatedItemIds)
+      } else {
+        void handleSaveConverted()
+      }
+      return
+    }
     void (async () => {
       const currentScript = await prepareImportedScriptForEditor()
-      if (currentScript) onEdit(currentScript, focus)
+      if (currentScript) {
+        void discardQueuedSourceSecretSessions()
+        onEdit(currentScript, focus)
+      }
     })()
   }
 
   const openSalesforceNativePreviewInEditor = () => {
     if (!salesforceNativeScript || !onEdit || combinedJavaVuserGate) return
+    if (editRequiresCredentialPreservingSave) {
+      if (!onImported) {
+        setError('Save this credential-preserving import before opening it in the Visual Editor.')
+        return
+      }
+      if (reviewMode === 'validation') {
+        void convertValidatedItems(validatedItemIds)
+      } else {
+        void handleSaveConverted()
+      }
+      return
+    }
     void (async () => {
       const preparedScript = await prepareImportedScriptForEditor()
       if (!preparedScript) return
-      if (containsExecutableRedaction(salesforceNativeScript)) {
-        setError('The native preview still contains a redacted credential sentinel. Open the exact replay draft after configuring its secret reference instead.')
-        return
-      }
+      void discardQueuedSourceSecretSessions()
       onEdit(salesforceNativeScript)
     })()
   }
@@ -1521,7 +1666,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   }, [api])
 
   useEffect(() => {
-    setSelectedResultScriptIndex(0)
+    const item = importItemsRef.current.find(candidate => candidate.id === selectedItemId)
+    setSelectedResultScriptIndex(item ? firstUnsavedEnterpriseArchiveResultScriptIndex(item) : 0)
     if (supplementalFileRef.current) {
       supplementalFileRef.current.value = ''
     }
@@ -1739,6 +1885,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayReviewGeneration: -1,
       replayScriptIndex: -1,
       replayProjectId: '',
+      savedResultScripts: {},
+      sourceSecretProjectId: '',
       error: '',
       notice: '',
     })
@@ -1761,6 +1909,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayReviewGeneration: -1,
       replayScriptIndex: -1,
       replayProjectId: '',
+      savedResultScripts: {},
+      sourceSecretProjectId: '',
       notice: '',
       error: '',
     })
@@ -1798,6 +1948,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       replayReviewGeneration: -1,
       replayScriptIndex: -1,
       replayProjectId: '',
+      savedResultScripts: {},
+      sourceSecretProjectId: '',
       error: '',
       notice: '',
     }))
@@ -1861,6 +2013,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   ) => {
     const targetItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
     if (targetItems.length === 0) return
+    void discardQueuedSourceSecretSessions(targetItems)
     const operationGeneration = ++operationGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const sourceOptionsIdentity = importOptionsIdentity(reviewOptions)
@@ -1904,6 +2057,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           replayScriptIndex: -1,
           replayProjectId: '',
           reviewGeneration: item.reviewGeneration + 1,
+          savedResultScripts: {},
+          sourceSecretProjectId: '',
         }
       : item))
 
@@ -1925,13 +2080,20 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
-        if (!requestIsCurrent(item)) continue
+        if (!requestIsCurrent(item)) {
+          if (sourceProjectId && res.source_secret_session_id) {
+            await discardSourceSecretSession(sourceProjectId, res.source_secret_session_id)
+          }
+          continue
+        }
         successCount += 1
         updateImportItem(item.id, {
           status: completeStatus,
           result: res,
           reviewMode: mode === 'validate' ? 'validation' : 'conversion',
           reviewOptionsIdentity: sourceOptionsIdentity,
+          savedResultScripts: {},
+          sourceSecretProjectId: sourceProjectId || '',
           error: '',
           notice: completionNotice || (mode === 'validate'
             ? 'Validation complete. Review the generated script, warnings, and preserved settings before conversion.'
@@ -1969,6 +2131,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       setError('Conversion options changed after validation. Validate the queued archive again before converting it.')
       return
     }
+    void discardQueuedSourceSecretSessions(targetItems)
     const operationGeneration = ++operationGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const sourceOptionsIdentity = importOptionsIdentity(options)
@@ -1990,6 +2153,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const targetIds = new Set(targetItems.map(item => item.id))
     const useNameOverride = targetItems.length === 1
     const savedScripts: StoredScript[] = []
+    const conversionItemPatches = new Map<string, Partial<EnterpriseArchiveImportQueueItem>>()
     let successCount = 0
     let failureCount = 0
 
@@ -2015,8 +2179,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       : item))
 
     for (const item of targetItems) {
+      let conversionResult: EnterpriseArchiveImportResult | null = null
+      const itemSavedScripts: StoredScript[] = []
       try {
-        const conversionResult = await api.importEnterpriseArchive(item.file, {
+        conversionResult = await api.importEnterpriseArchive(item.file, {
           name: useNameOverride ? options.name || undefined : undefined,
           project_id: sourceProjectId,
           base_url: options.base_url || undefined,
@@ -2027,33 +2193,46 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(options.salesforce_native ? { salesforce_native: true } : {}),
         })
-        if (!requestIsCurrent(item)) continue
+        if (!requestIsCurrent(item)) {
+          if (sourceProjectId && conversionResult.source_secret_session_id) {
+            await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
+          }
+          continue
+        }
         const scriptsToSave = getEnterpriseArchiveResultScripts(conversionResult)
         const conversionDetectedProtocol = conversionResult.detected_protocol ?? conversionResult.summary?.detected_protocol ?? null
         const conversionBlockedByProtocol = Boolean(conversionDetectedProtocol && conversionDetectedProtocol.import_mode !== 'executable')
         const conversionBlockedByMigration = Boolean(conversionResult.summary?.migration_readiness?.blocked)
         const conversionRequiresBrowserReplay = scriptsToSave.some(script => isBrowserImport(script))
-        const conversionRequiresSecretBindings = (conversionResult.secret_binding_requirements?.length ?? 0) > 0
+        const conversionSecretBindingRequirements = conversionResult.secret_binding_requirements ?? []
+        const conversionRequiresSecretBindings = conversionSecretBindingRequirements.length > 0
+          && !requirementsPreserveDestinationValues(conversionSecretBindingRequirements)
         const conversionRequiresParameterizationReview = (conversionResult.parameterization?.suggestions || [])
           .some(suggestion => !suggestion.pre_applied)
         if (scriptsToSave.length === 0) {
-          updateImportItem(item.id, {
+          const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
             result: conversionResult,
             reviewMode: 'conversion',
             reviewOptionsIdentity: sourceOptionsIdentity,
+            savedResultScripts: {},
+            sourceSecretProjectId: sourceProjectId || '',
             error: 'Conversion completed, but no executable script was produced. Review the generated artifact before saving.',
             notice: '',
-          })
+          }
+          conversionItemPatches.set(item.id, patch)
+          updateImportItem(item.id, patch)
           failureCount += 1
           continue
         }
         if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings || conversionRequiresParameterizationReview) {
-          updateImportItem(item.id, {
+          const patch: Partial<EnterpriseArchiveImportQueueItem> = {
             status: 'converted',
             result: conversionResult,
             reviewMode: 'conversion',
             reviewOptionsIdentity: sourceOptionsIdentity,
+            savedResultScripts: {},
+            sourceSecretProjectId: sourceProjectId || '',
             error: '',
             notice: conversionBlockedByProtocol
               ? 'Conversion complete. Review the protocol gate before saving or promoting this archive.'
@@ -2062,14 +2241,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 : conversionRequiresBrowserReplay
                   ? 'Conversion complete. Run draft browser replay before saving this browser script.'
                   : conversionRequiresSecretBindings
-                    ? 'Conversion complete. Resolve the redacted credential bindings before saving.'
+                  ? 'Conversion complete. Resolve the redacted credential bindings before saving.'
                     : 'Conversion complete. Review parameterization suggestions before saving.',
-          })
+          }
+          conversionItemPatches.set(item.id, patch)
+          updateImportItem(item.id, patch)
           successCount += 1
           continue
         }
 
-        const itemSavedScripts: StoredScript[] = []
         for (const script of scriptsToSave) {
           if (!requestIsCurrent(item)) break
           const scriptToSave = isBrowserImport(script)
@@ -2084,39 +2264,81 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           itemSavedScripts.push(withFallbackPersistedScript(savedScript, scriptToSave))
         }
 
-        if (!requestIsCurrent(item)) continue
+        if (!requestIsCurrent(item)) {
+          await rollbackStaleCreatedScripts(itemSavedScripts)
+          if (sourceProjectId && conversionResult.source_secret_session_id) {
+            await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
+          }
+          continue
+        }
+        if (sourceProjectId && conversionResult.source_secret_session_id) {
+          await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
+        }
+        if (!requestIsCurrent(item)) {
+          await rollbackStaleCreatedScripts(itemSavedScripts)
+          continue
+        }
 
         savedScripts.push(...itemSavedScripts)
         successCount += 1
-        updateImportItem(item.id, {
+        const patch: Partial<EnterpriseArchiveImportQueueItem> = {
           status: 'converted',
           result: conversionResult,
           reviewMode: 'conversion',
           reviewOptionsIdentity: sourceOptionsIdentity,
+          savedResultScripts: Object.fromEntries(itemSavedScripts.map((script, index) => [index, script])),
+          sourceSecretProjectId: sourceProjectId || '',
           error: '',
           notice: `Converted and saved ${itemSavedScripts.length} script${itemSavedScripts.length === 1 ? '' : 's'} to the library.`,
-        })
+        }
+        conversionItemPatches.set(item.id, patch)
+        updateImportItem(item.id, patch)
       } catch (error: unknown) {
-        if (!requestIsCurrent(item)) continue
+        if (!requestIsCurrent(item)) {
+          await rollbackStaleCreatedScripts(itemSavedScripts)
+          if (sourceProjectId && conversionResult?.source_secret_session_id) {
+            await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
+          }
+          continue
+        }
         failureCount += 1
-        updateImportItem(item.id, {
+        if (itemSavedScripts.length > 0) {
+          savedScripts.push(...itemSavedScripts)
+        }
+        const patch: Partial<EnterpriseArchiveImportQueueItem> = {
           status: 'failed',
+          ...(conversionResult ? {
+            result: conversionResult,
+            reviewMode: 'conversion' as const,
+            reviewOptionsIdentity: sourceOptionsIdentity,
+            savedResultScripts: Object.fromEntries(itemSavedScripts.map((script, index) => [index, script])),
+            sourceSecretProjectId: sourceProjectId || '',
+          } : {}),
           error: getErrorMessage(error, 'Import failed'),
-          notice: '',
-        })
+          notice: itemSavedScripts.length > 0
+            ? `${itemSavedScripts.length} generated script${itemSavedScripts.length === 1 ? '' : 's'} saved before this archive failed. Review the remaining lanes before retrying.`
+            : '',
+        }
+        conversionItemPatches.set(item.id, patch)
+        updateImportItem(item.id, patch)
       }
     }
 
     if (operationGenerationRef.current !== operationGeneration || reviewProjectIdRef.current !== sourceProjectId) return
     setWorkingMode(null)
 
-    if (savedScripts.length > 0 && onImported) {
-      onImported({ scripts: savedScripts })
-      return
-    }
-
     if (savedScripts.length > 0) {
-      setNotice(`Converted and saved ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}.`)
+      const projectedItems = importItemsRef.current.map(item => {
+        const patch = conversionItemPatches.get(item.id)
+        return patch ? { ...item, ...patch } : item
+      })
+      const savedNotice = `Converted and saved ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}.`
+      await publishSavedEnterpriseArchiveScripts(
+        projectedItems,
+        savedScripts,
+        `${savedNotice} Continue reviewing the remaining archive drafts before leaving this import.`,
+        savedNotice,
+      )
       return
     }
 
@@ -2237,6 +2459,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const preparedReview = latestPreparedReviewRef.current
     const currentImportedScript = preparedReview.importedScript
     if (!currentImportedScript || !selectedItem) return
+    if (enterpriseArchiveResultScriptIsSaved(selectedItem, activeResultScriptIndex)) {
+      setNotice('This generated script is already saved. Continue with the next unsaved script.')
+      return
+    }
     if (!reviewMatchesCurrentOptions) {
       setError('Conversion options changed after this review. Refresh the review before saving the script.')
       return
@@ -2278,7 +2504,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           && current?.reviewOptionsIdentity === sourceOptionsIdentity
           && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
       }
-      if (preparedReview.secretBindingRequirements.length > 0) {
+      if (
+        preparedReview.secretBindingRequirements.length > 0
+        && !requirementsPreserveDestinationValues(preparedReview.secretBindingRequirements)
+      ) {
         setError('Resolve every redacted credential binding before saving this script.')
         return
       }
@@ -2335,15 +2564,34 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       }
       setScriptSaveInProgress(true)
       const savedScript = await api.createScript(scriptToSave, sourceProjectId, folderId)
-      if (!requestIsCurrent()) return
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
+      const persistedScript = withFallbackPersistedScript(savedScript, scriptToSave)
+      if (!requestIsCurrent()) {
+        await rollbackStaleCreatedScripts([persistedScript])
+        return
+      }
+      const nextItems = importItemsRef.current.map(item => item.id !== sourceItemId
+        ? item
+        : {
+            ...item,
+            savedResultScripts: {
+              ...item.savedResultScripts,
+              [sourceScriptIndex]: persistedScript,
+            },
+            notice: `Saved ${persistedScript.name} to the script library.`,
+          })
+      await publishSavedEnterpriseArchiveScripts(
+        nextItems,
+        [persistedScript],
+        `Saved ${persistedScript.name} to the script library. Continue reviewing the remaining generated scripts before leaving this import.`,
+        `Saved ${persistedScript.name} to the script library.`,
+      )
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save script'))
     } finally {
       if (scriptSaveInFlightRef.current === saveScope) {
         scriptSaveInFlightRef.current = null
+        setScriptSaveInProgress(false)
       }
-      if (requestIsCurrent()) setScriptSaveInProgress(false)
     }
   }
 
@@ -2395,6 +2643,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           ...resolvedResult,
           script: nextScripts[0],
           scripts: nextScripts,
+          ...(nextScripts.length === 1
+            ? { import_draft_expires_at: resolved.import_draft_expires_at }
+            : {}),
           secret_binding_requirements: replaceSecretBindingRequirementsForScript(
             resolvedResult.secret_binding_requirements,
             scriptIndex,
@@ -2462,6 +2713,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     settledSourceSecretSelectionsRef.current.set(sessionId, migrationSelections)
     const current = importItemsRef.current.find(item => item.id === selectedItem.id)
     if (current?.result?.source_secret_session_id !== sessionId) return
+    markSourceSecretSessionSettled(
+      current.sourceSecretProjectId || reviewProjectIdRef.current || '',
+      sessionId,
+    )
     updateImportItem(selectedItem.id, {
       result: {
         ...current.result,
@@ -2476,13 +2731,19 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     })
   }
 
-  const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
+  const handleParameterizationApplied = (
+    parameterizedScript: ScriptDefinition,
+    _diffs: unknown[],
+    _selectedIds: string[],
+    importDraftExpiresAt?: string,
+  ) => {
     if (!selectedItem || !result || !importedScript) return
     const nextScripts = resultScripts.map((script, index) => index === activeResultScriptIndex ? parameterizedScript : script)
     const nextResult = {
       ...result,
       script: nextScripts[0],
       scripts: nextScripts,
+      ...(nextScripts.length === 1 ? { import_draft_expires_at: importDraftExpiresAt } : {}),
     }
     latestPreparedReviewRef.current = {
       itemId: selectedItem.id,
@@ -2554,7 +2815,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         && latestReview.result === currentResult
     }
     if (!requestIsCurrent()) return
-    if (preparedReview.secretBindingRequirements.length > 0) {
+    if (
+      preparedReview.secretBindingRequirements.length > 0
+      && !requirementsPreserveDestinationValues(preparedReview.secretBindingRequirements)
+    ) {
       setError('Resolve every redacted credential binding before saving this review artifact.')
       return
     }
@@ -2617,7 +2881,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           <h2>Import Enterprise Script Archive</h2>
           <p className="lr-subtitle">Upload a ZIP containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata. APEX Load routes executable HTTP, SOAP, browser, database, and network archives while preserving review artifacts for sources that still require evidence or external runners.</p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void discardQueuedSourceSecretSessions(); onClose() }}>Back</button>}
       </div>
 
       {/* Drop zone */}
@@ -3090,7 +3354,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   >
                     <span className="lr-output-main">
                       <strong>{script.name || `Generated Script ${index + 1}`}</strong>
-                      <small>{script.protocol || 'unknown'} · {scriptActionCount(script)} actions</small>
+                      <small>
+                        {script.protocol || 'unknown'} · {scriptActionCount(script)} actions
+                        {selectedItem && enterpriseArchiveResultScriptIsSaved(selectedItem, index) ? ' · Saved' : ''}
+                      </small>
                     </span>
                   </button>
                 ))}
@@ -3114,10 +3381,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            importDraftExpiresAt={result.import_draft_expires_at}
             onSourceSecretSessionSettled={handleSourceSecretSessionSettled}
             credentialReviewRef={credentialReviewRef}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
-            reviewBusy={!reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress}
+            reviewBusy={!reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress || selectedResultScriptSaved}
             saveDisabled={reviewMode === 'validation'
               ? (!selectedItemValidated || !reviewMatchesCurrentOptions || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
               : (primarySaveDisabled || workingMode !== null)}
@@ -3128,6 +3396,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 ? () => convertValidatedItems(validatedItemIds)
                 : handleSaveConverted}
             onEdit={importedEditorAvailable ? () => { openImportedScriptInEditor() } : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
 

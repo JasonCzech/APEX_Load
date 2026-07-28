@@ -144,6 +144,54 @@ func TestMergeOpenAPIImportScriptPreservesUserCustomizations(t *testing.T) {
 	}
 }
 
+func TestMergeImportScriptByKeyDoesNotDuplicateImportedUnkeyedActionsOnRetry(t *testing.T) {
+	importedPlaceholder := dsl.Action{
+		Name: "Review source script",
+		Type: "review_required",
+		Metadata: map[string]any{
+			"execution_blocker": "import_review_required",
+		},
+	}
+	manualDuplicate := importedPlaceholder
+	existing := &dsl.Script{
+		Actions: []dsl.Action{
+			openAPIKeyedAction("GetA", "GET /a"),
+			importedPlaceholder,
+			manualDuplicate,
+			{Name: "ManualStep", Type: "request", Method: "GET", Target: "/manual"},
+		},
+	}
+	imported := &dsl.Script{
+		Actions: []dsl.Action{
+			openAPIKeyedAction("GetA", "GET /a"),
+			importedPlaceholder,
+		},
+	}
+
+	merged := mergeImportScriptByKey(existing, imported, openAPIActionKey)
+	placeholderCount := 0
+	manualCount := 0
+	for _, action := range merged.Actions {
+		switch action.Name {
+		case importedPlaceholder.Name:
+			placeholderCount++
+		case "ManualStep":
+			manualCount++
+		}
+	}
+	if placeholderCount != 2 {
+		t.Fatalf("matching imported occurrence should be deduplicated while the extra manual occurrence survives: %#v", merged.Actions)
+	}
+	if manualCount != 1 {
+		t.Fatalf("manual unkeyed action was not preserved: %#v", merged.Actions)
+	}
+
+	retried := mergeImportScriptByKey(merged, imported, openAPIActionKey)
+	if len(retried.Actions) != len(merged.Actions) {
+		t.Fatalf("retry changed action count from %d to %d: %#v", len(merged.Actions), len(retried.Actions), retried.Actions)
+	}
+}
+
 // TestMergeOpenAPIImportScriptPreservesInitTeardown guards B3: a merge re-import
 // must not silently drop the user's manual init/teardown steps. The importer's
 // re-synthesized lifecycle step (matched by type+name) wins, but everything the

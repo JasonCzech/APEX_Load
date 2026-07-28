@@ -62,25 +62,25 @@ func TestConvertSensitiveHeadersUsesSharedWholeValueProjection(t *testing.T) {
 			name:   "authorization template plus residual literal",
 			header: "Authorization",
 			value:  "Bearer {{var.corr_token}} residual-secret",
-			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
+			want:   "Bearer {{var.corr_token}} residual-secret",
 		},
 		{
 			name:   "cookie template plus residual literal",
 			header: "Cookie",
 			value:  "session={{var.corr_session}}; admin=literal-credential",
-			want:   "{{secret.SAMPLE_COOKIE}}",
+			want:   "session={{var.corr_session}}; admin=literal-credential",
 		},
 		{
 			name:   "authorization scheme plus unproven token",
 			header: "Authorization",
 			value:  "Bearer {{var.corr_token}}",
-			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
+			want:   "Bearer {{var.corr_token}}",
 		},
 		{
 			name:   "composed cookie values are governed as one value",
 			header: "Cookie",
 			value:  "session={{var.corr_session}}; csrf={{secret.csrf}}",
-			want:   "{{secret.SAMPLE_COOKIE}}",
+			want:   "session={{var.corr_session}}; csrf={{secret.csrf}}",
 		},
 		{
 			name:   "whole value governed",
@@ -92,25 +92,25 @@ func TestConvertSensitiveHeadersUsesSharedWholeValueProjection(t *testing.T) {
 			name:   "authorization malformed builtin arguments",
 			header: "Authorization",
 			value:  "Bearer {{fn.random(1,literal-secret)}}",
-			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
+			want:   "Bearer {{fn.random(1,literal-secret)}}",
 		},
 		{
 			name:   "cookie unsupported builtin call",
 			header: "Cookie",
 			value:  "session={{fake.email(literal-secret)}}",
-			want:   "{{secret.SAMPLE_COOKIE}}",
+			want:   "session={{fake.email(literal-secret)}}",
 		},
 		{
 			name:   "authorization composed builtin",
 			header: "Authorization",
 			value:  "Bearer {{fn.random_string(32)}}",
-			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
+			want:   "Bearer {{fn.random_string(32)}}",
 		},
 		{
 			name:   "cookie composed builtins",
 			header: "Cookie",
 			value:  "nonce={{fn.uuid()}}; shard={{fn.random(1,4)}}",
-			want:   "{{secret.SAMPLE_COOKIE}}",
+			want:   "nonce={{fn.uuid()}}; shard={{fn.random(1,4)}}",
 		},
 	}
 
@@ -184,11 +184,11 @@ func TestConvertRESTJSON(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, "{{secret.SAMPLE_AUTHORIZATION}}") {
-		t.Fatalf("expected authorization header to be sanitized, got %q", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Bearer top-secret" {
+		t.Fatalf("authorization header = %q, want imported executable value", got)
 	}
-	if got := result.Script.Actions[0].Body; !strings.Contains(got, "{{secret.SAMPLE_PASSWORD}}") {
-		t.Fatalf("expected password to be sanitized in body, got %q", got)
+	if got := result.Script.Actions[0].Body; !strings.Contains(got, `"password":"secret"`) {
+		t.Fatalf("request body lost imported password: %q", got)
 	}
 	if len(result.Script.Actions[0].Assertions) != 1 {
 		t.Fatalf("first action assertions = %d, want 1", len(result.Script.Actions[0].Assertions))
@@ -215,21 +215,26 @@ func TestConvertRESTJSON(t *testing.T) {
 	}
 }
 
-func TestConvertRESTJSONRejectsSensitiveNumericValueWithoutStringCoercion(t *testing.T) {
-	_, err := Convert(ImportRequest{
+func TestConvertRESTJSONPreservesSensitiveNumericValueWithoutStringCoercion(t *testing.T) {
+	result, err := Convert(ImportRequest{
 		Format: "rest_json",
 		Content: `{"request":{"method":"POST","url":"https://api.example.com/login",
 			"body":{"password":"abc\"residual-secret","passcode":123456}},
 			"response":{"status":200}}`,
 	})
-	if err == nil {
-		t.Fatal("Convert returned nil error for a sensitive non-string JSON value")
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
 	}
-	if strings.Contains(err.Error(), "residual-secret") || strings.Contains(err.Error(), "123456") {
-		t.Fatalf("conversion error leaked a source credential: %v", err)
+	body := result.Script.Actions[0].Body
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("decode preserved body: %v", err)
 	}
-	if !strings.Contains(err.Error(), "credential_json_sensitive_non_string_unsupported") {
-		t.Fatalf("conversion error = %v, want stable sensitive-type rejection code", err)
+	if decoded["password"] != `abc"residual-secret` || decoded["passcode"] != float64(123456) {
+		t.Fatalf("preserved JSON values = %#v", decoded)
+	}
+	if _, ok := decoded["passcode"].(string); ok {
+		t.Fatalf("sensitive numeric value was coerced to string: %s", body)
 	}
 }
 
@@ -1852,8 +1857,8 @@ func TestConvertHAREncodedCredentialConsumerUsesSharedProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if got := result.Script.Actions[1].Body; got != "aura.token={{secret.SAMPLE_AURA_TOKEN}}" {
-		t.Fatalf("body = %q, want sensitive form field governed as one value", got)
+	if got := result.Script.Actions[1].Body; got != "aura.token=tok+branch%2F123456" {
+		t.Fatalf("body = %q, want imported form bytes", got)
 	}
 	if got := result.Script.Actions[0].Extractors; len(got) != 0 {
 		t.Fatalf("source extractors = %#v, want none because %%20 source cannot supply '+' consumer", got)
@@ -2398,9 +2403,9 @@ func TestConvertHARGovernsUnsupportedEncodedCredentialSpellings(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Convert returned error: %v", err)
 			}
-			wantTarget := "/callback?access_token={{secret.SAMPLE_ACCESS_TOKEN}}"
+			wantTarget := "/callback?access_token=" + tt.spelling
 			if got := result.Script.Actions[1].Target; got != wantTarget {
-				t.Fatalf("target = %q, want encoded credential governed as %q", got, wantTarget)
+				t.Fatalf("target = %q, want imported encoded credential %q", got, wantTarget)
 			}
 			for _, extractor := range result.Script.Actions[0].Extractors {
 				if extractor.Convert == "url_encode" {
@@ -2419,7 +2424,7 @@ func TestConvertHARGovernsUnsupportedEncodedCredentialSpellings(t *testing.T) {
 	}
 }
 
-func TestConvertHARPreservesFormParamsStripsCookiesAndDuplicateHeaders(t *testing.T) {
+func TestConvertHARPreservesFormParamsCookiesAndDuplicateHeaders(t *testing.T) {
 	sanitizeSensitive := false
 	inferExtractors := false
 	result, err := Convert(ImportRequest{
@@ -2487,14 +2492,17 @@ func TestConvertHARPreservesFormParamsStripsCookiesAndDuplicateHeaders(t *testin
 		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
 	}
 	first := result.Script.Actions[0]
-	if first.Body != "page=1&q=widgets" {
+	if first.Body != "q=widgets&page=1" {
 		t.Fatalf("urlencoded body = %q", first.Body)
 	}
 	if first.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
 		t.Fatalf("content type = %q", first.Headers["Content-Type"])
 	}
-	if first.Headers["Cookie"] != "" || len(headerListValues(first.HeaderList, "Cookie")) != 0 {
-		t.Fatalf("recorded cookies should be stripped for jar replay: headers=%#v header_list=%#v", first.Headers, first.HeaderList)
+	if first.Headers["Cookie"] != "sid=abc; theme=dark" {
+		t.Fatalf("Cookie header = %q, want HAR cookies[] serialized in source order", first.Headers["Cookie"])
+	}
+	if got := headerListValues(first.HeaderList, "Cookie"); !slices.Equal(got, []string{"sid=abc; theme=dark"}) {
+		t.Fatalf("Cookie header occurrences = %#v, want one exact serialized occurrence", got)
 	}
 	if first.Metadata["har.request.http_version"] != "HTTP/2" || first.Metadata["har.response.http_version"] != "HTTP/2" || first.Metadata["har.server_ip_address"] != "203.0.113.10" {
 		t.Fatalf("HAR metadata = %#v, want HTTP versions and server IP", first.Metadata)
@@ -2535,6 +2543,167 @@ func TestConvertHARPreservesFormParamsStripsCookiesAndDuplicateHeaders(t *testin
 	}
 }
 
+func TestConvertHARExplicitCookieHeaderWinsAndSourceReviewRedacts(t *testing.T) {
+	const (
+		headerCanary = "har-cookie-header-canary-a46814"
+		arrayCanary  = "har-cookie-array-canary-2e931f"
+	)
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[{
+			"request":{
+				"method":"GET",
+				"url":"https://api.example.com/private",
+				"headers":[{"name":"cOoKiE","value":"session=` + headerCanary + `;  theme=dark"}],
+				"cookies":[{"name":"session","value":"` + arrayCanary + `"}]
+			},
+			"response":{"status":200,"headers":[],"content":{"text":"{}"}}
+		}]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if got := headerListValues(action.HeaderList, "Cookie"); !slices.Equal(got, []string{"session=" + headerCanary + ";  theme=dark"}) {
+		t.Fatalf("Cookie header occurrences = %#v, want exact explicit HAR header", got)
+	}
+	if action.Headers["cOoKiE"] != "session="+headerCanary+";  theme=dark" {
+		t.Fatalf("Cookie compatibility header = %#v, want original casing and value", action.Headers)
+	}
+	if !containsSampleDiagnostic(result, "HAR cookies[]") {
+		t.Fatalf("diagnostics = %#v, want explicit-header precedence diagnostic", result.Unsupported)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
+		t.Fatalf("source review = %#v, want disclosure-safe source files", result.SourceReview)
+	}
+	for _, file := range result.SourceReview.SourceFiles {
+		if strings.Contains(file.Content, headerCanary) || strings.Contains(file.Content, arrayCanary) {
+			t.Fatalf("source review file %q leaked a HAR cookie: %s", file.Path, file.Content)
+		}
+	}
+}
+
+func TestConvertHARFormParamsPreserveOrderDuplicatesAndEmptyText(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[{
+			"request":{
+				"method":"POST",
+				"url":"https://api.example.com/form",
+				"headers":[],
+				"postData":{
+					"mimeType":"application/x-www-form-urlencoded",
+					"params":[
+						{"name":"z","value":"1"},
+						{"name":"password","value":""},
+						{"name":"z","value":"2"},
+						{"name":"a","value":""}
+					]
+				}
+			},
+			"response":{"status":204,"headers":[],"content":{"text":""}}
+		}]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got, want := result.Script.Actions[0].Body, "z=1&password=&z=2&a="; got != want {
+		t.Fatalf("URL-encoded body = %q, want source-order bytes %q", got, want)
+	}
+	if len(result.Script.DataSources) != 0 {
+		t.Fatalf("data sources = %#v, empty text fields must not become file assets", result.Script.DataSources)
+	}
+}
+
+func TestConvertHARMultipartEmptyTextFieldIsNotAFile(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[{
+			"request":{
+				"method":"POST",
+				"url":"https://api.example.com/upload",
+				"headers":[],
+				"postData":{
+					"mimeType":"multipart/form-data",
+					"params":[
+						{"name":"password","value":""},
+						{"name":"note","value":""},
+						{"name":"file","fileName":"report.pdf","contentType":"application/pdf"}
+					]
+				}
+			},
+			"response":{"status":201,"headers":[],"content":{"text":"{}"}}
+		}]}}`,
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	const boundary = "------apexload-har-boundary"
+	for _, name := range []string{"password", "note"} {
+		want := `Content-Disposition: form-data; name="` + name + "\"\r\n\r\n\r\n" + boundary
+		if !strings.Contains(action.Body, want) {
+			t.Fatalf("multipart body did not preserve %q as an empty text field: %q", name, action.Body)
+		}
+		if strings.Contains(action.Body, `name="`+name+`"; filename=`) || strings.Contains(action.Body, "{{file."+name+"}}") {
+			t.Fatalf("multipart body treated empty text field %q as a file: %q", name, action.Body)
+		}
+	}
+	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "file" {
+		t.Fatalf("data sources = %#v, want only the explicitly named file part", result.Script.DataSources)
+	}
+}
+
+func TestConvertPreservesWhitespaceOnlyRequestBodies(t *testing.T) {
+	const body = " \t\n"
+	tests := []struct {
+		name    string
+		format  string
+		content string
+	}{
+		{
+			name:   "HAR postData text",
+			format: "har",
+			content: `{"log":{"entries":[{
+				"request":{
+					"method":"POST",
+					"url":"https://api.example.com/whitespace",
+					"headers":[{"name":"Content-Type","value":"text/plain"}],
+					"postData":{"mimeType":"text/plain","text":" \t\n"}
+				},
+				"response":{"status":204,"headers":[],"content":{"text":""}}
+			}]}}`,
+		},
+		{
+			name:    "raw HTTP body",
+			format:  "raw_http",
+			content: "POST /whitespace HTTP/1.1\r\nHost: api.example.com\r\nContent-Type: text/plain\r\n\r\n" + body,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inferExtractors := false
+			result, err := Convert(ImportRequest{
+				Format:  test.format,
+				Content: test.content,
+				Options: ConvertOptions{InferExtractors: &inferExtractors},
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			if got := result.Script.Actions[0].Body; got != body {
+				t.Fatalf("request body = %q, want exact whitespace bytes %q", got, body)
+			}
+		})
+	}
+}
+
 func TestConvertHARMetadataDoesNotDuplicateQueryOrCookieCredentials(t *testing.T) {
 	const queryCanary = "har-query-canary-814ac7"
 	const cookieCanary = "har-cookie-canary-36d510"
@@ -2572,9 +2741,16 @@ func TestConvertHARMetadataDoesNotDuplicateQueryOrCookieCredentials(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), queryCanary) ||
-		strings.Contains(string(publicJSON), cookieCanary) {
-		t.Fatalf("HAR metadata credential leaked in converter JSON: %s", publicJSON)
+	if !strings.Contains(action.Target, queryCanary) {
+		t.Fatalf("executable target lost imported query credential: %q", action.Target)
+	}
+	if strings.Contains(string(publicJSON), cookieCanary) {
+		t.Fatalf("non-executable HAR cookie metadata leaked in converter JSON: %s", publicJSON)
+	}
+	if result.SourceReview == nil ||
+		strings.Contains(result.SourceReview.SourceFiles[0].Content, queryCanary) ||
+		strings.Contains(result.SourceReview.SourceFiles[0].Content, cookieCanary) {
+		t.Fatalf("source review retained credential material: %#v", result.SourceReview)
 	}
 }
 
@@ -2626,7 +2802,7 @@ func TestConvertHARStaticFilterIsMethodAware(t *testing.T) {
 	}
 }
 
-func TestConvertHARStripsReplayHostileHeaders(t *testing.T) {
+func TestConvertHARStripsReplayHostileHeadersButPreservesCookie(t *testing.T) {
 	inferExtractors := false
 	result, err := Convert(ImportRequest{
 		Format: "har",
@@ -2645,10 +2821,16 @@ func TestConvertHARStripsReplayHostileHeaders(t *testing.T) {
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	for _, name := range []string{":authority", "Connection", "Cookie"} {
+	for _, name := range []string{":authority", "Connection"} {
 		if action.Headers[name] != "" || len(headerListValues(action.HeaderList, name)) != 0 {
 			t.Fatalf("%s should be stripped: headers=%#v header_list=%#v", name, action.Headers, action.HeaderList)
 		}
+	}
+	if action.Headers["Cookie"] != "sid=abc" {
+		t.Fatalf("Cookie header = %q, want exact imported value", action.Headers["Cookie"])
+	}
+	if got := headerListValues(action.HeaderList, "Cookie"); !slices.Equal(got, []string{"sid=abc"}) {
+		t.Fatalf("Cookie header occurrences = %#v, want exact imported occurrence", got)
 	}
 	if action.Headers["Accept"] != "application/json" {
 		t.Fatalf("Accept header = %q, want preserved", action.Headers["Accept"])

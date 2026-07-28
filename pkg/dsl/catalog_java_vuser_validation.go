@@ -14,6 +14,10 @@ const (
 )
 
 func validateJavaVuserScriptIssues(script *Script) []string {
+	return validateJavaVuserScriptIssuesWithPolicy(script, false)
+}
+
+func validateJavaVuserScriptIssuesWithPolicy(script *Script, allowPreservedCredentials bool) []string {
 	var issues []string
 	cfg := script.Config.JavaVuser
 	hasPhaseLifecycle, hasLegacyLifecycle := javaVuserLifecycleModes(script)
@@ -70,7 +74,11 @@ func validateJavaVuserScriptIssues(script *Script) []string {
 			issues = append(issues, fmt.Sprintf("config.java_vuser.classpath[%d] is invalid (%s)", issue.Index, issue.Category))
 		}
 	}
-	for _, issue := range javarunner.ValidateVMParameters(cfg.AdditionalVMParameters) {
+	vmParameterIssues := javarunner.ValidateVMParameters(cfg.AdditionalVMParameters)
+	if allowPreservedCredentials {
+		vmParameterIssues = javarunner.ValidateVMParametersForExecution(cfg.AdditionalVMParameters)
+	}
+	for _, issue := range vmParameterIssues {
 		if issue.Index < 0 {
 			issues = append(issues, fmt.Sprintf("config.java_vuser.additional_vm_parameters is invalid (%s)", issue.Category))
 			continue

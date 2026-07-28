@@ -160,6 +160,10 @@ type SecretRequirement struct {
 	Replacement          string `json:"replacement"`
 	Context              string `json:"context"`
 	SourceValueAvailable bool   `json:"source_value_available,omitempty"`
+	// DestinationValuePreserved is set only by the protected import API after
+	// it proves this requirement's authored value can be restored into every
+	// affected destination occurrence without another operator input.
+	DestinationValuePreserved bool `json:"destination_value_preserved,omitempty"`
 	// ExistingReference identifies a source {{secret.*}} reference that was
 	// already safe. It remains a configure-now-or-later requirement, but never
 	// participates in source-value migration.
@@ -199,6 +203,10 @@ type NativeScriptCandidate struct {
 	MissingVariables   []string            `json:"missing_variables,omitempty"`
 	SecretRequirements []SecretRequirement `json:"secret_requirements,omitempty"`
 	SourceMappings     []SourceMapping     `json:"source_mappings,omitempty"`
+	// CredentialTargets are encrypted-session-only commit instructions. They
+	// bind protected values to exact server-authored script occurrences and
+	// must never cross the public inspection boundary.
+	CredentialTargets []NativeCredentialTarget `json:"-"`
 }
 
 // NativeDiagnostic describes a bounded conversion decision without retaining

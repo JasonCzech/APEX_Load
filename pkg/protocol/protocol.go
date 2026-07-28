@@ -596,28 +596,38 @@ type Result struct {
 	// pre-scrub correlation observer. Public replay events, reports, snapshots,
 	// exports, and WebSocket messages must never retain it.
 	CorrelationEvidence *CorrelationEvidence `json:"-"`
-	Extractions         map[string]string
-	PageURL             string
-	PageTitle           string
-	HTML                string
-	ScreenshotBase64    string
-	ConsoleEntries      []ConsoleEntry
-	NetworkEntries      []NetworkEntry
-	DOMSummary          *DOMSummary
-	ClientMetrics       *ClientMetrics
-	ServerTelemetry     *ServerTelemetry
-	ProtocolEvidence    map[string]any
-	Snapshot            *ErrorSnapshot // populated when snapshot_on_error is enabled
-	SourceStepID        string
-	SourceStepIndex     int
-	SourceAction        string
-	SourceActionName    string
-	SourceTransaction   string
-	SourceProfile       string
-	SourcePath          string
-	SourceUID           string
-	RequestType         string
-	OperationKind       string
+	// RuntimeCredentialValues carries protocol-managed session credentials (for
+	// example HTTP cookie-jar values) to the owning engine. The engine consumes
+	// and clears this memory-only field before extraction, metrics, snapshots,
+	// archives, or any ResultSink can observe the result.
+	RuntimeCredentialValues []string `json:"-"`
+	// RuntimeCredentialValuesSnapshot declares that RuntimeCredentialValues is a
+	// complete live snapshot, not an append-only set of newly observed values.
+	// Snapshot producers let the engine retire rotations under a bounded
+	// lifecycle instead of retaining every historical value forever.
+	RuntimeCredentialValuesSnapshot bool `json:"-"`
+	Extractions                     map[string]string
+	PageURL                         string
+	PageTitle                       string
+	HTML                            string
+	ScreenshotBase64                string
+	ConsoleEntries                  []ConsoleEntry
+	NetworkEntries                  []NetworkEntry
+	DOMSummary                      *DOMSummary
+	ClientMetrics                   *ClientMetrics
+	ServerTelemetry                 *ServerTelemetry
+	ProtocolEvidence                map[string]any
+	Snapshot                        *ErrorSnapshot // populated when snapshot_on_error is enabled
+	SourceStepID                    string
+	SourceStepIndex                 int
+	SourceAction                    string
+	SourceActionName                string
+	SourceTransaction               string
+	SourceProfile                   string
+	SourcePath                      string
+	SourceUID                       string
+	RequestType                     string
+	OperationKind                   string
 }
 
 const (

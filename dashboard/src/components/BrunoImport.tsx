@@ -242,6 +242,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [inspection, setInspection] = useState<BrunoInspectResponse | null>(null)
   const inspectionRef = useRef<BrunoInspectResponse | null>(inspection)
   inspectionRef.current = inspection
+  const [protectedSessionNow, setProtectedSessionNow] = useState(() => Date.now())
   const [support, setSupport] = useState<BrunoSupportMatrixResponse | null>(null)
   const [scripts, setScripts] = useState<StoredScript[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -396,6 +397,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     suggested_name: requirement.suggested_name,
     replacement: requirement.replacement,
     source_value_available: requirement.source_value_available,
+    destination_value_preserved: requirement.destination_value_preserved,
   })), [requirements])
   const sourceMigrationAvailable = Boolean(
     support?.secret_store?.source_secret_migration_policy_enabled
@@ -423,8 +425,19 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const duplicateNativeNames = new Set(selectedNativeNames.map(value => value.toLowerCase())).size !== selectedNativeNames.length
   const nativeNamesValid = selectedNativeNames.every(Boolean) && !duplicateNativeNames
   const credentialsValid = requirements.length === 0 || preparedSecrets?.valid === true
+  const protectedSessionExpiry = inspection?.expires_at
+    ? Date.parse(inspection.expires_at)
+    : Number.NaN
+  const protectedSessionExpired = Number.isFinite(protectedSessionExpiry)
+    && protectedSessionExpiry <= protectedSessionNow
+  const protectedSessionLabel = Number.isFinite(protectedSessionExpiry)
+    ? protectedSessionExpired
+      ? 'This Bruno import session has expired. Re-inspect the source before saving.'
+      : `Bruno import session available until ${new Date(protectedSessionExpiry).toLocaleString()}.`
+    : ''
   const canCommit = Boolean(
     inspection &&
+    !protectedSessionExpired &&
     !loading &&
     !parameterizationApplying &&
     credentialsValid &&
@@ -453,6 +466,18 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     setParameterizationSelectedIds([])
     setParameterizationApplying(false)
   }, [inspection?.import_session_id])
+
+  useEffect(() => {
+    setProtectedSessionNow(Date.now())
+    if (!Number.isFinite(protectedSessionExpiry)) return
+    const remaining = protectedSessionExpiry - Date.now()
+    if (remaining <= 0) return
+    const timeout = window.setTimeout(
+      () => setProtectedSessionNow(Date.now()),
+      Math.min(remaining, 2_147_483_647),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [inspection?.import_session_id, protectedSessionExpiry])
 
   const selectFiles = (next: File[]) => {
     advanceSourceGeneration()
@@ -547,17 +572,12 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       })
       if (!requestIsCurrent()) return
       setInspection(response)
-      const nextBindings: Record<string, string> = {}
-      const inspectedRequirements = [
-        ...(response.result.secret_requirements || []),
-        ...(response.result.output_mode === 'native_requests'
-          ? response.result.scripts.flatMap(candidate => candidate.secret_requirements || [])
-          : []),
-      ]
-      ;inspectedRequirements.forEach(requirement => {
-        nextBindings[requirement.id] = secretBindingsRef.current[requirement.id] || requirement.suggested_name
-      })
-      secretBindingsRef.current = nextBindings
+      // The protected Bruno session already contains the operator-authored
+      // runtime values. A suggested logical name is review information, not an
+      // implicit instruction to replace that value with an unconfigured secret
+      // reference. Only the credential review's explicit selections populate
+      // this map before commit.
+      secretBindingsRef.current = {}
       setConflictResolutions({})
       const candidates = response.result.output_mode === 'native_requests' ? response.result.scripts : []
       setSelectedCandidateIds(candidates.map(candidate => candidate.candidate_id))
@@ -776,7 +796,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           ref={credentialReviewRef}
           requirements={credentialRequirements}
           reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
-          disabled={loading || parameterizationApplying}
+          disabled={loading || parameterizationApplying || protectedSessionExpired}
           projectId={projectId}
           sourceSecretSessionExpiresAt={inspection?.expires_at}
           sourceMigrationAllowed={sourceMigrationAvailable}
@@ -785,6 +805,15 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           onApply={applyCredentialBindings}
           onPreparedChange={setPreparedSecrets}
         />
+      )}
+
+      {protectedSessionLabel && !committed && (
+        <div
+          className={`bruno-preflight ${protectedSessionExpired ? 'warning' : ''}`}
+          role={protectedSessionExpired ? 'alert' : 'status'}
+        >
+          {protectedSessionLabel}
+        </div>
       )}
 
       {outputMode === 'canonical' && inspection?.result.output_mode === 'canonical' && inspection.parameterization && inspection.parameterization.suggestions.length > 0 && !committed && (

@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 )
 
-func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T) {
+func TestImportedCredentialRemainsInRunnableScriptWithoutProtectedHandoff(t *testing.T) {
 	value := randomOpenAPIProtectedValue(t)
 	result, err := Convert(ImportRequest{Content: fmt.Sprintf(`{
 	  "openapi":"3.0.3",
@@ -31,13 +29,12 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), value) {
-		t.Fatal("converter JSON disclosed a protected credential value")
+	if !strings.Contains(string(publicJSON), value) {
+		t.Fatal("converter result did not retain the imported credential in its destination script")
 	}
 	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != value {
-		t.Fatal("protected credential requirement was not transferred intact")
+	if requirements != nil {
+		t.Fatalf("preserved credential unexpectedly requires a protected handoff: %#v", requirements)
 	}
 	if result.ProtectedRequirements.Take() != nil {
 		t.Fatal("protected credential requirements were returned more than once")
@@ -46,9 +43,10 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(scriptJSON), value) {
-		t.Fatal("projected script retained a protected credential value")
+	if !strings.Contains(string(scriptJSON), value) {
+		t.Fatal("destination script did not retain the imported credential value")
 	}
+	assertOpenAPISourceReviewRedacted(t, result, value)
 }
 
 func randomOpenAPIProtectedValue(t *testing.T) string {
@@ -58,10 +56,4 @@ func randomOpenAPIProtectedValue(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return hex.EncodeToString(raw)
-}
-
-func clearOpenAPIProtectedValues(requirements []credentialpolicy.Requirement) {
-	for index := range requirements {
-		requirements[index].Value = ""
-	}
 }

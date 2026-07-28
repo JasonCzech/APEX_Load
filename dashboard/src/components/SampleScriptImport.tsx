@@ -30,8 +30,10 @@ import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { isValidSecretBindingName, refreshedSecretBindingRequirements, secretBindingReference } from './secretBindingUtils'
+import { credentialPreservingImportDraftRequiresSave } from './protectedImportSession'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -414,6 +416,7 @@ function inferSampleFormatFromFile(file: File | undefined, fallback: SampleForma
 
 export default function SampleScriptImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
   const api = useApi()
+  const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
   const primaryDropRef = useRef<HTMLLabelElement>(null)
@@ -464,14 +467,14 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const resetConvertTask = convertTask.reset
   const resetSaveTask = saveTask.reset
   const invalidateSampleSource = useCallback(() => {
-    void credentialReviewRef.current?.discardSourceSession()
+    sourceSecretSessions.clear('conversion')
     const generation = advanceReviewGeneration()
     resetConvertTask()
     resetSaveTask()
     setMessageError('')
     setAssetUploads({})
     return generation
-  }, [advanceReviewGeneration, resetConvertTask, resetSaveTask])
+  }, [advanceReviewGeneration, resetConvertTask, resetSaveTask, sourceSecretSessions])
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
     invalidateSampleSource()
     dispatchOptions({ type: 'update', field, value })
@@ -492,6 +495,11 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const importFileAssets = fileAssetSources(reviewedScript)
   const hasMissingFileAssets = importFileAssets.some(source => !isFileAssetReady(source))
   const replayPreflight = reviewedScript ? (result?.preflight || buildLocalReplayPreflight(reviewedScript)) : null
+  const editRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
+    result,
+    reviewedScript,
+    result?.secret_binding_requirements,
+  )
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
     invalidateSampleSource()
@@ -780,14 +788,16 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             },
           })
 
+          if (!requestIsCurrent()) {
+            sourceSecretSessions.discardUnaccepted(sourceProjectId, res.source_secret_session_id)
+            throw new Error('The sample source changed while conversion was running. Review the current input and try again.')
+          }
+          sourceSecretSessions.replace('conversion', sourceProjectId, res.source_secret_session_id)
+
           const builtScript = buildScriptWithOptions(res.script)
           const finalScript = isJavaHttpPreset ? promoteScriptToJavaHTTP(builtScript) : builtScript
           const correlatedScript = attachImportCorrelationSuggestions(finalScript, 'sample-import', res.correlations)
           const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, res.warnings) : res.warnings
-
-          if (!requestIsCurrent()) {
-            throw new Error('The sample source changed while conversion was running. Review the current input and try again.')
-          }
 
           return {
             ...res,
@@ -809,6 +819,10 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     const sourceResult = latestResultRef.current
     const scriptToSave = latestResultRef.current?.script ?? latestResultRef.current?.scripts?.[0]
     if (!scriptToSave) return
+    if (fileAssetSources(scriptToSave).some(source => !isFileAssetReady(source))) {
+      setMessageError('Upload every imported file asset before saving this script.')
+      return
+    }
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
       && reviewProjectIdRef.current === sourceProjectId
       && latestResultRef.current === sourceResult
@@ -817,23 +831,45 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       const savedScript = await saveTask.run(async () => {
         return api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null)
       })
-      if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
   }
 
   const handleEdit = () => {
-    const currentScript = latestResultRef.current?.script ?? latestResultRef.current?.scripts?.[0]
-    if (currentScript) onEdit?.(currentScript)
+    const currentResult = latestResultRef.current
+    const currentScript = currentResult?.script ?? currentResult?.scripts?.[0]
+    if (!currentScript) return
+    if (credentialPreservingImportDraftRequiresSave(
+      currentResult,
+      currentScript,
+      currentResult?.secret_binding_requirements,
+    )) {
+      if (!onImported) {
+        setMessageError('Save this credential-preserving import before opening it in the Visual Editor.')
+        return
+      }
+      void handleSave()
+      return
+    }
+    onEdit?.(currentScript)
   }
 
-  const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
+  const handleParameterizationApplied = (
+    parameterizedScript: ScriptDefinition,
+    _diffs: unknown[],
+    _selectedIds: string[],
+    importDraftExpiresAt?: string,
+  ) => {
     if (!result) return
     advanceReviewGeneration()
     resetSaveTask()
     const preflight = buildLocalReplayPreflight(parameterizedScript)
-    convertTask.setValue(replaceImportResultScript(result, attachReplayPreflight(parameterizedScript, preflight), preflight))
+    convertTask.setValue({
+      ...replaceImportResultScript(result, attachReplayPreflight(parameterizedScript, preflight), preflight),
+      import_draft_expires_at: importDraftExpiresAt,
+    })
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
@@ -848,6 +884,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       const nextResult = {
         ...replaceImportResultScript(result, attachReplayPreflight(resolved.script, preflight), preflight),
         secret_binding_requirements: resolved.secret_binding_requirements,
+        import_draft_expires_at: resolved.import_draft_expires_at,
       }
       latestResultRef.current = nextResult
       convertTask.setValue(nextResult)
@@ -909,7 +946,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { sourceSecretSessions.clear('conversion'); onClose() }}>Back</button>}
       </div>
 
       <div className="sample-import-card">
@@ -1148,11 +1185,13 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            importDraftExpiresAt={result.import_draft_expires_at}
             credentialReviewRef={credentialReviewRef}
             saving={saving}
             saveDisabled={hasMissingFileAssets}
             onSave={handleSave}
             onEdit={onEdit ? handleEdit : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
             {replayPreflight && (

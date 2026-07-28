@@ -857,6 +857,108 @@ func TestConvertOpenAPIQueryAndDocLevelSecurity(t *testing.T) {
 	}
 }
 
+func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Credential examples", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/json": {
+      "post": {
+        "operationId": "jsonCredential",
+        "requestBody": {"content": {"application/json": {"schema": {
+          "type": "object",
+          "properties": {
+            "password": {"type": "string", "example": "json-pass"},
+            "pin": {"type": "integer", "format": "password", "example": 731}
+          }
+        }}}},
+        "responses": {"200": {"description": "ok"}}
+      }
+    },
+    "/form": {
+      "post": {
+        "operationId": "formCredential",
+        "requestBody": {"content": {"application/x-www-form-urlencoded": {"schema": {
+          "type": "object",
+          "properties": {"password": {"type": "string", "default": "form-pass"}}
+        }}}},
+        "responses": {"200": {"description": "ok"}}
+      }
+    },
+    "/multipart": {
+      "post": {
+        "operationId": "multipartCredential",
+        "requestBody": {"content": {"multipart/form-data": {"schema": {
+          "type": "object",
+          "properties": {"password": {"type": "string", "example": "multipart-pass"}}
+        }}}},
+        "responses": {"200": {"description": "ok"}}
+      }
+    },
+    "/xml": {
+      "post": {
+        "operationId": "xmlCredential",
+        "requestBody": {"content": {"application/xml": {"schema": {
+          "type": "object",
+          "properties": {"password": {"type": "string", "example": "xml-pass"}}
+        }}}},
+        "responses": {"200": {"description": "ok"}}
+      }
+    },
+    "/accounts/{password}": {
+      "get": {
+        "operationId": "parameterCredentials",
+        "parameters": [
+          {"name": "password", "in": "path", "required": true, "schema": {"type": "string", "example": "path-pass"}},
+          {"name": "X-API-Key", "in": "header", "schema": {"type": "string", "example": "header-pass"}},
+          {"name": "session_token", "in": "cookie", "schema": {"type": "string", "default": "cookie-pass"}},
+          {"name": "filter", "in": "query", "style": "deepObject", "explode": true, "schema": {
+            "type": "object",
+            "properties": {"api_key": {"type": "string", "example": "query-pass"}}
+          }}
+        ],
+        "responses": {"200": {"description": "ok"}}
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+
+	jsonAction := openAPIActionFull(result, "jsonCredential")
+	if !strings.Contains(jsonAction.Body, `"password": "json-pass"`) ||
+		!strings.Contains(jsonAction.Body, `"pin": 731`) {
+		t.Fatalf("JSON body did not retain typed authored credentials: %s", jsonAction.Body)
+	}
+	formAction := openAPIActionFull(result, "formCredential")
+	if !strings.Contains(formAction.Body, "password=form-pass") {
+		t.Fatalf("form body did not retain authored password: %q", formAction.Body)
+	}
+	multipartAction := openAPIActionFull(result, "multipartCredential")
+	if !strings.Contains(multipartAction.Body, "\r\nmultipart-pass\r\n") {
+		t.Fatalf("multipart body did not retain authored password: %q", multipartAction.Body)
+	}
+	xmlAction := openAPIActionFull(result, "xmlCredential")
+	if !strings.Contains(xmlAction.Body, "<password>xml-pass</password>") {
+		t.Fatalf("XML body did not retain authored password: %q", xmlAction.Body)
+	}
+	paramsAction := openAPIActionFull(result, "parameterCredentials")
+	if !strings.Contains(paramsAction.Target, "/accounts/path-pass") ||
+		!strings.Contains(paramsAction.Target, "filter[api_key]=query-pass") {
+		t.Fatalf("parameter target did not retain authored credentials: %q", paramsAction.Target)
+	}
+	if paramsAction.Headers["X-API-Key"] != "header-pass" {
+		t.Fatalf("header credential = %q, want exact authored value", paramsAction.Headers["X-API-Key"])
+	}
+	if paramsAction.Headers["Cookie"] != "session_token=cookie-pass" {
+		t.Fatalf("cookie credential = %q, want exact authored value", paramsAction.Headers["Cookie"])
+	}
+}
+
 func TestConvertOpenAPIOAuthClientCredentialsGeneratesTokenInit(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `{
@@ -1132,7 +1234,7 @@ func TestConvertOpenAPISecurityConflictCreatesDurableBlockedDraft(t *testing.T) 
 	}
 }
 
-func TestConvertOpenAPIProjectsAuthoredCredentialExamplesWithoutTypeCorruption(t *testing.T) {
+func TestConvertOpenAPIPreservesAuthoredCredentialExamplesWithoutTypeCorruption(t *testing.T) {
 	const canary = "openapi-canary-secret-9B4F"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1158,29 +1260,26 @@ func TestConvertOpenAPIProjectsAuthoredCredentialExamplesWithoutTypeCorruption(t
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := openAPIActionFull(result, "createSession")
-	if action.Headers["X-API-Key"] != "{{secret.OPENAPI_X_API_KEY}}" {
+	if action.Headers["X-API-Key"] != canary {
 		t.Fatalf("credential header = %q", action.Headers["X-API-Key"])
 	}
-	if !strings.Contains(action.Target, "access_token={{secret.OPENAPI_ACCESS_TOKEN}}") {
-		t.Fatalf("target = %q, want governed query credential", action.Target)
+	if !strings.Contains(action.Target, "access_token="+canary) {
+		t.Fatalf("target = %q, want preserved query credential", action.Target)
 	}
 	var body map[string]any
 	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
 	}
-	if body["password"] != "{{secret.OPENAPI_PASSWORD}}" || body["client_secret"] != "{{secret.OPENAPI_CLIENT_SECRET}}" {
-		t.Fatalf("credential body projection = %#v", body)
+	if body["password"] != canary || body["client_secret"] != canary {
+		t.Fatalf("credential body preservation = %#v", body)
 	}
 	if count, ok := body["count"].(float64); !ok || count != 3 {
 		t.Fatalf("ordinary count changed: %#v", body["count"])
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal result: %v", err)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved credentials unexpectedly require rebinding: %#v", requirements)
 	}
-	if strings.Contains(string(encoded), canary) {
-		t.Fatalf("credential canary leaked in conversion result: %s", encoded)
-	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
 		t.Fatalf("validation issues = %v", issues)
 	}
@@ -1189,7 +1288,65 @@ func TestConvertOpenAPIProjectsAuthoredCredentialExamplesWithoutTypeCorruption(t
 	}
 }
 
-func TestConvertOpenAPIFormatPasswordIsGovernedWithoutSensitiveFieldName(t *testing.T) {
+func TestConvertOpenAPIPreservesGatedPlainTextCredentialExample(t *testing.T) {
+	const canary = "openapi-plain-text-password-42B7"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Plain example","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createPlainSession",
+    "requestBody":{"content":{"text/plain":{"example":"password=` + canary + `"}}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createPlainSession")
+	if action.Body != "password="+canary {
+		t.Fatalf("plain-text body = %q, want exact authored bytes", action.Body)
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("plain-text review gate = %#v", action.Metadata)
+	}
+	review, _ := action.Metadata["import_review"].(map[string]any)
+	codes, _ := review["reason_codes"].([]string)
+	if !containsString(codes, "unsafe_structured_credential_projection") {
+		t.Fatalf("plain-text review codes = %#v", review)
+	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
+}
+
+func TestConvertSwagger2BasicSecurityUsesNativeAuth(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "swagger":"2.0",
+  "info":{"title":"Swagger Basic","version":"1"},
+  "host":"api.example.test",
+  "schemes":["https"],
+  "basePath":"/v1",
+  "securityDefinitions":{"basicAuth":{"type":"basic"}},
+  "security":[{"basicAuth":[]}],
+  "paths":{"/orders":{"get":{
+    "operationId":"listOrders",
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "listOrders")
+	if action.Auth == nil || action.Auth.Type != "basic" ||
+		action.Auth.Username != "{{env.OPENAPI_BASICAUTH_USERNAME}}" ||
+		action.Auth.Password != "{{secret.OPENAPI_BASICAUTH_PASSWORD}}" {
+		t.Fatalf("Swagger 2 basic auth = %#v", action.Auth)
+	}
+	if action.Metadata["execution_blocker"] != nil {
+		t.Fatalf("Swagger 2 basic auth was review-gated: %#v", action.Metadata)
+	}
+}
+
+func TestConvertOpenAPIFormatPasswordIsPreservedWithoutSensitiveFieldName(t *testing.T) {
 	const canary = "openapi-format-password-canary-74B2"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1210,39 +1367,21 @@ func TestConvertOpenAPIFormatPasswordIsGovernedWithoutSensitiveFieldName(t *test
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
 	action := openAPIActionFull(result, "createPinSession")
 	var body map[string]any
 	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
 	}
-	if body["pin"] != "{{secret.OPENAPI_PIN}}" || body["note"] != "unchanged" {
-		t.Fatalf("body = %#v, want governed pin and unchanged note", body)
+	if body["pin"] != canary || body["note"] != "unchanged" {
+		t.Fatalf("body = %#v, want preserved pin and unchanged note", body)
 	}
-	if len(requirements) != 1 || requirements[0].Value != canary {
-		t.Fatalf("protected requirements = %#v, want authored format-password value", requirements)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved format-password value unexpectedly requires rebinding: %#v", requirements)
 	}
-	publicJSON, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(publicJSON), canary) {
-		t.Fatal("format-password canary leaked in the public conversion result")
-	}
-	if result.SourceReview == nil {
-		t.Fatal("source review is missing")
-	}
-	sourceJSON, err := json.Marshal(result.SourceReview)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(sourceJSON), canary) {
-		t.Fatal("format-password canary leaked in source review")
-	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
 }
 
-func TestConvertOpenAPIAuthoredMultipartExampleUsesWireEncodingAndCredentialProjection(t *testing.T) {
+func TestConvertOpenAPIAuthoredMultipartExampleUsesWireEncodingAndPreservesCredential(t *testing.T) {
 	const canary = "openapi-multipart-canary-89C1"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1268,22 +1407,18 @@ func TestConvertOpenAPIAuthoredMultipartExampleUsesWireEncodingAndCredentialProj
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
 	action := openAPIActionFull(result, "createMultipartSession")
 	if !strings.Contains(action.Headers["Content-Type"], "multipart/form-data; boundary=----apexload-openapi-boundary") ||
 		!strings.Contains(action.Body, "Content-Disposition: form-data; name=\"pin\"") ||
-		!strings.Contains(action.Body, "{{secret.OPENAPI_PIN}}") ||
+		!strings.Contains(action.Body, "\r\n\r\n"+canary+"\r\n") ||
 		!strings.Contains(action.Body, "{\"count\":1}") ||
 		!strings.Contains(action.Body, "\r\n\r\nunchanged\r\n") {
 		t.Fatalf("authored multipart action = %#v", action)
 	}
-	if strings.Contains(action.Body, canary) {
-		t.Fatal("authored multipart credential remained in the script")
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved multipart credential unexpectedly requires rebinding: %#v", requirements)
 	}
-	if len(requirements) != 1 || requirements[0].Value != canary {
-		t.Fatalf("protected requirements = %#v", requirements)
-	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
 	review, ok := action.Metadata["import_review"].(map[string]any)
 	if !ok {
 		t.Fatalf("import review = %#v, want complex multipart encoding gate", action.Metadata["import_review"])
@@ -1397,7 +1532,7 @@ func TestConvertOpenAPISingularMediaTypeExampleRetainsPrecedence(t *testing.T) {
 	}
 }
 
-func TestConvertOpenAPIMediaTypeExamplesProjectSelectedCredentialsAndScrubAllAlternatives(t *testing.T) {
+func TestConvertOpenAPIMediaTypeExamplesPreserveSelectedCredentialsAndScrubAllAlternatives(t *testing.T) {
 	const selectedCanary = "openapi-plural-selected-canary-71A9"
 	const unselectedCanary = "openapi-plural-unselected-canary-84D2"
 	result, err := Convert(ImportRequest{Content: `{
@@ -1418,26 +1553,25 @@ func TestConvertOpenAPIMediaTypeExamplesProjectSelectedCredentialsAndScrubAllAlt
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
 	action := openAPIActionFull(result, "createSession")
 	var body map[string]any
 	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
 	}
-	if body["username"] != "alice" || body["password"] != "{{secret.OPENAPI_PASSWORD}}" {
-		t.Fatalf("body = %#v, want selected example with governed credential", body)
+	if body["username"] != "alice" || body["password"] != selectedCanary {
+		t.Fatalf("body = %#v, want selected example with preserved credential", body)
 	}
-	if len(requirements) != 1 || requirements[0].Value != selectedCanary {
-		t.Fatalf("protected requirements = %#v, want only the selected example credential", requirements)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved selected credential unexpectedly requires rebinding: %#v", requirements)
 	}
-	publicJSON, err := json.Marshal(result)
+	publicJSON, err := json.Marshal(result.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), selectedCanary) || strings.Contains(string(publicJSON), unselectedCanary) {
-		t.Fatal("plural example credential leaked in the public conversion result or source review")
+	if !strings.Contains(string(publicJSON), selectedCanary) || strings.Contains(string(publicJSON), unselectedCanary) {
+		t.Fatal("destination script did not preserve only the selected example credential")
 	}
+	assertOpenAPISourceReviewRedacted(t, result, selectedCanary, unselectedCanary)
 }
 
 func TestConvertOpenAPIExternalMediaTypeExampleCreatesBlockedDraft(t *testing.T) {
@@ -1633,7 +1767,7 @@ func TestConvertOpenAPIMultipartEncodingRequiresReview(t *testing.T) {
 	}
 }
 
-func TestConvertOpenAPIComposedCookieDoesNotDisableBodyCredentialProjection(t *testing.T) {
+func TestConvertOpenAPIComposedCookieDoesNotDisableBodyCredentialPreservation(t *testing.T) {
 	const canary = "openapi-independent-body-canary-81D4"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1657,9 +1791,6 @@ func TestConvertOpenAPIComposedCookieDoesNotDisableBodyCredentialProjection(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
-
 	action := openAPIActionFull(result, "createComposedCookieSession")
 	wantCookie := "locale={{data.openapi.locale}}; session_signature={{secret.OPENAPI_COOKIEAUTH_API_KEY}}"
 	if action.Headers["Cookie"] != wantCookie {
@@ -1669,25 +1800,19 @@ func TestConvertOpenAPIComposedCookieDoesNotDisableBodyCredentialProjection(t *t
 	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
 	}
-	if body["password"] != "{{secret.OPENAPI_PASSWORD}}" {
-		t.Fatalf("independent body credential was not projected: %#v", body)
+	if body["password"] != canary {
+		t.Fatalf("independent body credential was not preserved: %#v", body)
 	}
-	if len(requirements) != 1 || requirements[0].Value != canary {
-		t.Fatalf("protected requirements = %#v, want body credential only", requirements)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved body credential unexpectedly requires rebinding: %#v", requirements)
 	}
 	if action.Metadata["execution_blocker"] != "import_review_required" {
 		t.Fatalf("missing-base-url review gate was not preserved: %#v", action.Metadata)
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), canary) {
-		t.Fatal("conversion result disclosed independent body credential")
-	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
 }
 
-func TestConvertOpenAPIDoesNotTrustAuthoredComposedCredentialHeader(t *testing.T) {
+func TestConvertOpenAPIPreservesAuthoredComposedCredentialHeader(t *testing.T) {
 	const canary = "openapi-authored-header-canary-4E92"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1706,30 +1831,22 @@ func TestConvertOpenAPIDoesNotTrustAuthoredComposedCredentialHeader(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirements := result.ProtectedRequirements.Take()
-	defer clearOpenAPIProtectedValues(requirements)
-
 	action := openAPIActionFull(result, "authoredComposedCredential")
-	if strings.Contains(action.Headers["Authorization"], canary) ||
-		!strings.Contains(action.Headers["Authorization"], "{{secret.") {
-		t.Fatalf("authored composed Authorization was not governed as one value: %q", action.Headers["Authorization"])
+	want := "Bearer " + canary + "-{{secret.EXTRA}}"
+	if action.Headers["Authorization"] != want {
+		t.Fatalf("authored composed Authorization = %q, want %q", action.Headers["Authorization"], want)
 	}
-	if len(requirements) != 1 || !strings.Contains(requirements[0].Value, canary) {
-		t.Fatalf("protected requirements = %#v, want authored header credential", requirements)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved composed header unexpectedly requires rebinding: %#v", requirements)
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), canary) {
-		t.Fatal("conversion result disclosed authored composed credential")
-	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
 }
 
-func TestConvertOpenAPIBlocksSensitiveNonStringExampleAndPreservesJSONType(t *testing.T) {
+func TestConvertOpenAPIPreservesSensitiveNonStringExampleAndJSONType(t *testing.T) {
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
   "info":{"title":"Typed secret","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
   "paths":{"/typed":{"post":{
     "operationId":"typedSecret",
     "requestBody":{"content":{"application/json":{"example":{
@@ -1747,18 +1864,18 @@ func TestConvertOpenAPIBlocksSensitiveNonStringExampleAndPreservesJSONType(t *te
 	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v", err)
 	}
-	if _, ok := body["password"].(float64); !ok || body["password"] != float64(0) {
-		t.Fatalf("sensitive number = %#v, want disclosure-safe numeric zero", body["password"])
+	if _, ok := body["password"].(float64); !ok || body["password"] != float64(12345) {
+		t.Fatalf("sensitive number = %#v, want original typed value", body["password"])
 	}
 	if body["ordinary"] != float64(12345) {
 		t.Fatalf("ordinary numeric value changed: %#v", body["ordinary"])
 	}
-	if action.Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("metadata = %#v, want durable import review gate", action.Metadata)
+	if action.Metadata["execution_blocker"] != nil {
+		t.Fatalf("preserved valid typed credential should remain executable: %#v", action.Metadata)
 	}
 }
 
-func TestConvertOpenAPISharedFinalizerIsDeterministicAndDisclosureSafe(t *testing.T) {
+func TestConvertOpenAPISharedFinalizerPreservesCredentialsDeterministically(t *testing.T) {
 	const canary = "openapi-shared-finalizer-canary-7F3C"
 	content := `{
   "openapi":"3.0.3",
@@ -1804,16 +1921,21 @@ func TestConvertOpenAPISharedFinalizerIsDeterministicAndDisclosureSafe(t *testin
 		if !containsOpenAPIDiagnostic(result, "source_order_unavailable") {
 			t.Fatalf("run %d: diagnostics = %#v, want source_order_unavailable", run, result.Unsupported)
 		}
-		if !strings.Contains(action.Target, "access_token={{secret.OPENAPI_ACCESS_TOKEN}}") {
+		if !strings.Contains(action.Target, "access_token="+canary) {
 			t.Fatalf("run %d: target = %q", run, action.Target)
 		}
+		if action.Headers["X-API-Key"] != canary ||
+			!strings.Contains(action.Body, `"password": "`+canary+`"`) {
+			t.Fatalf("run %d: imported credentials were not preserved: %#v", run, action)
+		}
+		if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+			t.Fatalf("run %d: preserved credentials unexpectedly require rebinding: %#v", run, requirements)
+		}
+		assertOpenAPISourceReviewRedacted(t, result, canary)
 		result.Script.CreatedAt = time.Time{}
 		encoded, err := json.Marshal(result)
 		if err != nil {
 			t.Fatalf("run %d: marshal result: %v", run, err)
-		}
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("run %d: credential canary leaked in conversion result", run)
 		}
 		digest := sha256.Sum256(encoded)
 		if run == 0 {
@@ -1824,7 +1946,7 @@ func TestConvertOpenAPISharedFinalizerIsDeterministicAndDisclosureSafe(t *testin
 	}
 }
 
-func TestConvertOpenAPISharedFinalizerProjectsFormAndXMLExamples(t *testing.T) {
+func TestConvertOpenAPISharedFinalizerPreservesFormAndXMLCredentialExamples(t *testing.T) {
 	const canary = "openapi-structured-canary-D219"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1852,21 +1974,33 @@ func TestConvertOpenAPISharedFinalizerProjectsFormAndXMLExamples(t *testing.T) {
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	form := openAPIActionFull(result, "formLogin")
-	if form.Body != "password={{secret.OPENAPI_PASSWORD}}&username=alice" {
+	if form.Body != "password="+canary+"&username=alice" {
 		t.Fatalf("form body = %q", form.Body)
 	}
 	xml := openAPIActionFull(result, "xmlLogin")
-	const xmlPrefix = `<login xmlns="urn:test"><password>{{secret.OPENAPI_PASSWORD`
-	const xmlSuffix = `}}</password><username>alice</username></login>`
-	if !strings.HasPrefix(xml.Body, xmlPrefix) || !strings.HasSuffix(xml.Body, xmlSuffix) {
-		t.Fatalf("XML body = %q, want byte-preserving envelope with a governed password", xml.Body)
+	wantXML := `<login xmlns="urn:test"><password>` + canary + `</password><username>alice</username></login>`
+	if xml.Body != wantXML {
+		t.Fatalf("XML body = %q, want byte-preserving credential envelope %q", xml.Body, wantXML)
 	}
-	encoded, err := json.Marshal(result)
+	if requirements := result.ProtectedRequirements.Take(); requirements != nil {
+		t.Fatalf("preserved structured credentials unexpectedly require rebinding: %#v", requirements)
+	}
+	assertOpenAPISourceReviewRedacted(t, result, canary)
+}
+
+func assertOpenAPISourceReviewRedacted(t *testing.T, result *ConvertResult, values ...string) {
+	t.Helper()
+	if result.SourceReview == nil {
+		t.Fatal("source review is missing")
+	}
+	encoded, err := json.Marshal(result.SourceReview)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), canary) {
-		t.Fatalf("structured credential canary leaked in conversion result")
+	for _, value := range values {
+		if strings.Contains(string(encoded), value) {
+			t.Fatalf("source review disclosed imported credential %q: %s", value, encoded)
+		}
 	}
 }
 

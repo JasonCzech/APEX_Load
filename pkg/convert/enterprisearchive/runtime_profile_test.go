@@ -123,6 +123,81 @@ RunLogicPaceType="ASAP"`,
 	}
 }
 
+func TestConvertZipRuntimeProfileConflictsProduceDurableExecutionGate(t *testing.T) {
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name: "cfg profile conflict",
+			files: map[string]string{
+				"ProfileConflict.usr": `[General]
+Type=Web
+DefaultCfg=first.cfg
+defaultcfg=second.cfg
+[Actions]
+Action=Action.c
+`,
+				"Action.c": `Action()
+{
+	web_url("request", "URL=https://example.test/orders", LAST);
+	return 0;
+}
+`,
+				"first.cfg":  "[ThinkTime]\nOptions=RECORDED",
+				"second.cfg": "[ThinkTime]\nOptions=NOTHINK",
+			},
+		},
+		{
+			name: "run logic profile conflict",
+			files: map[string]string{
+				"ProfileConflict.usr": `[General]
+Type=Web
+DefaultCfg=active.cfg
+[Actions]
+Action=Action.c
+`,
+				"Action.c": `Action()
+{
+	web_url("request", "URL=https://example.test/orders", LAST);
+	return 0;
+}
+`,
+				"active.cfg": `[General]
+DefaultRunLogic=first.usp
+defaultrunlogic=second.usp
+`,
+				"first.usp":  "[RunLogicRunRoot]\nRunLogicNumOfIterations=2\nRunLogicPaceType=ASAP",
+				"second.usp": "[RunLogicRunRoot]\nRunLogicNumOfIterations=3\nRunLogicPaceType=ASAP",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := ConvertZip(buildSourceZip(t, test.files), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip: %v", err)
+			}
+			if result.Script == nil || len(result.Script.Actions) != 1 {
+				t.Fatalf("script/actions = %#v, want one blocked request", result.Script)
+			}
+			action := result.Script.Actions[0]
+			if action.Metadata["execution_blocker"] != "import_review_required" {
+				t.Fatalf("action metadata = %#v, want durable runtime-profile gate", action.Metadata)
+			}
+			review, _ := action.Metadata["import_review"].(map[string]any)
+			reasons, _ := review["reason_codes"].([]string)
+			if !containsString(reasons, runtimeProfileSelectionReason) {
+				t.Fatalf("import review = %#v, want reason %q", review, runtimeProfileSelectionReason)
+			}
+			if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+				t.Fatalf("DSL validation issues = %#v", issues)
+			}
+		})
+	}
+}
+
 func TestResolveRuntimeConfigAmbiguousRunLogicDropsLegacyCfgPacingAndIterations(t *testing.T) {
 	files := map[string]string{
 		"active.cfg": `[Iterations]
@@ -1582,13 +1657,20 @@ ProxyPassword=stale-password
 ` + test.enableRow,
 			}, nil)
 			httpConfig := rc.ToHTTPConfig()
-			if httpConfig.ProxyMode != "none" || httpConfig.Proxy.URL != "" ||
-				httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
+			if httpConfig.ProxyMode != "none" || httpConfig.Proxy.URL != "" {
 				t.Fatalf("unsupported proxy mode did not fail closed: %#v", httpConfig)
 			}
 			issue, ok := runtimeConfigIssueByID(rc, "proxy")
 			if ok != test.wantIssue {
 				t.Fatalf("proxy issue = %#v, want issue %v", issue, test.wantIssue)
+			}
+			if test.wantIssue {
+				if httpConfig.Proxy.Username != "{{secret.ENTERPRISE_PROXY_USERNAME}}" ||
+					httpConfig.Proxy.Password != "{{secret.ENTERPRISE_PROXY_PASSWORD}}" {
+					t.Fatalf("unsupported proxy lost inert credential record: %#v", httpConfig.Proxy)
+				}
+			} else if httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
+				t.Fatalf("explicitly dormant proxy retained credentials: %#v", httpConfig.Proxy)
 			}
 			if test.wantIssue && (len(issue.RuntimeFiles) != 1 ||
 				issue.RuntimeFiles[0] != "profiles/proxy.cfg" ||
@@ -1619,13 +1701,20 @@ func TestRuntimeCfgProxyWithoutEnableFlagsFinalizesSelectedMode(t *testing.T) {
 					"ProxyUserName=stale-user\nProxyPassword=stale-password\n",
 			}, nil)
 			httpConfig := rc.ToHTTPConfig()
-			if httpConfig.ProxyMode != test.wantMode || httpConfig.Proxy.URL != "" ||
-				httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
-				t.Fatalf("finalized proxy = %#v, want mode %q without dormant endpoint state", httpConfig, test.wantMode)
+			if httpConfig.ProxyMode != test.wantMode || httpConfig.Proxy.URL != "" {
+				t.Fatalf("finalized proxy = %#v, want mode %q without an executable endpoint", httpConfig, test.wantMode)
 			}
 			issue, ok := runtimeConfigIssueByID(rc, "proxy")
 			if ok != test.wantIssue {
 				t.Fatalf("proxy issue = %#v, want issue %v", issue, test.wantIssue)
+			}
+			if test.wantIssue {
+				if httpConfig.Proxy.Username != "{{secret.ENTERPRISE_PROXY_USERNAME}}" ||
+					httpConfig.Proxy.Password != "{{secret.ENTERPRISE_PROXY_PASSWORD}}" {
+					t.Fatalf("review-only proxy lost inert credential record: %#v", httpConfig.Proxy)
+				}
+			} else if httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
+				t.Fatalf("inactive proxy retained dormant credentials: %#v", httpConfig.Proxy)
 			}
 			if test.wantIssue && (len(issue.RuntimeFiles) != 1 ||
 				issue.RuntimeFiles[0] != "profiles/proxy.cfg" ||

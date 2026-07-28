@@ -81,12 +81,16 @@ func (vu *VUser) loadDataRow() {
 	if vu.DataProvider == nil || !vu.DataProvider.HasSources() {
 		return
 	}
+	if vu.Variables == nil {
+		vu.Variables = make(map[string]string)
+	}
 	for _, name := range vu.DataProvider.SourceNames() {
 		row := vu.DataProvider.GetRow(name, vu.ID)
 		for k, v := range row {
 			vu.Variables[k] = v
 		}
 	}
+	_ = vu.refreshImportedCredentialRuntimeValues()
 }
 
 // makeLogger creates a logger for this VUser based on the log config.
@@ -185,6 +189,13 @@ func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *Reda
 }
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
+	vu.ensureImportedCredentialTemplatePlan()
+	vu.beginRuntimeCredentialActionResolution()
+	defer vu.endRuntimeCredentialActionResolution()
+	// A protocol result may have staged a complete credential-session snapshot.
+	// Advance it only when the next action begins so the rotating response was
+	// scrubbed with both the request's old value and the response's new value.
+	_ = vu.commitRuntimeCredentialSessionSnapshot()
 	vu.unresolvedSecretRefs = nil
 	vu.unresolvedFileRefs = nil
 	vu.unresolvedParameterRefs = nil
@@ -528,6 +539,9 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 				redactedValue = "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
 			}
 		}
+		if resolvedOK {
+			vu.recordRuntimeCredentialActionTemplate(expr, resolvedValue)
+		}
 		resolved.WriteString(resolvedValue)
 		redacted.WriteString(redactedValue)
 	}
@@ -716,15 +730,14 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 	// extraction. If its reversible spellings exceed the bounded matcher
 	// budget, fail this extraction atomically instead of keeping a value that
 	// later evidence could expose.
-	sensitiveValues := make([]string, 0)
+	sensitiveScopes := make(map[string][]string)
 	for key, value := range r.Extractions {
-		if value != "" && scrub.SensitiveName(key) {
-			sensitiveValues = append(sensitiveValues, value)
+		if scrub.SensitiveName(key) || vu.importedCredentialVariableName(key) {
+			sensitiveScopes["extraction:"+strings.ToLower(strings.TrimSpace(key))] = []string{value}
 		}
 	}
-	redactionConfig, err := WithSecretValueRedactionChecked(vu.RedactionConfig, sensitiveValues)
-	if err != nil {
-		return fmt.Errorf("sensitive extraction redaction: %s", scrubSensitiveText(err.Error()))
+	if err := vu.replaceRuntimeCredentialScopes(sensitiveScopes); err != nil {
+		return fmt.Errorf("sensitive extraction redaction: %s", err)
 	}
 	for key, value := range r.Extractions {
 		size := len(key) + len(value)
@@ -738,8 +751,6 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 	// in their resolved targets, evidence, logs, or replay reports. Add their
 	// exact values only to the in-memory redaction projection after the entire
 	// extraction batch has passed validation and retention bounds.
-	vu.RedactionConfig = redactionConfig
-	vu.runtimeRedaction.Store(vu.RedactionConfig)
 	return nil
 }
 

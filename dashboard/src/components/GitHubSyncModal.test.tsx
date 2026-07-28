@@ -156,8 +156,12 @@ describe('GitHubSyncModal (import)', () => {
   let fetchMock: MockInstance<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
   let applyBody: Record<string, unknown> | null
   let createBody: Record<string, unknown> | null
+  let createResponse: Promise<Response> | null
   let bindingApplyResponse: Promise<Response> | null
   let importParameterization: Record<string, unknown> | undefined
+  let importDraftResponse: Record<string, unknown>
+  let importDraftExpiresAt: string
+  let destinationValuePreserved: boolean
 
   const importedDraft = {
     name: 'Redacted Login',
@@ -187,8 +191,12 @@ describe('GitHubSyncModal (import)', () => {
     root = createRoot(container)
     applyBody = null
     createBody = null
+    createResponse = null
     bindingApplyResponse = null
     importParameterization = undefined
+    importDraftResponse = importedDraft
+    importDraftExpiresAt = ''
+    destinationValuePreserved = false
     secretApiMock.getProjectSecretStatuses.mockResolvedValue({
       project_id: 'team-a',
       capabilities: {
@@ -202,6 +210,7 @@ describe('GitHubSyncModal (import)', () => {
     })
     secretApiMock.createProjectSecrets.mockResolvedValue({ project_id: 'team-a', secrets: [], count: 0 })
     secretApiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'team-a', secrets: [], count: 0 })
+    secretApiMock.applyImportParameterization.mockReset()
     secretApiMock.applyImportParameterization.mockResolvedValue({ script: importedDraft, diffs: [], applied_count: 0 })
     fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
@@ -220,8 +229,9 @@ describe('GitHubSyncModal (import)', () => {
       }
       if (url.includes('/scripts/import/github') && method === 'POST') {
         return jsonResponse({
-          script: importedDraft,
+          script: importDraftResponse,
           parameterization: importParameterization,
+          ...(importDraftExpiresAt ? { import_draft_expires_at: importDraftExpiresAt } : {}),
           secret_binding_requirements: [{
             id: 'binding-1',
             path: 'actions[0].headers.Authorization',
@@ -229,6 +239,7 @@ describe('GitHubSyncModal (import)', () => {
             context: 'Bearer credential in the Login action',
             suggested_name: 'LOGIN_TOKEN',
             replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+            destination_value_preserved: destinationValuePreserved,
           }],
         })
       }
@@ -239,6 +250,7 @@ describe('GitHubSyncModal (import)', () => {
       }
       if (url.endsWith('/scripts') && method === 'POST') {
         createBody = init?.body ? JSON.parse(String(init.body)) : null
+        if (createResponse) return createResponse
         return jsonResponse({
           id: 'script-imported',
           ref_key: 'S-2',
@@ -282,8 +294,8 @@ describe('GitHubSyncModal (import)', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Credentials (1)')
-    expect(container.textContent).toContain('configure them later in Project Secrets')
-    const bindingName = container.querySelector<HTMLInputElement>('.secret-binding-review input')
+    expect(container.textContent).toContain('configure it later in Project Secrets')
+    const bindingName = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')
     expect(bindingName?.value).toBe('LOGIN_TOKEN')
 
     const save = findButton('Save with 1 secret to configure')
@@ -301,6 +313,181 @@ describe('GitHubSyncModal (import)', () => {
     expect(JSON.stringify(createBody)).toContain('{{secret.LOGIN_TOKEN}}')
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-imported' }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('saves a preservation-marked imported credential without calling the binding endpoint', async () => {
+    const preservedDraft = {
+      ...importedDraft,
+      metadata: {
+        import: {
+          source: 'github',
+          preserved: { import_value_policy: 'preserve' },
+        },
+      },
+      actions: [{
+        ...importedDraft.actions[0],
+        headers: { Authorization: 'Bearer imported-runtime-token' },
+      }],
+    }
+    importDraftResponse = preservedDraft
+    destinationValuePreserved = true
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={() => {}} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')?.click()
+    })
+    await act(async () => {
+      findButton('Import & Save')?.click()
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(container.textContent).toContain('Preserved in script')
+    expect(container.textContent).toContain('0 to configure later')
+    await act(async () => {
+      findButton('Save Script')?.click()
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(applyBody).toBeNull()
+    expect(createBody).toEqual({ script: preservedDraft, project_id: 'team-a' })
+  })
+
+  it('expires a preservation-marked GitHub draft and disables Save until it is re-imported', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    try {
+      importDraftResponse = {
+        ...importedDraft,
+        metadata: {
+          import: {
+            source: 'github',
+            preserved: { import_value_policy: 'preserve' },
+          },
+        },
+        actions: [{
+          ...importedDraft.actions[0],
+          headers: { Authorization: 'Bearer imported-runtime-token' },
+        }],
+      }
+      destinationValuePreserved = true
+      importDraftExpiresAt = '2030-01-01T00:00:01Z'
+      await act(async () => {
+        root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={() => {}} />)
+      })
+      await flushPromises()
+      await flushPromises()
+      await act(async () => {
+        vi.advanceTimersByTime(0)
+        await Promise.resolve()
+      })
+
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')?.click()
+      })
+      await act(async () => {
+        findButton('Import & Save')?.click()
+      })
+      await flushPromises()
+      await flushPromises()
+
+      expect(container.textContent).toContain('Credential-preserving import draft available until')
+      expect(findButton('Save Script')?.disabled).toBe(false)
+      await act(async () => {
+        vi.advanceTimersByTime(1_001)
+        await Promise.resolve()
+      })
+      expect(container.textContent).toContain('This credential-preserving import draft has expired')
+      expect(findButton('Save Script')?.disabled).toBe(true)
+      await act(async () => {
+        findButton('Save Script')?.click()
+      })
+      expect(createBody).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('uses the rotated preservation expiry returned after parameterization', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    try {
+      const initialExpiry = '2030-01-01T00:00:01Z'
+      const rotatedExpiry = '2030-01-01T01:00:00Z'
+      const parameterizedDraft = {
+        ...importedDraft,
+        actions: [{ ...importedDraft.actions[0], target: '{{env.LOGIN_URL}}' }],
+      }
+      importDraftExpiresAt = initialExpiry
+      destinationValuePreserved = true
+      importParameterization = {
+        suggestions: [{
+          id: 'param-login-url',
+          kind: 'env',
+          var_name: 'LOGIN_URL',
+          replacement: '{{env.LOGIN_URL}}',
+          confidence: 0.95,
+          rule_id: 'url.constant',
+          rationale: 'Use the project login URL.',
+          auto_apply: true,
+          high_risk: false,
+        }],
+        summary: { total: 1, by_kind: { env: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0 },
+      }
+      secretApiMock.applyImportParameterization.mockResolvedValue({
+        script: parameterizedDraft,
+        diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'param-login-url' }],
+        applied_count: 1,
+        import_draft_expires_at: rotatedExpiry,
+      })
+
+      await act(async () => {
+        root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={() => {}} />)
+      })
+      await flushPromises()
+      await flushPromises()
+      await act(async () => {
+        vi.advanceTimersByTime(0)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')?.click()
+      })
+      await act(async () => {
+        findButton('Import & Save')?.click()
+      })
+      await flushPromises()
+      await flushPromises()
+
+      expect(container.textContent).toContain(new Date(initialExpiry).toLocaleString())
+      await act(async () => {
+        findButton('Apply Selected (1)')?.click()
+        await Promise.resolve()
+      })
+      await flushPromises()
+      await act(async () => {
+        vi.advanceTimersByTime(0)
+        await Promise.resolve()
+      })
+      expect(container.textContent).toContain(new Date(rotatedExpiry).toLocaleString())
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_001)
+        await Promise.resolve()
+      })
+      expect(container.textContent).not.toContain('This credential-preserving import draft has expired')
+      expect(findButton('Save Script')?.disabled).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('ignores an import response after the selected branch changes', async () => {
@@ -374,6 +561,58 @@ describe('GitHubSyncModal (import)', () => {
 
     expect(createBody).toBeNull()
     expect(onImported).not.toHaveBeenCalled()
+  })
+
+  it('reports a script that commits after Cancel instead of leaving it untracked', async () => {
+    let resolveCreate!: (response: Response) => void
+    createResponse = new Promise<Response>(resolve => {
+      resolveCreate = resolve
+    })
+    const onImported = vi.fn()
+    const onClose = vi.fn()
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={onClose} onImported={onImported} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Browse scripts/redacted.json"]')?.click()
+    })
+    await act(async () => {
+      findButton('Import & Save')?.click()
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => {
+      findButton('Save with 1 secret to configure')?.click()
+    })
+    await flushPromises()
+    expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
+
+    await act(async () => {
+      findButton('Cancel')?.click()
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      resolveCreate(new Response(JSON.stringify({
+        id: 'script-imported-after-cancel',
+        ref_key: 'S-3',
+        name: resolvedDraft.name,
+        protocol: resolvedDraft.protocol,
+        version: resolvedDraft.version,
+        project_id: 'team-a',
+        created_at: new Date().toISOString(),
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      await createResponse
+      await Promise.resolve()
+    })
+
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'script-imported-after-cancel',
+    }))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('locks parameterization while credential bindings are being prepared for save', async () => {

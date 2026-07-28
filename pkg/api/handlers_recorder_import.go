@@ -33,7 +33,7 @@ func (s *Server) handleImportRecorder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
+	writeScriptImportResponse(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
 }
 
 func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +46,7 @@ func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
+	writeScriptImportResponse(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
 }
 
 func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 		response := s.buildRecorderImportResponse(r, result, preflight)
 		response["valid"] = false
 		response["issues"] = issues
-		writeJSON(w, http.StatusBadRequest, response)
+		writeScriptImportResponse(w, http.StatusBadRequest, response)
 		return
 	}
 	ignoreThink := true
@@ -91,7 +91,7 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 	response := s.buildRecorderImportResponse(r, result, preflight)
 	response["replay_session_id"] = replay.ID
 	response["replay_session"] = replay
-	writeJSON(w, http.StatusCreated, response)
+	writeScriptImportResponse(w, http.StatusCreated, response)
 }
 
 func (s *Server) convertRecorderImport(importReq *recorderImportRequest) (*recorderjson.ConvertResult, *ReplayPreflight, error) {

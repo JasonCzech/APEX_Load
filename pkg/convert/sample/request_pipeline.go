@@ -19,7 +19,6 @@ func finalizeSampleRequestAction(
 	actionPath string,
 	location sampleSourceLocation,
 	format string,
-	sanitizeSensitive bool,
 	registry *credentialpolicy.NameRegistry,
 	provenVars map[string]struct{},
 ) (dsl.Action, requestimport.Report, error) {
@@ -68,13 +67,7 @@ func finalizeSampleRequestAction(
 			Source:   source,
 		}
 	}
-	mode := credentialpolicy.SecretReference
-	if !sanitizeSensitive {
-		// Compatibility mode deliberately retains source values, but the shared
-		// policy still marks every detected credential as unmanaged so a draft
-		// cannot execute or persist without an explicit binding decision.
-		mode = credentialpolicy.Audit
-	}
+	mode := credentialpolicy.Preserve
 	credentialOptions := &requestimport.CredentialProjectionOptions{
 		Mode:       mode,
 		Registry:   registry,

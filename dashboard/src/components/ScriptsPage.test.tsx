@@ -73,9 +73,17 @@ vi.mock('./ScriptEditor', () => ({
 }))
 
 vi.mock('./EnterpriseArchiveImport', () => ({
-  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }) => void, onClose?: () => void }) => (
+  default: ({ onImported, onEdit, onClose }: { onImported?: (result: { scripts: Array<{ id: string; name: string; protocol: string; script?: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] } }>; scenario?: { name?: string } | null; stayInImportReview?: boolean }) => void, onEdit?: (script: { name: string; version: string; protocol: string; config: { base_url: string }; actions: unknown[] }, focus?: { targetSection?: string }) => void, onClose?: () => void }) => (
     <div data-testid="enterprise-archive-import">
       <input aria-label="mock-enterprise-archive-state" defaultValue="converted-review" />
+      <button onClick={() => onImported?.({
+        scripts: [{
+          id: 'imported-script-partial',
+          name: 'Saved Enterprise Lane',
+          protocol: 'http',
+        }],
+        stayInImportReview: true,
+      })}>mock-enterprise-archive-refresh-only-save</button>
       <button onClick={() => onImported?.({
         scripts: [{
           id: 'imported-script-1',
@@ -1490,6 +1498,27 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Imported Enterprise Script Archive')
     expect(container.textContent).toContain('script-id:imported-script-1')
+  })
+
+  it('refreshes the library without leaving an enterprise archive that still has unsaved lanes', async () => {
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+
+    await clickButton('Import From Source')
+    await clickButton('Import Enterprise Script Archive')
+    const preservedInput = container.querySelector<HTMLInputElement>('input[aria-label="mock-enterprise-archive-state"]')!
+    preservedInput.value = 'pending-lane-still-mounted'
+
+    await clickButton('mock-enterprise-archive-refresh-only-save')
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('[data-testid="enterprise-archive-import"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="mock-enterprise-archive-state"]')?.value)
+      .toBe('pending-lane-still-mounted')
   })
 
   it('returns Enterprise Script Archive import close actions to the create options shell', async () => {

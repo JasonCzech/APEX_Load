@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 func TestConvertHTTPDevWebScript(t *testing.T) {
@@ -389,6 +390,156 @@ func TestConvertRejectsUnresolvedQueryStringTemplate(t *testing.T) {
 	if !containsDevWebDiagnostic(result, "DevWeb load.WebRequest") {
 		t.Fatalf("diagnostics = %#v, want WebRequest warning", result.Unsupported)
 	}
+	if len(result.Script.Actions) != 1 ||
+		result.Script.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("dynamic request draft = %#v, want one durable blocked review placeholder", result.Script.Actions)
+	}
+	if result.Script.Config.BaseURL != "https://missing-base-url.apexload.invalid" {
+		t.Fatalf("base URL = %q, want unroutable blocked-draft placeholder", result.Script.Config.BaseURL)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertDevWebPreservesQueryObjectOrderAndLastDuplicateValue(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "Ordered Query",
+		Content: `load.action("Search", async function() {
+		  new load.WebRequest({
+		    url: "https://api.example.test/search?existing=0#results",
+		    queryString: {
+		      zeta: "first",
+		      alpha: "second",
+		      zeta: "effective"
+		    }
+		  }).send();
+		});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Target != "https://api.example.test/search?existing=0&zeta=effective&alpha=second#results" {
+		t.Fatalf("target = %q, want source property order with last duplicate value", action.Target)
+	}
+	ordered, ok := action.Metadata["devweb_query_string_ordered"].([]map[string]string)
+	if !ok || len(ordered) != 2 ||
+		ordered[0]["name"] != "zeta" || ordered[0]["value"] != "effective" ||
+		ordered[1]["name"] != "alpha" || ordered[1]["value"] != "second" {
+		t.Fatalf("ordered query metadata = %#v", action.Metadata["devweb_query_string_ordered"])
+	}
+}
+
+func TestConvertDevWebKeepsRuntimeQueryReferencesResolvable(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "Runtime Query",
+		Content: "load.action(\"Search\", async function() {\n" +
+			"  new load.WebRequest({\n" +
+			"    url: \"https://api.example.test/search\",\n" +
+			"    queryString: { q: `${load.params.searchTerm}` }\n" +
+			"  }).send();\n" +
+			"});",
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := result.Script.Actions[0].Target; got !=
+		"https://api.example.test/search?q={{var.searchTerm}}" {
+		t.Fatalf("target = %q, runtime template was encoded into inert URL text", got)
+	}
+}
+
+func TestConvertDevWebObjectBodyPreservesJSONTypesAndOrder(t *testing.T) {
+	const password = "devweb-typed-password"
+	result, err := Convert(ImportRequest{
+		Name: "Typed Body",
+		Content: `load.action("Create", async function() {
+		  new load.WebRequest({
+		    url: "https://api.example.test/items",
+		    method: "POST",
+		    headers: {"Content-Type": "application/json"},
+		    body: {
+		      password: "` + password + `",
+		      count: 2,
+		      enabled: true,
+		      missing: null,
+		      nested: {ratio: 1.5},
+		      values: [1, "two", false]
+		    }
+		  }).send();
+		});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	action := result.Script.Actions[0]
+	want := `{"password":"` + password + `","count":2,"enabled":true,"missing":null,"nested":{"ratio":1.5},"values":[1,"two",false]}`
+	if action.Body != want {
+		t.Fatalf("body = %q, want type-preserving ordered JSON %q", action.Body, want)
+	}
+	if action.Metadata["execution_blocker"] != nil {
+		t.Fatalf("static typed body was unexpectedly blocked: %#v", action.Metadata)
+	}
+}
+
+func TestConvertDevWebDynamicObjectBodyBecomesBlockedDraft(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "Dynamic Body",
+		Content: `load.action("Create", async function() {
+		  new load.WebRequest({
+		    url: "https://api.example.test/items",
+		    method: "POST",
+		    body: {count: computeCount()}
+		  }).send();
+		});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Stats.HTTPRequests != 0 || len(result.Script.Actions) != 1 {
+		t.Fatalf("conversion = %#v / %#v, want one review placeholder", result.Stats, result.Script.Actions)
+	}
+	if result.Script.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("dynamic object draft = %#v, want durable review gate", result.Script.Actions[0])
+	}
+}
+
+func TestConvertDevWebDecodesStaticJavaScriptStringEscapes(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "Escaped Literal",
+		Content: `load.action("Escaped", async function() {
+		  new load.WebRequest({
+		    url: "https://api.example.test/line\x2Ditem/\u0041/\u{42}",
+		    method: "GET"
+		  }).send();
+		});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := result.Script.Actions[0].Target; got != "https://api.example.test/line-item/A/B" {
+		t.Fatalf("target = %q, want decoded JavaScript literal", got)
+	}
+}
+
+func TestConvertDevWebRejectsUnsupportedJavaScriptStringEscape(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "Unsupported Escape",
+		Content: `load.action("Escaped", async function() {
+		  new load.WebRequest({
+		    url: "https://api.example.test/\q",
+		    method: "GET"
+		  }).send();
+		});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Script.Actions) != 1 ||
+		result.Script.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("unsupported literal = %#v, want blocked review draft", result.Script.Actions)
+	}
 }
 
 func TestConvertDevWebReportsUnparseableWebRequestAndCorrelationHelpers(t *testing.T) {
@@ -404,8 +555,8 @@ load.action("Mixed", async function() {
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
-	if len(result.Script.Actions) != 2 {
-		t.Fatalf("converted actions = %d, want 2", len(result.Script.Actions))
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("converted actions = %d, want 4 including dynamic-request, residual-assignment, and correlation review placeholders", len(result.Script.Actions))
 	}
 	if !containsDevWebDiagnostic(result, "DevWeb load.WebRequest") {
 		t.Fatalf("diagnostics = %#v, want WebRequest warning", result.Unsupported)
@@ -431,7 +582,7 @@ load.action("Dynamic", async function() {
 		t.Fatalf("Convert: %v", err)
 	}
 	if len(result.Script.Actions) != 6 {
-		t.Fatalf("converted actions = %d, want 6", len(result.Script.Actions))
+		t.Fatalf("converted actions = %d, want 6 including the durable merged dynamic-request review placeholder", len(result.Script.Actions))
 	}
 	for _, element := range []string{
 		"DevWeb dynamic JavaScript",
@@ -443,6 +594,55 @@ load.action("Dynamic", async function() {
 		if !containsDevWebDiagnostic(result, element) {
 			t.Fatalf("diagnostics = %#v, want %s warning", result.Unsupported, element)
 		}
+	}
+}
+
+func TestConvertDevWebResidualSourceIsDurableDisclosureSafeAndExecutionGated(t *testing.T) {
+	const canary = "devweb-residual-neutral-canary-5a21"
+	content := `
+load.action("Residual", async function() {
+  const signingMaterial = "` + canary + `";
+  new load.WebRequest({ url: "https://api.example.test/health" }).send();
+});`
+	result, err := Convert(ImportRequest{Name: "residual", Content: content})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Script.Actions) < 2 {
+		t.Fatalf("actions = %#v, want request and review placeholders", result.Script.Actions)
+	}
+	for index, action := range result.Script.Actions {
+		if action.Metadata["execution_blocker"] != "import_review_required" {
+			t.Fatalf("actions[%d] blocker = %#v, want import_review_required", index, action.Metadata)
+		}
+		if action.Type == "review_required" &&
+			(strings.Contains(action.Value, canary) ||
+				strings.Contains(action.Value, "signingMaterial")) {
+			t.Fatalf("review placeholder copied raw source: %#v", action)
+		}
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatalf("import metadata = %#v", result.Script.Metadata)
+	}
+	snapshot, ok := result.Script.Metadata.Import.Preserved[devWebGatedSourceMetadataKey].(map[string]string)
+	if !ok {
+		t.Fatalf("gated source = %#v, want exact file snapshot", result.Script.Metadata.Import.Preserved[devWebGatedSourceMetadataKey])
+	}
+	retained := snapshot["residual.js"]
+	if retained != content || !strings.Contains(retained, canary) {
+		t.Fatalf("durable gated source = %q, want exact source", retained)
+	}
+	reviewPayload, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("marshal source review: %v", err)
+	}
+	for _, forbidden := range []string{canary, "signingMaterial"} {
+		if strings.Contains(string(reviewPayload), forbidden) {
+			t.Fatalf("public source review retained %q: %s", forbidden, reviewPayload)
+		}
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
 	}
 }
 
@@ -579,16 +779,15 @@ func TestConvertZipRejectsUnsafeEntries(t *testing.T) {
 	}
 }
 
-// TestConvertGovernsAuthoredCredentialHeaders pins the shared credential
-// projection for DevWeb.
+// TestConvertPreservesAuthoredCredentialHeaders pins the shared credential
+// preservation contract for DevWeb.
 //
 // The converter used to emit authored header values verbatim, so an
 // "Authorization: Bearer <token>" in the source became a literal in the
-// executable draft. The API response boundary masked it to [REDACTED] on the
-// way out, which left an operator with a redaction and nothing to migrate —
-// they had to retype the credential. It is now governed at conversion time and
-// the source value travels in the protected channel.
-func TestConvertGovernsAuthoredCredentialHeaders(t *testing.T) {
+// executable draft. That is intentional: the operator already possesses the
+// source and the destination script must remain runnable without reentry.
+// Source-review surfaces are still irreversibly redacted.
+func TestConvertPreservesAuthoredCredentialHeaders(t *testing.T) {
 	const canary = "devweb-authored-credential-canary-9Z1"
 	result, err := Convert(ImportRequest{
 		Name: "credentials",
@@ -604,38 +803,265 @@ func TestConvertGovernsAuthoredCredentialHeaders(t *testing.T) {
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	for name, value := range action.Headers {
-		if strings.Contains(value, canary) {
-			t.Fatalf("header %q retained the authored credential: %q", name, value)
-		}
+	if got := devWebHeaderValue(action.Headers, "authorization"); got != "Bearer "+canary {
+		t.Fatalf("authorization = %q, want preserved authored value", got)
 	}
-	if !strings.Contains(devWebHeaderValue(action.Headers, "authorization"), "{{secret.") {
-		t.Fatalf("authorization = %q, want a governed secret reference", devWebHeaderValue(action.Headers, "authorization"))
+	if got := devWebHeaderValue(action.Headers, "x-api-key"); got != canary {
+		t.Fatalf("X-Api-Key = %q, want preserved authored value", got)
 	}
 
-	// The public payload must not carry the source value...
+	// The destination conversion result carries the executable source value...
 	payload, err := json.Marshal(result)
 	if err != nil {
 		t.Fatalf("json.Marshal returned error: %v", err)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("public conversion result disclosed the authored credential: %s", payload)
+	if !strings.Contains(string(payload), canary) {
+		t.Fatalf("destination conversion result dropped the authored credential: %s", payload)
 	}
-	// ...but the protected channel must, so the operator can migrate it instead
-	// of retyping it.
+	// ...without creating a protected handoff that requires operator reentry.
 	protected := result.ProtectedRequirements.Take()
-	if len(protected) == 0 {
-		t.Fatal("no protected requirements were produced for authored credentials")
+	if protected != nil || len(result.SecretRequirements) != 0 {
+		t.Fatalf("preserved credentials unexpectedly require rebinding: %#v / %#v", protected, result.SecretRequirements)
 	}
-	found := false
-	for _, requirement := range protected {
-		if strings.Contains(requirement.Value, canary) {
-			found = true
+	if result.SourceReview == nil {
+		t.Fatal("source review is missing")
+	}
+	reviewJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(reviewJSON), canary) {
+		t.Fatalf("source review disclosed the authored credential: %s", reviewJSON)
+	}
+}
+
+func TestConvertPreservesCredentialURLButRedactsItFromSourceReview(t *testing.T) {
+	const (
+		password = "devweb-url-password-canary"
+		token    = "devweb-url-query-canary"
+	)
+	authoredURL := "https://alice:" + password + "@api.example.test/orders?api_key=" + token
+	result, err := Convert(ImportRequest{
+		Name: "credential URL",
+		Content: `load.action(async function () {
+  await new load.WebRequest({
+    url: "` + authoredURL + `",
+    method: "GET",
+  }).send();
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Target != authoredURL {
+		t.Fatalf("destination URL = %#v, want byte-exact %q", result.Script.Actions, authoredURL)
+	}
+	if result.SourceReview == nil {
+		t.Fatal("source review is missing")
+	}
+	reviewJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{password, token, authoredURL} {
+		if strings.Contains(string(reviewJSON), canary) {
+			t.Fatalf("source review disclosed URL credential %q: %s", canary, reviewJSON)
 		}
 	}
-	if !found {
-		t.Fatalf("protected requirements did not carry the source value: %#v", protected)
+}
+
+func TestConvertZipMasksCredentialBoundNeutralCSVColumnOnlyInSourceReview(t *testing.T) {
+	const (
+		credentialCanary = "devweb-neutral-csv-credential-73c1"
+		ordinaryValue    = "devweb-safe-review-label"
+	)
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	writeDevWebZipFile(t, writer, "Neutral/main.js", `load.action("Login", async function () {
+  await new load.WebRequest({
+	    url: "https://api.example.test/login",
+	    method: "POST",
+	    headers: {"Content-Type": "application/json"},
+	    body: {
+	      "password": `+"`${load.params.displayLabel}`"+`,
+	      "display": `+"`${load.params.displayLabel}`"+`,
+	      "kind": "test"
+	    }
+	  }).send();
+	});`)
+	writeDevWebZipFile(t, writer, "Neutral/parameters.yml", `
+parameters:
+- name: displayLabel
+  type: csv
+  fileName: credentials.dat
+  columnName: displayLabel
+  nextRow: sequential
+  nextValue: iteration
+  onEnd: loop
+`)
+	writeDevWebZipFile(
+		t,
+		writer,
+		"Neutral/credentials.dat",
+		"displayLabel,ordinary\n"+credentialCanary+","+ordinaryValue+"\n",
+	)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
+
+	result, err := ConvertZip(archive.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script == nil || len(result.Script.Actions) != 1 ||
+		strings.Count(
+			result.Script.Actions[0].Body,
+			"{{data.credentials.displayLabel}}",
+		) != 2 {
+		t.Fatalf("durable request lost CSV credential binding: %#v", result.Script)
+	}
+	if len(result.Script.DataSources) != 1 ||
+		!strings.Contains(result.Script.DataSources[0].InlineData, credentialCanary) {
+		t.Fatalf("durable inline CSV lost imported credential: %#v", result.Script.DataSources)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved[dsl.ImportPreservedCredentialPolicyKey] !=
+		dsl.ImportPreservedCredentialPolicyPreserve {
+		t.Fatalf("credential preservation policy = %#v", preserved)
+	}
+	credentialNames, err := json.Marshal(
+		preserved[dsl.ImportPreservedCredentialParameterNamesKey],
+	)
+	if err != nil || !strings.Contains(string(credentialNames), "displayLabel") {
+		t.Fatalf("credential parameter provenance = %s, err=%v", credentialNames, err)
+	}
+	projected, err := scriptdisclosure.Project(result.Script)
+	if err != nil {
+		t.Fatalf("project disclosure copy: %v", err)
+	}
+	projectedPayload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatalf("json.Marshal(disclosure copy): %v", err)
+	}
+	if strings.Contains(string(projectedPayload), credentialCanary) ||
+		!strings.Contains(string(projectedPayload), ordinaryValue) {
+		t.Fatalf("disclosure projection did not isolate credential CSV column: %s", projectedPayload)
+	}
+	if !strings.Contains(result.Script.DataSources[0].InlineData, credentialCanary) {
+		t.Fatalf("disclosure projection mutated durable CSV: %#v", result.Script.DataSources)
+	}
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+		t.Fatalf("preserved CSV credential requires operator reentry: %#v", requirements)
+	}
+	reviewPayload, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("json.Marshal(source review): %v", err)
+	}
+	if strings.Contains(string(reviewPayload), credentialCanary) {
+		t.Fatalf("source review disclosed credential-bound neutral CSV cell: %s", reviewPayload)
+	}
+	if !strings.Contains(string(reviewPayload), ordinaryValue) {
+		t.Fatalf("source review discarded nonsensitive CSV cell: %s", reviewPayload)
+	}
+}
+
+func TestConvertPreservesExplicitSecretReferenceWithoutCreatingRequirement(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "existing secret reference",
+		Content: `load.action(async function () {
+  await new load.WebRequest({
+    url: "https://api.example.test/orders",
+    method: "GET",
+    headers: {"Authorization": "Bearer {{secret.EXISTING_TOKEN}}"},
+  }).send();
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := devWebHeaderValue(result.Script.Actions[0].Headers, "authorization"); got != "Bearer {{secret.EXISTING_TOKEN}}" {
+		t.Fatalf("authored secret reference changed: %q", got)
+	}
+	if protected := result.ProtectedRequirements.Take(); protected != nil || len(result.SecretRequirements) != 0 {
+		t.Fatalf("authored secret reference created redundant requirements: %#v / %#v", protected, result.SecretRequirements)
+	}
+}
+
+func TestConvertPreservesStructuredCredentialBytesButBlocksMalformedAndDuplicateJSON(t *testing.T) {
+	tests := []struct {
+		name   string
+		body   string
+		reason string
+	}{
+		{
+			name:   "malformed",
+			body:   `{"password":"devweb-malformed-canary"`,
+			reason: "credential_json_malformed",
+		},
+		{
+			name:   "duplicate key",
+			body:   `{"password":"first-canary","password":"second-canary"}`,
+			reason: "credential_json_duplicate_key",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			quotedBody := strings.ReplaceAll(strings.ReplaceAll(test.body, `\`, `\\`), `"`, `\"`)
+			result, err := Convert(ImportRequest{
+				Name: test.name,
+				Content: `load.action(async function () {
+  await new load.WebRequest({
+    url: "https://api.example.test/login",
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: "` + quotedBody + `",
+  }).send();
+});`,
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			if len(result.Script.Actions) != 1 {
+				t.Fatalf("actions = %#v", result.Script.Actions)
+			}
+			action := result.Script.Actions[0]
+			if action.Body != test.body {
+				t.Fatalf("body = %q, want byte-preserved %q", action.Body, test.body)
+			}
+			if action.Metadata["execution_blocker"] != test.reason {
+				t.Fatalf("malformed/duplicate JSON was not blocked: %#v", action.Metadata)
+			}
+			review, ok := action.Metadata["import_review"].(map[string]any)
+			if !ok || !devWebReviewHasReason(review, test.reason) {
+				t.Fatalf("import review = %#v, want %q", action.Metadata["import_review"], test.reason)
+			}
+			if result.SourceReview == nil {
+				t.Fatal("source review is missing")
+			}
+			reviewJSON, err := json.Marshal(result.SourceReview)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, canary := range []string{"devweb-malformed-canary", "first-canary", "second-canary"} {
+				if strings.Contains(string(reviewJSON), canary) {
+					t.Fatalf("source review disclosed %q from a blocked body: %s", canary, reviewJSON)
+				}
+			}
+		})
+	}
+}
+
+func devWebReviewHasReason(review map[string]any, want string) bool {
+	values, ok := review["reason_codes"].([]string)
+	if !ok {
+		return false
+	}
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // TestConvertPreservesCorrelatedCredentialHeader is the companion invariant: a

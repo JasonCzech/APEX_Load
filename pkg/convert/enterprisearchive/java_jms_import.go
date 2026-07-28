@@ -48,15 +48,16 @@ func orderedJavaSourceActionFiles(projectConfig *ProjectConfig, files map[string
 	ordered := make([]string, 0, len(candidates))
 	seen := map[string]struct{}{}
 	for _, candidate := range candidates {
-		if _, ok := findFile(files, candidate); !ok {
+		resolved, _, ambiguous := findSourceArchiveFile(files, candidate)
+		if resolved == "" || len(ambiguous) > 0 {
 			continue
 		}
-		key := strings.ToLower(filepath.Base(candidate))
+		key := strings.ToLower(normalizeRuntimeArchivePath(resolved))
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		ordered = append(ordered, candidate)
+		ordered = append(ordered, resolved)
 	}
 	sort.SliceStable(ordered, func(i, j int) bool {
 		return javaPhaseOrder(sourceActionPhase(ordered[i])) < javaPhaseOrder(sourceActionPhase(ordered[j]))
@@ -92,8 +93,8 @@ func findTruststoreArtifact(files map[string]string) string {
 func javaSourcesAsParsedActions(javaSources []string, files map[string]string) []*ParsedAction {
 	actions := make([]*ParsedAction, 0, len(javaSources))
 	for _, name := range javaSources {
-		content, ok := findFile(files, name)
-		if !ok {
+		resolved, content, ambiguous := findSourceArchiveFile(files, name)
+		if resolved == "" || len(ambiguous) > 0 {
 			continue
 		}
 		functions := make([]ParsedFunction, 0)
@@ -102,15 +103,15 @@ func javaSourcesAsParsedActions(javaSources []string, files map[string]string) [
 			fnName := "lr." + content[match[2]:match[3]]
 			functions = append(functions, ParsedFunction{
 				Name:       fnName,
-				Filename:   name,
-				Phase:      sourceActionPhase(name),
+				Filename:   resolved,
+				Phase:      sourceActionPhase(resolved),
 				LineNumber: line,
 				RawBlock:   fnName,
 			})
 		}
 		actions = append(actions, &ParsedAction{
-			Filename:  name,
-			Phase:     sourceActionPhase(name),
+			Filename:  resolved,
+			Phase:     sourceActionPhase(resolved),
 			Functions: functions,
 		})
 	}

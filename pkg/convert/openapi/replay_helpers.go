@@ -381,12 +381,21 @@ func xmlForSchema(s schema, res resolver, location string, columns columnRegistr
 }
 
 func writeXMLValue(b *strings.Builder, name string, s schema, columns columnRegistry) {
+	sensitive := schemaCredentialField(name, s)
 	name = xmlElementName(name, s)
 	if len(s.Properties) == 0 && s.Type != "object" {
 		b.WriteString("<" + name + ">")
-		column := sanitizeColumnName(name)
-		columns.add(column, s)
-		b.WriteString(xmlEscape("{{data.openapi." + column + "}}"))
+		if sensitive {
+			value := openAPICredentialReference(name)
+			if authored, ok := authoredSchemaWireValue(s); ok {
+				value = authored
+			}
+			b.WriteString(xmlEscape(value))
+		} else {
+			column := sanitizeColumnName(name)
+			columns.add(column, s)
+			b.WriteString(xmlEscape("{{data.openapi." + column + "}}"))
+		}
 		b.WriteString("</" + name + ">")
 		return
 	}
@@ -395,9 +404,18 @@ func writeXMLValue(b *strings.Builder, name string, s schema, columns columnRegi
 	for _, propName := range sortedSchemaPropertyKeys(s.Properties) {
 		prop := s.Properties[propName]
 		if prop.XML != nil && prop.XML.Attribute {
-			column := sanitizeColumnName(propName)
-			columns.add(column, prop)
-			attrs = append(attrs, xmlElementName(propName, prop)+`="`+xmlEscape("{{data.openapi."+column+"}}")+`"`)
+			value := ""
+			if schemaCredentialField(propName, prop) {
+				value = openAPICredentialReference(propName)
+				if authored, ok := authoredSchemaWireValue(prop); ok {
+					value = authored
+				}
+			} else {
+				column := sanitizeColumnName(propName)
+				columns.add(column, prop)
+				value = "{{data.openapi." + column + "}}"
+			}
+			attrs = append(attrs, xmlElementName(propName, prop)+`="`+xmlEscape(value)+`"`)
 			continue
 		}
 		var child strings.Builder

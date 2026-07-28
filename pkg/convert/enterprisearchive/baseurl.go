@@ -104,9 +104,9 @@ func baseURLHostParameterName(host string) (string, bool) {
 }
 
 // rebuildConcreteBaseURL forms a concrete base URL from a resolved parameter
-// value, preserving the recorded scheme and path. The value may be a bare host,
-// host:port, or a full URL; only its scheme/host are used (the recording's path
-// wins).
+// value, preserving the recorded path. The value may be a bare host, host:port,
+// or a full URL; a full URL contributes its scheme and byte-exact authority
+// (including userinfo), while the recording's path wins.
 func rebuildConcreteBaseURL(scheme, value, rest string) (string, bool) {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -117,7 +117,11 @@ func rebuildConcreteBaseURL(scheme, value, rest string) (string, bool) {
 		if err != nil || parsed.Host == "" {
 			return "", false
 		}
-		candidate := parsed.Scheme + "://" + parsed.Host + rest
+		authority, ok := rawAbsoluteURLAuthority(value)
+		if !ok {
+			return "", false
+		}
+		candidate := parsed.Scheme + "://" + authority + rest
 		if baseURLIsParseable(candidate) {
 			return candidate, true
 		}
@@ -135,6 +139,22 @@ func rebuildConcreteBaseURL(scheme, value, rest string) (string, bool) {
 		return candidate, true
 	}
 	return "", false
+}
+
+func rawAbsoluteURLAuthority(value string) (string, bool) {
+	schemeEnd := strings.Index(value, "://")
+	if schemeEnd <= 0 {
+		return "", false
+	}
+	start := schemeEnd + len("://")
+	end := len(value)
+	if offset := strings.IndexAny(value[start:], "/?#"); offset >= 0 {
+		end = start + offset
+	}
+	if start == end {
+		return "", false
+	}
+	return value[start:end], true
 }
 
 // concreteParameterValueByCanonicalName resolves a parameter value by matching
@@ -231,7 +251,13 @@ func sameOriginRelativeTarget(rawURL, baseURL string) (string, bool) {
 	if !strings.EqualFold(parsed.Scheme, base.Scheme) || !strings.EqualFold(parsed.Host, base.Host) {
 		return "", false
 	}
-	path := parsed.Path
+	// Userinfo is part of the executable URL semantics. Relativizing such a URL
+	// would silently discard it, leaving credentials only in provenance
+	// metadata rather than on the request that is actually replayed.
+	if parsed.User != nil {
+		return "", false
+	}
+	path := parsed.EscapedPath()
 	if parsed.RawQuery != "" {
 		path += "?" + parsed.RawQuery
 	}

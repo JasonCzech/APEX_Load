@@ -173,3 +173,30 @@ func TestValidateJavaVuserVMParametersUsesValueFreeStructuralErrors(t *testing.T
 		t.Fatalf("issues exposed rejected VM parameter value: %s", joined)
 	}
 }
+
+func TestTrustedImportValidationAllowsOnlySensitiveJavaVMArguments(t *testing.T) {
+	script := &Script{
+		Name: "Imported Java Vuser", Version: "1", Protocol: "java_vuser",
+		Config: ScriptConfig{JavaVuser: JavaVuserConfig{
+			AdditionalVMParameters: []string{"-Ddatabase.password=imported-password"},
+		}},
+		Actions: []Action{{
+			Name: "Run", Type: "java_vuser_run", Target: "Actions",
+			Params: map[string]any{"method": "action"},
+		}},
+	}
+	if issues := ValidateScriptIssues(script); len(issues) == 0 ||
+		!strings.Contains(strings.Join(issues, "\n"), "sensitive_property") {
+		t.Fatalf("ordinary validation issues = %v", issues)
+	}
+	if issues := ValidateScriptIssuesWithPreservedImportCredentials(script); len(issues) != 0 {
+		t.Fatalf("trusted import validation issues = %v", issues)
+	}
+
+	script.Config.JavaVuser.AdditionalVMParameters =
+		append(script.Config.JavaVuser.AdditionalVMParameters, "-javaagent:/tmp/agent.jar")
+	if issues := ValidateScriptIssuesWithPreservedImportCredentials(script); len(issues) == 0 ||
+		!strings.Contains(strings.Join(issues, "\n"), "agent_hook") {
+		t.Fatalf("trusted structural validation issues = %v", issues)
+	}
+}

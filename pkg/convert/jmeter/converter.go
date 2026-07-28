@@ -14,7 +14,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type ConvertOptions struct {
@@ -383,11 +385,58 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		allRequirements,
 		variableReview,
 	)
+	if (jmeterPreservedCredentialFinding(allFindings) &&
+		len(allRequirements) == 0) ||
+		jmeterJDBCCredentialSourceRetained(result.Scripts) {
+		// Preserve-mode credentials intentionally remain in the runnable
+		// destination, so there is no protected Requirement.Value list to drive
+		// the historical value-by-value source scrubber. Omit the public source
+		// text instead of risking disclosure through JMeter's sibling
+		// Header.name/Header.value XML shape or entity-encoded values. Newlines
+		// remain so source mappings keep their original line coordinates.
+		reviewContent = "<!-- [JMETER SOURCE OMITTED: IMPORTED CREDENTIALS RETAINED IN DESTINATION] -->" +
+			strings.Repeat("\n", strings.Count(reviewContent, "\n"))
+		variableSourceRedacted = true
+	}
 	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: reviewContent}, sourceMappings)
 	if residualSourceRedacted || variableSourceRedacted {
 		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
 	}
 	return result, nil
+}
+
+func jmeterPreservedCredentialFinding(findings []importreview.Finding) bool {
+	for _, finding := range findings {
+		if strings.TrimSpace(finding.Code) == "import_credential_preserved" {
+			return true
+		}
+	}
+	return false
+}
+
+func jmeterJDBCCredentialSourceRetained(scripts []*dsl.Script) bool {
+	for _, script := range scripts {
+		if script == nil || script.Metadata == nil ||
+			script.Metadata.Import == nil {
+			continue
+		}
+		sources, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedJMeterJDBCSourcesKey].([]map[string]string)
+		for _, source := range sources {
+			if source["password"] != "" ||
+				hasJDBCInlineCredentials(source["db_url"]) {
+				return true
+			}
+			for _, property := range parseJMeterJDBCConnectionProperties(
+				source["connection_properties"],
+			) {
+				if credential.SensitiveName(property.Name) &&
+					property.Value != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string, sourceMappings *[]sourceview.Mapping) {
@@ -429,7 +478,8 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			for _, auth := range auths {
 				if auth.URL == "" && !ctx.defaultAuthSeen {
 					ctx.defaultAuthSeen = true
-					if auth.Config.Type != "" {
+					if auth.Config.Type != "" &&
+						authCapabilityFromJMeterMechanism(auth.Mechanism).Support == httpprotocol.AuthExecutable {
 						script.Config.HTTP.Auth = auth.Config
 					}
 				}
@@ -622,10 +672,17 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			handleJMeterScriptSampler(child, script, result, diagnostics, sourceFileName, sourceMappings)
 			continue
 		case "JDBCDataSource":
-			if cfg, credentialRedacted, ok := parseJMeterJDBCConnection(child.Element); ok {
+			if cfg, credentialRetained, ok := parseJMeterJDBCConnection(child.Element); ok {
 				ctx.databaseConfig = cfg
-				if credentialRedacted {
-					diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(child.Element), "database password was replaced with {{secret.db_password}}; supply it as a governed secret before replay (the cleartext JMX password — whether a separate property or embedded inline in the JDBC URL — is not stored in the imported script)")
+				// Keep the complete authored JDBC source record even when every
+				// property could be projected into the native DSN. Some JDBC
+				// driver properties have no portable database/sql equivalent;
+				// retaining the exact source lets an operator repair the
+				// already-gated adapter without re-importing or re-entering a
+				// password.
+				preserveJMeterJDBCSource(script, child.Element)
+				if credentialRetained {
+					diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(child.Element), "database credentials were retained in the durable destination and will be masked on ordinary reads; review the imported connection before replay")
 				}
 			}
 			continue

@@ -49,6 +49,51 @@ func TestParseJavaVersionRejectsUnrecognizedOutputWithoutEcho(t *testing.T) {
 	}
 }
 
+func TestParseJavaVMFamily(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   JavaVMFamily
+	}{
+		{
+			name: "Eclipse OpenJ9",
+			output: "openjdk version \"17.0.13\"\n" +
+				"Eclipse OpenJ9 VM (build openj9-0.48.0, JRE 17 Linux amd64-64-Bit Compressed References)",
+			want: JavaVMOpenJ9,
+		},
+		{
+			name: "IBM J9",
+			output: "java version \"1.8.0_431\"\n" +
+				"IBM J9 VM (build 2.9, JRE 1.8.0 Linux amd64-64-Bit)",
+			want: JavaVMOpenJ9,
+		},
+		{
+			name: "OpenJDK HotSpot",
+			output: "openjdk version \"21.0.7\"\n" +
+				"OpenJDK 64-Bit Server VM (build 21.0.7+6, mixed mode)",
+			want: JavaVMHotSpot,
+		},
+		{
+			name: "Oracle HotSpot",
+			output: "java version \"1.8.0_431\"\n" +
+				"Java HotSpot(TM) 64-Bit Server VM (build 25.431-b10, mixed mode)",
+			want: JavaVMHotSpot,
+		},
+		{
+			name:   "unrecognized",
+			output: "openjdk version \"21.0.7\"\nExample Experimental VM",
+			want:   JavaVMUnknown,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ParseJavaVMFamily(test.output); got != test.want {
+				t.Fatalf("ParseJavaVMFamily() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestResolveSpecifiedJDK(t *testing.T) {
 	requireShellFixture(t)
 	home := makeFakeJDK(t, "jdk-21", "21.0.7", "java")
@@ -68,7 +113,8 @@ func TestResolveSpecifiedJDK(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if jdk.Home != canonicalHome || jdk.Major != 21 || jdk.Version != "21.0.7" || jdk.Source != JDKSourceSpecifiedHome {
+	if jdk.Home != canonicalHome || jdk.Major != 21 || jdk.Version != "21.0.7" ||
+		jdk.VMFamily != JavaVMHotSpot || jdk.Source != JDKSourceSpecifiedHome {
 		t.Fatalf("resolved JDK = %#v, want canonical JDK 21 specified home", jdk)
 	}
 	if filepath.Base(jdk.JavaBin) != "java" {
@@ -390,7 +436,13 @@ func TestIsDirectJavaCommand(t *testing.T) {
 
 func makeFakeJDK(t *testing.T, name, version, launcher string) string {
 	t.Helper()
-	return makeFakeJavaScript(t, name, "echo 'openjdk version \""+version+"\"' >&2", launcher)
+	return makeFakeJavaScript(
+		t,
+		name,
+		"echo 'openjdk version \""+version+"\"' >&2\n"+
+			"echo 'OpenJDK 64-Bit Server VM (build "+version+", mixed mode)' >&2",
+		launcher,
+	)
 }
 
 func makeFakeJavaScript(t *testing.T, name, body string, launcherName ...string) string {

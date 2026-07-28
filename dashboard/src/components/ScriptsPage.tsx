@@ -594,6 +594,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const handleImported = useCallback((result: ImportedSaveResult) => {
     void refresh()
     void refreshAuthoringSessions()
+    if (result.stayInImportReview) return
     if (result.scripts[0]) {
       handleSavedScript(result.scripts[0], buildImportedSaveNotice(result))
       return

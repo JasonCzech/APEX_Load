@@ -55,7 +55,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	persistProtocolCompatReport(result.Script, "devweb", protocolCompat)
 	preflight := buildAndAttachImportPreflight(result.Script, "devweb", issues, result.Warnings)
 
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -67,7 +67,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 		ProtocolCompat:      protocolCompat,
 		Parameterization:    buildImportParameterization(result.Script, nil),
 		Preflight:           preflight,
-	}))
+	})
 }
 
 func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +94,7 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	preflight := buildAndAttachImportPreflight(result.Script, "k6", issues, result.Warnings)
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -109,7 +109,7 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 			"import_mode":    "constrained_http_subset",
 			"execution_mode": "apexload_http",
 		},
-	}))
+	})
 }
 
 func (s *Server) handleExportK6(w http.ResponseWriter, r *http.Request) {

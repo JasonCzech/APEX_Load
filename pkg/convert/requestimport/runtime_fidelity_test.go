@@ -1,11 +1,13 @@
 package requestimport
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -210,6 +212,100 @@ func TestRuntimeHeaderFidelityDoesNotDiscloseAuthoredCanaryName(t *testing.T) {
 	}
 	if len(action.HeaderList) != 0 || headerFidelityOccurrenceName(t, action) != "<invalid-header>" {
 		t.Fatalf("action = %#v", action)
+	}
+}
+
+func TestFinalizeActionPreserveModeRetainsInvalidHeaderBytesInInertEnvelope(t *testing.T) {
+	t.Parallel()
+	const (
+		headerName  = "Authorization"
+		headerValue = "Bearer preserve-header-canary-8f31\r\nX-Injected: yes"
+	)
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:    "preserved-invalid-header",
+		Name:   "Preserved invalid header",
+		Method: "GET",
+		Target: "/",
+		Headers: HeaderList{{
+			Name:  headerName,
+			Value: headerValue,
+			Source: SourceRef{
+				Format:  "fixture",
+				Path:    "collection.json",
+				Pointer: "/requests/0/headers/0",
+			},
+		}},
+	}, FinalizeOptions{
+		ActionPath: "actions[0]",
+		Credentials: &CredentialProjectionOptions{
+			Mode: credentialpolicy.Preserve,
+		},
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if len(action.HeaderList) != 0 || len(action.Headers) != 0 {
+		t.Fatalf("invalid header remained transport-active: list %#v map %#v", action.HeaderList, action.Headers)
+	}
+	if action.Metadata["execution_blocker"] != importReviewRequiredBlocker ||
+		report.Disposition != BlockedDraft ||
+		len(report.Requirements) != 0 {
+		t.Fatalf("action/report = %#v / %#v", action, report)
+	}
+	nameBytes, valueBytes := preservedHeaderOccurrenceBytes(t, action, 0)
+	if string(nameBytes) != headerName || string(valueBytes) != headerValue {
+		t.Fatalf("preserved bytes = %q: %q, want %q: %q", nameBytes, valueBytes, headerName, headerValue)
+	}
+	foundFidelityMapping := false
+	for _, mapping := range report.SourceMappings {
+		foundFidelityMapping = foundFidelityMapping || mapping.Target ==
+			"actions[0].metadata.import_header_fidelity.omitted_occurrences[0]"
+	}
+	if !foundFidelityMapping {
+		t.Fatalf("source mappings = %#v", report.SourceMappings)
+	}
+	script := validBaseScript()
+	script.Actions = []dsl.Action{action}
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("blocked inert draft validation issues = %v", issues)
+	}
+	encodedReport, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encodedReport), "preserve-header-canary-8f31") {
+		t.Fatalf("public report disclosed preserved header: %s", encodedReport)
+	}
+}
+
+func TestFinalizeScriptPreservePolicyRetainsInvalidDefaultHeaderBytes(t *testing.T) {
+	t.Parallel()
+	const (
+		headerName  = "Authorization"
+		headerValue = "Bearer default-header-canary-a34d\r\nX-Injected: yes"
+	)
+	script := validBaseScript()
+	script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "fixture"}}
+	script.Config.HTTP.DefaultHeaders = map[string]string{headerName: headerValue}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "request", Method: "GET", Target: "/",
+	}}
+
+	result, err := FinalizeScript(script, nil, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript: %v", err)
+	}
+	if len(result.Script.Config.HTTP.DefaultHeaders) != 0 {
+		t.Fatalf("invalid default remained transport-active: %#v", result.Script.Config.HTTP.DefaultHeaders)
+	}
+	action := result.Script.Actions[0]
+	nameBytes, valueBytes := preservedHeaderOccurrenceBytes(t, action, 0)
+	if string(nameBytes) != headerName || string(valueBytes) != headerValue {
+		t.Fatalf("preserved default bytes = %q: %q, want %q: %q", nameBytes, valueBytes, headerName, headerValue)
+	}
+	if result.Disposition != BlockedDraft || result.Readiness.ReplayReady ||
+		len(result.ValidationIssues) != 0 {
+		t.Fatalf("finalized result = %#v", result)
 	}
 }
 
@@ -549,6 +645,32 @@ func headerFidelityOccurrenceName(t *testing.T, action dsl.Action) string {
 	}
 	name, _ := occurrences[0]["name"].(string)
 	return name
+}
+
+func preservedHeaderOccurrenceBytes(t *testing.T, action dsl.Action, index int) ([]byte, []byte) {
+	t.Helper()
+	marker := headerFidelityMarker(t, action)
+	occurrences := metadataObjectValues(marker["omitted_occurrences"])
+	if index < 0 || index >= len(occurrences) {
+		t.Fatalf("omitted occurrences = %#v, want index %d", marker["omitted_occurrences"], index)
+	}
+	name, ok := occurrences[index][dsl.ImportHeaderFidelityPreservedNameBase64Key].(string)
+	if !ok {
+		t.Fatalf("missing preserved name bytes in %#v", occurrences[index])
+	}
+	value, ok := occurrences[index][dsl.ImportHeaderFidelityPreservedValueBase64Key].(string)
+	if !ok {
+		t.Fatalf("missing preserved value bytes in %#v", occurrences[index])
+	}
+	nameBytes, err := base64.StdEncoding.DecodeString(name)
+	if err != nil {
+		t.Fatalf("decode preserved name: %v", err)
+	}
+	valueBytes, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		t.Fatalf("decode preserved value: %v", err)
+	}
+	return nameBytes, valueBytes
 }
 
 func sliceContains(values []string, want string) bool {

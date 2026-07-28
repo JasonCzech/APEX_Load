@@ -2,10 +2,8 @@ package requestimport
 
 import (
 	"mime"
-	"net/url"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
@@ -17,174 +15,60 @@ import (
 )
 
 // sanitizeCredentialSourceWire validates transient, importer-proven source
-// literals before a secret reference can hide an invalid wire shape. Every
-// omission produces an inert, structurally valid blocked draft and no binding
-// requirement for the omitted value.
+// literals before a secret reference can hide an invalid wire shape. Invalid
+// values remain byte-exact in a structurally valid blocked draft so an
+// importing operator never has to re-enter a credential merely to review or
+// repair the request.
 func sanitizeCredentialSourceWire(
 	request EffectiveRequest,
 	projected EffectiveRequest,
 	options credentialpolicy.Options,
-) (EffectiveRequest, []importreview.Finding) {
+) (EffectiveRequest, []runtimeMultipartOmission, []importreview.Finding) {
 	var findings []importreview.Finding
 
 	if !validSourceURLForProjection(projected.Target, options) {
-		projected.Target = "/"
+		if options.Mode != credentialpolicy.Preserve {
+			projected.Target = "/"
+		}
+		detail := "the source URL contained bytes that cannot be represented safely on the HTTP wire and was replaced by an inert target"
+		if options.Mode == credentialpolicy.Preserve {
+			detail = "the source URL cannot be represented safely on the HTTP wire; its exact imported value was retained in a blocked draft"
+		}
 		findings = append(findings, sourceWireReviewFinding(
 			request,
 			request.Source,
 			"invalid_url_wire_value",
 			"HTTP target",
-			"the source URL contained bytes that cannot be represented safely on the HTTP wire and was replaced by an inert target",
+			detail,
 		))
 	}
 	if strings.TrimSpace(projected.BaseURL) != "" &&
 		!validSourceURLForProjection(projected.BaseURL, options) {
-		projected.BaseURL = ""
+		if options.Mode != credentialpolicy.Preserve {
+			projected.BaseURL = ""
+		}
+		detail := "the source base URL contained bytes that cannot be represented safely on the HTTP wire and was omitted"
+		if options.Mode == credentialpolicy.Preserve {
+			detail = "the source base URL cannot be represented safely on the HTTP wire; its exact imported value was retained in a blocked draft"
+		}
 		findings = append(findings, sourceWireReviewFinding(
 			request,
 			chooseRequestSource(projected.BaseURLSource, request.Source),
 			"invalid_url_wire_value",
 			"HTTP base URL",
-			"the source base URL contained bytes that cannot be represented safely on the HTTP wire and was omitted",
+			detail,
 		))
 	}
 
 	projected, authFindings := sanitizeCredentialSourceAuth(request, projected, options)
 	findings = append(findings, authFindings...)
-	multipartFindings := sanitizeCredentialSourceMultipart(request, &projected.Body, options)
+	multipartOmissions, multipartFindings := sanitizeCredentialSourceMultipart(request, &projected.Body, options)
 	findings = append(findings, multipartFindings...)
-	return projected, importreview.NormalizeFindings(findings)
+	return projected, multipartOmissions, importreview.NormalizeFindings(findings)
 }
 
 func validSourceURLForProjection(raw string, options credentialpolicy.Options) bool {
-	materialized, _ := credentialpolicy.MaterializeSourceVariables(raw, options)
-	if !utf8.ValidString(materialized) {
-		return false
-	}
-	parseable, ok := replaceSourceURLTemplates(materialized)
-	if !ok {
-		return false
-	}
-	if strings.IndexFunc(parseable, func(r rune) bool {
-		return r < ' ' || r == 0x7f || r == ' '
-	}) >= 0 {
-		return false
-	}
-	parsed, err := url.Parse(parseable)
-	if err != nil {
-		return false
-	}
-	if parsed.Scheme == "" {
-		// RFC 3986 network-path references still require an authority. Ordinary
-		// relative request targets are valid and are resolved against BaseURL.
-		return !strings.HasPrefix(parseable, "//") || parsed.Host != ""
-	}
-	// Go accepts opaque forms such as https:user@example.test. net/http cannot
-	// replay those as hierarchical HTTP requests, and the credential projector
-	// cannot identify their userinfo safely.
-	if parsed.Opaque != "" || parsed.Host == "" {
-		return false
-	}
-	if sourceURLSchemeIsDynamic(materialized) {
-		return true
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https":
-		return true
-	default:
-		return false
-	}
-}
-
-func sourceURLSchemeIsDynamic(value string) bool {
-	colon := strings.IndexByte(value, ':')
-	if colon < 0 {
-		return false
-	}
-	firstDelimiter := len(value)
-	if delimiter := strings.IndexAny(value, "/?#"); delimiter >= 0 {
-		firstDelimiter = delimiter
-	}
-	return colon < firstDelimiter && strings.Contains(value[:colon], "{{")
-}
-
-func replaceSourceURLTemplates(value string) (string, bool) {
-	var output strings.Builder
-	for position := 0; position < len(value); {
-		start := strings.Index(value[position:], "{{")
-		if start < 0 {
-			remainder := value[position:]
-			if strings.Contains(remainder, "}}") {
-				return "", false
-			}
-			output.WriteString(remainder)
-			break
-		}
-		start += position
-		literal := value[position:start]
-		if strings.Contains(literal, "}}") {
-			return "", false
-		}
-		output.WriteString(literal)
-		end := strings.Index(value[start+2:], "}}")
-		if end < 0 {
-			return "", false
-		}
-		end += start + 2
-		expression := value[start+2 : end]
-		if strings.TrimSpace(expression) == "" ||
-			strings.Contains(expression, "{{") ||
-			strings.IndexFunc(expression, func(r rune) bool {
-				return r < ' ' || r == 0x7f
-			}) >= 0 {
-			return "", false
-		}
-		replacement := "apex"
-		if sourceURLTemplateIsPort(value, start) {
-			replacement = "443"
-		}
-		output.WriteString(replacement)
-		position = end + 2
-	}
-	return output.String(), true
-}
-
-func sourceURLTemplateIsPort(value string, start int) bool {
-	authorityStart := -1
-	if scheme := strings.Index(value, "://"); scheme >= 0 {
-		authorityStart = scheme + 3
-	} else if strings.HasPrefix(value, "//") {
-		authorityStart = 2
-	}
-	if authorityStart < 0 || start < authorityStart {
-		return false
-	}
-	authorityEnd := len(value)
-	if end := strings.IndexAny(value[authorityStart:], "/?#"); end >= 0 {
-		authorityEnd = authorityStart + end
-	}
-	if start >= authorityEnd {
-		return false
-	}
-	if at := strings.LastIndex(value[authorityStart:authorityEnd], "@"); at >= 0 &&
-		start < authorityStart+at {
-		return false
-	}
-	colon := strings.LastIndex(value[authorityStart:start], ":")
-	if colon < 0 {
-		return false
-	}
-	colon += authorityStart
-	if bracket := strings.LastIndex(value[authorityStart:start], "]"); bracket >= 0 &&
-		authorityStart+bracket > colon {
-		return false
-	}
-	for _, current := range value[colon+1 : start] {
-		if current < '0' || current > '9' {
-			return false
-		}
-	}
-	return true
+	return credentialpolicy.ValidRawURL(raw, options)
 }
 
 func sanitizeCredentialSourceAuth(
@@ -237,20 +121,26 @@ func sanitizeCredentialSourceAuth(
 	}
 
 	source := chooseRequestSource(auth.Source, request.Source)
-	projected.Auth = Auth{
-		Mode:       AuthNone,
-		SourceMode: auth.SourceMode,
-		Source:     source,
+	if options.Mode != credentialpolicy.Preserve {
+		projected.Auth = Auth{
+			Mode:       AuthNone,
+			SourceMode: auth.SourceMode,
+			Source:     source,
+		}
+		if projected.AuthConfig != nil {
+			projected.AuthConfig = &dsl.AuthConfig{Type: httpprotocol.AuthTypeNone}
+		}
 	}
-	if projected.AuthConfig != nil {
-		projected.AuthConfig = &dsl.AuthConfig{Type: httpprotocol.AuthTypeNone}
+	detail := "the source authentication value cannot be represented safely on the HTTP wire and was replaced by explicit no-auth"
+	if options.Mode == credentialpolicy.Preserve {
+		detail = "the source authentication value cannot be represented safely on the HTTP wire; its exact imported fields were retained in a blocked draft"
 	}
 	return projected, []importreview.Finding{sourceWireReviewFinding(
 		request,
 		source,
 		"invalid_auth_wire_value",
 		"HTTP authentication",
-		"the source authentication value cannot be represented safely on the HTTP wire and was replaced by explicit no-auth",
+		detail,
 	)}
 }
 
@@ -258,17 +148,18 @@ func sanitizeCredentialSourceMultipart(
 	request EffectiveRequest,
 	body *Body,
 	options credentialpolicy.Options,
-) []importreview.Finding {
+) ([]runtimeMultipartOmission, []importreview.Finding) {
 	if body == nil || body.Kind != BodyMultipart || body.Multipart == nil {
-		return nil
+		return nil, nil
 	}
+	var omissions []runtimeMultipartOmission
 	var findings []importreview.Finding
 	for partIndex := range body.Multipart.Parts {
 		part := &body.Multipart.Parts[partIndex]
 		headers := make(HeaderList, 0, len(part.Headers))
 		var dispositionNames []string
 		unsafeDisposition := false
-		for _, header := range part.Headers {
+		for headerIndex, header := range part.Headers {
 			source := chooseRequestSource(header.Source, chooseRequestSource(part.Source, request.Source))
 			materialized := materializeCredentialSourceValue(header.Value, options)
 			reason := ""
@@ -293,6 +184,21 @@ func sanitizeCredentialSourceMultipart(
 			if strings.EqualFold(strings.TrimSpace(header.Name), "Content-Disposition") {
 				unsafeDisposition = true
 			}
+			omissionField := "header"
+			if strings.EqualFold(strings.TrimSpace(header.Name), "Content-Disposition") {
+				omissionField = "content_disposition"
+			}
+			omissions = append(omissions, runtimeMultipartOmission{
+				PartIndex:      partIndex,
+				HeaderIndex:    headerIndex,
+				Field:          omissionField,
+				ReasonCode:     reason,
+				Source:         source,
+				sourceName:     header.Name,
+				sourceValue:    header.Value,
+				hasSourceName:  options.Mode == credentialpolicy.Preserve,
+				hasSourceValue: options.Mode == credentialpolicy.Preserve,
+			})
 			findings = append(findings, sourceWireReviewFinding(
 				request,
 				source,
@@ -370,6 +276,15 @@ func sanitizeCredentialSourceMultipart(
 		if part.ContentType != "" {
 			materialized := materializeCredentialSourceValue(part.ContentType, options)
 			if !httpguts.ValidHeaderFieldValue(materialized) {
+				omissions = append(omissions, runtimeMultipartOmission{
+					PartIndex:      partIndex,
+					HeaderIndex:    -1,
+					Field:          "content_type",
+					ReasonCode:     "invalid_multipart_header_value",
+					Source:         chooseRequestSource(part.Source, request.Source),
+					sourceValue:    part.ContentType,
+					hasSourceValue: options.Mode == credentialpolicy.Preserve,
+				})
 				part.ContentType = ""
 				findings = append(findings, sourceWireReviewFinding(
 					request,
@@ -388,7 +303,7 @@ func sanitizeCredentialSourceMultipart(
 			part.Name = "part_" + strconv.Itoa(partIndex+1)
 		}
 	}
-	return importreview.NormalizeFindings(findings)
+	return omissions, importreview.NormalizeFindings(findings)
 }
 
 func sourceMultipartSensitiveName(name string, options credentialpolicy.Options) bool {

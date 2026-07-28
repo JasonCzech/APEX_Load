@@ -13,8 +13,17 @@ func validateSAPGUIScriptIssues(script *Script) []string {
 	if cfg.SessionBehavior != "" && !isAllowedValue(cfg.SessionBehavior, "attach", "new_session", "reuse") {
 		issues = append(issues, "config.sapgui.session_behavior must be attach, new_session, or reuse")
 	}
-	if cfg.Password != "" && !strings.HasPrefix(cfg.Password, "{{secret.") {
+	if cfg.Password != "" && !strings.HasPrefix(cfg.Password, "{{secret.") &&
+		!sapGUIImportedCredentialPreservationEnabled(script) {
 		issues = append(issues, "config.sapgui.password must be a secret template")
 	}
 	return issues
+}
+
+func sapGUIImportedCredentialPreservationEnabled(script *Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return false
+	}
+	policy, _ := script.Metadata.Import.Preserved[ImportPreservedCredentialPolicyKey].(string)
+	return strings.EqualFold(strings.TrimSpace(policy), ImportPreservedCredentialPolicyPreserve)
 }

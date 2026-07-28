@@ -1373,6 +1373,92 @@ func TestCompileManagedTestGroupLockedAppliesEphemeralTargetOverridesWithoutMuta
 	}
 }
 
+func TestCompileManagedTestGroupRejectsRuntimeRedirectOfRetainedImportCredentials(t *testing.T) {
+	const retained = "runtime-override-retained-password"
+	tests := []struct {
+		name  string
+		root  *RuntimeSettingsOverride
+		group *RuntimeSettingsOverride
+	}{
+		{
+			name: "root base URL",
+			root: &RuntimeSettingsOverride{BaseURL: "https://redirect.example.test"},
+		},
+		{
+			name:  "group base URL",
+			group: &RuntimeSettingsOverride{BaseURL: "https://redirect.example.test"},
+		},
+		{
+			name: "root proxy",
+			root: &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{
+				ProxyMode: "custom",
+				Proxy:     dsl.ProxyConfig{URL: "http://redirect-proxy.example.test:8080"},
+			}},
+		},
+		{
+			name: "group proxy",
+			group: &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{
+				ProxyMode: "custom",
+				Proxy:     dsl.ProxyConfig{URL: "http://redirect-proxy.example.test:8080"},
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := NewTestRunner(1, NewHub(), nil)
+			script := &dsl.Script{
+				ID:       "retained-runtime-override-" + strings.ReplaceAll(test.name, " ", "-"),
+				Name:     "Retained runtime override",
+				Version:  "1",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL: "https://origin.example.test",
+				},
+				Actions: []dsl.Action{{
+					Name:    "request",
+					Type:    "GET",
+					Method:  "GET",
+					Target:  "/private",
+					Headers: map[string]string{"Authorization": "Bearer " + retained},
+				}},
+			}
+			if _, _, err := runner.CreateImportedScriptDurableReportingReplay(script, "postman"); err != nil {
+				t.Fatalf("create retained import: %v", err)
+			}
+			_, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+				Name:            "group",
+				ScriptID:        script.ID,
+				VUsers:          1,
+				RuntimeSettings: test.group,
+			}, test.root, nil)
+			if err == nil ||
+				!strings.Contains(err.Error(), "runtime override is unsafe for retained imported credentials") {
+				t.Fatalf("runtime redirect error = %v", err)
+			}
+		})
+	}
+
+	runner := NewTestRunner(1, NewHub(), nil)
+	safe := &dsl.Script{
+		ID: "retained-runtime-safe", Name: "Retained safe override", Version: "1", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://origin.example.test"},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "GET", Method: "GET", Target: "/private",
+			Headers: map[string]string{"Authorization": "Bearer " + retained},
+		}},
+	}
+	if _, _, err := runner.CreateImportedScriptDurableReportingReplay(safe, "postman"); err != nil {
+		t.Fatalf("create safe retained import: %v", err)
+	}
+	if _, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		Name: "group", ScriptID: safe.ID, VUsers: 1,
+	}, &RuntimeSettingsOverride{
+		Pacing: &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 10},
+	}, nil); err != nil {
+		t.Fatalf("safe pacing override was rejected: %v", err)
+	}
+}
+
 func TestCompileManagedTestGroupLockedAppliesGroupRuntimeOverridesWithPrecedence(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)

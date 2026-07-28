@@ -21,7 +21,7 @@ func TestImportBatchSchemaMigratesLegacyTableInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open legacy database: %v", err)
 	}
-	_, err = legacy.Exec(`CREATE TABLE import_batches (
+	_, err = legacy.Exec(`CREATE TABLE bruno_native_import_batches (
 		id TEXT PRIMARY KEY,
 		project_id TEXT NOT NULL,
 		idempotency_key TEXT NOT NULL,
@@ -44,7 +44,7 @@ func TestImportBatchSchemaMigratesLegacyTableInPlace(t *testing.T) {
 		t.Fatalf("migrate legacy store: %v", err)
 	}
 	defer store.Close()
-	_, err = store.db.Exec(`INSERT INTO import_batches (
+	_, err = store.db.Exec(`INSERT INTO bruno_native_import_batches (
 		id, project_id, idempotency_key, request_sha256,
 		raw_artifact_id, sanitized_artifact_id,
 		candidate_ids_json, script_ids_json, created_by, created_at
@@ -58,7 +58,7 @@ func TestImportBatchSchemaMigratesLegacyTableInPlace(t *testing.T) {
 	var receiptVersion int
 	if err := store.db.QueryRow(`SELECT source_profile, receipt_version,
 		request_digest_profile, scripts_json
-		FROM import_batches WHERE id = ?`, "legacy-row").Scan(
+		FROM bruno_native_import_batches WHERE id = ?`, "legacy-row").Scan(
 		&profile, &receiptVersion, &digestProfile, &scriptsJSON,
 	); err != nil {
 		t.Fatalf("read migrated defaults: %v", err)
@@ -220,13 +220,13 @@ func TestGenericImportBatchReadsLegacySchemaDefaults(t *testing.T) {
 	}
 
 	// Simulate an older controller that omits every generic receipt column.
-	_, err = store.db.Exec(`INSERT INTO import_batches (
+	_, err = store.db.Exec(`INSERT INTO bruno_native_import_batches (
 		id, project_id, idempotency_key, request_sha256, raw_artifact_id, sanitized_artifact_id,
 		candidate_ids_json, script_ids_json, scripts_json, created_by, created_at
 	)
 	SELECT ?, project_id, ?, request_sha256, raw_artifact_id, sanitized_artifact_id,
 		candidate_ids_json, script_ids_json, '[]', created_by, created_at
-	FROM import_batches WHERE id = ?`,
+	FROM bruno_native_import_batches WHERE id = ?`,
 		"legacy-default-batch", "legacy-default-session", created.Batch.ID)
 	if err != nil {
 		t.Fatalf("insert legacy-shaped receipt: %v", err)
@@ -321,7 +321,7 @@ func TestConcurrentGenericImportBatchCommitHasOneDurableWinner(t *testing.T) {
 
 	var receiptCount, scriptCount int
 	if err := first.db.QueryRow(
-		`SELECT COUNT(*) FROM import_batches WHERE project_id = ? AND idempotency_key = ?`,
+		`SELECT COUNT(*) FROM bruno_native_import_batches WHERE project_id = ? AND idempotency_key = ?`,
 		"project-bruno", "concurrent-generic-session",
 	).Scan(&receiptCount); err != nil {
 		t.Fatalf("count receipts: %v", err)
@@ -393,7 +393,7 @@ func TestGenericImportBatchRejectsMismatchedReceiptAndArtifactScope(t *testing.T
 				t.Fatal("CommitImportBatch unexpectedly accepted mismatched scope")
 			}
 			var receipts, scripts int
-			if err := store.db.QueryRow(`SELECT COUNT(*) FROM import_batches`).Scan(&receipts); err != nil {
+			if err := store.db.QueryRow(`SELECT COUNT(*) FROM bruno_native_import_batches`).Scan(&receipts); err != nil {
 				t.Fatal(err)
 			}
 			if err := store.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&scripts); err != nil {
@@ -554,9 +554,9 @@ func TestGenericImportBatchRejectsUnmanagedCredentialsBeforePersistence(t *testi
 			}
 
 			for _, table := range []string{
-				"import_batches",
+				"bruno_native_import_batches",
 				"scripts",
-				"import_source_artifacts",
+				"bruno_source_artifacts",
 			} {
 				var count int
 				if err := store.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
@@ -1158,9 +1158,9 @@ func TestGenericImportBatchAllowsOrdinaryParameterAndDataColumns(t *testing.T) {
 func assertGenericImportBatchTablesEmpty(t *testing.T, store *SQLiteStore) {
 	t.Helper()
 	for _, table := range []string{
-		"import_batches",
+		"bruno_native_import_batches",
 		"scripts",
-		"import_source_artifacts",
+		"bruno_source_artifacts",
 	} {
 		var count int
 		if err := store.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
@@ -1181,7 +1181,7 @@ func TestGenericImportBatchRejectsCorruptReceiptCardinality(t *testing.T) {
 	if _, err := store.CommitImportBatch(commit); err != nil {
 		t.Fatalf("CommitImportBatch: %v", err)
 	}
-	if _, err := store.db.Exec(`UPDATE import_batches
+	if _, err := store.db.Exec(`UPDATE bruno_native_import_batches
 		SET candidate_ids_json = '["candidate-1"]'
 		WHERE project_id = ? AND idempotency_key = ?`,
 		commit.Receipt.ProjectID, commit.Receipt.IdempotencyKey); err != nil {

@@ -39,6 +39,13 @@ function setInput(input: HTMLInputElement, value: string) {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function selectProjectSecret(container: HTMLElement, index = 0) {
+  const choices = Array.from(container.querySelectorAll<HTMLInputElement>(
+    '.secret-binding-review-choice input[id$="-project-secret"]',
+  ))
+  choices[index]?.click()
+}
+
 function inspectionFixture() {
   return {
     import_session_id: 'session-1',
@@ -109,6 +116,7 @@ function inspectionFixture() {
         replacement: '{{secret.PASSWORD}}',
         context: 'http.auth.password',
         source_value_available: true,
+        destination_value_preserved: true,
       }],
       security_findings: [{
         severity: 'warning',
@@ -327,6 +335,261 @@ describe('BrunoImport', () => {
     vi.clearAllMocks()
   })
 
+  it('expires and disables a protected Bruno commit while credential review is visible', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    try {
+      const inspection = inspectionFixture()
+      inspection.expires_at = '2030-01-01T00:00:01Z'
+      apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+      const file = new File(['meta { name: Expiring credential }'], 'collection.bru', { type: 'text/plain' })
+      await act(async () => {
+        root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+        await Promise.resolve()
+      })
+      const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect source'))
+      await act(async () => {
+        inspectButton?.click()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Import Bruno collection'))
+      expect(container.textContent).toContain('Bruno import session available until')
+      expect(commitButton?.disabled).toBe(false)
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_001)
+        await Promise.resolve()
+      })
+      expect(container.textContent).toContain('This Bruno import session has expired')
+      expect(commitButton?.disabled).toBe(true)
+      expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows and enforces protected Bruno expiry even when no credentials require review', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2030-01-01T00:00:00Z'))
+    try {
+      const inspection = inspectionFixture()
+      inspection.expires_at = '2030-01-01T00:00:01Z'
+      inspection.result.secret_requirements = []
+      apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+      const file = new File(['meta { name: Expiring import }'], 'collection.bru', { type: 'text/plain' })
+      await act(async () => {
+        root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+        await Promise.resolve()
+      })
+      const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Inspect source'))
+      await act(async () => {
+        inspectButton?.click()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(container.querySelector('.secret-binding-review')).toBeNull()
+      const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Import Bruno collection'))
+      expect(commitButton?.disabled).toBe(false)
+      await act(async () => {
+        vi.advanceTimersByTime(1_001)
+        await Promise.resolve()
+      })
+      expect(container.textContent).toContain('This Bruno import session has expired')
+      expect(commitButton?.disabled).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('commits an untouched credential review without bindings so the imported runtime value remains usable', async () => {
+    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
+      script_id: 'script-1',
+      required: [],
+      configured: [],
+      missing: [],
+    })
+    const file = new File(['meta { name: Preserved password }\nget { url: https://example.test }\n'], 'collection.bru', { type: 'text/plain' })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
+      .toBe('Preserved in script')
+    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Import Bruno collection'))
+    expect(commitButton?.textContent).not.toContain('to configure')
+    await act(async () => {
+      commitButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      import_session_id: 'session-1',
+      mode: 'create',
+      migrate_secrets: false,
+      secret_bindings: {},
+    }))
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledWith('script-1')
+    expect(container.textContent).toContain('Canonical source active')
+    expect(container.textContent).not.toContain('project secret still needs configuration')
+  })
+
+  it('saves a native request with its imported credential when migration and binding stay unselected', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    const inspection = nativeInspectionFixture()
+    const candidate = inspection.result.scripts[0]
+    inspection.result.scripts = [candidate]
+    inspection.result.fidelity.executable_items = 1
+    ;(candidate as typeof candidate & { secret_requirements: unknown[] }).secret_requirements = [{
+      id: 'native-password',
+      path: 'CTA/first.yml:http.auth.password',
+      key: 'password',
+      suggested_name: 'PASSWORD',
+      context: 'Bruno HTTP auth password',
+      replacement: '{{secret.PASSWORD}}',
+      source_value_available: true,
+      destination_value_preserved: true,
+    }]
+    apiMock.inspectBrunoImport.mockResolvedValueOnce(inspection)
+    apiMock.commitBrunoImport.mockResolvedValueOnce({
+      batch_id: 'batch-preserved',
+      created: true,
+      count: 1,
+      idempotent_replay: false,
+      _http_status: 201,
+      scripts: [{
+        ...candidate.script,
+        id: candidate.planned_script_id,
+        ref_key: 'SCR-PRESERVED',
+        folder_id: 'folder-1',
+        created_at: '2026-07-16T19:00:00Z',
+      }],
+    })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const folder = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.parentElement?.textContent?.includes('Destination folder'))
+    await act(async () => {
+      if (folder) {
+        folder.value = 'folder-1'
+        folder.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
+      .toBe('Preserved in script')
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save 1 native script'))
+    await act(async () => {
+      saveButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'create_native_batch',
+      migrate_secrets: false,
+      secret_bindings: {},
+    }))
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Native batch saved')
+  })
+
+  it('submits a binding when the operator explicitly chooses an existing project secret', async () => {
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: true,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'EXISTING_PASSWORD',
+        provider: 'encrypted_database',
+        writable: true,
+      })),
+    }))
+    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
+      script_id: 'script-1',
+      required: ['EXISTING_PASSWORD'],
+      configured: ['EXISTING_PASSWORD'],
+      missing: [],
+    })
+    const file = new File(['meta { name: Existing binding }\nget { url: https://example.test }\n'], 'collection.bru', { type: 'text/plain' })
+    await act(async () => {
+      root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />)
+      await Promise.resolve()
+    })
+    const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Inspect source'))
+    await act(async () => {
+      inspectButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const bindingName = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]'))
+      .find(input => input.value === 'PASSWORD')
+    expect(bindingName).toBeDefined()
+    await act(async () => {
+      selectProjectSecret(container)
+      setInput(bindingName!, 'EXISTING_PASSWORD')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
+      .toBe('Configured')
+
+    const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Import Bruno collection'))
+    await act(async () => {
+      commitButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
+      migrate_secrets: false,
+      secret_bindings: {
+        'request.yml:http.auth.password': 'EXISTING_PASSWORD',
+      },
+    }))
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+  })
+
   it('inspects, binds, and commits a standalone Bruno YAML request without opening the HTTP editor', async () => {
     const file = new File(['meta { name: SOAP request }\nget { url: https://example.test }\n'], 'collection.bru', { type: 'text/plain' })
     const onImported = vi.fn()
@@ -356,12 +619,13 @@ describe('BrunoImport', () => {
 
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Import Bruno collection'))
-    expect(commitButton?.textContent).toContain('with 1 secret to configure')
+    expect(commitButton?.textContent).not.toContain('to configure')
     expect(commitButton?.disabled).toBe(false)
 
     const bindingInput = Array.from(container.querySelectorAll('input')).find(input => input.value === 'PASSWORD')
     expect(bindingInput).toBeDefined()
     act(() => {
+      selectProjectSecret(container)
       setInput(bindingInput!, 'INVALID/NAME')
     })
     expect(bindingInput?.getAttribute('aria-invalid')).toBe('true')
@@ -1081,14 +1345,14 @@ describe('BrunoImport', () => {
     expect(container.textContent).toContain('Imported APIs')
   })
 
-  it('persists selected parameterization and offers deferred secret configuration after commit', async () => {
+  it('persists selected parameterization and an explicitly selected deferred secret binding', async () => {
     const file = new File(['info: {name: Deferred, type: http}'], 'deferred.yml')
     const onConfigureSecrets = vi.fn()
     apiMock.getScriptSecretStatus.mockResolvedValueOnce({
       script_id: 'script-1',
-      required: ['PASSWORD'],
+      required: ['EXPLICIT_PASSWORD'],
       configured: [],
-      missing: ['PASSWORD'],
+      missing: ['EXPLICIT_PASSWORD'],
     })
     await act(async () => {
       root.render(
@@ -1120,6 +1384,13 @@ describe('BrunoImport', () => {
       selected_ids: ['pz_bruno_tenant'],
     }))
 
+    const bindingName = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]'))
+      .find(input => input.value === 'PASSWORD')
+    expect(bindingName).toBeDefined()
+    act(() => {
+      selectProjectSecret(container)
+      setInput(bindingName!, 'EXPLICIT_PASSWORD')
+    })
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Import Bruno collection'))
     expect(commitButton?.textContent).toContain('with 1 secret to configure')
@@ -1133,6 +1404,9 @@ describe('BrunoImport', () => {
     expect(apiMock.commitBrunoImport).toHaveBeenCalledWith(expect.objectContaining({
       parameterization_selected_ids: ['pz_bruno_tenant'],
       migrate_secrets: false,
+      secret_bindings: {
+        'request.yml:http.auth.password': 'EXPLICIT_PASSWORD',
+      },
     }))
     expect(container.textContent).toContain('1 project secret still needs configuration.')
     const configureButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -1211,8 +1485,12 @@ describe('BrunoImport', () => {
     const pendingStatus = new Promise<typeof statusResponse>(resolve => {
       resolveStatus = resolve
     })
-    apiMock.getProjectSecretStatuses.mockImplementationOnce(() => pendingStatus)
+    apiMock.getProjectSecretStatuses.mockImplementation(() => pendingStatus)
 
+    await act(async () => {
+      selectProjectSecret(container)
+      await Promise.resolve()
+    })
     await act(async () => { commitButton?.click() })
     await act(async () => { await Promise.resolve() })
 
@@ -1259,6 +1537,10 @@ describe('BrunoImport', () => {
 
     const migrationToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(input => input.parentElement?.textContent?.includes('Import detected credential values'))
+    await act(async () => {
+      selectProjectSecret(container)
+      await Promise.resolve()
+    })
     await act(async () => migrationToggle?.click())
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Import Bruno collection'))

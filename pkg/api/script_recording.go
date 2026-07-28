@@ -34,12 +34,23 @@ type attestedRecordingBaseline struct {
 	observations []correlate.Observation
 }
 
+func recordingBaselineSnapshotDigest(session *recorder.Session) (string, error) {
+	payload, err := json.Marshal(recorder.SessionBaseline(session))
+	if err != nil {
+		return "", fmt.Errorf("marshal recording baseline snapshot: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
 type correlationActionGraph struct {
-	Protocol string           `json:"protocol"`
-	Config   dsl.ScriptConfig `json:"config"`
-	Init     []dsl.Action     `json:"init"`
-	Actions  []dsl.Action     `json:"actions"`
-	Teardown []dsl.Action     `json:"teardown"`
+	Protocol    string           `json:"protocol"`
+	Config      dsl.ScriptConfig `json:"config"`
+	DataSources []dsl.DataSource `json:"data_sources"`
+	Parameters  []dsl.Parameter  `json:"parameters"`
+	Init        []dsl.Action     `json:"init"`
+	Actions     []dsl.Action     `json:"actions"`
+	Teardown    []dsl.Action     `json:"teardown"`
 }
 
 // scriptCorrelationActionGraphDigest returns a stable identity for the exact
@@ -60,12 +71,22 @@ func scriptCorrelationActionGraphDigest(script *dsl.Script) (string, error) {
 		}
 		return input
 	}
+	dataSources := script.DataSources
+	if len(dataSources) == 0 {
+		dataSources = []dsl.DataSource{}
+	}
+	parameters := script.Parameters
+	if len(parameters) == 0 {
+		parameters = []dsl.Parameter{}
+	}
 	payload, err := json.Marshal(correlationActionGraph{
-		Protocol: strings.ToLower(strings.TrimSpace(script.Protocol)),
-		Config:   script.Config,
-		Init:     actions(script.Init),
-		Actions:  actions(script.Actions),
-		Teardown: actions(script.Teardown),
+		Protocol:    strings.ToLower(strings.TrimSpace(script.Protocol)),
+		Config:      script.Config,
+		DataSources: dataSources,
+		Parameters:  parameters,
+		Init:        actions(script.Init),
+		Actions:     actions(script.Actions),
+		Teardown:    actions(script.Teardown),
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal script action graph: %w", err)
@@ -265,7 +286,12 @@ func estimatedRecordingObservationJSONSize(observation storage.ScriptRecordingOb
 // encrypted correlation evidence. The returned observations come from the same
 // snapshot used for verification so a live session cannot change between the
 // provenance check and persistence.
-func (s *Server) attestRecordingBaselineCapture(scriptProjectID string, script *dsl.Script, sessionID string) (*attestedRecordingBaseline, error) {
+func (s *Server) attestRecordingBaselineCapture(
+	scriptProjectID string,
+	script *dsl.Script,
+	sessionID string,
+	importClaims ...*importDraftAttestationClaim,
+) (*attestedRecordingBaseline, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, nil
@@ -291,6 +317,25 @@ func (s *Server) attestRecordingBaselineCapture(scriptProjectID string, script *
 	if normalizeProjectID(session.ProjectID) != normalizeProjectID(scriptProjectID) {
 		return nil, errRecordingCaptureSourceNotFound
 	}
+	snapshotDigest, err := recordingBaselineSnapshotDigest(session)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", errRecordingCaptureUnattested, err)
+	}
+	if len(importClaims) > 0 {
+		claim := importClaims[0]
+		if claim != nil &&
+			strings.EqualFold(strings.TrimSpace(claim.Profile), "recorder") &&
+			strings.TrimSpace(claim.RecordingSessionID) == sessionID &&
+			strings.TrimSpace(claim.RecordingSnapshotDigest) == snapshotDigest &&
+			claim.AttestedExecutionGraphDigest != "" &&
+			claim.AttestedExecutionGraphDigest ==
+				claim.SubmittedExecutionGraphDigest {
+			return &attestedRecordingBaseline{
+				source:       "proxy_recording",
+				observations: recorder.SessionBaseline(session),
+			}, nil
+		}
+	}
 	submittedDigest, err := scriptCorrelationActionGraphDigest(script)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errRecordingCaptureUnattested, err)
@@ -300,8 +345,12 @@ func (s *Server) attestRecordingBaselineCapture(scriptProjectID string, script *
 		if converted == nil || converted.Script == nil {
 			continue
 		}
-		candidate, _, bindingErr := applySuggestedSecretBindings(converted.Script, 0)
-		if bindingErr != nil || candidate == nil {
+		candidate, prepareErr := preparePersistentImportedLibraryScript(
+			converted.Script,
+			nil,
+			"recorder",
+		)
+		if prepareErr != nil || candidate == nil {
 			continue
 		}
 		candidateDigest, digestErr := scriptCorrelationActionGraphDigest(candidate)

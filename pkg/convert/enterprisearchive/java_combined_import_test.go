@@ -771,6 +771,78 @@ public class Actions {
 	}
 }
 
+func TestConvertZipJavaActionSourceResolutionFailsClosed(t *testing.T) {
+	tests := []struct {
+		name       string
+		actionFile string
+		files      map[string]string
+		wantText   string
+	}{
+		{
+			name:       "qualified pointer is not replaced by another basename",
+			actionFile: "live/Actions.java",
+			files: map[string]string{
+				"backup/Actions.java": `package backup;
+public class Actions {
+  public int action() { return 0; }
+}`,
+			},
+			wantText: "could not be resolved exactly",
+		},
+		{
+			name:       "unqualified pointer with duplicate basenames is ambiguous",
+			actionFile: "Actions.java",
+			files: map[string]string{
+				"first/Actions.java": `package first;
+public class Actions {
+  public int action() { return 0; }
+}`,
+				"second/Actions.java": `package second;
+public class Actions {
+  public int action() { return 0; }
+}`,
+			},
+			wantText: "matched multiple archive files",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := ConvertZip(
+				buildJavaVuserFilesArchiveWithAction(t, "JavaSourceResolution", test.actionFile, test.files),
+				ConvertOptions{},
+			)
+			if err != nil {
+				t.Fatalf("ConvertZip: %v", err)
+			}
+			if result.Script == nil || len(result.Script.Actions) != 1 {
+				t.Fatalf("script/actions = %#v, want a blocked Java review draft", result.Script)
+			}
+			action := result.Script.Actions[0]
+			if action.Target == "backup.Actions" || action.Target == "first.Actions" || action.Target == "second.Actions" {
+				t.Fatalf("runner target = %q, rejected same-basename source was selected", action.Target)
+			}
+			if action.Metadata["execution_blocker"] != javaVuserSourceSelectionExecutionBlocker {
+				t.Fatalf("action metadata = %#v, want durable source-selection blocker", action.Metadata)
+			}
+			blockers := strings.Join(
+				javaReviewArtifactBlockers(result, javaSourceIntegrityKey),
+				"\n",
+			)
+			if !strings.Contains(blockers, test.wantText) {
+				t.Fatalf("source integrity blockers = %q, want %q", blockers, test.wantText)
+			}
+			if result.FidelityReport == nil ||
+				result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+				t.Fatalf("fidelity report = %#v, want blocked promotion", result.FidelityReport)
+			}
+			if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+				t.Fatalf("DSL validation issues = %#v", issues)
+			}
+		})
+	}
+}
+
 func TestConvertZipJavaMissingActionMethodIsBlocked(t *testing.T) {
 	result, err := ConvertZip(buildJavaVuserFilesArchive(t, "JavaMissingAction", map[string]string{
 		"Actions.java": `public class Actions {

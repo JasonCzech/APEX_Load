@@ -289,9 +289,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if len(action.Headers) == 0 {
 			action.Headers = nil
 		}
-		if strings.TrimSpace(action.Body) == "" {
-			action.Body = ""
-		}
 		applySOAPSampleHints(&action)
 
 		if ex.Response != nil {
@@ -367,7 +364,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			actionPath,
 			location,
 			format,
-			sanitizeSensitive,
 			credentialNames,
 			sampleProvenVariables(stepVars),
 		)

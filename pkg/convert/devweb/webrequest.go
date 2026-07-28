@@ -12,26 +12,48 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+type devWebStringEntry struct {
+	Key   string
+	Value string
+}
+
 func parseWebRequest(blockName string, objectLiteral string, ctx convertContext) (dsl.Action, bool) {
-	rawURL := objectStringField(objectLiteral, "url", ctx)
-	if rawURL == "" {
-		rawURL = objectStringField(objectLiteral, "URL", ctx)
+	rawURL, urlPresent, urlOK := objectStaticStringField(objectLiteral, "url", ctx)
+	if !urlPresent {
+		rawURL, urlPresent, urlOK = objectStaticStringField(objectLiteral, "URL", ctx)
 	}
-	if rawURL == "" {
+	if !urlPresent || !urlOK || rawURL == "" {
 		return dsl.Action{}, false
 	}
-	method := strings.ToUpper(convertutil.FirstNonEmpty(objectStringField(objectLiteral, "method", ctx), "GET"))
-	body := objectStringField(objectLiteral, "body", ctx)
-	if body == "" {
-		body = objectStringField(objectLiteral, "bodyText", ctx)
+	methodValue, methodPresent, methodOK := objectStaticStringField(objectLiteral, "method", ctx)
+	if methodPresent && !methodOK {
+		return dsl.Action{}, false
 	}
-	headers := objectStringMapField(objectLiteral, "headers", ctx)
-	query := objectStringMapField(objectLiteral, "queryString", ctx)
+	method := strings.ToUpper(convertutil.FirstNonEmpty(methodValue, "GET"))
+
+	body, bodyPresent, bodyOK := objectStaticBodyField(objectLiteral, "body", ctx)
+	if !bodyPresent {
+		body, bodyPresent, bodyOK = objectStaticBodyField(objectLiteral, "bodyText", ctx)
+	}
+	if bodyPresent && !bodyOK {
+		return dsl.Action{}, false
+	}
+
+	headerEntries, headersPresent, headersOK := objectStringEntriesField(objectLiteral, "headers", ctx)
+	if headersPresent && !headersOK {
+		return dsl.Action{}, false
+	}
+	queryEntries, queryPresent, queryOK := objectStringEntriesField(objectLiteral, "queryString", ctx)
+	if queryPresent && !queryOK {
+		return dsl.Action{}, false
+	}
+	headers := devWebStringEntriesMap(headerEntries)
+	query := devWebStringEntriesMap(queryEntries)
 	if containsTemplateExpression(rawURL) || containsTemplateExpression(method) || containsTemplateExpression(body) || stringMapContainsTemplateExpression(headers) || stringMapContainsTemplateExpression(query) {
 		return dsl.Action{}, false
 	}
-	if len(query) > 0 {
-		rawURL = appendQueryString(rawURL, query)
+	if len(queryEntries) > 0 {
+		rawURL = appendOrderedQueryString(rawURL, queryEntries)
 	}
 	action := dsl.Action{
 		Name:    actionName(blockName, method),
@@ -41,8 +63,15 @@ func parseWebRequest(blockName string, objectLiteral string, ctx convertContext)
 		Headers: headers,
 		Body:    body,
 	}
-	if len(query) > 0 {
-		action.Metadata = map[string]any{"devweb_query_string": query}
+	if len(queryEntries) > 0 {
+		ordered := make([]map[string]string, 0, len(queryEntries))
+		for _, entry := range queryEntries {
+			ordered = append(ordered, map[string]string{"name": entry.Key, "value": entry.Value})
+		}
+		action.Metadata = map[string]any{
+			"devweb_query_string":         query,
+			"devweb_query_string_ordered": ordered,
+		}
 	}
 	action.Extractors = parseDevWebExtractors(objectLiteral)
 	return action, true
@@ -62,33 +91,87 @@ func stringMapContainsTemplateExpression(values map[string]string) bool {
 }
 
 func objectStringField(objectLiteral string, field string, ctx convertContext) string {
-	raw, ok := objectFieldRaw(objectLiteral, field)
-	if !ok {
+	value, present, ok := objectStaticStringField(objectLiteral, field, ctx)
+	if !present || !ok {
 		return ""
 	}
-	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "{") {
-		return jsObjectToJSON(raw, ctx.parameterTemplates)
-	}
-	return jsStringValue(raw, ctx.parameterTemplates)
+	return value
 }
 
 func objectStringMapField(objectLiteral string, field string, ctx convertContext) map[string]string {
+	entries, present, ok := objectStringEntriesField(objectLiteral, field, ctx)
+	if !present || !ok {
+		return nil
+	}
+	return devWebStringEntriesMap(entries)
+}
+
+func objectStaticStringField(objectLiteral string, field string, ctx convertContext) (string, bool, bool) {
 	raw, ok := objectFieldRaw(objectLiteral, field)
 	if !ok {
-		return nil
+		return "", false, true
+	}
+	raw = strings.TrimSpace(raw)
+	value, ok := devWebStaticStringValue(raw, ctx.parameterTemplates)
+	return value, true, ok
+}
+
+func objectStaticBodyField(objectLiteral string, field string, ctx convertContext) (string, bool, bool) {
+	raw, ok := objectFieldRaw(objectLiteral, field)
+	if !ok {
+		return "", false, true
+	}
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "{") || strings.HasPrefix(raw, "[") {
+		encoded, ok := encodeDevWebStaticJSONValue(raw, ctx.parameterTemplates)
+		return encoded, true, ok
+	}
+	if value, ok := devWebStaticStringValue(raw, ctx.parameterTemplates); ok {
+		return value, true, true
+	}
+	encoded, ok := encodeDevWebStaticJSONValue(raw, ctx.parameterTemplates)
+	return encoded, true, ok
+}
+
+func objectStringEntriesField(objectLiteral string, field string, ctx convertContext) ([]devWebStringEntry, bool, bool) {
+	raw, ok := objectFieldRaw(objectLiteral, field)
+	if !ok {
+		return nil, false, true
 	}
 	raw = strings.TrimSpace(raw)
 	if !strings.HasPrefix(raw, "{") || !strings.HasSuffix(raw, "}") {
+		return nil, true, false
+	}
+	rawEntries, ok := devWebObjectEntries(strings.TrimSpace(raw[1 : len(raw)-1]))
+	if !ok {
+		return nil, true, false
+	}
+	entries := make([]devWebStringEntry, 0, len(rawEntries))
+	indexByKey := make(map[string]int, len(rawEntries))
+	for _, entry := range rawEntries {
+		value, ok := devWebStaticStringValue(entry.Value, ctx.parameterTemplates)
+		if !ok {
+			return nil, true, false
+		}
+		if index, duplicate := indexByKey[entry.Key]; duplicate {
+			// JavaScript uses the last value while retaining the property's
+			// original enumeration position.
+			entries[index].Value = value
+			continue
+		}
+		indexByKey[entry.Key] = len(entries)
+		entries = append(entries, devWebStringEntry{Key: entry.Key, Value: value})
+	}
+	return entries, true, true
+}
+
+func devWebStringEntriesMap(entries []devWebStringEntry) map[string]string {
+	if len(entries) == 0 {
 		return nil
 	}
-	entries := objectLiteralEntries(strings.TrimSpace(raw[1 : len(raw)-1]))
 	values := make(map[string]string, len(entries))
-	for key, rawValue := range entries {
-		values[key] = jsStringValue(rawValue, ctx.parameterTemplates)
-	}
-	if len(values) == 0 {
-		return nil
+	for _, entry := range entries {
+		values[entry.Key] = entry.Value
 	}
 	return values
 }
@@ -148,18 +231,77 @@ func findTopLevelFieldEnd(value string, start int) int {
 
 func objectLiteralEntries(inner string) map[string]string {
 	entries := map[string]string{}
-	for _, part := range splitTopLevel(inner, ',') {
-		key, value, ok := strings.Cut(part, ":")
-		if !ok {
-			continue
-		}
-		cleanKey := strings.Trim(strings.TrimSpace(key), `"'`+"`")
-		if cleanKey == "" {
-			continue
-		}
-		entries[cleanKey] = strings.TrimSpace(value)
+	ordered, _ := devWebObjectEntries(inner)
+	for _, entry := range ordered {
+		entries[entry.Key] = entry.Value
 	}
 	return entries
+}
+
+func devWebObjectEntries(inner string) ([]devWebStringEntry, bool) {
+	if strings.TrimSpace(inner) == "" {
+		return nil, true
+	}
+	entries := make([]devWebStringEntry, 0)
+	for _, part := range splitTopLevel(inner, ',') {
+		keyExpression, value, ok := splitDevWebObjectProperty(part)
+		if !ok {
+			return nil, false
+		}
+		keyExpression = strings.TrimSpace(keyExpression)
+		key := ""
+		if decoded, literal := decodeDevWebJSStringLiteral(keyExpression); literal {
+			key = decoded
+		} else if regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`).MatchString(keyExpression) ||
+			regexp.MustCompile(`^(?:0|[1-9][0-9]*)$`).MatchString(keyExpression) {
+			key = keyExpression
+		} else {
+			return nil, false
+		}
+		if key == "" {
+			return nil, false
+		}
+		entries = append(entries, devWebStringEntry{Key: key, Value: strings.TrimSpace(value)})
+	}
+	return entries, true
+}
+
+func splitDevWebObjectProperty(property string) (string, string, bool) {
+	quote := rune(0)
+	escaped := false
+	depth := 0
+	for index, r := range property {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			if r == '\\' {
+				escaped = true
+			} else if r == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch r {
+		case '\'', '"', '`':
+			quote = r
+		case '{', '[', '(':
+			depth++
+		case '}', ']', ')':
+			if depth == 0 {
+				return "", "", false
+			}
+			depth--
+		case ':':
+			if depth == 0 {
+				key := strings.TrimSpace(property[:index])
+				value := strings.TrimSpace(property[index+1:])
+				return key, value, key != "" && value != ""
+			}
+		}
+	}
+	return "", "", false
 }
 
 func splitTopLevel(value string, delimiter rune) []string {
@@ -215,44 +357,187 @@ func splitTopLevel(value string, delimiter rune) []string {
 }
 
 func jsStringValue(raw string, params map[string]string) string {
-	value := jsString(raw)
-	return convertDevWebTemplate(value, params)
+	value, ok := devWebStaticStringValue(raw, params)
+	if !ok {
+		return strings.TrimSpace(raw)
+	}
+	return value
 }
 
 func jsObjectToJSON(raw string, params map[string]string) string {
-	raw = strings.TrimSpace(raw)
-	if !strings.HasPrefix(raw, "{") || !strings.HasSuffix(raw, "}") {
-		return jsStringValue(raw, params)
+	encoded, ok := encodeDevWebStaticJSONValue(raw, params)
+	if !ok {
+		return strings.TrimSpace(raw)
 	}
-	entries := objectLiteralEntries(strings.TrimSpace(raw[1 : len(raw)-1]))
-	if len(entries) == 0 {
-		return "{}"
-	}
-	values := map[string]string{}
-	for key, rawValue := range entries {
-		values[key] = jsStringValue(rawValue, params)
-	}
-	data, err := json.Marshal(values)
-	if err != nil {
-		return raw
-	}
-	return string(data)
+	return encoded
 }
 
 func appendQueryString(rawURL string, query map[string]string) string {
 	if len(query) == 0 {
 		return rawURL
 	}
+	keys := make([]string, 0, len(query))
+	for key := range query {
+		keys = append(keys, key)
+	}
+	sortStrings(keys)
+	entries := make([]devWebStringEntry, 0, len(keys))
+	for _, key := range keys {
+		entries = append(entries, devWebStringEntry{Key: key, Value: query[key]})
+	}
+	return appendOrderedQueryString(rawURL, entries)
+}
+
+func appendOrderedQueryString(rawURL string, query []devWebStringEntry) string {
+	if len(query) == 0 {
+		return rawURL
+	}
+	base, fragment, hasFragment := strings.Cut(rawURL, "#")
 	separator := "?"
-	if strings.Contains(rawURL, "?") {
+	if strings.Contains(base, "?") {
 		separator = "&"
 	}
 	parts := make([]string, 0, len(query))
-	for key, value := range query {
-		parts = append(parts, url.QueryEscape(key)+"="+url.QueryEscape(value))
+	for _, entry := range query {
+		parts = append(parts,
+			encodeDevWebQueryComponent(entry.Key)+"="+
+				encodeDevWebQueryComponent(entry.Value),
+		)
 	}
-	sortStrings(parts)
-	return rawURL + separator + strings.Join(parts, "&")
+	result := base + separator + strings.Join(parts, "&")
+	if hasFragment {
+		result += "#" + fragment
+	}
+	return result
+}
+
+func encodeDevWebQueryComponent(value string) string {
+	var builder strings.Builder
+	for len(value) > 0 {
+		open := strings.Index(value, "{{")
+		if open < 0 {
+			builder.WriteString(url.QueryEscape(value))
+			break
+		}
+		builder.WriteString(url.QueryEscape(value[:open]))
+		closeOffset := strings.Index(value[open+2:], "}}")
+		if closeOffset < 0 {
+			builder.WriteString(url.QueryEscape(value[open:]))
+			break
+		}
+		end := open + 2 + closeOffset + 2
+		builder.WriteString(value[open:end])
+		value = value[end:]
+	}
+	return builder.String()
+}
+
+func devWebStaticStringValue(raw string, params map[string]string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if decoded, ok := decodeDevWebJSStringLiteral(raw); ok {
+		value := convertDevWebTemplate(decoded, params)
+		return value, !containsTemplateExpression(value)
+	}
+	if strings.HasPrefix(raw, "load.params.") {
+		name := strings.TrimSpace(strings.TrimPrefix(raw, "load.params."))
+		if name == "" {
+			return "", false
+		}
+		if params != nil && params[name] != "" {
+			return params[name], true
+		}
+		return "{{var." + name + "}}", true
+	}
+	if strings.Contains(raw, ".extractors.") &&
+		regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*\.extractors\.[A-Za-z_$][A-Za-z0-9_$]*$`).MatchString(raw) {
+		name := raw[strings.LastIndex(raw, ".extractors.")+len(".extractors."):]
+		return "{{var." + name + "}}", true
+	}
+	if params != nil {
+		if value, ok := params[raw]; ok && value != "" {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func encodeDevWebStaticJSONValue(raw string, params map[string]string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	if value, ok := devWebStaticStringValue(raw, params); ok {
+		encoded, err := json.Marshal(value)
+		return string(encoded), err == nil
+	}
+	if strings.HasPrefix(raw, "{") {
+		if !strings.HasSuffix(raw, "}") {
+			return "", false
+		}
+		entries, ok := devWebObjectEntries(strings.TrimSpace(raw[1 : len(raw)-1]))
+		if !ok {
+			return "", false
+		}
+		effective := make([]devWebStringEntry, 0, len(entries))
+		indexByKey := make(map[string]int, len(entries))
+		for _, entry := range entries {
+			if index, duplicate := indexByKey[entry.Key]; duplicate {
+				effective[index].Value = entry.Value
+				continue
+			}
+			indexByKey[entry.Key] = len(effective)
+			effective = append(effective, entry)
+		}
+		var builder strings.Builder
+		builder.WriteByte('{')
+		for index, entry := range effective {
+			value, ok := encodeDevWebStaticJSONValue(entry.Value, params)
+			if !ok {
+				return "", false
+			}
+			key, err := json.Marshal(entry.Key)
+			if err != nil {
+				return "", false
+			}
+			if index > 0 {
+				builder.WriteByte(',')
+			}
+			builder.Write(key)
+			builder.WriteByte(':')
+			builder.WriteString(value)
+		}
+		builder.WriteByte('}')
+		return builder.String(), true
+	}
+	if strings.HasPrefix(raw, "[") {
+		if !strings.HasSuffix(raw, "]") {
+			return "", false
+		}
+		items := splitTopLevel(strings.TrimSpace(raw[1:len(raw)-1]), ',')
+		var builder strings.Builder
+		builder.WriteByte('[')
+		for index, item := range items {
+			value, ok := encodeDevWebStaticJSONValue(item, params)
+			if !ok {
+				return "", false
+			}
+			if index > 0 {
+				builder.WriteByte(',')
+			}
+			builder.WriteString(value)
+		}
+		builder.WriteByte(']')
+		return builder.String(), true
+	}
+	switch raw {
+	case "true", "false", "null":
+		return raw, true
+	}
+	if regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$`).MatchString(raw) &&
+		json.Valid([]byte(raw)) {
+		return raw, true
+	}
+	return "", false
 }
 
 func parseDevWebExtractors(objectLiteral string) []dsl.Extractor {

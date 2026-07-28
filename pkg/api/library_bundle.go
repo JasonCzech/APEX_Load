@@ -379,7 +379,7 @@ func (s *Server) libraryScriptBundleItem(id string) (LibraryBundleItem, error) {
 		SourceInstanceID: s.controllerID,
 		SourceItemID:     stored.ID,
 		ProjectID:        stored.ProjectID,
-		Name:             stored.Name,
+		Name:             disclosureSafeScriptName(stored.Name, stored.Script),
 		ContentHash:      hashLibraryScript(script),
 		CreatedAt:        stored.CreatedAt,
 		UpdatedAt:        stored.CreatedAt,
@@ -1620,7 +1620,7 @@ func scenarioDependencies(scenario *StoredScenario, s *Server) []LibraryDependen
 		seen[ref.ScriptID] = struct{}{}
 		dep := LibraryDependency{Kind: "script", ID: ref.ScriptID, Name: ref.ScriptName, ProjectID: normalizeProjectID(scenario.ProjectID)}
 		if stored, ok := s.runner.GetScript(ref.ScriptID); ok && stored != nil && normalizeProjectID(stored.ProjectID) == normalizeProjectID(scenario.ProjectID) && stored.Script != nil && normalizeProjectID(stored.Script.ProjectID) == normalizeProjectID(scenario.ProjectID) {
-			dep.Name = firstNonEmpty(dep.Name, stored.Name)
+			dep.Name = firstNonEmpty(dep.Name, disclosureSafeScriptName(stored.Name, stored.Script))
 			dep.ContentHash = hashLibraryScript(stored.Script)
 		}
 		deps = append(deps, dep)

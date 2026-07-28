@@ -2,25 +2,27 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 )
 
-func TestSharedImportCommitProjectsStructuredBodyKinds(t *testing.T) {
+func TestSharedImportCommitPreservesStructuredBodyCredentialsDurablyAndMasksResponse(t *testing.T) {
 	const canary = "structured-commit-canary-81d2"
 	const boundary = "commit-structured-boundary"
 	tests := []struct {
-		name        string
-		contentType string
-		body        string
-		stable      []string
+		name         string
+		contentType  string
+		body         string
+		bodyEncoding string
+		stable       []string
 	}{
 		{
 			name:        "xml",
@@ -50,6 +52,12 @@ func TestSharedImportCommitProjectsStructuredBodyKinds(t *testing.T) {
 				"--" + boundary + "--\r\n",
 			},
 		},
+		{
+			name:         "base64 json",
+			contentType:  "application/json",
+			body:         "eyJwYXNzd29yZCI6InN0cnVjdHVyZWQtY29tbWl0LWNhbmFyeS04MWQyIiwib3JkaW5hcnkiOiJrZWVwIn0=",
+			bodyEncoding: "base64",
+		},
 	}
 	for _, test := range tests {
 		test := test
@@ -65,8 +73,9 @@ func TestSharedImportCommitProjectsStructuredBodyKinds(t *testing.T) {
 				Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
 				Actions: []dsl.Action{{
 					Name: "Submit payload", Type: "request", Method: http.MethodPost, Target: "/submit",
-					Headers: map[string]string{"Content-Type": test.contentType},
-					Body:    test.body,
+					Headers:      map[string]string{"Content-Type": test.contentType},
+					Body:         test.body,
+					BodyEncoding: test.bodyEncoding,
 				}},
 			}
 			result, resp := commitStructuredBodyScript(t, server, "/api/v1/scripts/import/postman/save", script)
@@ -75,10 +84,18 @@ func TestSharedImportCommitProjectsStructuredBodyKinds(t *testing.T) {
 			}
 			got := result.StoredScript.Script.Actions[0].Body
 			if strings.Contains(got, canary) {
-				t.Fatalf("structured credential remained: %s", got)
+				t.Fatalf("stored-script response exposed structured credential: %s", got)
 			}
-			if reference := governedReferenceInText(got); reference == "" {
-				t.Fatalf("structured credential received no governed reference: %s", got)
+			disclosureBody := got
+			if test.bodyEncoding == "base64" {
+				decoded, err := base64.StdEncoding.DecodeString(got)
+				if err != nil {
+					t.Fatalf("decode stored-script response body: %v", err)
+				}
+				disclosureBody = string(decoded)
+			}
+			if !strings.Contains(disclosureBody, maskedScriptSecret) {
+				t.Fatalf("stored-script response did not mask structured credential: %s", got)
 			}
 			for _, stable := range test.stable {
 				if !strings.Contains(got, stable) {
@@ -87,8 +104,18 @@ func TestSharedImportCommitProjectsStructuredBodyKinds(t *testing.T) {
 			}
 			persisted, ok := server.runner.GetScript(scriptID)
 			if !ok || persisted == nil || persisted.Script == nil ||
-				persisted.Script.Actions[0].Body != got {
-				t.Fatalf("persisted structured bytes differ from response: %#v", persisted)
+				persisted.Script.Actions[0].Body != test.body {
+				t.Fatalf("durable structured body did not retain exact imported bytes: %#v", persisted)
+			}
+			if !isCredentialPreservingImport(persisted.Script) {
+				t.Fatal("durable imported script lost its server-owned preservation policy")
+			}
+			values, err := engine.ImportedCredentialValues(persisted.Script)
+			if err != nil {
+				t.Fatalf("runtime credential values: %v", err)
+			}
+			if !stringSliceContains(values, canary) {
+				t.Fatalf("runtime redaction values = %#v, want canary", values)
 			}
 		})
 	}
@@ -134,13 +161,14 @@ func TestSharedImportCommitPreservesRawAndFileSurfaces(t *testing.T) {
 	}
 }
 
-func TestSharedImportCommitRejectsUnsafeStructuredBodies(t *testing.T) {
+func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t *testing.T) {
 	const canary = "unsafe-structured-canary-019f"
 	tests := []struct {
 		name        string
 		contentType string
 		body        string
 		code        string
+		blocked     bool
 	}{
 		{
 			name:        "graphql inline literal",
@@ -163,6 +191,7 @@ func TestSharedImportCommitRejectsUnsafeStructuredBodies(t *testing.T) {
 			contentType: "application/x-www-form-urlencoded",
 			body:        "client_secret=%zz" + canary,
 			code:        "credential_form_malformed",
+			blocked:     true,
 		},
 	}
 	for _, test := range tests {
@@ -182,24 +211,56 @@ func TestSharedImportCommitRejectsUnsafeStructuredBodies(t *testing.T) {
 					Body:    test.body,
 				}},
 			}
-			_, resp := commitStructuredBodyScript(t, server, "/api/v1/scripts/import/postman/save", script)
-			if resp.Code != http.StatusBadRequest {
-				t.Fatalf("commit status = %d, want 400 body=%s", resp.Code, resp.Body.String())
-			}
-			if !strings.Contains(resp.Body.String(), test.code) {
-				t.Fatalf("stable rejection code %q missing: %s", test.code, resp.Body.String())
+			result, resp := commitStructuredBodyScript(t, server, "/api/v1/scripts/import/postman/save", script)
+			if resp.Code != http.StatusCreated {
+				t.Fatalf("commit status = %d, want 201 body=%s", resp.Code, resp.Body.String())
 			}
 			if strings.Contains(resp.Body.String(), canary) {
-				t.Fatalf("rejection disclosed source credential: %s", resp.Body.String())
+				t.Fatalf("commit response disclosed source credential: %s", resp.Body.String())
 			}
-			if _, ok := server.runner.GetScript(script.ID); ok {
-				t.Fatal("unsafe structured body was persisted")
+			if got := result.StoredScript.Script.Actions[0].Body; got != maskedScriptSecret {
+				t.Fatalf("disclosure body = %q, want whole-body mask", got)
+			}
+			persisted, ok := server.runner.GetScript(script.ID)
+			if !ok || persisted == nil || persisted.Script == nil {
+				t.Fatal("credential-bearing structured import was not persisted")
+			}
+			action := persisted.Script.Actions[0]
+			if action.Body != test.body {
+				t.Fatalf("durable body changed: %q", action.Body)
+			}
+			if !isCredentialPreservingImport(persisted.Script) {
+				t.Fatal("durable import lost its credential-preservation policy")
+			}
+			blocker, _ := action.Metadata["execution_blocker"].(string)
+			if test.blocked {
+				if blocker != "import_review_required" {
+					t.Fatalf("malformed structured body blocker = %q", blocker)
+				}
+				encoded, err := json.Marshal(action.Metadata)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Contains(encoded, []byte(test.code)) {
+					t.Fatalf("stable review code %q missing: %s", test.code, encoded)
+				}
+			} else if blocker != "" {
+				t.Fatalf("exact runnable import gained disclosure-only blocker %q", blocker)
+			}
+			if !test.blocked && strings.Contains(test.body, canary) {
+				values, err := engine.ImportedCredentialValues(persisted.Script)
+				if err != nil {
+					t.Fatalf("runtime credential values: %v", err)
+				}
+				if !stringSliceContains(values, canary) {
+					t.Fatalf("runtime redaction values = %#v, want canary", values)
+				}
 			}
 		})
 	}
 }
 
-func TestSharedImportCommitBlocksXMLMixedCredentialContent(t *testing.T) {
+func TestSharedImportCommitPreservesXMLMixedCredentialContentWithRuntimeLocator(t *testing.T) {
 	const canary = "xml-mixed-canary-bc73"
 	body := `<root><password>prefix<token>` + canary + `</token>suffix</password><ordinary>keep</ordinary></root>`
 	server := NewServer(ServerConfig{})
@@ -221,12 +282,28 @@ func TestSharedImportCommitBlocksXMLMixedCredentialContent(t *testing.T) {
 		t.Fatalf("blocked draft status = %d body=%s", resp.Code, resp.Body.String())
 	}
 	action := result.StoredScript.Script.Actions[0]
-	if strings.Contains(action.Body, canary) ||
-		action.Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("mixed XML was not disclosure-safe and blocked: %#v", action)
+	if strings.Contains(action.Body, canary) {
+		t.Fatalf("mixed XML response was not disclosure-safe: %#v", action)
 	}
 	if !strings.Contains(action.Body, "<ordinary>keep</ordinary>") {
 		t.Fatalf("nonsensitive XML bytes changed: %s", action.Body)
+	}
+	persisted, ok := server.runner.GetScript(script.ID)
+	if !ok || persisted == nil || persisted.Script == nil {
+		t.Fatal("mixed XML import was not persisted")
+	}
+	if got := persisted.Script.Actions[0].Body; got != body {
+		t.Fatalf("durable mixed XML changed: %s", got)
+	}
+	if blocker, _ := persisted.Script.Actions[0].Metadata["execution_blocker"].(string); blocker != "" {
+		t.Fatalf("credential retention alone blocked execution: %q", blocker)
+	}
+	values, err := engine.ImportedCredentialValues(persisted.Script)
+	if err != nil {
+		t.Fatalf("runtime credential values: %v", err)
+	}
+	if !stringSliceContains(values, canary) {
+		t.Fatalf("runtime redaction values = %#v, want mixed XML canary", values)
 	}
 }
 
@@ -377,7 +454,7 @@ func TestGenericMaskAndStorePreserveGovernedStructuredBodyBytes(t *testing.T) {
 	}
 }
 
-func TestGenericMaskRejectsUnsafeMultipartNestedCredential(t *testing.T) {
+func TestGenericMaskWholeBodyRedactsUnsafeMultipartNestedCredential(t *testing.T) {
 	const boundary = "generic-unsafe-boundary"
 	script := &dsl.Script{
 		Name: "Unsafe multipart", Version: "1.0.0", Protocol: "http",
@@ -391,8 +468,21 @@ func TestGenericMaskRejectsUnsafeMultipartNestedCredential(t *testing.T) {
 				"--" + boundary + "--\r\n",
 		}},
 	}
-	if projected := maskScriptSecrets(script); projected != nil {
-		t.Fatalf("unsafe nested multipart became runnable: %#v", projected.Actions[0])
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		t.Fatal("unsafe nested multipart could not be disclosure-projected")
+	}
+	if got := projected.Actions[0].Body; got != maskedScriptSecret {
+		t.Fatalf("unsafe nested multipart disclosure body = %q", got)
+	}
+	if blocker, _ := projected.Actions[0].Metadata["execution_blocker"].(string); blocker != "import_review_required" {
+		t.Fatalf("disclosure projection blocker = %q, want fail-closed response gate", blocker)
+	}
+	if projected.Actions[0].Metadata[scriptProjectionResponseGateMetadataKey] == nil {
+		t.Fatal("disclosure projection omitted its response-only gate marker")
+	}
+	if !strings.Contains(script.Actions[0].Body, `{"password":7}`) {
+		t.Fatal("disclosure projection mutated the executable source script")
 	}
 }
 
@@ -424,20 +514,4 @@ func commitStructuredBodyScript(
 		}
 	}
 	return result, resp
-}
-
-func governedReferenceInText(value string) string {
-	start := strings.Index(value, "{{secret.")
-	if start < 0 {
-		return ""
-	}
-	end := strings.Index(value[start:], "}}")
-	if end < 0 {
-		return ""
-	}
-	reference := value[start : start+end+2]
-	if _, ok := credential.ParseReference(reference); !ok {
-		return ""
-	}
-	return reference
 }

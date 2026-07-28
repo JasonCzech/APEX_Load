@@ -1,9 +1,13 @@
 package devweb
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"mime"
+	"net/url"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,13 +24,10 @@ import (
 // JavaScript recognition has already produced an effective request, and only
 // that request enters the shared request/security/finalization pipeline.
 //
-// Before this existed the converter emitted authored header values verbatim, so
-// an "Authorization: Bearer <token>" in a DevWeb script became a literal in the
-// executable draft. The API response boundary masked it to [REDACTED] on the
-// way out, which left the operator with a redaction and no migratable value —
-// they had to retype the credential. Routing through the shared projector
-// governs it into {{secret.*}} and carries the source value in the protected
-// channel instead, matching every other HTTP importer.
+// The shared projector reviews authored credentials consistently while
+// preserving their exact executable values. Source-review evidence is scrubbed
+// separately; importing a script must not turn an already-available credential
+// into a binding the operator has to reenter.
 func finalizeDevWebHTTPRequest(
 	action dsl.Action,
 	index int,
@@ -86,7 +87,7 @@ func finalizeDevWebHTTPRequest(
 
 	finalized, report, err := requestimport.FinalizeAction(effective, requestimport.FinalizeOptions{
 		Credentials: &requestimport.CredentialProjectionOptions{
-			Mode:       credentialpolicy.SecretReference,
+			Mode:       credentialpolicy.Preserve,
 			Registry:   registry,
 			NamePrefix: "DEVWEB",
 			// Variables a DevWeb extractor produces are response-derived, not
@@ -221,20 +222,270 @@ func devWebRuntimeDataReferences(actions []dsl.Action) map[string]struct{} {
 
 var devWebRuntimeReferencePattern = regexp.MustCompile(`\{\{\s*(?:data|param)\.[A-Za-z0-9_.-]+\s*\}\}`)
 
+var devWebDataReferencePattern = regexp.MustCompile(
+	`\{\{\s*data\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_.-]+)\s*\}\}`,
+)
+
+// devWebCredentialDataBindings identifies runtime CSV columns consumed by a
+// credential-bearing request surface. The executable {{data.*}} references and
+// inline rows remain untouched; the result is used only to mask SourceReview.
+func devWebCredentialDataBindings(actions []dsl.Action) map[string]map[string]struct{} {
+	bindings := make(map[string]map[string]struct{})
+	record := func(value string) {
+		for _, match := range devWebDataReferencePattern.FindAllStringSubmatch(value, -1) {
+			if len(match) != 3 {
+				continue
+			}
+			source := strings.ToLower(strings.TrimSpace(match[1]))
+			column := strings.ToLower(strings.TrimSpace(match[2]))
+			if source == "" || column == "" {
+				continue
+			}
+			if bindings[source] == nil {
+				bindings[source] = make(map[string]struct{})
+			}
+			bindings[source][column] = struct{}{}
+		}
+	}
+	for _, action := range actions {
+		collectDevWebCredentialURLDataReferences(action.Target, record)
+		for name, value := range action.Headers {
+			if credential.SensitiveHeader(name) || credential.SensitiveName(name) {
+				record(value)
+			}
+		}
+		for _, header := range action.HeaderList {
+			if credential.SensitiveHeader(header.Name) || credential.SensitiveName(header.Name) {
+				record(header.Value)
+			}
+		}
+		if action.Auth != nil {
+			record(action.Auth.Password)
+			record(action.Auth.Token)
+		}
+		collectDevWebCredentialBodyDataReferences(
+			action.Body,
+			devWebActionContentType(action),
+			record,
+		)
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	return bindings
+}
+
+func markDevWebCredentialPreservingImport(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	preserved := ensureDevWebImportPreserved(script)
+	preserved[dsl.ImportPreservedCredentialPolicyKey] =
+		dsl.ImportPreservedCredentialPolicyPreserve
+}
+
+func markDevWebCredentialDataBindings(
+	script *dsl.Script,
+	bindings map[string]map[string]struct{},
+) {
+	if script == nil || len(bindings) == 0 {
+		return
+	}
+	names := make(map[string]struct{})
+	for _, parameter := range script.Parameters {
+		source := strings.ToLower(strings.TrimSpace(parameter.DataSource))
+		column := strings.ToLower(strings.TrimSpace(parameter.Column))
+		if _, sensitive := bindings[source][column]; sensitive {
+			if name := strings.TrimSpace(parameter.Name); name != "" {
+				names[name] = struct{}{}
+			}
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.SliceStable(ordered, func(left, right int) bool {
+		return strings.ToLower(ordered[left]) < strings.ToLower(ordered[right])
+	})
+	preserved := ensureDevWebImportPreserved(script)
+	preserved[dsl.ImportPreservedCredentialParameterNamesKey] = ordered
+}
+
+func collectDevWebCredentialURLDataReferences(raw string, record func(string)) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	authorityStart := 0
+	if scheme := strings.Index(raw, "://"); scheme >= 0 {
+		authorityStart = scheme + 3
+	} else if strings.HasPrefix(raw, "//") {
+		authorityStart = 2
+	}
+	authorityEnd := len(raw)
+	if end := strings.IndexAny(raw[authorityStart:], "/?#"); end >= 0 {
+		authorityEnd = authorityStart + end
+	}
+	if at := strings.LastIndex(raw[authorityStart:authorityEnd], "@"); at >= 0 {
+		record(raw[authorityStart : authorityStart+at])
+	}
+	if queryStart := strings.IndexByte(raw, '?'); queryStart >= 0 {
+		queryEnd := len(raw)
+		if fragment := strings.IndexByte(raw[queryStart+1:], '#'); fragment >= 0 {
+			queryEnd = queryStart + 1 + fragment
+		}
+		for _, pair := range strings.Split(raw[queryStart+1:queryEnd], "&") {
+			name, value, _ := strings.Cut(pair, "=")
+			decodedName, err := url.QueryUnescape(name)
+			if err == nil && credential.SensitiveName(decodedName) {
+				record(value)
+			}
+		}
+	}
+}
+
+func collectDevWebCredentialBodyDataReferences(
+	body string,
+	contentType string,
+	record func(string),
+) {
+	occurrences := devWebDataReferencePattern.FindAllStringIndex(body, -1)
+	if len(occurrences) == 0 {
+		return
+	}
+	for index, occurrence := range occurrences {
+		reference := body[occurrence[0]:occurrence[1]]
+		probe := fmt.Sprintf("APEX_DEVWEB_CREDENTIAL_PROBE_%d_7f2c", index+1)
+		// Classify one occurrence at a time. Replacing every equal reference at
+		// once is unsafe when a data binding is used both in a password field and
+		// in an ordinary field: the surviving ordinary probe would make the
+		// credential occurrence appear nonsensitive.
+		candidate := body[:occurrence[0]] + probe + body[occurrence[1]:]
+		projected, result, err := credentialpolicy.ProjectRequestBody(
+			[]byte(candidate),
+			contentType,
+			credentialpolicy.Options{
+				Mode:        credentialpolicy.Redact,
+				Source:      credentialpolicy.SourceRef{Format: "devweb_source_review"},
+				RequestKey:  "devweb_source_review",
+				TargetField: "body",
+			},
+		)
+		if err != nil || result.Disposition == credentialpolicy.Rejected ||
+			projected == nil || !bytes.Contains(projected, []byte(probe)) {
+			record(reference)
+		}
+	}
+}
+
+func devWebActionContentType(action dsl.Action) string {
+	for _, header := range action.HeaderList {
+		if strings.EqualFold(strings.TrimSpace(header.Name), "Content-Type") {
+			return header.Value
+		}
+	}
+	for name, value := range action.Headers {
+		if strings.EqualFold(strings.TrimSpace(name), "Content-Type") {
+			return value
+		}
+	}
+	return ""
+}
+
+// redactDevWebCredentialDataFile masks only credential-bound CSV columns in a
+// detached source-review copy. If the file cannot be parsed deterministically,
+// the complete review file is replaced rather than risk disclosing a row.
+func redactDevWebCredentialDataFile(
+	name string,
+	content string,
+	bindings map[string]map[string]struct{},
+) (string, bool) {
+	if len(bindings) == 0 {
+		return content, false
+	}
+	sourceName := strings.ToLower(sanitizeName(
+		strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)),
+	))
+	columns := bindings[sourceName]
+	if len(columns) == 0 {
+		return content, false
+	}
+	reader := csv.NewReader(strings.NewReader(content))
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	if err != nil || len(records) == 0 {
+		return credential.Redacted, content != credential.Redacted
+	}
+	var indexes []int
+	for index, column := range records[0] {
+		if _, sensitive := columns[strings.ToLower(strings.TrimSpace(column))]; sensitive {
+			indexes = append(indexes, index)
+		}
+	}
+	if len(indexes) == 0 {
+		// A declared data binding without the expected header is ambiguous.
+		return credential.Redacted, content != credential.Redacted
+	}
+	changed := false
+	for row := 1; row < len(records); row++ {
+		for _, column := range indexes {
+			if column >= len(records[row]) {
+				return credential.Redacted, content != credential.Redacted
+			}
+			if records[row][column] != credential.Redacted {
+				records[row][column] = credential.Redacted
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return content, false
+	}
+	var output strings.Builder
+	writer := csv.NewWriter(&output)
+	writer.WriteAll(records)
+	if err := writer.Error(); err != nil {
+		return credential.Redacted, content != credential.Redacted
+	}
+	return output.String(), true
+}
+
 // redactDevWebCredentialValues removes discovered credential values from the
 // source text that rides in the public source review.
 //
-// The shared scrubber only recognizes credential names it knows, so a
-// vendor-prefixed header such as "X-Api-Key" survives its patterns even though
-// the projector governed that header in the executable script. Redacting
-// against the values the projector actually found closes the gap without
-// guessing at names. Longest-first so a value that contains another is replaced
-// before its substring.
-func redactDevWebCredentialValues(content string, requirements []credentialpolicy.Requirement) string {
-	values := make([]string, 0, len(requirements))
+// Preserve mode intentionally emits no binding requirements, so values are
+// also collected from the finalized executable actions. Longest-first keeps a
+// value containing another from leaving a suffix behind.
+func redactDevWebCredentialValues(
+	content string,
+	requirements []credentialpolicy.Requirement,
+	actions []dsl.Action,
+) (string, bool) {
+	values := make([]string, 0, len(requirements)+len(actions)*2)
 	for _, requirement := range requirements {
 		if value := strings.TrimSpace(requirement.Value); value != "" {
 			values = append(values, value)
+		}
+	}
+	for _, action := range actions {
+		if action.Target != "" && scrub.ValueURL(action.Target, scrub.Policy{}) != action.Target {
+			// Preserve-mode projection deliberately keeps the executable URL
+			// byte-exact. Source review is a different disclosure boundary:
+			// remove the complete authored URL scalar when it contains userinfo
+			// or a credential-shaped query value. RedactQuotedValues below also
+			// finds the corresponding escaped JavaScript string literal.
+			values = append(values, action.Target)
+		}
+		for name, value := range action.Headers {
+			if credential.SensitiveHeader(name) && value != "" {
+				values = append(values, value)
+			}
+		}
+		if action.Body != "" && scrub.Value(action.Body, scrub.Policy{}) != action.Body {
+			values = append(values, action.Body)
 		}
 	}
 	sort.SliceStable(values, func(i, j int) bool {
@@ -243,9 +494,12 @@ func redactDevWebCredentialValues(content string, requirements []credentialpolic
 		}
 		return len(values[i]) > len(values[j])
 	})
+	changed := false
 	for _, value := range values {
-		content = strings.ReplaceAll(content, value, credential.Redacted)
+		next := strings.ReplaceAll(content, value, credential.Redacted)
+		changed = changed || next != content
+		content = next
 	}
-	content, _ = scrub.RedactQuotedValues(content, values)
-	return content
+	content, quotedChanged := scrub.RedactQuotedValues(content, values)
+	return content, changed || quotedChanged
 }

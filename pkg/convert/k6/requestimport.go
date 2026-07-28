@@ -48,12 +48,11 @@ func finalizeK6HTTPRequest(parsed parsedHTTPRequest, index int, target, body, so
 			Pointer: fmt.Sprintf("%s/headers/%d", source.Pointer, headerIndex),
 		}
 		if strings.ContainsAny(headers[headerIndex].Value, "\r\n") {
-			headers[headerIndex].Value = strings.NewReplacer("\r", " ", "\n", " ").Replace(headers[headerIndex].Value)
 			findings = append(findings, importreview.Finding{
 				Code:     "k6_invalid_header_value",
 				Severity: diag.Blocker,
 				Element:  headers[headerIndex].Name,
-				Detail:   "the static JavaScript header contained a line break and was sanitized before import",
+				Detail:   "the static JavaScript header contained a line break and cannot be sent by the native HTTP runtime",
 				Location: location,
 				Gate:     importreview.GateExecution,
 			})
@@ -83,7 +82,7 @@ func finalizeK6HTTPRequest(parsed parsedHTTPRequest, index int, target, body, so
 	}
 	action, report, err := requestimport.FinalizeAction(effective, requestimport.FinalizeOptions{
 		Credentials: &requestimport.CredentialProjectionOptions{
-			Mode:       credentialpolicy.SecretReference,
+			Mode:       credentialpolicy.Preserve,
 			Registry:   registry,
 			NamePrefix: "K6",
 		},
@@ -161,11 +160,34 @@ func publicK6CredentialRequirements(requirements []credentialpolicy.Requirement)
 	return out
 }
 
-func redactK6CredentialValues(content string, requirements []credentialpolicy.Requirement) string {
-	values := make([]string, 0, len(requirements))
+func redactK6CredentialValues(
+	content string,
+	requirements []credentialpolicy.Requirement,
+	requests []parsedHTTPRequest,
+) (string, bool) {
+	values := make([]string, 0, len(requirements)+len(requests)*2)
 	for _, requirement := range requirements {
 		if value := strings.TrimSpace(requirement.Value); value != "" {
 			values = append(values, value)
+		}
+	}
+	for _, request := range requests {
+		if request.URL != "" && scrub.ValueURL(request.URL, scrub.Policy{}) != request.URL {
+			// Redact the complete authored URL scalar. This covers URL userinfo
+			// and preserves encoded query spelling without trying to splice a
+			// decoded value into JavaScript source.
+			values = append(values, request.URL)
+		}
+		for name, value := range request.Headers {
+			if credential.SensitiveHeader(name) && value != "" {
+				values = append(values, value)
+			}
+		}
+		if request.Body != "" && scrub.Value(request.Body, scrub.Policy{}) != request.Body {
+			// A JavaScript string may contain escaped JSON/XML/form data. The
+			// quoted-value redactor below recognizes the decoded body and
+			// removes the whole source scalar while retaining line positions.
+			values = append(values, request.Body)
 		}
 	}
 	sort.SliceStable(values, func(i, j int) bool {
@@ -174,9 +196,12 @@ func redactK6CredentialValues(content string, requirements []credentialpolicy.Re
 		}
 		return len(values[i]) > len(values[j])
 	})
+	changed := false
 	for _, value := range values {
-		content = strings.ReplaceAll(content, value, credential.Redacted)
+		next := strings.ReplaceAll(content, value, credential.Redacted)
+		changed = changed || next != content
+		content = next
 	}
-	content, _ = scrub.RedactQuotedValues(content, values)
-	return content
+	content, quotedChanged := scrub.RedactQuotedValues(content, values)
+	return content, changed || quotedChanged
 }

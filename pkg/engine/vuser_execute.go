@@ -5,7 +5,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
@@ -25,6 +24,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result == nil {
 		return
 	}
+	vu.consumeRuntimeCredentialResultValues(result)
 	// CorrelationEvidence is a replay-only, pre-scrub side channel. No metrics or
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
@@ -40,6 +40,9 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		} else {
 			result.ErrorMessage += "; extraction retention failed: " + err.Error()
 		}
+	}
+	if vu.runtimeCredentialRedactionError() != nil {
+		clearUnredactableResultEvidence(result)
 	}
 	retainResponseBody := shouldRetainResultResponseBody(result, logCfg)
 	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
@@ -60,6 +63,56 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
 	}
+}
+
+// consumeRuntimeCredentialResultValues moves protocol-only credential evidence
+// into the runtime matcher before a result is retained or an unsuccessful retry
+// result is discarded. Consuming every attempt means a cookie rotated during a
+// retry is protected on the next attempt without growing an append-only global
+// matcher.
+func (vu *VUser) consumeRuntimeCredentialResultValues(result *protocol.Result) {
+	if vu == nil || result == nil {
+		return
+	}
+	runtimeCredentialValues := result.RuntimeCredentialValues
+	runtimeCredentialValuesSnapshot := result.RuntimeCredentialValuesSnapshot
+	result.RuntimeCredentialValues = nil
+	result.RuntimeCredentialValuesSnapshot = false
+	if runtimeCredentialValuesSnapshot {
+		_ = vu.stageRuntimeCredentialSessionSnapshot(runtimeCredentialValues)
+	} else {
+		_ = vu.registerRuntimeCredentialValues(runtimeCredentialValues...)
+	}
+}
+
+func clearUnredactableResultEvidence(result *protocol.Result) {
+	if result == nil {
+		return
+	}
+	result.Success = false
+	result.ErrorMessage = "runtime credential redaction failed"
+	result.ResponseBody = ""
+	result.CorrelationEvidence = nil
+	result.Extractions = nil
+	result.CorrelationID = ""
+	result.DependencyTarget = ""
+	result.PageURL = ""
+	result.PageTitle = ""
+	result.HTML = ""
+	result.ScreenshotBase64 = ""
+	result.ConsoleEntries = nil
+	result.NetworkEntries = nil
+	result.DOMSummary = nil
+	result.ClientMetrics = nil
+	result.ServerTelemetry = nil
+	result.ProtocolEvidence = nil
+	result.Snapshot = nil
+	result.SourceAction = ""
+	result.SourceActionName = ""
+	result.SourceTransaction = ""
+	result.SourcePath = ""
+	result.SourceUID = ""
+	result.OperationKind = ""
 }
 
 func shouldRetainResultResponseBody(result *protocol.Result, logCfg dsl.LogConfig) bool {
@@ -622,7 +675,10 @@ func (vu *VUser) executeWithRetryStream(
 	if err := vu.checkResolvedSecrets(); err != nil {
 		return nil, err
 	}
-	if err := vu.extendRuntimeRedactionForActionAuth(action); err != nil {
+	if err := vu.runtimeCredentialRedactionError(); err != nil {
+		return nil, err
+	}
+	if err := vu.extendRuntimeRedactionForResolvedAction(action); err != nil {
 		return nil, err
 	}
 	if errCfg.MaxRetries < 0 || errCfg.MaxRetries > dsl.MaxErrorRetries {
@@ -701,6 +757,7 @@ func (vu *VUser) executeWithRetryStream(
 			}
 		}
 		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
+		vu.consumeRuntimeCredentialResultValues(result)
 		if err != nil {
 			// Adapters are permitted to return diagnostic Result data alongside an
 			// error. The caller intentionally discards that result, so detach and zero
@@ -767,29 +824,6 @@ func actionTypeForTrace(action *protocol.Action) string {
 		return strings.ToLower(strings.TrimSpace(action.Type))
 	}
 	return strings.ToLower(strings.TrimSpace(action.Method))
-}
-
-func (vu *VUser) extendRuntimeRedactionForActionAuth(action *protocol.Action) error {
-	if action == nil || action.Auth == nil ||
-		!strings.EqualFold(strings.TrimSpace(action.Auth.Type), "basic") {
-		return nil
-	}
-	if action.Auth.Username == "" && action.Auth.Password == "" {
-		return nil
-	}
-	payload := base64.StdEncoding.EncodeToString([]byte(action.Auth.Username + ":" + action.Auth.Password))
-	redactionConfig, err := WithSecretValueRedactionChecked(vu.RedactionConfig, []string{
-		action.Auth.Username,
-		action.Auth.Password,
-		payload,
-		"Basic " + payload,
-	})
-	if err != nil {
-		return fmt.Errorf("prepare action credential redaction: %s", scrubSensitiveText(err.Error()))
-	}
-	vu.RedactionConfig = redactionConfig
-	vu.runtimeRedaction.Store(redactionConfig)
-	return nil
 }
 
 func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {

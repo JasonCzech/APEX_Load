@@ -1,10 +1,12 @@
 package enterprisearchive
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -14,6 +16,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -28,12 +33,12 @@ type enterpriseRuntimeSourceCredential struct {
 	value    string
 	source   credentialpolicy.SourceRef
 	nameHint string
-	label    string
 }
 
-// applyEnterpriseRuntimeBindings maps adapter-specific runtime surfaces through
-// the shared credential requirement/reference primitives and retains raw source
-// values only in ConvertResult's one-shot protected handoff.
+// applyEnterpriseRuntimeBindings applies the shared credential safety review
+// while retaining safely replayable imported values in the executable
+// destination script. Disclosure-safe source review and API read projections
+// remain responsible for masking those values outside persistence/replay.
 func applyEnterpriseRuntimeBindings(
 	result *ConvertResult,
 	scripts []*dsl.Script,
@@ -89,7 +94,7 @@ func applyEnterpriseRuntimeBindings(
 		}
 	}
 
-	project := func(value, field, key, label, nameHint string, occurrence int) string {
+	project := func(value, field, nameHint string) string {
 		if strings.TrimSpace(value) == "" {
 			return ""
 		}
@@ -97,16 +102,6 @@ func applyEnterpriseRuntimeBindings(
 		sourceCredential, hasSourceCredential := sourceValues[field]
 		if sourceCredential.nameHint != "" {
 			nameHint = sourceCredential.nameHint
-		}
-		if sourceCredential.label != "" {
-			label = sourceCredential.label
-		}
-		source := sourceCredential.source
-		if source.Format == "" {
-			source = credentialpolicy.SourceRef{
-				Format:  "enterprise_script_archive",
-				Pointer: field,
-			}
 		}
 
 		if _, existingReference := credential.ParseReference(value); existingReference {
@@ -119,56 +114,27 @@ func applyEnterpriseRuntimeBindings(
 				expected != value || sourceIsReference {
 				return value
 			}
-			requirement, projected, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{
-				Key:      key,
-				Label:    label,
-				Context:  field,
-				NameHint: nameHint,
-				Source:   source,
-				Targets: []credentialpolicy.TargetRef{{
-					Field:      field,
-					Occurrence: occurrence,
-				}},
-				Value: sourceCredential.value,
-				Mode:  credentialpolicy.SecretReference,
-			})
-			if err != nil {
-				return value
-			}
-			appendRequirement(requirement)
-			return projected
+			// ToHTTPConfig temporarily uses a secret reference so raw runtime
+			// values do not leak through intermediate metadata. At the final
+			// destination boundary restore the protected source byte-for-byte;
+			// Preserve mode must not create a binding/re-entry requirement.
+			return sourceCredential.value
 		}
 
-		// A caller-supplied runtime override may still carry a literal even though
-		// RuntimeConfig itself now projects safe draft references. Govern it using
-		// the same source-neutral requirement contract.
-		requirement, projected, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{
-			Key:      key,
-			Label:    label,
-			Context:  field,
-			NameHint: nameHint,
-			Source:   source,
-			Targets: []credentialpolicy.TargetRef{{
-				Field:      field,
-				Occurrence: occurrence,
-			}},
-			Value:    value,
-			Mode:     credentialpolicy.SecretReference,
-			Registry: registry,
-		})
-		if err != nil {
-			return credential.DraftReference(value, nameHint)
-		}
-		appendRequirement(requirement)
-		return projected
+		// The source already supplied this executable value. Preserve it without
+		// manufacturing a binding that would ask the operator to enter it again.
+		return value
 	}
 
 	for scriptIndex, script := range scripts {
 		if script == nil {
 			continue
 		}
+		markEnterpriseCredentialPreservingImport(script)
 		candidateKey := fmt.Sprintf("enterprise:%d", scriptIndex)
 		httpConfig := &script.Config.HTTP
+		authoredProxyMode := httpConfig.ProxyMode
+		authoredProxy := httpConfig.Proxy
 		httpConfig.Proxy.URL, httpConfig.Proxy.Username, httpConfig.Proxy.Password =
 			splitEnterpriseProxyUserinfo(
 				httpConfig.Proxy.URL,
@@ -183,25 +149,65 @@ func applyEnterpriseRuntimeBindings(
 					Pointer: "config.http.proxy.url",
 				}
 			}
-			projectedURL, projection, err := credentialpolicy.ProjectRawURL(
-				httpConfig.Proxy.URL,
-				credentialpolicy.Options{
-					Mode:        credentialpolicy.SecretReference,
-					Source:      proxySource,
-					Registry:    registry,
-					TargetField: "config.http.proxy.url",
-				},
-			)
-			if err != nil ||
+			projectedURL := ""
+			var projection credentialpolicy.Result
+			var err error
+			unrepresentable := !utf8.ValidString(httpConfig.Proxy.URL)
+			runtimeUnsupported := !unrepresentable &&
+				!validRuntimeCustomProxyURL(httpConfig.Proxy.URL)
+			if unrepresentable {
+				err = fmt.Errorf("proxy URL is not representable in the durable DSL")
+			} else {
+				projectedURL, projection, err = credentialpolicy.ProjectRawURL(
+					httpConfig.Proxy.URL,
+					credentialpolicy.Options{
+						Mode:        credentialpolicy.Preserve,
+						Source:      proxySource,
+						Registry:    registry,
+						TargetField: "config.http.proxy.url",
+					},
+				)
+			}
+			requiresReview := runtimeUnsupported ||
+				err != nil ||
 				projection.Disposition == credentialpolicy.BlockedDraft ||
-				projection.Disposition == credentialpolicy.Rejected {
-				httpConfig.ProxyMode = "none"
-				httpConfig.Proxy = dsl.ProxyConfig{}
+				projection.Disposition == credentialpolicy.Rejected
+			structurallyUnrepresentable := unrepresentable ||
+				runtimeUnsupported ||
+				err != nil ||
+				projection.Disposition == credentialpolicy.Rejected
+			if !structurallyUnrepresentable &&
+				projection.Disposition != credentialpolicy.Rejected {
+				httpConfig.Proxy.URL = projectedURL
+				mergeEnterpriseScriptCredentialTargets(script, projection.PreservedTargets)
+				for _, requirement := range projection.Requirements {
+					if requirement.ExistingReference {
+						if _, covered := coveredReplacements[strings.TrimSpace(requirement.Replacement)]; covered {
+							continue
+						}
+					}
+					appendRequirement(requirement)
+				}
+			}
+			if requiresReview {
+				detail := "the source proxy URL requires bounded review and was retained in a blocked draft"
+				warning := "HTTP proxy URL requires review; the imported value was retained and the generated draft cannot execute until the gate is resolved."
+				if structurallyUnrepresentable {
+					preserveEnterpriseUnsupportedProxySource(
+						script,
+						authoredProxyMode,
+						authoredProxy,
+					)
+					httpConfig.ProxyMode = "none"
+					httpConfig.Proxy = dsl.ProxyConfig{}
+					detail = "the source proxy cannot be represented by the DSL's executable proxy field; proxying was disabled and its exact source record was retained in protected metadata"
+					warning = "HTTP proxy URL could not be represented by the executable DSL; proxying was disabled, its exact source record was retained for repair, and the generated draft requires review before execution."
+				}
 				finding := importreview.Finding{
 					Code:       "import_review_required",
 					Severity:   diag.Blocker,
 					Element:    "HTTP proxy URL",
-					Detail:     "the source proxy URL could not be projected into an exact disclosure-safe runtime value",
+					Detail:     detail,
 					Location:   proxySource.Pointer,
 					Source:     "enterprise_script_archive",
 					ReasonCode: "runtime_proxy_url_credential_projection_failed",
@@ -217,52 +223,58 @@ func applyEnterpriseRuntimeBindings(
 				})
 				result.Warnings = append(
 					result.Warnings,
-					"HTTP proxy URL credential projection failed; proxying was disabled and the generated draft requires review before execution.",
+					warning,
 				)
-			} else {
-				httpConfig.Proxy.URL = projectedURL
-				for _, requirement := range projection.Requirements {
-					if requirement.ExistingReference {
-						if _, covered := coveredReplacements[strings.TrimSpace(requirement.Replacement)]; covered {
-							continue
-						}
-					}
-					appendRequirement(requirement)
-				}
 			}
 		}
 		httpConfig.Proxy.Username = project(
 			httpConfig.Proxy.Username,
 			"config.http.proxy.username",
-			"proxy_username",
-			"Proxy username",
 			enterpriseProxyUsernameSecretName,
-			scriptIndex,
 		)
 		httpConfig.Proxy.Password = project(
 			httpConfig.Proxy.Password,
 			"config.http.proxy.password",
-			"proxy_password",
-			"Proxy password",
 			enterpriseProxyPasswordSecretName,
-			scriptIndex,
 		)
 		httpConfig.Auth.Password = project(
 			httpConfig.Auth.Password,
 			"config.http.auth.password",
-			"password",
-			"HTTP authentication password",
 			enterpriseHTTPAuthPasswordSecretName,
-			scriptIndex,
 		)
 		httpConfig.Auth.Token = project(
 			httpConfig.Auth.Token,
 			"config.http.auth.token",
-			"token",
-			"HTTP authentication token",
 			enterpriseHTTPAuthTokenSecretName,
-			scriptIndex,
 		)
+		if enterpriseGlobalHTTPAuthInvalid(httpConfig.Auth) {
+			location := "config.http.auth"
+			if runtimeFile := normalizeRuntimeArchivePath(ctx.RuntimeFileName); runtimeFile != "" {
+				location = runtimeFile + "#Authentication"
+			}
+			finding := importreview.Finding{
+				Code:       "import_review_required",
+				Severity:   diag.Blocker,
+				Element:    "HTTP authentication",
+				Detail:     "the source authentication value cannot be represented safely by the native HTTP runtime and was retained in a blocked draft",
+				Location:   location,
+				Source:     "enterprise_script_archive",
+				ReasonCode: "invalid_auth_wire_value",
+				SourceRef:  location,
+				Resolution: "replace_behavior_and_remove_gate",
+				Gate:       importreview.GateExecution,
+			}
+			_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+				actionFinding := finding
+				actionFinding.ActionPath = ref.Path
+				importreview.ApplyToAction(ref.Action, []importreview.Finding{actionFinding})
+				return nil
+			})
+			result.Warnings = append(
+				result.Warnings,
+				"HTTP authentication could not be represented safely; the imported value was retained and the generated draft requires review before execution.",
+			)
+		}
 
 		headerNames := make([]string, 0, len(httpConfig.DefaultHeaders))
 		for name := range httpConfig.DefaultHeaders {
@@ -273,15 +285,12 @@ func applyEnterpriseRuntimeBindings(
 		sort.SliceStable(headerNames, func(i, j int) bool {
 			return strings.ToLower(headerNames[i]) < strings.ToLower(headerNames[j])
 		})
-		for headerIndex, name := range headerNames {
+		for _, name := range headerNames {
 			field := "config.http.default_headers." + strings.ToLower(strings.TrimSpace(name))
 			httpConfig.DefaultHeaders[name] = project(
 				httpConfig.DefaultHeaders[name],
 				field,
-				name,
-				name,
 				"ENTERPRISE_DEFAULT_HEADER_"+credential.EnvKey(name),
-				scriptIndex*1000+headerIndex,
 			)
 		}
 
@@ -294,17 +303,18 @@ func applyEnterpriseRuntimeBindings(
 		sort.SliceStable(attributeNames, func(i, j int) bool {
 			return strings.ToLower(attributeNames[i]) < strings.ToLower(attributeNames[j])
 		})
-		for attributeIndex, name := range attributeNames {
+		for _, name := range attributeNames {
 			field := "config.web_runtime.additional_attributes." + strings.ToLower(strings.TrimSpace(name))
 			script.Config.WebRuntime.AdditionalAttributes[name] = project(
 				script.Config.WebRuntime.AdditionalAttributes[name],
 				field,
-				name,
-				name,
 				"ENTERPRISE_RUNTIME_"+credential.EnvKey(name),
-				scriptIndex*1000+attributeIndex,
 			)
 		}
+		mergeEnterpriseScriptCredentialTargets(
+			script,
+			enterpriseOpaqueConfigCredentialTargets(script, candidateKey),
+		)
 
 		additionalURLs := make([]requestimport.ScriptCredentialURL, len(result.RecordedResourceURLs))
 		for index, value := range result.RecordedResourceURLs {
@@ -337,7 +347,7 @@ func applyEnterpriseRuntimeBindings(
 			result.RecordedResourceURLs = nil
 			result.Warnings = append(
 				result.Warnings,
-				"HTTP credential review could not safely traverse the generated request tree; request details were removed and the draft requires review.",
+				"HTTP credential review could not safely traverse the generated request tree; an inert source snapshot was retained in the blocked draft for operator repair.",
 			)
 		}
 	}
@@ -347,6 +357,125 @@ func applyEnterpriseRuntimeBindings(
 	for index := range requirements {
 		requirements[index].Value = ""
 	}
+}
+
+func markEnterpriseCredentialPreservingImport(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		script.Metadata.Import.Source = "enterprise_script_archive"
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =
+		dsl.ImportPreservedCredentialPolicyPreserve
+}
+
+func preserveEnterpriseUnsupportedProxySource(
+	script *dsl.Script,
+	proxyMode string,
+	proxy dsl.ProxyConfig,
+) {
+	if script == nil {
+		return
+	}
+	markEnterpriseCredentialPreservingImport(script)
+	encode := func(value string) string {
+		return base64.StdEncoding.EncodeToString([]byte(value))
+	}
+	noProxy := make([]string, len(proxy.NoProxy))
+	for index, value := range proxy.NoProxy {
+		noProxy[index] = encode(value)
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey] =
+		map[string]any{
+			"version":                1,
+			"proxy_mode_base64":      encode(proxyMode),
+			"url_base64":             encode(proxy.URL),
+			"username_base64":        encode(proxy.Username),
+			"password_base64":        encode(proxy.Password),
+			"no_proxy_values_base64": noProxy,
+		}
+}
+
+func mergeEnterpriseScriptCredentialTargets(
+	script *dsl.Script,
+	targets []credentialpolicy.TargetRef,
+) {
+	if script == nil || len(targets) == 0 {
+		return
+	}
+	markEnterpriseCredentialPreservingImport(script)
+	preserved := script.Metadata.Import.Preserved
+	metadata := make(map[string]any, 1)
+	if existing, ok := preserved[dsl.ImportPreservedCredentialTargetsMetadataKey]; ok {
+		metadata[dsl.ImportPreservedCredentialTargetsMetadataKey] = existing
+	}
+	metadata = requestimport.MergePreservedCredentialTargetsMetadata(metadata, targets)
+	if merged, ok := metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]; ok {
+		preserved[dsl.ImportPreservedCredentialTargetsMetadataKey] = merged
+	}
+}
+
+// enterpriseOpaqueConfigCredentialTargets records executable config scalars
+// whose credential components cannot be represented by ordinary field-name
+// scanning alone. The locators contain no values; they let runtime redaction
+// derive both the complete composite and isolated components immediately
+// before execution.
+func enterpriseOpaqueConfigCredentialTargets(
+	script *dsl.Script,
+	requestKey string,
+) []credentialpolicy.TargetRef {
+	if script == nil {
+		return nil
+	}
+	var targets []credentialpolicy.TargetRef
+	dsn := strings.TrimSpace(script.Config.Database.DSN)
+	if dsn != "" {
+		if _, governed := credential.ParseReference(dsn); !governed {
+			targets = append(targets, credentialpolicy.TargetRef{
+				RequestKey: requestKey,
+				Field:      "config.database.dsn.opaque",
+			})
+		}
+	}
+	for index, argument := range script.Config.JavaVuser.AdditionalVMParameters {
+		if !javarunner.ContainsSensitiveVMParameterValue(argument) {
+			continue
+		}
+		targets = append(targets, credentialpolicy.TargetRef{
+			RequestKey: requestKey,
+			Field:      "config.java_vuser.additional_vm_parameters.opaque",
+			Index:      index,
+		})
+	}
+	return targets
+}
+
+func enterpriseGlobalHTTPAuthInvalid(auth dsl.AuthConfig) bool {
+	mode := httpprotocol.NormalizeAuthType(auth.Type)
+	switch mode {
+	case "", httpprotocol.AuthTypeNone, httpprotocol.AuthTypeInherit:
+		return false
+	}
+	if httpprotocol.LookupAuthCapability(mode).Support != httpprotocol.AuthExecutable {
+		return true
+	}
+	return httpprotocol.ValidateAuthWireValues(&protocol.AuthConfig{
+		Type:     mode,
+		Username: auth.Username,
+		Password: auth.Password,
+		Token:    auth.Token,
+		Domain:   auth.Domain,
+	}) != nil
 }
 
 func enterpriseRuntimeSourceValues(ctx archiveFinalizationContext) map[string]enterpriseRuntimeSourceCredential {
@@ -368,12 +497,18 @@ func enterpriseRuntimeSourceValues(ctx archiveFinalizationContext) map[string]en
 	_, embeddedProxyUser, embeddedProxyPass :=
 		splitEnterpriseProxyUserinfo(ctx.RuntimeConfig.ProxyURL, "", "")
 	proxyUser := ctx.RuntimeConfig.ProxyUser
+	if proxyUser == "" {
+		proxyUser = ctx.RuntimeConfig.proxyReviewUser
+	}
 	proxyUserSource := source("Proxy/ProxyUserName")
 	if strings.TrimSpace(proxyUser) == "" && embeddedProxyUser != "" {
 		proxyUser = embeddedProxyUser
 		proxyUserSource = source("Proxy/ProxyServer")
 	}
 	proxyPass := ctx.RuntimeConfig.ProxyPass
+	if proxyPass == "" {
+		proxyPass = ctx.RuntimeConfig.proxyReviewPass
+	}
 	proxyPassSource := source("Proxy/ProxyPassword")
 	if strings.TrimSpace(proxyPass) == "" && embeddedProxyPass != "" {
 		proxyPass = embeddedProxyPass
@@ -387,19 +522,16 @@ func enterpriseRuntimeSourceValues(ctx archiveFinalizationContext) map[string]en
 			value:    proxyUser,
 			source:   proxyUserSource,
 			nameHint: enterpriseProxyUsernameSecretName,
-			label:    "Proxy username",
 		},
 		"config.http.proxy.password": {
 			value:    proxyPass,
 			source:   proxyPassSource,
 			nameHint: enterpriseProxyPasswordSecretName,
-			label:    "Proxy password",
 		},
 		"config.http.auth.password": {
 			value:    ctx.RuntimeConfig.AuthPass,
 			source:   source("Authentication/Password"),
 			nameHint: enterpriseHTTPAuthPasswordSecretName,
-			label:    "HTTP authentication password",
 		},
 	}
 	for name, value := range ctx.RuntimeConfig.AdditionalAttributes {
@@ -411,7 +543,6 @@ func enterpriseRuntimeSourceValues(ctx archiveFinalizationContext) map[string]en
 			value:    value,
 			source:   source("Additional Attributes/" + name),
 			nameHint: "ENTERPRISE_RUNTIME_" + credential.EnvKey(name),
-			label:    name,
 		}
 	}
 	return out
@@ -424,6 +555,8 @@ func clearEnterpriseRuntimeSourceValues(config *RuntimeConfig) {
 	config.ProxyURL = disclosureSafeProxyEndpoint(config.ProxyURL)
 	config.ProxyUser = ""
 	config.ProxyPass = ""
+	config.proxyReviewUser = ""
+	config.proxyReviewPass = ""
 	config.AuthPass = ""
 	for name := range config.AdditionalAttributes {
 		if credential.SensitiveName(name) {
@@ -655,6 +788,10 @@ func disclosureSafeEnterpriseSourceReview(review *SourceReview) {
 		case ".c", ".h", ".java":
 			safe := scrub.Value(source.Content, scrub.Policy{})
 			safe = redactEnterpriseCallArgument(safe, "web_set_user", 1)
+			safe = redactEnterpriseCallArgument(safe, "DriverManager.getConnection", 2)
+			safe = redactEnterpriseJNDICredentialArguments(safe)
+			safe = redactEnterpriseCallArgument(safe, "sapgui_logon", 2)
+			safe = redactEnterpriseCallArgument(safe, "sapgui_set_password", 1)
 			if safe != source.Content {
 				source.Content = safe
 				source.Redacted = true
@@ -754,6 +891,45 @@ func redactEnterpriseCallArgument(content, function string, argumentIndex int) s
 	spans := enterpriseCallArgumentSpans(content, function, argumentIndex)
 	for index := len(spans) - 1; index >= 0; index-- {
 		span := spans[index]
+		content = content[:span.start] +
+			enterpriseRedactedSourceExpression(content[span.start:span.end]) +
+			content[span.end:]
+	}
+	return content
+}
+
+// redactEnterpriseJNDICredentialArguments handles the positional JNDI form
+// env.put(Context.SECURITY_CREDENTIALS, value). Generic text scrubbing cannot
+// infer that a short neutral literal is a password from the literal alone.
+func redactEnterpriseJNDICredentialArguments(content string) string {
+	keySpans := enterpriseCallArgumentSpans(content, "put", 0)
+	valueSpans := enterpriseCallArgumentSpans(content, "put", 1)
+	if len(keySpans) == 0 || len(valueSpans) == 0 {
+		return content
+	}
+
+	redactions := make([]enterpriseSourceSpan, 0)
+	valueIndex := 0
+	for keyIndex, keySpan := range keySpans {
+		nextKeyStart := len(content)
+		if keyIndex+1 < len(keySpans) {
+			nextKeyStart = keySpans[keyIndex+1].start
+		}
+		for valueIndex < len(valueSpans) && valueSpans[valueIndex].start <= keySpan.end {
+			valueIndex++
+		}
+		if valueIndex >= len(valueSpans) || valueSpans[valueIndex].start >= nextKeyStart {
+			continue
+		}
+		key := strings.ToLower(content[keySpan.start:keySpan.end])
+		if strings.Contains(key, "security_credentials") ||
+			strings.Contains(key, "java.naming.security.credentials") {
+			redactions = append(redactions, valueSpans[valueIndex])
+		}
+		valueIndex++
+	}
+	for index := len(redactions) - 1; index >= 0; index-- {
+		span := redactions[index]
 		content = content[:span.start] +
 			enterpriseRedactedSourceExpression(content[span.start:span.end]) +
 			content[span.end:]

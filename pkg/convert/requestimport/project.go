@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -28,8 +29,6 @@ const (
 	PhaseInit     Phase = "init"
 	PhaseActions  Phase = "actions"
 	PhaseTeardown Phase = "teardown"
-
-	unsupportedAuthCredentialMetadataKey = "import_review_credential_references"
 )
 
 // ActionOverlay carries source-specific DSL features that are intentionally not
@@ -121,8 +120,14 @@ type Report struct {
 	SourceMappings []SourceMapping                `json:"source_mappings,omitempty"`
 	Assets         []Asset                        `json:"-"`
 	// runtimeFidelity carries source occurrence indexes across credential
-	// projection without exposing source values or changing the public report.
+	// projection. Preserve mode may also carry exact omitted header bytes until
+	// they are encoded into gated action metadata; the field is unexported and
+	// never changes the public report.
 	runtimeFidelity runtimeFidelityProjection
+	// preservedTargets contains disclosure-safe executable field locators. The
+	// finalizer writes them to action metadata; no credential value is carried
+	// in this report sidecar.
+	preservedTargets []credentialpolicy.TargetRef
 }
 
 // Result is the common finalization sidecar. Converter-specific public result
@@ -164,6 +169,7 @@ func FinalizeAction(request EffectiveRequest, options FinalizeOptions) (dsl.Acti
 	if err != nil {
 		return dsl.Action{}, Report{RequestKey: request.Key, Disposition: Rejected}, err
 	}
+	attachPreservedCredentialTargets(&action, credentialReport.preservedTargets)
 	// projectRequest records any post-projection/synthesized omissions first.
 	// Append source-wire omissions discovered before credential replacement so
 	// metadata order and source mappings remain aligned.
@@ -171,6 +177,10 @@ func FinalizeAction(request EffectiveRequest, options FinalizeOptions) (dsl.Acti
 	runtimeProjection.HeaderOmissions = append(
 		runtimeProjection.HeaderOmissions,
 		credentialReport.runtimeFidelity.HeaderOmissions...,
+	)
+	runtimeProjection.MultipartOmissions = append(
+		runtimeProjection.MultipartOmissions,
+		credentialReport.runtimeFidelity.MultipartOmissions...,
 	)
 	findings := append([]importreview.Finding(nil), options.Findings...)
 	findings = append(findings, credentialReport.Findings...)
@@ -213,6 +223,104 @@ func FinalizeAction(request EffectiveRequest, options FinalizeOptions) (dsl.Acti
 	return action, report, nil
 }
 
+func attachPreservedCredentialTargets(action *dsl.Action, targets []credentialpolicy.TargetRef) {
+	if action == nil || len(targets) == 0 {
+		return
+	}
+	action.Metadata = attachPreservedCredentialTargetsMetadata(action.Metadata, targets)
+}
+
+func attachPreservedCredentialTargetsMetadata(
+	metadata map[string]any,
+	targets []credentialpolicy.TargetRef,
+) map[string]any {
+	return MergePreservedCredentialTargetsMetadata(metadata, targets)
+}
+
+// MergePreservedCredentialTargetsMetadata appends disclosure-safe runtime
+// redaction locators without discarding locators already attached by an
+// adapter or an earlier projection pass. Encounter order is stable and exact
+// duplicate occurrences are removed.
+func MergePreservedCredentialTargetsMetadata(
+	metadata map[string]any,
+	targets []credentialpolicy.TargetRef,
+) map[string]any {
+	if len(targets) == 0 {
+		return metadata
+	}
+	existing := preservedCredentialTargetsFromMetadata(metadata)
+	seen := make(map[string]struct{}, len(existing)+len(targets))
+	normalized := make([]credentialpolicy.TargetRef, 0, len(existing)+len(targets))
+	targets = append(existing, targets...)
+	for _, target := range targets {
+		target.Field = strings.TrimSpace(target.Field)
+		if target.Field == "" || target.Index < 0 || target.Occurrence < 0 {
+			continue
+		}
+		key := fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%d",
+			target.RequestKey, target.Field, target.Index, target.Pointer, target.Occurrence)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, target)
+	}
+	if len(normalized) == 0 {
+		return metadata
+	}
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+	metadata[dsl.ImportPreservedCredentialTargetsMetadataKey] = normalized
+	return metadata
+}
+
+func preservedCredentialTargetsFromMetadata(
+	metadata map[string]any,
+) []credentialpolicy.TargetRef {
+	if metadata == nil {
+		return nil
+	}
+	raw, exists := metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]
+	if !exists || raw == nil {
+		return nil
+	}
+	payload, err := json.Marshal(raw)
+	if err != nil || len(payload) > 256<<10 {
+		return nil
+	}
+	var targets []credentialpolicy.TargetRef
+	if err := json.Unmarshal(payload, &targets); err != nil {
+		return nil
+	}
+	return targets
+}
+
+func attachScriptPreservedCredentialTargets(script *dsl.Script, targets []credentialpolicy.TargetRef) {
+	if script == nil || len(targets) == 0 {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	metadata := make(map[string]any, 1)
+	if existing, ok := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialTargetsMetadataKey]; ok {
+		metadata[dsl.ImportPreservedCredentialTargetsMetadataKey] = existing
+	}
+	metadata = attachPreservedCredentialTargetsMetadata(metadata, targets)
+	value, ok := metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]
+	if !ok {
+		return
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialTargetsMetadataKey] = value
+}
+
 // FinalizeScript applies all request reports, validates the complete script,
 // and returns a source-neutral readiness result. Any DSL validation issue here
 // is an internal invariant failure: importers must return valid blocked drafts,
@@ -221,6 +329,7 @@ func FinalizeScript(script *dsl.Script, reports []Report, options FinalizeOption
 	if script == nil {
 		return nil, errors.New("script is required")
 	}
+	markCredentialPreservingImport(script)
 	if isHTTPFamilyProtocol(script.Protocol) && script.Config.HTTP.Traceparent == nil {
 		// Source-exact imports must not acquire the runtime's opt-out
 		// traceparent default. Preserve an explicit source/importer choice in
@@ -277,7 +386,10 @@ func FinalizeScript(script *dsl.Script, reports []Report, options FinalizeOption
 	}
 	runtimeFindings, runtimeMappings, err := ApplyRuntimeFidelityReview(
 		script,
-		RuntimeFidelityOptions{SourceProfile: script.GeneratedFrom},
+		RuntimeFidelityOptions{
+			SourceProfile:              script.GeneratedFrom,
+			PreserveOmittedHeaderBytes: importPreservesCredentialValues(script),
+		},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("review HTTP runtime fidelity: %w", err)
@@ -298,11 +410,90 @@ func FinalizeScript(script *dsl.Script, reports []Report, options FinalizeOption
 	if err != nil {
 		return nil, err
 	}
+	markCredentialParameterProvenance(result.Script, result.Requirements)
 	if len(result.ValidationIssues) != 0 {
 		return nil, fmt.Errorf("internal request import invariant: generated script failed DSL validation: %s", strings.Join(result.ValidationIssues, "; "))
 	}
 	result.Disposition = dispositionForReadiness(result.Readiness, reports)
 	return result, nil
+}
+
+func markCredentialParameterProvenance(
+	script *dsl.Script,
+	requirements []credentialpolicy.Requirement,
+) {
+	if script == nil || len(requirements) == 0 ||
+		script.Metadata == nil || script.Metadata.Import == nil {
+		return
+	}
+	names := make(map[string]string)
+	if script.Metadata.Import.Preserved != nil {
+		existingValue := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialParameterNamesKey]
+		switch existing := existingValue.(type) {
+		case []string:
+			for _, name := range existing {
+				if normalized := strings.ToLower(strings.TrimSpace(name)); normalized != "" {
+					names[normalized] = strings.TrimSpace(name)
+				}
+			}
+		case []any:
+			for _, value := range existing {
+				name, ok := value.(string)
+				if !ok {
+					continue
+				}
+				if normalized := strings.ToLower(strings.TrimSpace(name)); normalized != "" {
+					names[normalized] = strings.TrimSpace(name)
+				}
+			}
+		}
+	}
+	for _, requirement := range requirements {
+		for _, name := range requirement.SourceVariableNames {
+			name = strings.TrimSpace(name)
+			if normalized := strings.ToLower(name); normalized != "" {
+				names[normalized] = name
+			}
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	ordered := make([]string, 0, len(names))
+	for _, name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		return strings.ToLower(ordered[i]) < strings.ToLower(ordered[j])
+	})
+	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialParameterNamesKey] =
+		ordered
+}
+
+func markCredentialPreservingImport(script *dsl.Script) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		return
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =
+		dsl.ImportPreservedCredentialPolicyPreserve
+}
+
+func importPreservesCredentialValues(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return false
+	}
+	value, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string)
+	return strings.EqualFold(
+		strings.TrimSpace(value),
+		dsl.ImportPreservedCredentialPolicyPreserve,
+	)
 }
 
 func projectScriptBaseURLCredentials(
@@ -365,7 +556,7 @@ func projectScriptBaseURLCredentials(
 		projected, result, err := credentialpolicy.ProjectRawURL(
 			script.Config.BaseURL,
 			credentialpolicy.Options{
-				Mode:        credentialpolicy.SecretReference,
+				Mode:        credentialpolicy.Preserve,
 				Source:      baseSource,
 				RequestKey:  report.RequestKey,
 				TargetField: "base_url",
@@ -379,6 +570,10 @@ func projectScriptBaseURLCredentials(
 		review := ReviewCredentialProjection(result, "HTTP base URL")
 		report.Disposition = review.Disposition
 		report.Requirements = review.Requirements
+		report.preservedTargets = append(
+			report.preservedTargets,
+			result.PreservedTargets...,
+		)
 		baseFindings = review.Findings
 		if review.Rejected {
 			var codes []string
@@ -388,6 +583,11 @@ func projectScriptBaseURLCredentials(
 				}
 			}
 			return report, &CredentialProjectionError{Codes: uniqueSorted(codes)}
+		}
+		if baseURLHasUnresolvableRuntimeTemplate(rawBaseURL) {
+			baseFindings = append(baseFindings, baseURLRuntimeTemplateFinding(baseSource))
+			baseFindings = importreview.NormalizeFindings(baseFindings)
+			report.Disposition = worseRequestDisposition(report.Disposition, BlockedDraft)
 		}
 		script.Config.BaseURL = projected
 	}
@@ -431,7 +631,7 @@ func projectScriptBaseURLCredentials(
 			projected, result, projectErr := credentialpolicy.ProjectRawURL(
 				rawSurface,
 				credentialpolicy.Options{
-					Mode:        credentialpolicy.SecretReference,
+					Mode:        credentialpolicy.Preserve,
 					Source:      surfaceSource,
 					RequestKey:  surfaceRequestKey,
 					TargetField: surface.targetField,
@@ -478,6 +678,43 @@ func projectScriptBaseURLCredentials(
 		report.Findings = importreview.NormalizeFindings(actionFindings)
 	}
 	return report, nil
+}
+
+const reasonBaseURLRuntimeTemplateUnavailable = "base_url_runtime_template_unavailable"
+
+var baseURLRuntimeTemplatePattern = regexp.MustCompile(`\{\{\s*([^{}]+?)\s*\}\}`)
+
+func baseURLHasUnresolvableRuntimeTemplate(value string) bool {
+	for _, match := range baseURLRuntimeTemplatePattern.FindAllStringSubmatch(value, -1) {
+		if len(match) != 2 {
+			continue
+		}
+		expression := strings.ToLower(strings.TrimSpace(match[1]))
+		// Protocol initialization resolves project-secret references before the
+		// HTTP client receives Config.BaseURL. Every other namespace is
+		// action/VUser scoped (or API-override scoped) and would otherwise be
+		// sent literally by direct replay, shakeout, or CLI execution.
+		if !strings.HasPrefix(expression, "secret.") {
+			return true
+		}
+	}
+	return false
+}
+
+func baseURLRuntimeTemplateFinding(source SourceRef) importreview.Finding {
+	location := sourceLocation(source)
+	return importreview.Finding{
+		Code:       importReviewRequiredBlocker,
+		Severity:   diag.Blocker,
+		Element:    "HTTP base URL",
+		Detail:     "config.base_url contains a per-VUser template that the HTTP runtime cannot resolve before protocol initialization",
+		Location:   location,
+		Source:     firstNonEmpty(strings.TrimSpace(source.Format), "import"),
+		ReasonCode: reasonBaseURLRuntimeTemplateUnavailable,
+		SourceRef:  location,
+		Resolution: "replace_with_literal_or_secret_reference_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}
 }
 
 type importURLCredentialSurface struct {
@@ -737,6 +974,7 @@ func (draft *Draft) Finalize(options FinalizeOptions) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	attachScriptPreservedCredentialTargets(draft.Script, baseURLReport.preservedTargets)
 	draft.Findings = append(draft.Findings, baseURLReport.Findings...)
 	draft.Requirements = append(
 		draft.Requirements,
@@ -867,7 +1105,6 @@ func projectRequest(request Request, overlay ActionOverlay, options ProjectOptio
 		action.Metadata["http_version"] = version
 	}
 	effectiveRequestAuth := effectiveAuth(request)
-	preserveUnsupportedAuthCredentialReferences(&action, effectiveRequestAuth)
 	action.Auth, findings = projectAuth(effectiveRequestAuth, request, findings)
 	action.TimeoutMs, findings, err = projectTimeout(request.Timeout, options, findings)
 	if err != nil {
@@ -912,33 +1149,6 @@ func projectRequest(request Request, overlay ActionOverlay, options ProjectOptio
 	return action, findings, request.Body.Assets, runtimeProjection, nil
 }
 
-func preserveUnsupportedAuthCredentialReferences(action *dsl.Action, auth Auth) {
-	if action == nil || auth.Mode != AuthUnsupported {
-		return
-	}
-	references := make(map[string]string, 2)
-	for _, field := range []struct {
-		name  string
-		value string
-	}{
-		{name: "password", value: auth.Password},
-		{name: "token", value: auth.Token},
-	} {
-		value := field.value
-		value = strings.TrimSpace(value)
-		if _, ok := credential.ParseReference(value); ok {
-			references[field.name] = value
-		}
-	}
-	if len(references) == 0 {
-		return
-	}
-	if action.Metadata == nil {
-		action.Metadata = make(map[string]any)
-	}
-	action.Metadata[unsupportedAuthCredentialMetadataKey] = references
-}
-
 func projectAuth(auth Auth, request Request, findings []importreview.Finding) (*dsl.AuthConfig, []importreview.Finding) {
 	mode := auth.Mode
 	switch mode {
@@ -970,9 +1180,19 @@ func projectAuth(auth Auth, request Request, findings []importreview.Finding) (*
 			fmt.Sprintf("the source HTTP authentication mode is %s and must be translated before execution", capability.Support),
 		)
 		findings = append(findings, finding)
-		// Explicit no-auth is a structurally valid, inert placeholder. Source
-		// credentials remain only in the protected candidate/requirements.
-		return &dsl.AuthConfig{Type: httpprotocol.AuthTypeNone}, findings
+		// The durable import-review gate makes an unsupported auth configuration
+		// inert before transport. Retain its exact fields in the destination so
+		// an operator can translate the scheme (for example NTLM to digest)
+		// without re-entering a password already present in the imported source.
+		// DSL validation explicitly permits unsupported auth only while that
+		// durable gate remains attached.
+		return &dsl.AuthConfig{
+			Type:     sourceMode,
+			Username: auth.Username,
+			Password: auth.Password,
+			Token:    auth.Token,
+			Domain:   auth.Domain,
+		}, findings
 	default:
 		sourceMode := firstNonEmpty(auth.SourceMode, string(mode))
 		findings = append(findings, requestReviewFinding(
@@ -981,7 +1201,13 @@ func projectAuth(auth Auth, request Request, findings []importreview.Finding) (*
 			"HTTP authentication",
 			"the effective HTTP authentication mode is unknown and must be translated before execution",
 		))
-		return &dsl.AuthConfig{Type: httpprotocol.AuthTypeNone}, findings
+		return &dsl.AuthConfig{
+			Type:     strings.ToLower(strings.TrimSpace(sourceMode)),
+			Username: auth.Username,
+			Password: auth.Password,
+			Token:    auth.Token,
+			Domain:   auth.Domain,
+		}, findings
 	}
 }
 

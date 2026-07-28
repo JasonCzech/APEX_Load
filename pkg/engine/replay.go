@@ -294,6 +294,11 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
 	}
 	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(script, secretResolver)...)
+	importedValues, credentialTemplates, err := inspectImportedCredentials(script)
+	if err != nil {
+		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
+	}
+	secretValues = append(secretValues, importedValues...)
 	seedSecretValues := make([]string, 0)
 	for key, value := range opts.Variables {
 		if value != "" && (scrub.SensitiveName(key) || scrub.Value(value, scrub.Policy{}) != value) {
@@ -354,16 +359,18 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	})
 
 	vu := &VUser{
-		ID:              0,
-		Group:           groupName,
-		Proto:           proto,
-		Script:          script,
-		Metrics:         NewMetricsCollector(16),
-		Variables:       make(map[string]string),
-		DataProvider:    dataProvider,
-		SecretResolver:  secretResolver,
-		RedactionConfig: redactionConfig,
-		SnapshotStore:   NewSnapshotStore(128),
+		ID:                           0,
+		Group:                        groupName,
+		Proto:                        proto,
+		Script:                       script,
+		Metrics:                      NewMetricsCollector(16),
+		Variables:                    make(map[string]string),
+		DataProvider:                 dataProvider,
+		SecretResolver:               secretResolver,
+		RedactionConfig:              redactionConfig,
+		credentialTemplates:          credentialTemplates,
+		credentialTemplatesInspected: true,
+		SnapshotStore:                NewSnapshotStore(128),
 	}
 	// Deterministic replay: seed random data selection and random template builtins
 	// BEFORE prepareRuntimeState, whose initial data-row load (loadDataRow → GetRow)
@@ -379,6 +386,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	vu.prepareRuntimeState()
 	for key, value := range opts.Variables {
 		vu.Variables[key] = value
+	}
+	if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
+		return nil, fmt.Errorf("prepare replay credential redaction: %s", err)
 	}
 
 	continueOnError := script.Config.ErrorHandling.ContinueOnError
@@ -404,7 +414,17 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, opts.OnProgress)
 
 	report.CompletedAt = time.Now()
-	report.FinalVariables = scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
+	if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
+		report.Success = false
+		if report.Error == "" {
+			report.Error = "runtime credential redaction failed"
+		}
+	}
+	report.FinalVariables = scrubReplayFinalVariables(
+		vu.Variables,
+		vu.RedactionConfig,
+		vu.credentialTemplates,
+	)
 	report.Snapshots = vu.SnapshotStore.Snapshots()
 	report.DiagnosisSummary = buildReplayDiagnosisSummary(report.Events)
 	report.RepairSuggestions = collectReplayRepairSuggestions(report.Events)
@@ -1350,13 +1370,21 @@ func replayThinkTimeCancellationError(ctx context.Context) string {
 	return "replay canceled during think time"
 }
 
-func scrubReplayFinalVariables(values map[string]string, config *RedactionConfig) map[string]string {
+func scrubReplayFinalVariables(
+	values map[string]string,
+	config *RedactionConfig,
+	credentialTemplates *importedCredentialTemplatePlan,
+) map[string]string {
 	if len(values) == 0 {
 		return nil
 	}
 	scrubbed := make(map[string]string, len(values))
 	for key, value := range values {
-		if scrub.SensitiveName(key) {
+		importedCredential := false
+		if credentialTemplates != nil {
+			_, importedCredential = credentialTemplates.variables[key]
+		}
+		if scrub.SensitiveName(key) || importedCredential {
 			scrubbed[key] = redactedPayloadValue
 			continue
 		}

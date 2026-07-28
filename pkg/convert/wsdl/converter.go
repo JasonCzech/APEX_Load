@@ -676,7 +676,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		for _, item := range operationDiagnostics.Items() {
 			diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 		}
-		body, secrets, credentialFindings, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+		body, secrets, credentialFindings, preservedTargets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 			RequestKey: actionName,
 			SourcePath: sourceFileName,
 			Pointer:    sourcePointer + "/body",
@@ -695,6 +695,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			"wsdl_binding":   selected.BindingName,
 			"soap_version":   soapVersion,
 		}
+		metadata = requestimport.MergePreservedCredentialTargetsMetadata(
+			metadata,
+			preservedTargets,
+		)
 		reviewFindings := wsdlOperationReviewFindings(op, sourceFileName, sourcePointer)
 		reviewFindings = append(reviewFindings, wsdlBindingReviewFindings(selected, doc, sourceFileName, sourcePointer)...)
 		reviewFindings = append(reviewFindings, wsdlSkeletonReviewFindings(operationDiagnostics.Items(), sourceFileName, sourcePointer)...)
@@ -703,9 +707,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		reviewFindings = append(reviewFindings, credentialFindings...)
 		reviewFindings = importreview.NormalizeFindings(reviewFindings)
-		if len(reviewFindings) > 0 {
+		executionFindings := wsdlExecutionGatingFindings(reviewFindings)
+		if len(executionFindings) > 0 {
 			metadata["execution_blocker"] = "import_review_required"
-			metadata["import_review"] = wsdlImportReviewMetadata(reviewFindings, sourceFileName, sourcePointer)
+			metadata["import_review"] = wsdlImportReviewMetadata(executionFindings, sourceFileName, sourcePointer)
 		}
 		requirements := make([]credentialpolicy.Requirement, 0, len(secrets))
 		for _, secret := range secrets {
@@ -806,7 +811,21 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(sourceFiles) == 0 {
 		sourceFiles = map[string]string{sourceFileName: content}
 	}
-	result.SourceReview = sourceview.Build(redactWSDLProjectedSecrets(sourceFiles, projectedSecrets), sourceMappings)
+	reviewFiles := redactWSDLProjectedSecrets(sourceFiles, projectedSecrets)
+	redactedReviewFiles := make(map[string]struct{})
+	for path, reviewContent := range reviewFiles {
+		if reviewContent != sourceFiles[path] {
+			redactedReviewFiles[path] = struct{}{}
+		}
+	}
+	result.SourceReview = sourceview.Build(reviewFiles, sourceMappings)
+	if result.SourceReview != nil {
+		for index := range result.SourceReview.SourceFiles {
+			if _, redacted := redactedReviewFiles[result.SourceReview.SourceFiles[index].Path]; redacted {
+				result.SourceReview.SourceFiles[index].Redacted = true
+			}
+		}
+	}
 	return result, nil
 }
 

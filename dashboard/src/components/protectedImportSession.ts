@@ -1,6 +1,24 @@
+import { type SecretBindingRequirement } from '../types/scriptImports'
+import { type ScriptDefinition } from '../types/scripts'
+
 export interface ProtectedImportCandidate {
   import_session_id?: string
   expires_at?: string
+}
+
+export interface CredentialPreservingImportCandidate {
+  import_draft_expires_at?: string
+}
+
+export function credentialPreservingImportDraftRequiresSave(
+  candidate: CredentialPreservingImportCandidate | null | undefined,
+  script: ScriptDefinition | null | undefined,
+  requirements: readonly SecretBindingRequirement[] = [],
+): boolean {
+  if (candidate?.import_draft_expires_at?.trim()) return true
+  if (requirements.some(requirement => requirement.destination_value_preserved === true)) return true
+  const token = script?.metadata?.import?.preserved?.server_import_attestation_v1
+  return typeof token === 'string' && token.trim().length > 0
 }
 
 export function activeProtectedImportSessionId(
@@ -45,6 +63,30 @@ export function protectedImportExpiryLabel(raw: string | undefined, now = Date.n
   if (!raw?.trim()) return ''
   const expiry = Date.parse(raw)
   if (!Number.isFinite(expiry)) return ''
-  if (expiry <= now) return 'The protected server candidate has expired; saving will use the validated compatibility path.'
+  if (expiry <= now) return 'The protected server candidate has expired.'
   return `Protected server candidate available until ${new Date(expiry).toLocaleString()}.`
+}
+
+export interface ImportDraftExpiryStatus {
+  expired: boolean
+  label: string
+}
+
+export function importDraftExpiryStatus(
+  raw: string | undefined,
+  now = Date.now(),
+): ImportDraftExpiryStatus | null {
+  if (!raw?.trim()) return null
+  const expiry = Date.parse(raw)
+  if (!Number.isFinite(expiry)) return null
+  if (expiry <= now) {
+    return {
+      expired: true,
+      label: 'This credential-preserving import draft has expired. Re-run the import before saving or editing it.',
+    }
+  }
+  return {
+    expired: false,
+    label: `Credential-preserving import draft available until ${new Date(expiry).toLocaleString()}.`,
+  }
 }

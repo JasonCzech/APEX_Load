@@ -413,6 +413,56 @@ func TestVUserRecordResultScrubsLongRuntimeSecretsBeforeEvidenceBounds(t *testin
 	}
 }
 
+func TestVUserRecordResultRegistersProtocolManagedCredentialsBeforePublishing(t *testing.T) {
+	const cookieValue = "xy7"
+	sink := &captureResultSink{}
+	vu := &VUser{
+		Metrics:    NewMetricsCollector(4),
+		ResultSink: sink,
+		Variables:  map[string]string{},
+	}
+	first := &protocol.Result{
+		Success:                 false,
+		ErrorMessage:            "upstream echoed " + cookieValue,
+		ResponseBody:            "neutral=" + cookieValue,
+		RuntimeCredentialValues: []string{cookieValue},
+		Extractions:             map[string]string{"ordinary": cookieValue},
+		ProtocolEvidence:        map[string]any{"ordinary": cookieValue},
+		Snapshot:                &protocol.ErrorSnapshot{ResponseBody: cookieValue},
+	}
+
+	vu.recordResult(first, dsl.ErrorHandlingConfig{SnapshotOnError: true}, dsl.LogConfig{})
+
+	if got := vu.Variables["ordinary"]; got != cookieValue {
+		t.Fatalf("raw extraction = %q, want protocol-managed credential for later replay", got)
+	}
+	if first.RuntimeCredentialValues != nil {
+		t.Fatalf("memory-only runtime credentials reached retained result: %#v", first.RuntimeCredentialValues)
+	}
+	encoded, err := json.Marshal(sink.result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(cookieValue)) {
+		t.Fatalf("same-response protocol-managed credential leaked: %s", encoded)
+	}
+
+	later := &protocol.Result{
+		Success:      false,
+		ErrorMessage: "later echo " + cookieValue,
+		ResponseBody: cookieValue,
+		Extractions:  map[string]string{"ordinary_later": cookieValue},
+	}
+	vu.recordResult(later, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	encoded, err = json.Marshal(sink.result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(cookieValue)) {
+		t.Fatalf("later protocol-managed credential echo leaked: %s", encoded)
+	}
+}
+
 func TestRuntimeSecretRedactionRunsBeforeGenericCredentialPatterns(t *testing.T) {
 	const secret = `abc"UNIQUELEAK`
 	config, err := WithSecretValueRedactionChecked(nil, []string{secret})
@@ -453,13 +503,157 @@ func TestRuntimeSecretRedactionDoesNotAmplifyShortMatches(t *testing.T) {
 	}
 }
 
-func TestRuntimeSecretRedactionRejectsUnboundedExpandedMatchers(t *testing.T) {
-	values := make([]string, maxCachedSecrets)
+func TestRuntimeSecretRedactionBoundsOptionalVariantsWithoutDroppingRawValues(t *testing.T) {
+	values := make([]string, 200)
 	for index := range values {
 		values[index] = fmt.Sprintf("%04d-%s", index, strings.Repeat(`a/"<&'?`, 570))
 	}
-	if _, err := WithSecretValueRedactionChecked(nil, values); err == nil || !strings.Contains(err.Error(), "matcher limit") {
-		t.Fatalf("expanded matcher admission error = %v", err)
+	config, err := WithSecretValueRedactionChecked(nil, values)
+	if err != nil {
+		t.Fatalf("raw values within bounds were rejected because of optional variants: %v", err)
+	}
+	if config.runtimePatternBytes > maxRuntimeSecretRedactionPatternBytes {
+		t.Fatalf("matcher bytes = %d, limit %d", config.runtimePatternBytes, maxRuntimeSecretRedactionPatternBytes)
+	}
+	for _, value := range []string{values[0], values[len(values)-1]} {
+		if got := config.ScrubText("raw=" + value); strings.Contains(got, value) {
+			t.Fatalf("mandatory raw value survived bounded matcher: %q", got)
+		}
+	}
+}
+
+func TestRuntimeSecretRedactionOverlayUnionsOverlappingMatchSpans(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		base    string
+		overlay string
+	}{
+		{name: "long overlay", base: "abc", overlay: "xabcx"},
+		{name: "long base", base: "xabcx", overlay: "abc"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			base, err := WithSecretValueRedactionChecked(nil, []string{test.base})
+			if err != nil {
+				t.Fatal(err)
+			}
+			config, err := withRuntimeSecretValueOverlay(base, []string{test.overlay})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := config.ScrubText("before=xabcx=after")
+			if strings.Contains(got, "abc") || strings.Contains(got, "xabcx") {
+				t.Fatalf("overlapping layered match survived: %q", got)
+			}
+		})
+	}
+}
+
+func TestVUserCookieRotationBeyondLegacyLimitRemainsBoundedAndScrubbed(t *testing.T) {
+	vu := &VUser{
+		Metrics:    NewMetricsCollector(1),
+		Variables:  map[string]string{},
+		ResultSink: &captureResultSink{},
+	}
+	const rotations = 640
+	previous := ""
+	for index := 0; index < rotations; index++ {
+		if err := vu.commitRuntimeCredentialSessionSnapshot(); err != nil {
+			t.Fatalf("commit rotation %d: %v", index, err)
+		}
+		current := fmt.Sprintf("cookie-rotation-%04d-opaque", index)
+		evidence := "new=" + current
+		if previous != "" {
+			evidence += ";old=" + previous
+		}
+		result := &protocol.Result{
+			Success:                         false,
+			ErrorMessage:                    evidence,
+			ResponseBody:                    evidence,
+			RuntimeCredentialValues:         []string{current},
+			RuntimeCredentialValuesSnapshot: true,
+		}
+		vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+		if vu.runtimeCredentialRedactionErr != nil {
+			t.Fatalf("rotation %d failed redaction capacity: %v", index, vu.runtimeCredentialRedactionErr)
+		}
+		for _, value := range []string{current, previous} {
+			if value != "" && (strings.Contains(result.ErrorMessage, value) ||
+				strings.Contains(result.ResponseBody, value)) {
+				t.Fatalf("rotation %d retained credential %q in %#v", index, value, result)
+			}
+		}
+		if result.RuntimeCredentialValues != nil || result.RuntimeCredentialValuesSnapshot {
+			t.Fatalf("rotation %d retained protocol-only credential side channel", index)
+		}
+		previous = current
+	}
+	if err := vu.commitRuntimeCredentialSessionSnapshot(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(vu.runtimeCredentialSessionHistory); got > maxRuntimeCredentialSessionHistoryValues {
+		t.Fatalf("retired session values = %d, limit %d", got, maxRuntimeCredentialSessionHistoryValues)
+	}
+	if got := vu.runtimeCredentialSessionHistoryBytes; got > maxRuntimeCredentialSessionHistoryBytes {
+		t.Fatalf("retired session bytes = %d, limit %d", got, maxRuntimeCredentialSessionHistoryBytes)
+	}
+	if got := len(vu.RedactionConfig.runtimeSecretValues); got > maxRuntimeCredentialSessionHistoryValues+1 {
+		t.Fatalf("session matcher values = %d, want bounded history plus live value", got)
+	}
+}
+
+func TestRuntimeSecretRedactionRejectsDistinctAndRawValueLimitsBeforeCompilation(t *testing.T) {
+	values := make([]string, maxRuntimeSecretRedactionValues+1)
+	for index := range values {
+		values[index] = fmt.Sprintf("runtime-credential-%04d", index)
+	}
+	if _, err := WithSecretValueRedactionChecked(nil, values); err == nil ||
+		!strings.Contains(err.Error(), "value limit") {
+		t.Fatalf("distinct-value admission error = %v", err)
+	}
+
+	if _, err := WithSecretValueRedactionChecked(
+		nil,
+		[]string{strings.Repeat("r", maxRuntimeSecretRedactionRawBytes+1)},
+	); err == nil || !strings.Contains(err.Error(), "raw-value limit") {
+		t.Fatalf("raw-value admission error = %v", err)
+	}
+}
+
+func TestRuntimeSecretRedactionAcceptsMoreThanLegacyValueLimit(t *testing.T) {
+	values := make([]string, 640)
+	for index := range values {
+		values[index] = fmt.Sprintf("imported-credential-%04d", index)
+	}
+	config, err := WithSecretValueRedactionChecked(nil, values)
+	if err != nil {
+		t.Fatalf("valid imported values exceeded legacy 512-value capacity: %v", err)
+	}
+	for _, value := range []string{values[0], values[511], values[len(values)-1]} {
+		if got := config.ScrubText("retained=" + value); strings.Contains(got, value) {
+			t.Fatalf("imported value survived runtime redaction: %q", got)
+		}
+	}
+}
+
+func TestRuntimeSecretRedactionAddsRotatingValuesInBoundedChunks(t *testing.T) {
+	var config *RedactionConfig
+	values := make([]string, maxRuntimeSecretRedactionReplacers*3)
+	for index := range values {
+		values[index] = fmt.Sprintf("rotating-credential-%04d-unique", index)
+		var err error
+		config, err = WithSecretValueRedactionChecked(config, []string{values[index]})
+		if err != nil {
+			t.Fatalf("add rotating value %d: %v", index, err)
+		}
+		if len(config.secretReplacers) > maxRuntimeSecretRedactionReplacers {
+			t.Fatalf("replacer chunks = %d, limit %d", len(config.secretReplacers), maxRuntimeSecretRedactionReplacers)
+		}
+	}
+	for _, value := range []string{values[0], values[len(values)/2], values[len(values)-1]} {
+		if got := config.ScrubText("echo=" + value); strings.Contains(got, value) ||
+			!strings.Contains(got, redactedPayloadValue) {
+			t.Fatalf("rotating value survived bounded matcher: %q", got)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package requestimport
 
 import (
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strconv"
@@ -15,20 +16,27 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-// ImportHeaderFidelityMetadataKey is the durable, value-free record of source
-// header occurrences that could not be represented by the native HTTP
-// transport. Version 1 of this envelope has:
+// ImportHeaderFidelityMetadataKey is the durable record of source header
+// occurrences that could not be represented by the native HTTP transport.
+// Version 1 of this envelope has:
 //
 //   - version: 1
 //   - reason_codes: sorted []string
 //   - source_refs: sorted []string
 //   - omitted_occurrences: ordered []map with source_index, name, reason_code,
-//     and optional source_ref
+//     optional source_ref, and (for credential-preserving imports) base64
+//     fields containing the exact source name/value bytes
 //
-// The envelope deliberately contains no header values. DSL validation requires
-// its reason codes to remain protected by the generic import review execution
-// gate, so deleting only the gate cannot turn a lossy draft into a runnable one.
-const ImportHeaderFidelityMetadataKey = "import_header_fidelity"
+// The exact bytes are inert: active HeaderList/Headers surfaces no longer
+// contain the occurrence, the marker requires a durable execution gate, and
+// API/read/review projections mask both byte fields.
+const ImportHeaderFidelityMetadataKey = dsl.ImportHeaderFidelityMetadataKey
+
+// ImportMultipartFidelityMetadataKey is the inert, execution-gated record of
+// exact structured multipart fields that cannot be serialized onto the native
+// HTTP wire. The active multipart body contains only valid replacement fields;
+// exact source bytes exist solely in this metadata envelope.
+const ImportMultipartFidelityMetadataKey = dsl.ImportMultipartFidelityMetadataKey
 
 // ImportHTTPVersionFidelityMetadataKey marks a source HTTP version that cannot
 // be selected by the native transport. The exact source spelling remains in
@@ -42,6 +50,7 @@ const (
 	reasonHTTPVersionNotPreserved     = "http_version_not_preserved"
 	importReviewRequiredBlocker       = "import_review_required"
 	headerFidelityOccurrenceFieldName = "omitted_occurrences"
+	multipartFidelityFieldName        = "omitted_fields"
 )
 
 // RuntimeFidelityOptions supplies provenance when an already-projected script
@@ -50,6 +59,10 @@ const (
 type RuntimeFidelityOptions struct {
 	SourceProfile string
 	Source        SourceRef
+	// PreserveOmittedHeaderBytes retains exact source name/value bytes in the
+	// inert action marker. It is enabled by the shared finalizer only for an
+	// import whose durable value policy is preserve.
+	PreserveOmittedHeaderBytes bool
 	// DeclaredHTTPVersion is a source-wide exact version declaration supplied by
 	// adapters whose legacy projected actions do not carry per-request version
 	// metadata. It is used only when a request surface has no declaration of its
@@ -69,14 +82,35 @@ type runtimeHeaderOmission struct {
 	// precedence without copying an arbitrary authored name into diagnostics or
 	// durable metadata.
 	identity string
+	// sourceName/sourceValue remain private until they are encoded into an
+	// execution-gated inert marker. Keeping Go strings here preserves their
+	// exact bytes, including invalid UTF-8, until base64 encoding.
+	sourceName      string
+	sourceValue     string
+	hasSourceHeader bool
+}
+
+type runtimeMultipartOmission struct {
+	PartIndex      int
+	HeaderIndex    int
+	Field          string
+	ReasonCode     string
+	Source         SourceRef
+	sourceName     string
+	sourceValue    string
+	hasSourceName  bool
+	hasSourceValue bool
 }
 
 type runtimeFidelityProjection struct {
-	HeaderOmissions []runtimeHeaderOmission
-	VersionBlocked  bool
-	VersionReason   string
-	VersionDetail   string
-	VersionSource   SourceRef
+	HeaderOmissions            []runtimeHeaderOmission
+	PreserveOmittedHeaderBytes bool
+	MultipartOmissions         []runtimeMultipartOmission
+	PreserveMultipartBytes     bool
+	VersionBlocked             bool
+	VersionReason              string
+	VersionDetail              string
+	VersionSource              SourceRef
 }
 
 // projectRuntimeFidelity converts runtime-incompatible header occurrences into
@@ -186,12 +220,15 @@ func sanitizeHeaderOccurrences(headers HeaderList, version string) (HeaderList, 
 			}
 			seenOmission[identity] = struct{}{}
 			omissions = append(omissions, runtimeHeaderOmission{
-				SourceIndex: item.sourceIndex,
-				Name:        safeHeaderEvidenceName(item.header.Name),
-				ReasonCode:  reason,
-				Detail:      issue.Detail,
-				Source:      item.header.Source,
-				identity:    headerIdentity(item.header.Name),
+				SourceIndex:     item.sourceIndex,
+				Name:            safeHeaderEvidenceName(item.header.Name),
+				ReasonCode:      reason,
+				Detail:          issue.Detail,
+				Source:          item.header.Source,
+				identity:        headerIdentity(item.header.Name),
+				sourceName:      item.header.Name,
+				sourceValue:     item.header.Value,
+				hasSourceHeader: true,
 			})
 		}
 		if len(remove) == 0 {
@@ -208,12 +245,15 @@ func sanitizeHeaderOccurrences(headers HeaderList, version string) (HeaderList, 
 				}
 				seenOmission[identity] = struct{}{}
 				omissions = append(omissions, runtimeHeaderOmission{
-					SourceIndex: item.sourceIndex,
-					Name:        safeHeaderEvidenceName(item.header.Name),
-					ReasonCode:  reason,
-					Detail:      "the source header could not be represented by the native HTTP runtime",
-					Source:      item.header.Source,
-					identity:    headerIdentity(item.header.Name),
+					SourceIndex:     item.sourceIndex,
+					Name:            safeHeaderEvidenceName(item.header.Name),
+					ReasonCode:      reason,
+					Detail:          "the source header could not be represented by the native HTTP runtime",
+					Source:          item.header.Source,
+					identity:        headerIdentity(item.header.Name),
+					sourceName:      item.header.Name,
+					sourceValue:     item.header.Value,
+					hasSourceHeader: true,
 				})
 			}
 		}
@@ -280,7 +320,9 @@ func safeHeaderEvidenceName(name string) string {
 }
 
 func applyRuntimeFidelityMetadata(action *dsl.Action, projection runtimeFidelityProjection) {
-	if action == nil || (len(projection.HeaderOmissions) == 0 && !projection.VersionBlocked) {
+	if action == nil || (len(projection.HeaderOmissions) == 0 &&
+		len(projection.MultipartOmissions) == 0 &&
+		!projection.VersionBlocked) {
 		return
 	}
 	if action.Metadata == nil {
@@ -302,6 +344,12 @@ func applyRuntimeFidelityMetadata(action *dsl.Action, projection runtimeFidelity
 				"name":         omission.Name,
 				"reason_code":  omission.ReasonCode,
 			}
+			if projection.PreserveOmittedHeaderBytes && omission.hasSourceHeader {
+				entry[dsl.ImportHeaderFidelityPreservedNameBase64Key] =
+					base64.StdEncoding.EncodeToString([]byte(omission.sourceName))
+				entry[dsl.ImportHeaderFidelityPreservedValueBase64Key] =
+					base64.StdEncoding.EncodeToString([]byte(omission.sourceValue))
+			}
 			if ref != "" {
 				entry["source_ref"] = ref
 				refs = append(refs, ref)
@@ -314,6 +362,49 @@ func applyRuntimeFidelityMetadata(action *dsl.Action, projection runtimeFidelity
 			"reason_codes":        uniqueSorted(reasons),
 			"source_refs":         uniqueSorted(refs),
 			"omitted_occurrences": occurrences,
+		}
+	}
+	if len(projection.MultipartOmissions) > 0 {
+		reasons := make([]string, 0, len(projection.MultipartOmissions))
+		refs := make([]string, 0, len(projection.MultipartOmissions))
+		fields := make([]map[string]any, 0, len(projection.MultipartOmissions))
+		if existing, ok := action.Metadata[ImportMultipartFidelityMetadataKey].(map[string]any); ok {
+			reasons = append(reasons, metadataStringValues(existing["reason_codes"])...)
+			refs = append(refs, metadataStringValues(existing["source_refs"])...)
+			fields = append(fields, metadataObjectValues(existing[multipartFidelityFieldName])...)
+		}
+		for _, omission := range projection.MultipartOmissions {
+			ref := sourceLocation(omission.Source)
+			entry := map[string]any{
+				"part_index":  omission.PartIndex,
+				"field":       omission.Field,
+				"reason_code": omission.ReasonCode,
+			}
+			if omission.HeaderIndex >= 0 {
+				entry["header_index"] = omission.HeaderIndex
+			}
+			if projection.PreserveMultipartBytes {
+				if omission.hasSourceName {
+					entry[dsl.ImportHeaderFidelityPreservedNameBase64Key] =
+						base64.StdEncoding.EncodeToString([]byte(omission.sourceName))
+				}
+				if omission.hasSourceValue {
+					entry[dsl.ImportHeaderFidelityPreservedValueBase64Key] =
+						base64.StdEncoding.EncodeToString([]byte(omission.sourceValue))
+				}
+			}
+			if ref != "" {
+				entry["source_ref"] = ref
+				refs = append(refs, ref)
+			}
+			reasons = append(reasons, omission.ReasonCode)
+			fields = append(fields, entry)
+		}
+		action.Metadata[ImportMultipartFidelityMetadataKey] = map[string]any{
+			"version":        importRuntimeFidelityVersion,
+			"reason_codes":   uniqueSorted(reasons),
+			"source_refs":    uniqueSorted(refs),
+			"omitted_fields": fields,
 		}
 	}
 	if projection.VersionBlocked {
@@ -396,7 +487,7 @@ func runtimeFidelitySourceMappings(
 	if base == "" {
 		base = "request"
 	}
-	mappings := make([]SourceMapping, 0, len(projection.HeaderOmissions)+1)
+	mappings := make([]SourceMapping, 0, len(projection.HeaderOmissions)+len(projection.MultipartOmissions)+1)
 	for index, omission := range projection.HeaderOmissions {
 		mappings = append(mappings, SourceMapping{
 			Source: omission.Source,
@@ -406,6 +497,18 @@ func runtimeFidelitySourceMappings(
 				ImportHeaderFidelityMetadataKey,
 				headerFidelityOccurrenceFieldName,
 				headerOccurrenceBase+index,
+			),
+		})
+	}
+	for index, omission := range projection.MultipartOmissions {
+		mappings = append(mappings, SourceMapping{
+			Source: omission.Source,
+			Target: fmt.Sprintf(
+				"%s.metadata.%s.%s[%d]",
+				base,
+				ImportMultipartFidelityMetadataKey,
+				multipartFidelityFieldName,
+				index,
 			),
 		})
 	}
@@ -543,7 +646,8 @@ func ApplyRuntimeFidelityReview(
 		visitedRequests++
 		source := runtimeSurfaceSource(ref, options.Source, sourceProfile)
 		projection := runtimeFidelityProjection{
-			HeaderOmissions: headerOmissionsWithFallbackSource(defaultOmissions, source),
+			HeaderOmissions:            headerOmissionsWithFallbackSource(defaultOmissions, source),
+			PreserveOmittedHeaderBytes: options.PreserveOmittedHeaderBytes,
 		}
 
 		if ref.Action != nil {
@@ -647,7 +751,8 @@ func ApplyRuntimeFidelityReview(
 	if visitedRequests == 0 && (len(defaultOmissions) > 0 || configVersionBlocked) {
 		path := fmt.Sprintf("actions[%d]", len(script.Actions))
 		projection := runtimeFidelityProjection{
-			HeaderOmissions: headerOmissionsWithFallbackSource(defaultOmissions, defaultSource),
+			HeaderOmissions:            headerOmissionsWithFallbackSource(defaultOmissions, defaultSource),
+			PreserveOmittedHeaderBytes: options.PreserveOmittedHeaderBytes,
 		}
 		if configVersionBlocked {
 			projection.VersionBlocked = true
@@ -966,12 +1071,15 @@ func sanitizeHeaderMapOccurrences(
 			}
 			seen[identity] = struct{}{}
 			omissions = append(omissions, runtimeHeaderOmission{
-				SourceIndex: originalIndex[key],
-				Name:        safeHeaderEvidenceName(key),
-				ReasonCode:  reason,
-				Detail:      issue.Detail,
-				Source:      source,
-				identity:    headerIdentity(key),
+				SourceIndex:     originalIndex[key],
+				Name:            safeHeaderEvidenceName(key),
+				ReasonCode:      reason,
+				Detail:          issue.Detail,
+				Source:          source,
+				identity:        headerIdentity(key),
+				sourceName:      key,
+				sourceValue:     active[key],
+				hasSourceHeader: true,
 			})
 		}
 		if len(remove) == 0 {
@@ -984,12 +1092,15 @@ func sanitizeHeaderMapOccurrences(
 				}
 				seen[identity] = struct{}{}
 				omissions = append(omissions, runtimeHeaderOmission{
-					SourceIndex: originalIndex[key],
-					Name:        safeHeaderEvidenceName(key),
-					ReasonCode:  reason,
-					Detail:      "the source header could not be represented by the native HTTP runtime",
-					Source:      source,
-					identity:    headerIdentity(key),
+					SourceIndex:     originalIndex[key],
+					Name:            safeHeaderEvidenceName(key),
+					ReasonCode:      reason,
+					Detail:          "the source header could not be represented by the native HTTP runtime",
+					Source:          source,
+					identity:        headerIdentity(key),
+					sourceName:      key,
+					sourceValue:     active[key],
+					hasSourceHeader: true,
 				})
 			}
 		}

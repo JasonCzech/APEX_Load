@@ -20,6 +20,14 @@ func ProjectRequestBody(payload []byte, contentType string, options Options) ([]
 		return nil, Result{}, err
 	}
 	if len(payload) > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"import_credential_review_incomplete",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_body_limit_exceeded"), nil
 	}
 	mediaType, parameters := requestBodyMediaType(contentType)
@@ -94,6 +102,14 @@ func ProjectRequestBody(payload []byte, contentType string, options Options) ([]
 	default:
 		if containsSensitiveNameHintWithOptions(payload, options) {
 			if !utf8.Valid(payload) {
+				if options.Mode == Preserve {
+					return append([]byte(nil), payload...),
+						preservedOpaquePayloadResult(
+							payload,
+							options,
+							"credential_raw_sensitive_binary_unsupported",
+						), nil
+				}
 				return nil, rejected(options.Source, "credential_raw_sensitive_binary_unsupported"), nil
 			}
 			projected, result, err := projectSensitiveScalar(
@@ -201,21 +217,69 @@ func ProjectMultipartWire(
 		return nil, Result{}, err
 	}
 	if len(payload) > options.Limits.MaxBytes {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"import_credential_review_incomplete",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_multipart_size_limit_exceeded"), nil
 	}
 	if options.multipartDepth >= options.Limits.MaxDepth {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"import_credential_review_incomplete",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_multipart_depth_limit_exceeded"), nil
 	}
 	if strings.TrimSpace(boundary) == "" {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"credential_multipart_boundary_missing",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_multipart_boundary_missing"), nil
 	}
 	if !validMultipartBoundary(boundary) {
+		if options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"credential_multipart_boundary_invalid",
+				), nil
+		}
 		return nil, rejected(options.Source, "credential_multipart_boundary_invalid"), nil
 	}
 	parts, parseErr := parseMultipartWire(payload, boundary, options)
 	if parseErr != nil {
 		if errors.Is(parseErr, errMultipartWireValueLimit) {
+			if options.Mode == Preserve {
+				return append([]byte(nil), payload...),
+					preservedOpaquePayloadResult(
+						payload,
+						options,
+						"import_credential_review_incomplete",
+					), nil
+			}
 			return nil, rejected(options.Source, "credential_multipart_value_limit_exceeded"), nil
+		}
+		if options.Mode == Preserve {
+			result := preservedOpaquePayloadResult(
+				payload,
+				options,
+				"credential_multipart_malformed",
+			)
+			return append([]byte(nil), payload...), result, nil
 		}
 		if containsSensitiveNameHintWithOptions(payload, options) {
 			return nil, rejected(options.Source, "credential_multipart_malformed_sensitive"), nil

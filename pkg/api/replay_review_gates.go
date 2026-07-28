@@ -10,7 +10,21 @@ import (
 )
 
 func validateScriptForReplay(script *dsl.Script) []string {
-	issues := validateScript(script)
+	return validateScriptForReplayWithImportTrust(script, false)
+}
+
+// validateScriptForReplayWithImportTrust permits credential-bearing Java VM
+// arguments only when the caller has already established that script is the
+// unchanged server-owned durable snapshot produced by an import. Client-sent
+// draft metadata is not provenance and must stay on the strict path.
+func validateScriptForReplayWithImportTrust(
+	script *dsl.Script,
+	trustedPreservedImport bool,
+) []string {
+	issues := dsl.ValidateScriptIssues(script)
+	if trustedPreservedImport {
+		issues = validateStoredExecutionScript(script)
+	}
 	return appendUniqueStrings(issues, scriptReviewGateIssues(script, "replay")...)
 }
 

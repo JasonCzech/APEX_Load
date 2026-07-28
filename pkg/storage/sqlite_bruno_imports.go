@@ -69,9 +69,27 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 	// "sanitized" artifact. Declaring it here rather than at each caller keeps
 	// the claim next to the evidence for it.
 	commit.Revision.SanitizedAvailable = true
-	script.Config.Bruno.BundleRef = "artifact://" + sanitizedArtifact.ID
-	script.Config.Bruno.BundleSHA256 = sanitizedArtifact.SHA256
-	script.Config.Bruno.ManifestSHA256 = sanitizedArtifact.ManifestSHA256
+	runtimeArtifact := sanitizedArtifact
+	if commit.UseRawArtifact {
+		runtimeArtifact = rawArtifact
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "bruno"}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	if commit.UseRawArtifact {
+		script.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey] = "raw"
+	} else {
+		delete(script.Metadata.Import.Preserved, dsl.ImportPreservedRuntimeArtifactKey)
+	}
+	script.Config.Bruno.BundleRef = "artifact://" + runtimeArtifact.ID
+	script.Config.Bruno.BundleSHA256 = runtimeArtifact.SHA256
+	script.Config.Bruno.ManifestSHA256 = runtimeArtifact.ManifestSHA256
 	script.Config.Bruno.SourceFormat = firstNonEmptyStorage(script.Config.Bruno.SourceFormat, commit.Revision.SourceFormat)
 	script.Config.Bruno.SourceRevision = commit.Revision.ID
 	script.Config.Bruno.CompatibilityVersion = firstNonEmptyStorage(script.Config.Bruno.CompatibilityVersion, commit.Revision.CompatibilityVersion)
@@ -90,7 +108,7 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 	}
 
 	var activeRevisionID string
-	activeErr := tx.QueryRow(`SELECT id FROM import_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
+	activeErr := tx.QueryRow(`SELECT id FROM bruno_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
 		script.ID, script.ProjectID).Scan(&activeRevisionID)
 	if activeErr != nil && !errors.Is(activeErr, sql.ErrNoRows) {
 		return nil, activeErr
@@ -105,7 +123,7 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 	}
 	if parentID != "" {
 		var parentScriptID, parentProjectID string
-		if err := tx.QueryRow(`SELECT script_id, project_id FROM import_source_revisions WHERE id = ?`, parentID).Scan(&parentScriptID, &parentProjectID); err != nil {
+		if err := tx.QueryRow(`SELECT script_id, project_id FROM bruno_source_revisions WHERE id = ?`, parentID).Scan(&parentScriptID, &parentProjectID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, ErrBrunoRevisionNotFound
 			}
@@ -116,11 +134,11 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 		}
 	}
 	commit.Revision.ParentRevisionID = parentID
-	if _, err := tx.Exec(`UPDATE import_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`,
+	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`,
 		script.ID, script.ProjectID); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`INSERT INTO import_source_revisions (
+	if _, err := tx.Exec(`INSERT INTO bruno_source_revisions (
 		id, script_id, project_id, parent_revision_id, active_flag, raw_artifact_id, sanitized_artifact_id,
 		sanitized_available, source_format, compatibility_version, identity_map_json, import_options_json, dependency_snapshot_ref,
 		security_profile_json, change_summary_json, secret_bindings_json, canonical_script_json, created_by, created_at
@@ -231,7 +249,7 @@ func saveBrunoArtifactTx(tx *storeTx, artifact *BrunoSourceArtifact) (*BrunoSour
 	if err != nil {
 		return nil, fmt.Errorf("marshal Bruno artifact encryption metadata: %w", err)
 	}
-	result, err := tx.Exec(`INSERT INTO import_source_artifacts (
+	result, err := tx.Exec(`INSERT INTO bruno_source_artifacts (
 		id, project_id, artifact_kind, backend_key, sha256, size_bytes, manifest_sha256,
 		source_format, encryption_json, lifecycle_state, created_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -251,7 +269,7 @@ func saveBrunoArtifactTx(tx *storeTx, artifact *BrunoSourceArtifact) (*BrunoSour
 	}
 
 	var existingID string
-	if err := tx.QueryRow(`SELECT id FROM import_source_artifacts WHERE project_id = ? AND artifact_kind = ? AND sha256 = ?`,
+	if err := tx.QueryRow(`SELECT id FROM bruno_source_artifacts WHERE project_id = ? AND artifact_kind = ? AND sha256 = ?`,
 		artifact.ProjectID, artifact.ArtifactKind, artifact.SHA256).Scan(&existingID); err != nil {
 		return nil, err
 	}
@@ -275,20 +293,20 @@ func (s *SQLiteStore) IsBrunoArtifactBackendKeyReferenced(backendKey string) (bo
 
 func (s *SQLiteStore) IsImportArtifactBackendKeyReferenced(backendKey string) (bool, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM import_source_artifacts WHERE backend_key = ?`, strings.TrimSpace(backendKey)).Scan(&count)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM bruno_source_artifacts WHERE backend_key = ?`, strings.TrimSpace(backendKey)).Scan(&count)
 	return count > 0, err
 }
 
 func getBrunoSourceArtifactTx(tx *storeTx, id, projectID string) (*BrunoSourceArtifact, error) {
 	return scanBrunoArtifact(tx.QueryRow(`SELECT id, project_id, artifact_kind, backend_key, sha256, size_bytes,
 		COALESCE(manifest_sha256, ''), COALESCE(source_format, ''), encryption_json, lifecycle_state, created_at
-		FROM import_source_artifacts WHERE id = ? AND project_id = ?`, id, projectID))
+		FROM bruno_source_artifacts WHERE id = ? AND project_id = ?`, id, projectID))
 }
 
 func getBrunoSourceArtifactDB(db *storeDB, id, projectID string) (*BrunoSourceArtifact, error) {
 	return scanBrunoArtifact(db.QueryRow(`SELECT id, project_id, artifact_kind, backend_key, sha256, size_bytes,
 		COALESCE(manifest_sha256, ''), COALESCE(source_format, ''), encryption_json, lifecycle_state, created_at
-		FROM import_source_artifacts WHERE id = ? AND project_id = ?`, id, projectID))
+		FROM bruno_source_artifacts WHERE id = ? AND project_id = ?`, id, projectID))
 }
 
 func scanBrunoArtifact(row rowScanner) (*BrunoSourceArtifact, error) {
@@ -344,7 +362,7 @@ func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID str
 	}
 	defer tx.Rollback()
 	var currentActive string
-	err = tx.QueryRow(`SELECT id FROM import_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
+	err = tx.QueryRow(`SELECT id FROM bruno_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
 		scriptID, projectID).Scan(&currentActive)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -361,12 +379,17 @@ func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID str
 		return nil, err
 	}
 	var currentScript dsl.Script
-	var configJSON, currentUpdatedRaw string
-	if err := tx.QueryRow(`SELECT id, name, protocol, version, project_id, config, CAST(updated_at AS TEXT)
+	var metadataJSON, configJSON, currentUpdatedRaw string
+	if err := tx.QueryRow(`SELECT id, name, protocol, version, project_id, COALESCE(metadata_json, ''), config, CAST(updated_at AS TEXT)
 		FROM scripts WHERE id = ? AND project_id = ?`, scriptID, projectID).
 		Scan(&currentScript.ID, &currentScript.Name, &currentScript.Protocol, &currentScript.Version,
-			&currentScript.ProjectID, &configJSON, &currentUpdatedRaw); err != nil {
+			&currentScript.ProjectID, &metadataJSON, &configJSON, &currentUpdatedRaw); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(metadataJSON) != "" && strings.TrimSpace(metadataJSON) != "null" {
+		if err := json.Unmarshal([]byte(metadataJSON), &currentScript.Metadata); err != nil {
+			return nil, fmt.Errorf("decode current Bruno script metadata: %w", err)
+		}
 	}
 	if err := json.Unmarshal([]byte(configJSON), &currentScript.Config); err != nil {
 		return nil, fmt.Errorf("decode current Bruno script config: %w", err)
@@ -382,13 +405,18 @@ func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID str
 	if len(secretBindings) > 0 {
 		currentScript.Config.Bruno.SecretBindings = secretBindings
 	}
+	synchronizeBrunoRuntimeArtifactMarker(&currentScript, revision.CanonicalScript)
+	encodedMetadata, err := json.Marshal(currentScript.Metadata)
+	if err != nil {
+		return nil, err
+	}
 	encodedConfig, err := json.Marshal(currentScript.Config)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	result, err := tx.Exec(`UPDATE scripts SET config = ?, updated_at = ? WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
-		string(encodedConfig), now, scriptID, projectID, currentUpdatedRaw)
+	result, err := tx.Exec(`UPDATE scripts SET metadata_json = ?, config = ?, updated_at = ? WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
+		string(encodedMetadata), string(encodedConfig), now, scriptID, projectID, currentUpdatedRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -398,10 +426,10 @@ func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID str
 		}
 		return nil, ErrBrunoImportConcurrentChange
 	}
-	if _, err := tx.Exec(`UPDATE import_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`, scriptID, projectID); err != nil {
+	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`, scriptID, projectID); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`UPDATE import_source_revisions SET active_flag = 1 WHERE id = ? AND script_id = ? AND project_id = ?`, revisionID, scriptID, projectID); err != nil {
+	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 1 WHERE id = ? AND script_id = ? AND project_id = ?`, revisionID, scriptID, projectID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -411,11 +439,39 @@ func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID str
 	return revision, nil
 }
 
+func synchronizeBrunoRuntimeArtifactMarker(current, target *dsl.Script) {
+	if current == nil || target == nil {
+		return
+	}
+	targetUsesRawArtifact := false
+	if target.Metadata != nil && target.Metadata.Import != nil {
+		source, _ := target.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey].(string)
+		targetUsesRawArtifact = strings.EqualFold(strings.TrimSpace(source), "raw")
+	}
+	if targetUsesRawArtifact {
+		if current.Metadata == nil {
+			current.Metadata = &dsl.ScriptMetadata{}
+		}
+		if current.Metadata.Import == nil {
+			current.Metadata.Import = &dsl.ImportMetadata{Source: "bruno"}
+		}
+		if current.Metadata.Import.Preserved == nil {
+			current.Metadata.Import.Preserved = make(map[string]any)
+		}
+		current.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey] = "raw"
+		return
+	}
+	if current.Metadata == nil || current.Metadata.Import == nil {
+		return
+	}
+	delete(current.Metadata.Import.Preserved, dsl.ImportPreservedRuntimeArtifactKey)
+}
+
 const brunoRevisionSelect = `SELECT id, script_id, project_id, COALESCE(parent_revision_id, ''), active_flag,
 	raw_artifact_id, sanitized_artifact_id, sanitized_available, source_format, compatibility_version, identity_map_json,
 	import_options_json, COALESCE(dependency_snapshot_ref, ''), security_profile_json, change_summary_json,
 	secret_bindings_json, canonical_script_json, COALESCE(created_by, ''), created_at
-	FROM import_source_revisions`
+	FROM bruno_source_revisions`
 
 func scanBrunoRevision(row rowScanner) (*BrunoSourceRevision, error) {
 	var revision BrunoSourceRevision

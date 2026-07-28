@@ -32,12 +32,29 @@ type VUser struct {
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
 	// callbacks, which may run on a driver/event goroutine while the VUser adds
 	// newly extracted credentials on its execution goroutine.
-	runtimeRedaction     atomic.Pointer[RedactionConfig]
-	SnapshotStore        *SnapshotStore
-	PauseControl         PauseController
-	IterationRateLimiter *TokenBucket
-	Rendezvous           *RendezvousCoordinator
-	ExecutionGoals       *ExecutionGoalLimiter
+	runtimeRedaction atomic.Pointer[RedactionConfig]
+	// credentialTemplates contains only source-authored template identities, not
+	// their values. Standard execution paths share an immutable precomputed plan;
+	// direct test/library VUsers initialize it lazily once.
+	credentialTemplates                  *importedCredentialTemplatePlan
+	credentialTemplatesInspected         bool
+	runtimeCredentialRedactionErr        error
+	runtimeCredentialStateReady          bool
+	runtimeCredentialBase                *RedactionConfig
+	runtimeCredentialValues              map[string]struct{}
+	runtimeCredentialScopes              map[string][]string
+	runtimeCredentialResolvingAction     bool
+	runtimeCredentialActionTemplates     []string
+	runtimeCredentialSessionLive         []string
+	runtimeCredentialSessionNext         []string
+	runtimeCredentialSessionStaged       bool
+	runtimeCredentialSessionHistory      []string
+	runtimeCredentialSessionHistoryBytes int
+	SnapshotStore                        *SnapshotStore
+	PauseControl                         PauseController
+	IterationRateLimiter                 *TokenBucket
+	Rendezvous                           *RendezvousCoordinator
+	ExecutionGoals                       *ExecutionGoalLimiter
 	// HardStopCtx, when set, is cancelled only on hard stops (duration
 	// timeout, explicit stop/abort) — not when ExecutionGoals exhausts a
 	// shared goal. An iteration that already claimed a goal reservation runs
@@ -413,6 +430,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			if vu.Parameters != nil {
 				vu.Parameters.RefreshIteration()
 			}
+			_ = vu.refreshImportedCredentialRuntimeValues()
 			if vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
 				if err := vu.resetProtocolForIteration(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
@@ -983,6 +1001,7 @@ func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Co
 }
 
 func (vu *VUser) prepareRuntimeState() {
+	vu.ensureImportedCredentialTemplatePlan()
 	vu.bindRuntimeTextRedactor()
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
@@ -992,6 +1011,7 @@ func (vu *VUser) prepareRuntimeState() {
 		vu.Parameters.Prime()
 	}
 	vu.loadDataRow()
+	_ = vu.refreshImportedCredentialRuntimeValues()
 }
 
 func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {

@@ -47,6 +47,7 @@ func parseActionFileASTWithAnalysis(
 	unsupportedConditionIDs := make(map[string]struct{})
 	unsupportedLoopIDs := make(map[string]struct{})
 	appendParsedFunction := func(fn ParsedFunction, flow sourceFlowContext) {
+		fn.sourceFunction = flow.function
 		for _, frame := range flow.conditions {
 			fn.Conditions = append(fn.Conditions, frame.Text)
 			fn.ConditionIDs = append(fn.ConditionIDs, frame.ID)
@@ -351,6 +352,13 @@ type sourceFlowContext struct {
 	breakables            []sourceFlowFrame // Text: "loop" or "switch"; ID: loop ID or ""
 	evaluatedConditionIDs []string
 	evaluatedLoopIDs      []string
+	function              string
+}
+
+func (ctx sourceFlowContext) withFunction(name string) sourceFlowContext {
+	out := ctx
+	out.function = strings.TrimSpace(name)
+	return out
 }
 
 func (ctx sourceFlowContext) withCondition(id, condition string) sourceFlowContext {
@@ -525,6 +533,18 @@ func walkCCNode(node cc.Node, visit func(cc.Node, sourceFlowContext)) {
 				// the flow context of their bodies instead of being flattened
 				// silently.
 				switch typed := node.(type) {
+				case *cc.FunctionDefinition:
+					functionName := ""
+					if typed.Declarator != nil {
+						functionName = typed.Declarator.Name()
+					}
+					// Function signatures cannot contain executable request
+					// calls. Walk only the body with explicit owner context so
+					// one physical file declared for multiple lifecycle phases
+					// can be partitioned without replaying every call in each
+					// phase.
+					walkValue(reflect.ValueOf(typed.CompoundStatement), flow.withFunction(functionName))
+					return
 				case *cc.SelectionStatement:
 					id := sourceFlowNodeID(typed)
 					switch typed.Case {

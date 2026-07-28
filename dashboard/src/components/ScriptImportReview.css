@@ -235,6 +235,41 @@
   gap: 5px;
 }
 
+.secret-binding-review-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin: 0 0 5px;
+  padding: 0;
+  border: 0;
+}
+
+.secret-binding-review-choice legend {
+  width: 100%;
+  margin-bottom: 1px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.secret-binding-review-choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.secret-binding-review-choice input[type='radio'] {
+  width: auto;
+  margin: 0;
+}
+
+.secret-binding-review-choice small {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .secret-binding-review-control label {
   color: var(--text-secondary);
   font-size: 12px;

@@ -25,8 +25,11 @@ func TestConvertDoesNotDiscloseEscapedCredentialVariableInSourceReview(t *testin
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != "postman-secret" {
-		t.Fatalf("protected requirements = %#v, want decoded credential", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, preserved credential must not require reentry", requirements)
+	}
+	if got := result.Script.Actions[0].Headers["X-Api-Key"]; got != "postman-secret" {
+		t.Fatalf("destination header = %q, want decoded imported credential", got)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
 		t.Fatalf("source review = %#v, want source files", result.SourceReview)
@@ -60,30 +63,32 @@ func TestConvertProjectsBaseURLUserinfoAndPercentQueryWithoutPublicDisclosure(t 
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(requirements)
-	if len(requirements) != 2 {
-		t.Fatalf("protected requirements = %#v, want userinfo and query bindings", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, preserved base URL must not require reentry", requirements)
 	}
-	if strings.Contains(result.Script.Config.BaseURL, "postman-pass") ||
-		strings.Contains(result.Script.Config.BaseURL, "postman%2Dquery") ||
-		!strings.Contains(result.Script.Config.BaseURL, "{{secret.") {
-		t.Fatalf("base URL was not projected safely: %q", result.Script.Config.BaseURL)
+	wantBaseURL := "https://alice:postman-pass@api.example.test/root?api_key=postman%2Dquery"
+	if result.Script.Config.BaseURL != wantBaseURL {
+		t.Fatalf("base URL = %q, want imported value %q", result.Script.Config.BaseURL, wantBaseURL)
 	}
 	if len(result.Script.Actions) != 1 ||
-		result.Script.Actions[0].Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("base URL userinfo did not durably gate the request: %#v", result.Script.Actions)
+		result.Script.Actions[0].Metadata["execution_blocker"] != nil {
+		t.Fatalf("preserved base URL userinfo blocked execution: %#v", result.Script.Actions)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, canary := range []string{
-		`postman\u002dpass`,
-		"postman-pass",
-		"postman%2Dquery",
-		"postman-query",
-	} {
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("serialized conversion disclosed %q: %s", canary, encoded)
+	if !strings.Contains(string(encoded), "postman-pass") ||
+		!strings.Contains(string(encoded), "postman%2Dquery") {
+		t.Fatalf("serialized destination lost imported base credentials: %s", encoded)
+	}
+	sourceJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{`postman\u002dpass`, "postman-pass", "postman%2Dquery", "postman-query"} {
+		if strings.Contains(string(sourceJSON), canary) {
+			t.Fatalf("source review disclosed %q: %s", canary, sourceJSON)
 		}
 	}
 }

@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestHTTPClearCookiesEmptiesJar(t *testing.T) {
@@ -35,7 +39,7 @@ func TestHTTPClearCookiesEmptiesJar(t *testing.T) {
 func TestBoundedCookieJarEnforcesCookieAndProcessBudgets(t *testing.T) {
 	target, _ := url.Parse("https://example.test/app/page")
 	probe := &http.Cookie{Name: "session", Value: "small"}
-	budget := &responseCaptureBudget{limit: boundedCookieSize(probe)}
+	budget := &responseCaptureBudget{limit: boundedCookieSize(probe) + int64(len(probe.Value))}
 	jar, err := newBoundedCookieJarWithBudget(budget)
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +47,9 @@ func TestBoundedCookieJarEnforcesCookieAndProcessBudgets(t *testing.T) {
 	jar.SetCookies(target, []*http.Cookie{probe, {Name: "second", Value: "small"}})
 	if got := jar.Cookies(target); len(got) != 1 || got[0].Name != "session" {
 		t.Fatalf("cookies after process budget = %#v, want only session", got)
+	}
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"small"}) {
+		t.Fatalf("accepted runtime credential values = %#v", got)
 	}
 	jar.SetCookies(target, []*http.Cookie{{Name: "oversized", Value: strings.Repeat("x", maxHTTPCookieBytes)}})
 	if got := jar.Cookies(target); len(got) != 1 {
@@ -53,6 +60,104 @@ func TestBoundedCookieJarEnforcesCookieAndProcessBudgets(t *testing.T) {
 	}
 	if got := budget.used.Load(); got != 0 {
 		t.Fatalf("cookie clear leaked %d process bytes", got)
+	}
+}
+
+func TestBoundedCookieJarSnapshotsAcceptedReplacementsWithoutGrowingHistory(t *testing.T) {
+	target, _ := url.Parse("https://example.test/app")
+	budget := &responseCaptureBudget{limit: maxHTTPProcessCookieBytes}
+	jar, err := newBoundedCookieJarWithBudget(budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar.SetCookies(target, []*http.Cookie{{Name: "opaque", Value: "first"}})
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"first"}) {
+		t.Fatalf("first accepted values = %#v", got)
+	}
+	jar.SetCookies(target, []*http.Cookie{
+		{Name: "opaque", Value: "second"},
+		{Name: "opaque", Value: "second"},
+	})
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"second"}) {
+		t.Fatalf("replacement accepted values = %#v", got)
+	}
+	jar.SetCookies(target, []*http.Cookie{{Name: "opaque", Value: "", MaxAge: -1}})
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"second"}) {
+		t.Fatalf("conservative deleted-cookie snapshot = %#v, want prior bounded value", got)
+	}
+	if got := jar.Cookies(target); len(got) != 0 {
+		t.Fatalf("cookie deletion left jar values = %#v", got)
+	}
+
+	constrainedBudget := &responseCaptureBudget{limit: 1}
+	constrained, err := newBoundedCookieJarWithBudget(constrainedBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	constrained.SetCookies(target, []*http.Cookie{{Name: "rejected", Value: "not-retained"}})
+	if got := constrained.runtimeCredentialValuesSnapshot(); len(got) != 0 {
+		t.Fatalf("rejected cookie produced runtime credential values = %#v", got)
+	}
+}
+
+func TestBoundedCookieJarMoreThanLegacyRotationLimitKeepsOnlyCurrentValue(t *testing.T) {
+	target, _ := url.Parse("https://example.test/app")
+	budget := &responseCaptureBudget{limit: maxHTTPProcessCookieBytes}
+	jar, err := newBoundedCookieJarWithBudget(budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const rotations = 640
+	for index := 0; index < rotations; index++ {
+		value := fmt.Sprintf("rotating-cookie-%04d", index)
+		jar.SetCookies(target, []*http.Cookie{{Name: "session", Value: value}})
+		if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{value}) {
+			t.Fatalf("rotation %d snapshot = %#v, want only current value", index, got)
+		}
+	}
+	if got := jar.Cookies(target); len(got) != 1 ||
+		got[0].Value != fmt.Sprintf("rotating-cookie-%04d", rotations-1) {
+		t.Fatalf("cookie after rotations = %#v", got)
+	}
+	if used := budget.used.Load(); used > maxHTTPCookieJarBytes {
+		t.Fatalf("rotations retained %d process-budget bytes, limit %d", used, maxHTTPCookieJarBytes)
+	}
+}
+
+func TestHTTPExecuteReportsCookiesAcceptedAcrossRedirects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start":
+			http.SetCookie(w, &http.Cookie{Name: "first", Value: "redirect-cookie", Path: "/"})
+			http.Redirect(w, r, "/final", http.StatusFound)
+		case "/final":
+			http.SetCookie(w, &http.Cookie{Name: "second", Value: "final-cookie", Path: "/"})
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	runtime := &HTTP{}
+	if err := runtime.Init(context.Background(), map[string]any{"base_url": server.URL}); err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Teardown(context.Background())
+	result, err := runtime.Execute(context.Background(), &protocol.Action{
+		Name: "redirect cookies", Method: http.MethodGet, Target: "/start",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("redirect result = %#v", result)
+	}
+	if !result.RuntimeCredentialValuesSnapshot {
+		t.Fatal("redirect cookie values were not marked as a complete snapshot")
+	}
+	if !reflect.DeepEqual(result.RuntimeCredentialValues, []string{"final-cookie", "redirect-cookie"}) {
+		t.Fatalf("redirect runtime credential values = %#v", result.RuntimeCredentialValues)
 	}
 }
 

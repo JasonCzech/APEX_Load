@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -17,12 +18,13 @@ type importParameterizeApplyRequest struct {
 }
 
 type importParameterizeApplyResponse struct {
-	Script        *dsl.Script     `json:"script"`
-	Diffs         []paramize.Diff `json:"diffs"`
-	AppliedCount  int             `json:"applied_count"`
-	Blocked       bool            `json:"blocked,omitempty"`
-	BlockedReason string          `json:"blocked_reason,omitempty"`
-	Warnings      []string        `json:"warnings,omitempty"`
+	Script               *dsl.Script     `json:"script"`
+	Diffs                []paramize.Diff `json:"diffs"`
+	AppliedCount         int             `json:"applied_count"`
+	Blocked              bool            `json:"blocked,omitempty"`
+	BlockedReason        string          `json:"blocked_reason,omitempty"`
+	Warnings             []string        `json:"warnings,omitempty"`
+	ImportDraftExpiresAt *time.Time      `json:"import_draft_expires_at,omitempty"`
 }
 
 // handleApplyImportParameterization handles
@@ -57,9 +59,29 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 		}
 	}
 
+	var mutationClaim *importDraftAttestationClaim
+	if isCredentialPreservingImport(req.Script) {
+		var claimErr error
+		mutationClaim, claimErr = s.claimImportDraftMutation(r, req.Script)
+		if claimErr != nil {
+			writeScriptImportResponse(w, http.StatusConflict, map[string]any{
+				"error": "credential-preserving import draft is invalid or expired; run the import again",
+				"code":  "import_draft_attestation_invalid",
+			})
+			return
+		}
+		defer func() {
+			if mutationClaim != nil {
+				s.releaseImportDraftAttestation(mutationClaim)
+			}
+		}()
+	}
+
 	// Project before deriving instructions. This accepts deferred [REDACTED]
 	// placeholders while ensuring a caller cannot smuggle an inline credential
-	// into the response or into client-controlled replacement instructions.
+	// into client-controlled replacement instructions. When the exact draft was
+	// authenticated above, the trusted instructions are applied to that exact
+	// draft so unrelated imported credentials remain byte-identical.
 	safeScript := maskScriptSecrets(req.Script)
 	if safeScript == nil {
 		writeError(w, http.StatusBadRequest, "failed to project script for parameterization")
@@ -77,7 +99,11 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 		}
 	}
 
-	applied, diffs, err := paramize.ApplySuggestions(safeScript, trusted.Suggestions, selected)
+	applyTarget := safeScript
+	if mutationClaim != nil {
+		applyTarget = req.Script
+	}
+	applied, diffs, err := paramize.ApplySuggestions(applyTarget, trusted.Suggestions, selected)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to apply parameterization: "+err.Error())
 		return
@@ -97,18 +123,40 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 	}
 
 	warnings := validateScript(projected)
+	responseScript := projected
+	var importDraftExpiresAt *time.Time
+	if mutationClaim != nil {
+		expiresAt, rotateErr := s.completeImportDraftMutation(r, mutationClaim, applied)
+		if rotateErr != nil {
+			writeScriptImportResponse(w, http.StatusServiceUnavailable, map[string]any{
+				"error":     "credential-preserving import draft could not be secured; retry the import",
+				"code":      "import_draft_attestation_unavailable",
+				"retryable": true,
+			})
+			return
+		}
+		mutationClaim = nil
+		responseScript = applied
+		if !expiresAt.IsZero() {
+			importDraftExpiresAt = &expiresAt
+		}
+	}
 	s.recordAuditEvent(r, "script.import.parameterize.apply", "success", "script", projected.Name, projected.ProjectID, map[string]any{
 		"selected": len(req.SelectedIDs),
 		"applied":  len(appliedIDs),
 		"changes":  len(diffs),
 	})
 
-	writeJSON(w, http.StatusOK, importParameterizeApplyResponse{
-		Script:       projected,
-		Diffs:        diffs,
-		AppliedCount: len(appliedIDs),
-		Warnings:     warnings,
-	})
+	response := map[string]any{
+		"script":        responseScript,
+		"diffs":         diffs,
+		"applied_count": len(appliedIDs),
+		"warnings":      warnings,
+	}
+	if importDraftExpiresAt != nil {
+		response["import_draft_expires_at"] = importDraftExpiresAt
+	}
+	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
 func sanitizeParameterizationDiffs(input []paramize.Diff) []paramize.Diff {

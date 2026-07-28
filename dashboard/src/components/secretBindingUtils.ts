@@ -12,6 +12,15 @@ export function secretBindingReference(value: string): string {
   return `{{secret.${value.trim()}}}`
 }
 
+export function requirementsPreserveDestinationValues(
+  requirements: readonly SecretBindingRequirement[],
+): boolean {
+  return (
+    requirements.length > 0
+    && requirements.every(requirement => requirement.destination_value_preserved === true)
+  )
+}
+
 export function refreshedSecretBindingRequirements(error: unknown): SecretBindingRequirement[] | null {
   if (!error || typeof error !== 'object' || (error as { code?: unknown }).code !== 'secret_binding_requirements_changed') {
     return null

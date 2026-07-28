@@ -707,34 +707,78 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
+	if err := validateJavaVMParameterSafety(script, isCredentialPreservingImport(script)); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Always inspect the disclosure-safe projection. A draft that contains only
-	// an inline credential (and no literal sentinel) must receive the same
-	// guided binding response as a previously redacted import.
-	projected := maskScriptSecrets(script)
-	if projected == nil {
-		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
-		return
-	}
-	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-		// Requirements and opaque IDs describe the exact safe representation
-		// consumed by the binding endpoint; plaintext never appears in the error.
-		writeSecretBindingsRequired(w, unresolved)
-		return
-	}
-	// Persist the projection, not the caller's raw object. The binding scanner
-	// intentionally ignores non-executable source-review evidence, but durable
-	// storage must still never retain credentials embedded in that metadata.
-	script = projected
-	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	var importAttestationClaim *importDraftAttestationClaim
+	if isCredentialPreservingImport(script) {
+		fingerprint, err := fingerprintImportDraftCredentials(script)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to validate credential-preserving import draft")
+			return
+		}
+		if fingerprint.HasRawCredentials ||
+			importDraftAttestationToken(script) != "" {
+			importAttestationClaim, err = s.claimImportDraftAttestation(r, script)
+			if err != nil {
+				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+				return
+			}
+			defer func() {
+				if importAttestationClaim != nil {
+					s.releaseImportDraftAttestation(importAttestationClaim)
+				}
+			}()
+			script, err = preparePersistentImportedLibraryScript(
+				script,
+				nil,
+				importAttestationClaim.Profile,
+			)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if strings.TrimSpace(script.ID) == "" {
+				script.ID = protectedImportCreateScriptID(
+					importAttestationClaim.Profile,
+					importAttestationClaim.Token,
+				)
+			}
+		} else {
+			s.discardImportDraftAttestation(r, script)
+			script, err = preparePersistentLibraryScript(script, nil)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+	} else {
+		// Always inspect the disclosure-safe projection. A draft that contains
+		// only an inline credential (and no literal sentinel) must receive the
+		// same guided binding response as a previously redacted import.
+		projected := maskScriptSecrets(script)
+		if projected == nil {
+			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
+			return
+		}
+		if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+			// Requirements and opaque IDs describe the exact safe representation
+			// consumed by the binding endpoint; plaintext never appears in the error.
+			writeSecretBindingsRequired(w, unresolved)
+			return
+		}
+		// Persist the projection, not the caller's raw object. The binding scanner
+		// intentionally ignores non-executable source-review evidence, but durable
+		// storage must still never retain credentials embedded in that metadata.
+		script = projected
+		if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
-	if issues := validateScript(script); len(issues) > 0 {
+	if issues := validateStoredExecutionScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
@@ -742,7 +786,12 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "Java Vuser scripts must be saved through authoring-session review and approval")
 		return
 	}
-	baseline, err := s.attestRecordingBaselineCapture(script.ProjectID, script, wrapper.SourceRecordingSessionID)
+	baseline, err := s.attestRecordingBaselineCapture(
+		script.ProjectID,
+		script,
+		wrapper.SourceRecordingSessionID,
+		importAttestationClaim,
+	)
 	if err != nil {
 		switch {
 		case errors.Is(err, errRecordingCaptureSourceNotFound):
@@ -753,17 +802,39 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stored, err := s.runner.StoreScriptDurable(script)
+	var stored *StoredScript
+	if importAttestationClaim != nil {
+		if err := s.assertImportDraftAttestationOwned(importAttestationClaim); err != nil {
+			writeError(w, http.StatusConflict, "credential-preserving import draft lease was lost; retry the save")
+			return
+		}
+		stored, _, err = s.runner.CreateImportedScriptDurableReportingReplay(
+			script,
+			importAttestationClaim.Profile,
+		)
+	} else {
+		stored, err = s.runner.StoreScriptDurable(script)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save script: "+err.Error())
 		return
+	}
+	if importAttestationClaim != nil {
+		if completeErr := s.completeImportDraftAttestation(importAttestationClaim); completeErr != nil {
+			slog.Warn(
+				"failed to finalize credential-preserving import draft session",
+				"script_id", stored.ID,
+				"error", completeErr,
+			)
+		}
+		importAttestationClaim = nil
 	}
 	if baseline != nil {
 		if err := s.persistRecordedBaseline(stored.ID, baseline.source, stored.Script, baseline.observations); err != nil {
 			slog.Warn("failed to persist attested recorded baseline", "script_id", stored.ID, "error", err)
 		}
 	}
-	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
+	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, maskStoredScript(stored))
 }
 
@@ -851,7 +922,16 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		script.FolderID = wrapper.FolderID
 	}
 
-	writeJSON(w, http.StatusOK, buildScriptValidationResponseWithVariables("", script, wrapper.Variables, s.runner.secretResolverForProject(script.ProjectID)))
+	writeJSON(
+		w,
+		http.StatusOK,
+		buildDraftScriptValidationResponseWithVariables(
+			"",
+			script,
+			wrapper.Variables,
+			s.runner.secretResolverForProject(script.ProjectID),
+		),
+	)
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
@@ -883,7 +963,7 @@ func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	s.recordAuditEvent(r, "script.move", "success", "script", id, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": req.FolderID})
+	s.recordAuditEvent(r, "script.move", "success", "script", id, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": req.FolderID})
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "folder_id": req.FolderID})
 }
 
@@ -1204,7 +1284,7 @@ func (s *Server) handleTestStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func validateScript(script *dsl.Script) []string {
-	return dsl.ValidateScriptIssues(script)
+	return validateStoredExecutionScript(script)
 }
 
 type scriptValidationResponse struct {
@@ -1227,6 +1307,37 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script, resolver
 
 func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string, resolvers ...engine.SecretResolver) scriptValidationResponse {
 	issues := validateScript(script)
+	return buildScriptValidationResponseFromIssues(
+		scriptID,
+		script,
+		variables,
+		issues,
+		resolvers...,
+	)
+}
+
+func buildDraftScriptValidationResponseWithVariables(
+	scriptID string,
+	script *dsl.Script,
+	variables map[string]string,
+	resolvers ...engine.SecretResolver,
+) scriptValidationResponse {
+	return buildScriptValidationResponseFromIssues(
+		scriptID,
+		script,
+		variables,
+		dsl.ValidateScriptIssues(script),
+		resolvers...,
+	)
+}
+
+func buildScriptValidationResponseFromIssues(
+	scriptID string,
+	script *dsl.Script,
+	variables map[string]string,
+	issues []string,
+	resolvers ...engine.SecretResolver,
+) scriptValidationResponse {
 	for _, blocker := range scriptImportPromotionBlockers(script) {
 		issues = append(issues, "import fidelity blocker: "+blocker)
 	}

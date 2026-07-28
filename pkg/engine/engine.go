@@ -69,6 +69,10 @@ type Engine struct {
 	softStop  context.CancelFunc
 	secrets   SecretResolver
 	redaction *RedactionConfig
+	// credentialTemplates is a value-free, immutable plan shared by every
+	// VUser. Runtime values remain per-VUser and are added only to that VUser's
+	// detached redaction matcher.
+	credentialTemplates *importedCredentialTemplatePlan
 	// javaVuserCapacityLimit is populated by the governed runtime validation
 	// immediately before Run acquires its process-wide persistent-session lease.
 	javaVuserCapacityLimit int64
@@ -134,19 +138,25 @@ func New(cfg Config) (*Engine, error) {
 		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
 	}
 	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(cfg.Script, secretResolver)...)
+	importedValues, credentialTemplates, err := inspectImportedCredentials(cfg.Script)
+	if err != nil {
+		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
+	}
+	secretValues = append(secretValues, importedValues...)
 	redactionConfig, err := WithSecretValueRedactionChecked(nil, secretValues)
 	if err != nil {
 		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
 	}
 	return &Engine{
-		script:    cfg.Script,
-		vusers:    cfg.VUsers,
-		duration:  cfg.Duration,
-		rampUp:    cfg.RampUp,
-		metrics:   NewMetricsCollector(10000),
-		data:      dataProvider,
-		secrets:   secretResolver,
-		redaction: redactionConfig,
+		script:              cfg.Script,
+		vusers:              cfg.VUsers,
+		duration:            cfg.Duration,
+		rampUp:              cfg.RampUp,
+		metrics:             NewMetricsCollector(10000),
+		data:                dataProvider,
+		secrets:             secretResolver,
+		redaction:           redactionConfig,
+		credentialTemplates: credentialTemplates,
 	}, nil
 }
 
@@ -347,19 +357,21 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			defer func() { e.metrics.SetActiveVUsers(activeVUsers.Add(-1)) }()
 
 			vu = &VUser{
-				ID:                   vuserID,
-				TotalVUsers:          e.vusers,
-				Proto:                vuProto,
-				Script:               e.script,
-				Metrics:              e.metrics,
-				SecretResolver:       e.secrets,
-				RedactionConfig:      e.redaction,
-				IterationRateLimiter: iterationRateLimiter,
-				Rendezvous:           rendezvous,
-				ExecutionGoals:       executionGoals,
-				HardStopCtx:          ctx,
-				ActionBoundaryCtx:    boundaryCtx,
-				DataProvider:         e.data,
+				ID:                           vuserID,
+				TotalVUsers:                  e.vusers,
+				Proto:                        vuProto,
+				Script:                       e.script,
+				Metrics:                      e.metrics,
+				SecretResolver:               e.secrets,
+				RedactionConfig:              e.redaction,
+				credentialTemplates:          e.credentialTemplates,
+				credentialTemplatesInspected: true,
+				IterationRateLimiter:         iterationRateLimiter,
+				Rendezvous:                   rendezvous,
+				ExecutionGoals:               executionGoals,
+				HardStopCtx:                  ctx,
+				ActionBoundaryCtx:            boundaryCtx,
+				DataProvider:                 e.data,
 			}
 			vu.Run(loopCtx)
 		}()
@@ -585,16 +597,18 @@ func (e *Engine) runOpenWorkload(
 			initializedWorkers.Add(1)
 
 			vu = &VUser{
-				ID:                workerID,
-				Proto:             vuProto,
-				Script:            iterationScript,
-				Metrics:           e.metrics,
-				SecretResolver:    e.secrets,
-				RedactionConfig:   e.redaction,
-				ExecutionGoals:    executionGoals,
-				HardStopCtx:       hardStopCtx,
-				ActionBoundaryCtx: actionBoundaryCtx,
-				DataProvider:      e.data,
+				ID:                           workerID,
+				Proto:                        vuProto,
+				Script:                       iterationScript,
+				Metrics:                      e.metrics,
+				SecretResolver:               e.secrets,
+				RedactionConfig:              e.redaction,
+				credentialTemplates:          e.credentialTemplates,
+				credentialTemplatesInspected: true,
+				ExecutionGoals:               executionGoals,
+				HardStopCtx:                  hardStopCtx,
+				ActionBoundaryCtx:            actionBoundaryCtx,
+				DataProvider:                 e.data,
 			}
 			vu.Run(loopCtx)
 		}(arrival)

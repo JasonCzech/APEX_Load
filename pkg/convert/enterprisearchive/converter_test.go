@@ -857,14 +857,12 @@ Action()
 	}
 	auth := result.Script.Config.HTTP.Auth
 	if auth.Type != "basic" || auth.Username != "perfuser" ||
-		auth.Password != "{{secret.ENTERPRISE_HTTP_AUTH_PASSWORD}}" {
+		auth.Password != "perfpass" {
 		t.Fatalf("http auth = %#v, want web_set_user basic auth", auth)
 	}
 	requirements := result.ProtectedRequirements.Take()
-	if len(requirements) != 1 ||
-		requirements[0].Value != "perfpass" ||
-		requirements[0].Replacement != auth.Password {
-		t.Fatalf("protected auth requirements = %#v, want one password handoff", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("protected auth requirements = %#v, want no re-entry requirement for an imported executable password", requirements)
 	}
 	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"] != "secure.example.com:443" {
 		t.Fatalf("web runtime attrs = %#v, want web_set_user host", result.Script.Config.WebRuntime.AdditionalAttributes)
@@ -873,6 +871,14 @@ Action()
 	authControls, ok := preserved["source_authentication"].([]map[string]any)
 	if !ok || len(authControls) != 1 || authControls[0]["host"] != "secure.example.com:443" {
 		t.Fatalf("source_authentication = %#v, want preserved web_set_user control", preserved["source_authentication"])
+	}
+	authControlsJSON, err := json.Marshal(authControls)
+	if err != nil {
+		t.Fatalf("json.Marshal(source_authentication): %v", err)
+	}
+	if strings.Contains(string(authControlsJSON), "perfpass") ||
+		!strings.Contains(string(authControlsJSON), credential.Redacted) {
+		t.Fatalf("source_authentication = %s, want disclosure-safe password provenance", authControlsJSON)
 	}
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_user", "config.http.auth", "converted")
 }
@@ -1938,8 +1944,8 @@ Options=NOTHINK
 	if got := lightning.Headers["X-B3-TraceId"]; got != "{{var.traceid}}" {
 		t.Fatalf("auto header on lightning = %q, want parameterized trace id", got)
 	}
-	if got := lightning.Headers["Cookie"]; !strings.HasPrefix(got, "{{secret.") {
-		t.Fatalf("cookie header = %q, want whole-value governed credential", got)
+	if got := lightning.Headers["Cookie"]; got != "sid={{var.c_lightning_sid}}" {
+		t.Fatalf("cookie header = %q, want response-derived session variable preserved", got)
 	}
 	if _, ok := result.Script.Actions[1].Headers["X-B3-TraceId"]; ok {
 		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[1].Headers)
@@ -2280,8 +2286,8 @@ vuser_end()
 	if address.Target != "https://acme.lightning.force.com/aura" {
 		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
 	}
-	if got := address.Headers["Cookie"]; !strings.HasPrefix(got, "{{secret.") {
-		t.Fatalf("address cookie = %q, want whole-value governed credential", got)
+	if got := address.Headers["Cookie"]; got != "sid={{var.sessionid}}" {
+		t.Fatalf("address cookie = %q, want response-derived session variable preserved", got)
 	}
 	if got := address.Headers["X-SFDC-Page-Scope-Id"]; got != "{{var.pagescopeid}}" {
 		t.Fatalf("auto header = %q, want persistent parameterized page scope", got)
@@ -2752,8 +2758,8 @@ Type="Table"
 	if got := result.Script.Actions[0].Target; got != "{{param.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws" {
 		t.Fatalf("target = %q, want URL parameter reference canonicalized to param.url", got)
 	}
-	if got := result.Script.Actions[0].Body; got != "url={{param.url}}&session={{secret.ENTERPRISE_REQUEST_SESSION}}" {
-		t.Fatalf("body = %q, want known .prm parameter plus governed unproven session credential", got)
+	if got := result.Script.Actions[0].Body; got != "url={{param.url}}&session={{var.sessionid}}" {
+		t.Fatalf("body = %q, want known .prm parameter plus imported runtime variable preserved", got)
 	}
 	if got := result.Script.Config.BaseURL; got != "https://csi-gw-ext.att.com:443" {
 		t.Fatalf("base_url = %q, want first URL.dat value to replace source fallback", got)
@@ -4581,8 +4587,8 @@ ValueList=perfuser
 	if result.ReviewArtifact == nil {
 		t.Fatal("review artifact = nil, want SAP GUI external-runner review artifact")
 	}
-	if result.Script.Config.SAPGUI.Password != "{{secret.sapgui_password}}" || result.Script.Config.SAPGUI.Client != "001" {
-		t.Fatalf("sapgui config = %#v, want secret password and client", result.Script.Config.SAPGUI)
+	if result.Script.Config.SAPGUI.Password != "recorded-password" || result.Script.Config.SAPGUI.Client != "001" {
+		t.Fatalf("sapgui config = %#v, want imported password and client", result.Script.Config.SAPGUI)
 	}
 	var sawSet, sawPress, sawGrid, sawSync bool
 	for _, action := range result.Script.Actions {
@@ -4591,8 +4597,8 @@ ValueList=perfuser
 			if action.Target == "wnd[0]/usr/txtRSYST-BNAME" && action.Value == "{{param.user}}" {
 				sawSet = true
 			}
-			if action.Target == "wnd[0]/usr/pwdRSYST-BCODE" && action.Value != "{{secret.sapgui_password}}" {
-				t.Fatalf("password action = %#v, want secret replacement", action)
+			if action.Target == "wnd[0]/usr/pwdRSYST-BCODE" && action.Value != "recorded-password" {
+				t.Fatalf("password action = %#v, want imported password retained", action)
 			}
 		case "sapgui_press":
 			sawPress = true

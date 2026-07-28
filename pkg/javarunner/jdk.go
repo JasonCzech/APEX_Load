@@ -59,6 +59,17 @@ const (
 	JDKSourcePath           JDKSource = "path"
 )
 
+// JavaVMFamily identifies the VM option dialect reported by the selected
+// launcher. HotSpot includes OpenJDK/Oracle/GraalVM HotSpot-derived runtimes;
+// OpenJ9 includes Eclipse OpenJ9 and IBM J9-derived runtimes.
+type JavaVMFamily string
+
+const (
+	JavaVMUnknown JavaVMFamily = ""
+	JavaVMHotSpot JavaVMFamily = "hotspot"
+	JavaVMOpenJ9  JavaVMFamily = "openj9"
+)
+
 var ErrUnsupportedRunnerCommand = errors.New("runner command is not a direct java launcher")
 
 // ResolveOptions describes one executor-local JDK resolution. An empty
@@ -81,11 +92,12 @@ type ResolveOptions struct {
 // resolved. For home-based candidates, Home is the canonical selected home;
 // for a direct launcher candidate it is derived from the canonical binary.
 type ResolvedJDK struct {
-	Home    string
-	JavaBin string
-	Version string
-	Major   int
-	Source  JDKSource
+	Home     string
+	JavaBin  string
+	Version  string
+	Major    int
+	VMFamily JavaVMFamily
+	Source   JDKSource
 }
 
 // EnvironmentOverrides returns the child-process environment values associated
@@ -305,7 +317,7 @@ func javaExecutableNames() []string {
 }
 
 func probeResolvedJDK(ctx context.Context, javaBin, home string, source JDKSource, timeout time.Duration, allowLegacyJava bool) (ResolvedJDK, error) {
-	return probeResolvedJDKWithProbes(ctx, javaBin, home, source, timeout, allowLegacyJava, ProbeJava, probeJavaHome)
+	return probeResolvedJDKWithRuntimeProbes(ctx, javaBin, home, source, timeout, allowLegacyJava, probeJavaRuntime, probeJavaHome)
 }
 
 func probeResolvedJDKWithProbes(
@@ -318,7 +330,32 @@ func probeResolvedJDKWithProbes(
 	versionProbe func(context.Context, string, time.Duration) (string, int, error),
 	homeProbe func(context.Context, string, time.Duration) (string, error),
 ) (ResolvedJDK, error) {
-	version, major, err := versionProbe(ctx, javaBin, timeout)
+	return probeResolvedJDKWithRuntimeProbes(
+		ctx,
+		javaBin,
+		home,
+		source,
+		timeout,
+		allowLegacyJava,
+		func(ctx context.Context, javaBin string, timeout time.Duration) (string, int, JavaVMFamily, error) {
+			version, major, err := versionProbe(ctx, javaBin, timeout)
+			return version, major, JavaVMUnknown, err
+		},
+		homeProbe,
+	)
+}
+
+func probeResolvedJDKWithRuntimeProbes(
+	ctx context.Context,
+	javaBin string,
+	home string,
+	source JDKSource,
+	timeout time.Duration,
+	allowLegacyJava bool,
+	versionProbe func(context.Context, string, time.Duration) (string, int, JavaVMFamily, error),
+	homeProbe func(context.Context, string, time.Duration) (string, error),
+) (ResolvedJDK, error) {
+	version, major, vmFamily, err := versionProbe(ctx, javaBin, timeout)
 	if err != nil {
 		return ResolvedJDK{}, err
 	}
@@ -341,11 +378,12 @@ func probeResolvedJDKWithProbes(
 		}
 	}
 	return ResolvedJDK{
-		Home:    home,
-		JavaBin: javaBin,
-		Version: version,
-		Major:   major,
-		Source:  source,
+		Home:     home,
+		JavaBin:  javaBin,
+		Version:  version,
+		Major:    major,
+		VMFamily: vmFamily,
+		Source:   source,
 	}, nil
 }
 
@@ -392,6 +430,11 @@ func probeJavaHome(ctx context.Context, javaBin string, timeout time.Duration) (
 // ProbeJava executes the resolved launcher with -version under a bounded
 // timeout/output budget and returns its normalized version token and major.
 func ProbeJava(ctx context.Context, javaBin string, timeout time.Duration) (string, int, error) {
+	version, major, _, err := probeJavaRuntime(ctx, javaBin, timeout)
+	return version, major, err
+}
+
+func probeJavaRuntime(ctx context.Context, javaBin string, timeout time.Duration) (string, int, JavaVMFamily, error) {
 	if timeout <= 0 {
 		timeout = defaultProbeTimeout
 	}
@@ -411,13 +454,13 @@ func ProbeJava(ctx context.Context, javaBin string, timeout time.Duration) (stri
 		ReapFailedStart,
 	)
 	if err != nil {
-		return "", 0, classifyJavaProbeError(probeCtx, err)
+		return "", 0, JavaVMUnknown, classifyJavaProbeError(probeCtx, err)
 	}
 	version, major, err := ParseJavaVersion(output.String())
 	if err != nil {
-		return "", 0, err
+		return "", 0, JavaVMUnknown, err
 	}
-	return version, major, nil
+	return version, major, ParseJavaVMFamily(output.String()), nil
 }
 
 func classifyJavaProbeError(ctx context.Context, err error) error {
@@ -511,6 +554,25 @@ func ParseJavaVersion(output string) (version string, major int, err error) {
 		}
 	}
 	return version, major, nil
+}
+
+// ParseJavaVMFamily recognizes the two supported JVM option dialects from
+// standard `java -version` output. It never returns or embeds probe output.
+func ParseJavaVMFamily(output string) JavaVMFamily {
+	lower := strings.ToLower(output)
+	if strings.Contains(lower, "openj9") ||
+		strings.Contains(lower, "j9 vm") ||
+		strings.Contains(lower, "j9vm") {
+		return JavaVMOpenJ9
+	}
+	if strings.Contains(lower, "hotspot") ||
+		strings.Contains(lower, "openjdk 64-bit server vm") ||
+		strings.Contains(lower, "openjdk server vm") ||
+		strings.Contains(lower, "openjdk 64-bit client vm") ||
+		strings.Contains(lower, "openjdk client vm") {
+		return JavaVMHotSpot
+	}
+	return JavaVMUnknown
 }
 
 type boundedBuffer struct {

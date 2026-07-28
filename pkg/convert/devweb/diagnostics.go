@@ -4,10 +4,12 @@ package devweb
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -18,25 +20,141 @@ func diagnoseReviewOnlyJavaScript(block namedBlock, stats *ConvertStats, diagnos
 			if pattern.Construct == "dynamic template literal" && isSafeDevWebTemplateLiteral(extractLine(block.Body, match[0]), ctx.parameterTemplates) {
 				continue
 			}
+			if pattern.Construct == "residual JavaScript assignment" &&
+				isDirectlyConvertedDevWebAssignment(extractLine(block.Body, match[0]), *steps) {
+				continue
+			}
 			stats.UnsupportedCalls = appendDevWebUnsupportedCall(stats.UnsupportedCalls, pattern.Construct)
 			diagnostics.Add(diag.Warning, pattern.Element, devwebLocation(block, match[0]), pattern.Detail)
-			lineContent := extractLine(block.Body, match[0])
-			*steps = append(*steps, parsedStep{
-				Protocol: "http",
-				Action: dsl.Action{
-					Name:  actionName(block.Name, "js_review"),
-					Type:  "review_required",
-					Value: strings.TrimSpace(lineContent),
-					Metadata: map[string]any{
-						"source": pattern.Construct,
-					},
-				},
-				Function:  pattern.Construct,
-				StartLine: devwebLine(block, match[0]),
-				EndLine:   devwebLine(block, match[0]),
-			})
+			if mergeDevWebReviewFinding(
+				*steps,
+				block,
+				match[0],
+				pattern.Construct,
+				"unsupported_source_logic",
+				pattern.Detail,
+			) {
+				continue
+			}
+			*steps = append(*steps, newDevWebReviewStep(block, match[0], pattern.Construct, "unsupported_source_logic", pattern.Detail))
 		}
 	}
+}
+
+var devWebAssignmentNamePattern = regexp.MustCompile(`(?i)\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=`)
+
+func isDirectlyConvertedDevWebAssignment(line string, steps []parsedStep) bool {
+	lower := strings.ToLower(line)
+	trimmed := strings.TrimSpace(lower)
+	if strings.Contains(lower, "require(") ||
+		strings.Contains(lower, "require (") ||
+		strings.HasPrefix(trimmed, "for (") ||
+		strings.HasPrefix(trimmed, "for(") {
+		// These are already represented by the custom-module/control-flow
+		// findings, so a second placeholder would add no review information.
+		return true
+	}
+	for _, construct := range []string{
+		"new load.webrequest",
+		"new load.websocket",
+		"new load.transaction",
+	} {
+		if strings.Contains(lower, construct) {
+			return true
+		}
+	}
+	if match := devWebAssignmentNamePattern.FindStringSubmatch(line); len(match) == 2 {
+		for _, step := range steps {
+			if stringValue(step.Action.Metadata["devweb_request_variable"]) == match[1] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func mergeDevWebReviewFinding(
+	steps []parsedStep,
+	block namedBlock,
+	offset int,
+	construct string,
+	reasonCode string,
+	detail string,
+) bool {
+	line := devwebLine(block, offset)
+	for index := range steps {
+		if steps[index].StartLine != line ||
+			!strings.EqualFold(strings.TrimSpace(steps[index].Action.Type), "review_required") {
+			continue
+		}
+		applyDevWebReviewFinding(
+			&steps[index].Action,
+			block,
+			offset,
+			construct,
+			reasonCode,
+			detail,
+		)
+		return true
+	}
+	return false
+}
+
+func newDevWebReviewStep(
+	block namedBlock,
+	offset int,
+	construct string,
+	reasonCode string,
+	detail string,
+) parsedStep {
+	line := devwebLine(block, offset)
+	action := dsl.Action{
+		Name:  actionName(block.Name, "js_review"),
+		Type:  "review_required",
+		Value: "Source behavior requires operator review before execution.",
+		Metadata: map[string]any{
+			"source": strings.TrimSpace(construct),
+		},
+	}
+	applyDevWebReviewFinding(&action, block, offset, construct, reasonCode, detail)
+	return parsedStep{
+		Protocol:  "http",
+		Action:    action,
+		Function:  construct,
+		StartLine: line,
+		EndLine:   line,
+	}
+}
+
+func applyDevWebReviewFinding(
+	action *dsl.Action,
+	block namedBlock,
+	offset int,
+	construct string,
+	reasonCode string,
+	detail string,
+) {
+	if action == nil {
+		return
+	}
+	line := devwebLine(block, offset)
+	sourceRef := fmt.Sprintf(
+		"%s line %d",
+		convertutil.FirstNonEmpty(block.Name, "DevWebAction"),
+		line,
+	)
+	importreview.ApplyToAction(action, []importreview.Finding{{
+		Code:       "import_review_required",
+		Severity:   diag.Blocker,
+		Element:    "DevWeb source behavior",
+		Detail:     detail,
+		Location:   sourceRef,
+		Source:     "devweb",
+		ReasonCode: reasonCode,
+		SourceRef:  sourceRef,
+		Resolution: "replace_behavior_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}})
 }
 
 func appendDevWebUnsupportedCall(values []string, value string) []string {

@@ -78,7 +78,7 @@ func finalizeJMeterHTTPRequest(
 	action, report, err := requestimport.FinalizeAction(effective, requestimport.FinalizeOptions{
 		Project: requestimport.DefaultProjectOptions(),
 		Credentials: &requestimport.CredentialProjectionOptions{
-			Mode:            credentialpolicy.SecretReference,
+			Mode:            credentialpolicy.Preserve,
 			Registry:        registry,
 			ProvenVars:      provenVariables,
 			SourceVariables: jmeterSourceVariables(resolution),
@@ -145,12 +145,11 @@ func sanitizeJMeterHeaderValues(headers requestimport.HeaderList, source credent
 		if !strings.ContainsAny(headers[index].Value, "\r\n") {
 			continue
 		}
-		headers[index].Value = strings.NewReplacer("\r", " ", "\n", " ").Replace(headers[index].Value)
 		findings = append(findings, importreview.Finding{
 			Code:     "jmeter_invalid_header_value",
 			Severity: diag.Blocker,
 			Element:  headers[index].Name,
-			Detail:   "the JMeter header contained a line break and was sanitized before import",
+			Detail:   "the JMeter header contained a line break and cannot be sent by the native HTTP runtime",
 			Location: source.Path + "#" + source.Pointer,
 			Gate:     importreview.GateExecution,
 		})
@@ -255,7 +254,18 @@ func jmeterExecutionFindingCodes(findings []importreview.Finding) []string {
 	var codes []string
 	for _, finding := range findings {
 		if finding.Gate == importreview.GateExecution || finding.Severity == diag.Blocker {
-			codes = append(codes, finding.Code)
+			code := strings.TrimSpace(finding.ReasonCode)
+			if strings.HasPrefix(code, "unsupported_http_auth_") {
+				// JMeter has historically exposed one stable source-facing reason
+				// for every AuthManager mechanism the HTTP runtime cannot execute.
+				// Keep that adapter contract while the shared finding retains the
+				// more precise mechanism-specific reason in the conversion report.
+				code = "unsupported_auth_scheme"
+			}
+			if code == "" {
+				code = finding.Code
+			}
+			codes = append(codes, code)
 		}
 	}
 	return uniqueJMeterStrings(codes)
@@ -288,7 +298,7 @@ func projectJMeterHTTPConfigCredentials(script *dsl.Script, ctx *convertContext,
 		resolution = ctx.variableScope.resolve(nil)
 	}
 	options := credentialpolicy.Options{
-		Mode:            credentialpolicy.SecretReference,
+		Mode:            credentialpolicy.Preserve,
 		Source:          source,
 		RequestKey:      report.RequestKey,
 		NamePrefix:      "JMETER",
@@ -306,8 +316,7 @@ func projectJMeterHTTPConfigCredentials(script *dsl.Script, ctx *convertContext,
 					continue
 				}
 			}
-			value := strings.NewReplacer("\r", " ", "\n", " ").Replace(header.Value)
-			value, used := resolution.expandRuntimeValue(value, nil)
+			value, used := resolution.expandRuntimeValue(header.Value, nil)
 			headerApplications[len(occurrences)] = used
 			occurrences = append(occurrences, credentialpolicy.HeaderOccurrence{Name: header.Name, Value: value, Source: source})
 		}

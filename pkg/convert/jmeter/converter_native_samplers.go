@@ -11,11 +11,13 @@ package jmeter
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -194,30 +196,268 @@ func jdbcQueryActionType(queryType string) string {
 // parseJMeterJDBCConnection maps a JDBC Connection Configuration element onto a
 // best-effort database config. Detection may be partial; the connection is always
 // flagged adapter_required so an operator verifies it before running. The second
-// return reports whether a credential was redacted (the separate password
-// property OR one embedded inline in dbUrl), so the caller can warn unconditionally.
+// return reports whether a credential was retained (the separate password
+// property OR one embedded inline in dbUrl), so the caller can add a review item.
 func parseJMeterJDBCConnection(element *xmlNode) (*dsl.DatabaseConfig, bool, bool) {
 	dbURL := prop(element, "dbUrl")
-	username := prop(element, "username")
-	password := prop(element, "password")
+	username, _ := authoredJMeterProperty(element, "username")
+	password, _ := authoredJMeterProperty(element, "password")
+	connectionProperties, _ := authoredJMeterProperty(element, "connectionProperties")
+	properties := parseJMeterJDBCConnectionProperties(connectionProperties)
 	cfg := &dsl.DatabaseConfig{}
-	credentialRedacted := strings.TrimSpace(password) != ""
-	if driver, dsn, inlineCred, ok := detectDatabaseDriverAndDSN(dbURL, username, password); ok {
-		cfg.Driver = driver
-		cfg.DSN = dsn
-		credentialRedacted = credentialRedacted || inlineCred
-	} else if trimmed := strings.TrimSpace(dbURL); trimmed != "" {
-		// Unknown driver: store the URL verbatim, but never with cleartext creds.
-		sanitized, inlineCred := redactJDBCInlineCredentials(strings.TrimPrefix(trimmed, "jdbc:"))
-		cfg.DSN = sanitized
-		credentialRedacted = credentialRedacted || inlineCred
+	credentialRetained := strings.TrimSpace(password) != ""
+	effectivePassword := password
+	if username == "" {
+		// DataSourceElement only calls BasicDataSource.setPassword when its
+		// dedicated username field is non-empty. A standalone password field is
+		// therefore inert source evidence, not an override of URL/property auth.
+		effectivePassword = ""
 	}
-	return cfg, credentialRedacted, true
+	if driver, dsn, inlineCred, ok := detectDatabaseDriverAndDSN(dbURL, username, effectivePassword); ok {
+		cfg.Driver = driver
+		cfg.DSN, _ = applyJMeterJDBCConnectionProperties(
+			driver,
+			dsn,
+			properties,
+			username != "",
+		)
+		credentialRetained = credentialRetained || inlineCred
+	} else if trimmed := strings.TrimSpace(dbURL); trimmed != "" {
+		// An unknown driver remains review-only, but its exact connection string
+		// is retained so importing it never creates a credential-reentry task.
+		cfg.DSN = strings.TrimPrefix(trimmed, "jdbc:")
+		cfg.DSN, _ = applyJMeterJDBCConnectionProperties(
+			"",
+			cfg.DSN,
+			properties,
+			username != "",
+		)
+		credentialRetained = credentialRetained || hasJDBCInlineCredentials(trimmed)
+	}
+	for _, property := range properties {
+		if credential.SensitiveName(property.Name) &&
+			strings.TrimSpace(property.Value) != "" {
+			credentialRetained = true
+		}
+	}
+	return cfg, credentialRetained, true
 }
 
-// importedDBPasswordSecret is the governed secret reference substituted for a
-// JMX cleartext password so the credential is never baked into the exported DSL.
-const importedDBPasswordSecret = "{{secret.db_password}}"
+// jmeterJDBCConnectionProperty is the effective java.util.Properties entry
+// produced by Commons DBCP's BasicDataSource.setConnectionProperties. Property
+// names are case-sensitive and duplicates use the last authored value.
+type jmeterJDBCConnectionProperty struct {
+	Name  string
+	Value string
+}
+
+// parseJMeterJDBCConnectionProperties mirrors Commons DBCP rather than using
+// url.ParseQuery: split on semicolons, split each non-empty entry on its first
+// '=', and treat an entry without a value as an empty-valued property. The
+// original string is retained separately in import metadata.
+func parseJMeterJDBCConnectionProperties(
+	raw string,
+) []jmeterJDBCConnectionProperty {
+	var (
+		properties []jmeterJDBCConnectionProperty
+		indices    = make(map[string]int)
+	)
+	for _, entry := range strings.Split(raw, ";") {
+		if entry == "" {
+			continue
+		}
+		name := entry
+		value := ""
+		if separator := strings.IndexByte(entry, '='); separator > 0 {
+			name = entry[:separator]
+			value = entry[separator+1:]
+		}
+		if index, exists := indices[name]; exists {
+			properties[index].Value = value
+			continue
+		}
+		indices[name] = len(properties)
+		properties = append(properties, jmeterJDBCConnectionProperty{
+			Name:  name,
+			Value: value,
+		})
+	}
+	return properties
+}
+
+// applyJMeterJDBCConnectionProperties carries JDBC driver properties into the
+// native database/sql DSN. Dedicated JMeter username/password fields have the
+// same precedence as BasicDataSource: when username is authored, both explicit
+// fields override connectionProperties user/password. Other properties replace
+// same-named URL query options and retain their deterministic source order.
+func applyJMeterJDBCConnectionProperties(
+	driver string,
+	dsn string,
+	properties []jmeterJDBCConnectionProperty,
+	explicitCredentials bool,
+) (string, bool) {
+	if len(properties) == 0 {
+		return dsn, true
+	}
+	switch strings.ToLower(strings.TrimSpace(driver)) {
+	case "postgres":
+		parsed, err := url.Parse(dsn)
+		if err != nil || parsed.Scheme == "" {
+			return dsn, false
+		}
+		queryProperties, propertyUser, propertyPassword :=
+			jmeterJDBCEffectiveProperties(properties, explicitCredentials)
+		parsed.RawQuery = mergeJMeterJDBCRawQuery(
+			parsed.RawQuery,
+			queryProperties,
+		)
+		if !explicitCredentials &&
+			(propertyUser != nil || propertyPassword != nil) {
+			username := ""
+			password := ""
+			hasPassword := false
+			if parsed.User != nil {
+				username = parsed.User.Username()
+				password, hasPassword = parsed.User.Password()
+			}
+			if propertyUser != nil {
+				username = *propertyUser
+			}
+			if propertyPassword != nil {
+				password = *propertyPassword
+				hasPassword = true
+			}
+			if hasPassword {
+				parsed.User = url.UserPassword(username, password)
+			} else if username != "" {
+				parsed.User = url.User(username)
+			}
+		}
+		return parsed.String(), true
+	case "mysql":
+		queryProperties, propertyUser, propertyPassword :=
+			jmeterJDBCEffectiveProperties(properties, explicitCredentials)
+		base, rawQuery, hasQuery := strings.Cut(dsn, "?")
+		rawQuery = mergeJMeterJDBCRawQuery(rawQuery, queryProperties)
+		if !explicitCredentials &&
+			(propertyUser != nil || propertyPassword != nil) {
+			base = mergeJMeterMySQLCredentials(
+				base,
+				propertyUser,
+				propertyPassword,
+			)
+		}
+		if rawQuery != "" || hasQuery {
+			return base + "?" + rawQuery, true
+		}
+		return base, true
+	default:
+		// Oracle/ODBC/custom JDBC properties cannot be translated faithfully
+		// into the bundled database/sql DSNs. They remain byte-exact in the
+		// protected jmeter_jdbc_sources envelope and the connection is already
+		// adapter_required. Returning false records that only preservation, not
+		// native application, was possible.
+		return dsn, false
+	}
+}
+
+func jmeterJDBCEffectiveProperties(
+	properties []jmeterJDBCConnectionProperty,
+	explicitCredentials bool,
+) (
+	query []jmeterJDBCConnectionProperty,
+	user *string,
+	password *string,
+) {
+	query = make([]jmeterJDBCConnectionProperty, 0, len(properties))
+	for _, property := range properties {
+		switch property.Name {
+		case "user":
+			if !explicitCredentials {
+				value := property.Value
+				user = &value
+			}
+		case "password":
+			if !explicitCredentials {
+				value := property.Value
+				password = &value
+			}
+		default:
+			query = append(query, property)
+		}
+	}
+	return query, user, password
+}
+
+func mergeJMeterJDBCRawQuery(
+	rawQuery string,
+	properties []jmeterJDBCConnectionProperty,
+) string {
+	if len(properties) == 0 {
+		return rawQuery
+	}
+	replaced := make(map[string]struct{}, len(properties))
+	for _, property := range properties {
+		replaced[property.Name] = struct{}{}
+	}
+	segments := make([]string, 0, len(properties)+1)
+	for _, segment := range strings.Split(rawQuery, "&") {
+		if segment == "" {
+			continue
+		}
+		encodedName, _, _ := strings.Cut(segment, "=")
+		name, err := url.QueryUnescape(encodedName)
+		if err == nil {
+			if _, replace := replaced[name]; replace {
+				continue
+			}
+		}
+		segments = append(segments, segment)
+	}
+	for _, property := range properties {
+		segments = append(
+			segments,
+			url.QueryEscape(property.Name)+"="+url.QueryEscape(property.Value),
+		)
+	}
+	return strings.Join(segments, "&")
+}
+
+func mergeJMeterMySQLCredentials(
+	dsn string,
+	propertyUser *string,
+	propertyPassword *string,
+) string {
+	marker := strings.Index(dsn, "@tcp(")
+	credentials := ""
+	suffix := dsn
+	if marker >= 0 {
+		credentials = dsn[:marker]
+		suffix = dsn[marker+1:]
+	}
+	username := credentials
+	password := ""
+	hasPassword := false
+	if separator := strings.IndexByte(credentials, ':'); separator >= 0 {
+		username = credentials[:separator]
+		password = credentials[separator+1:]
+		hasPassword = true
+	}
+	if propertyUser != nil {
+		username = *propertyUser
+	}
+	if propertyPassword != nil {
+		password = *propertyPassword
+		hasPassword = true
+	}
+	if username == "" && !hasPassword {
+		return suffix
+	}
+	if hasPassword {
+		return username + ":" + password + "@" + suffix
+	}
+	return username + "@" + suffix
+}
 
 var (
 	// jdbcCredPropRe matches a password carried as a JDBC connection property or
@@ -229,69 +469,40 @@ var (
 	jdbcOracleCredRe = regexp.MustCompile(`(?i)^(jdbc:oracle:[a-z]+:)([^/@:][^/@]*)/([^@]*)(@)`)
 )
 
-// redactJDBCInlineCredentials replaces any credential embedded directly in a JDBC
-// URL with the governed {{secret.db_password}} reference so cleartext is never
-// baked into the exported DSN. It returns the sanitized URL and whether a
-// credential was found. It handles connection-property (;password=), Oracle
-// thin (user/pass@), and URL-userinfo (scheme://user:pass@host) forms.
-func redactJDBCInlineCredentials(raw string) (string, bool) {
-	out := raw
-	found := false
-
-	if jdbcCredPropRe.MatchString(out) {
-		out = jdbcCredPropRe.ReplaceAllString(out, "${1}"+importedDBPasswordSecret)
-		found = true
+// hasJDBCInlineCredentials detects connection-property, Oracle thin, and URL
+// userinfo credential forms without changing any source bytes.
+func hasJDBCInlineCredentials(raw string) bool {
+	if jdbcCredPropRe.MatchString(raw) || jdbcOracleCredRe.MatchString(raw) {
+		return true
 	}
-	if jdbcOracleCredRe.MatchString(out) {
-		out = jdbcOracleCredRe.ReplaceAllString(out, "${1}${2}/"+importedDBPasswordSecret+"${4}")
-		found = true
-	}
-	if idx := strings.Index(out, "://"); idx >= 0 {
-		head := out[:idx+3]
-		rest := out[idx+3:]
+	if idx := strings.Index(raw, "://"); idx >= 0 {
+		rest := raw[idx+3:]
 		authority := rest
-		tail := ""
 		if end := strings.IndexAny(rest, "/?;"); end >= 0 {
-			authority, tail = rest[:end], rest[end:]
+			authority = rest[:end]
 		}
 		if at := strings.LastIndex(authority, "@"); at >= 0 {
-			userinfo, host := authority[:at], authority[at:] // host keeps the '@'
-			if colon := strings.Index(userinfo, ":"); colon >= 0 {
-				userinfo = userinfo[:colon+1] + importedDBPasswordSecret
-				found = true
-			}
-			out = head + userinfo + host + tail
+			return strings.Contains(authority[:at], ":")
 		}
 	}
-	return out, found
+	return false
 }
 
 // detectDatabaseDriverAndDSN converts a JDBC URL into an APEX Load driver + DSN.
-// The cleartext JMX password is never embedded: the generated script is
-// exportable/downloadable/pushable, so the password (whether supplied as a
-// separate property or embedded inline in the URL) is replaced with a governed
-// secret reference resolved at runtime. The third return reports whether an
-// inline credential was found and redacted.
+// Imported credentials remain in the durable runtime DSN. Ordinary API reads
+// and exports mask that field, while the trusted import-save path retains it so
+// the operator can run the destination without re-entering a password. The third
+// return reports whether an inline credential was found.
 func detectDatabaseDriverAndDSN(dbURL, username, password string) (string, string, bool, bool) {
 	raw := strings.TrimSpace(dbURL)
-	// Strip any credential embedded directly in the URL up front, so cleartext
-	// can never reach the DSN regardless of which driver branch builds it.
-	raw, inlineCred := redactJDBCInlineCredentials(raw)
+	inlineCred := hasJDBCInlineCredentials(raw)
 	lower := strings.ToLower(raw)
-	hostPort, database := splitJDBCURL(raw)
-	if strings.TrimSpace(password) != "" {
-		password = importedDBPasswordSecret
-	}
 	switch {
 	case strings.HasPrefix(lower, "jdbc:postgresql:"):
-		base := "postgres://" + hostPort + "/" + database
-		return "postgres", injectURLCredentials(base, username, password), inlineCred, true
+		dsn := "postgres:" + raw[len("jdbc:postgresql:"):]
+		return "postgres", injectURLCredentials(dsn, username, password), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:mysql:"), strings.HasPrefix(lower, "jdbc:mariadb:"):
-		cred := username
-		if password != "" {
-			cred += ":" + password
-		}
-		return "mysql", fmt.Sprintf("%s@tcp(%s)/%s", cred, hostPort, database), inlineCred, true
+		return "mysql", mysqlDSNFromJDBC(raw, username, password), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:oracle:"):
 		return "oracle", strings.TrimPrefix(raw, "jdbc:"), inlineCred, true
 	case strings.HasPrefix(lower, "jdbc:sqlite:"):
@@ -302,20 +513,34 @@ func detectDatabaseDriverAndDSN(dbURL, username, password string) (string, strin
 	return "", "", false, false
 }
 
-// splitJDBCURL extracts host:port and the database/path from a JDBC URL.
-func splitJDBCURL(url string) (hostPort, database string) {
-	idx := strings.Index(url, "://")
-	if idx < 0 {
-		return "", ""
+func mysqlDSNFromJDBC(raw, username, password string) string {
+	lower := strings.ToLower(raw)
+	prefix := "jdbc:mysql:"
+	if strings.HasPrefix(lower, "jdbc:mariadb:") {
+		prefix = "jdbc:mariadb:"
 	}
-	rest := url[idx+3:]
-	if cut := strings.IndexAny(rest, "?;"); cut >= 0 {
-		rest = rest[:cut]
-	}
+	rest := raw[len(prefix):]
+	rest = strings.TrimPrefix(rest, "//")
+	authority := rest
+	database := ""
 	if slash := strings.Index(rest, "/"); slash >= 0 {
-		return rest[:slash], rest[slash+1:]
+		authority, database = rest[:slash], rest[slash+1:]
 	}
-	return rest, ""
+	sourceCredentials := ""
+	if at := strings.LastIndex(authority, "@"); at >= 0 {
+		sourceCredentials, authority = authority[:at], authority[at+1:]
+	}
+	credentials := sourceCredentials
+	if username != "" || password != "" {
+		credentials = username
+		if password != "" {
+			credentials += ":" + password
+		}
+	}
+	if credentials == "" {
+		return fmt.Sprintf("tcp(%s)/%s", authority, database)
+	}
+	return fmt.Sprintf("%s@tcp(%s)/%s", credentials, authority, database)
 }
 
 // injectURLCredentials inserts user[:pass]@ after the scheme of a URL-style DSN.
@@ -323,15 +548,63 @@ func injectURLCredentials(dsn, username, password string) string {
 	if strings.TrimSpace(username) == "" {
 		return dsn
 	}
-	idx := strings.Index(dsn, "://")
-	if idx < 0 {
+	parsed, err := url.Parse(dsn)
+	if err != nil || parsed.Scheme == "" {
 		return dsn
 	}
-	cred := username
 	if password != "" {
-		cred += ":" + password
+		parsed.User = url.UserPassword(username, password)
+	} else {
+		parsed.User = url.User(username)
 	}
-	return dsn[:idx+3] + cred + "@" + dsn[idx+3:]
+	return parsed.String()
+}
+
+func preserveJMeterJDBCSource(script *dsl.Script, element *xmlNode) {
+	if script == nil || element == nil {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{Source: "jmeter"}
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = map[string]any{}
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =
+		dsl.ImportPreservedCredentialPolicyPreserve
+	existing, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedJMeterJDBCSourcesKey].([]map[string]string)
+	dbURL, _ := authoredJMeterProperty(element, "dbUrl")
+	username, _ := authoredJMeterProperty(element, "username")
+	password, _ := authoredJMeterProperty(element, "password")
+	connectionProperties, _ := authoredJMeterProperty(element, "connectionProperties")
+	existing = append(existing, map[string]string{
+		"db_url":                dbURL,
+		"username":              username,
+		"password":              password,
+		"connection_properties": connectionProperties,
+	})
+	script.Metadata.Import.Preserved[dsl.ImportPreservedJMeterJDBCSourcesKey] = existing
+}
+
+func authoredJMeterProperty(
+	node *xmlNode,
+	name string,
+) (string, bool) {
+	if node == nil {
+		return "", false
+	}
+	if node.Attrs["name"] == name {
+		return node.Text, true
+	}
+	for _, child := range node.Children {
+		if value, ok := authoredJMeterProperty(child, name); ok {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // handleJMeterNetworkSampler converts FTP/TCP samplers into network actions when

@@ -76,6 +76,15 @@ public class Actions {
 		approval.Script == nil || approval.Script.Protocol != "java_vuser" {
 		t.Fatalf("approval response = %#v, want approved singleton Java library script", approval)
 	}
+	if evidence, ok := readJavaVuserAuthoringApproval(approval.Script.Script); !ok {
+		t.Fatal("approved imported response omitted governance evidence")
+	} else if evidence.contentHash != hashLibraryScript(approval.Script.Script) {
+		t.Fatalf(
+			"approved imported response hash = %q, canonical response hash = %q",
+			evidence.contentHash,
+			hashLibraryScript(approval.Script.Script),
+		)
+	}
 	if conflict := server.runner.javaVuserApprovalConflict(approval.Script.Script); conflict != "" {
 		t.Fatalf("approved imported script failed governance verification: %s", conflict)
 	}

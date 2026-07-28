@@ -1,0 +1,845 @@
+// Package scriptdisclosure projects executable scripts into irreversible,
+// disclosure-safe copies without changing their noncredential structure.
+//
+// The durable script remains the execution authority. Project is intended for
+// receipts, API responses, exports, and other evidence surfaces that must retain
+// enough information to describe the imported script without becoming a secret
+// escrow.
+package scriptdisclosure
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/scrub"
+)
+
+const (
+	maxProjectionDepth = 64
+	maxProjectionNodes = 250_000
+)
+
+var portableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
+
+type projectionContext struct {
+	key            string
+	opaque         bool
+	headers        bool
+	headerList     bool
+	secretBindings bool
+	parameter      bool
+	dataSource     bool
+	metadata       bool
+	javaVMArgument bool
+}
+
+type projector struct {
+	nodes                    int
+	knownSecrets             []string
+	credentialParameterNames map[string]struct{}
+	sensitiveSourceColumns   map[string][]string
+}
+
+// Project returns a detached script whose credential material has been
+// irreversibly replaced with credential.Redacted. It preserves map entries,
+// ordered slices, duplicate headers, control-flow branches, assertions,
+// extractors, and every ordinary scalar.
+func Project(script *dsl.Script) (*dsl.Script, error) {
+	if script == nil {
+		return nil, nil
+	}
+	return ProjectWithCredentialSource(script, script)
+}
+
+// ProjectWithCredentialSource projects script while deriving literal
+// credential equivalence from credentialSource. This is useful when another
+// field-aware projector has already masked the primary credential field but an
+// identical literal must still be removed from an otherwise neutral field.
+func ProjectWithCredentialSource(script, credentialSource *dsl.Script) (*dsl.Script, error) {
+	if script == nil {
+		return nil, nil
+	}
+	if credentialSource == nil {
+		credentialSource = script
+	}
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return nil, fmt.Errorf("marshal script disclosure copy: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	var raw any
+	if err := decoder.Decode(&raw); err != nil {
+		return nil, fmt.Errorf("decode script disclosure copy: %w", err)
+	}
+
+	p := &projector{
+		credentialParameterNames: credentialParameterNames(credentialSource),
+		sensitiveSourceColumns:   sensitiveDataSourceColumns(credentialSource),
+	}
+	sourcePayload, err := json.Marshal(credentialSource)
+	if err != nil {
+		return nil, fmt.Errorf("marshal script credential source: %w", err)
+	}
+	sourceDecoder := json.NewDecoder(bytes.NewReader(sourcePayload))
+	sourceDecoder.UseNumber()
+	var sourceRaw any
+	if err := sourceDecoder.Decode(&sourceRaw); err != nil {
+		return nil, fmt.Errorf("decode script credential source: %w", err)
+	}
+	collector := newSecretCollector(p.credentialParameterNames, p.sensitiveSourceColumns)
+	collector.collect(sourceRaw, projectionContext{}, 0)
+	collector.collectScriptCredentialTargets(credentialSource)
+	p.knownSecrets = collector.sorted()
+
+	projected, err := p.project(raw, projectionContext{}, 0)
+	if err != nil {
+		return nil, err
+	}
+	projectedPayload, err := json.Marshal(projected)
+	if err != nil {
+		return nil, fmt.Errorf("marshal projected script disclosure copy: %w", err)
+	}
+	var result dsl.Script
+	if err := json.Unmarshal(projectedPayload, &result); err != nil {
+		return nil, fmt.Errorf("decode projected script disclosure copy: %w", err)
+	}
+	return &result, nil
+}
+
+func (p *projector) project(value any, ctx projectionContext, depth int) (any, error) {
+	p.nodes++
+	if depth > maxProjectionDepth || p.nodes > maxProjectionNodes {
+		return nil, fmt.Errorf("script disclosure projection exceeds structural limits")
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		if ctx.headerList {
+			return p.projectHeaderEntry(typed, depth)
+		}
+		if ctx.dataSource {
+			typed = p.projectDataSource(typed)
+		}
+		credentialValue := mapHasCredentialValue(typed, p.credentialParameterNames)
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			normalized := normalizeName(key)
+			if ctx.metadata &&
+				key == dsl.ImportPreservedCredentialTargetsMetadataKey &&
+				validCredentialTargetLocators(child) {
+				out[key] = child
+				continue
+			}
+			if normalized == normalizeName(dsl.ImportHeaderFidelityPreservedNameBase64Key) ||
+				normalized == normalizeName(dsl.ImportHeaderFidelityPreservedValueBase64Key) {
+				out[key] = base64.StdEncoding.EncodeToString([]byte(credential.Redacted))
+				continue
+			}
+			if ctx.metadata && isOpaqueSourcePayloadKey(key) {
+				out[key] = maskOpaque(child)
+				continue
+			}
+			if isReviewEvidenceKey(key) {
+				projected, err := p.project(child, projectionContext{
+					key:      key,
+					opaque:   true,
+					metadata: true,
+				}, depth+1)
+				if err != nil {
+					return nil, err
+				}
+				out[key] = projected
+				continue
+			}
+			if ctx.secretBindings {
+				out[key] = projectSecretBinding(child)
+				continue
+			}
+			if normalizeName(ctx.key) == "proxy" && normalized == "username" {
+				out[key] = projectSensitiveNode(child)
+				continue
+			}
+			if credentialValue && (normalized == "value" || normalized == "values") {
+				out[key] = projectCredentialCollection(child)
+				continue
+			}
+			if normalized == "body" {
+				if text, ok := child.(string); ok {
+					out[key] = p.projectBody(text, typed)
+				} else {
+					out[key] = credential.Redacted
+				}
+				continue
+			}
+			if ctx.headers {
+				out[key] = p.projectHeaderValue(key, child)
+				continue
+			}
+
+			childContext := projectionContext{
+				key:            key,
+				opaque:         ctx.opaque || isOpaqueMap(key),
+				headers:        isHeaderMap(key),
+				headerList:     isHeaderList(key),
+				secretBindings: isSecretBindingsMap(key),
+				parameter:      normalizeName(key) == "parameters",
+				dataSource:     normalizeName(key) == "datasources",
+				metadata:       ctx.metadata || normalized == "metadata",
+				javaVMArgument: normalized == "additionalvmparameters",
+			}
+			projected, err := p.project(child, childContext, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = projected
+		}
+		return out, nil
+	case []any:
+		out := make([]any, len(typed))
+		for index, child := range typed {
+			childContext := ctx
+			if ctx.parameter {
+				childContext = projectionContext{parameter: true}
+			}
+			if ctx.dataSource {
+				childContext = projectionContext{dataSource: true}
+			}
+			projected, err := p.project(child, childContext, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out[index] = projected
+		}
+		return out, nil
+	case string:
+		return p.projectString(typed, ctx), nil
+	default:
+		if isSensitiveKey(ctx.key) && !isSecretReferenceKey(ctx.key) {
+			return credential.Redacted, nil
+		}
+		return value, nil
+	}
+}
+
+func validCredentialTargetLocators(value any) bool {
+	payload, err := json.Marshal(value)
+	if err != nil || len(payload) > 256<<10 {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var targets []credentialpolicy.TargetRef
+	if err := decoder.Decode(&targets); err != nil {
+		return false
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return false
+	}
+	for _, target := range targets {
+		if !validLocatorText(target.Field, 1024, false) ||
+			!validLocatorText(target.Pointer, 4096, true) ||
+			!validLocatorText(target.RequestKey, 1024, true) ||
+			target.Index < 0 || target.Occurrence < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func validLocatorText(value string, maxBytes int, allowEmpty bool) bool {
+	if (!allowEmpty && strings.TrimSpace(value) == "") || len(value) > maxBytes {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func (p *projector) projectHeaderEntry(entry map[string]any, depth int) (map[string]any, error) {
+	out := make(map[string]any, len(entry))
+	name, _ := entry["name"].(string)
+	for key, value := range entry {
+		if strings.EqualFold(key, "value") {
+			out[key] = p.projectHeaderValue(name, value)
+			continue
+		}
+		projected, err := p.project(value, projectionContext{key: key}, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		out[key] = projected
+	}
+	return out, nil
+}
+
+func (p *projector) projectHeaderValue(name string, value any) any {
+	text, ok := value.(string)
+	if !ok {
+		if credential.SensitiveHeader(name) {
+			return credential.Redacted
+		}
+		return value
+	}
+	if credential.SensitiveHeader(name) || isSensitiveKey(name) {
+		return projectSensitiveString(text)
+	}
+	if isNonSecretIdentifierHeader(name) {
+		return p.replaceKnown(projectURL(text))
+	}
+	return p.replaceKnown(scrubText(text))
+}
+
+func (p *projector) projectString(value string, ctx projectionContext) string {
+	if value == "" || isPortableBinding(value) {
+		return value
+	}
+	if ctx.javaVMArgument && javarunner.ContainsSensitiveVMParameterValue(value) {
+		return credential.Redacted
+	}
+	if ctx.metadata && isPortableProvenanceIdentifier(ctx.key, value) {
+		return p.replaceKnown(scrub.ValueURL(value, scrub.Policy{}))
+	}
+	if isSecretReferenceKey(ctx.key) && isNamedReference(value) {
+		return value
+	}
+	if isSensitiveKey(ctx.key) {
+		return projectSensitiveString(value)
+	}
+	if isURLKey(ctx.key) {
+		return p.replaceKnown(projectURL(value))
+	}
+	if ctx.opaque || isFreeTextKey(ctx.key) {
+		return p.replaceKnown(scrubText(value))
+	}
+	return p.replaceKnown(value)
+}
+
+func (p *projector) projectBody(stored string, owner map[string]any) string {
+	if stored == "" || isPortableBinding(stored) {
+		return stored
+	}
+	wire := []byte(stored)
+	encoded := strings.EqualFold(strings.TrimSpace(stringValue(owner["body_encoding"])), "base64")
+	if encoded {
+		if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stored)); err == nil {
+			wire = decoded
+		} else {
+			return credential.Redacted
+		}
+	}
+	projected, result, err := credentialpolicy.ProjectRequestBody(
+		wire,
+		contentType(owner),
+		credentialpolicy.Options{
+			Mode:               credentialpolicy.Redact,
+			Source:             credentialpolicy.SourceRef{Format: "script_disclosure"},
+			RequestKey:         "script_disclosure",
+			TargetField:        "body",
+			TrustedWholeValues: bodyTemplateValues(string(wire)),
+		},
+	)
+	if err != nil || result.Disposition == credentialpolicy.Rejected || projected == nil {
+		projected = []byte(credential.Redacted)
+	}
+	projected = []byte(p.replaceKnown(string(projected)))
+	if !encoded {
+		return string(projected)
+	}
+	if bytes.Equal(projected, wire) {
+		return stored
+	}
+	return base64.StdEncoding.EncodeToString(projected)
+}
+
+func (p *projector) replaceKnown(value string) string {
+	if value == "" || strings.Contains(value, credential.Redacted) && len(p.knownSecrets) == 0 {
+		return value
+	}
+	for _, secret := range p.knownSecrets {
+		if value == secret {
+			return credential.Redacted
+		}
+		if len(secret) >= 4 {
+			value = strings.ReplaceAll(value, secret, credential.Redacted)
+		}
+	}
+	return value
+}
+
+func projectSensitiveNode(value any) any {
+	if text, ok := value.(string); ok {
+		return projectSensitiveString(text)
+	}
+	if value == nil {
+		return nil
+	}
+	return credential.Redacted
+}
+
+func projectCredentialCollection(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = projectSensitiveNode(item)
+		}
+		return out
+	default:
+		return projectSensitiveNode(value)
+	}
+}
+
+func projectSecretBinding(value any) any {
+	text, ok := value.(string)
+	if !ok {
+		if value == nil {
+			return nil
+		}
+		return credential.Redacted
+	}
+	if isPortableBinding(text) {
+		return text
+	}
+	return projectSensitiveString(text)
+}
+
+func projectSensitiveString(value string) string {
+	if strings.TrimSpace(value) == "" || isPortableBinding(value) ||
+		strings.Contains(value, credential.Redacted) {
+		return value
+	}
+	trimmed := strings.TrimSpace(value)
+	for _, scheme := range []string{"Bearer", "Basic", "Digest"} {
+		if len(trimmed) > len(scheme) &&
+			strings.EqualFold(trimmed[:len(scheme)], scheme) &&
+			unicode.IsSpace(rune(trimmed[len(scheme)])) {
+			return trimmed[:len(scheme)] + " " + credential.Redacted
+		}
+	}
+	return credential.Redacted
+}
+
+func projectURL(value string) string {
+	value = scrubWithTemplates(value, true)
+	scheme := strings.Index(value, "://")
+	if scheme < 0 {
+		return value
+	}
+	authorityStart := scheme + 3
+	authorityEnd := len(value)
+	if separator := strings.IndexAny(value[authorityStart:], "/?#"); separator >= 0 {
+		authorityEnd = authorityStart + separator
+	}
+	if at := strings.LastIndex(value[authorityStart:authorityEnd], "@"); at >= 0 {
+		at += authorityStart
+		value = value[:authorityStart] + credential.Redacted + value[at:]
+	}
+	return value
+}
+
+func scrubText(value string) string {
+	return scrubWithTemplates(value, false)
+}
+
+func scrubWithTemplates(value string, urlValue bool) string {
+	if value == "" {
+		return value
+	}
+	protected := value
+	var separatorReplacements map[string]string
+	var bindingReplacements map[string]string
+	if urlValue {
+		protected, separatorReplacements = protectAdditionalURLSeparators(protected)
+		protected, bindingReplacements = protectURLBindings(protected)
+	}
+	replacements := make(map[string]string)
+	for _, reference := range portableTemplatePattern.FindAllString(value, -1) {
+		placeholder := uniquePlaceholder(value, "template", len(replacements))
+		protected = strings.Replace(protected, reference, placeholder, 1)
+		replacements[placeholder] = reference
+	}
+	if urlValue {
+		protected = scrub.ValueURL(protected, scrub.Policy{})
+	} else {
+		protected = scrub.Value(protected, scrub.Policy{})
+	}
+	for placeholder, reference := range replacements {
+		protected = strings.ReplaceAll(protected, placeholder, reference)
+	}
+	for placeholder, binding := range bindingReplacements {
+		protected = strings.ReplaceAll(protected, placeholder, binding)
+	}
+	for placeholder, separator := range separatorReplacements {
+		protected = strings.ReplaceAll(protected, placeholder, separator)
+	}
+	return protected
+}
+
+func protectAdditionalURLSeparators(value string) (string, map[string]string) {
+	if !strings.Contains(value, "?") {
+		return value, nil
+	}
+	replacements := make(map[string]string)
+	var protected strings.Builder
+	protected.Grow(len(value))
+	queryStarted := false
+	inFragment := false
+	for offset := 0; offset < len(value); offset++ {
+		switch value[offset] {
+		case '#':
+			inFragment = true
+			protected.WriteByte(value[offset])
+		case '?':
+			if !queryStarted && !inFragment {
+				queryStarted = true
+				protected.WriteByte(value[offset])
+				continue
+			}
+			placeholder := "&" + uniquePlaceholder(value, "separator", len(replacements)) + "=safe&"
+			replacements[placeholder] = "?"
+			protected.WriteString(placeholder)
+		default:
+			protected.WriteByte(value[offset])
+		}
+	}
+	if len(replacements) == 0 {
+		return value, nil
+	}
+	return protected.String(), replacements
+}
+
+func protectURLBindings(value string) (string, map[string]string) {
+	replacements := make(map[string]string)
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == '?' || r == '&' || r == '#'
+	})
+	for _, part := range parts {
+		_, rawValue, ok := strings.Cut(part, "=")
+		if !ok || !isPortableBinding(rawValue) {
+			continue
+		}
+		placeholder := uniquePlaceholder(value, "binding", len(replacements)) + "=safe"
+		replacements[placeholder] = part
+		value = strings.Replace(value, part, placeholder, 1)
+	}
+	return value, replacements
+}
+
+func uniquePlaceholder(value, domain string, index int) string {
+	placeholder := "apex~" + domain + "~" + strconv.Itoa(index) + "~safe"
+	for strings.Contains(value, placeholder) {
+		placeholder += "~"
+	}
+	return placeholder
+}
+
+func bodyTemplateValues(value string) map[string]struct{} {
+	result := make(map[string]struct{})
+	for _, reference := range portableTemplatePattern.FindAllString(value, -1) {
+		result[strings.TrimSpace(reference)] = struct{}{}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func contentType(owner map[string]any) string {
+	if entries, ok := owner["header_list"].([]any); ok {
+		value := ""
+		for _, raw := range entries {
+			entry, _ := raw.(map[string]any)
+			name, _ := entry["name"].(string)
+			if strings.EqualFold(strings.TrimSpace(name), "Content-Type") {
+				value, _ = entry["value"].(string)
+			}
+		}
+		if value != "" {
+			return value
+		}
+	}
+	if headers, ok := owner["headers"].(map[string]any); ok {
+		for name, raw := range headers {
+			if strings.EqualFold(strings.TrimSpace(name), "Content-Type") {
+				value, _ := raw.(string)
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func mapHasCredentialValue(value map[string]any, proven map[string]struct{}) bool {
+	if name, _ := value["name"].(string); name != "" {
+		if _, ok := proven[canonicalName(name)]; ok {
+			return true
+		}
+	}
+	if _, hasType := value["type"]; !hasType {
+		return false
+	}
+	if metadata, ok := value["metadata"].(map[string]any); ok {
+		if marked, _ := metadata["source_marked_secret"].(bool); marked {
+			return true
+		}
+		if masked, _ := metadata["source_masked_secret"].(bool); masked {
+			return true
+		}
+	}
+	var hints strings.Builder
+	for _, key := range []string{"name", "type", "target", "selector", "object_ref", "column"} {
+		if text, ok := value[key].(string); ok {
+			hints.WriteByte(' ')
+			hints.WriteString(text)
+		}
+	}
+	normalized := normalizeName(hints.String())
+	for _, marker := range []string{
+		"password", "passwd", "passphrase", "secret", "token",
+		"credential", "authorization", "cookie", "apikey",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeName(value string) string {
+	var out strings.Builder
+	for _, r := range strings.ToLower(value) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+func canonicalName(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isSensitiveKey(key string) bool {
+	normalized := normalizeName(key)
+	switch normalized {
+	case "tokenurl", "persistsessionacrossiterations", "credentialpolicy",
+		"effectiveauth", "authmode":
+		return false
+	}
+	if credential.SensitiveName(key) {
+		return true
+	}
+	for _, suffix := range []string{
+		"authorization", "password", "passwd", "passphrase", "token",
+		"secret", "apikey", "credential", "cookie", "sessionid",
+		"privatekey", "accesskey", "accesskeyid", "secretaccesskey",
+	} {
+		if strings.HasSuffix(normalized, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSecretReferenceKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "dsn_secret", "sasl_password_secret", "connection_string_secret", "ca_cert_secret",
+		"trust_store_ref", "credential_ref", "storage_ref":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNamedReference(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, credential.Redacted) || len(value) > 512 {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("._:/@-{}", r) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isPortableBinding(value string) bool {
+	if strings.Contains(value, credential.Redacted) {
+		return false
+	}
+	references := portableTemplatePattern.FindAllString(value, -1)
+	if len(references) == 0 {
+		return false
+	}
+	remainder := value
+	for _, reference := range references {
+		remainder = strings.Replace(remainder, reference, "", 1)
+	}
+	switch strings.ToLower(strings.TrimSpace(remainder)) {
+	case "", "bearer", "basic", "digest":
+		return true
+	default:
+		return false
+	}
+}
+
+func isURLKey(key string) bool {
+	switch normalizeName(key) {
+	case "baseurl", "url", "brokerurl", "schemaregistryurl", "server", "origin", "target", "address":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFreeTextKey(key string) bool {
+	switch normalizeName(key) {
+	case "value", "expected", "inlinedata", "schema", "objectschema",
+		"expression", "expr", "left", "right", "runnercommand":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOpaqueMap(key string) bool {
+	switch normalizeName(key) {
+	case "params", "metadata", "preserved", "properties", "labels", "options",
+		"additionalattributes", "requestmapping", "responsemapping", "namespaces":
+		return true
+	default:
+		return false
+	}
+}
+
+func isHeaderMap(key string) bool {
+	switch normalizeName(key) {
+	case "headers", "defaultheaders":
+		return true
+	default:
+		return false
+	}
+}
+
+func isHeaderList(key string) bool {
+	return normalizeName(key) == "headerlist"
+}
+
+func isSecretBindingsMap(key string) bool {
+	return normalizeName(key) == "secretbindings"
+}
+
+func isOpaqueSourcePayloadKey(key string) bool {
+	switch normalizeName(key) {
+	case "jsr223sources", "k6gatedsource", "postmaneventsources",
+		"credentialtraversalsourcesnapshotbase64", "devwebgatedsource",
+		"jmeterjdbcsources", "enterpriseunsupportedproxysource":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReviewEvidenceKey(key string) bool {
+	switch normalizeName(key) {
+	case "sourcereview", "importreview", "review", "reviewevidence":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPortableProvenanceIdentifier(key, value string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "source_path", "source_step_id", "source_profile", "source_uid":
+		return true
+	case "diagnostic_ids", "finding_ids":
+		const prefix = "bruno-native-"
+		if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+24 {
+			return false
+		}
+		for _, r := range value[len(prefix):] {
+			if !strings.ContainsRune("0123456789abcdef", r) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func maskOpaque(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			out[key] = maskOpaque(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for index, child := range typed {
+			out[index] = maskOpaque(child)
+		}
+		return out
+	case nil:
+		return nil
+	default:
+		return credential.Redacted
+	}
+}
+
+func isNonSecretIdentifierHeader(name string) bool {
+	normalized := normalizeName(name)
+	for _, sensitive := range []string{
+		"authorization", "password", "secret", "token", "cookie",
+		"session", "credential", "apikey", "accesskey", "privatekey",
+	} {
+		if strings.Contains(normalized, sensitive) {
+			return false
+		}
+	}
+	for _, suffix := range []string{"messageid", "traceid", "correlationid", "requestid"} {
+		if strings.HasSuffix(normalized, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return text
+}
+
+func sortedSecrets(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if len(result[i]) == len(result[j]) {
+			return result[i] < result[j]
+		}
+		return len(result[i]) > len(result[j])
+	})
+	return result
+}

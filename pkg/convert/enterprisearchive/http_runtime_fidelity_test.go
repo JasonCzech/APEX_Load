@@ -254,7 +254,7 @@ HTTPVersion=HTTP/2
 	}
 }
 
-func TestConvertZipRuntimeCredentialsAreProtectedAndMetadataIsDisclosureSafe(t *testing.T) {
+func TestConvertZipRuntimeCredentialsAreExecutableAndProvenanceIsDisclosureSafe(t *testing.T) {
 	t.Parallel()
 	const (
 		proxyUser = "proxy-user-canary"
@@ -291,24 +291,15 @@ api_key=` + apiKey + `
 	if err != nil {
 		t.Fatal(err)
 	}
-	serialized, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if strings.Contains(string(serialized), canary) {
-			t.Fatalf("converter JSON retained runtime credential %q: %s", canary, serialized)
-		}
-	}
 	config := result.Script.Config
-	for field, value := range map[string]string{
-		"proxy username": config.HTTP.Proxy.Username,
-		"proxy password": config.HTTP.Proxy.Password,
-		"auth password":  config.HTTP.Auth.Password,
-		"api key":        config.WebRuntime.AdditionalAttributes["api_key"],
+	for field, values := range map[string][2]string{
+		"proxy username": {config.HTTP.Proxy.Username, proxyUser},
+		"proxy password": {config.HTTP.Proxy.Password, proxyPass},
+		"auth password":  {config.HTTP.Auth.Password, authPass},
+		"api key":        {config.WebRuntime.AdditionalAttributes["api_key"], apiKey},
 	} {
-		if !strings.HasPrefix(value, "{{secret.") {
-			t.Errorf("%s = %q, want governed secret reference", field, value)
+		if values[0] != values[1] {
+			t.Errorf("%s = %q, want imported executable bytes %q", field, values[0], values[1])
 		}
 	}
 	runtimeFiles := result.Script.Metadata.Import.Preserved["runtime_files"]
@@ -324,26 +315,21 @@ api_key=` + apiKey + `
 	if !strings.Contains(string(runtimeJSON), "[REDACTED]") {
 		t.Fatalf("preserved runtime metadata omitted disclosure sentinel: %s", runtimeJSON)
 	}
+	assertEnterpriseCredentialProvenanceRedacted(
+		t,
+		result,
+		[]string{proxyUser, proxyPass, authPass, apiKey},
+	)
 
-	requirements := result.ProtectedRequirements.Take()
-	if len(requirements) != 4 {
-		t.Fatalf("protected requirements = %#v, want four runtime credentials", requirements)
-	}
-	values := make(map[string]bool, len(requirements))
-	for _, requirement := range requirements {
-		values[requirement.Value] = true
-	}
-	for _, value := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if !values[value] {
-			t.Errorf("protected source value %q missing from %#v", value, requirements)
-		}
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, want no re-entry requirements for retained runtime credentials", requirements)
 	}
 	if result.ProtectedRequirements.Take() != nil {
 		t.Fatal("protected requirements handoff was not one-shot")
 	}
 }
 
-func TestConvertZipEmbeddedProxyUserinfoIsProtectedAndRemovedFromMetadata(t *testing.T) {
+func TestConvertZipEmbeddedProxyUserinfoIsExecutableAndRemovedFromProvenance(t *testing.T) {
 	t.Parallel()
 	const (
 		proxyUser = "embedded-proxy-user-canary"
@@ -374,18 +360,9 @@ ProxyServer=http://` + proxyUser + `:` + proxyPass + `@proxy.example.test:8080
 	if result.Script.Config.HTTP.Proxy.URL != "http://proxy.example.test:8080" {
 		t.Fatalf("proxy URL = %q, want URL without userinfo", result.Script.Config.HTTP.Proxy.URL)
 	}
-	if result.Script.Config.HTTP.Proxy.Username != "{{secret.ENTERPRISE_PROXY_USERNAME}}" ||
-		result.Script.Config.HTTP.Proxy.Password != "{{secret.ENTERPRISE_PROXY_PASSWORD}}" {
-		t.Fatalf("proxy config = %#v, want protected username/password references", result.Script.Config.HTTP.Proxy)
-	}
-	serialized, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, canary := range []string{proxyUser, proxyPass} {
-		if strings.Contains(string(serialized), canary) {
-			t.Fatalf("converter JSON retained embedded proxy credential %q: %s", canary, serialized)
-		}
+	if result.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		result.Script.Config.HTTP.Proxy.Password != proxyPass {
+		t.Fatalf("proxy config = %#v, want imported executable username/password", result.Script.Config.HTTP.Proxy)
 	}
 	runtimeJSON, err := json.Marshal(result.Script.Metadata.Import.Preserved["runtime_files"])
 	if err != nil {
@@ -396,21 +373,14 @@ ProxyServer=http://` + proxyUser + `:` + proxyPass + `@proxy.example.test:8080
 		!strings.Contains(string(runtimeJSON), "http://proxy.example.test:8080") {
 		t.Fatalf("preserved runtime proxy metadata is not disclosure-safe: %s", runtimeJSON)
 	}
+	assertEnterpriseCredentialProvenanceRedacted(t, result, []string{proxyUser, proxyPass})
 
-	requirements := result.ProtectedRequirements.Take()
-	if len(requirements) != 2 {
-		t.Fatalf("protected requirements = %#v, want embedded proxy username/password", requirements)
-	}
-	values := map[string]bool{}
-	for _, requirement := range requirements {
-		values[requirement.Value] = true
-	}
-	if !values[proxyUser] || !values[proxyPass] {
-		t.Fatalf("protected source values = %#v, want embedded proxy credentials", requirements)
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, want no re-entry requirements for retained proxy credentials", requirements)
 	}
 }
 
-func TestConvertZipProxyURLQueryCredentialIsProtectedAndRemovedFromMetadata(t *testing.T) {
+func TestConvertZipProxyURLQueryCredentialIsExecutableAndRemovedFromProvenance(t *testing.T) {
 	t.Parallel()
 	const proxyToken = "proxy-query-token-canary-3f71"
 	archive := buildSourceZip(t, map[string]string{
@@ -435,28 +405,27 @@ ProxyServer=http://proxy.example.test:8080?region=east&token=` + proxyToken + `
 	if err != nil {
 		t.Fatal(err)
 	}
-	serialized, err := json.Marshal(result)
+	if got := result.Script.Config.HTTP.Proxy.URL; got !=
+		"http://proxy.example.test:8080?region=east&token="+proxyToken {
+		t.Fatalf("proxy URL = %q, want imported ordered query bytes", got)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	if preserved[dsl.ImportPreservedCredentialPolicyKey] !=
+		dsl.ImportPreservedCredentialPolicyPreserve {
+		t.Fatalf("enterprise credential preservation policy = %#v", preserved)
+	}
+	targetsJSON, err := json.Marshal(
+		preserved[dsl.ImportPreservedCredentialTargetsMetadataKey],
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(serialized), proxyToken) {
-		t.Fatalf("converter JSON retained proxy query credential: %s", serialized)
+	if !strings.Contains(string(targetsJSON), "config.http.proxy.url.query") {
+		t.Fatalf("proxy query credential locator was discarded: %s", targetsJSON)
 	}
-	if got := result.Script.Config.HTTP.Proxy.URL; got !=
-		"http://proxy.example.test:8080?region=east&token={{secret.TOKEN}}" {
-		t.Fatalf("proxy URL = %q, want ordered query with governed token", got)
-	}
-	requirements := result.ProtectedRequirements.Take()
-	found := false
-	for _, requirement := range requirements {
-		if requirement.Value == proxyToken &&
-			len(requirement.Targets) == 1 &&
-			requirement.Targets[0].Field == "config.http.proxy.url.query" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("protected proxy URL requirement missing from %#v", requirements)
+	assertEnterpriseCredentialProvenanceRedacted(t, result, []string{proxyToken})
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, want no re-entry requirement for retained proxy query credential", requirements)
 	}
 }
 

@@ -52,7 +52,12 @@ type BrunoImportCommit struct {
 	ExpectedActiveRevisionID string
 	RawArtifact              BrunoSourceArtifact
 	SanitizedArtifact        BrunoSourceArtifact
-	Revision                 BrunoSourceRevision
+	// UseRawArtifact keeps the imported source credential values in the
+	// execution bundle. The raw object remains protected by the artifact store
+	// and raw-source authorization; only the durable runtime reference selects
+	// it. Sanitized source remains available for ordinary review/download.
+	UseRawArtifact bool
+	Revision       BrunoSourceRevision
 }
 
 type BrunoImportCommitResult struct {

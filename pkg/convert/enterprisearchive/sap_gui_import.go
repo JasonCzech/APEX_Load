@@ -27,9 +27,14 @@ func ConvertSAPGUI(actions []*ParsedAction, opts ConvertOptions, detected Detect
 			Protocol:      "sap_gui",
 			GeneratedBy:   "apexload-enterprise-script-archive-sapgui-importer",
 			GeneratedFrom: "enterprise_script_archive",
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+				Source: "enterprise_script_archive",
+				Preserved: map[string]any{
+					dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+				},
+			}},
 			Config: dsl.ScriptConfig{
 				SAPGUI: dsl.SAPGUIConfig{
-					Password:        "{{secret.sapgui_password}}",
 					SessionBehavior: "attach",
 					SyncTimeoutMs:   30000,
 				},
@@ -114,11 +119,11 @@ func convertSAPGUIFunction(result *ConvertResult, state *sapGUIImportState, fn P
 		}
 		action.Params["client"] = sapGUILogonClient(fn)
 		action.Params["user"] = sapGUILogonUser(fn)
-		action.Params["password"] = "{{secret.sapgui_password}}"
+		action.Params["password"] = sapGUILogonPassword(fn)
 		action.Params["language"] = sapGUILogonLanguage(fn)
 		result.Script.Config.SAPGUI.Client = stringParam(action.Params, "client")
 		result.Script.Config.SAPGUI.Username = stringParam(action.Params, "user")
-		result.Script.Config.SAPGUI.Password = "{{secret.sapgui_password}}"
+		result.Script.Config.SAPGUI.Password = stringParam(action.Params, "password")
 		result.Script.Config.SAPGUI.Language = stringParam(action.Params, "language")
 	case "sapgui_set_text", "sapgui_set_password", "sapgui_set_ok_code", "sapgui_set_property":
 		action.Type = "sapgui_set"
@@ -126,8 +131,7 @@ func convertSAPGUIFunction(result *ConvertResult, state *sapGUIImportState, fn P
 		action.Value = sapGUIArg(fn, 1, "Value", "Text")
 		action.Params["control"] = sapGUIControlKind(name, action.Target)
 		if name == "sapgui_set_password" {
-			action.Value = "{{secret.sapgui_password}}"
-			action.Metadata["secret_replaced"] = true
+			action.Metadata["credential_preserved"] = true
 		}
 	case "sapgui_send_vkey":
 		action.Type = "sapgui_press"
@@ -325,6 +329,16 @@ func sapGUILogonUser(fn ParsedFunction) string {
 	}
 	if len(fn.RawArgs) >= 4 && looksLikeSAPClient(fn.RawArgs[0]) {
 		return convertParamReferences(cleanConfigValue(fn.RawArgs[1]))
+	}
+	return ""
+}
+
+func sapGUILogonPassword(fn ParsedFunction) string {
+	if value := sapGUIArg(fn, -1, "Password"); value != "" {
+		return value
+	}
+	if len(fn.RawArgs) >= 4 && looksLikeSAPClient(fn.RawArgs[0]) {
+		return convertParamReferences(cleanConfigValue(fn.RawArgs[2]))
 	}
 	return ""
 }

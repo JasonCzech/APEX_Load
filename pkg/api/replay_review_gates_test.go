@@ -320,6 +320,7 @@ func TestNativeTransactionValueExecutionBlockerBlocksReplayAndLaunch(t *testing.
 		Name:     "Native transaction getter review",
 		Version:  "1.0.0",
 		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{{
 			Name: "lr_get_transaction_duration",
 			Type: "source_review",

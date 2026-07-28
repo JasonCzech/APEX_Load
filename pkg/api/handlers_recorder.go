@@ -314,18 +314,30 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
+		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
 	}
 
-	safeScript, _, err := applySuggestedSecretBindings(result.Script, 0)
+	// This conversion is produced directly from the server-owned recording
+	// snapshot. The operator already supplied every captured request credential,
+	// so retain those exact executable values in the private durable copy rather
+	// than replacing them with unconfigured {{secret.*}} references.
+	importedScript, err := preparePersistentImportedLibraryScript(
+		result.Script,
+		nil,
+		"recorder",
+	)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
 		return
 	}
-	if err := validateConvertedScriptForCommit(safeScript); err != nil {
+	if err := validateConvertedScriptForCommit(importedScript); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "recording did not produce an executable script: "+err.Error())
 		return
 	}
-	stored, err := s.runner.StoreScriptDurable(safeScript)
+	stored, _, err := s.runner.CreateImportedScriptDurableReportingReplay(
+		importedScript,
+		"recorder",
+	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save recorded script: "+err.Error())
 		return
@@ -337,13 +349,14 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Script:       result.Script,
-		Warnings:     result.Warnings,
-		Correlations: result.Correlations,
+		Script:               result.Script,
+		Warnings:             result.Warnings,
+		Correlations:         result.Correlations,
+		SkipDraftAttestation: true,
 	})
 	response["script"] = maskStoredScript(stored)
 	response["scripts"] = []any{maskStoredScript(stored)}
-	writeJSON(w, http.StatusCreated, response)
+	writeScriptImportResponse(w, http.StatusCreated, response)
 }
 
 func validateConvertedScriptForCommit(script *dsl.Script) error {
@@ -375,12 +388,20 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
+		ensureCredentialPreservingImportMetadata(result.Script, "recorder")
 	}
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Script:       result.Script,
-		Warnings:     result.Warnings,
-		Correlations: result.Correlations,
-	}))
+	snapshotDigest, err := recordingBaselineSnapshotDigest(session)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to bind recording preview snapshot")
+		return
+	}
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
+		Script:                  result.Script,
+		Warnings:                result.Warnings,
+		Correlations:            result.Correlations,
+		RecordingSessionID:      id,
+		RecordingSnapshotDigest: snapshotDigest,
+	})
 }
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {

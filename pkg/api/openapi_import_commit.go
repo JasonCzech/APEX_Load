@@ -93,8 +93,29 @@ func mergeImportScriptByKey(existing *dsl.Script, imported *dsl.Script, keyFn fu
 	if existing == nil {
 		return &merged
 	}
+	matchedImportedUnkeyed := make([]bool, len(imported.Actions))
 	for _, action := range existing.Actions {
-		if keyFn(action) == "" {
+		if keyFn(action) != "" {
+			continue
+		}
+		// Importers can emit review placeholders and other source-owned actions
+		// that do not have an operation key. A retry after the script write but
+		// before protected-source retention observes those actions in both the
+		// stored script and the recovered candidate. Treat matching occurrences
+		// as the same imported action instead of appending them again. The
+		// occurrence-aware match still preserves any additional identical
+		// user-authored action.
+		matched := false
+		for index, importedAction := range imported.Actions {
+			if matchedImportedUnkeyed[index] || keyFn(importedAction) != "" ||
+				!reflect.DeepEqual(action, importedAction) {
+				continue
+			}
+			matchedImportedUnkeyed[index] = true
+			matched = true
+			break
+		}
+		if !matched {
 			merged.Actions = append(merged.Actions, action)
 		}
 	}

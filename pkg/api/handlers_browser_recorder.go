@@ -590,6 +590,158 @@ type browserRecordingConvertRequest struct {
 	// Parameterize applies safe auto-parameterization suggestions to the
 	// converted browser script(s) before preview/save.
 	Parameterize bool `json:"parameterize,omitempty"`
+	// SecretBindings are save-time, value-free operator choices from the
+	// preview. They are applied to the fresh conversion before the atomic
+	// create transaction so a same-name "Use project secret" choice cannot be
+	// lost or depend on a fallible post-commit update.
+	SecretBindings []browserRecordingSecretBinding `json:"secret_bindings,omitempty"`
+	// ParameterizationSelections identify only the value-free suggestions the
+	// operator selected in the preview. The server re-derives those suggestions
+	// from the fresh conversion and applies them before the atomic create
+	// transaction; the browser never supplies mutation instructions.
+	ParameterizationSelections []browserRecordingParameterizationSelection `json:"parameterization_selections,omitempty"`
+	// ExpectedScriptCount fences the preview/save handoff. A changed conversion
+	// shape must fail before persistence rather than silently pairing reviewed
+	// scripts with a different fresh conversion.
+	ExpectedScriptCount int `json:"expected_script_count,omitempty"`
+}
+
+// browserRecordingPreviewRequest deliberately excludes save-only secret
+// bindings. Keeping a separate wire type makes the generated API contract
+// truthful and lets DisallowUnknownFields reject a binding sent to preview.
+type browserRecordingPreviewRequest struct {
+	Name                 string `json:"name"`
+	MaxThinkTimeMs       int    `json:"max_think_time_ms,omitempty"`
+	StartSeq             int    `json:"start_seq,omitempty"`
+	EndSeq               int    `json:"end_seq,omitempty"`
+	SplitAtTransactions  bool   `json:"split_at_transactions,omitempty"`
+	AlsoCreateHTTPScript bool   `json:"also_create_http_script,omitempty"`
+	Parameterize         bool   `json:"parameterize,omitempty"`
+}
+
+func (req browserRecordingPreviewRequest) convertRequest() browserRecordingConvertRequest {
+	return browserRecordingConvertRequest{
+		Name:                 req.Name,
+		MaxThinkTimeMs:       req.MaxThinkTimeMs,
+		StartSeq:             req.StartSeq,
+		EndSeq:               req.EndSeq,
+		SplitAtTransactions:  req.SplitAtTransactions,
+		AlsoCreateHTTPScript: req.AlsoCreateHTTPScript,
+		Parameterize:         req.Parameterize,
+	}
+}
+
+type browserRecordingSecretBinding struct {
+	RequirementID string `json:"requirement_id"`
+	SecretName    string `json:"secret_name"`
+	ScriptIndex   int    `json:"script_index"`
+}
+
+type browserRecordingParameterizationSelection struct {
+	ScriptIndex int      `json:"script_index"`
+	SelectedIDs []string `json:"selected_ids"`
+}
+
+const maxBridgedBrowserImportScripts = 64
+const maxBrowserRecordingParameterizationSelections = 4096
+
+// handleAttestBridgedBrowserRecordingImport is an authenticated,
+// operator-asserted handoff for a reviewed draft from the local recording flow
+// to the remote controller. Local and remote controllers do not share
+// in-memory attestation stores, so a local token can never authorize the later
+// remote library write. This browser-recorder-specific boundary strips that
+// token, validates the source/protocol pairing and project scope, then issues
+// remote one-shot attestations over the exact credential locations and values
+// the operator already reviewed.
+func (s *Server) handleAttestBridgedBrowserRecordingImport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ProjectID string       `json:"project_id,omitempty"`
+		Scripts   []dsl.Script `json:"scripts"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if len(req.Scripts) == 0 || len(req.Scripts) > maxBridgedBrowserImportScripts {
+		writeError(w, http.StatusBadRequest, "between 1 and 64 browser recording scripts are required")
+		return
+	}
+	projectHint := jsonImportProjectID(r, req.ProjectID)
+	if strings.TrimSpace(projectHint) == "" {
+		for index := range req.Scripts {
+			if strings.TrimSpace(req.Scripts[index].ProjectID) != "" {
+				projectHint = req.Scripts[index].ProjectID
+				break
+			}
+		}
+	}
+	projectID := authorizedProjectOr(r, projectHint)
+	if !requireAuthorizedProjectMatch(w, r, projectID) {
+		return
+	}
+
+	scripts := make([]*dsl.Script, len(req.Scripts))
+	scriptValues := make([]any, len(req.Scripts))
+	for index := range req.Scripts {
+		script := &req.Scripts[index]
+		if strings.TrimSpace(script.ProjectID) != "" &&
+			normalizeProjectID(script.ProjectID) != projectID {
+			writeError(w, http.StatusBadRequest, "browser recording script belongs to a different project")
+			return
+		}
+		script.ProjectID = projectID
+		protocol := strings.ToLower(strings.TrimSpace(script.Protocol))
+		source := ""
+		switch protocol {
+		case "browser":
+			source = "browser_recorder"
+		case "http", "soap":
+			source = "browser_recording_har"
+		default:
+			writeError(w, http.StatusBadRequest, "paired browser recording handoff supports only browser and HTTP scripts")
+			return
+		}
+		// A token issued by the local agent has no authority on this server and
+		// must not consume capacity or accidentally collide with a remote token.
+		stripImportDraftAttestation(script)
+		if script.Metadata == nil {
+			script.Metadata = &dsl.ScriptMetadata{}
+		}
+		if script.Metadata.Import == nil {
+			script.Metadata.Import = &dsl.ImportMetadata{}
+		}
+		script.Metadata.Import.Source = source
+		if script.Metadata.Import.Preserved != nil {
+			delete(
+				script.Metadata.Import.Preserved,
+				dsl.ImportPreservedCredentialPolicyKey,
+			)
+		}
+		ensureCredentialPreservingImportMetadata(script, source)
+		if err := sanitizePersistentImportReviewSurfaces(script); err != nil {
+			writeError(w, http.StatusBadRequest, "browser recording review metadata is invalid")
+			return
+		}
+		if err := validateScriptFolderProject(s.store, script); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateJavaVMParameterSafety(script, true); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if issues := validateStoredExecutionScript(script); len(issues) > 0 {
+			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
+			return
+		}
+		scripts[index] = script
+		scriptValues[index] = script
+	}
+
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		Script:  scripts[0],
+		Scripts: scriptValues,
+	})
+	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
 // convertBrowserRecording runs the shared conversion path for preview and
@@ -621,6 +773,142 @@ func (s *Server) convertBrowserRecording(artifact *recbrowser.Session, info *Bro
 		result.Script.ProjectID = projectID
 	}
 	return result
+}
+
+func validateBrowserRecordingSecretBindings(
+	bindings []browserRecordingSecretBinding,
+	scriptCount int,
+) error {
+	seen := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		requirementID := strings.TrimSpace(binding.RequirementID)
+		secretName := strings.TrimSpace(binding.SecretName)
+		if requirementID == "" || secretName == "" {
+			return errors.New("secret binding requirement_id and secret_name are required")
+		}
+		if binding.ScriptIndex < 0 || binding.ScriptIndex >= scriptCount {
+			return fmt.Errorf("secret binding for %q targets an unavailable converted script", requirementID)
+		}
+		key := strconv.Itoa(binding.ScriptIndex) + "\x00" + requirementID
+		if _, duplicate := seen[key]; duplicate {
+			return fmt.Errorf("secret binding requirement_id %q is duplicated", requirementID)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
+}
+
+func applyBrowserRecordingSecretBindings(
+	script *dsl.Script,
+	scriptIndex int,
+	bindings []browserRecordingSecretBinding,
+) (*dsl.Script, error) {
+	selected := make([]secretBindingSelection, 0)
+	for _, binding := range bindings {
+		if binding.ScriptIndex != scriptIndex {
+			continue
+		}
+		selected = append(selected, secretBindingSelection{
+			RequirementID: binding.RequirementID,
+			SecretName:    binding.SecretName,
+		})
+	}
+	if len(selected) == 0 {
+		return script, nil
+	}
+	resolved, _, err := applyCredentialPreservingSecretBindings(
+		script,
+		scriptIndex,
+		selected,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+func validateBrowserRecordingParameterizationSelections(
+	selections []browserRecordingParameterizationSelection,
+	scriptCount int,
+) error {
+	total := 0
+	seen := make(map[string]struct{})
+	for _, selection := range selections {
+		if selection.ScriptIndex < 0 ||
+			(scriptCount >= 0 && selection.ScriptIndex >= scriptCount) {
+			return fmt.Errorf(
+				"parameterization selection targets unavailable converted script %d",
+				selection.ScriptIndex,
+			)
+		}
+		if len(selection.SelectedIDs) == 0 {
+			return fmt.Errorf(
+				"parameterization selection for script %d has no selected_ids",
+				selection.ScriptIndex,
+			)
+		}
+		for _, rawID := range selection.SelectedIDs {
+			id := strings.TrimSpace(rawID)
+			if id == "" {
+				return errors.New("parameterization selected_ids cannot contain an empty ID")
+			}
+			total++
+			if total > maxBrowserRecordingParameterizationSelections {
+				return fmt.Errorf(
+					"parameterization selection exceeds the %d-suggestion limit",
+					maxBrowserRecordingParameterizationSelections,
+				)
+			}
+			key := strconv.Itoa(selection.ScriptIndex) + "\x00" + id
+			if _, duplicate := seen[key]; duplicate {
+				return fmt.Errorf(
+					"parameterization suggestion %q is duplicated for script %d",
+					id,
+					selection.ScriptIndex,
+				)
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func applyBrowserRecordingParameterizationSelections(
+	script *dsl.Script,
+	scriptIndex int,
+	selections []browserRecordingParameterizationSelection,
+) (*dsl.Script, error) {
+	selected := make(map[string]bool)
+	for _, selection := range selections {
+		if selection.ScriptIndex != scriptIndex {
+			continue
+		}
+		for _, id := range selection.SelectedIDs {
+			selected[strings.TrimSpace(id)] = true
+		}
+	}
+	if len(selected) == 0 {
+		return script, nil
+	}
+	trusted := buildTrustedImportParameterization(script)
+	trustedByID := make(map[string]struct{}, len(trusted.Suggestions))
+	for _, suggestion := range trusted.Suggestions {
+		trustedByID[suggestion.ID] = struct{}{}
+	}
+	for id := range selected {
+		if _, ok := trustedByID[id]; !ok {
+			return nil, fmt.Errorf(
+				"selected suggestion %q is stale or unavailable for converted script %d",
+				id,
+				scriptIndex,
+			)
+		}
+	}
+	applied, _, err := paramize.ApplySuggestions(script, trusted.Suggestions, selected)
+	if err != nil {
+		return nil, err
+	}
+	return applied, nil
 }
 
 // attachRecordingProvenance stamps the saved script with enough metadata to
@@ -721,10 +1009,11 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 		return
 	}
 
-	var req browserRecordingConvertRequest
-	if !decodeOptionalJSONBody(w, r, &req) {
+	var previewReq browserRecordingPreviewRequest
+	if !decodeOptionalJSONBody(w, r, &previewReq) {
 		return
 	}
+	req := previewReq.convertRequest()
 
 	result := s.convertBrowserRecording(artifact, info, req)
 	warnings := append([]string(nil), result.Warnings...)
@@ -756,7 +1045,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	if httpScript != nil {
 		response["http_script"] = httpScript
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
 func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -779,6 +1068,18 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	if !decodeOptionalJSONBody(w, r, &req) {
 		return
 	}
+	if req.ExpectedScriptCount < 0 ||
+		req.ExpectedScriptCount > maxBridgedBrowserImportScripts+1 {
+		writeError(w, http.StatusBadRequest, "expected_script_count is outside the supported range")
+		return
+	}
+	if err := validateBrowserRecordingParameterizationSelections(
+		req.ParameterizationSelections,
+		-1,
+	); err != nil {
+		writeError(w, http.StatusBadRequest, "browser recording parameterization selections are invalid: "+err.Error())
+		return
+	}
 
 	result := s.convertBrowserRecording(artifact, info, req)
 
@@ -789,23 +1090,49 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		if sc == nil {
 			continue
 		}
-		safeScript, _, err := applySuggestedSecretBindings(sc, scriptIndex)
+		parameterizedScript, err := applyBrowserRecordingParameterizationSelections(
+			sc,
+			scriptIndex,
+			req.ParameterizationSelections,
+		)
+		if err != nil {
+			writeError(w, http.StatusConflict, "browser recording parameterization selections are stale or invalid: "+err.Error())
+			return
+		}
+		boundScript, err := applyBrowserRecordingSecretBindings(
+			parameterizedScript,
+			scriptIndex,
+			req.SecretBindings,
+		)
+		if err != nil {
+			writeError(w, http.StatusConflict, "browser recording secret bindings are stale or invalid: "+err.Error())
+			return
+		}
+		result.Scripts[scriptIndex] = boundScript
+		if scriptIndex == 0 {
+			result.Script = boundScript
+		}
+		importedScript, err := preparePersistentImportedLibraryScript(
+			boundScript,
+			nil,
+			"browser_recorder",
+		)
 		if err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
 			return
 		}
-		if err := validateConvertedScriptForCommit(safeScript); err != nil {
+		if err := validateConvertedScriptForCommit(importedScript); err != nil {
 			writeError(w, http.StatusUnprocessableEntity, "browser recording did not produce an executable script: "+err.Error())
 			return
 		}
 		// Reserve a fresh create-only ID before the durable import journal is
 		// prepared. Rollback is then fenced to the exact created version.
-		safeScript.ID = uuid.NewString()
-		safeScript.RefKey = ""
-		if strings.TrimSpace(safeScript.Version) == "" {
-			safeScript.Version = "1"
+		importedScript.ID = uuid.NewString()
+		importedScript.RefKey = ""
+		if strings.TrimSpace(importedScript.Version) == "" {
+			importedScript.Version = "1"
 		}
-		preparedScripts = append(preparedScripts, safeScript)
+		preparedScripts = append(preparedScripts, importedScript)
 	}
 	if len(preparedScripts) == 0 {
 		writeError(w, http.StatusUnprocessableEntity, "conversion produced no scripts")
@@ -824,25 +1151,76 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		} else if httpScript == nil {
 			warnings = append(warnings, "HTTP script generation skipped: conversion produced no script")
 		} else {
-			safeHTTPScript, _, bindingErr := applySuggestedSecretBindings(httpScript, len(result.Scripts))
-			if bindingErr != nil {
-				warnings = append(warnings, "HTTP script persistence skipped: failed to prepare recorded credentials: "+bindingErr.Error())
-			} else if validationErr := validateConvertedScriptForCommit(safeHTTPScript); validationErr != nil {
+			httpScriptIndex := len(result.Scripts)
+			httpScript, err = applyBrowserRecordingParameterizationSelections(
+				httpScript,
+				httpScriptIndex,
+				req.ParameterizationSelections,
+			)
+			if err != nil {
+				writeError(w, http.StatusConflict, "browser recording HTTP parameterization selections are stale or invalid: "+err.Error())
+				return
+			}
+			httpScript, err = applyBrowserRecordingSecretBindings(
+				httpScript,
+				httpScriptIndex,
+				req.SecretBindings,
+			)
+			if err != nil {
+				writeError(w, http.StatusConflict, "browser recording HTTP secret bindings are stale or invalid: "+err.Error())
+				return
+			}
+			importedHTTPScript, prepareErr := preparePersistentImportedLibraryScript(
+				httpScript,
+				nil,
+				"browser_recording_har",
+			)
+			if prepareErr != nil {
+				warnings = append(warnings, "HTTP script persistence skipped: failed to prepare recorded credentials: "+prepareErr.Error())
+			} else if validationErr := validateConvertedScriptForCommit(importedHTTPScript); validationErr != nil {
 				warnings = append(warnings, "HTTP script persistence skipped: "+validationErr.Error())
 			} else {
-				safeHTTPScript.ID = uuid.NewString()
-				safeHTTPScript.RefKey = ""
-				if strings.TrimSpace(safeHTTPScript.Version) == "" {
-					safeHTTPScript.Version = "1"
+				importedHTTPScript.ID = uuid.NewString()
+				importedHTTPScript.RefKey = ""
+				if strings.TrimSpace(importedHTTPScript.Version) == "" {
+					importedHTTPScript.Version = "1"
 				}
-				preparedHTTPScript = safeHTTPScript
+				preparedHTTPScript = importedHTTPScript
 			}
 		}
+	}
+	availableScriptCount := len(result.Scripts)
+	if httpScript != nil {
+		availableScriptCount++
+	}
+	if err := validateBrowserRecordingSecretBindings(req.SecretBindings, availableScriptCount); err != nil {
+		writeError(w, http.StatusConflict, "browser recording secret bindings are stale or invalid: "+err.Error())
+		return
+	}
+	if err := validateBrowserRecordingParameterizationSelections(
+		req.ParameterizationSelections,
+		availableScriptCount,
+	); err != nil {
+		writeError(w, http.StatusConflict, "browser recording parameterization selections are stale or invalid: "+err.Error())
+		return
 	}
 
 	transactionScripts := append([]*dsl.Script(nil), preparedScripts...)
 	if preparedHTTPScript != nil {
 		transactionScripts = append(transactionScripts, preparedHTTPScript)
+	}
+	if req.ExpectedScriptCount > 0 &&
+		len(transactionScripts) != req.ExpectedScriptCount {
+		writeError(
+			w,
+			http.StatusConflict,
+			fmt.Sprintf(
+				"browser recording conversion changed from %d reviewed script(s) to %d persistable script(s); refresh the preview",
+				req.ExpectedScriptCount,
+				len(transactionScripts),
+			),
+		)
+		return
 	}
 	transaction, err := newCreateImportTransaction(s, "browser-recording", transactionScripts, "", nil)
 	if err != nil {
@@ -859,8 +1237,11 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	}()
 
 	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
-	for _, safeScript := range preparedScripts {
-		stored, err := transaction.createScript(safeScript)
+	for _, importedScript := range preparedScripts {
+		stored, err := transaction.createImportedScript(
+			importedScript,
+			"browser_recorder",
+		)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save converted script: "+err.Error())
 			return
@@ -871,13 +1252,20 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 
 	var httpStored *StoredScript
 	if preparedHTTPScript != nil {
-		httpStored, err = transaction.createScript(preparedHTTPScript)
+		httpStored, err = transaction.createImportedScript(
+			preparedHTTPScript,
+			"browser_recording_har",
+		)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save converted HTTP script: "+err.Error())
 			return
 		}
 		warnings = append(warnings, httpWarnings...)
-		warnings = append(warnings, fmt.Sprintf("also created HTTP script %q (%s) from the recorded HAR", httpStored.Name, httpStored.ID))
+		warnings = append(warnings, fmt.Sprintf(
+			"also created HTTP script %q (%s) from the recorded HAR",
+			disclosureSafeScriptName(httpStored.Name, httpStored.Script),
+			httpStored.ID,
+		))
 	}
 	if err := transaction.commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit converted scripts: "+err.Error())
@@ -885,9 +1273,10 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	}
 	committed = true
 
-	s.browserRecording.NotifyConverted(id, primary.ID, primary.Name)
+	disclosedPrimaryName := disclosureSafeScriptName(primary.Name, primary.Script)
+	s.browserRecording.NotifyConverted(id, primary.ID, disclosedPrimaryName)
 	s.recordAuditEvent(r, "browser_recording.convert", "success", "script", primary.ID, primary.ProjectID,
-		map[string]any{"recording_session_id": id, "name": primary.Name, "actions": result.Stats.ConvertedActions,
+		map[string]any{"recording_session_id": id, "name": disclosedPrimaryName, "actions": result.Stats.ConvertedActions,
 			"scripts": len(storedScripts), "http_script": httpStored != nil})
 
 	sourceHTTPForResponse := httpScript
@@ -895,18 +1284,19 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		sourceHTTPForResponse = nil
 	}
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Script:           result.Script,
-		Scripts:          appendBrowserRecordingScripts(result.Scripts, sourceHTTPForResponse),
-		Warnings:         warnings,
-		Stats:            result.Stats,
-		Parameterization: buildImportParameterization(result.Script, nil),
+		Script:               result.Script,
+		Scripts:              appendBrowserRecordingScripts(result.Scripts, sourceHTTPForResponse),
+		Warnings:             warnings,
+		Stats:                result.Stats,
+		Parameterization:     buildImportParameterization(result.Script, nil),
+		SkipDraftAttestation: true,
 	})
 	response["script"] = maskStoredScript(primary)
 	response["scripts"] = storedScriptsForResponse(storedScripts, httpStored)
 	if httpStored != nil {
 		response["http_script"] = maskStoredScript(httpStored)
 	}
-	writeJSON(w, http.StatusCreated, response)
+	writeScriptImportResponse(w, http.StatusCreated, response)
 }
 
 func appendBrowserRecordingScripts(scripts []*dsl.Script, httpScript *dsl.Script) []any {

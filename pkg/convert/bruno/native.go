@@ -2023,7 +2023,35 @@ func buildNativeCandidate(
 		script.Actions[0] = action
 	}
 
-	secretNames := collectNativeSecretNames(script)
+	projectionRequirementsByID := make(map[string]SecretRequirement)
+	for _, requirementGroup := range sourceRequirements {
+		for _, requirement := range requirementGroup {
+			projectionRequirementsByID[requirement.ID] = requirement
+		}
+	}
+	for _, requirement := range templateState.generatedReq {
+		projectionRequirementsByID[requirement.ID] = requirement
+	}
+	projectionRequirements := make([]SecretRequirement, 0, len(projectionRequirementsByID))
+	for _, requirement := range projectionRequirementsByID {
+		projectionRequirements = append(projectionRequirements, requirement)
+	}
+	sort.Slice(projectionRequirements, func(i, j int) bool {
+		return projectionRequirements[i].ID < projectionRequirements[j].ID
+	})
+	publicScript, _, err := finalizeNativeScriptCredentialTargets(
+		script,
+		projectionRequirements,
+	)
+	if err != nil {
+		return NativeScriptCandidate{}, nil, fmt.Errorf(
+			"project Bruno native credential targets for %q: %w",
+			item.Path,
+			err,
+		)
+	}
+
+	secretNames := collectNativeSecretNames(publicScript)
 	requirements := make([]SecretRequirement, 0, len(secretNames))
 	seenRequirements := make(map[string]struct{})
 	for _, secretName := range secretNames {
@@ -2142,6 +2170,17 @@ func buildNativeCandidate(
 		)
 	}
 	script = finalized.Script
+	script, credentialTargets, err := finalizeNativeScriptCredentialTargets(
+		script,
+		projectionRequirements,
+	)
+	if err != nil {
+		return NativeScriptCandidate{}, nil, fmt.Errorf(
+			"finalize Bruno native credential targets for %q: %w",
+			item.Path,
+			err,
+		)
+	}
 
 	if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
 		return NativeScriptCandidate{}, nil, fmt.Errorf("native Bruno script %q is invalid: %s", item.Path, strings.Join(issues, "; "))
@@ -2167,13 +2206,14 @@ func buildNativeCandidate(
 		SourceUID:          item.UID,
 		Sequence:           item.Sequence,
 		Method:             method,
-		Target:             target,
+		Target:             script.Actions[0].Target,
 		Script:             script,
 		Fidelity:           fidelity,
 		Diagnostics:        diagnostics,
 		MissingVariables:   missing,
 		SecretRequirements: requirements,
 		SourceMappings:     sourceMappings,
+		CredentialTargets:  credentialTargets,
 	}
 
 	var candidateFindings []SecurityFinding
@@ -2214,7 +2254,7 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 						nativeTemplateContextLabel(context, contextName),
 					)
 					registerNativeGeneratedRequirement(state, requirement)
-					return requirement.Replacement
+					return nativeCredentialProjectionReplacement(requirement)
 				}
 				return "{{" + expression + "}}"
 			}
@@ -2265,7 +2305,7 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 					requirement.Value = resolution.Value
 				}
 				registerNativeGeneratedRequirement(state, requirement)
-				return requirement.Replacement
+				return nativeCredentialProjectionReplacement(requirement)
 			}
 			// APEX expands action fields once. Keep values containing an APEX
 			// namespace in the action itself instead of hiding that template
@@ -2281,7 +2321,7 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 		if nativeTemplateRequiresSecret(expression, context, contextName) {
 			requirement := nativeSecretRequirement(expression, state.sourcePath, nativeTemplateContextLabel(context, contextName))
 			registerNativeGeneratedRequirement(state, requirement)
-			return requirement.Replacement
+			return nativeCredentialProjectionReplacement(requirement)
 		}
 		state.missing[expression] = struct{}{}
 		return "{{var." + expression + "}}"
@@ -2377,7 +2417,7 @@ func rewriteNativeComposedSensitiveHeader(
 		requirement.Value = resolved
 	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return requirement.Replacement, complete
+	return nativeCredentialProjectionReplacement(requirement), complete
 }
 
 func registerNativeGeneratedRequirement(
@@ -2493,6 +2533,17 @@ func nativeSourceSecretValue(
 ) (string, bool) {
 	canonical, ok := exactNativeSecretReference(reference)
 	if !ok {
+		return "", false
+	}
+	if match := nativeCredentialMarkerPattern.FindStringSubmatch(canonical); len(match) == 2 {
+		requirementID := strings.ToLower(match[1])
+		for _, requirements := range sourceRequirements {
+			for _, requirement := range requirements {
+				if strings.EqualFold(requirement.ID, requirementID) && requirement.Value != "" {
+					return requirement.Value, true
+				}
+			}
+		}
 		return "", false
 	}
 	name := strings.TrimSuffix(strings.TrimPrefix(canonical, "{{secret."), "}}")

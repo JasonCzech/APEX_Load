@@ -2,6 +2,7 @@ package javarunner
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -11,6 +12,7 @@ const enforcedDisableAttachMechanism = "-XX:+DisableAttachMechanism"
 const enforcedDisableOpenJ9Attach = "-Dcom.ibm.tools.attach.enable=no"
 const enforcedDisableHeapDumpOnOOM = "-XX:-HeapDumpOnOutOfMemoryError"
 const enforcedDisableCrashCoreDump = "-XX:-CreateCoredumpOnCrash"
+const enforcedDisableOpenJ9Dumps = "-Xdump:none"
 
 // CommandSpec describes the operator- and script-owned portions of a direct
 // Java harness launch. VMParameters are already exact argv tokens; no quoting
@@ -20,7 +22,11 @@ type CommandSpec struct {
 	// JavaMajor is the already-probed launcher major. Zero means unknown and
 	// keeps the modern fail-closed defaults. The explicit legacy Java 8 lane
 	// omits flags introduced after Java 8 so its JVM can still start.
-	JavaMajor            int
+	JavaMajor int
+	// VMFamily is the already-probed VM implementation. Java 8 requires an
+	// identified family because HotSpot and OpenJ9 use incompatible crash-dump
+	// suppression switches.
+	VMFamily             JavaVMFamily
 	HarnessJar           string
 	ScriptClasspath      []string
 	SharedClasspath      []string
@@ -43,7 +49,11 @@ type CommandPlan struct {
 // classpath/main arguments. Modern runtimes never receive an Xbootclasspath
 // flag; callers represent that compatibility fallback as execution evidence.
 func BuildCommand(spec CommandSpec) (CommandPlan, error) {
-	if issues := ValidateVMParameters(spec.VMParameters); len(issues) > 0 {
+	// BuildCommand is an execution boundary. Ordinary authored values have
+	// already passed strict validation before persistence; trusted imports may
+	// intentionally retain exact credential-bearing tokens and surface their
+	// process-table exposure as durable review evidence.
+	if issues := ValidateVMParametersForExecution(spec.VMParameters); len(issues) > 0 {
 		return CommandPlan{}, issues[0]
 	}
 
@@ -67,19 +77,27 @@ func BuildCommand(spec CommandSpec) (CommandPlan, error) {
 		Args: append([]string(nil), spec.VMParameters...),
 	}
 	// Every VUser JVM in a sidecar shares an OS identity and working directory.
-	// Enforce both HotSpot and OpenJ9 attach isolation, OOM heap-dump
-	// suppression, and HotSpot crash-core suppression after all caller-owned VM
+	// Enforce attach isolation and dump suppression after all caller-owned VM
 	// tokens so last-option precedence cannot reopen a sibling-memory or
-	// heap-artifact disclosure path. CreateCoredumpOnCrash was introduced in
-	// HotSpot 9, so the operator-enabled legacy Java 8 lane cannot receive it;
-	// OpenJ9 ignores an unrecognized -XX: option, but HotSpot 8 fails startup.
+	// crash-artifact disclosure path. OpenJ9 has its own all-dump switch.
+	// CreateCoredumpOnCrash was introduced in HotSpot 9, so HotSpot 8 instead
+	// directs its fatal-error log to the platform null device. An unidentified
+	// Java 8 VM cannot be launched safely because those switches are mutually
+	// incompatible.
 	plan.Args = append(
 		plan.Args,
 		enforcedDisableAttachMechanism,
 		enforcedDisableOpenJ9Attach,
 		enforcedDisableHeapDumpOnOOM,
 	)
-	if spec.JavaMajor != 8 {
+	switch {
+	case spec.VMFamily == JavaVMOpenJ9:
+		plan.Args = append(plan.Args, enforcedDisableOpenJ9Dumps)
+	case spec.JavaMajor == 8 && spec.VMFamily == JavaVMHotSpot:
+		plan.Args = append(plan.Args, "-XX:ErrorFile="+os.DevNull)
+	case spec.JavaMajor == 8:
+		return CommandPlan{}, fmt.Errorf("legacy Java 8 VM family is not recognized")
+	default:
 		plan.Args = append(plan.Args, enforcedDisableCrashCoreDump)
 	}
 	if spec.DedicatedClassLoader {

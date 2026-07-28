@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T) {
@@ -33,13 +34,13 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), value) {
-		t.Fatalf("converter JSON disclosed a protected credential value: %s", strings.ReplaceAll(string(publicJSON), value, "<PROTECTED>"))
+	if !strings.Contains(string(publicJSON), value) {
+		t.Fatal("destination conversion lost imported credential")
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != value {
-		t.Fatal("protected credential requirement was not transferred intact")
+	if len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, preserved credential must not require reentry", requirements)
 	}
 	if result.ProtectedRequirements.Take() != nil {
 		t.Fatal("protected credential requirements were returned more than once")
@@ -48,8 +49,15 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(scriptJSON), value) {
-		t.Fatal("projected script retained a protected credential value")
+	if !strings.Contains(string(scriptJSON), value) {
+		t.Fatal("destination script lost imported credential")
+	}
+	sourceJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(sourceJSON), value) {
+		t.Fatalf("source review disclosed credential: %s", sourceJSON)
 	}
 }
 
@@ -87,26 +95,33 @@ func TestStaticInnocuousVariableInCredentialSurfaceIsProtectedAndRemovedFromPara
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(publicJSON), canary) {
-				t.Fatalf("public conversion disclosed static credential variable: %s", publicJSON)
+			if !strings.Contains(string(publicJSON), canary) {
+				t.Fatalf("destination conversion lost static credential variable: %s", publicJSON)
 			}
-			if got := result.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, "{{secret.") {
-				t.Fatalf("credential variable was not projected: %q", got)
+			if got := result.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+canary {
+				t.Fatalf("credential header = %q, want imported executable value", got)
 			}
-			if len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Name != "visibleLabel" {
-				t.Fatalf("credential parameter was not removed without disturbing nonsensitive parameter: %#v", result.Script.Parameters)
+			if len(result.Script.Parameters) != 2 ||
+				!postmanParameterNames(result, "authValue") ||
+				!postmanParameterNames(result, "visibleLabel") {
+				t.Fatalf("credential parameter was not preserved: %#v", result.Script.Parameters)
+			}
+			provenance, ok := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialParameterNamesKey].([]string)
+			if !ok || !containsString(provenance, "authValue") ||
+				containsString(provenance, "visibleLabel") {
+				t.Fatalf("credential parameter provenance = %#v", provenance)
 			}
 			if useDataSet {
 				if len(result.Script.DataSources) != 1 ||
-					strings.Contains(result.Script.DataSources[0].InlineData, "authValue") ||
-					strings.Contains(result.Script.DataSources[0].InlineData, canary) ||
+					!strings.Contains(result.Script.DataSources[0].InlineData, "authValue") ||
+					!strings.Contains(result.Script.DataSources[0].InlineData, canary) ||
 					!strings.Contains(result.Script.DataSources[0].InlineData, "visibleLabel") ||
 					!strings.Contains(result.Script.DataSources[0].InlineData, "ordinary") {
-					t.Fatalf("parameter data source was not safely projected: %#v", result.Script.DataSources)
+					t.Fatalf("parameter data source lost imported values: %#v", result.Script.DataSources)
 				}
 			} else if len(result.Script.DataSources) != 0 ||
-				len(result.Script.Parameters[0].Values) != 1 ||
-				result.Script.Parameters[0].Values[0] != "ordinary" {
+				!postmanParameterHasValue(result, "authValue", canary) ||
+				!postmanParameterHasValue(result, "visibleLabel", "ordinary") {
 				t.Fatalf("parameter-value mode changed nonsensitive variable: %#v / %#v", result.Script.Parameters, result.Script.DataSources)
 			}
 			if result.SourceReview == nil {
@@ -121,11 +136,8 @@ func TestStaticInnocuousVariableInCredentialSurfaceIsProtectedAndRemovedFromPara
 			}
 			requirements := result.ProtectedRequirements.Take()
 			defer clearPostmanProtectedValues(requirements)
-			if len(requirements) != 1 ||
-				requirements[0].Value != "Bearer "+canary ||
-				len(requirements[0].SourceVariableNames) != 1 ||
-				requirements[0].SourceVariableNames[0] != "authValue" {
-				t.Fatalf("protected source-variable handoff = %#v", requirements)
+			if len(requirements) != 0 {
+				t.Fatalf("protected source-variable requirements = %#v, want no reentry", requirements)
 			}
 		})
 	}
@@ -154,23 +166,23 @@ func TestCredentialVariableDependencyClosureIsProtectedAndRemoved(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, "{{secret.") {
-		t.Fatalf("nested credential variable was not projected: %q", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+canary {
+		t.Fatalf("nested credential header = %q, want imported executable value", got)
 	}
-	if len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Name != "visibleLabel" {
-		t.Fatalf("credential dependency closure remained in parameters: %#v", result.Script.Parameters)
+	if len(result.Script.Parameters) != 3 {
+		t.Fatalf("credential dependency parameters were not preserved: %#v", result.Script.Parameters)
 	}
 	publicJSON, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), canary) {
-		t.Fatalf("public conversion disclosed nested credential: %s", publicJSON)
+	if !strings.Contains(string(publicJSON), canary) {
+		t.Fatalf("destination conversion lost nested credential: %s", publicJSON)
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != "Bearer "+canary {
-		t.Fatalf("nested credential protected handoff = %#v", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("nested credential requirements = %#v, want no reentry", requirements)
 	}
 }
 
@@ -211,8 +223,8 @@ func TestCredentialVariableProvenanceIsActionOrderAware(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, "{{secret.") {
-		t.Fatalf("future extractor incorrectly proved the first action dynamic: %q", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+canary {
+		t.Fatalf("first action credential = %q, want imported executable value", got)
 	}
 	if got := result.Script.Actions[2].Headers["Authorization"]; got != "Bearer {{var.auth_value}}" {
 		t.Fatalf("prior response extractor was not preserved dynamically: %q", got)
@@ -221,21 +233,33 @@ func TestCredentialVariableProvenanceIsActionOrderAware(t *testing.T) {
 		result.Script.Actions[1].Extractors[0].Name != "auth_value" {
 		t.Fatalf("response provenance extractor missing: %#v", result.Script.Actions[1].Extractors)
 	}
-	if len(result.Script.Parameters) != 0 {
-		t.Fatalf("static credential seed remained in parameters: %#v", result.Script.Parameters)
+	if len(result.Script.Parameters) != 1 || !postmanParameterNames(result, "auth_value") {
+		t.Fatalf("static credential seed was not preserved: %#v", result.Script.Parameters)
 	}
 	publicJSON, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), canary) {
-		t.Fatalf("action-ordered conversion disclosed static credential: %s", publicJSON)
+	if !strings.Contains(string(publicJSON), canary) {
+		t.Fatalf("destination conversion lost action-ordered credential: %s", publicJSON)
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != "Bearer "+canary {
-		t.Fatalf("protected requirements = %#v", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("protected requirements = %#v, want no reentry", requirements)
 	}
+}
+
+func postmanParameterHasValue(result *ConvertResult, name, value string) bool {
+	if result == nil || result.Script == nil {
+		return false
+	}
+	for _, parameter := range result.Script.Parameters {
+		if parameter.Name == name && len(parameter.Values) == 1 && parameter.Values[0] == value {
+			return true
+		}
+	}
+	return false
 }
 
 func randomPostmanProtectedValue(t *testing.T) string {

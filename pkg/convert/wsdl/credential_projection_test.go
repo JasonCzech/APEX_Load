@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestConvertWSDLProjectsSensitiveSchemaLiteralsAndPreservesEnvelopeBytes(t *testing.T) {
+func TestConvertWSDLPreservesSensitiveSchemaLiteralsAndEnvelopeBytes(t *testing.T) {
 	const (
 		passwordCanary = "credential-canary-password-7d40"
 		tokenCanary    = "credential-canary-token-8c51"
@@ -65,8 +65,8 @@ func TestConvertWSDLProjectsSensitiveSchemaLiteralsAndPreservesEnvelopeBytes(t *
   <soapenv:Body>
     <tns:LoginRequest>
       <tns:note>safe&amp;stable</tns:note>
-      <tns:password>{{secret.WSDL_PASSWORD}}</tns:password>
-      <tns:accessToken>{{secret.WSDL_ACCESSTOKEN}}</tns:accessToken>
+      <tns:password>` + passwordCanary + `</tns:password>
+      <tns:accessToken>` + tokenCanary + `</tns:accessToken>
       <tns:count>7</tns:count>
     </tns:LoginRequest>
   </soapenv:Body>
@@ -77,29 +77,38 @@ func TestConvertWSDLProjectsSensitiveSchemaLiteralsAndPreservesEnvelopeBytes(t *
 	if len(action.Headers) != 0 || len(action.HeaderList) != 0 {
 		t.Fatalf("SOAP runtime-owned HTTP headers changed: map=%#v list=%#v", action.Headers, action.HeaderList)
 	}
-	if len(result.SecretRequirements) != 2 {
-		t.Fatalf("secret requirements = %#v, want 2", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("preserved credentials unexpectedly require rebinding: %#v", result.SecretRequirements)
 	}
-	for _, requirement := range result.SecretRequirements {
-		if requirement.Value != "" || requirement.SourceValueAvailable {
-			t.Fatalf("WSDL result retained unprotected migration material: %#v", requirement)
-		}
-		if requirement.ID == "" || requirement.Replacement == "" {
-			t.Fatalf("incomplete credential requirement: %#v", requirement)
-		}
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("informational credential preservation finding blocked execution: %#v", action.Metadata)
 	}
-	if result.Readiness.State != importreview.Blocked ||
-		!reflect.DeepEqual(result.Readiness.BlockingCodes, []string{"credential_bindings_required"}) {
-		t.Fatalf("readiness = %#v", result.Readiness)
-	}
-	encoded, err := json.Marshal(result)
+	rawTargets, err := json.Marshal(
+		action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey],
+	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("marshal preserved credential targets: %v", err)
+	}
+	var preservedTargets []credentialpolicy.TargetRef
+	if err := json.Unmarshal(rawTargets, &preservedTargets); err != nil {
+		t.Fatalf("decode preserved credential targets: %v", err)
+	}
+	if len(preservedTargets) != 2 ||
+		preservedTargets[0].Field != "body.xml.text" ||
+		preservedTargets[0].Pointer != "/Envelope/Body/LoginRequest/password" ||
+		preservedTargets[1].Field != "body.xml.text" ||
+		preservedTargets[1].Pointer != "/Envelope/Body/LoginRequest/accessToken" {
+		t.Fatalf("preserved credential targets = %#v", preservedTargets)
+	}
+	if result.Readiness.State != importreview.Ready ||
+		!result.Readiness.ReplayReady ||
+		!result.Readiness.PromotionReady {
+		t.Fatalf("credential-preserving WSDL readiness = %#v, want executable", result.Readiness)
+	}
+	if containsString(result.Readiness.BlockingCodes, "credential_bindings_required") {
+		t.Fatalf("preserved credentials made the script depend on operator reentry: %#v", result.Readiness)
 	}
 	for _, canary := range []string{passwordCanary, tokenCanary} {
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("serialized conversion leaked canary %q: %s", canary, encoded)
-		}
 		if result.SourceReview != nil {
 			for _, file := range result.SourceReview.SourceFiles {
 				if strings.Contains(file.Content, canary) {
@@ -148,7 +157,7 @@ func TestConvertWSDLScrubsCredentialInUnusedSchemaBranch(t *testing.T) {
 	}
 }
 
-func TestConvertWSDLProjectsEndpointCredentialsAcrossAllPublicSurfaces(t *testing.T) {
+func TestConvertWSDLPreservesEndpointCredentialsAndRedactsSourceReview(t *testing.T) {
 	const source = `<definitions name="EndpointCredentials" targetNamespace="urn:endpoint"
   xmlns="http://schemas.xmlsoap.org/wsdl/"
   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
@@ -172,51 +181,31 @@ func TestConvertWSDLProjectsEndpointCredentialsAcrossAllPublicSurfaces(t *testin
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if len(result.SecretRequirements) != 2 {
-		t.Fatalf("secret requirements = %#v, want userinfo and query bindings", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("preserved endpoint credentials unexpectedly require rebinding: %#v", result.SecretRequirements)
 	}
-	for _, requirement := range result.SecretRequirements {
-		if requirement.Value != "" || requirement.SourceValueAvailable {
-			t.Fatalf("public requirement retained migration material: %#v", requirement)
-		}
-	}
-	if strings.Contains(result.Script.Config.BaseURL, "wsdl-pass") ||
-		strings.Contains(result.Script.Config.BaseURL, "wsdl%2Dquery") ||
-		!strings.Contains(result.Script.Config.BaseURL, "{{secret.") {
-		t.Fatalf("base URL was not projected safely: %q", result.Script.Config.BaseURL)
+	const wantBaseURL = "https://alice:wsdl-pass@api.example.test/root?api_key=wsdl%2Dquery"
+	if result.Script.Config.BaseURL != wantBaseURL {
+		t.Fatalf("base URL = %q, want preserved %q", result.Script.Config.BaseURL, wantBaseURL)
 	}
 	if len(result.Script.Actions) != 1 ||
-		result.Script.Actions[0].Target != result.Script.Config.BaseURL ||
-		result.Script.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("SOAP target did not reuse the gated projected base URL: %#v", result.Script.Actions)
-	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, canary := range []string{
-		"wsdl&#45;pass",
-		"wsdl-pass",
-		"wsdl%2Dquery",
-		"wsdl-query",
-	} {
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("serialized conversion disclosed %q: %s", canary, encoded)
-		}
+		result.Script.Actions[0].Target != result.Script.Config.BaseURL {
+		t.Fatalf("SOAP target did not reuse the preserved base URL: %#v", result.Script.Actions)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		!strings.Contains(result.SourceReview.SourceFiles[0].Content, "WSDL SOURCE OMITTED") {
+		!strings.Contains(result.SourceReview.SourceFiles[0].Content, "WSDL SOURCE OMITTED") ||
+		!result.SourceReview.SourceFiles[0].Redacted {
 		t.Fatalf("encoded endpoint source was not fail-closed: %#v", result.SourceReview)
 	}
 }
 
-func TestProjectWSDLCredentialsPreservesNonsensitiveXMLAndAttributeSyntax(t *testing.T) {
+func TestProjectWSDLCredentialsPreservesEntireXMLAndAttributeSyntax(t *testing.T) {
 	const (
 		textCanary = "credential-canary-text-13af"
 		attrCanary = "credential-canary-attr-24b0"
 	)
 	body := []byte(`<env:Envelope xmlns:env="urn:env"><env:Header/><env:Body><auth:token xmlns:auth="urn:auth" apiKey='` + attrCanary + `'>  ` + textCanary + `  </auth:token><note a="1">&amp; exact</note></env:Body></env:Envelope>`)
-	projected, secrets, findings, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+	projected, secrets, findings, targets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 		RequestKey: "login",
 		SourcePath: "login.wsdl",
 		Pointer:    "operation/Login/body",
@@ -225,17 +214,21 @@ func TestProjectWSDLCredentialsPreservesNonsensitiveXMLAndAttributeSyntax(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(findings) != 0 || len(secrets) != 2 {
-		t.Fatalf("projection sidecars: findings=%#v secrets=%#v", findings, secrets)
+	if len(findings) != 1 ||
+		findings[0].Code != "import_credential_preserved" ||
+		findings[0].Gate != importreview.GateNone ||
+		len(secrets) != 0 ||
+		len(targets) != 2 {
+		t.Fatalf("projection sidecars: findings=%#v secrets=%#v targets=%#v", findings, secrets, targets)
 	}
 	got := string(projected)
-	if strings.Contains(got, textCanary) || strings.Contains(got, attrCanary) {
-		t.Fatalf("projected body retained canary: %s", got)
+	if got != string(body) {
+		t.Fatalf("credential XML bytes changed:\n got: %q\nwant: %q", got, body)
 	}
-	if !strings.Contains(got, `apiKey='{{secret.WSDL_APIKEY}}'`) {
+	if !strings.Contains(got, `apiKey='`+attrCanary+`'`) {
 		t.Fatalf("single-quoted attribute syntax was not preserved: %s", got)
 	}
-	if !strings.Contains(got, `>  {{secret.WSDL_TOKEN}}  </auth:token>`) {
+	if !strings.Contains(got, `>  `+textCanary+`  </auth:token>`) {
 		t.Fatalf("element whitespace was not preserved: %s", got)
 	}
 	if !strings.Contains(got, `<note a="1">&amp; exact</note>`) {
@@ -243,7 +236,7 @@ func TestProjectWSDLCredentialsPreservesNonsensitiveXMLAndAttributeSyntax(t *tes
 	}
 }
 
-func TestProjectWSDLCredentialsRedactsAndBlocksMixedSensitiveContent(t *testing.T) {
+func TestProjectWSDLCredentialsPreservesValidMixedSensitiveContent(t *testing.T) {
 	const (
 		canary      = "credential-canary-mixed-35c1"
 		childCanary = "credential-canary-child-46d2"
@@ -252,7 +245,7 @@ func TestProjectWSDLCredentialsRedactsAndBlocksMixedSensitiveContent(t *testing.
   <username>alice</username>
   <password>` + canary + `<accessToken>` + childCanary + `</accessToken>suffix</password>
 </credentials><note>exact</note></Envelope>`)
-	projected, secrets, findings, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+	projected, secrets, findings, targets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 		RequestKey: "login",
 		SourcePath: "login.wsdl",
 		Pointer:    "operation/Login/body",
@@ -266,17 +259,68 @@ func TestProjectWSDLCredentialsRedactsAndBlocksMixedSensitiveContent(t *testing.
 	}
 	if len(findings) != 1 ||
 		findings[0].Code != "credential_xml_sensitive_mixed_content_review_required" ||
-		findings[0].Gate != importreview.GateExecution {
+		findings[0].Gate != importreview.GateNone {
 		t.Fatalf("findings = %#v", findings)
 	}
+	if len(targets) != 1 ||
+		targets[0].Field != "body.xml.mixed_content" ||
+		targets[0].Pointer != "/Envelope/credentials" {
+		t.Fatalf("preserved targets = %#v", targets)
+	}
 	got := string(projected)
-	if strings.Contains(got, canary) || strings.Contains(got, childCanary) ||
-		!strings.Contains(got, `<credentials>`+credential.Redacted+`</credentials>`) {
-		t.Fatalf("mixed sensitive content was not fail-safe redacted: %s", got)
+	if got != string(body) {
+		t.Fatalf("valid mixed credential XML changed:\n got: %q\nwant: %q", got, body)
 	}
-	if !strings.Contains(got, `<credentials>`) || !strings.Contains(got, `<note>exact</note>`) {
-		t.Fatalf("credential container or nonsensitive sibling changed: %s", got)
+}
+
+func TestProjectWSDLCredentialsPreservesMalformedXMLButBlocksExecution(t *testing.T) {
+	body := []byte(`<Envelope><password>wsdl-malformed-canary</Envelope>`)
+	projected, secrets, findings, _, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+		RequestKey: "login",
+		SourcePath: "login.wsdl",
+		Pointer:    "operation/Login/body",
+		Registry:   credentialpolicy.NewNameRegistry(),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	if string(projected) != string(body) {
+		t.Fatalf("malformed XML bytes changed:\n got: %q\nwant: %q", projected, body)
+	}
+	if len(secrets) != 0 {
+		t.Fatalf("malformed preserved XML unexpectedly created requirements: %#v", secrets)
+	}
+	if !wsdlFindingHasExecutionGate(findings, "credential_xml_malformed") {
+		t.Fatalf("findings = %#v, want malformed XML execution gate", findings)
+	}
+}
+
+func TestProjectWSDLCredentialsPreservesExplicitSecretReference(t *testing.T) {
+	body := []byte(`<Envelope><password>{{secret.EXISTING_PASSWORD}}</password></Envelope>`)
+	projected, secrets, findings, _, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+		RequestKey: "login",
+		SourcePath: "login.wsdl",
+		Pointer:    "operation/Login/body",
+		Registry:   credentialpolicy.NewNameRegistry(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(projected) != string(body) {
+		t.Fatalf("authored secret reference changed:\n got: %q\nwant: %q", projected, body)
+	}
+	if len(secrets) != 0 || wsdlFindingHasExecutionGate(findings, "") {
+		t.Fatalf("authored secret reference produced side effects: secrets=%#v findings=%#v", secrets, findings)
+	}
+}
+
+func wsdlFindingHasExecutionGate(findings []importreview.Finding, code string) bool {
+	for _, finding := range findings {
+		if (code == "" || finding.Code == code) && finding.Gate == importreview.GateExecution {
+			return true
+		}
+	}
+	return false
 }
 
 func TestConvertWSDLRPCEncodedIsValidBlockedDraft(t *testing.T) {

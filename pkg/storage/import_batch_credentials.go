@@ -67,7 +67,10 @@ func (context importBatchCredentialContext) provesDynamicVariable(name string) b
 //
 // This function only returns structural paths and a stable sentinel. It must
 // never include the rejected value in an error.
-func validateImportBatchCredentialSafety(script *dsl.Script) error {
+func validateImportBatchCredentialSafety(
+	script *dsl.Script,
+	trustPreservedExecutableCredentials bool,
+) error {
 	if script == nil {
 		return ErrImportBatchCredentialsUnmanaged
 	}
@@ -80,6 +83,14 @@ func validateImportBatchCredentialSafety(script *dsl.Script) error {
 		if err := validateImportBatchMetadataCredentials(metadata, "metadata", context, false); err != nil {
 			return err
 		}
+	}
+	if trustPreservedExecutableCredentials && importBatchPreservesExecutableCredentials(script) {
+		// The server-owned import finalizer marks exact runnable imports after
+		// review evidence has been sanitized. Their executable values are
+		// intentionally retained: the operator already supplied the source
+		// credentials, and atomic persistence must not convert them into missing
+		// bindings. Metadata remains subject to the disclosure check above.
+		return nil
 	}
 	if err := validateImportBatchRootCredentials(script, context); err != nil {
 		return err
@@ -106,6 +117,18 @@ func validateImportBatchCredentialSafety(script *dsl.Script) error {
 			return nil
 		}
 	})
+}
+
+func importBatchPreservesExecutableCredentials(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		return false
+	}
+	policy, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string)
+	return strings.EqualFold(
+		strings.TrimSpace(policy),
+		dsl.ImportPreservedCredentialPolicyPreserve,
+	)
 }
 
 func validateImportBatchRootCredentials(script *dsl.Script, context importBatchCredentialContext) error {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -98,6 +99,34 @@ func TestScriptCorrelationActionGraphDigestIsCanonicalAndContentBound(t *testing
 		t.Fatal("HTTP default-header edit did not change the action-graph digest")
 	}
 	right.Config.HTTP.DefaultHeaders["X-Default"] = "one"
+	right.DataSources = []dsl.DataSource{{
+		Name:       "users",
+		Type:       "csv",
+		InlineData: "username,password\nalice,changed\n",
+		Strategy:   "sequential",
+	}}
+	changedDataSourceDigest, err := scriptCorrelationActionGraphDigest(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedDataSourceDigest == leftDigest {
+		t.Fatal("data-source edit did not change the action-graph digest")
+	}
+	right.DataSources = nil
+	right.Parameters = []dsl.Parameter{{
+		Name:       "username",
+		Type:       "file",
+		DataSource: "users",
+		Column:     "username",
+	}}
+	changedParameterDigest, err := scriptCorrelationActionGraphDigest(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedParameterDigest == leftDigest {
+		t.Fatal("parameter edit did not change the action-graph digest")
+	}
+	right.Parameters = nil
 	right.Actions[1].Body = `{"changed":true}`
 	changedDigest, err := scriptCorrelationActionGraphDigest(right)
 	if err != nil {
@@ -488,7 +517,7 @@ func TestAttestRecordingBaselineCapturePersistsExactSameProjectConversion(t *tes
 	if converted == nil || converted.Script == nil {
 		t.Fatal("recording conversion produced no script")
 	}
-	safeScript, _, err := applySuggestedSecretBindings(converted.Script, 0)
+	safeScript, err := preparePersistentImportedLibraryScript(converted.Script, nil, "recorder")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +526,7 @@ func TestAttestRecordingBaselineCapturePersistsExactSameProjectConversion(t *tes
 		t.Fatal("recording snapshot not found")
 	}
 	reconverted := recorder.ConvertSession(snapshot, safeScript.Name)
-	safeReconverted, _, err := applySuggestedSecretBindings(reconverted.Script, 0)
+	safeReconverted, err := preparePersistentImportedLibraryScript(reconverted.Script, nil, "recorder")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +579,7 @@ func TestAttestRecordingBaselineCaptureRejectsRequestConfigOverride(t *testing.T
 	if converted == nil || converted.Script == nil {
 		t.Fatal("recording conversion produced no script")
 	}
-	safeScript, _, err := applySuggestedSecretBindings(converted.Script, 0)
+	safeScript, err := preparePersistentImportedLibraryScript(converted.Script, nil, "recorder")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,6 +728,12 @@ func TestHandleCreateScriptRejectsUnattestedRecordingBindingBeforeStore(t *testi
 		t.Fatal(err)
 	}
 	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{
+		ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save project: %v", err)
+	}
 	server := NewServer(ServerConfig{Store: store})
 	proxyRecorder := recorder.New("127.0.0.1:0")
 	session, err := proxyRecorder.StartSessionForProject("proxy-session", "Checkout", "project-a", recorder.SessionFilters{}, nil)
@@ -735,5 +770,243 @@ func TestHandleCreateScriptRejectsUnattestedRecordingBindingBeforeStore(t *testi
 	}
 	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
 		t.Fatalf("stored scripts = %#v, rejected binding must not create a script", scripts)
+	}
+}
+
+func TestRecordingPreviewLineageSurvivesServerBindingButRejectsClientGraphEdit(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{
+		ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	session, err := server.recorder.StartSessionForProject(
+		"recording-lineage",
+		"Login",
+		"project-a",
+		recorder.SessionFilters{},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.BaseURL = "https://shop.example.test"
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq:          1,
+		Method:       http.MethodPost,
+		URL:          "https://shop.example.test/login",
+		Path:         "/login",
+		Headers:      map[string]string{"Authorization": "Bearer retained-login-token"},
+		Body:         `{"ordinary":"keep"}`,
+		ResponseBody: `{"session":"dynamic"}`,
+	})
+
+	previewRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/recorder/"+session.ID+"/convert/preview",
+		bytes.NewBufferString(`{"name":"Recorded login"}`),
+	)
+	previewRequest.Header.Set("Content-Type", "application/json")
+	previewResponse := httptest.NewRecorder()
+	server.mux.ServeHTTP(previewResponse, previewRequest)
+	if previewResponse.Code != http.StatusOK {
+		t.Fatalf("preview status = %d body=%s", previewResponse.Code, previewResponse.Body.String())
+	}
+	var preview struct {
+		Script       dsl.Script                 `json:"script"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(previewResponse.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Requirements) == 0 ||
+		importDraftAttestationToken(&preview.Script) == "" {
+		t.Fatalf("preview lacks credential lineage: %#v", preview)
+	}
+
+	edited := cloneScriptDefinition(&preview.Script)
+	edited.Actions[0].Target = "/unrelated"
+	editedPayload, _ := json.Marshal(map[string]any{
+		"project_id":                  "project-a",
+		"source_recording_session_id": session.ID,
+		"script":                      edited,
+	})
+	editedResponse := httptest.NewRecorder()
+	editedRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts",
+		bytes.NewReader(editedPayload),
+	)
+	editedRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(editedResponse, editedRequest)
+	if editedResponse.Code != http.StatusConflict {
+		t.Fatalf("client-edited graph status = %d body=%s", editedResponse.Code, editedResponse.Body.String())
+	}
+
+	credentialEdited := cloneScriptDefinition(&preview.Script)
+	if len(credentialEdited.Actions[0].HeaderList) > 0 {
+		credentialEdited.Actions[0].HeaderList[0].Value = "Bearer client-substituted-token"
+	} else {
+		credentialEdited.Actions[0].Headers["Authorization"] = "Bearer client-substituted-token"
+	}
+	credentialPayload, _ := json.Marshal(map[string]any{
+		"project_id":                  "project-a",
+		"source_recording_session_id": session.ID,
+		"script":                      credentialEdited,
+	})
+	credentialResponse := httptest.NewRecorder()
+	credentialRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts",
+		bytes.NewReader(credentialPayload),
+	)
+	credentialRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(credentialResponse, credentialRequest)
+	if credentialResponse.Code != http.StatusConflict {
+		t.Fatalf("client-edited credential status = %d body=%s", credentialResponse.Code, credentialResponse.Body.String())
+	}
+
+	dataSourceEdited := cloneScriptDefinition(&preview.Script)
+	dataSourceEdited.DataSources = append(dataSourceEdited.DataSources, dsl.DataSource{
+		Name:       "client_rows",
+		Type:       "csv",
+		InlineData: "password\nclient-substituted-password\n",
+		Strategy:   "sequential",
+	})
+	dataSourcePayload, _ := json.Marshal(map[string]any{
+		"project_id":                  "project-a",
+		"source_recording_session_id": session.ID,
+		"script":                      dataSourceEdited,
+	})
+	dataSourceResponse := httptest.NewRecorder()
+	dataSourceRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts",
+		bytes.NewReader(dataSourcePayload),
+	)
+	dataSourceRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(dataSourceResponse, dataSourceRequest)
+	if dataSourceResponse.Code != http.StatusConflict {
+		t.Fatalf("client-edited data source status = %d body=%s", dataSourceResponse.Code, dataSourceResponse.Body.String())
+	}
+
+	parameterEdited := cloneScriptDefinition(&preview.Script)
+	parameterEdited.Parameters = append(parameterEdited.Parameters, dsl.Parameter{
+		Name:   "client_password",
+		Type:   "list",
+		Values: []string{"client-substituted-password"},
+	})
+	parameterPayload, _ := json.Marshal(map[string]any{
+		"project_id":                  "project-a",
+		"source_recording_session_id": session.ID,
+		"script":                      parameterEdited,
+	})
+	parameterResponse := httptest.NewRecorder()
+	parameterRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts",
+		bytes.NewReader(parameterPayload),
+	)
+	parameterRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(parameterResponse, parameterRequest)
+	if parameterResponse.Code != http.StatusConflict {
+		t.Fatalf("client-edited parameter status = %d body=%s", parameterResponse.Code, parameterResponse.Body.String())
+	}
+
+	preserved := ensureScriptImportPreserved(&preview.Script, "recorder")
+	preserved["correlation_suggestions"] = []any{
+		map[string]any{"name": "session", "action_index": float64(0)},
+	}
+	bindings := make([]secretBindingSelection, 0, len(preview.Requirements))
+	for index, requirement := range preview.Requirements {
+		bindings = append(bindings, secretBindingSelection{
+			RequirementID: requirement.ID,
+			SecretName:    fmt.Sprintf("RECORDED_LOGIN_%d", index),
+		})
+	}
+	bindingPayload, _ := json.Marshal(applySecretBindingsRequest{
+		Script:   &preview.Script,
+		Bindings: bindings,
+	})
+	bindingResponse := httptest.NewRecorder()
+	bindingRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/secret-bindings/apply",
+		bytes.NewReader(bindingPayload),
+	)
+	bindingRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(bindingResponse, bindingRequest)
+	if bindingResponse.Code != http.StatusOK {
+		t.Fatalf("binding status = %d body=%s", bindingResponse.Code, bindingResponse.Body.String())
+	}
+	var bound struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(bindingResponse.Body.Bytes(), &bound); err != nil {
+		t.Fatal(err)
+	}
+	if importDraftAttestationToken(&bound.Script) == "" {
+		t.Fatal("server-owned binding lost recording lineage")
+	}
+
+	claimRequest := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", nil)
+	claim, err := server.claimImportDraftMutation(claimRequest, &bound.Script)
+	if err != nil {
+		t.Fatalf("claim bound recording lineage: %v", err)
+	}
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq:          2,
+		Method:       http.MethodGet,
+		URL:          "https://shop.example.test/account",
+		Path:         "/account",
+		ResponseBody: `{"account":"changed-after-preview"}`,
+	})
+	if _, err := server.attestRecordingBaselineCapture(
+		"project-a",
+		&bound.Script,
+		session.ID,
+		claim,
+	); !errors.Is(err, errRecordingCaptureUnattested) {
+		t.Fatalf("mutable recording snapshot attestation error = %v", err)
+	}
+	server.releaseImportDraftAttestation(claim)
+	session.Requests = session.Requests[:1]
+
+	createPayload, _ := json.Marshal(map[string]any{
+		"project_id":                  "project-a",
+		"source_recording_session_id": session.ID,
+		"script":                      bound.Script,
+	})
+	createResponse := httptest.NewRecorder()
+	createRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts",
+		bytes.NewReader(createPayload),
+	)
+	createRequest.Header.Set("Content-Type", "application/json")
+	server.mux.ServeHTTP(createResponse, createRequest)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("bound recording save status = %d body=%s", createResponse.Code, createResponse.Body.String())
+	}
+	var stored StoredScript
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(stored.ID) == "" {
+		t.Fatalf("stored response = %#v", stored)
+	}
+	baseline, err := store.GetScriptRecording(stored.ID)
+	if err != nil {
+		t.Fatalf("recording baseline: %v", err)
+	}
+	if baseline == nil || baseline.Source != "proxy_recording" ||
+		baseline.RequestCount != 1 {
+		t.Fatalf("recording baseline = %#v", baseline)
 	}
 }

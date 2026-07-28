@@ -16,6 +16,7 @@ import (
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/selector"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func newBrowserRecorderTestServer(t *testing.T, fake *fakeBrowserRecorderBackend) *Server {
@@ -489,6 +490,34 @@ func TestHandlePreviewBrowserRecordingConversionReturnsAllScriptsWithoutStoring(
 	}
 }
 
+func TestHandlePreviewBrowserRecordingConversionRejectsSaveOnlySecretBindings(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert/preview",
+		bytes.NewBufferString(`{
+			"name":"Checkout Preview",
+			"secret_bindings":[{
+				"requirement_id":"secret-binding-example",
+				"secret_name":"LOGIN_PASSWORD",
+				"script_index":0
+			}]
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("preview status = %d, want 400 body=%s", resp.Code, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("preview persisted %d script(s), want none", got)
+	}
+}
+
 func TestHandleConvertBrowserRecordingRequiresStop(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)
@@ -545,6 +574,213 @@ func TestHandleConvertBrowserRecordingStoresScript(t *testing.T) {
 	}
 }
 
+func TestHandleConvertBrowserRecordingRejectsChangedScriptCountBeforePersisting(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Checkout Saved","expected_script_count":2}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("convert status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("count mismatch persisted %d script(s), want none", got)
+	}
+}
+
+func TestHandleConvertBrowserRecordingAppliesReviewedParameterizationAtomically(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.StartURL = "https://shop.example/login?user_id=12345"
+	artifact.NavEvents[0].URL = artifact.StartURL
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	stoppedArtifact, info, ok := server.browserRecording.Artifact(id)
+	if !ok || stoppedArtifact == nil || info == nil {
+		t.Fatal("stopped browser artifact is unavailable")
+	}
+	preview := server.convertBrowserRecording(
+		stoppedArtifact,
+		info,
+		browserRecordingConvertRequest{Name: "Parameterized Browser"},
+	)
+	var selectedID string
+	for _, suggestion := range buildTrustedImportParameterization(preview.Script).Suggestions {
+		if suggestion.VarName == "user_id" {
+			selectedID = suggestion.ID
+			break
+		}
+	}
+	if selectedID == "" {
+		t.Fatalf(
+			"browser preview produced no trusted user_id parameterization: %#v",
+			buildTrustedImportParameterization(preview.Script).Suggestions,
+		)
+	}
+
+	requestBody, err := json.Marshal(map[string]any{
+		"name":                  "Parameterized Browser",
+		"expected_script_count": 1,
+		"parameterization_selections": []map[string]any{{
+			"script_index": 0,
+			"selected_ids": []string{selectedID},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewReader(requestBody),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	stored := server.runner.ListScripts()
+	if len(stored) != 1 || stored[0] == nil || stored[0].Script == nil {
+		t.Fatalf("stored scripts = %#v, want one script", stored)
+	}
+	foundParameterizedTarget := false
+	for _, action := range stored[0].Script.Actions {
+		foundParameterizedTarget = foundParameterizedTarget ||
+			strings.Contains(action.Target, "user_id={{var.user_id}}")
+	}
+	if !foundParameterizedTarget || len(stored[0].Script.Parameters) == 0 {
+		t.Fatalf(
+			"reviewed parameterization was not committed atomically: actions=%#v parameters=%#v",
+			stored[0].Script.Actions,
+			stored[0].Script.Parameters,
+		)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRejectsStaleParameterizationBeforePersisting(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{
+			"name":"Stale Parameterization",
+			"expected_script_count":1,
+			"parameterization_selections":[{
+				"script_index":0,
+				"selected_ids":["suggestion-from-an-old-preview"]
+			}]
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("convert status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("stale parameterization persisted %d script(s), want none", got)
+	}
+}
+
+func TestHandleConvertBrowserRecordingMasksCredentialRepeatedAsDetachedName(t *testing.T) {
+	const credentialName = "browser-name-password-canary"
+	artifact := recordedBrowserArtifact()
+	artifact.Steps[0].Masked = false
+	artifact.Steps[0].MarkSecret = true
+	artifact.Steps[0].Value = credentialName
+
+	server, store := newAuditTestServer(t)
+	defer store.Close()
+	stubBrowserRecordingDependencyProbe(t, nil)
+	if runtime.GOOS == "linux" {
+		t.Setenv("DISPLAY", ":0")
+	}
+	if err := store.SaveProject(&storage.Project{
+		ID:        "proj-1",
+		Name:      "Browser recorder project",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	fake := newFakeBrowserRecorder(artifact)
+	fake.install(server.browserRecording)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+	drainHubBroadcasts(t, server.hub)
+
+	body, err := json.Marshal(map[string]any{"name": credentialName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), credentialName) {
+		t.Fatalf("convert response disclosed credential repeated as script name: %s", resp.Body.String())
+	}
+
+	var converted map[string]any
+	for _, message := range drainHubBroadcasts(t, server.hub) {
+		if message["type"] == "browser_recording_converted" {
+			converted = message
+			break
+		}
+	}
+	if converted == nil {
+		t.Fatal("missing browser_recording_converted broadcast")
+	}
+	if got, _ := converted["script_name"].(string); got == credentialName || !strings.Contains(got, scrub.Redacted) {
+		t.Fatalf("converted broadcast script_name = %q, want disclosure-safe marker", got)
+	}
+
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{
+		Action:    "browser_recording.convert",
+		ProjectID: "proj-1",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("ListAuditEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("browser conversion audit events = %#v, want one", events)
+	}
+	if got, _ := events[0].Details["name"].(string); got == credentialName || !strings.Contains(got, scrub.Redacted) {
+		t.Fatalf("browser conversion audit name = %q, want disclosure-safe marker", got)
+	}
+
+	stored := server.runner.ListScripts()
+	if len(stored) != 1 || stored[0] == nil || stored[0].Script == nil {
+		t.Fatalf("stored scripts = %#v, want one durable script", stored)
+	}
+	if stored[0].Name != credentialName || stored[0].Script.Name != credentialName {
+		t.Fatalf("durable script name was altered: wrapper=%q script=%q", stored[0].Name, stored[0].Script.Name)
+	}
+}
+
 func TestHandleConvertBrowserRecordingRejectsMalformedJSONBeforePersisting(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)
@@ -563,7 +799,7 @@ func TestHandleConvertBrowserRecordingRejectsMalformedJSONBeforePersisting(t *te
 	}
 }
 
-func TestHandleConvertBrowserRecordingStoresOnlyGovernedSecretReferences(t *testing.T) {
+func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *testing.T) {
 	artifact := recordedBrowserArtifact()
 	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer browser-recorded-token"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
 	fake := newFakeBrowserRecorder(artifact)
@@ -580,6 +816,12 @@ func TestHandleConvertBrowserRecordingStoresOnlyGovernedSecretReferences(t *test
 	}
 	if strings.Contains(resp.Body.String(), "browser-recorded-token") {
 		t.Fatalf("convert response disclosed recorded credential: %s", resp.Body.String())
+	}
+	server.importDraftAttestationMu.Lock()
+	attestationCount := len(server.importDraftAttestations)
+	server.importDraftAttestationMu.Unlock()
+	if attestationCount != 0 {
+		t.Fatalf("already-committed browser response retained %d unused draft attestation(s)", attestationCount)
 	}
 	var payload struct {
 		SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
@@ -604,11 +846,209 @@ func TestHandleConvertBrowserRecordingStoresOnlyGovernedSecretReferences(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(storedJSON), "browser-recorded-token") || strings.Contains(string(storedJSON), scrub.Redacted) {
-		t.Fatalf("stored HTTP script contains credential material or sentinel: %s", storedJSON)
+	if !strings.Contains(string(storedJSON), "browser-recorded-token") {
+		t.Fatalf("durable HTTP script discarded recorded credential: %s", storedJSON)
 	}
-	if !strings.Contains(string(storedJSON), "{{secret.") {
-		t.Fatalf("stored HTTP script has no governed secret reference: %s", storedJSON)
+	if strings.Contains(string(storedJSON), "{{secret.") || strings.Contains(string(storedJSON), scrub.Redacted) {
+		t.Fatalf("durable HTTP script requires credential re-entry or contains a sentinel: %s", storedJSON)
+	}
+	if !isCredentialPreservingImport(httpScript.Script) {
+		t.Fatalf("stored HTTP script lacks server-owned preservation policy: %#v", httpScript.Script.Metadata)
+	}
+	readReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+httpScript.ID, nil)
+	readResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(readResp, readReq)
+	if readResp.Code != http.StatusOK {
+		t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
+	}
+	if strings.Contains(readResp.Body.String(), "browser-recorded-token") {
+		t.Fatalf("ordinary stored-script read disclosed HAR credential: %s", readResp.Body.String())
+	}
+}
+
+func TestHandleConvertBrowserRecordingSplitPreservesMarkedCapturedSecret(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	const captured = "split-captured-password"
+	artifact.Steps[0].Masked = false
+	artifact.Steps[0].MarkSecret = true
+	artifact.Steps[0].Value = captured
+	artifact.Markers = []recbrowser.Marker{
+		{Kind: recbrowser.MarkerTransactionStart, Name: "Login", Timestamp: artifact.StartedAt.Add(500 * time.Millisecond)},
+		{Kind: recbrowser.MarkerTransactionEnd, Name: "Login", Timestamp: artifact.StartedAt.Add(1500 * time.Millisecond)},
+		{Kind: recbrowser.MarkerTransactionStart, Name: "Checkout", Timestamp: artifact.StartedAt.Add(1750 * time.Millisecond)},
+		{Kind: recbrowser.MarkerTransactionEnd, Name: "Checkout", Timestamp: artifact.StartedAt.Add(2500 * time.Millisecond)},
+	}
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Split Secret","split_at_transactions":true}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), captured) {
+		t.Fatalf("saved split-import response disclosed captured secret: %s", resp.Body.String())
+	}
+
+	storedScripts := server.runner.ListScripts()
+	if len(storedScripts) != 2 {
+		t.Fatalf("stored split scripts = %d, want 2", len(storedScripts))
+	}
+	foundCaptured := false
+	for _, stored := range storedScripts {
+		if stored == nil || stored.Script == nil {
+			continue
+		}
+		if !isCredentialPreservingImport(stored.Script) {
+			t.Fatalf("split script lacks server-owned preservation policy: %#v", stored.Script.Metadata)
+		}
+		for _, action := range stored.Script.Actions {
+			if action.Type != "browser_fill" {
+				continue
+			}
+			foundCaptured = foundCaptured || action.Value == captured
+			if strings.HasPrefix(action.Value, "{{secret.") {
+				t.Fatalf("split browser fill requires credential re-entry: %#v", action)
+			}
+		}
+		readReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
+		readResp := httptest.NewRecorder()
+		server.mux.ServeHTTP(readResp, readReq)
+		if readResp.Code != http.StatusOK {
+			t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
+		}
+		if strings.Contains(readResp.Body.String(), captured) {
+			t.Fatalf("ordinary split-script read disclosed captured secret: %s", readResp.Body.String())
+		}
+	}
+	if !foundCaptured {
+		t.Fatalf("no durable split script retained %q", captured)
+	}
+}
+
+func TestHandleConvertBrowserRecordingAtomicallyAppliesExplicitSecretBinding(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	const captured = "operator-selected-browser-password"
+	artifact.Steps[0].Masked = false
+	artifact.Steps[0].MarkSecret = true
+	artifact.Steps[0].Value = captured
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	previewReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert/preview",
+		bytes.NewBufferString(`{"name":"Bound Browser Secret"}`),
+	)
+	previewReq.Header.Set("Content-Type", "application/json")
+	previewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(previewResp, previewReq)
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d body=%s", previewResp.Code, previewResp.Body.String())
+	}
+	var preview struct {
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	var selected SecretBindingRequirement
+	for _, requirement := range preview.Requirements {
+		if requirement.DestinationValuePreserved && requirement.Path == "/actions/2/value" {
+			selected = requirement
+			break
+		}
+	}
+	if selected.ID == "" {
+		t.Fatalf("preview requirements = %#v, want preserved browser-fill value", preview.Requirements)
+	}
+
+	requestBody, err := json.Marshal(map[string]any{
+		"name": "Bound Browser Secret",
+		"secret_bindings": []map[string]any{{
+			"requirement_id": selected.ID,
+			"secret_name":    selected.SuggestedName,
+			"script_index":   selected.ScriptIndex,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewReader(requestBody),
+	)
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(saveResp, saveReq)
+	if saveResp.Code != http.StatusCreated {
+		t.Fatalf("save status = %d body=%s", saveResp.Code, saveResp.Body.String())
+	}
+	if strings.Contains(saveResp.Body.String(), captured) {
+		t.Fatalf("save response disclosed captured credential: %s", saveResp.Body.String())
+	}
+
+	stored := server.runner.ListScripts()
+	if len(stored) != 1 || stored[0] == nil || stored[0].Script == nil {
+		t.Fatalf("stored scripts = %#v, want one script", stored)
+	}
+	wantReference := "{{secret." + selected.SuggestedName + "}}"
+	foundReference := false
+	for _, action := range stored[0].Script.Actions {
+		if action.Type != "browser_fill" {
+			continue
+		}
+		if action.Value == captured {
+			t.Fatalf("explicit project-secret choice was ignored in durable script: %#v", action)
+		}
+		foundReference = foundReference || action.Value == wantReference
+	}
+	if !foundReference {
+		t.Fatalf("durable script does not contain selected reference %q: %#v", wantReference, stored[0].Script.Actions)
+	}
+}
+
+func TestHandleConvertBrowserRecordingRejectsStaleSecretBindingBeforePersisting(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.Steps[0].Masked = false
+	artifact.Steps[0].MarkSecret = true
+	artifact.Steps[0].Value = "stale-binding-browser-password"
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{
+			"name":"Stale Browser Binding",
+			"secret_bindings":[{
+				"requirement_id":"secret-binding-from-an-old-preview",
+				"secret_name":"LOGIN_PASSWORD",
+				"script_index":0
+			}]
+		}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("save status = %d, want 409 body=%s", resp.Code, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("stale secret binding persisted %d script(s), want none", got)
 	}
 }
 

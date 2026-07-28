@@ -35,7 +35,7 @@ func sapGUIActionSpecs() []ActionSpec {
 			Fields: []FieldSpec{
 				{Name: "params.client", Kind: FieldKindString, Doc: "SAP client number."},
 				{Name: "params.user", Kind: FieldKindString, Doc: "Recorded username or template."},
-				{Name: "params.password", Kind: FieldKindString, Doc: "Password secret template."},
+				{Name: "params.password", Kind: FieldKindString, Doc: "Password secret template or retained imported value."},
 				{Name: "params.language", Kind: FieldKindString, Doc: "SAP logon language."},
 			},
 		},

@@ -2,6 +2,7 @@ package k6
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -107,7 +108,7 @@ http.del('https://api.example.com/items/1', '{"reason":"obsolete"}');
 	}
 }
 
-func TestConvertGovernsAndBlocksStaticURLUserinfo(t *testing.T) {
+func TestConvertPreservesStaticURLUserinfo(t *testing.T) {
 	t.Parallel()
 	const canary = "k6-userinfo-canary-71F4"
 	result, err := Convert(ImportRequest{
@@ -123,20 +124,19 @@ http.get('https://alice:` + canary + `@api.example.test/private');
 		t.Fatalf("actions = %#v", result.Script.Actions)
 	}
 	action := result.Script.Actions[0]
-	if !strings.Contains(action.Target, "{{secret.") ||
-		!strings.Contains(action.Target, "@api.example.test/private") ||
-		strings.Contains(action.Target, canary) {
-		t.Fatalf("projected target = %q", action.Target)
+	wantTarget := "https://alice:" + canary + "@api.example.test/private"
+	if action.Target != wantTarget {
+		t.Fatalf("target = %q, want preserved %q", action.Target, wantTarget)
 	}
-	if action.Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("metadata = %#v, want userinfo review gate", action.Metadata)
+	if action.Metadata["execution_blocker"] != nil {
+		t.Fatalf("preserved userinfo should remain executable: %#v", action.Metadata)
 	}
 	public, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(public), canary) {
-		t.Fatal("userinfo credential leaked in public conversion result")
+	if !strings.Contains(string(public), canary) {
+		t.Fatal("destination conversion result did not retain the userinfo credential")
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
 		strings.Contains(result.SourceReview.SourceFiles[0].Content, canary) {
@@ -204,18 +204,27 @@ http.post('https://api.example.com/orders', JSON.stringify(payload));
 	if second.Body != "" {
 		t.Fatalf("dynamic body was copied into executable material: %q", second.Body)
 	}
+	gatedSource, _ := result.Script.Metadata.Import.Preserved["k6_gated_source"].(string)
+	for _, retained := range []string{"credential-canary-k6", "JSON.stringify(payload)", "base +", "__ENV.TOKEN"} {
+		if !strings.Contains(gatedSource, retained) {
+			t.Fatalf("durable gated source omitted %q: %q", retained, gatedSource)
+		}
+	}
 	for i, action := range result.Script.Actions {
 		if got := action.Metadata["execution_blocker"]; got != "import_review_required" {
 			t.Fatalf("actions[%d] blocker = %#v", i, got)
 		}
 	}
-	payload, err := json.Marshal(result)
+	if result.SourceReview == nil {
+		t.Fatal("SourceReview is nil")
+	}
+	reviewPayload, err := json.Marshal(result.SourceReview)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{"credential-canary-k6", "JSON.stringify", "base +", "__ENV.TOKEN"} {
-		if strings.Contains(string(payload), forbidden) {
-			t.Fatalf("blocked script retained source expression %q: %s", forbidden, payload)
+		if strings.Contains(string(reviewPayload), forbidden) {
+			t.Fatalf("public source review retained source expression %q: %s", forbidden, reviewPayload)
 		}
 	}
 }
@@ -284,12 +293,16 @@ export default function () {
 		!result.SourceReview.SourceFiles[0].Redacted {
 		t.Fatalf("source review = %#v, want explicitly redacted source", result.SourceReview)
 	}
-	payload, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal result: %v", err)
+	gatedSource, _ := result.Script.Metadata.Import.Preserved["k6_gated_source"].(string)
+	if !strings.Contains(gatedSource, canary) {
+		t.Fatalf("durable gated source omitted residual credential: %q", gatedSource)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("complete conversion result disclosed residual canary: %s", payload)
+	reviewPayload, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("marshal source review: %v", err)
+	}
+	if strings.Contains(string(reviewPayload), canary) {
+		t.Fatalf("source review disclosed residual canary: %s", reviewPayload)
 	}
 }
 
@@ -302,15 +315,43 @@ func TestConvertStaticLiteralWithInvalidHeaderBecomesBlockedDraft(t *testing.T) 
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	if action.Target != "/line-item" || action.Headers["X-Test"] != "a b" {
+	if action.Target != "/line-item" || len(action.HeaderList) != 0 ||
+		len(action.Headers) != 0 {
 		t.Fatalf("decoded literal action = %#v", action)
 	}
 	if action.Metadata["execution_blocker"] != "import_review_required" {
 		t.Fatalf("unsafe header draft was not blocked: %#v", action.Metadata)
 	}
+	name, value := k6PreservedHeaderBytes(t, action)
+	if name != "X-Test" || value != "a\nb" {
+		t.Fatalf("preserved header = %q: %q, want exact decoded literal", name, value)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
 }
 
-func TestConvertProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *testing.T) {
+func TestConvertDuplicateHeadersOptionUsesLastJavaScriptProperty(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "duplicate options",
+		Content: `http.get("https://api.example.com/orders", {
+		  headers: {"X-Old": "must-not-survive", "X-Shared": "old"},
+		  headers: {"X-New": "effective", "X-Shared": "new"}
+		});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if _, exists := action.Headers["X-Old"]; exists {
+		t.Fatalf("headers = %#v, overridden JavaScript property survived", action.Headers)
+	}
+	if action.Headers["X-New"] != "effective" || action.Headers["X-Shared"] != "new" {
+		t.Fatalf("headers = %#v, want last JavaScript property value", action.Headers)
+	}
+}
+
+func TestConvertPreservesCredentialsAndIsDeterministic(t *testing.T) {
 	const (
 		urlCanary    = "k6-url-canary-7d1d"
 		headerCanary = "k6-header-canary-34ca"
@@ -332,34 +373,24 @@ func TestConvertProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *testin
 			t.Fatalf("run %d: actions = %d, want 1", run, len(result.Script.Actions))
 		}
 		action := result.Script.Actions[0]
-		if !strings.Contains(action.Target, "{{secret.") {
-			t.Fatalf("run %d: target = %q, want projected query credential", run, action.Target)
+		if action.Target != "/login?access_token="+urlCanary {
+			t.Fatalf("run %d: target = %q, want preserved query credential", run, action.Target)
 		}
-		if !strings.Contains(action.Headers["X-Api-Key"], "{{secret.") {
-			t.Fatalf("run %d: header = %q, want projected credential", run, action.Headers["X-Api-Key"])
+		if action.Headers["X-Api-Key"] != headerCanary {
+			t.Fatalf("run %d: header = %q, want preserved credential", run, action.Headers["X-Api-Key"])
 		}
-		if !strings.Contains(action.Body, `"password":"{{secret.`) ||
-			!strings.Contains(action.Body, `"note":"byte-exact"`) {
-			t.Fatalf("run %d: body = %q, want projected password with nonsensitive bytes retained", run, action.Body)
+		if action.Body != `{"password":"`+bodyCanary+`","note":"byte-exact"}` {
+			t.Fatalf("run %d: body = %q, want byte-exact imported body", run, action.Body)
 		}
-		if len(result.SecretRequirements) != 3 {
-			t.Fatalf("run %d: requirements = %#v, want URL/header/body requirements", run, result.SecretRequirements)
+		if len(result.SecretRequirements) != 0 {
+			t.Fatalf("run %d: preserved credentials unexpectedly require rebinding: %#v", run, result.SecretRequirements)
 		}
-		for _, requirement := range result.SecretRequirements {
-			if requirement.Value != "" || requirement.SourceValueAvailable {
-				t.Fatalf("run %d: public requirement retained protected material: %#v", run, requirement)
-			}
-		}
+		assertK6SourceReviewRedacted(t, result, urlCanary, headerCanary, bodyCanary)
 
 		result.Script.CreatedAt = time.Time{}
 		payload, err := json.Marshal(result)
 		if err != nil {
 			t.Fatalf("run %d: marshal result: %v", run, err)
-		}
-		for _, canary := range []string{urlCanary, headerCanary, bodyCanary} {
-			if strings.Contains(string(payload), canary) {
-				t.Fatalf("run %d: result disclosed canary %q: %s", run, canary, payload)
-			}
 		}
 		hash := sha256.Sum256(payload)
 		if run == 0 {
@@ -390,6 +421,55 @@ func mustConvert(t *testing.T) *ConvertResult {
 		t.Fatal(err)
 	}
 	return result
+}
+
+func assertK6SourceReviewRedacted(t *testing.T, result *ConvertResult, values ...string) {
+	t.Helper()
+	if result.SourceReview == nil {
+		t.Fatal("source review is missing")
+	}
+	payload, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range values {
+		if strings.Contains(string(payload), value) {
+			t.Fatalf("source review disclosed imported credential %q: %s", value, payload)
+		}
+	}
+}
+
+func k6PreservedHeaderBytes(t *testing.T, action dsl.Action) (string, string) {
+	t.Helper()
+	marker, ok := action.Metadata[dsl.ImportHeaderFidelityMetadataKey].(map[string]any)
+	if !ok {
+		t.Fatalf("missing header fidelity marker: %#v", action.Metadata)
+	}
+	var occurrence map[string]any
+	switch values := marker["omitted_occurrences"].(type) {
+	case []map[string]any:
+		if len(values) > 0 {
+			occurrence = values[0]
+		}
+	case []any:
+		if len(values) > 0 {
+			occurrence, _ = values[0].(map[string]any)
+		}
+	}
+	if occurrence == nil {
+		t.Fatalf("missing omitted occurrence: %#v", marker)
+	}
+	decode := func(key string) string {
+		t.Helper()
+		encoded, _ := occurrence[key].(string)
+		value, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			t.Fatalf("decode %s: %v", key, err)
+		}
+		return string(value)
+	}
+	return decode(dsl.ImportHeaderFidelityPreservedNameBase64Key),
+		decode(dsl.ImportHeaderFidelityPreservedValueBase64Key)
 }
 
 func contains(haystack, needle string) bool {

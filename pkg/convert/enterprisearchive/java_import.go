@@ -10,8 +10,11 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -184,6 +187,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	state.emitsTransactions, state.emitsActionTransactions, state.transactionMarkers, state.transactions = javaProgramTransactionStats(runtimeReachability)
 
 	result := convertJavaVuserRunnerDraft(files, opts, detected, program, append([]string(nil), parseWarnings...), state, projectConfig)
+	applyJavaVuserSourceSelectionGate(result, program)
 	appendJavaCombinedSourceMappingsForEntries(result, program, mappable.entries, externalLifecycle, runtimeReachability)
 	if blockers := javaVuserRunnerSemanticBlockers(runtimeReachability); len(blockers) > 0 {
 		if result.ReviewArtifact != nil {
@@ -218,10 +222,37 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	return result, nil
 }
 
+const javaVuserSourceSelectionExecutionBlocker = "java_source_selection_unresolved"
+
+func applyJavaVuserSourceSelectionGate(result *ConvertResult, program javaProgram) {
+	if result == nil || result.Script == nil || program.vuserSourceSelectionBlocker == "" {
+		return
+	}
+	_ = dslwalk.WalkActions(result.Script, func(ref dslwalk.ActionRef) error {
+		importreview.ApplyToAction(ref.Action, []importreview.Finding{{
+			Code:       javaVuserSourceSelectionExecutionBlocker,
+			Severity:   diag.Blocker,
+			Element:    "Java lifecycle source",
+			Detail:     "the declared Java action lifecycle source could not be resolved unambiguously; no alternate same-basename source was selected",
+			Location:   ref.Path,
+			ActionPath: ref.Path,
+			Source:     "enterprise_script_archive",
+			ReasonCode: javaVuserSourceSelectionExecutionBlocker,
+			SourceRef:  program.vuserSourceSelectionRef,
+			Resolution: "replace_behavior_and_remove_gate",
+			Gate:       importreview.GateExecution,
+		}})
+		return nil
+	})
+}
+
 func javaVuserSourceIntegrityBlockers(program javaProgram, projectConfig *ProjectConfig) []string {
 	blockers := javaVuserInstantiationBlockers(program)
 	blockers = append(blockers, javaVuserInheritanceBlockers(program)...)
 	blockers = append(blockers, javaVuserUnparsedSourceBlockers(program, projectConfig)...)
+	if program.vuserSourceSelectionBlocker != "" {
+		blockers = append(blockers, program.vuserSourceSelectionBlocker)
+	}
 	if len(program.Methods) == 0 {
 		blockers = append(blockers, javaVuserNoParseableSourceBlocker)
 		return uniqueSortedStrings(blockers)
@@ -1093,7 +1124,10 @@ func javaExternalLifecycleFileMatches(lifecycle, sourceFile string, projectConfi
 	declaredFiles := javaDeclaredLifecycleSourceFiles(lifecycle, projectConfig)
 	if len(declaredFiles) > 0 {
 		for _, declaredFile := range declaredFiles {
-			if javaSourcePathMatchRank(sourceFile, declaredFile) < 3 {
+			actual := javaNormalizedSourcePath(sourceFile)
+			configured := javaNormalizedSourcePath(declaredFile)
+			if actual == configured ||
+				(!strings.Contains(configured, "/") && filepath.Base(actual) == filepath.Base(configured)) {
 				return true
 			}
 		}
@@ -5145,6 +5179,9 @@ func javaVuserClassName(program javaProgram) string {
 }
 
 func javaVuserClass(program javaProgram) (javaClass, bool) {
+	if program.vuserSourceSelectionBlocker != "" {
+		return javaClass{}, false
+	}
 	if program.selectedVuserClassFile != "" {
 		for _, class := range program.Classes {
 			if javaSourcePathEqual(class.File, program.selectedVuserClassFile) &&
@@ -5178,8 +5215,13 @@ func javaVuserClass(program javaProgram) (javaClass, bool) {
 // LoadRunner archives may include backup or packaged Java sources; alphabetical
 // zip order must not redirect lifecycle execution to one of those classes.
 func javaProgramWithProjectVuserClass(program javaProgram, projectConfig *ProjectConfig) javaProgram {
-	class, ok := javaVuserClassForProject(program, projectConfig)
-	if !ok {
+	class, declared, blocker := javaVuserClassForProject(program, projectConfig)
+	if blocker != "" {
+		program.vuserSourceSelectionBlocker = blocker
+		program.vuserSourceSelectionRef = javaProjectActionLifecycleSource(projectConfig)
+		return program
+	}
+	if !declared {
 		return program
 	}
 	program.selectedVuserClassFile = class.File
@@ -5187,9 +5229,32 @@ func javaProgramWithProjectVuserClass(program javaProgram, projectConfig *Projec
 	return program
 }
 
-func javaVuserClassForProject(program javaProgram, projectConfig *ProjectConfig) (javaClass, bool) {
+func javaProjectActionLifecycleSource(projectConfig *ProjectConfig) string {
 	if projectConfig == nil {
-		return javaClass{}, false
+		return ""
+	}
+	for _, sourceFile := range projectConfig.SourceActionFiles {
+		if !strings.EqualFold(strings.TrimSpace(sourceFile.Language), "java") &&
+			!strings.HasSuffix(strings.ToLower(strings.TrimSpace(sourceFile.Name)), ".java") {
+			continue
+		}
+		phase := normalizeSourcePhase(sourceFile.Phase)
+		if phase == "" {
+			phase = sourceActionPhase(sourceFile.Name)
+		}
+		if phase == "action" {
+			return normalizeRuntimeArchivePath(sourceFile.Name)
+		}
+	}
+	return ""
+}
+
+func javaVuserClassForProject(
+	program javaProgram,
+	projectConfig *ProjectConfig,
+) (class javaClass, declared bool, blocker string) {
+	if projectConfig == nil {
+		return javaClass{}, false, ""
 	}
 	for _, sourceFile := range projectConfig.SourceActionFiles {
 		if !strings.EqualFold(strings.TrimSpace(sourceFile.Language), "java") &&
@@ -5203,40 +5268,80 @@ func javaVuserClassForProject(program javaProgram, projectConfig *ProjectConfig)
 		if phase != "action" {
 			continue
 		}
-		if class, ok := javaVuserClassForSourceFile(program, sourceFile.Name); ok {
-			return class, true
+		declared = true
+		class, candidates, ok := javaVuserClassForSourceFile(program, sourceFile.Name)
+		if ok {
+			return class, true, ""
 		}
+		pointer := normalizeRuntimeArchivePath(sourceFile.Name)
+		if len(candidates) > 1 {
+			return javaClass{}, true, fmt.Sprintf(
+				"Declared Java action lifecycle source %q matched multiple archive files (%s); runner-class selection is ambiguous and must be corrected before promotion.",
+				pointer,
+				strings.Join(candidates, ", "),
+			)
+		}
+		// Preserve the established Java-only recovery for a missing, generic
+		// unqualified Actions.java declaration: when exactly one parsed class
+		// owns action(), javaVuserClass can still identify it structurally.
+		// Qualified pointers and duplicate-basename matches never take this
+		// fallback.
+		if len(candidates) == 0 && !strings.Contains(pointer, "/") {
+			return javaClass{}, false, ""
+		}
+		return javaClass{}, true, fmt.Sprintf(
+			"Declared Java action lifecycle source %q could not be resolved exactly; no same-basename source was substituted and the declaration must be corrected before promotion.",
+			pointer,
+		)
 	}
-	return javaClass{}, false
+	return javaClass{}, false, ""
 }
 
-func javaVuserClassForSourceFile(program javaProgram, sourceFile string) (javaClass, bool) {
-	bestRank := 3
+func javaVuserClassForSourceFile(
+	program javaProgram,
+	sourceFile string,
+) (javaClass, []string, bool) {
+	configured := javaNormalizedSourcePath(sourceFile)
+	if configured == "" {
+		return javaClass{}, nil, false
+	}
+	files := make(map[string]string)
+	for _, class := range program.Classes {
+		normalized := javaNormalizedSourcePath(class.File)
+		if normalized != "" {
+			files[normalized] = class.File
+		}
+	}
+	matchedFiles := make([]string, 0)
+	if actual, ok := files[configured]; ok {
+		matchedFiles = append(matchedFiles, actual)
+	} else if !strings.Contains(configured, "/") {
+		for normalized, actual := range files {
+			if filepath.Base(normalized) == filepath.Base(configured) {
+				matchedFiles = append(matchedFiles, actual)
+			}
+		}
+	}
+	matchedFiles = uniqueSortedStrings(matchedFiles)
+	if len(matchedFiles) != 1 {
+		return javaClass{}, matchedFiles, false
+	}
+	resolvedFile := javaNormalizedSourcePath(matchedFiles[0])
 	matches := make([]javaClass, 0)
 	for _, class := range program.Classes {
-		rank := javaSourcePathMatchRank(class.File, sourceFile)
-		if rank > bestRank {
-			continue
+		if javaNormalizedSourcePath(class.File) == resolvedFile {
+			matches = append(matches, class)
 		}
-		if rank < bestRank {
-			bestRank = rank
-			matches = matches[:0]
-		}
-		matches = append(matches, class)
-	}
-	if len(matches) == 0 || bestRank == 3 {
-		return javaClass{}, false
 	}
 
-	normalizedSourceFile := javaNormalizedSourcePath(sourceFile)
-	baseType := strings.TrimSuffix(filepath.Base(normalizedSourceFile), filepath.Ext(normalizedSourceFile))
+	baseType := strings.TrimSuffix(filepath.Base(resolvedFile), filepath.Ext(resolvedFile))
 	for _, requireAction := range []bool{true, false} {
 		for _, class := range matches {
 			if requireAction != javaClassHasLifecycleMethod(class, "action") {
 				continue
 			}
 			if strings.EqualFold(strings.TrimSpace(class.Name), baseType) {
-				return class, true
+				return class, matchedFiles, true
 			}
 		}
 		for _, class := range matches {
@@ -5244,16 +5349,16 @@ func javaVuserClassForSourceFile(program javaProgram, sourceFile string) (javaCl
 				continue
 			}
 			if strings.EqualFold(strings.TrimSpace(class.Name), "Actions") {
-				return class, true
+				return class, matchedFiles, true
 			}
 		}
 		for _, class := range matches {
 			if requireAction == javaClassHasLifecycleMethod(class, "action") {
-				return class, true
+				return class, matchedFiles, true
 			}
 		}
 	}
-	return javaClass{}, false
+	return javaClass{}, matchedFiles, false
 }
 
 func javaClassHasLifecycleMethod(class javaClass, lifecycle string) bool {
@@ -5494,6 +5599,8 @@ func convertJavaEnvPut(result *ConvertResult, state *javaImportState, files map[
 				result.Script.Config.JMS.Properties = map[string]string{}
 			}
 			result.Script.Config.JMS.Properties["recorded_username"] = user
+			result.Script.Config.JMS.Properties["recorded_security_principal"] = value
+			result.Script.Config.JMS.Username = user
 			if result.Script.Config.JMS.MessageVPN == "" {
 				result.Script.Config.JMS.MessageVPN = vpn
 			}
@@ -5502,12 +5609,12 @@ func convertJavaEnvPut(result *ConvertResult, state *javaImportState, files map[
 				result.Script.Config.JMS.Properties = map[string]string{}
 			}
 			result.Script.Config.JMS.Properties["recorded_username"] = value
+			result.Script.Config.JMS.Username = value
 		}
-		result.Script.Config.JMS.Username = "{{secret.jms_username}}"
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s line %d: JMS username was replaced with {{secret.jms_username}}.", statement.File, statement.StartLine))
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s line %d: JMS username was retained in the durable destination for review.", statement.File, statement.StartLine))
 	case "security_credentials", "password":
-		result.Script.Config.JMS.Password = "{{secret.jms_password}}"
-		result.Warnings = append(result.Warnings, fmt.Sprintf("%s line %d: literal JMS credential was replaced with {{secret.jms_password}}.", statement.File, statement.StartLine))
+		result.Script.Config.JMS.Password = value
+		result.Warnings = append(result.Warnings, fmt.Sprintf("%s line %d: JMS password was retained in the durable destination and is masked on ordinary reads.", statement.File, statement.StartLine))
 	case "solace_jms_vpn", "message_vpn":
 		result.Script.Config.JMS.MessageVPN = value
 	case "trust_store", "truststore", "ssl_trust_store", "ssl_truststore":

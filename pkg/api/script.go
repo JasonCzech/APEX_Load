@@ -43,7 +43,10 @@ type conditionalScriptDeletePersistence interface {
 	DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error)
 }
 
-var errScriptConcurrentChange = errors.New("script changed concurrently; reload and retry")
+var (
+	errScriptConcurrentChange           = errors.New("script changed concurrently; reload and retry")
+	errScriptCredentialBindingsRequired = errors.New("script contains executable credentials that require logical secret bindings")
+)
 
 func validatePersistentLibraryScript(script *dsl.Script) error {
 	if isCIScriptSnapshot(script) {
@@ -53,25 +56,186 @@ func validatePersistentLibraryScript(script *dsl.Script) error {
 }
 
 // preparePersistentLibraryScript is the final defense shared by every durable
-// library write. HTTP handlers provide richer structured binding responses,
-// but internal import/sync/authoring callers must not be able to bypass the
-// invariant: executable credentials require {{secret.*}} references, and only
-// the disclosure-safe projection may reach storage.
+// library write.
+//
+// Imported scripts are a deliberate exception to the ordinary authoring
+// projection: the importing operator already possessed the source credential,
+// and import fidelity requires the durable execution copy to retain it. Read,
+// export, federation, and source-control responses still pass through
+// maskScriptSecrets. On a masked read-modify-write, reconciliation restores
+// unchanged durable values from prior rather than asking the operator to enter
+// them again.
 func preparePersistentLibraryScript(script, prior *dsl.Script) (*dsl.Script, error) {
-	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
+	return preparePersistentLibraryScriptWithImportTrust(script, prior, false, "")
+}
+
+// preparePersistentImportedLibraryScript is the only create-time entry point
+// that may establish the credential-preserving import policy. Callers must
+// already be inside an authenticated importer commit/session workflow; ordinary
+// script JSON is never an attestation, even if a client forges the same metadata
+// marker.
+func preparePersistentImportedLibraryScript(
+	script, prior *dsl.Script,
+	sourceProfile string,
+) (*dsl.Script, error) {
+	return preparePersistentLibraryScriptWithImportTrust(
+		script,
+		prior,
+		true,
+		sourceProfile,
+	)
+}
+
+func preparePersistentLibraryScriptWithImportTrust(
+	script, prior *dsl.Script,
+	trustedImport bool,
+	sourceProfile string,
+) (*dsl.Script, error) {
+	candidate := cloneScriptDefinition(script)
+	if candidate == nil {
+		return nil, fmt.Errorf("failed to clone script for persistence")
+	}
+	// This opaque, short-lived capability authorizes one compatibility save;
+	// it is never durable import provenance and must not enter storage.
+	stripImportDraftAttestation(candidate)
+	script = candidate
+	// Only an authenticated importer commit or a durable server-owned prior may
+	// carry exact credential-bearing JVM argv. Structural/process-control
+	// validation remains universal.
+	preserveImportedCredentials := trustedImport || isCredentialPreservingImport(prior)
+	if err := validateJavaVMParameterSafety(script, preserveImportedCredentials); err != nil {
 		return nil, err
+	}
+	// A durable prior marker is server-owned evidence because ordinary create
+	// paths below cannot establish it. This permits masked read-modify-write
+	// without requiring credential re-entry while rejecting a forged marker on
+	// a new or previously ordinary script.
+	if preserveImportedCredentials {
+		preserved := script
+		if trustedImport {
+			// Adapter provenance is selected by the authenticated import route,
+			// never by the submitted draft. Besides being audit evidence, the
+			// profile controls source-specific gates and reconciliation rules.
+			// Stamp it even when a client supplied a different non-empty value.
+			if strings.TrimSpace(sourceProfile) == "" && prior != nil &&
+				prior.Metadata != nil && prior.Metadata.Import != nil {
+				sourceProfile = prior.Metadata.Import.Source
+			}
+			if preserved.Metadata == nil {
+				preserved.Metadata = &dsl.ScriptMetadata{}
+			}
+			if preserved.Metadata.Import == nil {
+				preserved.Metadata.Import = &dsl.ImportMetadata{}
+			}
+			preserved.Metadata.Import.Source = strings.TrimSpace(sourceProfile)
+		}
+		if prior != nil && prior.Metadata != nil && prior.Metadata.Import != nil {
+			if !trustedImport {
+				// Source profile is durable server-owned provenance. An ordinary
+				// editor may omit it but cannot relabel an imported script to a
+				// different adapter profile (which can also change
+				// source-specific replay-gate interpretation).
+				sourceProfile = prior.Metadata.Import.Source
+				if preserved.Metadata == nil {
+					preserved.Metadata = &dsl.ScriptMetadata{}
+				}
+				if preserved.Metadata.Import == nil {
+					preserved.Metadata.Import = &dsl.ImportMetadata{}
+				}
+				preserved.Metadata.Import.Source = sourceProfile
+			}
+		}
+		// Import provenance is server-owned durable state. An ordinary editor may
+		// omit or mask it, but cannot erase the attestation while executable
+		// imported values are being reconciled from the durable prior.
+		ensureCredentialPreservingImportMetadata(preserved, sourceProfile)
+		if err := reconcileMaskedScriptSecrets(preserved, prior); err != nil {
+			return nil, err
+		}
+		if !trustedImport && prior != nil {
+			if err := restoreServerOwnedImportSecurityMetadata(
+				preserved,
+				prior,
+			); err != nil {
+				return nil, err
+			}
+		}
+		if err := sanitizePersistentImportReviewSurfaces(preserved); err != nil {
+			return nil, err
+		}
+		if !trustedImport && prior != nil {
+			if err := validatePreservedImportCredentialEdits(preserved, prior); err != nil {
+				return nil, err
+			}
+		}
+		return preserved, nil
 	}
 	projected := maskScriptSecrets(script)
 	if projected == nil {
 		return nil, fmt.Errorf("failed to project script for durable secret binding")
 	}
 	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-		return nil, fmt.Errorf("script contains executable credentials that require logical secret bindings")
+		return nil, errScriptCredentialBindingsRequired
 	}
 	if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
 		return nil, err
 	}
+	if err := sanitizePersistentImportReviewSurfaces(projected); err != nil {
+		return nil, err
+	}
 	return projected, nil
+}
+
+func ensureCredentialPreservingImportMetadata(script *dsl.Script, sourceProfile string) {
+	if script == nil {
+		return
+	}
+	sourceProfile = strings.TrimSpace(sourceProfile)
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		script.Metadata.Import.Source = sourceProfile
+	}
+	markCredentialPreservingImportScript(script)
+}
+
+func isCredentialPreservingImport(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		return false
+	}
+	policy, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string)
+	return strings.EqualFold(
+		strings.TrimSpace(policy),
+		dsl.ImportPreservedCredentialPolicyPreserve,
+	)
+}
+
+// validateStoredExecutionScript is for server-owned durable import/session
+// snapshots. A trusted import may retain credential-bearing Java VM argv, but
+// all ordinary DSL validation and every structural JVM option rule still
+// applies.
+func validateStoredExecutionScript(script *dsl.Script) []string {
+	if isCredentialPreservingImport(script) {
+		return dsl.ValidateScriptIssuesWithPreservedImportCredentials(script)
+	}
+	return dsl.ValidateScriptIssues(script)
+}
+
+func markCredentialPreservingImportScript(script *dsl.Script) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
+		strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		return
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =
+		dsl.ImportPreservedCredentialPolicyPreserve
 }
 
 func (tr *TestRunner) rejectActivePrivateCISnapshotMutationLocked(id string) error {
@@ -239,7 +403,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 		_, supportsCreateOnly := tr.scriptStore.(createOnlyScriptPersistence)
 		_, supportsCAS := tr.scriptStore.(conditionalScriptPersistence)
 		if !supportsCreateOnly || !supportsCAS {
-			if err := tr.saveStoredScript(script); err != nil {
+			if err := tr.saveStoredScriptWithImportTrust(script, prior, false, ""); err != nil {
 				return nil, err
 			}
 		} else {
@@ -299,7 +463,7 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 // an existing durable ID. It is idempotent for an identical prior create, which
 // lets an interrupted authoring approval resume safely across HA replicas.
 func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, error) {
-	stored, _, err := tr.createScriptDurable(script, false)
+	stored, _, err := tr.createScriptDurable(script, false, false, "")
 	return stored, err
 }
 
@@ -313,7 +477,20 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 // the outcome was invisible, so a retrying client could not distinguish "I
 // created this" from "this was already committed" and had to assume the former.
 func (tr *TestRunner) CreateScriptDurableReportingReplay(script *dsl.Script) (*StoredScript, bool, error) {
-	return tr.createScriptDurable(script, false)
+	return tr.createScriptDurable(script, false, false, "")
+}
+
+// CreateImportedScriptDurableReportingReplay is restricted to authenticated
+// importer commit workflows. It establishes the server-owned preservation
+// marker and retains imported executable credential values.
+func (tr *TestRunner) CreateImportedScriptDurableReportingReplay(
+	script *dsl.Script,
+	sourceProfile string,
+) (*StoredScript, bool, error) {
+	if strings.TrimSpace(sourceProfile) == "" {
+		return nil, false, fmt.Errorf("import source profile is required")
+	}
+	return tr.createScriptDurable(script, false, true, sourceProfile)
 }
 
 func (tr *TestRunner) createAuthoringApprovedScriptDurable(script *dsl.Script) (*StoredScript, error) {
@@ -322,11 +499,26 @@ func (tr *TestRunner) createAuthoringApprovedScriptDurable(script *dsl.Script) (
 			return nil, fmt.Errorf("Java Vuser authoring approval evidence is missing")
 		}
 	}
-	stored, _, err := tr.createScriptDurable(script, true)
+	trustedImport := isCredentialPreservingImport(script)
+	sourceProfile := ""
+	if trustedImport && script.Metadata != nil && script.Metadata.Import != nil {
+		sourceProfile = script.Metadata.Import.Source
+	}
+	stored, _, err := tr.createScriptDurable(
+		script,
+		true,
+		trustedImport,
+		sourceProfile,
+	)
 	return stored, err
 }
 
-func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJava bool) (*StoredScript, bool, error) {
+func (tr *TestRunner) createScriptDurable(
+	script *dsl.Script,
+	authoringApprovedJava bool,
+	trustedImport bool,
+	sourceProfile string,
+) (*StoredScript, bool, error) {
 	created := true
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
@@ -346,7 +538,13 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
 		return nil, false, err
 	}
-	projected, err := preparePersistentLibraryScript(script, nil)
+	var projected *dsl.Script
+	var err error
+	if trustedImport {
+		projected, err = preparePersistentImportedLibraryScript(script, nil, sourceProfile)
+	} else {
+		projected, err = preparePersistentLibraryScript(script, nil)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -378,7 +576,7 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 			}
 			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 		}
-		created, err := store.CreateScriptIfAbsent(script)
+		created, err = store.CreateScriptIfAbsent(script)
 		if err != nil {
 			return nil, false, err
 		}
@@ -409,7 +607,7 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 			}
 			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 		}
-		if err := tr.saveStoredScript(script); err != nil {
+		if err := tr.saveStoredScriptWithImportTrust(script, nil, trustedImport, sourceProfile); err != nil {
 			return nil, false, err
 		}
 	}
@@ -500,7 +698,7 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 		if current == nil || current.Script == nil || !equivalentCreateOnlyScript(current.Script, expected) {
 			return nil, false, nil
 		}
-		if err := tr.saveStoredScript(script); err != nil {
+		if err := tr.saveStoredScriptWithImportTrust(script, expected, false, ""); err != nil {
 			return nil, false, err
 		}
 	}
@@ -654,7 +852,12 @@ func (tr *TestRunner) ReplayScript(id string, opts engine.ReplayOptions) (*engin
 	}
 	script := cloneScriptDefinition(stored.Script)
 	tr.mu.RUnlock()
-	return tr.ReplayScriptDefinition(script, opts)
+	return tr.replayScriptDefinitionContext(
+		context.Background(),
+		script,
+		opts,
+		isCredentialPreservingImport(script),
+	)
 }
 
 func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
@@ -662,11 +865,27 @@ func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.Rep
 }
 
 func (tr *TestRunner) ReplayScriptDefinitionContext(ctx context.Context, script *dsl.Script, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
+	return tr.replayScriptDefinitionContext(ctx, script, opts, false)
+}
+
+func (tr *TestRunner) replayScriptDefinitionContext(
+	ctx context.Context,
+	script *dsl.Script,
+	opts engine.ReplayOptions,
+	trustedPreservedImport bool,
+) (*engine.ReplayReport, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	issues := dsl.ValidateScriptIssues(script)
+	if trustedPreservedImport {
+		issues = validateStoredExecutionScript(script)
+	}
+	if len(issues) > 0 {
+		return nil, fmt.Errorf("script is invalid: %s", strings.Join(issues, "; "))
 	}
 	if err := replayReviewGateError(script); err != nil {
 		return nil, err
@@ -810,7 +1029,9 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 // ID's delete/recreate window from turning a previously authorized request into
 // a cross-project overwrite.
 func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script, expectedProjectID string) (*StoredScript, bool, error) {
-	return tr.updateScriptDurableInProject(id, script, expectedProjectID, time.Time{}, "", "", time.Time{})
+	return tr.updateScriptDurableInProject(
+		id, script, expectedProjectID, time.Time{}, "", "", time.Time{}, false, "",
+	)
 }
 
 // UpdateScriptDurableInProjectIfUnchanged applies a mutation only when the
@@ -823,7 +1044,47 @@ func (tr *TestRunner) UpdateScriptDurableInProjectIfUnchanged(id string, script 
 	if expectedUpdatedAt.IsZero() || strings.TrimSpace(expectedActionGraphDigest) == "" {
 		return nil, false, fmt.Errorf("script mutation requires an original timestamp and action-graph digest")
 	}
-	return tr.updateScriptDurableInProject(id, script, expectedProjectID, expectedUpdatedAt, expectedActionGraphDigest, "", time.Time{})
+	return tr.updateScriptDurableInProject(
+		id,
+		script,
+		expectedProjectID,
+		expectedUpdatedAt,
+		expectedActionGraphDigest,
+		"",
+		time.Time{},
+		false,
+		"",
+	)
+}
+
+// UpdateImportedScriptDurableInProjectIfUnchanged is the replace-mode
+// counterpart to CreateImportedScriptDurableReportingReplay. The authenticated
+// import workflow, not caller-controlled metadata, authorizes preservation.
+func (tr *TestRunner) UpdateImportedScriptDurableInProjectIfUnchanged(
+	id string,
+	script *dsl.Script,
+	expectedProjectID string,
+	expectedUpdatedAt time.Time,
+	expectedActionGraphDigest string,
+	sourceProfile string,
+) (*StoredScript, bool, error) {
+	if expectedUpdatedAt.IsZero() || strings.TrimSpace(expectedActionGraphDigest) == "" {
+		return nil, false, fmt.Errorf("script mutation requires an original timestamp and action-graph digest")
+	}
+	if strings.TrimSpace(sourceProfile) == "" {
+		return nil, false, fmt.Errorf("import source profile is required")
+	}
+	return tr.updateScriptDurableInProject(
+		id,
+		script,
+		expectedProjectID,
+		expectedUpdatedAt,
+		expectedActionGraphDigest,
+		"",
+		time.Time{},
+		true,
+		sourceProfile,
+	)
 }
 
 // UpdateScriptDurableInProjectIfUnchangedAndCorrelationRulesetCurrent adds an
@@ -853,6 +1114,8 @@ func (tr *TestRunner) UpdateScriptDurableInProjectIfUnchangedAndCorrelationRules
 		expectedActionGraphDigest,
 		rulesetID,
 		expectedRulesetUpdatedAt,
+		false,
+		"",
 	)
 }
 
@@ -864,6 +1127,8 @@ func (tr *TestRunner) updateScriptDurableInProject(
 	expectedActionGraphDigest string,
 	rulesetID string,
 	expectedRulesetUpdatedAt time.Time,
+	trustedImport bool,
+	sourceProfile string,
 ) (*StoredScript, bool, error) {
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
@@ -904,7 +1169,12 @@ func (tr *TestRunner) updateScriptDurableInProject(
 			return nil, false, errScriptConcurrentChange
 		}
 	}
-	projected, err := preparePersistentLibraryScript(script, current)
+	var projected *dsl.Script
+	if trustedImport {
+		projected, err = preparePersistentImportedLibraryScript(script, current, sourceProfile)
+	} else {
+		projected, err = preparePersistentLibraryScript(script, current)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -980,7 +1250,12 @@ func (tr *TestRunner) updateScriptDurableInProject(
 				return nil, false, errScriptConcurrentChange
 			}
 		} else if store, ok := tr.scriptStore.(conditionalScriptPersistence); !ok {
-			if err := tr.saveStoredScript(script); err != nil {
+			if err := tr.saveStoredScriptWithImportTrust(
+				script,
+				current,
+				trustedImport,
+				sourceProfile,
+			); err != nil {
 				return nil, false, err
 			}
 		} else {

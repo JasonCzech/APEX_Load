@@ -25,6 +25,28 @@ func TestDatabaseInitRejectsUnboundedQueryTimeout(t *testing.T) {
 	}
 }
 
+func TestDatabasePostgresDSLDriverSelectsBundledPGX(t *testing.T) {
+	if got := normalizeDriver("postgres"); got != "pgx" {
+		t.Fatalf("normalizeDriver(postgres) = %q, want bundled pgx database/sql driver", got)
+	}
+	if err := validateDatabaseDriver("postgres"); err != nil {
+		t.Fatalf("public postgres driver rejected: %v", err)
+	}
+	if err := validateDatabaseDriver("pgx"); err == nil {
+		t.Fatal("internal pgx spelling must not become a public DSL driver")
+	}
+	registered := false
+	for _, driverName := range sql.Drivers() {
+		if driverName == "pgx" {
+			registered = true
+			break
+		}
+	}
+	if !registered {
+		t.Fatal("bundled pgx database/sql driver is not registered")
+	}
+}
+
 func TestDatabaseInitEnforcesResolvedCITargetPolicy(t *testing.T) {
 	tests := []struct {
 		name string

@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -11,7 +12,7 @@ import (
 )
 
 const (
-	importHeaderFidelityMetadataKey      = "import_header_fidelity"
+	importHeaderFidelityMetadataKey      = ImportHeaderFidelityMetadataKey
 	importHTTPVersionFidelityMetadataKey = "import_http_version_fidelity"
 	importReviewRequiredBlocker          = "import_review_required"
 )
@@ -355,8 +356,47 @@ func validateImportHeaderFidelityMarker(label string, raw any) ([]string, []stri
 				issues = append(issues, fmt.Sprintf("%s.source_ref %q is missing from %s.source_refs", occurrenceLabel, sourceRef, importHeaderFidelityMetadataKey))
 			}
 		}
+		nameBytes, hasNameBytes := occurrence[ImportHeaderFidelityPreservedNameBase64Key]
+		valueBytes, hasValueBytes := occurrence[ImportHeaderFidelityPreservedValueBase64Key]
+		if hasNameBytes != hasValueBytes {
+			issues = append(issues, fmt.Sprintf(
+				"%s must contain both %s and %s",
+				occurrenceLabel,
+				ImportHeaderFidelityPreservedNameBase64Key,
+				ImportHeaderFidelityPreservedValueBase64Key,
+			))
+			continue
+		}
+		if hasNameBytes {
+			issues = append(
+				issues,
+				validateCanonicalBase64MetadataField(
+					occurrenceLabel+"."+ImportHeaderFidelityPreservedNameBase64Key,
+					nameBytes,
+				)...,
+			)
+			issues = append(
+				issues,
+				validateCanonicalBase64MetadataField(
+					occurrenceLabel+"."+ImportHeaderFidelityPreservedValueBase64Key,
+					valueBytes,
+				)...,
+			)
+		}
 	}
 	return sortedStringSet(markerReasons), issues
+}
+
+func validateCanonicalBase64MetadataField(label string, raw any) []string {
+	value, ok := raw.(string)
+	if !ok {
+		return []string{label + " must be a base64 string"}
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || base64.StdEncoding.EncodeToString(decoded) != value {
+		return []string{label + " must use canonical base64 encoding"}
+	}
+	return nil
 }
 
 func validateImportHTTPVersionFidelityMarker(label string, raw any) (string, []string) {

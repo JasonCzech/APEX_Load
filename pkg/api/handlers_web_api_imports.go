@@ -113,19 +113,6 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections, agentforceTransformRequested(r))
-	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Summary:             result.Summary,
-		UnsupportedElements: result.Unsupported.Strings(),
-		Correlations:        result.Correlations,
-		ReviewSections:      reviewSections,
-		SourceReview:        result.SourceReview,
-		Parameterization:    buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
-		Preflight:           preflight,
-	})
 	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
 		r,
 		"openapi",
@@ -133,6 +120,26 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		protectedRequirements,
 		importCandidateSource{Bytes: importReq.Data, Format: "openapi"},
 	)
+	reusesCandidateForDraftAttestation := attachImportCandidateDraftAttestation(
+		result.Script,
+		"openapi",
+		sessionID,
+		sessionErr,
+	)
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		Result:               result,
+		Script:               result.Script,
+		Warnings:             result.Warnings,
+		Stats:                result.Stats,
+		Summary:              result.Summary,
+		UnsupportedElements:  result.Unsupported.Strings(),
+		Correlations:         result.Correlations,
+		ReviewSections:       reviewSections,
+		SourceReview:         result.SourceReview,
+		Parameterization:     buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
+		Preflight:            preflight,
+		SkipDraftAttestation: reusesCandidateForDraftAttestation,
+	})
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
 	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
 		protectedCredentialReview = s.attachProtectedImportCredentialMigration(
@@ -144,7 +151,36 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
-	writeJSON(w, http.StatusOK, response)
+	writeScriptImportResponse(w, http.StatusOK, response)
+}
+
+// attachImportCandidateDraftAttestation lets the editable legacy save path and
+// the protected commit path consume the same one-shot candidate. Without this
+// binding, response construction allocates a second protected candidate solely
+// for the legacy attestation and a successful import leaves that extra capacity
+// slot occupied until expiry.
+func attachImportCandidateDraftAttestation(
+	script *dsl.Script,
+	profile string,
+	sessionID string,
+	sessionErr error,
+) bool {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionErr != nil || sessionID == "" || script == nil {
+		return false
+	}
+	fingerprint, err := fingerprintImportDraftCredentials(script)
+	if err == nil && fingerprint.HasRawCredentials {
+		preserved := ensureScriptImportPreserved(script, profile)
+		preserved[importDraftAttestationMetadataKey] =
+			importDraftProtectedTokenPrefix + sessionID
+	}
+	// Even when the script has no raw credential, the caller has already
+	// allocated its only protected candidate and no draft attestation is
+	// necessary. If fingerprinting fails, the protected commit remains usable;
+	// allocating a second candidate would not make the malformed legacy draft
+	// attestable.
+	return true
 }
 
 func (s *Server) handleOpenAPISupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +285,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 	}
 	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections, agentforceTransformRequested(r))
 
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -259,7 +295,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      reviewSections,
 		Parameterization:    buildImportParameterization(result.Script, nil),
 		Preflight:           preflight,
-	}))
+	})
 }
 
 func ramlSummaryReportsPolicy(summary raml.ReviewSummary, policy string) bool {
@@ -460,7 +496,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	preflight := buildAndAttachImportPreflight(result.Script, "wsdl", issues, result.Warnings)
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -471,7 +507,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
 		Preflight:           preflight,
-	}))
+	})
 }
 
 func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
@@ -525,19 +561,6 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransform)
-	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Summary:             result.Summary,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      reviewSections,
-		SourceReview:        result.SourceReview,
-		Correlations:        result.Correlations,
-		Parameterization:    buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
-		Preflight:           preflight,
-	})
 	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
 		r,
 		"postman",
@@ -545,6 +568,26 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		protectedRequirements,
 		importCandidateSource{Bytes: importReq.Data, Format: "postman"},
 	)
+	reusesCandidateForDraftAttestation := attachImportCandidateDraftAttestation(
+		result.Script,
+		"postman",
+		sessionID,
+		sessionErr,
+	)
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		Result:               result,
+		Script:               result.Script,
+		Warnings:             result.Warnings,
+		Stats:                result.Stats,
+		Summary:              result.Summary,
+		UnsupportedElements:  result.Unsupported.Strings(),
+		ReviewSections:       reviewSections,
+		SourceReview:         result.SourceReview,
+		Correlations:         result.Correlations,
+		Parameterization:     buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
+		Preflight:            preflight,
+		SkipDraftAttestation: reusesCandidateForDraftAttestation,
+	})
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
 	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
 		protectedCredentialReview = s.attachProtectedImportCredentialMigration(
@@ -556,7 +599,7 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		)
 	}
 	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
-	writeJSON(w, http.StatusOK, response)
+	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
 func (s *Server) handleSavePostmanImport(w http.ResponseWriter, r *http.Request) {
@@ -635,7 +678,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
 		Script:              result.Script,
@@ -647,7 +690,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildMultiScriptParameterization(result.Scripts),
 		Preflight:           preflight,
-	}))
+	})
 }
 
 func (s *Server) handleEventHubsCaptureSupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -713,7 +756,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	preflight := buildAndAttachImportPreflight(result.Script, "eventhubs_capture", issues, result.Warnings)
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
 		Warnings:         result.Warnings,
@@ -722,7 +765,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 		ReviewSections:   buildEventHubsCaptureReviewSections(result),
 		Parameterization: buildImportParameterization(result.Script, nil),
 		Preflight:        preflight,
-	}))
+	})
 }
 
 func buildEventHubsCaptureReviewSections(result *eventhubscapture.ConvertResult) []scriptImportReviewSection {
@@ -814,7 +857,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 		result.Warnings = append(result.Warnings, issues...)
 	}
 	preflight := buildAndAttachImportPreflight(result.Script, "broker_config", issues, result.Warnings)
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
 		Warnings:         result.Warnings,
@@ -823,7 +866,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 		ReviewSections:   buildBrokerConfigReviewSections(result),
 		Parameterization: buildImportParameterization(result.Script, nil),
 		Preflight:        preflight,
-	}))
+	})
 }
 
 func buildBrokerConfigReviewSections(result *brokerconfig.ConvertResult) []scriptImportReviewSection {

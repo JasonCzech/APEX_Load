@@ -231,13 +231,29 @@ func TestHandleImportOpenAPIRedactsCredentialsFromResultAndRootSummaries(t *test
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	editable := string(envelope["script"]) + string(envelope["scripts"])
 	for _, secret := range []string{username, password, token} {
-		if strings.Contains(response.Body.String(), secret) {
-			t.Fatalf("OpenAPI import disclosed URL credential %q in result/root summaries: %s", secret, response.Body.String())
+		if !strings.Contains(editable, secret) {
+			t.Fatalf("authorized OpenAPI editable draft lost URL credential %q: %s", secret, editable)
 		}
 	}
-	if !strings.Contains(response.Body.String(), maskedScriptSecret) || !strings.Contains(response.Body.String(), "region=east") {
-		t.Fatalf("OpenAPI URL projection did not preserve a safe summary: %s", response.Body.String())
+	delete(envelope, "script")
+	delete(envelope, "scripts")
+	reviewPayload, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{username, password, token} {
+		if strings.Contains(string(reviewPayload), secret) {
+			t.Fatalf("OpenAPI result/review surfaces disclosed URL credential %q: %s", secret, reviewPayload)
+		}
+	}
+	if !strings.Contains(string(reviewPayload), maskedScriptSecret) || !strings.Contains(string(reviewPayload), "region=east") {
+		t.Fatalf("OpenAPI URL projection did not preserve a safe summary: %s", reviewPayload)
 	}
 }
 
@@ -844,6 +860,9 @@ func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
 			DataSources []struct {
 				InlineData string `json:"inline_data"`
 			} `json:"data_sources"`
+			Actions []struct {
+				Headers map[string]string `json:"headers"`
+			} `json:"actions"`
 		} `json:"script"`
 		Stats struct {
 			EnvironmentValues int `json:"environment_values"`
@@ -858,17 +877,19 @@ func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
 	if result.Stats.EnvironmentValues != 2 {
 		t.Fatalf("environment values = %d, want 2", result.Stats.EnvironmentValues)
 	}
-	// The only generated parameter column is the credential-bearing token.
-	// It must leave the public script/data source and travel through the
-	// protected import session instead.
-	if len(result.Script.DataSources) != 0 {
-		t.Fatalf("data sources = %+v, want credential-only source omitted", result.Script.DataSources)
+	// Keep the resolved source column as well as the executable occurrence:
+	// deleting it would change parameterized replay and would force an operator
+	// who already supplied the environment file to reconstruct its value.
+	if len(result.Script.DataSources) != 1 ||
+		!strings.Contains(result.Script.DataSources[0].InlineData, "env-token") {
+		t.Fatalf("data sources = %+v, want imported credential column retained", result.Script.DataSources)
 	}
-	if strings.Contains(resp.Body.String(), "env-token") || strings.Contains(resp.Body.String(), "collection-token") {
-		t.Fatalf("response disclosed a source credential: %s", resp.Body.String())
+	if len(result.Script.Actions) != 1 ||
+		result.Script.Actions[0].Headers["X-Token"] != "env-token" {
+		t.Fatalf("destination action removed imported environment credential: %+v", result.Script.Actions)
 	}
-	if !strings.Contains(resp.Body.String(), "{{secret.POSTMAN_X_TOKEN}}") {
-		t.Fatalf("response did not contain the projected token reference: %s", resp.Body.String())
+	if strings.Contains(resp.Body.String(), "collection-token") {
+		t.Fatalf("response retained shadowed collection credential: %s", resp.Body.String())
 	}
 }
 

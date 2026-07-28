@@ -1,10 +1,10 @@
 package requestimport
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -25,26 +25,42 @@ func TestFinalizeScriptProjectsBaseURLCredentialsAndGatesUserinfo(t *testing.T) 
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if strings.Contains(result.Script.Config.BaseURL, canary) ||
-		strings.Contains(result.Script.Config.BaseURL, "query%2Dsecret") {
-		t.Fatalf("base URL retained source credentials: %q", result.Script.Config.BaseURL)
+	if got := result.Script.Config.BaseURL; got != script.Config.BaseURL {
+		t.Fatalf("base URL = %q, want imported bytes %q", got, script.Config.BaseURL)
 	}
-	if !strings.Contains(result.Script.Config.BaseURL, "{{secret.") {
-		t.Fatalf("base URL = %q, want governed references", result.Script.Config.BaseURL)
-	}
-	if len(result.Requirements) != 2 {
-		t.Fatalf("requirements = %#v, want userinfo and query requirements", result.Requirements)
-	}
-	values := map[string]bool{}
-	for _, requirement := range result.Requirements {
-		values[requirement.Value] = true
-	}
-	if !values["service:"+canary] || !values["query%2Dsecret"] {
-		t.Fatalf("protected requirement values = %#v", values)
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved values must not require reentry", result.Requirements)
 	}
 	for index, action := range result.Script.Actions {
-		if action.Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-			t.Fatalf("actions[%d] metadata = %#v, want durable base-URL userinfo gate", index, action.Metadata)
+		if blocker := action.Metadata["execution_blocker"]; blocker != nil {
+			t.Fatalf("actions[%d] metadata = %#v, preserved credential must not block execution", index, action.Metadata)
+		}
+	}
+}
+
+func TestFinalizeActionDoesNotAttachEffectiveBaseURLLocatorToAction(t *testing.T) {
+	t.Parallel()
+
+	action, report, err := FinalizeAction(EffectiveRequest{
+		Key:     "relative-orders",
+		Name:    "Orders",
+		Method:  "GET",
+		BaseURL: "https://operator:base-url-canary-17f4@api.example.test",
+		Target:  "/orders",
+		Source:  SourceRef{Format: "fixture", Pointer: "/requests/0"},
+	}, FinalizeOptions{
+		Credentials: &CredentialProjectionOptions{Mode: credentialpolicy.Preserve},
+		ActionPath:  "actions[0]",
+	})
+	if err != nil {
+		t.Fatalf("FinalizeAction: %v", err)
+	}
+	if action.Target != "/orders" || report.Disposition != ExecutableExact {
+		t.Fatalf("action/report = %#v / %#v", action, report)
+	}
+	for _, target := range preservedCredentialTargetsFromMetadata(action.Metadata) {
+		if strings.Contains(strings.ToLower(target.Field), "base_url") {
+			t.Fatalf("base URL locator was attached to action target: %#v", target)
 		}
 	}
 }
@@ -70,11 +86,11 @@ func TestFinalizeScriptBaseURLSecretNameDoesNotCollideWithExistingReference(t *t
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if len(result.Requirements) != 1 {
-		t.Fatalf("requirements = %#v, want one base URL requirement", result.Requirements)
+	if got := result.Script.Config.BaseURL; got != script.Config.BaseURL {
+		t.Fatalf("base URL = %q, want imported value %q", got, script.Config.BaseURL)
 	}
-	if result.Requirements[0].SuggestedName == "IMPORT_BASE_URL_API_KEY" {
-		t.Fatalf("base URL requirement collided with existing script reference: %#v", result.Requirements[0])
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved base URL must not require reentry", result.Requirements)
 	}
 }
 
@@ -93,14 +109,11 @@ func TestDraftFinalizeProjectsBaseURLAndCountsUnresolvedBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Draft.Finalize returned error: %v", err)
 	}
-	if len(result.Requirements) != 1 ||
-		result.Requirements[0].Value != "draft%2Dsecret" ||
-		strings.Contains(result.Script.Config.BaseURL, "draft%2Dsecret") {
-		t.Fatalf("base URL projection = %q / %#v", result.Script.Config.BaseURL, result.Requirements)
+	if result.Script.Config.BaseURL != script.Config.BaseURL || len(result.Requirements) != 0 {
+		t.Fatalf("base URL preservation = %q / %#v", result.Script.Config.BaseURL, result.Requirements)
 	}
-	if result.Readiness.State != importreview.Blocked ||
-		!reflect.DeepEqual(result.Readiness.BlockingCodes, []string{"credential_bindings_required"}) {
-		t.Fatalf("readiness = %#v, want unresolved base credential binding", result.Readiness)
+	if result.Readiness.State == importreview.Blocked {
+		t.Fatalf("readiness = %#v, preserved credential must not require binding", result.Readiness)
 	}
 }
 
@@ -134,19 +147,15 @@ func TestFinalizeScriptProjectsBaseCredentialFromOAuthInitURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if len(result.Requirements) != 1 {
-		t.Fatalf("requirements = %#v, want one structurally reused base credential", result.Requirements)
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved OAuth URL must not require reentry", result.Requirements)
 	}
 	init := result.Script.Init[0]
-	if strings.Contains(init.Target, canary) ||
-		init.Params["token_url"] != init.Target {
-		t.Fatalf("OAuth init retained or diverged from the projected URL: %#v", init)
+	if init.Target != rawTokenURL || init.Params["token_url"] != rawTokenURL {
+		t.Fatalf("OAuth init lost imported URL bytes: %#v", init)
 	}
-	if !strings.Contains(init.Target, result.Requirements[0].Replacement) {
-		t.Fatalf("OAuth init target = %q, want its occurrence-scoped replacement %#v", init.Target, result.Requirements)
-	}
-	if init.Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("OAuth init did not receive the durable userinfo gate: %#v", init.Metadata)
+	if blocker := init.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("OAuth init received credential execution blocker: %#v", init.Metadata)
 	}
 }
 
@@ -178,21 +187,16 @@ func TestFinalizeScriptProjectsDistinctOAuthTokenURLWithoutTarget(t *testing.T) 
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if len(result.Requirements) != 1 || result.Requirements[0].Value != "oauth-user:"+canary {
-		t.Fatalf("requirements = %#v, want protected OAuth token URL userinfo", result.Requirements)
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved OAuth URL must not require reentry", result.Requirements)
 	}
 	init := result.Script.Init[0]
 	tokenURL, _ := init.Params["token_url"].(string)
-	if strings.Contains(tokenURL, canary) ||
-		!strings.Contains(tokenURL, result.Requirements[0].Replacement) {
-		t.Fatalf("OAuth params.token_url retained source credential: %#v", init)
+	if tokenURL != rawTokenURL {
+		t.Fatalf("OAuth params.token_url = %q, want imported value %q", tokenURL, rawTokenURL)
 	}
-	if len(result.Requirements[0].Targets) != 1 ||
-		result.Requirements[0].Targets[0].Field != "params.token_url.userinfo" {
-		t.Fatalf("OAuth requirement targets = %#v", result.Requirements[0].Targets)
-	}
-	if init.Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("OAuth init did not receive a durable token-URL gate: %#v", init.Metadata)
+	if blocker := init.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("OAuth init received credential execution blocker: %#v", init.Metadata)
 	}
 }
 
@@ -224,16 +228,13 @@ func TestFinalizeScriptTreatsOAuthTokenURLAsAuthoritativeWhenTargetMirrorsIt(t *
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if len(result.Requirements) != 1 ||
-		len(result.Requirements[0].Targets) != 1 ||
-		result.Requirements[0].Targets[0].Field != "params.token_url.userinfo" {
-		t.Fatalf("OAuth requirements = %#v, want one executable token-URL target", result.Requirements)
+	if len(result.Requirements) != 0 {
+		t.Fatalf("OAuth requirements = %#v, preserved OAuth URL must not require reentry", result.Requirements)
 	}
 	init := result.Script.Init[0]
 	if init.Target != init.Params["token_url"] ||
-		strings.Contains(init.Target, canary) ||
-		!strings.Contains(init.Target, result.Requirements[0].Replacement) {
-		t.Fatalf("OAuth mirror did not follow projected executable URL: %#v", init)
+		init.Target != rawTokenURL {
+		t.Fatalf("OAuth mirror did not retain imported executable URL: %#v", init)
 	}
 }
 
@@ -269,12 +270,76 @@ func TestFinalizeScriptGovernsRuntimeVariableInSensitiveBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if !strings.Contains(result.Script.Config.BaseURL, "{{secret.") {
-		t.Fatalf("base URL = %q, want runtime variable governed as a secret", result.Script.Config.BaseURL)
+	if result.Script.Config.BaseURL != baseURL {
+		t.Fatalf("base URL = %q, want imported expression %q", result.Script.Config.BaseURL, baseURL)
 	}
-	if len(result.Requirements) != 1 ||
-		result.Requirements[0].DeferredSourceExpression != "{{var.access_token}}" {
-		t.Fatalf("requirements = %#v, want protected base URL variable", result.Requirements)
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved expression must not require reentry", result.Requirements)
+	}
+	if blocker := result.Script.Init[0].Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("absolute bootstrap received unrelated base URL blocker %v: %#v", blocker, result.Script.Init[0].Metadata)
+	}
+	assertBaseURLRuntimeTemplateGate(t, result.Script.Actions[0])
+	assertBaseURLRuntimeTemplateFinding(t, result.Findings)
+	if result.Disposition != BlockedDraft ||
+		result.Readiness.State != importreview.Blocked ||
+		result.Readiness.ReplayReady {
+		t.Fatalf("result remained executable: disposition=%q readiness=%#v", result.Disposition, result.Readiness)
+	}
+}
+
+func TestBaseURLRuntimeTemplateAvailabilityMatchesProtocolInitialization(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		value   string
+		blocked bool
+	}{
+		{name: "literal", value: "https://api.example.test", blocked: false},
+		{name: "project secret", value: "https://{{secret.API_HOST}}/v1", blocked: false},
+		{name: "environment", value: "https://{{env.API_HOST}}/v1", blocked: true},
+		{name: "data", value: "https://{{data.hosts.name}}/v1", blocked: true},
+		{name: "variable", value: "https://{{var.host}}/v1", blocked: true},
+		{name: "parameter", value: "https://{{param.host}}/v1", blocked: true},
+		{name: "function", value: "https://api.example.test/{{fn.uuid()}}", blocked: true},
+		{name: "fake", value: "https://{{fake.domain()}}/v1", blocked: true},
+		{name: "file", value: "https://{{file.host}}/v1", blocked: true},
+		{name: "mixed secret and environment", value: "https://{{secret.API_HOST}}/{{env.PATH}}", blocked: true},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := baseURLHasUnresolvableRuntimeTemplate(test.value); got != test.blocked {
+				t.Fatalf("baseURLHasUnresolvableRuntimeTemplate(%q) = %t, want %t", test.value, got, test.blocked)
+			}
+		})
+	}
+}
+
+func TestFinalizeScriptGatesEnvironmentTemplateInBaseURL(t *testing.T) {
+	t.Parallel()
+	script := validBaseScript()
+	script.GeneratedFrom = "har"
+	script.Config.BaseURL = "https://{{env.API_HOST}}/v1"
+	script.Actions = []dsl.Action{{
+		Name:   "request",
+		Type:   "GET",
+		Method: "GET",
+		Target: "/orders",
+	}}
+
+	result, err := FinalizeScript(script, nil, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != "https://{{env.API_HOST}}/v1" {
+		t.Fatalf("base URL = %q, want exact imported template", result.Script.Config.BaseURL)
+	}
+	assertBaseURLRuntimeTemplateGate(t, result.Script.Actions[0])
+	assertBaseURLRuntimeTemplateFinding(t, result.Findings)
+	if result.Disposition != BlockedDraft || result.Readiness.ReplayReady {
+		t.Fatalf("environment base URL remained executable: disposition=%q readiness=%#v", result.Disposition, result.Readiness)
 	}
 }
 
@@ -298,11 +363,93 @@ func TestFinalizeScriptDoesNotTrustStaticParameterAsBaseURLCredentialProvenance(
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if !strings.Contains(result.Script.Config.BaseURL, "{{secret.") {
-		t.Fatalf("base URL = %q, want static parameter governed as a secret", result.Script.Config.BaseURL)
+	if got, want := result.Script.Config.BaseURL, script.Config.BaseURL; got != want {
+		t.Fatalf("base URL = %q, want imported expression %q", got, want)
 	}
-	if len(result.Requirements) != 1 {
-		t.Fatalf("requirements = %#v, want static base credential binding", result.Requirements)
+	if len(result.Requirements) != 0 ||
+		len(result.Script.Parameters) != 1 ||
+		result.Script.Parameters[0].Values[0] != "static-token-value" {
+		t.Fatalf("preserved parameter source = %#v / %#v", result.Requirements, result.Script.Parameters)
+	}
+	assertBaseURLRuntimeTemplateGate(t, result.Script.Actions[0])
+	assertBaseURLRuntimeTemplateFinding(t, result.Findings)
+	if result.Disposition != BlockedDraft || result.Readiness.ReplayReady {
+		t.Fatalf("result remained executable: disposition=%q readiness=%#v", result.Disposition, result.Readiness)
+	}
+}
+
+func TestFinalizeScriptBlocksParameterTemplateInBaseURL(t *testing.T) {
+	script := validBaseScript()
+	const baseURL = "https://api.example.test?access_token={{param.access_token}}"
+	script.GeneratedFrom = "har"
+	script.Config.BaseURL = baseURL
+	script.Parameters = []dsl.Parameter{{
+		Name:   "access_token",
+		Type:   "list",
+		Values: []string{"runtime-token-value"},
+	}}
+	script.Actions = []dsl.Action{
+		{
+			Name:   "relative",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/orders",
+		},
+		{
+			Name:   "absolute",
+			Type:   "GET",
+			Method: "GET",
+			Target: "https://other.example.test/status",
+		},
+	}
+
+	result, err := FinalizeScript(script, nil, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != baseURL {
+		t.Fatalf("base URL = %q, want imported expression %q", result.Script.Config.BaseURL, baseURL)
+	}
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, preserved expression must not require reentry", result.Requirements)
+	}
+	assertBaseURLRuntimeTemplateGate(t, result.Script.Actions[0])
+	if blocker := result.Script.Actions[1].Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("absolute request received unrelated base URL blocker %v: %#v", blocker, result.Script.Actions[1].Metadata)
+	}
+	assertBaseURLRuntimeTemplateFinding(t, result.Findings)
+	if result.Disposition != BlockedDraft || result.Readiness.ReplayReady {
+		t.Fatalf("result remained executable: disposition=%q readiness=%#v", result.Disposition, result.Readiness)
+	}
+}
+
+func TestFinalizeScriptKeepsResolvableSecretBaseURLExecutable(t *testing.T) {
+	script := validBaseScript()
+	const baseURL = "https://api.example.test?access_token={{secret.BASE_ACCESS_TOKEN}}"
+	script.GeneratedFrom = "har"
+	script.Config.BaseURL = baseURL
+	script.Actions = []dsl.Action{{
+		Name:   "request",
+		Type:   "GET",
+		Method: "GET",
+		Target: "/orders",
+	}}
+
+	result, err := FinalizeScript(script, nil, FinalizeOptions{})
+	if err != nil {
+		t.Fatalf("FinalizeScript returned error: %v", err)
+	}
+	if result.Script.Config.BaseURL != baseURL {
+		t.Fatalf("base URL = %q, want resolvable secret expression %q", result.Script.Config.BaseURL, baseURL)
+	}
+	if len(result.Requirements) != 0 {
+		t.Fatalf("requirements = %#v, existing secret reference must not require reentry", result.Requirements)
+	}
+	if blocker := result.Script.Actions[0].Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("secret-backed base URL received blocker %v: %#v", blocker, result.Script.Actions[0].Metadata)
+	}
+	if result.Disposition != ExecutableExact || !result.Readiness.ReplayReady {
+		t.Fatalf("secret-backed base URL is not executable: disposition=%q readiness=%#v", result.Disposition, result.Readiness)
 	}
 }
 
@@ -328,10 +475,50 @@ func TestFinalizeScriptScopesBaseURLUserinfoGateToAffectedRequests(t *testing.T)
 	if err != nil {
 		t.Fatalf("FinalizeScript returned error: %v", err)
 	}
-	if result.Script.Actions[0].Metadata["execution_blocker"] != "credential_url_userinfo_review_required" {
-		t.Fatalf("relative request metadata = %#v, want base URL gate", result.Script.Actions[0].Metadata)
+	if result.Script.Config.BaseURL != script.Config.BaseURL {
+		t.Fatalf("base URL = %q, want imported value %q", result.Script.Config.BaseURL, script.Config.BaseURL)
+	}
+	if blocker := result.Script.Actions[0].Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("relative request metadata = %#v, preserved credential must not gate execution", result.Script.Actions[0].Metadata)
 	}
 	if blocker := result.Script.Actions[1].Metadata["execution_blocker"]; blocker != nil {
 		t.Fatalf("absolute request received unrelated base URL blocker %v: %#v", blocker, result.Script.Actions[1].Metadata)
 	}
+}
+
+func assertBaseURLRuntimeTemplateGate(t *testing.T, action dsl.Action) {
+	t.Helper()
+	blockers, _ := action.Metadata["execution_blockers"].([]string)
+	foundBlocker := action.Metadata["execution_blocker"] == importReviewRequiredBlocker
+	for _, blocker := range blockers {
+		if blocker == importReviewRequiredBlocker {
+			foundBlocker = true
+		}
+	}
+	if !foundBlocker {
+		t.Fatalf("execution blockers = %#v, want %q: %#v", blockers, importReviewRequiredBlocker, action.Metadata)
+	}
+	review, _ := action.Metadata["import_review"].(map[string]any)
+	reasons, _ := review["reason_codes"].([]string)
+	foundReason := false
+	for _, reason := range reasons {
+		if reason == reasonBaseURLRuntimeTemplateUnavailable {
+			foundReason = true
+		}
+	}
+	if !foundReason {
+		t.Fatalf("import review = %#v, want base URL runtime-template reason", review)
+	}
+}
+
+func assertBaseURLRuntimeTemplateFinding(t *testing.T, findings []importreview.Finding) {
+	t.Helper()
+	for _, finding := range findings {
+		if finding.ReasonCode == reasonBaseURLRuntimeTemplateUnavailable &&
+			finding.Code == importReviewRequiredBlocker &&
+			finding.Gate == importreview.GateExecution {
+			return
+		}
+	}
+	t.Fatalf("findings = %#v, want durable base URL runtime-template blocker", findings)
 }

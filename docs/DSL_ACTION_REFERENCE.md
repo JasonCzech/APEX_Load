@@ -1515,7 +1515,7 @@ Logs on to a SAP GUI session.
 |-------|------|----------|-------------|
 | `params.client` | string |  | SAP client number. |
 | `params.user` | string |  | Recorded username or template. |
-| `params.password` | string |  | Password secret template. |
+| `params.password` | string |  | Password secret template or retained imported value. |
 | `params.language` | string |  | SAP logon language. |
 
 ### `sapgui_press`

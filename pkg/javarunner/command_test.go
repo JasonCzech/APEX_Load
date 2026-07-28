@@ -1,6 +1,8 @@
 package javarunner
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -91,9 +93,10 @@ func TestBuildCommandPreservesHarnessJarLaunchCompatibility(t *testing.T) {
 	}
 }
 
-func TestBuildCommandLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
+func TestBuildCommandLegacyHotSpotUsesCompatibleCrashArtifactSink(t *testing.T) {
 	plan, err := BuildCommand(CommandSpec{
 		JavaMajor:  8,
+		VMFamily:   JavaVMHotSpot,
 		HarnessJar: "/runner/harness.jar",
 	})
 	if err != nil {
@@ -101,6 +104,9 @@ func TestBuildCommandLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
 	}
 	if slices.Contains(plan.Args, enforcedDisableCrashCoreDump) {
 		t.Fatalf("legacy Java 8 command includes unsupported crash-core flag: %#v", plan.Args)
+	}
+	if !slices.Contains(plan.Args, "-XX:ErrorFile="+os.DevNull) {
+		t.Fatalf("legacy Java 8 command lacks compatible crash-log suppression: %#v", plan.Args)
 	}
 	for _, required := range []string{
 		enforcedDisableAttachMechanism,
@@ -110,6 +116,41 @@ func TestBuildCommandLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
 		if !slices.Contains(plan.Args, required) {
 			t.Fatalf("legacy Java 8 command lost required enforcement %q: %#v", required, plan.Args)
 		}
+	}
+}
+
+func TestBuildCommandOpenJ9DisablesAllNativeDumpHandlers(t *testing.T) {
+	for _, major := range []int{8, 17, 21} {
+		t.Run(fmt.Sprintf("java_%d", major), func(t *testing.T) {
+			plan, err := BuildCommand(CommandSpec{
+				JavaMajor:  major,
+				VMFamily:   JavaVMOpenJ9,
+				HarnessJar: "/runner/harness.jar",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(plan.Args, enforcedDisableOpenJ9Dumps) {
+				t.Fatalf("OpenJ9 command lacks all-dump suppression: %#v", plan.Args)
+			}
+			for _, hotspotOnly := range []string{
+				enforcedDisableCrashCoreDump,
+				"-XX:ErrorFile=" + os.DevNull,
+			} {
+				if slices.Contains(plan.Args, hotspotOnly) {
+					t.Fatalf("OpenJ9 command includes HotSpot-only option %q: %#v", hotspotOnly, plan.Args)
+				}
+			}
+		})
+	}
+}
+
+func TestBuildCommandRejectsUnidentifiedLegacyVM(t *testing.T) {
+	if _, err := BuildCommand(CommandSpec{
+		JavaMajor:  8,
+		HarnessJar: "/runner/harness.jar",
+	}); err == nil {
+		t.Fatal("BuildCommand accepted a Java 8 VM without a recognized option dialect")
 	}
 }
 
@@ -132,14 +173,25 @@ func TestBuildCommandRejectsHarnessMainBeginningWithDash(t *testing.T) {
 	}
 }
 
-func TestBuildCommandRejectsUnsafeVMParameterWithoutExposingValue(t *testing.T) {
+func TestStrictVMParameterValidationRejectsSensitiveValueWithoutExposingIt(t *testing.T) {
 	const secret = "do-not-log"
-	_, err := BuildCommand(CommandSpec{VMParameters: []string{"-Dapexload.secret=" + secret}})
-	if err == nil {
-		t.Fatal("BuildCommand succeeded, want validation error")
+	issues := ValidateVMParameters([]string{"-Ddatabase.password=" + secret})
+	if len(issues) != 1 {
+		t.Fatalf("ValidateVMParameters issues = %#v, want one", issues)
 	}
-	if got := err.Error(); got == "" || strings.Contains(got, secret) {
-		t.Fatalf("BuildCommand error %q exposed token value", got)
+	if got := issues[0].Error(); got == "" || strings.Contains(got, secret) {
+		t.Fatalf("validation error %q exposed token value", got)
+	}
+}
+
+func TestBuildCommandPreservesTrustedImportedSensitiveVMParameter(t *testing.T) {
+	const parameter = "-Ddatabase.password=imported-password"
+	plan, err := BuildCommand(CommandSpec{VMParameters: []string{parameter}})
+	if err != nil {
+		t.Fatalf("BuildCommand: %v", err)
+	}
+	if len(plan.Args) == 0 || plan.Args[0] != parameter {
+		t.Fatalf("BuildCommand args = %#v, want exact imported argument first", plan.Args)
 	}
 }
 
@@ -155,6 +207,8 @@ func TestBuildCommandRejectsCallerControlledDiagnosticDumpTriggers(t *testing.T)
 		"-XX:-CrashOnOutOfMemoryError",
 		"-XX:+CreateCoredumpOnCrash",
 		"-XX:-CreateCoredumpOnCrash",
+		"-XX:ErrorFile=" + os.DevNull,
+		"-Xdump:none",
 	} {
 		t.Run(parameter, func(t *testing.T) {
 			if _, err := BuildCommand(CommandSpec{VMParameters: []string{parameter}}); err == nil {

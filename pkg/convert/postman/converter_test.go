@@ -80,11 +80,12 @@ func TestConvertPostmanCollection(t *testing.T) {
 		t.Fatalf("trace header = %q", first.Headers["X-Trace"])
 	}
 	second := result.Script.Actions[1]
-	if !strings.Contains(second.Headers["Authorization"], "{{secret.") {
-		t.Fatalf("authorization header = %q", second.Headers["Authorization"])
+	if second.Headers["Authorization"] != "Bearer secret-token" {
+		t.Fatalf("authorization header = %q, want imported executable value", second.Headers["Authorization"])
 	}
-	if !strings.Contains(second.Body, "{{var.customer_id}}") || !strings.Contains(second.Body, "{{secret.") {
-		t.Fatalf("second body was not parameterized/sanitized: %s", second.Body)
+	if !strings.Contains(second.Body, "{{var.customer_id}}") ||
+		!strings.Contains(second.Body, `"password":"hidden"`) {
+		t.Fatalf("second body lost imported request semantics: %s", second.Body)
 	}
 	if len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Name != "order_id" {
 		t.Fatalf("parameters = %#v, want order_id only", result.Script.Parameters)
@@ -233,9 +234,9 @@ func TestConvertPostmanGraphQLMalformedVariablesAreNotStringified(t *testing.T) 
 	}
 }
 
-func TestConvertPostmanRejectsMalformedCredentialBearingGraphQLVariables(t *testing.T) {
+func TestConvertPostmanBlocksMalformedCredentialBearingGraphQLVariables(t *testing.T) {
 	const canary = "postman-graphql-malformed-secret-4b9e"
-	_, err := Convert(ImportRequest{
+	result, err := Convert(ImportRequest{
 		Content: `{
 		  "info": {"name": "GraphQL malformed credential variables"},
 		  "item": [{
@@ -254,14 +255,26 @@ func TestConvertPostmanRejectsMalformedCredentialBearingGraphQLVariables(t *test
 		  }]
 		}`,
 	})
-	if err == nil {
-		t.Fatal("credential-bearing malformed GraphQL variables were not rejected")
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "credential_json_malformed_sensitive") {
-		t.Fatalf("rejection error = %q, want stable shared policy code", err)
+	action := result.Script.Actions[0]
+	if !strings.Contains(action.Body, canary) ||
+		action.Metadata["execution_blocker"] != "credential_json_malformed" ||
+		result.finalization == nil ||
+		result.finalization.Result == nil ||
+		result.finalization.Result.Disposition != requestimport.BlockedDraft {
+		t.Fatalf("malformed credential GraphQL draft = %#v / %#v", action, result.finalization)
 	}
-	if strings.Contains(err.Error(), canary) {
-		t.Fatalf("rejection error disclosed GraphQL credential: %q", err)
+	if !postmanReportHasFinding(result.finalization.Reports[0], "credential_json_malformed") {
+		t.Fatalf("malformed-JSON finding = %#v", result.finalization.Reports[0].Findings)
+	}
+	if result.SourceReview == nil ||
+		strings.Contains(result.SourceReview.SourceFiles[0].Content, canary) {
+		t.Fatalf("source review disclosed malformed credential: %#v", result.SourceReview)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked malformed credential draft is invalid: %v", issues)
 	}
 }
 
@@ -340,6 +353,74 @@ func TestConvertPostmanAuthDynamicVariablesAndPathVariables(t *testing.T) {
 	if got := result.Script.Actions[2].Metadata["execution_blocker"]; got != "import_review_required" {
 		t.Fatalf("unsupported signing auth blocker = %#v", got)
 	}
+	signed := result.Script.Actions[2]
+	if signed.Auth == nil || signed.Auth.Type != "awsv4" {
+		t.Fatalf("unsupported signing auth = %#v, want exact source mode retained", signed.Auth)
+	}
+	fields, ok := signed.Metadata["postman_auth_source_fields"].([]map[string]any)
+	if !ok || len(fields) != 1 ||
+		fields[0]["name"] != "accessKey" ||
+		fields[0]["value"] != "AKIA" {
+		t.Fatalf("unsupported signing fields = %#v, want source access key retained", signed.Metadata["postman_auth_source_fields"])
+	}
+}
+
+func TestConvertPostmanAuthPreservesAuthoredWhitespace(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Whitespace credentials"},
+		  "item": [
+		    {
+		      "name": "Bearer",
+		      "request": {
+		        "method": "GET",
+		        "auth": {"type": "bearer", "bearer": [
+		          {"key": "token", "value": "  bearer token  "}
+		        ]},
+		        "url": "https://api.example.com/bearer"
+		      }
+		    },
+		    {
+		      "name": "Basic",
+		      "request": {
+		        "method": "GET",
+		        "auth": {"type": "basic", "basic": [
+		          {"key": "username", "value": " operator "},
+		          {"key": "password", "value": "  "}
+		        ]},
+		        "url": "https://api.example.com/basic"
+		      }
+		    },
+		    {
+		      "name": "Digest",
+		      "request": {
+		        "method": "GET",
+		        "auth": {"type": "digest", "digest": [
+		          {"key": "username", "value": " digest-user "},
+		          {"key": "password", "value": " digest-password "}
+		        ]},
+		        "url": "https://api.example.com/digest"
+		      }
+		    }
+		  ]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := result.Script.Actions[0].Auth; got == nil || got.Token != "  bearer token  " {
+		t.Fatalf("bearer auth = %#v, want byte-exact authored token", got)
+	}
+	if got := result.Script.Actions[1].Auth; got == nil ||
+		got.Username != " operator " ||
+		got.Password != "  " {
+		t.Fatalf("basic auth = %#v, want byte-exact authored fields", got)
+	}
+	if got := result.Script.Actions[2].Auth; got == nil ||
+		got.Username != " digest-user " ||
+		got.Password != " digest-password " {
+		t.Fatalf("digest auth = %#v, want byte-exact authored fields", got)
+	}
 }
 
 func TestConvertPostmanNoAuthOverridesCollectionAuth(t *testing.T) {
@@ -359,8 +440,8 @@ func TestConvertPostmanNoAuthOverridesCollectionAuth(t *testing.T) {
 	if result.Script.Config.HTTP.Auth.Type != "" {
 		t.Fatalf("global auth = %#v, want none", result.Script.Config.HTTP.Auth)
 	}
-	if got := result.Script.Actions[0].Auth; got == nil || got.Type != "bearer" || !strings.Contains(got.Token, "{{secret.") {
-		t.Fatalf("inherited auth = %#v, want projected bearer action auth", got)
+	if got := result.Script.Actions[0].Auth; got == nil || got.Type != "bearer" || got.Token != "collection-secret" {
+		t.Fatalf("inherited auth = %#v, want imported bearer action auth", got)
 	}
 	if got := result.Script.Actions[1].Auth; got == nil || got.Type != "noauth" {
 		t.Fatalf("explicit noauth = %#v, want noauth action override", got)
@@ -402,15 +483,15 @@ func TestConvertPostmanAPIKeyAuth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if got := result.Script.Actions[0].Headers["X-API-Key"]; !strings.Contains(got, "{{secret.") {
-		t.Fatalf("header API key = %q", got)
+	if got := result.Script.Actions[0].Headers["X-API-Key"]; got != "super-secret" {
+		t.Fatalf("header API key = %q, want imported executable value", got)
 	}
-	if got := result.Script.Actions[1].Target; got != "/query?existing=1&api_key={{secret.POSTMAN_API_KEY}}" {
-		t.Fatalf("unproven query API key was not governed: %q", got)
+	if got := result.Script.Actions[1].Target; got != "/query?existing=1&api_key={{var.apiToken}}" {
+		t.Fatalf("query API key expression changed: %q", got)
 	}
 }
 
-func TestConvertPostmanAPIKeyMissingOrUnsupportedPlacementIsBlockedAndInert(t *testing.T) {
+func TestConvertPostmanAPIKeyMissingOrUnsupportedPlacementIsBlockedAndRetained(t *testing.T) {
 	const (
 		missingPlacementCanary     = "postman-apikey-missing-placement-canary"
 		unsupportedPlacementCanary = "postman-apikey-unsupported-placement-canary"
@@ -459,8 +540,11 @@ func TestConvertPostmanAPIKeyMissingOrUnsupportedPlacementIsBlockedAndInert(t *t
 			action.Headers["X-Unsupported-Placement"] != "" {
 			t.Fatalf("action %d invented an API-key header: %#v", index, action.Headers)
 		}
-		if action.Auth == nil || action.Auth.Type != "none" {
-			t.Fatalf("action %d auth = %#v, want inert no-auth placeholder", index, action.Auth)
+		wantToken := []string{missingPlacementCanary, unsupportedPlacementCanary}[index]
+		if action.Auth == nil ||
+			action.Auth.Type != "postman_apikey" ||
+			action.Auth.Token != wantToken {
+			t.Fatalf("action %d auth = %#v, want exact source credential retained behind gate", index, action.Auth)
 		}
 		if action.Metadata["execution_blocker"] != "import_review_required" {
 			t.Fatalf("action %d blocker = %#v", index, action.Metadata)
@@ -480,26 +564,58 @@ func TestConvertPostmanAPIKeyMissingOrUnsupportedPlacementIsBlockedAndInert(t *t
 	}
 	protected := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(protected)
-	if len(protected) != 2 {
-		t.Fatalf("protected requirements = %#v, want two source credentials", protected)
+	if len(protected) != 0 {
+		t.Fatalf("protected requirements = %#v, blocked review must not create reentry bindings", protected)
 	}
-	protectedValues := map[string]struct{}{}
-	for _, requirement := range protected {
-		protectedValues[requirement.Value] = struct{}{}
-	}
-	for _, canary := range []string{missingPlacementCanary, unsupportedPlacementCanary} {
-		if _, ok := protectedValues[canary]; !ok {
-			t.Fatalf("protected requirements did not retain %q: %#v", canary, protected)
-		}
-	}
-	publicJSON, err := json.Marshal(result)
+	destinationJSON, err := json.Marshal(result.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, canary := range []string{missingPlacementCanary, unsupportedPlacementCanary} {
-		if strings.Contains(string(publicJSON), canary) {
-			t.Fatalf("public blocked draft disclosed %q: %s", canary, publicJSON)
+		if !strings.Contains(string(destinationJSON), canary) {
+			t.Fatalf("destination blocked draft removed %q: %s", canary, destinationJSON)
 		}
+	}
+}
+
+func TestConvertPostmanUnknownAuthRetainsEverySourceFieldBehindGate(t *testing.T) {
+	const password = "unknown-auth-password-canary"
+	result, err := Convert(ImportRequest{
+		Content: `{
+		  "info": {"name": "Unknown Auth"},
+		  "item": [{
+		    "name": "Custom Auth",
+		    "request": {
+		      "method": "GET",
+		      "auth": {"type": "customscheme", "customscheme": [
+		        {"key": "account", "value": "operator"},
+		        {"key": "password", "value": "` + password + `"},
+		        {"key": "realm", "value": "example"}
+		      ]},
+		      "url": "https://api.example.com/custom"
+		    }
+		  }]
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Auth == nil || action.Auth.Type != "customscheme" {
+		t.Fatalf("auth = %#v, want exact unknown source mode", action.Auth)
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("metadata = %#v, want durable review gate", action.Metadata)
+	}
+	fields, ok := action.Metadata["postman_auth_source_fields"].([]map[string]any)
+	if !ok || len(fields) != 3 {
+		t.Fatalf("source fields = %#v, want all authored entries", action.Metadata["postman_auth_source_fields"])
+	}
+	if fields[1]["name"] != "password" || fields[1]["value"] != password {
+		t.Fatalf("password field = %#v, want exact source credential", fields[1])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked destination is invalid: %v", issues)
 	}
 }
 
@@ -831,8 +947,8 @@ func TestConvertPostmanReportsEventScriptsAndTranslatesSimpleVariables(t *testin
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if postmanParameterNames(result, "token") {
-		t.Fatalf("static credential variable remained in parameters: %#v", result.Script.Parameters)
+	if !postmanParameterNames(result, "token") {
+		t.Fatalf("translated script variable was not retained in parameters: %#v", result.Script.Parameters)
 	}
 	if !containsPostmanDiagnostic(result, "Postman pre-request script") {
 		t.Fatalf("diagnostics = %#v, want pre-request warning", result.Unsupported)
@@ -850,20 +966,24 @@ func TestConvertPostmanReportsEventScriptsAndTranslatesSimpleVariables(t *testin
 	if len(action.Assertions) != 1 || action.Assertions[0].Type != "status_code" || action.Assertions[0].Expected != 200 {
 		t.Fatalf("translated status assertion = %#v", action.Assertions)
 	}
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("marshal result: %v", err)
-	}
-	if strings.Contains(string(encoded), "abc123") {
-		t.Fatalf("public conversion disclosed static script credential: %s", encoded)
+	if !strings.Contains(action.Headers["Authorization"], "abc123") {
+		t.Fatalf("destination header lost translated script credential: %q", action.Headers["Authorization"])
 	}
 	requirements := result.ProtectedRequirements.Take()
 	defer clearPostmanProtectedValues(requirements)
-	if len(requirements) != 1 || requirements[0].Value != "Bearer abc123" {
-		t.Fatalf("static script credential protected handoff = %#v", requirements)
+	if len(requirements) != 0 {
+		t.Fatalf("static script credential requirements = %#v, want no reentry", requirements)
 	}
-	if strings.Contains(string(encoded), "postman-residual-script-canary-a12b") {
-		t.Fatalf("public conversion result disclosed residual script source: %s", encoded)
+	eventSources, _ := result.Script.Metadata.Import.Preserved["postman_event_sources"].([]map[string]string)
+	if len(eventSources) != 1 || !strings.Contains(eventSources[0]["script"], "postman-residual-script-canary-a12b") {
+		t.Fatalf("durable destination omitted residual event source: %#v", eventSources)
+	}
+	reviewJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("marshal source review: %v", err)
+	}
+	if strings.Contains(string(reviewJSON), "postman-residual-script-canary-a12b") {
+		t.Fatalf("public source review disclosed residual script source: %s", reviewJSON)
 	}
 }
 
@@ -1284,7 +1404,7 @@ func TestConvertPostmanUsesSharedRequestFinalizer(t *testing.T) {
 	}
 }
 
-func TestConvertPostmanSharedCredentialProjectionDoesNotLeakCanaries(t *testing.T) {
+func TestConvertPostmanSharedCredentialProjectionPreservesExecutableCanaries(t *testing.T) {
 	const (
 		queryCanary  = "postman-query-canary-81d5"
 		xmlCanary    = "postman-xml-canary-92e6"
@@ -1315,24 +1435,94 @@ func TestConvertPostmanSharedCredentialProjectionDoesNotLeakCanaries(t *testing.
 		t.Fatal(err)
 	}
 	for _, canary := range []string{queryCanary, xmlCanary, cookieCanary} {
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("credential canary %q leaked in converter JSON: %s", canary, encoded)
+		if !strings.Contains(string(encoded), canary) {
+			t.Fatalf("destination conversion lost credential %q: %s", canary, encoded)
 		}
 	}
 	action := result.Script.Actions[0]
-	if !strings.Contains(action.Target, "{{secret.") || !strings.Contains(action.Body, "{{secret.") {
-		t.Fatalf("shared projection did not govern URL and XML credentials: %#v", action)
+	if !strings.Contains(action.Target, queryCanary) || !strings.Contains(action.Body, xmlCanary) {
+		t.Fatalf("shared projection changed URL or XML credential bytes: %#v", action)
 	}
-	if !strings.Contains(action.Headers["Cookie"], "{{secret.") {
-		t.Fatalf("Postman cookie was not projected by shared policy: %q", action.Headers["Cookie"])
+	if action.Headers["Cookie"] != "session="+cookieCanary {
+		t.Fatalf("Postman cookie changed: %q", action.Headers["Cookie"])
 	}
 	if result.finalization == nil || len(result.finalization.Reports) != 1 ||
-		len(result.finalization.Reports[0].Requirements) < 2 {
-		t.Fatalf("credential requirements = %#v", result.finalization)
+		len(result.finalization.Reports[0].Requirements) != 0 {
+		t.Fatalf("credential requirements = %#v, preserved values must not require reentry", result.finalization)
 	}
-	for _, requirement := range result.finalization.Reports[0].Requirements {
-		if requirement.Value != "" || requirement.SourceValueAvailable {
-			t.Fatalf("raw credential escaped conversion stack: %#v", requirement)
+	if result.SourceReview == nil {
+		t.Fatal("source review missing")
+	}
+	sourceJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, canary := range []string{queryCanary, xmlCanary, cookieCanary} {
+		if strings.Contains(string(sourceJSON), canary) {
+			t.Fatalf("source review disclosed %q: %s", canary, sourceJSON)
+		}
+	}
+}
+
+func TestConvertPostmanMasksNeutralVariablesUsedByCredentialURLAndBodyOnlyInSourceReview(t *testing.T) {
+	const (
+		queryCanary  = "postman-neutral-query-value-81f3"
+		bodyCanary   = "postman-neutral-body-value-42ac"
+		shadowCanary = "postman-neutral-duplicate-value-59de"
+	)
+	result, err := Convert(ImportRequest{
+		Content: fmt.Sprintf(`{
+		  "info": {"name": "Neutral credential variables"},
+		  "variable": [
+		    {"key": "lookupLabel", "value": %q},
+		    {"key": "payloadLabel", "value": %q},
+		    {"key": "shadowLabel", "value": %q}
+		  ],
+		  "item": [{
+		    "name": "Credential flow",
+		    "request": {
+		      "method": "POST",
+		      "url": "https://api.example.test/login?api_key={{lookupLabel}}",
+		      "header": [{"key": "Content-Type", "value": "application/json"}],
+		      "body": {
+		        "mode": "raw",
+		        "raw": "{\"password\":\"{{payloadLabel}}\",\"password\":\"{{shadowLabel}}\",\"label\":\"ordinary\"}"
+		      }
+		    }
+		  }]
+		}`, queryCanary, bodyCanary, shadowCanary),
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script == nil || len(result.Script.Actions) != 1 {
+		t.Fatalf("script = %#v, want one request", result.Script)
+	}
+	action := result.Script.Actions[0]
+	if !strings.Contains(action.Target, "{{var.lookupLabel}}") ||
+		!strings.Contains(action.Body, "{{var.payloadLabel}}") ||
+		!strings.Contains(action.Body, "{{var.shadowLabel}}") {
+		t.Fatalf("durable request lost imported credential bindings: %#v", action)
+	}
+	durablePayload, err := json.Marshal(result.Script)
+	if err != nil {
+		t.Fatalf("json.Marshal(durable script): %v", err)
+	}
+	for _, canary := range []string{queryCanary, bodyCanary, shadowCanary} {
+		if !strings.Contains(string(durablePayload), canary) {
+			t.Fatalf("durable script lost imported credential %q: %s", canary, durablePayload)
+		}
+	}
+	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+		t.Fatalf("preserved imported values require operator reentry: %#v", requirements)
+	}
+	reviewPayload, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatalf("json.Marshal(source review): %v", err)
+	}
+	for _, canary := range []string{queryCanary, bodyCanary, shadowCanary} {
+		if strings.Contains(string(reviewPayload), canary) {
+			t.Fatalf("source review disclosed neutral credential variable %q: %s", canary, reviewPayload)
 		}
 	}
 }
@@ -1385,47 +1575,42 @@ func TestConvertPostmanProtectedProjectionCoversHeaderAuthJSONFormAndMultipart(t
 		t.Fatalf("marshal result: %v", err)
 	}
 	for _, canary := range canaries {
-		if strings.Contains(string(encoded), canary) {
-			t.Fatalf("public conversion result disclosed %q: %s", canary, encoded)
+		if !strings.Contains(string(encoded), canary) {
+			t.Fatalf("destination conversion lost %q: %s", canary, encoded)
 		}
 	}
 
 	jsonAction := result.Script.Actions[0]
-	if !strings.Contains(jsonAction.Headers["X-Api-Key"], "{{secret.") ||
-		jsonAction.Auth == nil || !strings.Contains(jsonAction.Auth.Token, "{{secret.") ||
-		!strings.Contains(jsonAction.Body, `"password":"{{secret.`) ||
+	if jsonAction.Headers["X-Api-Key"] != canaries[0] ||
+		jsonAction.Auth == nil || jsonAction.Auth.Token != canaries[1] ||
+		!strings.Contains(jsonAction.Body, `"password":"`+canaries[2]+`"`) ||
 		!strings.Contains(jsonAction.Body, `"count":7`) {
 		t.Fatalf("JSON/header/auth projection = %#v", jsonAction)
 	}
 	formBody := result.Script.Actions[1].Body
 	firstLabel := strings.Index(formBody, "label=first")
-	secret := strings.Index(formBody, "password={{secret.")
+	secret := strings.Index(formBody, "password="+canaries[3])
 	secondLabel := strings.Index(formBody, "label=second")
 	if firstLabel < 0 || secret <= firstLabel || secondLabel <= secret {
 		t.Fatalf("ordered duplicate form fields changed: %q", formBody)
 	}
 	multipartBody := result.Script.Actions[2].Body
 	if strings.Count(multipartBody, `name="label"`) != 2 ||
-		!strings.Contains(multipartBody, "{{secret.") {
+		!strings.Contains(multipartBody, canaries[4]) {
 		t.Fatalf("ordered duplicate multipart fields changed: %q", multipartBody)
 	}
 
 	protected := result.ProtectedRequirements.Take()
-	if len(protected) != len(canaries) {
-		t.Fatalf("protected requirements = %#v, want %d", protected, len(canaries))
+	if len(protected) != 0 {
+		t.Fatalf("protected requirements = %#v, preserved credentials must not require reentry", protected)
 	}
-	seen := make(map[string]struct{}, len(protected))
-	for _, requirement := range protected {
-		seen[requirement.Value] = struct{}{}
-		for _, canary := range canaries {
-			if strings.Contains(requirement.ID, canary) {
-				t.Fatalf("requirement ID disclosed source value: %#v", requirement)
-			}
-		}
+	sourceJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, canary := range canaries {
-		if _, ok := seen[canary]; !ok {
-			t.Fatalf("protected handoff did not retain %q: %#v", canary, protected)
+		if strings.Contains(string(sourceJSON), canary) {
+			t.Fatalf("source review disclosed %q: %s", canary, sourceJSON)
 		}
 	}
 }
@@ -1451,17 +1636,16 @@ func TestConvertPostmanGovernsComposedCredentialAsWholeValue(t *testing.T) {
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	if action.Headers["Authorization"] == "" ||
-		!postmanWholeTemplatePattern.MatchString(action.Headers["Authorization"]) ||
-		!strings.Contains(action.Headers["Authorization"], "{{secret.") {
-		t.Fatalf("composed credential was not governed as one value: %q", action.Headers["Authorization"])
+	want := "Bearer " + canary + "-{{var.token}}"
+	if action.Headers["Authorization"] != want {
+		t.Fatalf("composed credential = %q, want imported value %q", action.Headers["Authorization"], want)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), canary) {
-		t.Fatalf("composed credential canary leaked: %s", encoded)
+	if !strings.Contains(string(encoded), canary) {
+		t.Fatalf("destination conversion lost composed credential: %s", encoded)
 	}
 }
 
@@ -1481,7 +1665,7 @@ func TestPostmanCredentialTemplatePreservationRequiresResponseProvenance(t *test
 	}
 }
 
-func TestConvertPostmanUnsanitizedCompatibilityIsDurablyBlocked(t *testing.T) {
+func TestConvertPostmanUnsanitizedCompatibilityRemainsExecutable(t *testing.T) {
 	sanitize := false
 	result, err := Convert(ImportRequest{
 		Content: `{
@@ -1508,15 +1692,11 @@ func TestConvertPostmanUnsanitizedCompatibilityIsDurablyBlocked(t *testing.T) {
 		action.Body != `{"password":"raw-body-canary","count":7}` {
 		t.Fatalf("sanitize_sensitive=false changed source values: %#v", action)
 	}
-	if action.Metadata["execution_blocker"] != "import_credentials_unmanaged" {
-		t.Fatalf("execution blocker = %#v", action.Metadata)
-	}
-	review, ok := action.Metadata["import_review"].(map[string]any)
-	if !ok || review["source"] != "postman" {
-		t.Fatalf("durable import review = %#v", action.Metadata["import_review"])
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("execution blocker = %#v, preserved credentials must remain runnable", action.Metadata)
 	}
 	if result.finalization == nil || result.finalization.Result == nil ||
-		result.finalization.Result.Disposition != "blocked_draft" {
+		result.finalization.Result.Disposition == "blocked_draft" {
 		t.Fatalf("finalization disposition = %#v", result.finalization)
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
@@ -1547,8 +1727,8 @@ func TestConvertPostmanProjectsMultipartCredentialsWithoutChangingOtherParts(t *
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	if strings.Contains(action.Body, multipartCanary) || !strings.Contains(action.Body, "{{secret.") {
-		t.Fatalf("multipart credential was not projected: %q", action.Body)
+	if !strings.Contains(action.Body, multipartCanary) {
+		t.Fatalf("multipart credential was not preserved: %q", action.Body)
 	}
 	if strings.Count(action.Body, `name="label"`) != 2 ||
 		!strings.Contains(action.Body, "\r\n\r\nfirst\r\n") ||
@@ -1556,15 +1736,22 @@ func TestConvertPostmanProjectsMultipartCredentialsWithoutChangingOtherParts(t *
 		t.Fatalf("nonsensitive multipart occurrences changed: %q", action.Body)
 	}
 	if len(result.finalization.Reports) != 1 ||
-		len(result.finalization.Reports[0].Requirements) != 1 {
-		t.Fatalf("multipart credential requirements = %#v", result.finalization.Reports)
+		len(result.finalization.Reports[0].Requirements) != 0 {
+		t.Fatalf("multipart credential requirements = %#v, want no reentry", result.finalization.Reports)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), multipartCanary) {
-		t.Fatalf("multipart canary leaked in converter JSON: %s", encoded)
+	if !strings.Contains(string(encoded), multipartCanary) {
+		t.Fatalf("destination conversion lost multipart credential: %s", encoded)
+	}
+	sourceJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(sourceJSON), multipartCanary) {
+		t.Fatalf("source review disclosed multipart credential: %s", sourceJSON)
 	}
 }
 

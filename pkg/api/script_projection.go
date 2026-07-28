@@ -5,9 +5,11 @@ package api
 // viewer, export, federation, and source-control representations must not.
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -22,12 +24,17 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const maskedScriptSecret = scrub.Redacted
 const credentialParameterSourceRedactedBlocker = "credential_parameter_source_redacted"
+const scriptProjectionResponseGateMetadataKey = "script_projection_response_gate_v1"
+const scriptProjectionUnprojectableBodyReason = "unprojectable_credential_body"
+
+var maskedImportHeaderBytes = base64.StdEncoding.EncodeToString([]byte(maskedScriptSecret))
 
 var scriptSecretTemplatePattern = regexp.MustCompile(`\{\{\s*secret\.(` + engine.LogicalSecretNameInputPattern + `)\s*\}\}`)
 var scriptPortableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
@@ -57,7 +64,20 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	if err := json.Unmarshal(payload, &working); err != nil {
 		return nil
 	}
+	if err := maskImportHeaderFidelityBytes(&working); err != nil {
+		return nil
+	}
+	// Import-save attestations are short-lived capabilities for the authorized
+	// editable draft only. Review payloads, stored reads, exports, and other
+	// disclosure-safe projections must never duplicate them.
+	stripImportDraftAttestation(&working)
+	// Source commit fences are private, server-owned reconciliation state.
+	// They contain no source values, but exposing them would let clients infer
+	// pending publication state and would invite accidental round-trip edits.
+	stripProtectedImportSourceCommitFence(&working)
+	maskRawBrunoRuntimeArtifactReference(&working)
 	maskJavaVuserVMParameterValues(&working)
+	maskScriptDataSourceCredentials(&working)
 	protectedBodies, ok := projectScriptRequestBodies(&working)
 	if !ok {
 		return nil
@@ -92,7 +112,514 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 		return nil
 	}
 	restoreBrunoNativeCompactProvenance(&masked, script)
-	return &masked
+	projectedScript, err := scriptdisclosure.ProjectWithCredentialSource(&masked, script)
+	if err != nil {
+		return nil
+	}
+	restoreBrunoNativeCompactProvenance(projectedScript, script)
+	restoreProjectedJavaVuserApprovalEvidence(projectedScript, script)
+	return projectedScript
+}
+
+// maskImportHeaderFidelityBytes projects the exact, inert source bytes retained
+// for runtime-incompatible headers and multipart fields. The durable execution
+// copy keeps those bytes behind import_review_required, but ordinary reads,
+// exports, and review responses must not disclose either an authored name or
+// value. The historical function name is retained because header fidelity was
+// the first consumer of this shared byte envelope.
+func maskImportHeaderFidelityBytes(script *dsl.Script) error {
+	if script == nil {
+		return nil
+	}
+	return dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		metadata := ref.Metadata()
+		if marker, ok := metadata[dsl.ImportHeaderFidelityMetadataKey].(map[string]any); ok {
+			maskHeaderFidelityOccurrenceBytes(marker["omitted_occurrences"])
+		}
+		if marker, ok := metadata[dsl.ImportMultipartFidelityMetadataKey].(map[string]any); ok {
+			maskHeaderFidelityOccurrenceBytes(marker["omitted_fields"])
+		}
+		return nil
+	})
+}
+
+func maskHeaderFidelityOccurrenceBytes(raw any) {
+	maskOccurrence := func(occurrence map[string]any) {
+		if occurrence == nil {
+			return
+		}
+		if _, exists := occurrence[dsl.ImportHeaderFidelityPreservedNameBase64Key]; exists {
+			occurrence[dsl.ImportHeaderFidelityPreservedNameBase64Key] = maskedImportHeaderBytes
+		}
+		if _, exists := occurrence[dsl.ImportHeaderFidelityPreservedValueBase64Key]; exists {
+			occurrence[dsl.ImportHeaderFidelityPreservedValueBase64Key] = maskedImportHeaderBytes
+		}
+	}
+	switch occurrences := raw.(type) {
+	case []map[string]any:
+		for _, occurrence := range occurrences {
+			maskOccurrence(occurrence)
+		}
+	case []any:
+		for _, rawOccurrence := range occurrences {
+			if occurrence, ok := rawOccurrence.(map[string]any); ok {
+				maskOccurrence(occurrence)
+			}
+		}
+	}
+}
+
+// importHeaderFidelityProjectionChanged lets the protected import-draft
+// attestation recognize credentials that exist only in inert, gated header or
+// multipart fidelity envelopes. Secret-binding discovery intentionally skips
+// gated actions, so without this comparison a legacy create would treat the
+// editable import draft as untrusted and persist its response mask instead of
+// the exact bytes. The historical function name remains for compatibility.
+func importHeaderFidelityProjectionChanged(raw, projected *dsl.Script) bool {
+	rawSnapshot, rawOK := importHeaderFidelitySnapshot(raw)
+	projectedSnapshot, projectedOK := importHeaderFidelitySnapshot(projected)
+	return !rawOK || !projectedOK || !reflect.DeepEqual(rawSnapshot, projectedSnapshot)
+}
+
+func importHeaderFidelitySnapshot(script *dsl.Script) ([]string, bool) {
+	if script == nil {
+		return nil, true
+	}
+	var snapshot []string
+	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		for _, envelope := range []struct {
+			metadataKey   string
+			collectionKey string
+		}{
+			{
+				metadataKey:   dsl.ImportHeaderFidelityMetadataKey,
+				collectionKey: "omitted_occurrences",
+			},
+			{
+				metadataKey:   dsl.ImportMultipartFidelityMetadataKey,
+				collectionKey: "omitted_fields",
+			},
+		} {
+			marker, ok := ref.Metadata()[envelope.metadataKey].(map[string]any)
+			if !ok {
+				continue
+			}
+			occurrences, ok := importFidelityOccurrencesJSON(
+				marker,
+				envelope.collectionKey,
+			)
+			if !ok {
+				return fmt.Errorf("decode %s occurrences", envelope.metadataKey)
+			}
+			for index, occurrence := range occurrences {
+				for _, key := range []string{
+					dsl.ImportHeaderFidelityPreservedNameBase64Key,
+					dsl.ImportHeaderFidelityPreservedValueBase64Key,
+				} {
+					value, exists := occurrence[key]
+					if !exists {
+						continue
+					}
+					payload, err := json.Marshal(value)
+					if err != nil {
+						return err
+					}
+					snapshot = append(
+						snapshot,
+						fmt.Sprintf(
+							"%s\x00%s\x00%d\x00%s\x00%s",
+							ref.Path,
+							envelope.metadataKey,
+							index,
+							key,
+							payload,
+						),
+					)
+				}
+			}
+		}
+		return nil
+	})
+	return snapshot, err == nil
+}
+
+const (
+	maxScriptProjectionDataSourceBytes = 8 << 20
+	maxScriptProjectionDataSourceCells = 100_000
+)
+
+// maskScriptDataSourceCredentials projects credential-bearing list parameters
+// and inline CSV/DAT cells without changing the durable runtime copy. Generic
+// text scrubbing cannot infer that a short value is sensitive merely because a
+// neutral source variable later feeds Authorization. Importer provenance and
+// column semantics close that response-only leak.
+func maskScriptDataSourceCredentials(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	credentialParameterNames := make(map[string]struct{})
+	if script.Metadata != nil && script.Metadata.Import != nil {
+		for _, name := range importPreservedStringSlice(
+			script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialParameterNamesKey],
+		) {
+			if name = canonicalCredentialParameterName(name); name != "" {
+				credentialParameterNames[name] = struct{}{}
+			}
+		}
+	}
+	sensitiveColumns := make(map[string][]string)
+	for index := range script.Parameters {
+		parameter := &script.Parameters[index]
+		_, provenCredentialSource := credentialParameterNames[canonicalCredentialParameterName(parameter.Name)]
+		sensitive := provenCredentialSource ||
+			isSensitiveScriptKey(parameter.Name) ||
+			isSensitiveScriptKey(parameter.Column)
+		if sensitive {
+			for valueIndex, value := range parameter.Values {
+				if value == "" || isPortableTemplateBinding(value) ||
+					strings.Contains(value, maskedScriptSecret) {
+					continue
+				}
+				parameter.Values[valueIndex] = projectSensitiveScriptValue(value)
+			}
+		}
+		sourceName := strings.ToLower(strings.TrimSpace(parameter.DataSource))
+		if sourceName == "" || !sensitive {
+			continue
+		}
+		sensitiveColumns[sourceName] = append(
+			sensitiveColumns[sourceName],
+			strings.TrimSpace(parameter.Column),
+		)
+	}
+	// Recorder parameterization uses direct {{data.recorded_inputs.column}}
+	// references and therefore has no dsl.Parameter object from which the
+	// projection can infer sensitive columns. Its server-authored provenance
+	// carries the exact column names instead.
+	if script.Metadata != nil && script.Metadata.Import != nil {
+		if columns := importPreservedStringSlice(
+			script.Metadata.Import.Preserved["recorded_input_secret_columns"],
+		); len(columns) > 0 {
+			sensitiveColumns["recorded_inputs"] = append(
+				sensitiveColumns["recorded_inputs"],
+				columns...,
+			)
+		}
+	}
+	if len(script.DataSources) == 0 {
+		return
+	}
+	for index := range script.DataSources {
+		source := &script.DataSources[index]
+		requiredColumns := sensitiveColumns[strings.ToLower(strings.TrimSpace(source.Name))]
+		sourceSensitive := isSensitiveScriptKey(source.Name)
+		if strings.TrimSpace(source.InlineData) == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(source.Encoding), "base64") {
+			if sourceSensitive || len(requiredColumns) > 0 {
+				source.InlineData = maskedScriptSecret
+			}
+			continue
+		}
+		projected, sensitive, ok := projectScriptDataSourceTable(
+			*source,
+			requiredColumns,
+			sourceSensitive,
+		)
+		if ok {
+			if sensitive {
+				source.InlineData = projected
+			}
+			continue
+		}
+		// A source whose schema already proves credential use must fail closed
+		// when its table cannot be parsed within the response-projection budget.
+		if sourceSensitive || len(requiredColumns) > 0 {
+			source.InlineData = maskedScriptSecret
+		}
+	}
+}
+
+func canonicalCredentialParameterName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func importPreservedStringSlice(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+				result = append(result, text)
+			}
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+// sanitizePersistentImportReviewSurfaces removes credential material from
+// non-executable import provenance before any durable write. Credential-
+// preserving imports bypass executable projection by design, so this boundary
+// must be applied independently of maskScriptSecrets.
+func sanitizePersistentImportReviewSurfaces(script *dsl.Script) error {
+	if script == nil {
+		return nil
+	}
+	if script.Metadata != nil && script.Metadata.Import != nil {
+		for key, value := range script.Metadata.Import.Preserved {
+			switch {
+			case key == javaVuserApprovalEvidenceKey:
+				// This is server-authored governance evidence, not executable
+				// session material. The loop has already removed its wrapper
+				// key from projection context, so preserve only the complete,
+				// strictly validated UUID/SHA-256 envelope explicitly.
+				validated := projectJavaVuserApprovalEvidence(value)
+				if len(validated) == 2 {
+					script.Metadata.Import.Preserved[key] = validated
+				} else {
+					delete(script.Metadata.Import.Preserved, key)
+				}
+			case isOpaqueImportSourcePayloadKey(key):
+				// These bounded, server-authored payloads are the only preserved
+				// metadata fields allowed to retain exact source bytes. They are
+				// required to finish a durably gated conversion and are masked
+				// independently on every ordinary response projection.
+				continue
+			case isExecutableImportPreservedPayloadKey(key):
+				// Browser recorded-only resource filtering consumes these exact
+				// URLs at runtime. They may contain the same userinfo or signed
+				// query credentials already present in the operator's imported
+				// recording, so the durable execution copy must retain them.
+				// maskScriptSecrets projects them independently on every read,
+				// export, receipt, and review surface.
+				continue
+			case isReviewEvidenceSubtreeKey(key):
+				script.Metadata.Import.Preserved[key] = sanitizeImportReviewEvidence(value)
+			default:
+				// Import provenance is not an executable credential surface.
+				// Even a trusted import must not turn arbitrary caller-controlled
+				// metadata into a durable raw-source side channel. Preserve
+				// ordinary enums, IDs, and mappings while applying the same
+				// disclosure projection used for opaque metadata responses.
+				script.Metadata.Import.Preserved[key] = projectScriptNode(
+					value,
+					scriptProjectionContext{
+						key:       key,
+						opaqueMap: true,
+						metadata:  true,
+					},
+				)
+			}
+		}
+	}
+	return dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if ref.Action == nil {
+			return nil
+		}
+		switch strings.ToLower(strings.TrimSpace(ref.Action.Type)) {
+		case "source_review", "review_required":
+		default:
+			return nil
+		}
+		// Runtime-incompatible header and multipart bytes are durable execution
+		// evidence, not source-review prose. Preserve only these already-gated
+		// envelopes while the rest of a review-only action is disclosure-
+		// sanitized; response projection masks them independently.
+		fidelityEnvelopes := make(map[string]any, 2)
+		if ref.Action.Metadata != nil {
+			for _, key := range []string{
+				dsl.ImportHeaderFidelityMetadataKey,
+				dsl.ImportMultipartFidelityMetadataKey,
+			} {
+				if value, exists := ref.Action.Metadata[key]; exists {
+					fidelityEnvelopes[key] = value
+				}
+			}
+		}
+		sanitized := sanitizeImportReviewEvidence(ref.Action)
+		payload, err := json.Marshal(sanitized)
+		if err != nil {
+			return fmt.Errorf("sanitize %s import review action: %w", ref.Path, err)
+		}
+		var action dsl.Action
+		if err := json.Unmarshal(payload, &action); err != nil {
+			return fmt.Errorf("decode sanitized %s import review action: %w", ref.Path, err)
+		}
+		if len(fidelityEnvelopes) > 0 {
+			if action.Metadata == nil {
+				action.Metadata = make(map[string]any)
+			}
+			for key, value := range fidelityEnvelopes {
+				action.Metadata[key] = value
+			}
+		}
+		*ref.Action = action
+		return nil
+	})
+}
+
+func isExecutableImportPreservedPayloadKey(key string) bool {
+	return normalizeScriptFieldName(key) == "recordedresourceurls"
+}
+
+func projectScriptDataSourceTable(
+	source dsl.DataSource,
+	requiredColumns []string,
+	sourceSensitive bool,
+) (string, bool, bool) {
+	if len(source.InlineData) > maxScriptProjectionDataSourceBytes {
+		return "", false, false
+	}
+	delimiter := dsl.ResolveDataSourceDelimiter(source, source.InlineData)
+	reader := csv.NewReader(strings.NewReader(source.InlineData))
+	reader.Comma = delimiter
+	reader.FieldsPerRecord = -1
+	reader.LazyQuotes = true
+
+	records := make([][]string, 0, 16)
+	cellCount := 0
+	maxColumns := 0
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil ||
+			len(record) > maxScriptProjectionDataSourceCells-cellCount {
+			return "", false, false
+		}
+		cellCount += len(record)
+		if len(record) > maxColumns {
+			maxColumns = len(record)
+		}
+		records = append(records, record)
+	}
+	if len(records) == 0 || maxColumns == 0 {
+		return source.InlineData, false, true
+	}
+
+	columns := append([]string(nil), source.Columns...)
+	dataStart := 0
+	if source.FirstRowHeader {
+		columns = records[0]
+		dataStart = 1
+	} else if len(columns) == 0 &&
+		scriptDataSourceRecordLooksLikeCredentialHeader(records[0], requiredColumns) {
+		// Older imported DAT sources did not always set first_row_header even
+		// though the first record carried names. Treat the row as a header only
+		// when it contains a credential semantic name, avoiding broad guessing.
+		columns = records[0]
+		dataStart = 1
+	}
+
+	sensitiveIndexes := make([]bool, maxColumns)
+	for columnIndex, column := range columns {
+		if columnIndex >= len(sensitiveIndexes) {
+			break
+		}
+		if isSensitiveScriptKey(strings.TrimPrefix(column, "\ufeff")) ||
+			scriptDataSourceColumnRequired(column, requiredColumns) {
+			sensitiveIndexes[columnIndex] = true
+		}
+	}
+	knownSensitiveColumn := false
+	for _, sensitive := range sensitiveIndexes {
+		knownSensitiveColumn = knownSensitiveColumn || sensitive
+	}
+	if !knownSensitiveColumn && (sourceSensitive || len(requiredColumns) > 0) {
+		// The source/parameter contract proves credential use but the authored
+		// column shape is absent or ambiguous. Redact every data cell rather
+		// than disclose a credential under an unhelpful column alias.
+		for index := range sensitiveIndexes {
+			sensitiveIndexes[index] = true
+		}
+		knownSensitiveColumn = true
+	}
+	if !knownSensitiveColumn {
+		return source.InlineData, false, true
+	}
+
+	for rowIndex := dataStart; rowIndex < len(records); rowIndex++ {
+		for columnIndex, sensitive := range sensitiveIndexes {
+			if !sensitive || columnIndex >= len(records[rowIndex]) {
+				continue
+			}
+			value := records[rowIndex][columnIndex]
+			if value == "" || isPortableTemplateBinding(value) ||
+				strings.Contains(value, maskedScriptSecret) {
+				continue
+			}
+			records[rowIndex][columnIndex] = maskedScriptSecret
+		}
+	}
+
+	var output bytes.Buffer
+	writer := csv.NewWriter(&output)
+	writer.Comma = delimiter
+	writer.UseCRLF = strings.Contains(source.InlineData, "\r\n")
+	for _, record := range records {
+		if err := writer.Write(record); err != nil {
+			return "", false, false
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", false, false
+	}
+	projected := output.String()
+	if !strings.HasSuffix(source.InlineData, "\n") {
+		projected = strings.TrimSuffix(projected, "\n")
+		if writer.UseCRLF {
+			projected = strings.TrimSuffix(projected, "\r")
+		}
+	}
+	return projected, true, true
+}
+
+func scriptDataSourceRecordLooksLikeCredentialHeader(record, requiredColumns []string) bool {
+	for _, column := range record {
+		column = strings.TrimPrefix(column, "\ufeff")
+		if isSensitiveScriptKey(column) ||
+			scriptDataSourceColumnRequired(column, requiredColumns) {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptDataSourceColumnRequired(column string, requiredColumns []string) bool {
+	column = strings.TrimSpace(strings.TrimPrefix(column, "\ufeff"))
+	if column == "" {
+		return false
+	}
+	for _, required := range requiredColumns {
+		if required != "" && strings.EqualFold(column, strings.TrimSpace(required)) {
+			return true
+		}
+	}
+	return false
+}
+
+func maskRawBrunoRuntimeArtifactReference(script *dsl.Script) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return
+	}
+	source, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey].(string)
+	if !strings.EqualFold(strings.TrimSpace(source), "raw") {
+		return
+	}
+	// These values identify the protected raw source object and its raw
+	// fingerprints. They are required by the runtime, but ordinary script reads
+	// must not disclose them. Masked-write reconciliation restores unchanged
+	// values from the durable script.
+	script.Config.Bruno.BundleRef = maskedScriptSecret
+	script.Config.Bruno.BundleSHA256 = maskedScriptSecret
+	script.Config.Bruno.ManifestSHA256 = maskedScriptSecret
 }
 
 // maskJavaVuserVMParameterValues is a read/export defense for legacy rows and
@@ -117,10 +644,19 @@ func maskJavaVuserVMParameterValues(script *dsl.Script) {
 // values with value-free diagnostics before generic secret-binding discovery
 // can offer an invalid project-secret binding for this surface.
 func validateJavaVMParameterDisclosureSafety(script *dsl.Script) error {
+	return validateJavaVMParameterSafety(script, false)
+}
+
+func validateJavaVMParameterSafety(script *dsl.Script, allowPreservedCredentials bool) error {
 	if script == nil {
 		return nil
 	}
 	issues := javarunner.ValidateVMParameters(script.Config.JavaVuser.AdditionalVMParameters)
+	if allowPreservedCredentials {
+		issues = javarunner.ValidateVMParametersForExecution(
+			script.Config.JavaVuser.AdditionalVMParameters,
+		)
+	}
 	if len(issues) == 0 {
 		return nil
 	}
@@ -171,10 +707,15 @@ func projectScriptRequestBodies(script *dsl.Script) (map[string]string, bool) {
 			result.Requirements[index].Value = ""
 		}
 		if err != nil || result.Disposition == credentialpolicy.Rejected || projected == nil {
-			return errors.New("request body cannot be projected safely")
-		}
-		if result.Disposition == credentialpolicy.BlockedDraft {
-			applyImportCommitBodyReviewGate(ref, "script_projection", result)
+			// A read/export projection must remain a structurally valid script
+			// even when malformed credential-bearing wire bytes cannot be
+			// selectively rewritten. Replace only the response copy with a
+			// whole-body sentinel and mark that response copy as non-executable.
+			// The marker lets masked-write reconciliation remove this transient
+			// gate and restore an unchanged authoritative body; it is never
+			// attached to the durable exact script.
+			projected = []byte(maskedScriptSecret)
+			applyScriptProjectionResponseGate(ref)
 		}
 		projected = projectMaskedXMLMessageIDs(projected)
 		protected[ref.Path] = body.encode(projected)
@@ -185,6 +726,35 @@ func projectScriptRequestBodies(script *dsl.Script) (map[string]string, bool) {
 		return nil, false
 	}
 	return protected, true
+}
+
+func applyScriptProjectionResponseGate(ref dslwalk.SurfaceRef) {
+	metadata := make(map[string]any, len(ref.Metadata())+4)
+	for key, value := range ref.Metadata() {
+		metadata[key] = value
+	}
+	if blocker, _ := metadata["execution_blocker"].(string); strings.TrimSpace(blocker) == "" {
+		metadata["execution_blocker"] = "import_review_required"
+	}
+	metadata["execution_blockers"] = appendUniqueStrings(
+		executionReviewBlockerCodes(metadata),
+		"import_review_required",
+	)
+	if _, exists := metadata["import_review"]; !exists {
+		metadata["import_review"] = map[string]any{
+			"version":      1,
+			"source":       "script_projection",
+			"reason_codes": []string{scriptProjectionUnprojectableBodyReason},
+			"source_refs":  []string{ref.Path + ".body"},
+			"resolution":   "replace_behavior_and_remove_gate",
+		}
+	}
+	// This marker distinguishes a disclosure-only fail-closed gate from source
+	// behavior that was already durably review-gated. It contains no source
+	// value and is removed when an unchanged masked response is reconciled with
+	// its authoritative stored script.
+	metadata[scriptProjectionResponseGateMetadataKey] = map[string]any{"version": 1}
+	ref.SetMetadata(metadata)
 }
 
 func projectMaskedXMLMessageIDs(payload []byte) []byte {
@@ -223,7 +793,28 @@ func maskStoredScript(stored *StoredScript) *StoredScript {
 	}
 	masked := cloneStoredScriptForReadLocked(stored)
 	masked.Script = maskScriptSecrets(masked.Script)
+	masked.Name = disclosureSafeScriptName(stored.Name, stored.Script)
 	return masked
+}
+
+// disclosureSafeScriptName projects a detached wrapper, filename, or audit
+// name using the executable script as the credential source. Import formats
+// commonly repeat a collection/request label outside the nested DSL object;
+// that duplicate must not turn an otherwise masked response into a disclosure.
+func disclosureSafeScriptName(name string, credentialSource *dsl.Script) string {
+	if credentialSource == nil {
+		return scrubScriptText(name, false)
+	}
+	probe := cloneScriptDefinition(credentialSource)
+	if probe == nil {
+		return maskedScriptSecret
+	}
+	probe.Name = name
+	projected := maskScriptSecrets(probe)
+	if projected == nil {
+		return maskedScriptSecret
+	}
+	return projected.Name
 }
 
 func maskStoredScripts(scripts []*StoredScript) []*StoredScript {
@@ -243,6 +834,7 @@ func maskAuthoringSession(session *storage.AuthoringSession) *storage.AuthoringS
 	}
 	masked := cloneAuthoringSession(session)
 	masked.Draft = maskScriptSecrets(masked.Draft)
+	masked.Name = disclosureSafeScriptName(session.Name, session.Draft)
 	masked.ReviewState = projectAuthoringReviewState(masked.ReviewState)
 	delete(masked.ReviewState, authoringSessionIdempotencyReviewKey)
 	return masked
@@ -298,6 +890,23 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 		credentialValue := scriptMapHasCredentialValue(typed)
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
+			if ctx.metadata &&
+				key == dsl.ImportPreservedCredentialTargetsMetadataKey {
+				// These are server-authored structural locators, not source
+				// values. Masking "/password" as if it were a password creates
+				// phantom binding requirements and makes the runtime locator
+				// unusable after a masked read-modify-write.
+				out[key] = projectImportCredentialTargetLocators(child)
+				continue
+			}
+			// These import-only payloads retain exact source text in the durable
+			// destination so the operator can finish a gated conversion without
+			// re-importing or re-entering embedded credentials. They are never
+			// executable and never cross an ordinary read/export boundary.
+			if ctx.metadata && isOpaqueImportSourcePayloadKey(key) {
+				out[key] = maskOpaqueImportSourcePayload(child)
+				continue
+			}
 			// Java Vuser approval provenance is a server-authored governance
 			// envelope. Its authoring-session UUID is an identifier, not runtime
 			// session material. Preserve only the two exact, validated scalar
@@ -318,6 +927,55 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				}
 				continue
 			}
+			// Proxy usernames are authentication material supplied alongside a
+			// proxy password, not ordinary application identity fields. Preserve
+			// them in the durable imported execution copy but mask them on stored
+			// reads, result/review projections, and exports.
+			if normalizeScriptFieldName(ctx.key) == "proxy" &&
+				normalizeScriptFieldName(key) == "username" {
+				if text, ok := child.(string); ok {
+					switch {
+					case strings.TrimSpace(text) == "":
+						out[key] = text
+					case isPortableTemplateBinding(text):
+						out[key] = text
+					default:
+						out[key] = projectSensitiveScriptValue(text)
+					}
+				} else {
+					out[key] = maskedScriptSecret
+				}
+				continue
+			}
+			// SOAPAction and operation are executable, adapter-defined strings.
+			// They are not credential-named fields, but imported values may
+			// contain URL userinfo, signed query parameters, or opaque
+			// credential assignments. Treat the action as URL-shaped and both
+			// fields as free text while retaining ordinary operation names.
+			if normalizeScriptFieldName(ctx.key) == "soap" {
+				switch normalizeScriptFieldName(key) {
+				case "action":
+					if text, ok := child.(string); ok {
+						out[key] = maskScriptURL(text)
+					} else {
+						out[key] = projectScriptNode(
+							child,
+							scriptProjectionContext{key: key, opaqueMap: true},
+						)
+					}
+					continue
+				case "operation":
+					if text, ok := child.(string); ok {
+						out[key] = scrubScriptText(text, false)
+					} else {
+						out[key] = projectScriptNode(
+							child,
+							scriptProjectionContext{key: key, opaqueMap: true},
+						)
+					}
+					continue
+				}
+			}
 			// Import review evidence is client-extensible and frequently embeds
 			// raw source snippets or sibling name/value pairs that the ordinary
 			// script projection cannot associate. Apply the import-specific,
@@ -334,6 +992,25 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				} else {
 					out[key] = maskedScriptSecret
 				}
+				continue
+			}
+			if credentialValue && strings.EqualFold(key, "values") {
+				values, ok := child.([]any)
+				if !ok {
+					out[key] = maskedScriptSecret
+					continue
+				}
+				projected := make([]any, len(values))
+				for index, value := range values {
+					if text, ok := value.(string); ok && isPortableTemplateBinding(text) {
+						projected[index] = text
+					} else if text, ok := value.(string); ok {
+						projected[index] = projectSensitiveScriptValue(text)
+					} else {
+						projected[index] = maskedScriptSecret
+					}
+				}
+				out[key] = projected
 				continue
 			}
 			childCtx := scriptProjectionContext{
@@ -367,6 +1044,75 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 	}
 }
 
+func projectImportCredentialTargetLocators(value any) any {
+	payload, err := json.Marshal(value)
+	if err != nil || len(payload) > 256<<10 {
+		return []any{}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var targets []credentialpolicy.TargetRef
+	if err := decoder.Decode(&targets); err != nil {
+		return []any{}
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return []any{}
+	}
+	for _, target := range targets {
+		if !validImportCredentialLocatorText(target.Field, 1024, false) ||
+			!validImportCredentialLocatorText(target.Pointer, 4096, true) ||
+			!validImportCredentialLocatorText(target.RequestKey, 1024, true) ||
+			target.Index < 0 || target.Occurrence < 0 {
+			return []any{}
+		}
+	}
+	return value
+}
+
+func validImportCredentialLocatorText(value string, maxBytes int, allowEmpty bool) bool {
+	if (!allowEmpty && strings.TrimSpace(value) == "") || len(value) > maxBytes {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func isOpaqueImportSourcePayloadKey(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "jsr223sources", "k6gatedsource", "postmaneventsources",
+		"credentialtraversalsourcesnapshotbase64", "devwebgatedsource",
+		"jmeterjdbcsources", "enterpriseunsupportedproxysource":
+		return true
+	default:
+		return false
+	}
+}
+
+func maskOpaqueImportSourcePayload(value any) any {
+	switch typed := value.(type) {
+	case []any:
+		masked := make([]any, len(typed))
+		for index := range typed {
+			masked[index] = maskOpaqueImportSourcePayload(typed[index])
+		}
+		return masked
+	case map[string]any:
+		masked := make(map[string]any, len(typed))
+		for key, child := range typed {
+			masked[key] = maskOpaqueImportSourcePayload(child)
+		}
+		return masked
+	case nil:
+		return nil
+	default:
+		return maskedScriptSecret
+	}
+}
+
 func projectJavaVuserApprovalEvidence(value any) map[string]any {
 	evidence, ok := value.(map[string]any)
 	if !ok {
@@ -376,26 +1122,58 @@ func projectJavaVuserApprovalEvidence(value any) map[string]any {
 	sessionID, sessionOK := evidence["session_id"].(string)
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionOK {
-		if _, err := uuid.Parse(sessionID); err == nil {
+		if parsed, err := uuid.Parse(sessionID); err == nil &&
+			parsed.String() == sessionID {
 			out["session_id"] = sessionID
 		}
 	}
 	contentHash, hashOK := evidence["content_hash"].(string)
-	contentHash = strings.ToLower(strings.TrimSpace(contentHash))
+	contentHash = strings.TrimSpace(contentHash)
 	if hashOK && isCanonicalSHA256(contentHash) {
 		out["content_hash"] = contentHash
 	}
 	return out
 }
 
+// restoreProjectedJavaVuserApprovalEvidence repairs the single governance
+// envelope that the final generic disclosure pass necessarily sees as opaque
+// metadata. Only a complete canonical UUID/SHA-256 pair is copied, and only
+// for a Java Vuser script whose executable surfaces require this approval.
+// Ordinary session_id fields remain irreversibly projected.
+func restoreProjectedJavaVuserApprovalEvidence(projected, source *dsl.Script) {
+	if projected == nil || source == nil ||
+		!scriptRequiresJavaVuserAuthoringApproval(source) ||
+		source.Metadata == nil || source.Metadata.Import == nil {
+		return
+	}
+	validated := projectJavaVuserApprovalEvidence(
+		source.Metadata.Import.Preserved[javaVuserApprovalEvidenceKey],
+	)
+	if len(validated) != 2 {
+		clearJavaVuserAuthoringApproval(projected)
+		return
+	}
+	sessionID, sessionOK := validated["session_id"].(string)
+	contentHash, hashOK := validated["content_hash"].(string)
+	if !sessionOK || !hashOK {
+		clearJavaVuserAuthoringApproval(projected)
+		return
+	}
+	writeJavaVuserAuthoringApproval(projected, javaVuserApprovalEvidence{
+		sessionID:   sessionID,
+		contentHash: contentHash,
+	})
+}
+
 const sha256HexLength = 64
 
 func isCanonicalSHA256(value string) bool {
 	const prefix = "sha256:"
-	return strings.HasPrefix(value, prefix) && isLowerHexDigest(strings.TrimPrefix(value, prefix), sha256HexLength)
+	return strings.HasPrefix(value, prefix) &&
+		isCanonicalLowerHexDigest(strings.TrimPrefix(value, prefix), sha256HexLength)
 }
 
-func isLowerHexDigest(value string, length int) bool {
+func isCanonicalLowerHexDigest(value string, length int) bool {
 	if len(value) != length {
 		return false
 	}
@@ -410,6 +1188,14 @@ func isLowerHexDigest(value string, length int) bool {
 func scriptMapHasCredentialValue(value map[string]any) bool {
 	if _, hasType := value["type"]; !hasType {
 		return false
+	}
+	if metadata, ok := value["metadata"].(map[string]any); ok {
+		if marked, _ := metadata["source_marked_secret"].(bool); marked {
+			return true
+		}
+		if masked, _ := metadata["source_masked_secret"].(bool); masked {
+			return true
+		}
 	}
 	var hints strings.Builder
 	for _, key := range []string{"name", "type", "target", "selector", "object_ref"} {
@@ -536,7 +1322,8 @@ func isSensitiveScriptKey(key string) bool {
 	// session material. Keep these explicit exceptions ahead of the shared
 	// component-aware vocabulary, which correctly treats standalone token and
 	// session components as sensitive in otherwise opaque extension maps.
-	if normalized == "tokenurl" || normalized == "persistsessionacrossiterations" {
+	if normalized == "tokenurl" || normalized == "persistsessionacrossiterations" ||
+		normalized == "credentialpolicy" {
 		return false
 	}
 	// Keep script projection aligned with the shared credential vocabulary used
@@ -894,7 +1681,8 @@ func isScriptURLKey(key string) bool {
 
 func isScriptFreeTextKey(key string) bool {
 	switch normalizeScriptFieldName(key) {
-	case "body", "value", "expected", "inlinedata", "schema", "objectschema", "expression", "left", "right":
+	case "body", "value", "expected", "inlinedata", "schema", "objectschema",
+		"expression", "left", "right", "runnercommand":
 		return true
 	default:
 		return false
@@ -937,7 +1725,7 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	if incoming == nil {
 		return fmt.Errorf("script is required")
 	}
-	hasRedactedRuntimeData := scriptHasRedactedRuntimeDataSource(incoming)
+	hasRedactedRuntimeData := scriptHasRedactedRuntimeCredentialSource(incoming)
 	allowRedactedRuntimeData := hasRedactedRuntimeData &&
 		scriptHasExecutionBlockerCode(incoming, credentialParameterSourceRedactedBlocker)
 	if prior == nil && hasRedactedRuntimeData && !allowRedactedRuntimeData {
@@ -990,7 +1778,16 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(payload, incoming)
+	// Decode into a zero value before replacing the caller's script. Decoding
+	// directly into incoming leaves maps/slices that were intentionally removed
+	// by reconciliation (for example a response-only review gate) resident
+	// because encoding/json does not clear fields omitted from the payload.
+	var resolved dsl.Script
+	if err := json.Unmarshal(payload, &resolved); err != nil {
+		return err
+	}
+	*incoming = resolved
+	return nil
 }
 
 func scriptAsJSONValue(script *dsl.Script) (any, error) {
@@ -1021,7 +1818,7 @@ func reconcileProjectedJSONWithOptions(
 ) (any, error) {
 	switch typed := incoming.(type) {
 	case string:
-		if allowRedactedRuntimeData && isRuntimeDataTableTraversalPath(path) {
+		if allowRedactedRuntimeData && isLegacyRedactedRuntimeSourceTraversalPath(path) {
 			projected, projectedOK := projectedPrior.(string)
 			raw, rawOK := rawPrior.(string)
 			// A script may contain one still-gated imported table alongside a
@@ -1054,6 +1851,18 @@ func reconcileProjectedJSONWithOptions(
 	case map[string]any:
 		projectedMap, _ := projectedPrior.(map[string]any)
 		rawMap, _ := rawPrior.(map[string]any)
+		// A disclosure projection may have to replace an unprojectable typed
+		// credential body with a whole-body sentinel. The response-only gate
+		// attached for that condition is not durable source behavior. When both
+		// the incoming value and the authoritative prior projection carry that
+		// exact server-generated gate, remove only its transient fields before
+		// ordinary field reconciliation. This restores the durable raw body on
+		// an unchanged (or non-wire-edited) read-modify-write without letting a
+		// caller promote arbitrary review-gated evidence into execution.
+		if isTransientScriptProjectionGate(typed, projectedMap, rawMap) {
+			typed = withoutTransientScriptProjectionGate(typed)
+			projectedMap = withoutTransientScriptProjectionGate(projectedMap)
+		}
 		priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) ||
 			isNonExecutableReviewAction(rawMap) ||
 			isDurablyImportReviewGatedAction(projectedMap) ||
@@ -1065,7 +1874,12 @@ func reconcileProjectedJSONWithOptions(
 			return nil, fmt.Errorf("%s promotes redacted review evidence into executable fields; bind a secret reference instead", path)
 		}
 		if incomingReviewOnly {
-			return incoming, nil
+			return reconcileMaskedImportHeaderFidelityBytes(
+				typed,
+				projectedMap,
+				rawMap,
+				path,
+			)
 		}
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
@@ -1113,7 +1927,9 @@ func reconcileProjectedJSONWithOptions(
 		}
 		if containsMaskedSecret &&
 			(!projectedOK || !reflect.DeepEqual(typed, projectedSlice)) {
-			if !isStableRuntimeDataSourceEdit(path, typed, projectedSlice) {
+			stableFieldEdit := isStableRuntimeDataSourceEdit(path, typed, projectedSlice) ||
+				isStableCredentialPreservingActionCollectionEdit(path, typed, projectedSlice)
+			if !stableFieldEdit {
 				for i, child := range typed {
 					incomingMap, incomingOK := child.(map[string]any)
 					if !incomingOK || i >= len(projectedSlice) {
@@ -1165,6 +1981,312 @@ func reconcileProjectedJSONWithOptions(
 	}
 }
 
+// reconcileMaskedImportHeaderFidelityBytes restores unchanged response
+// projections of the inert header and multipart fidelity envelopes. Review-
+// gated actions normally skip secret reconciliation because their evidence is
+// non-executable, but these bytes are intentionally durable: persisting the
+// fixed masked payload would silently destroy the operator's exact imported
+// source. The historical function name remains for compatibility.
+func reconcileMaskedImportHeaderFidelityBytes(
+	incoming,
+	projected,
+	raw map[string]any,
+	path string,
+) (map[string]any, error) {
+	reconciled, err := reconcileMaskedImportFidelityBytes(
+		incoming,
+		projected,
+		raw,
+		path,
+		dsl.ImportHeaderFidelityMetadataKey,
+		"omitted_occurrences",
+		"imported-header",
+	)
+	if err != nil {
+		return nil, err
+	}
+	return reconcileMaskedImportFidelityBytes(
+		reconciled,
+		projected,
+		raw,
+		path,
+		dsl.ImportMultipartFidelityMetadataKey,
+		"omitted_fields",
+		"imported-multipart",
+	)
+}
+
+func reconcileMaskedImportFidelityBytes(
+	incoming,
+	projected,
+	raw map[string]any,
+	path,
+	metadataKey,
+	collectionKey,
+	payloadLabel string,
+) (map[string]any, error) {
+	incomingMarker := importFidelityMarkerJSON(incoming, metadataKey)
+	if incomingMarker == nil {
+		return incoming, nil
+	}
+	incomingOccurrences, incomingOK := importFidelityOccurrencesJSON(
+		incomingMarker,
+		collectionKey,
+	)
+	if !incomingOK || !headerFidelityOccurrencesContainMask(incomingOccurrences) {
+		return incoming, nil
+	}
+	projectedOccurrences, projectedOK := importFidelityOccurrencesJSON(
+		importFidelityMarkerJSON(projected, metadataKey),
+		collectionKey,
+	)
+	rawOccurrences, rawOK := importFidelityOccurrencesJSON(
+		importFidelityMarkerJSON(raw, metadataKey),
+		collectionKey,
+	)
+	if !projectedOK || !rawOK ||
+		len(incomingOccurrences) != len(projectedOccurrences) ||
+		len(incomingOccurrences) != len(rawOccurrences) {
+		return nil, fmt.Errorf(
+			"%s contains an orphan masked %s payload; retain or remove the complete fidelity marker",
+			path,
+			payloadLabel,
+		)
+	}
+
+	for index := range incomingOccurrences {
+		incomingOccurrence := incomingOccurrences[index]
+		projectedOccurrence := projectedOccurrences[index]
+		rawOccurrence := rawOccurrences[index]
+		if !reflect.DeepEqual(
+			headerFidelityOccurrenceIdentity(incomingOccurrence),
+			headerFidelityOccurrenceIdentity(projectedOccurrence),
+		) || !reflect.DeepEqual(
+			headerFidelityOccurrenceIdentity(incomingOccurrence),
+			headerFidelityOccurrenceIdentity(rawOccurrence),
+		) {
+			return nil, fmt.Errorf(
+				"%s.metadata.%s.%s changed while containing a masked %s payload",
+				path,
+				metadataKey,
+				collectionKey,
+				payloadLabel,
+			)
+		}
+		for _, key := range []string{
+			dsl.ImportHeaderFidelityPreservedNameBase64Key,
+			dsl.ImportHeaderFidelityPreservedValueBase64Key,
+		} {
+			incomingValue, incomingExists := incomingOccurrence[key].(string)
+			if !incomingExists || incomingValue != maskedImportHeaderBytes {
+				continue
+			}
+			projectedValue, projectedExists := projectedOccurrence[key].(string)
+			rawValue, rawExists := rawOccurrence[key].(string)
+			if !projectedExists || projectedValue != maskedImportHeaderBytes ||
+				!rawExists {
+				return nil, fmt.Errorf(
+					"%s.metadata.%s.%s[%d].%s contains an orphan masked %s payload",
+					path,
+					metadataKey,
+					collectionKey,
+					index,
+					key,
+					payloadLabel,
+				)
+			}
+			incomingOccurrence[key] = rawValue
+		}
+	}
+	return incoming, nil
+}
+
+func importHeaderFidelityMarkerJSON(action map[string]any) map[string]any {
+	return importFidelityMarkerJSON(action, dsl.ImportHeaderFidelityMetadataKey)
+}
+
+func importFidelityMarkerJSON(
+	action map[string]any,
+	metadataKey string,
+) map[string]any {
+	if action == nil {
+		return nil
+	}
+	metadata, _ := action["metadata"].(map[string]any)
+	marker, _ := metadata[metadataKey].(map[string]any)
+	return marker
+}
+
+func importHeaderFidelityOccurrencesJSON(marker map[string]any) ([]map[string]any, bool) {
+	return importFidelityOccurrencesJSON(marker, "omitted_occurrences")
+}
+
+func importFidelityOccurrencesJSON(
+	marker map[string]any,
+	collectionKey string,
+) ([]map[string]any, bool) {
+	if marker == nil {
+		return nil, false
+	}
+	switch values := marker[collectionKey].(type) {
+	case []any:
+		out := make([]map[string]any, 0, len(values))
+		for _, raw := range values {
+			value, ok := raw.(map[string]any)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, value)
+		}
+		return out, true
+	case []map[string]any:
+		return values, true
+	default:
+		return nil, false
+	}
+}
+
+func headerFidelityOccurrencesContainMask(occurrences []map[string]any) bool {
+	for _, occurrence := range occurrences {
+		for _, key := range []string{
+			dsl.ImportHeaderFidelityPreservedNameBase64Key,
+			dsl.ImportHeaderFidelityPreservedValueBase64Key,
+		} {
+			if value, _ := occurrence[key].(string); value == maskedImportHeaderBytes {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func headerFidelityOccurrenceIdentity(occurrence map[string]any) map[string]any {
+	if occurrence == nil {
+		return nil
+	}
+	out := make(map[string]any, len(occurrence))
+	for key, value := range occurrence {
+		switch key {
+		case dsl.ImportHeaderFidelityPreservedNameBase64Key,
+			dsl.ImportHeaderFidelityPreservedValueBase64Key:
+			continue
+		default:
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func isTransientScriptProjectionGate(
+	incoming,
+	projectedPrior,
+	rawPrior map[string]any,
+) bool {
+	return hasScriptProjectionResponseGate(incoming) &&
+		hasScriptProjectionResponseGate(projectedPrior) &&
+		!hasScriptProjectionResponseGate(rawPrior) &&
+		!isDurablyImportReviewGatedAction(rawPrior)
+}
+
+func hasScriptProjectionResponseGate(action map[string]any) bool {
+	if !isScriptActionJSONValue(action) {
+		return false
+	}
+	metadata, _ := action["metadata"].(map[string]any)
+	if metadata == nil {
+		return false
+	}
+	if !scriptProjectionResponseGateMarker(metadata) {
+		// Keep recognizing response projections emitted during the transition
+		// before the explicit sidecar marker was introduced.
+		review, _ := metadata["import_review"].(map[string]any)
+		source, _ := review["source"].(string)
+		if !strings.EqualFold(strings.TrimSpace(source), "script_projection") {
+			return false
+		}
+	}
+	for _, blocker := range executionReviewBlockerCodes(metadata) {
+		if blocker == "import_review_required" {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptProjectionResponseGateMarker(metadata map[string]any) bool {
+	marker, _ := metadata[scriptProjectionResponseGateMetadataKey].(map[string]any)
+	markerVersion := 0
+	switch version := marker["version"].(type) {
+	case float64:
+		if version == 1 {
+			markerVersion = 1
+		}
+	case int:
+		if version == 1 {
+			markerVersion = 1
+		}
+	case json.Number:
+		if version.String() == "1" {
+			markerVersion = 1
+		}
+	}
+	return markerVersion == 1
+}
+
+func withoutTransientScriptProjectionGate(action map[string]any) map[string]any {
+	if !hasScriptProjectionResponseGate(action) {
+		return action
+	}
+	out := make(map[string]any, len(action))
+	for key, value := range action {
+		out[key] = value
+	}
+	metadata, _ := action["metadata"].(map[string]any)
+	cleanMetadata := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		cleanMetadata[key] = value
+	}
+	delete(cleanMetadata, scriptProjectionResponseGateMetadataKey)
+	if review, _ := cleanMetadata["import_review"].(map[string]any); review != nil {
+		source, _ := review["source"].(string)
+		if strings.EqualFold(strings.TrimSpace(source), "script_projection") {
+			delete(cleanMetadata, "import_review")
+		}
+	}
+	if blocker, _ := cleanMetadata["execution_blocker"].(string); blocker == "import_review_required" {
+		delete(cleanMetadata, "execution_blocker")
+	}
+	if raw, exists := cleanMetadata["execution_blockers"]; exists {
+		filtered := make([]any, 0)
+		switch blockers := raw.(type) {
+		case []any:
+			for _, blocker := range blockers {
+				text, _ := blocker.(string)
+				if text != "import_review_required" {
+					filtered = append(filtered, blocker)
+				}
+			}
+		case []string:
+			for _, blocker := range blockers {
+				if blocker != "import_review_required" {
+					filtered = append(filtered, blocker)
+				}
+			}
+		}
+		if len(filtered) == 0 {
+			delete(cleanMetadata, "execution_blockers")
+		} else {
+			cleanMetadata["execution_blockers"] = filtered
+		}
+	}
+	if len(cleanMetadata) == 0 {
+		delete(out, "metadata")
+	} else {
+		out["metadata"] = cleanMetadata
+	}
+	return out
+}
+
 func jsonValueContainsExecutableMaskedSecret(value any, path string) bool {
 	return jsonValueContainsExecutableMaskedSecretWithOptions(value, path, false)
 }
@@ -1189,7 +2311,7 @@ func jsonValueContainsExecutableMaskedSecretWithOptions(
 			// Redacted imported parameter rows are safe durable placeholders,
 			// not a project-secret binding. reconcileMaskedScriptSecrets permits
 			// them only while the script retains the matching execution gate.
-			if allowRedactedRuntimeData && isRuntimeDataTableTraversalPath(childPath) {
+			if allowRedactedRuntimeData && isLegacyRedactedRuntimeSourceTraversalPath(childPath) {
 				continue
 			}
 			// Must mirror discoverRedactedValues: a provenance entry raises no
@@ -1204,9 +2326,14 @@ func jsonValueContainsExecutableMaskedSecretWithOptions(
 		}
 	case []any:
 		for index, child := range typed {
+			childPath := appendJSONPointer(path, strconv.Itoa(index))
+			if allowRedactedRuntimeData &&
+				isLegacyRedactedRuntimeSourceTraversalPath(childPath) {
+				continue
+			}
 			if jsonValueContainsExecutableMaskedSecretWithOptions(
 				child,
-				appendJSONPointer(path, strconv.Itoa(index)),
+				childPath,
 				allowRedactedRuntimeData,
 			) {
 				return true
@@ -1247,13 +2374,68 @@ func isStableRuntimeDataSourceEdit(path string, incoming, projected []any) bool 
 	return true
 }
 
-func scriptHasRedactedRuntimeDataSource(script *dsl.Script) bool {
+// isStableCredentialPreservingActionCollectionEdit permits field-level
+// reconciliation for masked imported requests when every action remains at the
+// same structural position and retains its request-routing identity. This lets
+// operators edit labels, assertions, extractors, and other non-wire authoring
+// fields without re-entering imported credentials. Request destination changes
+// and reordering continue to fail closed here; the post-reconciliation import
+// context fence independently protects raw/import-response updates.
+func isStableCredentialPreservingActionCollectionEdit(path string, incoming, projected []any) bool {
+	if len(incoming) != len(projected) || !isActionCollectionTraversalPath(path) {
+		return false
+	}
+	for index := range incoming {
+		incomingMap, incomingOK := incoming[index].(map[string]any)
+		projectedMap, projectedOK := projected[index].(map[string]any)
+		if !incomingOK || !projectedOK {
+			return false
+		}
+		if !reflect.DeepEqual(
+			credentialPreservingActionIdentity(incomingMap),
+			credentialPreservingActionIdentity(projectedMap),
+		) {
+			return false
+		}
+	}
+	return true
+}
+
+func isActionCollectionTraversalPath(path string) bool {
+	switch path {
+	case "script.init", "script.actions", "script.teardown":
+		return true
+	default:
+		return strings.HasSuffix(path, ".control.steps") ||
+			strings.HasSuffix(path, ".control.else") ||
+			strings.HasSuffix(path, ".params.requests")
+	}
+}
+
+func credentialPreservingActionIdentity(action map[string]any) map[string]any {
+	identity := make(map[string]any, 5)
+	for _, key := range []string{"type", "method", "target", "selector", "object_ref"} {
+		if value, exists := action[key]; exists {
+			identity[key] = value
+		}
+	}
+	return identity
+}
+
+func scriptHasRedactedRuntimeCredentialSource(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
 	for _, source := range script.DataSources {
 		if strings.Contains(source.InlineData, maskedScriptSecret) {
 			return true
+		}
+	}
+	for _, parameter := range script.Parameters {
+		for _, value := range parameter.Values {
+			if strings.Contains(value, maskedScriptSecret) {
+				return true
+			}
 		}
 	}
 	return false
@@ -1294,6 +2476,37 @@ func isRuntimeDataTableTraversalPath(path string) bool {
 	if strings.HasPrefix(path, hybridPrefix) && strings.HasSuffix(path, hybridSuffix) {
 		index := strings.TrimSuffix(strings.TrimPrefix(path, hybridPrefix), hybridSuffix)
 		return index != "" && isDecimalToken(index)
+	}
+	return false
+}
+
+func isLegacyRedactedRuntimeSourceTraversalPath(path string) bool {
+	if isRuntimeDataTableTraversalPath(path) {
+		return true
+	}
+	if tokens, err := splitJSONPointer(path); err == nil && len(tokens) == 4 {
+		return tokens[0] == "parameters" &&
+			isDecimalToken(tokens[1]) &&
+			tokens[2] == "values" &&
+			isDecimalToken(tokens[3])
+	}
+
+	const (
+		reconcilePrefix = "script.parameters["
+		reconcileMiddle = "].values["
+		reconcileSuffix = "]"
+		hybridPrefix    = "script.parameters/"
+		hybridMiddle    = "/values/"
+	)
+	if strings.HasPrefix(path, reconcilePrefix) && strings.HasSuffix(path, reconcileSuffix) {
+		remainder := strings.TrimSuffix(strings.TrimPrefix(path, reconcilePrefix), reconcileSuffix)
+		parameterIndex, valueIndex, ok := strings.Cut(remainder, reconcileMiddle)
+		return ok && isDecimalToken(parameterIndex) && isDecimalToken(valueIndex)
+	}
+	if strings.HasPrefix(path, hybridPrefix) {
+		remainder := strings.TrimPrefix(path, hybridPrefix)
+		parameterIndex, valueIndex, ok := strings.Cut(remainder, hybridMiddle)
+		return ok && isDecimalToken(parameterIndex) && isDecimalToken(valueIndex)
 	}
 	return false
 }

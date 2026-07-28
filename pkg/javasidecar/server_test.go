@@ -373,7 +373,7 @@ func TestServerHealthCapabilitiesAndExecution(t *testing.T) {
 		t.Fatalf("Capabilities() lifecycle/warning features = %#v", capabilities.Features)
 	}
 
-	vmToken := "-Dlabel=hello world"
+	vmToken := "-Ddatabase.password=imported-password"
 	response, err := client.Execute(context.Background(), ExecutionRequest{
 		ExecutionID: "exec-1",
 		Runtime: RuntimeSettings{

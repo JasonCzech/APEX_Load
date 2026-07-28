@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -72,10 +73,11 @@ func (err *CredentialProjectionError) Error() string {
 // wire-byte Body currently carries.
 func CredentialReport(requestKey string, result credentialpolicy.Result) Report {
 	return Report{
-		RequestKey:   strings.TrimSpace(requestKey),
-		Disposition:  requestDisposition(result.Disposition),
-		Findings:     projectionFindings(result.Findings),
-		Requirements: credentialpolicy.CloneRequirements(result.Requirements),
+		RequestKey:       strings.TrimSpace(requestKey),
+		Disposition:      requestDisposition(result.Disposition),
+		Findings:         projectionFindings(result.Findings),
+		Requirements:     credentialpolicy.CloneRequirements(result.Requirements),
+		preservedTargets: append([]credentialpolicy.TargetRef(nil), result.PreservedTargets...),
 	}
 }
 
@@ -113,7 +115,13 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 		policyOptions.PreGovernedHeaderOccurrences,
 		sourceRuntimeFidelity.HeaderOmissions,
 	)
-	projected, sourceWireFindings := sanitizeCredentialSourceWire(request, projected, policyOptions)
+	projected, multipartOmissions, sourceWireFindings := sanitizeCredentialSourceWire(
+		request,
+		projected,
+		policyOptions,
+	)
+	sourceRuntimeFidelity.MultipartOmissions = multipartOmissions
+	sourceRuntimeFidelity.PreserveMultipartBytes = options.Mode == credentialpolicy.Preserve
 	sourceFindings = append(sourceFindings, sourceWireFindings...)
 	sourceFindings = importreview.NormalizeFindings(sourceFindings)
 	sourceReport := Report{
@@ -133,7 +141,9 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 	if err != nil {
 		return EffectiveRequest{}, rejectedReport(), err
 	}
-	projected.Target = target
+	if result.Disposition != credentialpolicy.Rejected {
+		projected.Target = target
+	}
 	aggregate.Merge(result)
 	if strings.TrimSpace(projected.BaseURL) != "" {
 		baseOptions := policyOptions
@@ -143,7 +153,15 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 		if baseErr != nil {
 			return EffectiveRequest{}, rejectedReport(), baseErr
 		}
-		projected.BaseURL = baseURL
+		if baseResult.Disposition != credentialpolicy.Rejected {
+			projected.BaseURL = baseURL
+		}
+		// EffectiveRequest.BaseURL becomes script.config.base_url; it is not an
+		// action field. FinalizeScript projects that executable config surface
+		// and stores its locators at script scope. Attaching these locators to
+		// the request action would make runtime redaction dereference the action
+		// target instead of the actual base URL.
+		baseResult.PreservedTargets = nil
 		aggregate.Merge(baseResult)
 	}
 
@@ -175,28 +193,17 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 	if err != nil {
 		return EffectiveRequest{}, rejectedReport(), err
 	}
-	projected.Auth.Username = authOutput.Username
-	projected.Auth.Password = authOutput.Password
-	projected.Auth.Token = authOutput.Token
-	projected.Auth.Domain = authOutput.Domain
-	if projected.Auth.Mode == AuthUnsupported {
-		for requirementIndex := range result.Requirements {
-			for targetIndex := range result.Requirements[requirementIndex].Targets {
-				target := &result.Requirements[requirementIndex].Targets[targetIndex]
-				switch target.Field {
-				case "auth.password":
-					target.Field = unsupportedAuthCredentialMetadataKey + ".password"
-				case "auth.token":
-					target.Field = unsupportedAuthCredentialMetadataKey + ".token"
-				}
-			}
+	if result.Disposition != credentialpolicy.Rejected {
+		projected.Auth.Username = authOutput.Username
+		projected.Auth.Password = authOutput.Password
+		projected.Auth.Token = authOutput.Token
+		projected.Auth.Domain = authOutput.Domain
+		if projected.AuthConfig != nil {
+			projected.AuthConfig.Username = authOutput.Username
+			projected.AuthConfig.Password = authOutput.Password
+			projected.AuthConfig.Token = authOutput.Token
+			projected.AuthConfig.Domain = authOutput.Domain
 		}
-	}
-	if projected.AuthConfig != nil {
-		projected.AuthConfig.Username = authOutput.Username
-		projected.AuthConfig.Password = authOutput.Password
-		projected.AuthConfig.Token = authOutput.Token
-		projected.AuthConfig.Domain = authOutput.Domain
 	}
 	aggregate.Merge(result)
 
@@ -237,11 +244,13 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 		}
 	}
 	if structuredGraphQL {
+		graphQLOptions := bodyOptions
+		graphQLOptions.TargetField = "graphql"
 		input := credentialpolicy.GraphQL{
 			Query:     []byte(projected.Body.GraphQL.Query),
 			Variables: append([]byte(nil), projected.Body.GraphQL.Variables...),
 		}
-		output, bodyResult, bodyErr := credentialpolicy.ProjectGraphQL(input, bodyOptions)
+		output, bodyResult, bodyErr := credentialpolicy.ProjectGraphQL(input, graphQLOptions)
 		if bodyErr != nil {
 			return EffectiveRequest{}, rejectedReport(), bodyErr
 		}
@@ -251,9 +260,11 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 			projected.Body.GraphQL.Variables = append([]byte(nil), output.Variables...)
 		}
 		if len(projected.Body.GraphQL.Extensions) > 0 {
+			extensionOptions := bodyOptions
+			extensionOptions.TargetField = "graphql.extensions"
 			extensions, extensionResult, extensionErr := credentialpolicy.ProjectJSON(
 				projected.Body.GraphQL.Extensions,
-				bodyOptions,
+				extensionOptions,
 			)
 			if extensionErr != nil {
 				return EffectiveRequest{}, rejectedReport(), extensionErr
@@ -274,21 +285,27 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 		if bodyErr != nil {
 			return EffectiveRequest{}, rejectedReport(), bodyErr
 		}
-		projected.Body.Payload = payload
+		if bodyResult.Disposition != credentialpolicy.Rejected && payload != nil {
+			projected.Body.Payload = payload
+		}
 		aggregate.Merge(bodyResult)
 	case BodyXML:
 		payload, bodyResult, bodyErr := credentialpolicy.ProjectXML(projected.Body.Payload, bodyOptions)
 		if bodyErr != nil {
 			return EffectiveRequest{}, rejectedReport(), bodyErr
 		}
-		projected.Body.Payload = payload
+		if bodyResult.Disposition != credentialpolicy.Rejected && payload != nil {
+			projected.Body.Payload = payload
+		}
 		aggregate.Merge(bodyResult)
 	case BodyFormURLEncoded:
 		payload, _, bodyResult, bodyErr := credentialpolicy.ProjectFormURLEncoded(string(projected.Body.Payload), bodyOptions)
 		if bodyErr != nil {
 			return EffectiveRequest{}, rejectedReport(), bodyErr
 		}
-		projected.Body.Payload = []byte(payload)
+		if bodyResult.Disposition != credentialpolicy.Rejected {
+			projected.Body.Payload = []byte(payload)
+		}
 		aggregate.Merge(bodyResult)
 	case BodyGraphQL:
 		// A GraphQL request encoded as ordinary JSON still benefits from the
@@ -303,7 +320,9 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 			if bodyErr != nil {
 				return EffectiveRequest{}, rejectedReport(), bodyErr
 			}
-			projected.Body.Payload = payload
+			if bodyResult.Disposition != credentialpolicy.Rejected && payload != nil {
+				projected.Body.Payload = payload
+			}
 			aggregate.Merge(bodyResult)
 		}
 	case BodyMultipart, BodyRaw, BodyFile:
@@ -320,9 +339,19 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 			if bodyErr != nil {
 				return EffectiveRequest{}, rejectedReport(), bodyErr
 			}
-			projected.Body.Payload = payload
+			if bodyResult.Disposition != credentialpolicy.Rejected && payload != nil {
+				projected.Body.Payload = payload
+			}
 			aggregate.Merge(bodyResult)
 		}
+	}
+	if options.Mode == credentialpolicy.Preserve &&
+		projected.Body.Encoding == BodyEncodingText &&
+		!utf8.Valid(projected.Body.Payload) {
+		// The DSL is JSON and therefore cannot round-trip invalid UTF-8 in a
+		// text field. Base64 is the DSL storage representation of the exact
+		// executable bytes; it does not change what the HTTP runtime sends.
+		projected.Body.Encoding = BodyEncodingBase64
 	}
 
 	review := ReviewCredentialProjection(aggregate, "imported credential")
@@ -334,6 +363,10 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 		Findings:        findings,
 		Requirements:    review.Requirements,
 		runtimeFidelity: sourceRuntimeFidelity,
+		preservedTargets: append(
+			[]credentialpolicy.TargetRef(nil),
+			aggregate.PreservedTargets...,
+		),
 	}
 	if review.Rejected {
 		codes := make([]string, 0, len(aggregate.Findings))
@@ -385,6 +418,14 @@ func sanitizeCredentialSourceHeaders(
 		validationHeaders[index].Value = materialized
 	}
 	_, projection, findings := projectHeaderRuntimeFidelity(request, validationHeaders)
+	projection.PreserveOmittedHeaderBytes = options.Mode == credentialpolicy.Preserve
+	if !projection.PreserveOmittedHeaderBytes {
+		for index := range projection.HeaderOmissions {
+			projection.HeaderOmissions[index].sourceName = ""
+			projection.HeaderOmissions[index].sourceValue = ""
+			projection.HeaderOmissions[index].hasSourceHeader = false
+		}
+	}
 	if len(projection.HeaderOmissions) == 0 {
 		return append(HeaderList(nil), headers...), projection, findings
 	}
@@ -565,20 +606,30 @@ func projectionFindings(input []credentialpolicy.Finding) []importreview.Finding
 }
 
 func projectionFindingResolution(finding credentialpolicy.Finding) string {
-	if finding.Code == "import_credentials_unmanaged" {
+	switch finding.Code {
+	case "import_credentials_unmanaged":
 		return "project_credentials_and_remove_gate"
+	case "import_credential_preserved", "import_credential_review_incomplete":
+		return "review_preserved_credential"
+	default:
+		return "replace_behavior_and_remove_gate"
 	}
-	return "replace_behavior_and_remove_gate"
 }
 
 func projectionFindingDetail(finding credentialpolicy.Finding) string {
+	switch finding.Code {
+	case "import_credential_preserved":
+		return "the imported credential was retained in the runnable destination script and should be reviewed by the operator"
+	case "import_credential_review_incomplete":
+		return "the imported value was retained, but bounded credential classification could not inspect the complete value"
+	}
 	switch finding.Disposition {
 	case credentialpolicy.Rejected:
 		return "the credential-bearing source value could not be converted into a valid disclosure-safe draft"
 	case credentialpolicy.BlockedDraft:
-		return "the credential-bearing source value was sanitized but requires review before execution"
+		return "the imported request is retained as a valid draft but requires review before execution"
 	default:
-		return "the credential-bearing source value was projected by the shared import policy"
+		return "the credential-bearing source value was reviewed by the shared import policy"
 	}
 }
 

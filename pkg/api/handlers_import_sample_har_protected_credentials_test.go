@@ -80,6 +80,7 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 			if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 				t.Fatal(err)
 			}
+			server.protectedSourceSessions = nil
 
 			unavailableCanary := "protected-" + test.name + "-unavailable-canary-8f91d2"
 			unavailable := invokeProtectedCredentialImport(
@@ -88,7 +89,7 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 				test.endpoint,
 				test.body(projectID, unavailableCanary),
 			)
-			assertProtectedCredentialImportResponse(t, unavailable, unavailableCanary, false)
+			assertProtectedCredentialImportResponse(t, unavailable, unavailableCanary, true)
 
 			wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 				Key:   bytes.Repeat([]byte{0x7c}, 32),
@@ -156,6 +157,12 @@ func invokeProtectedCredentialImport(
 	if response.Code != http.StatusOK {
 		t.Fatalf("%s status = %d, want %d body=%s", endpoint, response.Code, http.StatusOK, response.Body.String())
 	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("%s Cache-Control = %q, want no-store", endpoint, got)
+	}
+	if got := response.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("%s Pragma = %q, want no-cache", endpoint, got)
+	}
 	var payload struct {
 		Script           dsl.Script                 `json:"script"`
 		Requirements     []SecretBindingRequirement `json:"secret_binding_requirements"`
@@ -181,22 +188,32 @@ func assertProtectedCredentialImportResponse(
 	wantAvailable bool,
 ) {
 	t.Helper()
-	if bytes.Contains(response.Body, []byte(canary)) {
-		t.Fatalf("import response disclosed protected canary: %s", strings.ReplaceAll(string(response.Body), canary, "<PROTECTED>"))
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	delete(envelope, "script")
+	delete(envelope, "scripts")
+	reviewEvidence, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(reviewEvidence, []byte(canary)) {
+		t.Fatalf("import review evidence disclosed protected canary: %s", strings.ReplaceAll(string(reviewEvidence), canary, "<PROTECTED>"))
 	}
 	scriptJSON, err := json.Marshal(response.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(scriptJSON, []byte(canary)) {
-		t.Fatal("public script disclosed protected canary")
+	if !bytes.Contains(scriptJSON, []byte(canary)) {
+		t.Fatal("authorized editable import script did not preserve the source credential")
 	}
 	if len(response.Requirements) != 1 {
 		t.Fatalf("requirements = %#v, want one protected credential", response.Requirements)
 	}
 	requirement := response.Requirements[0]
 	if requirement.ID == "" || requirement.Path == "" || requirement.SuggestedName == "" ||
-		!strings.HasPrefix(requirement.Replacement, "{{secret.") {
+		!strings.Contains(requirement.Replacement, "{{secret.") {
 		t.Fatalf("protected requirement omitted safe binding metadata: %#v", requirement)
 	}
 	if requirement.SourceValueAvailable != wantAvailable {
@@ -309,10 +326,11 @@ func TestScriptImportResponseCombinesLegacyAndProtectedSourceValues(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, canary := range []string{legacyCanary, protectedCanary} {
-		if bytes.Contains(encoded, []byte(canary)) {
-			t.Fatalf("combined response disclosed %q", canary)
-		}
+	if !bytes.Contains(encoded, []byte(legacyCanary)) {
+		t.Fatal("editable import response lost its already-authored credential")
+	}
+	if bytes.Contains(encoded, []byte(protectedCanary)) {
+		t.Fatalf("protected requirement payload disclosed %q", protectedCanary)
 	}
 	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
 	if len(requirements) != 2 {

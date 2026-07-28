@@ -130,6 +130,213 @@ func TestJavaVMArgumentsNeverBecomeSecretBindingsOrPersistThroughAuthoringSessio
 	}
 }
 
+func TestImportedJavaVMCredentialSurvivesAuthoringApprovalWithoutReentry(t *testing.T) {
+	const (
+		projectID = "project-imported-java-vm-argv"
+		canary    = "imported-java-password-remains-runnable"
+	)
+	server := newJavaVuserGovernanceServer(t, projectID)
+	draft := combinedJavaVuserGovernanceDraft(projectID)
+	draft.Config.JavaVuser.AdditionalVMParameters = []string{
+		"-Xmx512m",
+		"-Ddatabase.password=" + canary,
+	}
+	markCredentialPreservingImportScript(draft)
+	importRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/enterprise-archive?project_id="+projectID,
+		nil,
+	)
+	if err := server.attachImportDraftAttestation(importRequest, draft); err != nil {
+		t.Fatalf("attach import draft attestation: %v", err)
+	}
+
+	approvedResponse := attemptJavaVuserDraftApprovalThroughAPI(
+		t,
+		server,
+		projectID,
+		"enterprise_script_archive",
+		draft,
+	)
+	if approvedResponse.Code != http.StatusOK {
+		t.Fatalf(
+			"approve imported Java Vuser status = %d body=%s",
+			approvedResponse.Code,
+			approvedResponse.Body.String(),
+		)
+	}
+	if strings.Contains(approvedResponse.Body.String(), canary) ||
+		!strings.Contains(approvedResponse.Body.String(), credential.Redacted) {
+		t.Fatalf("approval response did not mask Java VM credential: %s", approvedResponse.Body.String())
+	}
+
+	var approved authoringSessionApprovalResponse
+	if err := json.Unmarshal(approvedResponse.Body.Bytes(), &approved); err != nil {
+		t.Fatalf("decode approval: %v", err)
+	}
+	if approved.Script == nil {
+		t.Fatalf("approval response omitted script: %#v", approved)
+	}
+	durable := server.runner.scripts[approved.Script.ID]
+	if durable == nil || durable.Script == nil {
+		t.Fatalf("approved script %q is not durable", approved.Script.ID)
+	}
+	if got := durable.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 2 ||
+		got[1] != "-Ddatabase.password="+canary {
+		t.Fatalf("durable imported Java VM argv = %#v", got)
+	}
+	if !isCredentialPreservingImport(durable.Script) {
+		t.Fatal("approved imported Java Vuser lost credential-preserving provenance")
+	}
+	if issues := validateStoredExecutionScript(durable.Script); len(issues) != 0 {
+		t.Fatalf("approved imported Java Vuser validation issues = %v", issues)
+	}
+}
+
+func TestCredentialPreservingAuthoringCreateRetryDoesNotRequireReimport(t *testing.T) {
+	const (
+		projectID      = "project-imported-java-vm-idempotent"
+		canary         = "imported-java-password-idempotent-retry"
+		idempotencyKey = "enterprise-java-import:revision-17:item-4"
+	)
+	server := newJavaVuserGovernanceServer(t, projectID)
+	draft := combinedJavaVuserGovernanceDraft(projectID)
+	draft.Config.JavaVuser.AdditionalVMParameters = []string{
+		"-Ddatabase.password=" + canary,
+	}
+	markCredentialPreservingImportScript(draft)
+	importRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/enterprise-archive?project_id="+projectID,
+		nil,
+	)
+	if err := server.attachImportDraftAttestation(importRequest, draft); err != nil {
+		t.Fatalf("attach import draft attestation: %v", err)
+	}
+	create := authoringSessionRequest{
+		ProjectID:      projectID,
+		Source:         "enterprise_script_archive",
+		Name:           "Imported Java idempotency",
+		Status:         "ready",
+		Draft:          *draft,
+		IdempotencyKey: idempotencyKey,
+	}
+	first := serveAuthoringSessionJSON(
+		t,
+		server,
+		http.MethodPost,
+		"/api/v1/scripts/authoring/sessions",
+		create,
+	)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("initial create status = %d body=%s", first.Code, first.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(first.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode initial authoring session: %v", err)
+	}
+
+	// The import capability is one-shot and has already been completed. A
+	// response-lost retry must converge on the durable idempotency row rather
+	// than asking the operator to import or enter the password again.
+	retry := serveAuthoringSessionJSON(
+		t,
+		server,
+		http.MethodPost,
+		"/api/v1/scripts/authoring/sessions",
+		create,
+	)
+	if retry.Code != http.StatusOK {
+		t.Fatalf("retry create status = %d body=%s", retry.Code, retry.Body.String())
+	}
+	var replayed storage.AuthoringSession
+	if err := json.Unmarshal(retry.Body.Bytes(), &replayed); err != nil {
+		t.Fatalf("decode replayed authoring session: %v", err)
+	}
+	if replayed.ID != created.ID {
+		t.Fatalf("replayed session ID = %q, want %q", replayed.ID, created.ID)
+	}
+	if strings.Contains(retry.Body.String(), canary) ||
+		!strings.Contains(retry.Body.String(), credential.Redacted) {
+		t.Fatalf("idempotent replay disclosed imported Java password: %s", retry.Body.String())
+	}
+	persisted, err := server.loadAuthoringSession(created.ID)
+	if err != nil {
+		t.Fatalf("load authoring session: %v", err)
+	}
+	if got := persisted.Draft.Config.JavaVuser.AdditionalVMParameters; len(got) != 1 ||
+		got[0] != "-Ddatabase.password="+canary {
+		t.Fatalf("durable idempotent Java argv = %#v", got)
+	}
+}
+
+func TestForgedImportMetadataCannotAuthorizeTransientJavaVMCredentials(t *testing.T) {
+	const canary = "forged-import-marker-password"
+	draft := javaVMDraft([]string{"-Ddatabase.password=" + canary})
+	draft.Actions[0].Target = "Actions"
+	draft.ProjectID = "project-forged-java-import"
+	draft.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+		Source: "enterprise_script_archive",
+		Preserved: map[string]any{
+			dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+		},
+	}}
+
+	if issues := validateScriptForReplay(draft); !containsIssueText(issues, "sensitive_property") {
+		t.Fatalf("untrusted replay validation issues = %v, want sensitive_property", issues)
+	}
+	if issues := validateScriptForReplayWithImportTrust(draft, true); len(issues) != 0 {
+		t.Fatalf("trusted durable replay validation issues = %v", issues)
+	}
+
+	server := NewServer(ServerConfig{MaxConcurrent: 1})
+	preparedResponse := httptest.NewRecorder()
+	prepared, issues, _, ok := server.prepareClassicReplayScript(
+		preparedResponse,
+		draft,
+		true,
+	)
+	if !ok || len(issues) != 0 {
+		t.Fatalf(
+			"prepare trusted durable import ok=%v issues=%v response=%s",
+			ok,
+			issues,
+			preparedResponse.Body.String(),
+		)
+	}
+	if got := prepared.Config.JavaVuser.AdditionalVMParameters; len(got) != 1 ||
+		got[0] != "-Ddatabase.password="+canary {
+		t.Fatalf("trusted replay preparation changed imported Java argv: %#v", got)
+	}
+
+	payload, err := json.Marshal(ReplayScriptRequest{
+		ProjectID: draft.ProjectID,
+		Script:    draft,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/replay",
+		bytes.NewReader(payload),
+	)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("forged transient replay status = %d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), canary) {
+		t.Fatalf("forged transient replay rejection disclosed password: %s", response.Body.String())
+	}
+	if !strings.Contains(
+		response.Body.String(),
+		"config.java_vuser.additional_vm_parameters",
+	) {
+		t.Fatalf("forged transient replay rejection omitted JVM argv issue: %s", response.Body.String())
+	}
+}
+
 func javaVMDraft(parameters []string) *dsl.Script {
 	return &dsl.Script{
 		Name:     "Java VM argument review",

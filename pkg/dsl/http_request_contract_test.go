@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -309,6 +310,12 @@ func TestValidateScriptIssues_ImportFidelityEvidenceRequiresMatchingDurableGate(
 				"name":         "Content-Length",
 				"reason_code":  headerReason,
 				"source_ref":   "collection.json#/item/0/header/0",
+				ImportHeaderFidelityPreservedNameBase64Key: base64.StdEncoding.EncodeToString(
+					[]byte("Content-Length"),
+				),
+				ImportHeaderFidelityPreservedValueBase64Key: base64.StdEncoding.EncodeToString(
+					[]byte("7\r\nX-Injected: yes"),
+				),
 			}},
 		},
 		importHTTPVersionFidelityMetadataKey: map[string]any{
@@ -321,6 +328,17 @@ func TestValidateScriptIssues_ImportFidelityEvidenceRequiresMatchingDurableGate(
 	if issues := ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("valid blocked-draft evidence issues = %v, want none", issues)
 	}
+
+	occurrence := script.Actions[0].Metadata[importHeaderFidelityMetadataKey].(map[string]any)["omitted_occurrences"].([]map[string]any)[0]
+	occurrence[ImportHeaderFidelityPreservedValueBase64Key] = "not canonical base64"
+	if issues := strings.Join(ValidateScriptIssues(script), "\n"); !strings.Contains(
+		issues,
+		ImportHeaderFidelityPreservedValueBase64Key+" must use canonical base64 encoding",
+	) {
+		t.Fatalf("invalid preserved bytes issues = %q", issues)
+	}
+	occurrence[ImportHeaderFidelityPreservedValueBase64Key] =
+		base64.StdEncoding.EncodeToString([]byte("7\r\nX-Injected: yes"))
 
 	delete(script.Actions[0].Metadata, "execution_blocker")
 	delete(script.Actions[0].Metadata, "execution_blockers")

@@ -23,16 +23,23 @@ import (
 
 // RuntimeConfig holds parsed source runtime settings from a .cfg file.
 type RuntimeConfig struct {
-	ConnectTimeoutSec                int
-	ReceiveTimeoutSec                int
-	StepTimeoutSec                   int
-	HTTPVersion                      string // source spelling; native projection supports exact "1.1" and "2"
-	KeepAlive                        bool
-	MaxConnsPerHost                  int
-	ProxyMode                        string
-	ProxyURL                         string
-	ProxyUser                        string
-	ProxyPass                        string
+	ConnectTimeoutSec int
+	ReceiveTimeoutSec int
+	StepTimeoutSec    int
+	HTTPVersion       string // source spelling; native projection supports exact "1.1" and "2"
+	KeepAlive         bool
+	MaxConnsPerHost   int
+	ProxyMode         string
+	ProxyURL          string
+	ProxyUser         string
+	ProxyPass         string
+	// proxyReviewUser/proxyReviewPass retain source credentials only when an
+	// enabled proxy selection cannot be represented safely. They are projected
+	// into config.http.proxy beside proxy_mode=none, so the destination keeps
+	// the operator-owned values without allowing the HTTP transport to use
+	// them. They are cleared after final credential projection.
+	proxyReviewUser                  string
+	proxyReviewPass                  string
 	ProxyNoProxy                     []string
 	UserAgent                        string
 	AcceptLanguage                   string
@@ -102,6 +109,7 @@ type RuntimeConfig struct {
 	JavaVMParameterRows              []string // verbatim source rows, in command-line order; see orderedJavaVMParameterRows
 	JavaVMParametersParseError       string
 	javaVMParameterRejections        []javaVMParameterRejection
+	javaVMParameterExposureReviews   []javaVMParameterRejection
 	JavaVMUseXBootClasspath          *bool
 	JavaVMUseXBootClasspathRaw       string
 	JavaVMUseXBootParseError         string
@@ -590,10 +598,28 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			}
 		}
 		if rc.JavaVMParametersParseError == "" {
-			if validationIssues := validateImportedJavaVMParameters(parameters); len(validationIssues) > 0 {
-				first := validationIssues[0]
+			validationIssues := validateImportedJavaVMParameters(parameters)
+			for _, issue := range javaVMParameterIssuesBySensitivity(validationIssues, true) {
+				review := javaVMParameterRejection{
+					tokenIndex: issue.Index,
+					category:   issue.Category,
+				}
+				if issue.Index >= 0 && issue.Index < len(provenance) {
+					review.sourceKey = provenance[issue.Index].sourceKey
+					review.sourceLine = provenance[issue.Index].sourceLine
+				} else if len(rows) > 0 {
+					review.sourceKey = rows[0].key
+					review.sourceLine = rows[0].line
+				}
+				rc.javaVMParameterExposureReviews = append(
+					rc.javaVMParameterExposureReviews,
+					review,
+				)
+			}
+			if blockingIssues := javaVMParameterIssuesBySensitivity(validationIssues, false); len(blockingIssues) > 0 {
+				first := blockingIssues[0]
 				rc.JavaVMParametersParseError = first.Error()
-				for _, issue := range validationIssues {
+				for _, issue := range blockingIssues {
 					rejection := javaVMParameterRejection{
 						tokenIndex: issue.Index,
 						category:   issue.Category,
@@ -626,7 +652,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 				Area:      "Java VM",
 				sourceKey: "javavmparameters",
 				Notes: fmt.Sprintf(
-					"Java VM parameter %s (token index %d) was omitted (%s): JVM command-line arguments have no secure secret-injection equivalent for sensitive values and unsafe process options are not executable; execution remains blocked until the behavior is replaced and reviewed.",
+					"Java VM parameter %s (token index %d) was omitted (%s): unsafe JVM process-control options are not executable; execution remains blocked until the behavior is replaced and reviewed.",
 					location,
 					rejection.tokenIndex,
 					rejection.category,
@@ -869,6 +895,18 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 		}
 	} else if rc.ProxyMode != "" {
 		cfg.ProxyMode = rc.ProxyMode
+	}
+	if cfg.Proxy.Username == "" && rc.proxyReviewUser != "" {
+		cfg.Proxy.Username = credential.DraftReference(
+			rc.proxyReviewUser,
+			enterpriseProxyUsernameSecretName,
+		)
+	}
+	if cfg.Proxy.Password == "" && rc.proxyReviewPass != "" {
+		cfg.Proxy.Password = credential.DraftReference(
+			rc.proxyReviewPass,
+			enterpriseProxyPasswordSecretName,
+		)
 	}
 	if len(rc.ProxyNoProxy) > 0 {
 		cfg.Proxy.NoProxy = append([]string(nil), rc.ProxyNoProxy...)
@@ -2691,12 +2729,11 @@ func runtimeConfigSourceSettingLine(content, key, value string) int {
 	return 0
 }
 
-// validateImportedJavaVMParameters layers import-time disclosure checks over
-// the governed runner's structural policy. The runner catches process-control
-// options and common password/token names. The importer additionally uses the
-// shared credential vocabulary and scrubber so api.key/private_key aliases,
-// neutral-property high-entropy values, and credential-bearing URLs never
-// become process-observable JVM argv.
+// validateImportedJavaVMParameters layers import-time disclosure recognition
+// over the governed runner's structural policy. Sensitive values are review
+// findings, not structural rejections: the importing operator already has the
+// value and exact argv fidelity requires retaining it in the destination
+// script. Unsafe JVM process-control options remain rejected separately.
 func validateImportedJavaVMParameters(parameters []string) []javarunner.ValidationIssue {
 	issues := javarunner.ValidateVMParameters(parameters)
 	seen := make(map[string]struct{}, len(issues))
@@ -2739,6 +2776,27 @@ func validateImportedJavaVMParameters(parameters []string) []javarunner.Validati
 		return issues[left].Category < issues[right].Category
 	})
 	return issues
+}
+
+func javaVMParameterIssuesBySensitivity(
+	issues []javarunner.ValidationIssue,
+	sensitive bool,
+) []javarunner.ValidationIssue {
+	filtered := make([]javarunner.ValidationIssue, 0, len(issues))
+	for _, issue := range issues {
+		if (issue.Category == javarunner.VMParameterSensitiveProperty) != sensitive {
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+	return filtered
+}
+
+func validateImportedJavaVMParameterStructure(parameters []string) []javarunner.ValidationIssue {
+	return javaVMParameterIssuesBySensitivity(
+		validateImportedJavaVMParameters(parameters),
+		false,
+	)
 }
 
 func executableJavaVMParameters(parameters []string) []string {
@@ -3294,7 +3352,7 @@ func parseRuntimeProxySettings(rc *RuntimeConfig, sections map[string]map[string
 		for _, flag := range flags {
 			evidence = append(evidence, fmt.Sprintf("[%s] %s=%q", flag.section, flag.key, runtimeProxyDiagnosticValue(flag.raw)))
 		}
-		disableRuntimeProxy(rc)
+		disableRuntimeProxyForReview(rc)
 		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 			ID: "proxy", Area: "Proxy",
 			Notes: fmt.Sprintf("Malformed or conflicting proxy enable flags (%s); using the APEX no-proxy default and requiring review.", strings.Join(evidence, ", ")),
@@ -3322,12 +3380,14 @@ func finalizeRuntimeProxySelection(rc *RuntimeConfig, explicitlyEnabled bool, en
 		return
 	}
 	if rc.ProxyMode == "none" {
-		disableRuntimeProxy(rc)
 		if explicitlyEnabled {
+			disableRuntimeProxyForReview(rc)
 			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 				ID: "proxy", Area: "Proxy",
 				Notes: "ProxyUseProxy/ProxyUseProxyServer enables proxying but ProxyMode is none; using the APEX no-proxy default and requiring review.",
 			})
+		} else {
+			disableRuntimeProxy(rc)
 		}
 		return
 	}
@@ -3355,7 +3415,7 @@ func finalizeRuntimeProxySelection(rc *RuntimeConfig, explicitlyEnabled bool, en
 	}
 	if rc.ProxyURL == "" {
 		if rc.ProxyMode == "custom" || explicitlyEnabled {
-			disableRuntimeProxy(rc)
+			disableRuntimeProxyForReview(rc)
 			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 				ID: "proxy", Area: "Proxy",
 				Notes: "The selected custom proxy has no proxy server URL; using the APEX no-proxy default and requiring review.",
@@ -3373,7 +3433,7 @@ func finalizeRuntimeProxySelection(rc *RuntimeConfig, explicitlyEnabled bool, en
 		rc.ProxyMode = "custom"
 	}
 	if !validRuntimeCustomProxyURL(rc.ProxyURL) {
-		disableRuntimeProxy(rc)
+		disableRuntimeProxyForReview(rc)
 		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 			ID: "proxy", Area: "Proxy",
 			Notes: "The selected custom proxy URL is not an absolute http, https, socks5, or socks5h URL with a host; using the APEX no-proxy default and requiring review.",
@@ -3382,7 +3442,7 @@ func finalizeRuntimeProxySelection(rc *RuntimeConfig, explicitlyEnabled bool, en
 }
 
 func failRuntimeProxySelection(rc *RuntimeConfig, notes string) {
-	disableRuntimeProxy(rc)
+	disableRuntimeProxyForReview(rc)
 	rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 		ID: "proxy", Area: "Proxy",
 		Notes: notes + " Using the APEX no-proxy default and requiring review.",
@@ -3418,7 +3478,7 @@ func validRuntimeCustomProxyURL(raw string) bool {
 }
 
 func markUnsupportedRuntimeProxyMode(rc *RuntimeConfig, raw string) {
-	disableRuntimeProxy(rc)
+	disableRuntimeProxyForReview(rc)
 	rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 		ID: "proxy", Area: "Proxy",
 		Notes: fmt.Sprintf("Unsupported proxy mode %q; using the APEX no-proxy default and requiring review.", runtimeProxyDiagnosticValue(raw)),
@@ -3461,7 +3521,29 @@ func disableRuntimeProxy(rc *RuntimeConfig) {
 	rc.ProxyURL = ""
 	rc.ProxyUser = ""
 	rc.ProxyPass = ""
+	rc.proxyReviewUser = ""
+	rc.proxyReviewPass = ""
 	rc.ProxyNoProxy = nil
+}
+
+func disableRuntimeProxyForReview(rc *RuntimeConfig) {
+	if rc == nil {
+		return
+	}
+	_, username, password := splitEnterpriseProxyUserinfo(
+		rc.ProxyURL,
+		rc.ProxyUser,
+		rc.ProxyPass,
+	)
+	if rc.proxyReviewUser != "" {
+		username = rc.proxyReviewUser
+	}
+	if rc.proxyReviewPass != "" {
+		password = rc.proxyReviewPass
+	}
+	disableRuntimeProxy(rc)
+	rc.proxyReviewUser = username
+	rc.proxyReviewPass = password
 }
 
 func resolveRuntimeProxyEndpoints(sections []map[string]string) (string, string) {

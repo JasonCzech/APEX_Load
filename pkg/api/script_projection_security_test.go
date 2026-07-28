@@ -116,6 +116,100 @@ func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 	}
 }
 
+func TestMaskScriptSecretsUsesImportedCredentialParameterProvenance(t *testing.T) {
+	const (
+		listCredential = "tiny-list-credential"
+		cellCredential = "tiny-cell-credential"
+	)
+	script := &dsl.Script{
+		ID: "neutral-credential-parameters", Name: "Neutral parameters", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "postman",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialParameterNamesKey: []string{"foo", "bar"},
+			},
+		}},
+		Parameters: []dsl.Parameter{
+			{Name: "foo", Type: "list", Values: []string{listCredential}},
+			{Name: "bar", Type: "file", DataSource: "postman", Column: "bar"},
+			{Name: "label", Type: "file", DataSource: "postman", Column: "label"},
+		},
+		DataSources: []dsl.DataSource{{
+			Name: "postman", Type: "csv", Strategy: "sequential",
+			FirstRowHeader: true, Columns: []string{"bar", "label"},
+			InlineData: "bar,label\n" + cellCredential + ",ordinary\n",
+		}},
+		Actions: []dsl.Action{{
+			Name: "Request", Type: "request", Method: http.MethodGet, Target: "/",
+			HeaderList: dsl.HeaderList{{Name: "Authorization", Value: "Bearer " + listCredential}},
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	payload, err := json.Marshal(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte(listCredential)) ||
+		bytes.Contains(payload, []byte(cellCredential)) {
+		t.Fatalf("credential source leaked through masked script: %s", payload)
+	}
+	if !bytes.Contains(payload, []byte("ordinary")) {
+		t.Fatalf("nonsensitive source cell was lost: %s", payload)
+	}
+	if got := masked.Parameters[0].Values; len(got) != 1 ||
+		got[0] != maskedScriptSecret {
+		t.Fatalf("neutral credential list parameter = %#v", got)
+	}
+	if !strings.Contains(masked.DataSources[0].InlineData, maskedScriptSecret) ||
+		strings.Contains(masked.DataSources[0].InlineData, cellCredential) {
+		t.Fatalf("neutral credential data-source column = %q", masked.DataSources[0].InlineData)
+	}
+	if script.Parameters[0].Values[0] != listCredential ||
+		!strings.Contains(script.DataSources[0].InlineData, cellCredential) {
+		t.Fatal("projection mutated the durable execution copy")
+	}
+}
+
+func TestMaskScriptSecretsTreatsDevWebGatedSourceAsOpaque(t *testing.T) {
+	const canary = "devweb-opaque-source-canary-20d4"
+	script := &dsl.Script{
+		ID: "devweb-opaque", Name: "DevWeb opaque", Version: "1", Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "devweb",
+			Preserved: map[string]any{
+				"devweb_gated_source": map[string]string{
+					"main.js": `const signingMaterial = "` + canary + `";`,
+				},
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "Review", Type: "review_required",
+			Value:    "Source behavior requires operator review before execution.",
+			Metadata: map[string]any{"execution_blocker": "import_review_required"},
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	payload, err := json.Marshal(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte(canary)) {
+		t.Fatalf("masked script disclosed opaque DevWeb source: %s", payload)
+	}
+	if !bytes.Contains(payload, []byte(maskedScriptSecret)) {
+		t.Fatalf("masked script omitted opaque-source marker: %s", payload)
+	}
+	rawSnapshot := script.Metadata.Import.Preserved["devweb_gated_source"].(map[string]string)
+	if !strings.Contains(rawSnapshot["main.js"], canary) {
+		t.Fatalf("projection mutated durable DevWeb source: %#v", rawSnapshot)
+	}
+}
+
 func TestMaskScriptSecretsRedactsUnsafeJavaVMArgumentsWithoutChangingSafeSiblings(t *testing.T) {
 	const canary = "q7W9pL2xN8vC4mR6tY1kH5sF3dJ0aB9uE2zG"
 	script := &dsl.Script{
@@ -151,6 +245,63 @@ func TestMaskScriptSecretsRedactsUnsafeJavaVMArgumentsWithoutChangingSafeSibling
 	}
 	if script.Config.JavaVuser.AdditionalVMParameters[1] != "-Dlabel="+canary {
 		t.Fatal("projection mutated the stored Java VM parameter list")
+	}
+}
+
+func TestMaskScriptSecretsRedactsJavaRunnerCommandCredentialWithoutChangingSafeCommand(t *testing.T) {
+	const canary = "runner-command-password-93c1"
+	script := &dsl.Script{
+		ID: "legacy-java-runner-command", Name: "Legacy Java", Version: "1", Protocol: "java_vuser",
+		Config: dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
+			RunnerCommand: "/opt/apex/runner --password=" + canary,
+			HarnessJar:    "/opt/apex/harness.jar",
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	if strings.Contains(masked.Config.JavaVuser.RunnerCommand, canary) ||
+		!strings.Contains(masked.Config.JavaVuser.RunnerCommand, maskedScriptSecret) {
+		t.Fatalf("projected Java runner command = %q", masked.Config.JavaVuser.RunnerCommand)
+	}
+	if masked.Config.JavaVuser.HarnessJar != "/opt/apex/harness.jar" {
+		t.Fatalf("safe Java harness path changed: %q", masked.Config.JavaVuser.HarnessJar)
+	}
+	if script.Config.JavaVuser.RunnerCommand != "/opt/apex/runner --password="+canary {
+		t.Fatal("projection mutated the stored Java runner command")
+	}
+}
+
+func TestMaskScriptSecretsRedactsSOAPActionCredentialsWithoutChangingSafeFields(t *testing.T) {
+	const canary = "soap-action-password-a813"
+	script := &dsl.Script{
+		ID: "legacy-soap-action", Name: "SOAP action", Version: "1", Protocol: "soap",
+		Actions: []dsl.Action{{
+			Name: "Call service", Type: "request", Method: http.MethodPost, Target: "/service",
+			SOAP: &dsl.SOAPActionConfig{
+				Action:    "https://operator:" + canary + "@service.test/action?token=" + canary + "&safe=yes",
+				Operation: "GetAccount",
+				BodyMode:  "raw_xml",
+			},
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil || len(masked.Actions) != 1 || masked.Actions[0].SOAP == nil {
+		t.Fatalf("masked script = %#v", masked)
+	}
+	soap := masked.Actions[0].SOAP
+	if strings.Contains(soap.Action, canary) ||
+		!strings.Contains(soap.Action, maskedScriptSecret) {
+		t.Fatalf("projected SOAP action = %q", soap.Action)
+	}
+	if soap.Operation != "GetAccount" || soap.BodyMode != "raw_xml" {
+		t.Fatalf("safe SOAP fields changed: %#v", soap)
+	}
+	if !strings.Contains(script.Actions[0].SOAP.Action, canary) {
+		t.Fatal("projection mutated the stored SOAP action")
 	}
 }
 
@@ -222,6 +373,69 @@ func TestMaskScriptSecretsGovernsCredentialNamedRawBody(t *testing.T) {
 	}
 	if !strings.Contains(script.Actions[0].Body, canary) {
 		t.Fatal("projection mutated the stored script")
+	}
+}
+
+func TestMaskScriptSecretsKeepsMalformedCredentialBodiesAsGatedDrafts(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		encoding    string
+	}{
+		{name: "json", contentType: "application/json", body: `{"password":"tiny"`},
+		{name: "xml", contentType: "application/xml", body: `<root><password>tiny`},
+		{name: "form", contentType: "application/x-www-form-urlencoded", body: `password=%ZZ`},
+		{
+			name:        "multipart",
+			contentType: "multipart/form-data; boundary=boundary",
+			body:        "--boundary\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\ntiny",
+		},
+		{name: "graphql", contentType: "application/graphql", body: `mutation Login { login(password: "tiny")`},
+		{
+			name:        "base64 json",
+			contentType: "application/json",
+			body:        base64.StdEncoding.EncodeToString([]byte(`{"password":"tiny"`)),
+			encoding:    "base64",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			script := &dsl.Script{
+				Name: "malformed " + test.name, Version: "1", Protocol: "http",
+				Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+				Actions: []dsl.Action{{
+					Name: "Submit", Type: "request", Method: http.MethodPost, Target: "/login",
+					Headers:      map[string]string{"Content-Type": test.contentType},
+					Body:         test.body,
+					BodyEncoding: test.encoding,
+				}},
+			}
+			projected := maskScriptSecrets(script)
+			if projected == nil {
+				t.Fatal("maskScriptSecrets returned nil")
+			}
+			gotBody := projected.Actions[0].Body
+			if test.encoding == "base64" {
+				decoded, err := base64.StdEncoding.DecodeString(gotBody)
+				if err != nil {
+					t.Fatalf("decode projected body: %v", err)
+				}
+				gotBody = string(decoded)
+			}
+			if gotBody != maskedScriptSecret {
+				t.Fatalf("projected malformed body = %q, want whole-body sentinel", gotBody)
+			}
+			if !scriptHasExecutionBlockerCode(projected, "import_review_required") {
+				t.Fatalf("projected malformed body omitted review gate: %#v", projected.Actions[0].Metadata)
+			}
+			if issues := dsl.ValidateScriptIssues(projected); len(issues) != 0 {
+				t.Fatalf("projected malformed body validation issues = %#v", issues)
+			}
+			if script.Actions[0].Body != test.body || script.Actions[0].Metadata != nil {
+				t.Fatalf("projection mutated stored source action: %#v", script.Actions[0])
+			}
+		})
 	}
 }
 
@@ -638,9 +852,12 @@ func TestImportResponseMasksEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T
 		if err != nil {
 			t.Fatalf("%s body is not valid base64: %v (%q)", label, err, action.Body)
 		}
-		wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
+		wantWire := wireBody
+		if label == "result.script" {
+			wantWire = strings.Replace(wireBody, canary, maskedScriptSecret, 1)
+		}
 		if string(decoded) != wantWire {
-			t.Fatalf("%s masked wire bytes changed outside credential occurrence:\n got: %q\nwant: %q", label, decoded, wantWire)
+			t.Fatalf("%s wire bytes changed outside the expected disclosure boundary:\n got: %q\nwant: %q", label, decoded, wantWire)
 		}
 	}
 	if script.Actions[0].Body != encodedBody {
@@ -891,11 +1108,65 @@ func TestReconcileMaskedScriptSecretsKeepsClientEditOfProjectedField(t *testing.
 	}
 }
 
+func TestReconcileMaskedScriptSecretsRestoresTypedSensitiveJSONProjection(t *testing.T) {
+	const rawBody = `{"password":7,"account":"ordinary"}`
+	stored := &dsl.Script{
+		Name: "typed-login", Version: "1.0.0", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{
+			Name: "Login", Type: "request", Method: "POST", Target: "/login",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    rawBody,
+		}},
+	}
+
+	incoming := maskScriptSecrets(stored)
+	if incoming == nil || incoming.Actions[0].Body != maskedScriptSecret ||
+		incoming.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("typed body projection = %#v", incoming)
+	}
+	incoming.Actions[0].Name = "Renamed login"
+	incomingJSON, _ := scriptAsJSONValue(incoming)
+	projectedJSON, _ := scriptAsJSONValue(maskScriptSecrets(stored))
+	rawJSON, _ := scriptAsJSONValue(stored)
+	incomingAction := incomingJSON.(map[string]any)["actions"].([]any)[0].(map[string]any)
+	projectedAction := projectedJSON.(map[string]any)["actions"].([]any)[0].(map[string]any)
+	rawAction := rawJSON.(map[string]any)["actions"].([]any)[0].(map[string]any)
+	if !isTransientScriptProjectionGate(incomingAction, projectedAction, rawAction) {
+		t.Fatalf(
+			"server projection gate was not recognized: incoming=%#v projected=%#v raw=%#v",
+			incomingAction["metadata"],
+			projectedAction["metadata"],
+			rawAction["metadata"],
+		)
+	}
+	if err := reconcileMaskedScriptSecrets(incoming, stored); err != nil {
+		t.Fatalf("reconcileMaskedScriptSecrets returned error: %v", err)
+	}
+	if incoming.Actions[0].Body != rawBody {
+		t.Fatalf("reconciled body = %q, want stored typed body %q", incoming.Actions[0].Body, rawBody)
+	}
+	if incoming.Actions[0].Name != "Renamed login" {
+		t.Fatalf("non-wire edit was lost: %#v", incoming.Actions[0])
+	}
+	if _, exists := incoming.Actions[0].Metadata["execution_blocker"]; exists {
+		t.Fatalf("response-only review gate became durable: %#v", incoming.Actions[0].Metadata)
+	}
+	if _, exists := incoming.Actions[0].Metadata["import_review"]; exists {
+		t.Fatalf("response-only review evidence became durable: %#v", incoming.Actions[0].Metadata)
+	}
+}
+
 func TestReconcileMaskedScriptSecretsAllowsGatedRedactedRuntimeData(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "imported parameter table",
 		Version:  "1.0.0",
 		Protocol: "http",
+		Parameters: []dsl.Parameter{{
+			Name:   "ClientSecret",
+			Type:   "list",
+			Values: []string{maskedScriptSecret},
+		}},
 		DataSources: []dsl.DataSource{{
 			Name:       "passwords",
 			Type:       "file",
@@ -913,6 +1184,18 @@ func TestReconcileMaskedScriptSecretsAllowsGatedRedactedRuntimeData(t *testing.T
 		}},
 	}
 
+	for _, path := range []string{"/parameters/0/values/0", "/data_sources/0/inline_data"} {
+		if !isLegacyRedactedRuntimeSourceTraversalPath(path) {
+			t.Fatalf("legacy runtime source path %q was not recognized", path)
+		}
+	}
+	rawBeforeCreate, err := scriptAsJSONValue(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jsonValueContainsExecutableMaskedSecretWithOptions(rawBeforeCreate, "", true) {
+		t.Fatalf("gate-aware sentinel detection treated a legacy runtime source as orphan: %#v", rawBeforeCreate)
+	}
 	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
 		t.Fatalf("create reconciliation rejected gated redacted runtime data: %v", err)
 	}
@@ -935,6 +1218,105 @@ func TestReconcileMaskedScriptSecretsAllowsGatedRedactedRuntimeData(t *testing.T
 	}
 	if got := incoming.DataSources[0].InlineData; got != "Password\n[REDACTED]\n" {
 		t.Fatalf("reconciled inline data = %q, want disclosure-safe table shape preserved", got)
+	}
+	if got := incoming.Parameters[0].Values; len(got) != 1 || got[0] != maskedScriptSecret {
+		t.Fatalf("reconciled legacy list values = %#v, want gated sentinel preserved", got)
+	}
+}
+
+func TestReconcileMaskedScriptSecretsRestoresSensitiveListParameterValues(t *testing.T) {
+	const rawPassword = "preserved-list-password-canary"
+	stored := &dsl.Script{
+		Name:     "runtime list parameter",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Parameters: []dsl.Parameter{{
+			Name:   "ClientSecret",
+			Type:   "list",
+			Values: []string{rawPassword},
+		}},
+		Actions: []dsl.Action{{
+			Name: "Submit", Type: "request", Method: "POST", Target: "/login",
+		}},
+	}
+
+	projected := maskScriptSecrets(stored)
+	if projected == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	if got := projected.Parameters[0].Values; len(got) != 1 || got[0] != maskedScriptSecret {
+		t.Fatalf("projected sensitive list values = %#v, want masked response", got)
+	}
+	if err := reconcileMaskedScriptSecrets(projected, stored); err != nil {
+		t.Fatalf("reconcileMaskedScriptSecrets returned error: %v", err)
+	}
+	if got := projected.Parameters[0].Values; len(got) != 1 || got[0] != rawPassword {
+		t.Fatalf("reconciled sensitive list values = %#v, want stored executable value", got)
+	}
+
+	directCreate := *stored
+	directCreate.Parameters = append([]dsl.Parameter(nil), stored.Parameters...)
+	directCreate.Parameters[0].Values = append([]string(nil), stored.Parameters[0].Values...)
+	if err := reconcileMaskedScriptSecrets(&directCreate, nil); err != nil {
+		t.Fatalf("direct create rejected executable sensitive list value: %v", err)
+	}
+	if got := directCreate.Parameters[0].Values[0]; got != rawPassword {
+		t.Fatalf("direct create changed executable list value to %q", got)
+	}
+}
+
+func TestMaskScriptSecretsRedactsCredentialBearingInlineDataCells(t *testing.T) {
+	script := &dsl.Script{
+		Name: "credential tables", Version: "1.0.0", Protocol: "http",
+		DataSources: []dsl.DataSource{
+			{
+				Name:           "users",
+				Type:           "csv",
+				InlineData:     "username,password,region\nalice,tiny,west\n",
+				Strategy:       "sequential",
+				FirstRowHeader: true,
+			},
+			{
+				Name:       "aliased",
+				Type:       "csv",
+				InlineData: "alice,short\n",
+				Columns:    []string{"identity", "opaque"},
+				Strategy:   "sequential",
+			},
+			{
+				Name:           "ordinary",
+				Type:           "csv",
+				InlineData:     "region,status\nwest,ready\n",
+				Strategy:       "sequential",
+				FirstRowHeader: true,
+			},
+		},
+		Parameters: []dsl.Parameter{{
+			Name:       "ClientSecret",
+			Type:       "file",
+			DataSource: "aliased",
+			Column:     "opaque",
+		}},
+		Actions: []dsl.Action{{
+			Name: "Submit", Type: "request", Method: "POST", Target: "/login",
+		}},
+	}
+
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	if got := projected.DataSources[0].InlineData; got != "username,password,region\nalice,"+maskedScriptSecret+",west\n" {
+		t.Fatalf("header-classified credential table = %q", got)
+	}
+	if got := projected.DataSources[1].InlineData; got != "alice,"+maskedScriptSecret+"\n" {
+		t.Fatalf("parameter-classified credential table = %q", got)
+	}
+	if got := projected.DataSources[2].InlineData; got != script.DataSources[2].InlineData {
+		t.Fatalf("ordinary table changed from %q to %q", script.DataSources[2].InlineData, got)
+	}
+	if got := script.DataSources[0].InlineData; got != "username,password,region\nalice,tiny,west\n" {
+		t.Fatalf("projection mutated runtime table: %q", got)
 	}
 }
 
@@ -1113,5 +1495,38 @@ func TestACMEShapedSOAPURLsDoNotCreateBodySecretRequirements(t *testing.T) {
 	}
 	if requirements := discoverSecretBindingRequirements(projected, 0); len(requirements) != 0 {
 		t.Fatalf("safe SOAP body created secret requirements: %#v", requirements)
+	}
+}
+
+func TestMaskScriptSecretsMasksRetainedUnsupportedAuthSourceFields(t *testing.T) {
+	const password = "retained-unsupported-auth-password-canary"
+	script := &dsl.Script{
+		Name: "retained auth", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "custom", Type: "request", Method: "GET", Target: "/custom",
+			Auth: &dsl.AuthConfig{Type: "customscheme"},
+			Metadata: map[string]any{
+				"execution_blocker": "import_review_required",
+				"postman_auth_source_fields": []map[string]any{{
+					"type":  "source_credential",
+					"name":  "password",
+					"value": password,
+				}},
+			},
+		}},
+	}
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	payload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), password) {
+		t.Fatalf("ordinary script projection disclosed retained auth field: %s", payload)
+	}
+	if !strings.Contains(string(payload), maskedScriptSecret) {
+		t.Fatalf("ordinary script projection did not mark retained auth field: %s", payload)
 	}
 }

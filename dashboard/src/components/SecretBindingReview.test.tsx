@@ -87,7 +87,7 @@ describe('SecretBindingReview', () => {
     render()
 
     expect(container.textContent).toContain('Credentials (2)')
-    expect(container.textContent).toContain('configure them later in Project Secrets')
+    expect(container.textContent).toContain('configure it later in Project Secrets')
     expect(container.textContent).toContain('/actions/0/headers/Authorization')
     expect(container.textContent).toContain('{{secret.ORDER_API_TOKEN}}')
     const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]'))
@@ -96,6 +96,139 @@ describe('SecretBindingReview', () => {
     const values = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'))
     expect(values).toHaveLength(2)
     expect(values.every(input => input.disabled)).toBe(true)
+  })
+
+  it('keeps an unchanged suggested binding review-only when the importer preserves authored values', async () => {
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={[{ ...requirements[0], destination_value_preserved: true }]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
+      .toBe('Preserved in script')
+    expect(container.querySelector<HTMLInputElement>('input[id$="-preserve"]')?.checked).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.disabled).toBe(true)
+    expect(container.querySelector('.credentials-card-summary')?.textContent)
+      .toContain('0 to configure later')
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(onApply).not.toHaveBeenCalled()
+  })
+
+  it('emits a binding when Use project secret is selected even if the name stays suggested', async () => {
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'ORDER_API_TOKEN',
+        provider: 'database',
+        writable: true,
+      })),
+    }))
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={[{ ...requirements[0], destination_value_preserved: true }]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'authorization-header', secret_name: 'ORDER_API_TOKEN' },
+    ])
+  })
+
+  it('keeps preserved and unresolved occurrences in independent destination groups', async () => {
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          requirements={[
+            { ...requirements[0], destination_value_preserved: true },
+            {
+              ...requirements[0],
+              id: 'authorization-header-second',
+              path: '/actions/1/headers/Authorization',
+            },
+          ]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const items = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))
+    expect(items).toHaveLength(2)
+    expect(items[0].querySelector<HTMLInputElement>('input[id$="-preserve"]')?.checked).toBe(true)
+    expect(items[0].querySelector<HTMLInputElement>('input[id$="-preserve"]')?.disabled).toBe(false)
+    expect(items[1].querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.checked).toBe(true)
+    expect(items[1].querySelector<HTMLInputElement>('input[id$="-preserve"]')?.disabled).toBe(true)
+    expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('1 imported value preserved')
+    expect(container.textContent).toContain('server did not confirm that this exact destination value was preserved')
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(onApply).toHaveBeenCalledWith([{
+      requirement_id: 'authorization-header-second',
+      secret_name: 'ORDER_API_TOKEN_2',
+    }])
+  })
+
+  it('fails closed when refreshed server evidence withdraws destination preservation', () => {
+    act(() => {
+      root.render(
+        <SecretBindingReview
+          requirements={[{ ...requirements[0], destination_value_preserved: true }]}
+          onApply={vi.fn()}
+        />,
+      )
+    })
+    expect(container.querySelector<HTMLInputElement>('input[id$="-preserve"]')?.checked).toBe(true)
+
+    act(() => {
+      root.render(
+        <SecretBindingReview
+          requirements={[{ ...requirements[0], destination_value_preserved: false }]}
+          onApply={vi.fn()}
+        />,
+      )
+    })
+
+    expect(container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.checked).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('input[id$="-preserve"]')?.disabled).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.disabled).toBe(false)
   })
 
   it('emits exact requirement-to-name selections and permits explicit reuse', async () => {
@@ -309,7 +442,8 @@ describe('SecretBindingReview', () => {
     expect(migrationToggle.checked).toBe(false)
     expect(migrationToggle.disabled).toBe(true)
     expect(rowStatus?.textContent).toBe('Configure later')
-    expect(container.textContent).toContain('Detected source credential values expired')
+    expect(container.textContent).toContain('Optional source-value migration into Project Secrets has expired')
+    expect(container.textContent).toContain('preserved imported destination values remain runnable')
 
     const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Continue with credentials'))
@@ -468,6 +602,7 @@ describe('SecretBindingReview', () => {
     expect(onPreparedChange).toHaveBeenLastCalledWith({
       valid: true,
       configureLaterCount: 0,
+      selectedBindingCount: 1,
     })
     expect(JSON.stringify(onPreparedChange.mock.calls)).not.toContain('never-leave-the-card')
 
@@ -894,7 +1029,182 @@ describe('SecretBindingReview', () => {
     ])
   })
 
-  it('migrates only source-backed values that are neither entered manually nor already configured', async () => {
+  it('allocates a fresh name for externally migrated values when existing project secrets collide', async () => {
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: true,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'ORDER_API_TOKEN' || name === 'ORDER_API_TOKEN_2',
+        provider: 'database',
+        writable: true,
+      })),
+    }))
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[{ ...requirements[0], source_value_available: true }]}
+          sourceMigrationAllowed
+          externalSourceMigrationSelected
+          onExternalSourceMigrationChange={vi.fn()}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
+      .toBe('Will use a new name')
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Continue with credentials'))
+    await act(async () => applyButton?.click())
+
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith(
+      'project-1',
+      expect.arrayContaining(['ORDER_API_TOKEN_2', 'ORDER_API_TOKEN_3']),
+    )
+    expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'authorization-header', secret_name: 'ORDER_API_TOKEN_3' },
+    ])
+  })
+
+  it('reuses a collision-safe name after a transient create failure while it remains available', async () => {
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: name === 'ORDER_API_TOKEN',
+        provider: 'database',
+        writable: true,
+      })),
+    }))
+    apiMock.createProjectSecrets
+      .mockRejectedValueOnce(new Error('temporary provider failure'))
+      .mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={[requirements[0]]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    const valueInput = container.querySelector<HTMLInputElement>('input[type="password"]')!
+    act(() => setInput(valueInput, 'manual-value'))
+
+    let committed = true
+    await act(async () => {
+      committed = await reviewRef.current!.commit()
+    })
+    expect(committed).toBe(false)
+    expect(apiMock.createProjectSecrets).toHaveBeenNthCalledWith(1, 'project-1', [{
+      name: 'ORDER_API_TOKEN_2',
+      value: 'manual-value',
+    }])
+
+    await act(async () => {
+      committed = await reviewRef.current!.commit()
+    })
+    expect(committed).toBe(true)
+    expect(apiMock.createProjectSecrets).toHaveBeenNthCalledWith(2, 'project-1', [{
+      name: 'ORDER_API_TOKEN_2',
+      value: 'manual-value',
+    }])
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'authorization-header', secret_name: 'ORDER_API_TOKEN_2' },
+    ])
+  })
+
+  it('allocates another fresh name when a create-only race claims the speculative name', async () => {
+    const configuredNames = new Set(['ORDER_API_TOKEN'])
+    apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: names.map(name => ({
+        name,
+        configured: configuredNames.has(name),
+        provider: 'database',
+        writable: true,
+      })),
+    }))
+    apiMock.createProjectSecrets
+      .mockImplementationOnce(async (_projectId: string, secrets: Array<{ name: string; value: string }>) => {
+        configuredNames.add(secrets[0].name)
+        throw new Error('secret was created concurrently')
+      })
+      .mockImplementationOnce(async (_projectId: string, secrets: Array<{ name: string; value: string }>) => {
+        configuredNames.add(secrets[0].name)
+        return { project_id: 'project-1', secrets: [], count: 1 }
+      })
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={[requirements[0]]}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    act(() => setInput(
+      container.querySelector<HTMLInputElement>('input[type="password"]')!,
+      'manual-value',
+    ))
+
+    let committed = true
+    await act(async () => {
+      committed = await reviewRef.current!.commit()
+    })
+    expect(committed).toBe(false)
+    expect(apiMock.createProjectSecrets).toHaveBeenNthCalledWith(1, 'project-1', [{
+      name: 'ORDER_API_TOKEN_2',
+      value: 'manual-value',
+    }])
+
+    await act(async () => {
+      committed = await reviewRef.current!.commit()
+    })
+    expect(committed).toBe(true)
+    expect(apiMock.createProjectSecrets).toHaveBeenNthCalledWith(2, 'project-1', [{
+      name: 'ORDER_API_TOKEN_2_2',
+      value: 'manual-value',
+    }])
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'authorization-header', secret_name: 'ORDER_API_TOKEN_2_2' },
+    ])
+  })
+
+  it('migrates source-backed values under collision-safe names instead of reusing configured secrets', async () => {
     apiMock.getProjectSecretStatuses.mockResolvedValue({
       project_id: 'project-1',
       capabilities: {
@@ -947,11 +1257,14 @@ describe('SecretBindingReview', () => {
     expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({
       project_id: 'project-1',
       source_secret_session_id: 'session-1',
-      secrets: [{ requirement_id: 'migrate', secret_name: 'MIGRATED_TOKEN' }],
+      secrets: [
+        { requirement_id: 'configured', secret_name: 'CONFIGURED_TOKEN_2' },
+        { requirement_id: 'migrate', secret_name: 'MIGRATED_TOKEN' },
+      ],
     })
     expect(onApply).toHaveBeenCalledWith([
       { requirement_id: 'manual', secret_name: 'MANUAL_TOKEN' },
-      { requirement_id: 'configured', secret_name: 'CONFIGURED_TOKEN' },
+      { requirement_id: 'configured', secret_name: 'CONFIGURED_TOKEN_2' },
       { requirement_id: 'migrate', secret_name: 'MIGRATED_TOKEN' },
       { requirement_id: 'unavailable', secret_name: 'UNAVAILABLE_TOKEN' },
     ])
@@ -985,6 +1298,53 @@ describe('SecretBindingReview', () => {
       secrets: [
         { requirement_id: 'active', secret_name: 'ACTIVE_TOKEN' },
         { requirement_id: 'other', secret_name: 'OTHER_TOKEN' },
+      ],
+    })
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'active', secret_name: 'ACTIVE_TOKEN' },
+    ])
+  })
+
+  it('does not migrate a hidden archive credential whose imported destination value is preserved', async () => {
+    const active = {
+      ...requirements[0],
+      id: 'active',
+      suggested_name: 'ACTIVE_TOKEN',
+      source_value_available: true,
+      script_index: 0,
+    }
+    const hiddenPreserved = {
+      ...requirements[1],
+      id: 'hidden-preserved',
+      suggested_name: 'HIDDEN_TOKEN',
+      source_value_available: true,
+      destination_value_preserved: true,
+      script_index: 1,
+    }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[active]}
+          sourceMigrationRequirements={[active, hiddenPreserved]}
+          sourceSecretSessionId="archive-session"
+          sourceMigrationAllowed
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    act(() => container.querySelector<HTMLInputElement>('.credentials-source-migration input')?.click())
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Continue with credentials'))
+    await act(async () => applyButton?.click())
+
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'archive-session',
+      secrets: [
+        { requirement_id: 'active', secret_name: 'ACTIVE_TOKEN' },
       ],
     })
     expect(onApply).toHaveBeenCalledWith([

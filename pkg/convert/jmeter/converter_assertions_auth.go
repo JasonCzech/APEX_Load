@@ -47,9 +47,18 @@ func authConfigFromJMeterAuth(auth jmeterAuth, diagnostics *diag.Collector, loca
 		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
 	default:
 		if diagnostics != nil {
-			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" requires review and was not converted to executable HTTP auth")
+			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" requires review and was retained behind an execution gate")
 		}
-		return dsl.AuthConfig{}
+		// Unsupported schemes remain non-executable because the sampler receives
+		// a durable import-review gate. Keep the exact authored fields on that
+		// gated action so translating the scheme later never requires the
+		// importing operator to re-enter its password.
+		return dsl.AuthConfig{
+			Type:     authCapabilityFromJMeterMechanism(auth.Mechanism).Type,
+			Username: auth.Username,
+			Password: auth.Password,
+			Domain:   auth.Domain,
+		}
 	}
 }
 

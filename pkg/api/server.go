@@ -74,9 +74,14 @@ type Server struct {
 	// authoringMutationMu serializes session edits, deletion, correlation
 	// write-back, and approval within one controller. The storage CAS used by
 	// those handlers extends the same fence across HA replicas.
-	authoringMutationMu sync.Mutex
-	authoring           map[string]*storage.AuthoringSession
-	libraryMu           sync.Mutex
+	authoringMutationMu      sync.Mutex
+	authoring                map[string]*storage.AuthoringSession
+	importDraftAttestationMu sync.Mutex
+	// importDraftAttestations contains only credential digests and scope
+	// metadata. Raw imported values remain in the operator's editable response
+	// and never enter this compatibility handoff.
+	importDraftAttestations map[string]*importDraftAttestation
+	libraryMu               sync.Mutex
 	// libraryStateMutationMu serializes the load/mutate/CAS transition for
 	// remotes and synchronization links within one controller. Durable CAS still
 	// provides the cross-controller fence.
@@ -424,6 +429,7 @@ func NewServer(cfg ServerConfig) *Server {
 		controllerID:                controllerID,
 		haExecution:                 cfg.HAExecutionLeadership,
 		authoring:                   make(map[string]*storage.AuthoringSession),
+		importDraftAttestations:     make(map[string]*importDraftAttestation),
 		libraryRemotes:              make(map[string]*LibraryRemote),
 		libraryLinks:                make(map[string]*librarySyncLink),
 		libraryCreds:                cfg.LibraryCredentials,
@@ -891,6 +897,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/recorder", cors(log(auth(http.HandlerFunc(s.handleImportRecorder)))))
 	s.mux.Handle("POST /api/v1/scripts/import/recorder/validate", cors(log(auth(http.HandlerFunc(s.handleValidateRecorderImport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/recorder/replay", cors(log(auth(http.HandlerFunc(s.handleReplayRecorderImport)))))
+	s.mux.Handle("POST /api/v1/scripts/import/browser-recorder/attest", cors(log(auth(http.HandlerFunc(s.handleAttestBridgedBrowserRecordingImport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi", cors(log(auth(http.HandlerFunc(s.handleImportOpenAPI)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi/commit", cors(log(auth(http.HandlerFunc(s.handleCommitOpenAPIImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/openapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOpenAPISupportMatrix)))))

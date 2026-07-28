@@ -42,6 +42,7 @@ import {
   type HttpURLScheme,
 } from "../utils/httpUrlInput";
 import { withFallbackPersistedScript } from "./importSaveUtils";
+import { useSourceSecretSessionLifecycle } from "./sourceSecretSessionLifecycle";
 import BrowserRecorderControlPanel from "./BrowserRecorderControlPanel";
 import {
   CLIENT_DOWNLOAD_PLATFORMS,
@@ -54,6 +55,10 @@ import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
 } from "./SecretBindingReview";
+import {
+  credentialPreservingImportDraftRequiresSave,
+  importDraftExpiryStatus,
+} from "./protectedImportSession";
 import { attachImportCorrelationSuggestions } from "./scriptEditorUtils";
 import { type ImportedSaveResult } from "./useScriptsAuthoringState";
 import {
@@ -566,6 +571,9 @@ export default function RecordingStudio({
   onClose,
 }: RecordingStudioProps) {
   const api = useApi();
+  const sourceSecretSessions = useSourceSecretSessionLifecycle(
+    api.discardImportSecretSession,
+  );
   const [sessions, setSessions] = useState<RecordingSession[]>([]);
   const [activeSession, setActiveSession] = useState<RecordingSession | null>(
     null,
@@ -1165,8 +1173,8 @@ export default function RecordingStudio({
     const recorderEndpointChanged =
       previousRecorderRequestScopeRef.current !== recorderRequestScope;
     previousRecorderRequestScopeRef.current = recorderRequestScope;
-    void convertedCredentialReviewRef.current?.discardSourceSession();
-    void salesforceCredentialReviewRef.current?.discardSourceSession();
+    sourceSecretSessions.clear("converted");
+    sourceSecretSessions.clear("salesforce");
     if (feedbackTimerRef.current !== null) {
       window.clearTimeout(feedbackTimerRef.current);
       feedbackTimerRef.current = null;
@@ -1208,6 +1216,7 @@ export default function RecordingStudio({
     advanceSalesforceReviewGeneration,
     resetConvertTask,
     resetSalesforceTask,
+    sourceSecretSessions,
   ]);
 
   useEffect(() => {
@@ -1220,8 +1229,6 @@ export default function RecordingStudio({
     () => () => {
       if (feedbackTimerRef.current !== null)
         window.clearTimeout(feedbackTimerRef.current);
-      void convertedCredentialReviewRef.current?.discardSourceSession();
-      void salesforceCredentialReviewRef.current?.discardSourceSession();
     },
     [],
   );
@@ -1614,28 +1621,52 @@ export default function RecordingStudio({
   };
 
   const handlePreviewConversion = async (session: RecordingSession) => {
+    const sourceGeneration = advanceConvertedReviewGeneration();
+    const sourceScope = refreshScopeRef.current;
+    const sourceProjectId = sourceScope.projectId;
+    const requestIsCurrent = () =>
+      refreshScopeRef.current === sourceScope &&
+      convertedReviewGenerationRef.current === sourceGeneration;
     try {
       setConvertedParameterizationApplying(false);
       setConvertedCredentialActionInProgress(false);
-      advanceConvertedReviewGeneration();
       convertedPreparedScriptRef.current = null;
       convertedSourceRecordingSessionIDRef.current = session.id;
       setConvertedPreparedSecrets(null);
       const result = await convertTask.run(
-        () =>
-          api.previewRecordingConversion(
+        async () => {
+          const response = await api.previewRecordingConversion(
             session.id,
             session.name,
             parameterizeInputs,
-          ),
+          );
+          if (!requestIsCurrent()) {
+            sourceSecretSessions.discardUnaccepted(
+              sourceProjectId,
+              response.source_secret_session_id,
+            );
+            throw new Error(
+              "The recording source changed while conversion was running.",
+            );
+          }
+          sourceSecretSessions.replace(
+            "converted",
+            sourceProjectId,
+            response.source_secret_session_id,
+          );
+          return response;
+        },
         { clearValue: true },
       );
-      if (!isCurrentProject()) return;
+      if (!requestIsCurrent()) return;
       showFeedback(
         `Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`,
       );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, "error");
+      if (requestIsCurrent()) {
+        sourceSecretSessions.clear("converted");
+        showFeedback(e.message, "error");
+      }
     }
   };
 
@@ -1684,10 +1715,15 @@ export default function RecordingStudio({
   };
 
   const handleReviewSalesforceSession = async (session: RecordingSession) => {
+    const sourceGeneration = advanceSalesforceReviewGeneration();
+    const sourceScope = refreshScopeRef.current;
+    const sourceProjectId = sourceScope.projectId;
+    const requestIsCurrent = () =>
+      refreshScopeRef.current === sourceScope &&
+      salesforceReviewGenerationRef.current === sourceGeneration;
     try {
       setSalesforceParameterizationApplying(false);
       setSalesforceCredentialActionInProgress(false);
-      advanceSalesforceReviewGeneration();
       salesforcePreparedScriptRef.current = null;
       setSalesforcePreparedSecrets(null);
       const result = await salesforceTask.run(
@@ -1707,46 +1743,88 @@ export default function RecordingStudio({
             `${safeRecordingFileName(session.name)}.har`,
             { type: blob.type || "application/json" },
           );
-          return api.importSalesforce(file, {
+          const response = await api.importSalesforce(file, {
             name: `${session.name} Salesforce HTTP`,
             base_url: session.base_url,
-            project_id: activeProject?.id,
+            project_id: sourceProjectId,
           });
+          if (!requestIsCurrent()) {
+            sourceSecretSessions.discardUnaccepted(
+              sourceProjectId,
+              response.source_secret_session_id,
+            );
+            throw new Error(
+              "The recording source changed while Salesforce review was running.",
+            );
+          }
+          sourceSecretSessions.replace(
+            "salesforce",
+            sourceProjectId,
+            response.source_secret_session_id,
+          );
+          return response;
         },
         { clearValue: true },
       );
-      if (!isCurrentProject()) return;
+      if (!requestIsCurrent()) return;
       showFeedback(
         `Salesforce HTTP draft generated with ${result.script?.actions?.length || 0} actions`,
       );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, "error");
+      if (requestIsCurrent()) {
+        sourceSecretSessions.clear("salesforce");
+        showFeedback(e.message, "error");
+      }
     }
   };
 
   const handleConvert = async (session: RecordingSession) => {
+    const sourceGeneration = advanceConvertedReviewGeneration();
+    const sourceScope = refreshScopeRef.current;
+    const sourceProjectId = sourceScope.projectId;
+    const requestIsCurrent = () =>
+      refreshScopeRef.current === sourceScope &&
+      convertedReviewGenerationRef.current === sourceGeneration;
     try {
       setConvertedParameterizationApplying(false);
       setConvertedCredentialActionInProgress(false);
-      advanceConvertedReviewGeneration();
       convertedPreparedScriptRef.current = null;
       convertedSourceRecordingSessionIDRef.current = session.id;
       setConvertedPreparedSecrets(null);
       const result = await convertTask.run(
-        () =>
-          api.previewRecordingConversion(
+        async () => {
+          const response = await api.previewRecordingConversion(
             session.id,
             session.name,
             parameterizeInputs,
-          ),
+          );
+          if (!requestIsCurrent()) {
+            sourceSecretSessions.discardUnaccepted(
+              sourceProjectId,
+              response.source_secret_session_id,
+            );
+            throw new Error(
+              "The recording source changed while conversion was running.",
+            );
+          }
+          sourceSecretSessions.replace(
+            "converted",
+            sourceProjectId,
+            response.source_secret_session_id,
+          );
+          return response;
+        },
         { clearValue: true },
       );
-      if (!isCurrentProject()) return;
+      if (!requestIsCurrent()) return;
       showFeedback(
         `Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`,
       );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, "error");
+      if (requestIsCurrent()) {
+        sourceSecretSessions.clear("converted");
+        showFeedback(e.message, "error");
+      }
     }
   };
 
@@ -1794,11 +1872,15 @@ export default function RecordingStudio({
           )
         : [preparedScript],
       secret_binding_requirements: resolved.secret_binding_requirements,
+      import_draft_expires_at: resolved.import_draft_expires_at,
     });
   };
 
   const handleApplyConvertedParameterization = (
     parameterizedScript: ScriptDefinition,
+    _diffs: unknown[],
+    _selectedIds: string[],
+    importDraftExpiresAt?: string,
   ) => {
     const result = convertTask.value;
     if (!result) return;
@@ -1818,16 +1900,33 @@ export default function RecordingStudio({
             index === 0 ? preparedScript : entry,
           )
         : [preparedScript],
+      ...((result.scripts?.length ?? 1) <= 1
+        ? { import_draft_expires_at: importDraftExpiresAt }
+        : {}),
     });
   };
 
   const prepareConvertedScript = async (): Promise<ScriptDefinition | null> => {
     const requirements = convertTask.value?.secret_binding_requirements || [];
     if (requirements.length === 0) return buildReviewedScript();
+    const reviewedScript = buildReviewedScript();
+    const selectedBindingCount =
+      convertedPreparedSecrets?.selectedBindingCount ??
+      requirements.filter(
+        (requirement) => requirement.destination_value_preserved !== true,
+      ).length;
     const sourceGeneration = convertedReviewGenerationRef.current;
     const sourceRecorderScope = refreshScopeRef.current;
     convertedPreparedScriptRef.current = null;
     const committed = await convertedCredentialReviewRef.current?.commit();
+    if (
+      committed &&
+      selectedBindingCount === 0 &&
+      convertedReviewGenerationRef.current === sourceGeneration &&
+      refreshScopeRef.current === sourceRecorderScope
+    ) {
+      return reviewedScript;
+    }
     return committed &&
       convertedReviewGenerationRef.current === sourceGeneration &&
       refreshScopeRef.current === sourceRecorderScope
@@ -1839,6 +1938,26 @@ export default function RecordingStudio({
     if (convertedCredentialActionInProgress) return;
     setConvertedCredentialActionInProgress(true);
     try {
+      const result = convertTask.value;
+      const reviewedScript = buildReviewedScript();
+      if (
+        !recorderImportStoredScript(result) &&
+        credentialPreservingImportDraftRequiresSave(
+          result,
+          reviewedScript,
+          result?.secret_binding_requirements,
+        )
+      ) {
+        if (!onImported) {
+          showFeedback(
+            "Save this credential-preserving import before opening it in the Visual Editor.",
+            "error",
+          );
+          return;
+        }
+        await handleSaveConvertedScript();
+        return;
+      }
       const script = await prepareConvertedScript();
       if (script) onEdit?.(script);
     } finally {
@@ -1890,13 +2009,14 @@ export default function RecordingStudio({
         script.folder_id ?? folderId ?? null,
         sourceRecordingSessionId,
       );
+      const persistedScript = withFallbackPersistedScript(savedScript, script);
+      onImported?.({
+        scripts: [persistedScript],
+      });
       if (!requestIsCurrent()) return;
       showFeedback(
         `Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`,
       );
-      onImported?.({
-        scripts: [withFallbackPersistedScript(savedScript, script)],
-      });
     } catch (e: any) {
       if (requestIsCurrent()) showFeedback(e.message, "error");
     } finally {
@@ -1932,11 +2052,15 @@ export default function RecordingStudio({
           )
         : [resolved.script],
       secret_binding_requirements: resolved.secret_binding_requirements,
+      import_draft_expires_at: resolved.import_draft_expires_at,
     });
   };
 
   const handleApplySalesforceParameterization = (
     parameterizedScript: ScriptDefinition,
+    _diffs: unknown[],
+    _selectedIds: string[],
+    importDraftExpiresAt?: string,
   ) => {
     const result = salesforceTask.value;
     if (!result) return;
@@ -1951,6 +2075,9 @@ export default function RecordingStudio({
             index === 0 ? parameterizedScript : entry,
           )
         : [parameterizedScript],
+      ...((result.scripts?.length ?? 1) <= 1
+        ? { import_draft_expires_at: importDraftExpiresAt }
+        : {}),
     });
   };
 
@@ -1961,10 +2088,24 @@ export default function RecordingStudio({
       if (!script) return null;
       if ((result?.secret_binding_requirements?.length || 0) === 0)
         return script;
+      const selectedBindingCount =
+        salesforcePreparedSecrets?.selectedBindingCount ??
+        result?.secret_binding_requirements?.filter(
+          (requirement) => requirement.destination_value_preserved !== true,
+        ).length ??
+        0;
       const sourceGeneration = salesforceReviewGenerationRef.current;
       const sourceRecorderScope = refreshScopeRef.current;
       salesforcePreparedScriptRef.current = null;
       const committed = await salesforceCredentialReviewRef.current?.commit();
+      if (
+        committed &&
+        selectedBindingCount === 0 &&
+        salesforceReviewGenerationRef.current === sourceGeneration &&
+        refreshScopeRef.current === sourceRecorderScope
+      ) {
+        return script;
+      }
       return committed &&
         salesforceReviewGenerationRef.current === sourceGeneration &&
         refreshScopeRef.current === sourceRecorderScope
@@ -1976,6 +2117,25 @@ export default function RecordingStudio({
     if (salesforceCredentialActionInProgress) return;
     setSalesforceCredentialActionInProgress(true);
     try {
+      const result = salesforceTask.value;
+      const reviewedScript = result?.script || result?.scripts?.[0];
+      if (
+        credentialPreservingImportDraftRequiresSave(
+          result,
+          reviewedScript,
+          result?.secret_binding_requirements,
+        )
+      ) {
+        if (!onImported) {
+          showFeedback(
+            "Save this credential-preserving import before opening it in the Visual Editor.",
+            "error",
+          );
+          return;
+        }
+        await handleSaveSalesforceScript();
+        return;
+      }
       const script = await prepareSalesforceScript();
       if (script) onEdit?.(script);
     } finally {
@@ -2004,13 +2164,13 @@ export default function RecordingStudio({
         sourceProjectId,
         script.folder_id ?? folderId ?? null,
       );
+      onImported?.({
+        scripts: [withFallbackPersistedScript(savedScript, script)],
+      });
       if (!requestIsCurrent()) return;
       showFeedback(
         `Salesforce HTTP script "${script.name}" saved to the script library`,
       );
-      onImported?.({
-        scripts: [withFallbackPersistedScript(savedScript, script)],
-      });
     } catch (e: any) {
       if (requestIsCurrent()) showFeedback(e.message, "error");
     } finally {
@@ -2053,15 +2213,27 @@ export default function RecordingStudio({
   const convertedScript = convertedReviewScript || convertedStoredScript;
   const convertedSecretRequirements =
     convertResult?.secret_binding_requirements || [];
+  const convertedRequiresCredentialPreservingSave =
+    !convertedStoredScript &&
+    credentialPreservingImportDraftRequiresSave(
+      convertResult,
+      convertedReviewScript,
+      convertedSecretRequirements,
+    );
+  const convertedImportDraftExpiry = convertedStoredScript
+    ? null
+    : importDraftExpiryStatus(convertResult?.import_draft_expires_at);
   const convertedCredentialsValid =
     convertedSecretRequirements.length === 0 ||
     convertedPreparedSecrets?.valid === true;
   const convertedDeferredSecretCount =
     convertedPreparedSecrets?.configureLaterCount ??
     new Set(
-      convertedSecretRequirements.map(
-        (requirement) => requirement.suggested_name,
-      ),
+      convertedSecretRequirements
+        .filter(
+          (requirement) => requirement.destination_value_preserved !== true,
+        )
+        .map((requirement) => requirement.suggested_name),
     ).size;
   const convertedSaveLabel = convertedSaveInProgress
     ? "Saving..."
@@ -2074,15 +2246,26 @@ export default function RecordingStudio({
     salesforceResult?.script || salesforceResult?.scripts?.[0];
   const salesforceSecretRequirements =
     salesforceResult?.secret_binding_requirements || [];
+  const salesforceRequiresCredentialPreservingSave =
+    credentialPreservingImportDraftRequiresSave(
+      salesforceResult,
+      salesforceScript,
+      salesforceSecretRequirements,
+    );
+  const salesforceImportDraftExpiry = importDraftExpiryStatus(
+    salesforceResult?.import_draft_expires_at,
+  );
   const salesforceCredentialsValid =
     salesforceSecretRequirements.length === 0 ||
     salesforcePreparedSecrets?.valid === true;
   const salesforceDeferredSecretCount =
     salesforcePreparedSecrets?.configureLaterCount ??
     new Set(
-      salesforceSecretRequirements.map(
-        (requirement) => requirement.suggested_name,
-      ),
+      salesforceSecretRequirements
+        .filter(
+          (requirement) => requirement.destination_value_preserved !== true,
+        )
+        .map((requirement) => requirement.suggested_name),
     ).size;
   const salesforceSaveLabel = salesforceSaveInProgress
     ? "Saving..."
@@ -3195,7 +3378,7 @@ export default function RecordingStudio({
               type="checkbox"
               checked={parameterizeInputs}
               onChange={(e) => {
-                void convertedCredentialReviewRef.current?.discardSourceSession();
+                sourceSecretSessions.clear("converted");
                 advanceConvertedReviewGeneration();
                 resetConvertTask();
                 convertedPreparedScriptRef.current = null;
@@ -3566,6 +3749,7 @@ export default function RecordingStudio({
                 void handleSaveConvertedScript();
               }}
               disabled={
+                convertedImportDraftExpiry?.expired ||
                 !convertedCredentialsValid ||
                 convertedSaveInProgress ||
                 convertedCredentialActionInProgress ||
@@ -3582,6 +3766,7 @@ export default function RecordingStudio({
                   void handleEditConvertedScript();
                 }}
                 disabled={
+                  convertedImportDraftExpiry?.expired ||
                   !convertedReviewScript ||
                   !convertedCredentialsValid ||
                   convertedSaveInProgress ||
@@ -3591,10 +3776,20 @@ export default function RecordingStudio({
               >
                 {convertedCredentialActionInProgress
                   ? "Preparing editor..."
-                  : "Open In Visual Editor"}
+                  : convertedRequiresCredentialPreservingSave
+                    ? "Save And Open In Visual Editor"
+                    : "Open In Visual Editor"}
               </button>
             )}
           </div>
+          {convertedImportDraftExpiry && (
+            <div
+              className={`rec-feedback ${convertedImportDraftExpiry.expired ? "error" : ""}`}
+              role={convertedImportDraftExpiry.expired ? "alert" : "status"}
+            >
+              {convertedImportDraftExpiry.label}
+            </div>
+          )}
 
           {convertResult.correlations &&
             convertResult.correlations.length > 0 && (
@@ -3721,6 +3916,7 @@ export default function RecordingStudio({
                 void handleSaveSalesforceScript();
               }}
               disabled={
+                salesforceImportDraftExpiry?.expired ||
                 !salesforceCredentialsValid ||
                 salesforceSaveInProgress ||
                 salesforceCredentialActionInProgress ||
@@ -3737,6 +3933,7 @@ export default function RecordingStudio({
                   void handleEditSalesforceScript();
                 }}
                 disabled={
+                  salesforceImportDraftExpiry?.expired ||
                   !salesforceCredentialsValid ||
                   salesforceSaveInProgress ||
                   salesforceCredentialActionInProgress ||
@@ -3745,10 +3942,20 @@ export default function RecordingStudio({
               >
                 {salesforceCredentialActionInProgress
                   ? "Preparing editor..."
-                  : "Open In Visual Editor"}
+                  : salesforceRequiresCredentialPreservingSave
+                    ? "Save And Open In Visual Editor"
+                    : "Open In Visual Editor"}
               </button>
             )}
           </div>
+          {salesforceImportDraftExpiry && (
+            <div
+              className={`rec-feedback ${salesforceImportDraftExpiry.expired ? "error" : ""}`}
+              role={salesforceImportDraftExpiry.expired ? "alert" : "status"}
+            >
+              {salesforceImportDraftExpiry.label}
+            </div>
+          )}
           {(salesforceResult.warnings?.length || 0) > 0 && (
             <div className="rec-warnings">
               {salesforceResult.warnings.slice(0, 4).map((warning, idx) => (

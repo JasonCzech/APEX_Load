@@ -86,7 +86,7 @@ func sanitizeNativePolicyHeaders(
 					document,
 					file.nativeAliasGroups,
 					pointer,
-					requirement.Replacement,
+					nativeCredentialProjectionReplacement(requirement),
 				); err != nil {
 					return nil, nil, 0, fmt.Errorf("write sanitized native header in %q: %w", file.Path, err)
 				}
@@ -126,7 +126,7 @@ func sanitizeNativePolicyHeaders(
 					document,
 					file.nativeAliasGroups,
 					pointer,
-					requirement.Replacement,
+					nativeCredentialProjectionReplacement(requirement),
 				); err != nil {
 					return nil, nil, 0, fmt.Errorf("write sanitized native header in %q: %w", file.Path, err)
 				}

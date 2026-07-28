@@ -141,6 +141,7 @@ describe('JMeterImport', () => {
     await act(async () => {
       resolveImport?.({
         scripts: [{ name: 'Stale JMeter result', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [], data_sources: [] }],
+        source_secret_session_id: 'stale-jmeter-session',
         warnings: [],
         unsupported_elements: [],
         assumptions: [],
@@ -154,6 +155,58 @@ describe('JMeterImport', () => {
 
     expect(container.textContent).not.toContain('Stale JMeter result')
     expect(container.textContent).not.toContain('Review Converted Scripts')
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'stale-jmeter-session',
+    })
+  })
+
+  it('publishes a completed batch save even when the JMeter review changes in flight', async () => {
+    const onImported = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    apiMock.saveJMeterImport.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" onImported={onImported} />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['<jmeterTestPlan />'], 'save-race.jmx')],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Validate Only'))?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
+    })
+    const includeAssertions = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))[0]
+    await act(async () => {
+      includeAssertions?.click()
+    })
+    await act(async () => {
+      resolveSave({
+        count: 1,
+        scripts: [{
+          id: 'jmeter-saved-after-change',
+          name: 'Auth_Users',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        }],
+      })
+      await Promise.resolve()
+    })
+
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'jmeter-saved-after-change' })],
+    }))
   })
 
   it('renders the import close action as a Back button', async () => {
@@ -346,6 +399,111 @@ describe('JMeterImport', () => {
       name: 'Auth_Users',
       actions: expect.any(Array),
     }))
+  })
+
+  it('saves credential-preserving JMeter scripts before opening the persisted editor', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    const importedScript = {
+      name: 'Credentialed JMeter Login',
+      version: '1.0.0',
+      protocol: 'http',
+      metadata: {
+        import: {
+          source: 'jmeter',
+          preserved: {
+            server_import_attestation_v1: 'protected:jmeter-login',
+          },
+        },
+      },
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=imported-runtime-password',
+      }],
+      data_sources: [],
+    }
+    apiMock.validateJMeterImport.mockResolvedValueOnce({
+      scripts: [importedScript],
+      script: importedScript,
+      import_draft_expires_at: '2099-07-26T12:30:00Z',
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      stats: {
+        thread_groups: 1,
+        samplers: 1,
+        total_samplers: 1,
+        skipped_samplers: 0,
+        converted_actions: 1,
+        headers: 0,
+        variables: 0,
+        csv_sources: 0,
+        assertions: 0,
+        timers: 0,
+        unsupported: 0,
+      },
+      summary: { file_name: 'credentialed.jmx' },
+      secret_binding_requirements: [{
+        id: 'login-password',
+        path: '/actions/0/body',
+        label: 'Login password',
+        context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD',
+        script_index: 0,
+        script_name: importedScript.name,
+        destination_value_preserved: true,
+      }],
+    })
+    apiMock.saveJMeterImport.mockResolvedValueOnce({
+      count: 1,
+      scripts: [{
+        id: 'jmeter-credentialed',
+        name: importedScript.name,
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      }],
+    })
+
+    await act(async () => root.render(
+      <JMeterImport onImported={onImported} onEdit={onEdit} />,
+    ))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['<jmeterTestPlan />'], 'credentialed.jmx', { type: 'application/xml' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const validateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Validate Only'))!
+    await act(async () => validateButton.click())
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Save And Open In Visual Editor')
+    expect(editButton).toBeDefined()
+    await act(async () => editButton?.click())
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({
+        actions: [expect.objectContaining({ body: 'password=imported-runtime-password' })],
+      })],
+    }))
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'jmeter-credentialed' })],
+    }))
+    expect(onEdit).not.toHaveBeenCalled()
   })
 
   it('resolves a redacted credential on the correct script before saving a multi-script import', async () => {

@@ -939,7 +939,7 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		if group.ScriptID != "" && group.script.ID != "" && group.script.ID != group.ScriptID {
 			return nil, fmt.Errorf("group[%d] runtime script id %q does not match %q", index, group.script.ID, group.ScriptID)
 		}
-		if issues := dsl.ValidateScriptIssues(group.script); len(issues) > 0 {
+		if issues := validateStoredExecutionScript(group.script); len(issues) > 0 {
 			return nil, fmt.Errorf("group[%d] compiled runtime script is invalid: %s: %w",
 				index, strings.Join(issues, "; "), errStaleRuntimeSnapshotValidation)
 		}
@@ -1335,10 +1335,24 @@ func (tr *TestRunner) forgetProject(projectID string) {
 }
 
 func (tr *TestRunner) saveStoredScript(script *dsl.Script) error {
+	return tr.saveStoredScriptWithImportTrust(script, nil, false, "")
+}
+
+func (tr *TestRunner) saveStoredScriptWithImportTrust(
+	script, prior *dsl.Script,
+	trustedImport bool,
+	sourceProfile string,
+) error {
 	if tr.scriptStore == nil {
 		return nil
 	}
-	projected, err := preparePersistentLibraryScript(script, nil)
+	var projected *dsl.Script
+	var err error
+	if trustedImport {
+		projected, err = preparePersistentImportedLibraryScript(script, prior, sourceProfile)
+	} else {
+		projected, err = preparePersistentLibraryScript(script, prior)
+	}
 	if err != nil {
 		return err
 	}

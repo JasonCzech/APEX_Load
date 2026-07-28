@@ -6,16 +6,17 @@ import { gzipSync } from 'node:zlib'
 const kib = (value) => value * 1024
 const mib = (value) => value * 1024 * 1024
 
-// These limits are based on the deterministic July 2026 production build and
-// leave roughly 6-10% headroom. This is a regression guard, not an assertion
+// These limits are based on the deterministic July 2026 production build,
+// including the shared import-review and protected-session workflows, and leave
+// roughly 4-7% aggregate headroom. This is a regression guard, not an assertion
 // that the current bundle has reached its long-term size target.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(650),
     maxAssetGzipBytes: kib(220),
-    maxTotalBytes: mib(4.4),
-    maxTotalGzipBytes: mib(1.2),
+    maxTotalBytes: mib(4.75),
+    maxTotalGzipBytes: mib(1.3),
   }),
   '.css': Object.freeze({
     label: 'CSS',

@@ -19,10 +19,11 @@ func TestMaskBrunoNativeCommitScriptsProtectsLegacyReceiptSnapshots(t *testing.T
 		ProjectID: "legacy-native-project",
 		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
 		Actions: []dsl.Action{{
-			Name:   "Legacy login",
-			Type:   "request",
-			Method: http.MethodPost,
-			Target: "/login",
+			Name:     "Legacy login",
+			Type:     "request",
+			Method:   http.MethodPost,
+			Target:   "/login",
+			Selector: canary,
 			Headers: map[string]string{
 				"Authorization": "Bearer " + canary,
 				"Content-Type":  "application/json",
@@ -44,6 +45,9 @@ func TestMaskBrunoNativeCommitScriptsProtectsLegacyReceiptSnapshots(t *testing.T
 	}
 	if !strings.Contains(string(payload), maskedScriptSecret) {
 		t.Fatalf("legacy receipt response did not contain a disclosure-safe projection: %s", payload)
+	}
+	if projected[0].Actions[0].Selector != maskedScriptSecret {
+		t.Fatalf("credential-equivalent selector = %q", projected[0].Actions[0].Selector)
 	}
 	if script.Actions[0].Headers["Authorization"] != "Bearer "+canary ||
 		!strings.Contains(script.Actions[0].Body, canary) {

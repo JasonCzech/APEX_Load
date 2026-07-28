@@ -19,7 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/importartifact"
 )
 
-func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *testing.T) {
+func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t *testing.T) {
 	tests := []struct {
 		name       string
 		profile    string
@@ -98,10 +98,6 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			value := randomProtectedImportValue(t)
-			protectedValue := value
-			if test.protected != nil {
-				protectedValue = test.protected(value)
-			}
 			artifactDir := t.TempDir()
 			wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 				Key:   bytes.Repeat([]byte{0x5a}, 32),
@@ -130,16 +126,12 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 			if inspectResponse.Code != http.StatusOK {
 				t.Fatalf("inspection status = %d", inspectResponse.Code)
 			}
-			if bytes.Contains(inspectResponse.Body.Bytes(), []byte(value)) {
-				t.Fatalf(
-					"inspection JSON disclosed a protected credential value: %s",
-					strings.ReplaceAll(inspectResponse.Body.String(), value, "<PROTECTED>"),
-				)
-			}
 			var inspection struct {
 				ImportSessionID string                     `json:"import_session_id"`
 				Script          dsl.Script                 `json:"script"`
 				Requirements    []SecretBindingRequirement `json:"secret_binding_requirements"`
+				Result          json.RawMessage            `json:"result"`
+				SourceReview    json.RawMessage            `json:"source_review"`
 			}
 			if err := json.Unmarshal(inspectResponse.Body.Bytes(), &inspection); err != nil {
 				t.Fatal(err)
@@ -147,61 +139,20 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 			if strings.TrimSpace(inspection.ImportSessionID) == "" {
 				t.Fatal("inspection did not create a protected import session")
 			}
-			if len(inspection.Requirements) != 1 {
-				t.Fatalf("inspection requirements = %#v, want one protected credential", inspection.Requirements)
+			// The inspection route is the authenticated authoring handoff. Its
+			// editable destination script must remain executable without asking
+			// the importing operator to enter the same password again.
+			assertScriptContainsProtectedImportValue(t, &inspection.Script, value)
+			// Review/result sidecars remain disclosure-safe even though the
+			// editable script is intentionally credential-bearing.
+			if bytes.Contains(inspection.Result, []byte(value)) ||
+				bytes.Contains(inspection.SourceReview, []byte(value)) {
+				t.Fatal("inspection review evidence disclosed an imported credential")
 			}
-			publicRequirement := inspection.Requirements[0]
-			if publicRequirement.ID == "" || publicRequirement.Path == "" ||
-				publicRequirement.SuggestedName == "" || publicRequirement.Replacement == "" {
-				t.Fatalf("inspection requirement omitted safe binding metadata: %#v", publicRequirement)
+			if len(inspection.Requirements) == 0 {
+				t.Fatal("inspection omitted the optional credential migration review")
 			}
-			if publicRequirement.SourceValueAvailable {
-				t.Fatal("inspection claimed a source value was available without a durable protected source store")
-			}
-			assertScriptOmitsProtectedImportValue(t, &inspection.Script, value)
 			assertProtectedImportArtifactsEncrypted(t, artifactDir, value)
-
-			customSecretName := strings.ToUpper(test.profile) + "_PROTECTED_CUSTOM"
-			applyBody, err := json.Marshal(map[string]any{
-				"script": inspection.Script,
-				"bindings": []map[string]string{{
-					"requirement_id": publicRequirement.ID,
-					"secret_name":    customSecretName,
-				}},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			applyRequest := httptest.NewRequest(
-				http.MethodPost,
-				"/api/v1/scripts/secret-bindings/apply",
-				bytes.NewReader(applyBody),
-			)
-			applyRequest.Header.Set("Content-Type", "application/json")
-			applyResponse := httptest.NewRecorder()
-			server.mux.ServeHTTP(applyResponse, applyRequest)
-			clear(applyBody)
-			if applyResponse.Code != http.StatusOK {
-				t.Fatalf("binding status = %d body=%s", applyResponse.Code, applyResponse.Body.String())
-			}
-			if bytes.Contains(applyResponse.Body.Bytes(), []byte(value)) {
-				t.Fatal("binding JSON disclosed a protected credential value")
-			}
-			if !bytes.Contains(applyResponse.Body.Bytes(), []byte(`"secret_binding_requirements":[]`)) {
-				t.Fatalf("binding JSON must encode an empty requirement list as []: %s", applyResponse.Body.String())
-			}
-			var applied struct {
-				Script       dsl.Script                 `json:"script"`
-				Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
-			}
-			if err := json.Unmarshal(applyResponse.Body.Bytes(), &applied); err != nil {
-				t.Fatal(err)
-			}
-			if len(applied.Requirements) != 0 {
-				t.Fatalf("binding requirements remain = %#v", applied.Requirements)
-			}
-			assertScriptReferencesProtectedImportName(t, &applied.Script, customSecretName)
-			assertProtectedImportMetadataRemoved(t, &applied.Script)
 
 			candidate, claim, err := server.claimProtectedImportCandidateSession(
 				httptest.NewRequest(http.MethodPost, test.commitURL, nil),
@@ -212,20 +163,13 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 			if err != nil {
 				t.Fatal(err)
 			}
-			valueMatched := false
-			identityPresent := false
-			for _, requirement := range candidate.CredentialRequirements {
-				if requirement.ID == publicRequirement.ID {
-					identityPresent = true
-				}
-				if requirement.Value == protectedValue {
-					valueMatched = true
-				}
+			if len(candidate.CredentialRequirements) != 0 {
+				t.Fatalf(
+					"preserved credential unexpectedly requires protected rebinding: %#v",
+					candidate.CredentialRequirements,
+				)
 			}
-			if !identityPresent || !valueMatched {
-				t.Fatal("protected credential identity/value did not round-trip through the encrypted envelope")
-			}
-			assertScriptOmitsProtectedImportValue(t, candidate.Script, value)
+			assertScriptContainsProtectedImportValue(t, candidate.Script, value)
 			clearProtectedImportCandidate(candidate)
 			server.releaseImportCandidateClaim(claim)
 
@@ -233,9 +177,6 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 				"import_session_id": inspection.ImportSessionID,
 				"project_id":        projectID,
 				"script":            dsl.Script{},
-				"secret_bindings": map[string]string{
-					publicRequirement.ID: customSecretName,
-				},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -263,17 +204,26 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 			}
 			assertScriptOmitsProtectedImportValue(t, committed.Script, value)
 			assertScriptOmitsProtectedImportValue(t, committed.StoredScript.Script, value)
-			assertScriptReferencesProtectedImportName(t, committed.Script, customSecretName)
-			assertScriptReferencesProtectedImportName(t, committed.StoredScript.Script, customSecretName)
 			assertProtectedImportMetadataRemoved(t, committed.Script)
 			assertProtectedImportMetadataRemoved(t, committed.StoredScript.Script)
 			durable, ok := server.runner.GetScript(committed.StoredScript.ID)
 			if !ok || durable == nil || durable.Script == nil {
 				t.Fatal("committed script was not durably available")
 			}
-			assertScriptOmitsProtectedImportValue(t, durable.Script, value)
-			assertScriptReferencesProtectedImportName(t, durable.Script, customSecretName)
+			assertScriptContainsProtectedImportValue(t, durable.Script, value)
 			assertProtectedImportMetadataRemoved(t, durable.Script)
+
+			readResponse := httptest.NewRecorder()
+			server.mux.ServeHTTP(
+				readResponse,
+				httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+committed.StoredScript.ID, nil),
+			)
+			if readResponse.Code != http.StatusOK {
+				t.Fatalf("ordinary read status = %d body=%s", readResponse.Code, readResponse.Body.String())
+			}
+			if bytes.Contains(readResponse.Body.Bytes(), []byte(value)) {
+				t.Fatal("ordinary stored-script read disclosed the imported credential")
+			}
 			assertProtectedImportArtifactsEncrypted(t, artifactDir, value)
 		})
 	}
@@ -318,12 +268,12 @@ func TestProtectedOpenAPICredentialValueMigratesWithoutDisclosure(t *testing.T) 
 	if inspection.Code != http.StatusOK {
 		t.Fatalf("inspection status = %d body=%s", inspection.Code, inspection.Body.String())
 	}
-	if strings.Contains(inspection.Body.String(), value) {
-		t.Fatal("inspection disclosed a migratable OpenAPI credential")
-	}
 	var payload struct {
+		Script          dsl.Script                 `json:"script"`
 		SourceSessionID string                     `json:"source_secret_session_id"`
 		Requirements    []SecretBindingRequirement `json:"secret_binding_requirements"`
+		Result          json.RawMessage            `json:"result"`
+		SourceReview    json.RawMessage            `json:"source_review"`
 	}
 	if err := json.Unmarshal(inspection.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
@@ -331,6 +281,11 @@ func TestProtectedOpenAPICredentialValueMigratesWithoutDisclosure(t *testing.T) 
 	if payload.SourceSessionID == "" || len(payload.Requirements) != 1 ||
 		!payload.Requirements[0].SourceValueAvailable {
 		t.Fatalf("protected migration metadata = %#v", payload)
+	}
+	assertScriptContainsProtectedImportValue(t, &payload.Script, value)
+	if bytes.Contains(payload.Result, []byte(value)) ||
+		bytes.Contains(payload.SourceReview, []byte(value)) {
+		t.Fatal("inspection review evidence disclosed a migratable OpenAPI credential")
 	}
 
 	migration := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", map[string]any{
@@ -399,6 +354,18 @@ func assertScriptOmitsProtectedImportValue(t *testing.T, script *dsl.Script, val
 	defer clear(payload)
 	if bytes.Contains(payload, []byte(value)) {
 		t.Fatal("script retained a protected credential value")
+	}
+}
+
+func assertScriptContainsProtectedImportValue(t *testing.T, script *dsl.Script, value string) {
+	t.Helper()
+	payload, err := json.Marshal(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(payload)
+	if !bytes.Contains(payload, []byte(value)) {
+		t.Fatal("script lost an imported credential value")
 	}
 }
 

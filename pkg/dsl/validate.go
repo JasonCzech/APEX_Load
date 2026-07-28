@@ -19,6 +19,21 @@ import (
 
 // ValidateScriptIssues returns all validation issues for a script definition.
 func ValidateScriptIssues(script *Script) []string {
+	return validateScriptIssues(script, false)
+}
+
+// ValidateScriptIssuesWithPreservedImportCredentials validates a
+// server-persisted import execution snapshot. It differs from ordinary
+// validation only for credential-bearing Java VM arguments: exact imported
+// argv is allowed, while every structural and process-control rule remains in
+// force. Callers must use this only for a script loaded from a trusted import
+// persistence/session path, never merely because client JSON carries an import
+// metadata marker.
+func ValidateScriptIssuesWithPreservedImportCredentials(script *Script) []string {
+	return validateScriptIssues(script, true)
+}
+
+func validateScriptIssues(script *Script, allowPreservedJavaVMCredentials bool) []string {
 	if script == nil {
 		return []string{"script is required"}
 	}
@@ -79,7 +94,7 @@ func ValidateScriptIssues(script *Script) []string {
 		issues = append(issues, validateJavaHTTPScriptIssues(script)...)
 	}
 	if script.Protocol == "java_vuser" {
-		issues = append(issues, validateJavaVuserScriptIssues(script)...)
+		issues = append(issues, validateJavaVuserScriptIssuesWithPolicy(script, allowPreservedJavaVMCredentials)...)
 	}
 	if script.Protocol == "database" {
 		issues = append(issues, validateDatabaseScriptIssues(script)...)

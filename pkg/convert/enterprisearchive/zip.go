@@ -15,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -249,9 +250,20 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	sourceConstants := collectSourceStringConstants(files)
 	var parsedActions []*ParsedAction
 	var parseErrors []string
-	for _, actionFile := range orderedSourceActionFiles(projectConfig, files) {
+	sourceDeclarations := orderedSourceActionFileDeclarations(projectConfig, files)
+	declarationsByResolvedFile := sourceDeclarationsByResolvedFile(sourceDeclarations, files)
+	type parsedCSource struct {
+		action *ParsedAction
+		err    error
+	}
+	parsedByResolvedFile := make(map[string]parsedCSource)
+	for _, declaration := range sourceDeclarations {
+		actionFile := declaration.Name
 		resolvedActionFile, content, ambiguous := findSourceArchiveFile(files, actionFile)
-		phase := sourceActionPhaseForProjectFile(projectConfig, actionFile)
+		phase := normalizeSourcePhase(declaration.Phase)
+		if phase == "" {
+			phase = sourceActionPhaseForProjectFile(projectConfig, actionFile)
+		}
 		if resolvedActionFile == "" || len(ambiguous) > 0 {
 			kind := "missing_source_file"
 			if len(ambiguous) > 0 {
@@ -269,17 +281,19 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			parseErrors = appendUnique(parseErrors, actionFile)
 			continue
 		}
-		parsed, err := ParseActionFile(resolvedActionFile, inlineSourceStringConstants(content, sourceConstants))
+		cacheKey := strings.ToLower(normalizeRuntimeArchivePath(resolvedActionFile))
+		cached, parsedAlready := parsedByResolvedFile[cacheKey]
+		if !parsedAlready {
+			cached.action, cached.err = ParseActionFile(resolvedActionFile, inlineSourceStringConstants(content, sourceConstants))
+			parsedByResolvedFile[cacheKey] = cached
+		}
+		parsed := sourceActionForLifecycleDeclaration(
+			cached.action,
+			declaration,
+			declarationsByResolvedFile[cacheKey],
+		)
+		err := cached.err
 		if parsed != nil {
-			parsed.Phase = phase
-			for index := range parsed.Functions {
-				parsed.Functions[index].Phase = parsed.Phase
-			}
-			for index := range parsed.ParseFailures {
-				if parsed.ParseFailures[index].Phase == "" {
-					parsed.ParseFailures[index].Phase = parsed.Phase
-				}
-			}
 			if err == nil || len(parsed.Functions) > 0 || len(parsed.ParseFailures) > 0 {
 				parsedActions = append(parsedActions, parsed)
 			}
@@ -554,6 +568,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 	}
 	applyEnterpriseRuntimeBindings(result, scripts, ctx)
 	applyJavaVMParameterRejectionReview(result, scripts, ctx.RuntimeConfig, ctx.RuntimeFileName)
+	applyRuntimeProfileSelectionReview(result, scripts, ctx)
 	applyEnterpriseRuntimeFidelityReview(result, scripts, ctx)
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
 	finalizeEnterpriseSourceDisclosure(result, ctx.Files, ctx.ParameterFileNames)
@@ -566,10 +581,107 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 
 const javaVMParameterExecutionBlocker = "java_vm_parameters_require_safe_replacement"
 
-// applyJavaVMParameterRejectionReview turns an import-time JVM argv rejection
-// into the durable action gate enforced by engine, replay, and launch paths.
-// Supplying a project secret cannot clear this gate: the engine deliberately
-// never resolves secrets into process-observable Java command-line arguments.
+const runtimeProfileSelectionReason = "runtime_profile_selection_unresolved"
+
+// applyRuntimeProfileSelectionReview turns an unresolved cfg/run-logic profile
+// selection into a durable execution gate. Falling back to runtime defaults is
+// structurally safe, but it is not wire- or schedule-equivalent when the source
+// selected conflicting profiles. A parity warning alone would therefore leave
+// an incomplete conversion runnable.
+func applyRuntimeProfileSelectionReview(
+	result *ConvertResult,
+	scripts []*dsl.Script,
+	ctx archiveFinalizationContext,
+) {
+	if result == nil || ctx.RuntimeConfig == nil {
+		return
+	}
+	selectionIssues := make([]RuntimeMigrationIssue, 0)
+	for _, issue := range ctx.RuntimeConfig.RuntimeIssues {
+		if issue.ID == "runtime_profile" || issue.profileSelection {
+			selectionIssues = append(selectionIssues, issue)
+		}
+	}
+	if len(selectionIssues) == 0 {
+		return
+	}
+
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+			findings := make([]importreview.Finding, 0, len(selectionIssues))
+			for _, issue := range selectionIssues {
+				sourceRefs := runtimeProfileSelectionSourceRefs(issue, ctx)
+				for _, sourceRef := range sourceRefs {
+					findings = append(findings, importreview.Finding{
+						Code:       "import_review_required",
+						Severity:   diag.Blocker,
+						Element:    "runtime profile selection",
+						Detail:     "the active runtime profile could not be selected unambiguously; safe defaults were retained only as a review draft",
+						Location:   ref.Path,
+						ActionPath: ref.Path,
+						Source:     "enterprise_script_archive",
+						ReasonCode: runtimeProfileSelectionReason,
+						SourceRef:  sourceRef,
+						Resolution: "replace_behavior_and_remove_gate",
+						Gate:       importreview.GateExecution,
+					})
+				}
+			}
+			importreview.ApplyToAction(ref.Action, findings)
+			for _, finding := range findings {
+				appendSourceReviewMapping(result, SourceReviewMapping{
+					SourceFile: strings.SplitN(finding.SourceRef, "#", 2)[0],
+					Function:   "Runtime profile selection",
+					TargetPath: ref.Path + ".metadata.import_review",
+					TargetKind: "review",
+					Status:     "review_only",
+					Notes:      "Runtime defaults were retained in a disclosure-safe draft, but execution remains blocked until the profile conflict is resolved.",
+				})
+			}
+			return nil
+		})
+	}
+	result.Warnings = append(result.Warnings,
+		"Runtime profile selection was unresolved; the imported draft uses safe defaults and remains blocked until the profile conflict is resolved.",
+	)
+	result.Warnings = uniqueSortedStrings(result.Warnings)
+}
+
+func runtimeProfileSelectionSourceRefs(
+	issue RuntimeMigrationIssue,
+	ctx archiveFinalizationContext,
+) []string {
+	refs := make([]string, 0, len(issue.RuntimeFiles)+1)
+	pointer := "runtime_profile"
+	if issue.ID == "pacing" {
+		pointer = "run_logic_profile"
+	}
+	if projectFile := normalizeRuntimeArchivePath(ctx.ProjectFileName); projectFile != "" {
+		refs = append(refs, projectFile+"#"+pointer)
+	}
+	for _, runtimeFile := range issue.RuntimeFiles {
+		runtimeFile = normalizeRuntimeArchivePath(runtimeFile)
+		if runtimeFile != "" {
+			refs = append(refs, runtimeFile+"#"+pointer)
+		}
+	}
+	if len(refs) == 0 {
+		refs = append(refs, pointer)
+	}
+	return uniqueSortedStrings(refs)
+}
+
+const javaVMParameterExposureReviewCode = "java_vm_parameters_process_table_exposure"
+
+// applyJavaVMParameterRejectionReview distinguishes structurally unsafe JVM
+// options from credential-bearing source arguments. Unsafe process-control
+// options are omitted and gated. Imported credentials are preserved exactly so
+// the destination remains runnable without re-entry; each Java action carries
+// value-free, non-blocking review evidence that the argument can be visible in
+// the operating-system process table.
 func applyJavaVMParameterRejectionReview(
 	result *ConvertResult,
 	scripts []*dsl.Script,
@@ -584,20 +696,41 @@ func applyJavaVMParameterRejectionReview(
 		runtimeFile = normalizeRuntimeArchivePath(runtimeCfg.RuntimeFiles[0])
 	}
 	rejections := make([]javaVMParameterRejection, 0)
+	exposureReviews := make([]javaVMParameterRejection, 0)
 	if runtimeCfg != nil {
-		rejections = append(rejections, runtimeCfg.javaVMParameterRejections...)
+		for _, finding := range runtimeCfg.javaVMParameterRejections {
+			if finding.category == javarunner.VMParameterSensitiveProperty {
+				exposureReviews = append(exposureReviews, finding)
+				continue
+			}
+			rejections = append(rejections, finding)
+		}
+		exposureReviews = append(
+			exposureReviews,
+			runtimeCfg.javaVMParameterExposureReviews...,
+		)
 	}
 	rejectedAny := false
+	reviewedExposure := false
 	for _, script := range scripts {
 		if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
 			continue
 		}
 		scriptRejections := append([]javaVMParameterRejection(nil), rejections...)
-		if validationIssues := validateImportedJavaVMParameters(
+		scriptExposureReviews := append([]javaVMParameterRejection(nil), exposureReviews...)
+		validationIssues := validateImportedJavaVMParameters(
 			script.Config.JavaVuser.AdditionalVMParameters,
-		); len(validationIssues) > 0 {
+		)
+		for _, issue := range javaVMParameterIssuesBySensitivity(validationIssues, true) {
+			scriptExposureReviews = append(scriptExposureReviews, javaVMParameterRejection{
+				sourceKey:  "config.java_vuser.additional_vm_parameters",
+				tokenIndex: issue.Index,
+				category:   issue.Category,
+			})
+		}
+		if structuralIssues := javaVMParameterIssuesBySensitivity(validationIssues, false); len(structuralIssues) > 0 {
 			script.Config.JavaVuser.AdditionalVMParameters = nil
-			for _, issue := range validationIssues {
+			for _, issue := range structuralIssues {
 				scriptRejections = append(scriptRejections, javaVMParameterRejection{
 					sourceKey:  "config.java_vuser.additional_vm_parameters",
 					tokenIndex: issue.Index,
@@ -605,19 +738,19 @@ func applyJavaVMParameterRejectionReview(
 				})
 			}
 		}
-		if len(scriptRejections) == 0 {
-			continue
+		if len(scriptExposureReviews) > 0 {
+			reviewedExposure = true
+			attachJavaVMParameterExposureReview(
+				script,
+				scriptExposureReviews,
+				runtimeFile,
+			)
 		}
-		rejectedAny = true
+		if len(scriptRejections) > 0 {
+			rejectedAny = true
+		}
 		for _, rejection := range scriptRejections {
-			pointer := "JavaVM:Options/" + rejection.sourceKey
-			if rejection.sourceLine > 0 {
-				pointer += fmt.Sprintf(":line-%d", rejection.sourceLine)
-			}
-			sourceRef := pointer
-			if runtimeFile != "" {
-				sourceRef = runtimeFile + "#" + pointer
-			}
+			pointer, sourceRef := javaVMParameterReviewSource(rejection, runtimeFile)
 			finding := importreview.Finding{
 				Code:       javaVMParameterExecutionBlocker,
 				Severity:   diag.Blocker,
@@ -638,14 +771,77 @@ func applyJavaVMParameterRejectionReview(
 			})
 		}
 	}
-	if !rejectedAny {
+	if reviewedExposure {
+		result.Warnings = append(
+			result.Warnings,
+			"Credential-bearing Java VM parameters were preserved exactly for runnable import fidelity; review operating-system process-table exposure on the governed Java runner.",
+		)
+	}
+	if rejectedAny {
+		result.Warnings = append(
+			result.Warnings,
+			"One or more structurally unsafe Java VM parameters were omitted by import policy; Java Vuser execution remains blocked until the behavior is safely replaced and reviewed.",
+		)
+	}
+	result.Warnings = uniqueSortedStrings(result.Warnings)
+}
+
+func attachJavaVMParameterExposureReview(
+	script *dsl.Script,
+	reviews []javaVMParameterRejection,
+	runtimeFile string,
+) {
+	if script == nil || len(reviews) == 0 {
 		return
 	}
-	result.Warnings = append(
-		result.Warnings,
-		"One or more Java VM parameters were omitted by import policy; Java Vuser execution remains blocked until the behavior is safely replaced and reviewed.",
-	)
-	result.Warnings = uniqueSortedStrings(result.Warnings)
+	tokenIndexes := make([]int, 0, len(reviews))
+	sourceRefs := make([]string, 0, len(reviews))
+	seenIndexes := make(map[int]struct{}, len(reviews))
+	for _, review := range reviews {
+		if _, exists := seenIndexes[review.tokenIndex]; !exists {
+			seenIndexes[review.tokenIndex] = struct{}{}
+			tokenIndexes = append(tokenIndexes, review.tokenIndex)
+		}
+		_, sourceRef := javaVMParameterReviewSource(review, runtimeFile)
+		sourceRefs = append(sourceRefs, sourceRef)
+	}
+	sort.Ints(tokenIndexes)
+	sourceRefs = uniqueSortedStrings(sourceRefs)
+	evidence := map[string]any{
+		"version":           1,
+		"reason_code":       javaVMParameterExposureReviewCode,
+		"token_indices":     tokenIndexes,
+		"source_refs":       sourceRefs,
+		"resolution":        "review_process_table_exposure",
+		"value_preserved":   true,
+		"execution_blocker": false,
+	}
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if ref.Action.Metadata == nil {
+			ref.Action.Metadata = make(map[string]any)
+		}
+		ref.Action.Metadata["java_vm_parameter_review"] = evidence
+		return nil
+	})
+}
+
+func javaVMParameterReviewSource(
+	review javaVMParameterRejection,
+	runtimeFile string,
+) (string, string) {
+	sourceKey := strings.TrimSpace(review.sourceKey)
+	if sourceKey == "" {
+		sourceKey = "config.java_vuser.additional_vm_parameters"
+	}
+	pointer := "JavaVM:Options/" + sourceKey
+	if review.sourceLine > 0 {
+		pointer += fmt.Sprintf(":line-%d", review.sourceLine)
+	}
+	sourceRef := pointer
+	if runtimeFile != "" {
+		sourceRef = runtimeFile + "#" + pointer
+	}
+	return pointer, sourceRef
 }
 
 func applyEnterpriseRuntimeFidelityReview(
@@ -815,25 +1011,35 @@ func redactArchiveMaskedBodyMetadata(script *dsl.Script) {
 	redactActions(script.Teardown)
 }
 
-func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]string) []string {
-	candidates := []string{"vuser_init.c"}
+func orderedSourceActionFileDeclarations(projectConfig *ProjectConfig, files map[string]string) []SourceActionFile {
+	candidates := []SourceActionFile{{
+		Name: "vuser_init.c", Phase: "init", Language: "c", Function: "vuser_init",
+	}}
 	if projectConfig != nil && len(projectConfig.SourceActionFiles) > 0 {
 		for _, sourceFile := range projectConfig.SourceActionFiles {
 			if strings.EqualFold(sourceFile.Language, "c") || strings.HasSuffix(strings.ToLower(sourceFile.Name), ".c") {
-				candidates = append(candidates, sourceFile.Name)
+				candidates = append(candidates, sourceFile)
 			}
 		}
 	} else if projectConfig != nil && len(projectConfig.ActionFiles) > 0 {
-		candidates = append(candidates, projectConfig.ActionFiles...)
+		for _, actionFile := range projectConfig.ActionFiles {
+			candidates = append(candidates, SourceActionFile{
+				Name: actionFile, Phase: sourceActionPhase(actionFile), Language: "c",
+			})
+		}
 	} else {
-		candidates = append(candidates, "Action.c")
+		candidates = append(candidates, SourceActionFile{
+			Name: "Action.c", Phase: "action", Language: "c", Function: "Action",
+		})
 	}
-	candidates = append(candidates, "vuser_end.c")
+	candidates = append(candidates, SourceActionFile{
+		Name: "vuser_end.c", Phase: "teardown", Language: "c", Function: "vuser_end",
+	})
 
-	ordered := make([]string, 0, len(candidates))
+	ordered := make([]SourceActionFile, 0, len(candidates))
 	seen := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
-		name := strings.TrimSpace(candidate)
+		name := strings.TrimSpace(candidate.Name)
 		if name == "" {
 			continue
 		}
@@ -841,17 +1047,153 @@ func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]str
 		if resolved == "" && !sourceActionPointerRequired(projectConfig, name) {
 			continue
 		}
+		phase := normalizeSourcePhase(candidate.Phase)
+		if phase == "" {
+			phase = sourceActionPhaseForProjectFile(projectConfig, name)
+		}
 		key := strings.ToLower(normalizeRuntimeArchivePath(name))
 		if resolved != "" {
 			key = strings.ToLower(normalizeRuntimeArchivePath(resolved))
 		}
+		// One source file may intentionally own init, action, and teardown
+		// functions. Deduplicate only within a phase; collapsing by physical
+		// path alone silently drops later lifecycle declarations.
+		key += "\x00" + phase
 		if _, exists := seen[key]; exists {
 			continue
 		}
 		seen[key] = struct{}{}
-		ordered = append(ordered, name)
+		candidate.Name = name
+		candidate.Phase = phase
+		if candidate.Language == "" {
+			candidate.Language = "c"
+		}
+		ordered = append(ordered, candidate)
 	}
 	return ordered
+}
+
+func sourceDeclarationsByResolvedFile(
+	declarations []SourceActionFile,
+	files map[string]string,
+) map[string][]SourceActionFile {
+	grouped := make(map[string][]SourceActionFile)
+	for _, declaration := range declarations {
+		resolved, _, ambiguous := findSourceArchiveFile(files, declaration.Name)
+		if resolved == "" || len(ambiguous) > 0 {
+			continue
+		}
+		key := strings.ToLower(normalizeRuntimeArchivePath(resolved))
+		grouped[key] = append(grouped[key], declaration)
+	}
+	return grouped
+}
+
+func sourceActionForLifecycleDeclaration(
+	parsed *ParsedAction,
+	declaration SourceActionFile,
+	siblings []SourceActionFile,
+) *ParsedAction {
+	if parsed == nil {
+		return nil
+	}
+	phase := normalizeSourcePhase(declaration.Phase)
+	if phase == "" {
+		phase = sourceActionPhase(declaration.Name)
+	}
+	out := &ParsedAction{
+		Filename: parsed.Filename,
+		Phase:    phase,
+	}
+
+	phases := make(map[string]struct{})
+	for _, sibling := range siblings {
+		siblingPhase := normalizeSourcePhase(sibling.Phase)
+		if siblingPhase == "" {
+			siblingPhase = sourceActionPhase(sibling.Name)
+		}
+		phases[siblingPhase] = struct{}{}
+	}
+	if len(phases) <= 1 {
+		out.Functions = append([]ParsedFunction(nil), parsed.Functions...)
+	} else {
+		for _, function := range parsed.Functions {
+			ownerPhase, ok := sourceLifecyclePhaseForFunction(function.sourceFunction, siblings)
+			if ok && ownerPhase == phase {
+				out.Functions = append(out.Functions, function)
+			}
+			if !ok {
+				out.ParseFailures = appendUniqueCSourceParseFailures(
+					out.ParseFailures,
+					CSourceParseFailure{
+						Filename:   parsed.Filename,
+						Phase:      phase,
+						LineNumber: function.LineNumber,
+						Kind:       "ambiguous_lifecycle_function_ownership",
+					},
+				)
+			}
+		}
+	}
+	for index := range out.Functions {
+		out.Functions[index].Phase = phase
+	}
+	out.ParseFailures = appendUniqueCSourceParseFailures(out.ParseFailures, parsed.ParseFailures...)
+	for index := range out.ParseFailures {
+		out.ParseFailures[index].Phase = phase
+	}
+	return out
+}
+
+func sourceLifecyclePhaseForFunction(
+	functionName string,
+	declarations []SourceActionFile,
+) (string, bool) {
+	functionName = strings.TrimSpace(functionName)
+	if functionName == "" {
+		return "", false
+	}
+	matches := make(map[string]struct{})
+	for _, declaration := range declarations {
+		if !strings.EqualFold(strings.TrimSpace(declaration.Function), functionName) {
+			continue
+		}
+		phase := normalizeSourcePhase(declaration.Phase)
+		if phase == "" {
+			phase = sourceActionPhase(declaration.Name)
+		}
+		matches[phase] = struct{}{}
+	}
+	if len(matches) == 1 {
+		for phase := range matches {
+			return phase, true
+		}
+	}
+	if len(matches) > 1 {
+		return "", false
+	}
+
+	var inferred string
+	switch strings.ToLower(functionName) {
+	case "vuser_init", "init":
+		inferred = "init"
+	case "vuser_end", "end", "teardown":
+		inferred = "teardown"
+	case "action":
+		inferred = "action"
+	default:
+		return "", false
+	}
+	for _, declaration := range declarations {
+		phase := normalizeSourcePhase(declaration.Phase)
+		if phase == "" {
+			phase = sourceActionPhase(declaration.Name)
+		}
+		if phase == inferred {
+			return inferred, true
+		}
+	}
+	return "", false
 }
 
 // findSourceArchiveFile resolves lifecycle source pointers with the same

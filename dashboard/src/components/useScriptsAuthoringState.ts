@@ -38,6 +38,11 @@ export interface AuthoringState {
 export interface ImportedSaveResult {
   scripts: StoredScript[]
   scenario?: StoredScenario | null
+  /**
+   * The import surface still owns unsaved generated drafts. Refresh library
+   * data for these saved scripts without replacing the importer with an editor.
+   */
+  stayInImportReview?: boolean
 }
 
 interface UseScriptsAuthoringStateOptions {

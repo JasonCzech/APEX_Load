@@ -180,6 +180,173 @@ describe('ScriptImportReview', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps server-marked imported values runnable when Save or Edit selects no bindings', async () => {
+    const onSave = vi.fn()
+    const onEdit = vi.fn()
+    const onSecretBindingsApply = vi.fn()
+    await act(async () => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="preserve-imported-values"
+          title="Review Generated Script"
+          script={script}
+          onSave={onSave}
+          onEdit={onEdit}
+          secretBindingRequirements={[{
+            id: 'auth-header',
+            path: '/actions/0/headers/Authorization',
+            label: 'Create Order — Authorization header',
+            context: 'Bearer credential',
+            suggested_name: 'ORDER_API_TOKEN',
+            replacement: 'Bearer {{secret.ORDER_API_TOKEN}}',
+            destination_value_preserved: true,
+          }]}
+          onSecretBindingsApply={onSecretBindingsApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('server-confirmed imported value can remain')
+    expect(container.textContent).toContain('0 to configure later')
+    const saveButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Open In Visual Editor')!
+
+    await act(async () => {
+      saveButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSecretBindingsApply).not.toHaveBeenCalled()
+
+    await act(async () => {
+      editButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onSecretBindingsApply).not.toHaveBeenCalled()
+  })
+
+  it('blocks Save and Edit after a credential-preserving import draft expires', async () => {
+    const onSave = vi.fn()
+    const onEdit = vi.fn()
+    const onParameterizationApplied = vi.fn()
+    const parameterization: Parameterization = {
+      suggestions: [{
+        id: 'expired-order-id',
+        kind: 'data_param',
+        var_name: 'ORDER_ID',
+        replacement: '{{param.ORDER_ID}}',
+        confidence: 0.95,
+        rule_id: 'test',
+        rationale: 'Repeated order id',
+        auto_apply: true,
+        high_risk: false,
+      }],
+      summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+    }
+    await act(async () => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="expired-import-draft"
+          title="Review Generated Script"
+          script={script}
+          importDraftExpiresAt="2000-01-01T00:00:00Z"
+          onSave={onSave}
+          onEdit={onEdit}
+          parameterization={parameterization}
+          onParameterizationApplied={onParameterizationApplied}
+          secretBindingRequirements={[{
+            id: 'auth-header',
+            path: '/actions/0/headers/Authorization',
+            label: 'Create Order — Authorization header',
+            context: 'Bearer credential',
+            suggested_name: 'ORDER_API_TOKEN',
+            replacement: 'Bearer {{secret.ORDER_API_TOKEN}}',
+            destination_value_preserved: true,
+          }]}
+          onSecretBindingsApply={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('credential-preserving import draft has expired')
+    const saveButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    const editButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-secondary')!
+    expect(saveButton.disabled).toBe(true)
+    expect(editButton.disabled).toBe(true)
+    expect(saveButton.title).toContain('Re-run the import')
+    expect(editButton.title).toContain('Re-run the import')
+    const applyParameterization = container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')!
+    expect(applyParameterization.disabled).toBe(true)
+    await act(async () => {
+      applyParameterization.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.applyImportParameterization).not.toHaveBeenCalled()
+    expect(onParameterizationApplied).not.toHaveBeenCalled()
+  })
+
+  it('applies an explicit project-secret selection for a server-marked import before saving', async () => {
+    const onSave = vi.fn()
+    const onSecretBindingsApply = vi.fn()
+    const requirement = {
+      id: 'auth-header',
+      path: '/actions/0/headers/Authorization',
+      label: 'Create Order — Authorization header',
+      context: 'Bearer credential',
+      suggested_name: 'ORDER_API_TOKEN',
+      replacement: 'Bearer {{secret.ORDER_API_TOKEN}}',
+      destination_value_preserved: true,
+    }
+    function Harness() {
+      const [requirements, setRequirements] = useState([requirement])
+      return (
+        <ScriptImportReview
+          reviewGeneration="replace-imported-value"
+          title="Review Generated Script"
+          script={script}
+          onSave={onSave}
+          secretBindingRequirements={requirements}
+          onSecretBindingsApply={async bindings => {
+            onSecretBindingsApply(bindings)
+            setRequirements([])
+          }}
+        />
+      )
+    }
+    await act(async () => {
+      root.render(<Harness />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.click()
+      await Promise.resolve()
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')!
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(nameInput, 'EXISTING_ORDER_TOKEN')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const saveButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
+    await act(async () => {
+      saveButton.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(onSecretBindingsApply).toHaveBeenCalledWith([{
+      requirement_id: 'auth-header',
+      secret_name: 'EXISTING_ORDER_TOKEN',
+    }])
+    expect(onSave).toHaveBeenCalledTimes(1)
+  })
+
   it('disables save, edit, and credential controls while parameterization is applying', async () => {
     apiMock.applyImportParameterization.mockImplementationOnce(() => new Promise(() => {}))
     const parameterization: Parameterization = {
@@ -289,6 +456,7 @@ describe('ScriptImportReview', () => {
   })
 
   it('preserves edited credential names and write-only values after applying parameterization', async () => {
+    const onParameterizationApplied = vi.fn()
     const parameterization: Parameterization = {
       suggestions: [{
         id: 'parameterize-order-id',
@@ -307,6 +475,7 @@ describe('ScriptImportReview', () => {
       script: { ...script, config: { ...script.config, base_url: '{{param.BASE_URL}}' } },
       diffs: [{ kind: 'value_replaced', path: '/config/base_url', suggestion_id: 'parameterize-order-id' }],
       applied_count: 1,
+      import_draft_expires_at: '2099-07-26T13:00:00Z',
     })
 
     function Harness() {
@@ -318,7 +487,8 @@ describe('ScriptImportReview', () => {
           title="Review Generated Script"
           script={reviewedScript}
           parameterization={parameterization}
-          onParameterizationApplied={nextScript => {
+          onParameterizationApplied={(nextScript, diffs, selectedIds, importDraftExpiresAt) => {
+            onParameterizationApplied(nextScript, diffs, selectedIds, importDraftExpiresAt)
             setReviewedScript(nextScript)
             setGeneration(current => current + 1)
           }}
@@ -358,6 +528,12 @@ describe('ScriptImportReview', () => {
 
     expect(container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')?.value).toBe('CUSTOM_ORDER_TOKEN')
     expect(container.querySelector<HTMLInputElement>('.secret-binding-review input[type="password"]')?.value).toBe('write-only-value')
+    expect(onParameterizationApplied).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Array),
+      ['parameterize-order-id'],
+      '2099-07-26T13:00:00Z',
+    )
   })
 
   it('invalidates a pending credential action when a newer import result is rendered', async () => {
@@ -526,6 +702,7 @@ describe('ScriptImportReview', () => {
     expect(container.textContent).toContain('Edit Imported Scripts with 1 secret to configure')
     expect(onCredentialsPreparedChange).toHaveBeenLastCalledWith({
       configureLaterCount: 1,
+      selectedBindingCount: 1,
       valid: true,
     })
   })

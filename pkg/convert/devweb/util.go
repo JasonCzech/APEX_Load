@@ -5,7 +5,10 @@ package devweb
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 func mapValues(maps ...map[string]string) []string {
@@ -157,15 +160,151 @@ func grpcTarget(args []string) string {
 }
 
 func jsString(raw string) string {
+	if value, ok := decodeDevWebJSStringLiteral(raw); ok {
+		return value
+	}
+	return strings.TrimSpace(raw)
+}
+
+// decodeDevWebJSStringLiteral decodes only a complete JavaScript string or
+// template literal. It never evaluates expressions. Rejecting an unsupported
+// escape lets the HTTP adapter produce a blocked review draft instead of
+// silently changing the bytes that the source runtime would send.
+func decodeDevWebJSStringLiteral(raw string) (string, bool) {
 	value := strings.TrimSpace(raw)
-	if len(value) >= 2 {
-		first := value[0]
-		last := value[len(value)-1]
-		if (first == '"' || first == '\'' || first == '`') && first == last {
-			value = value[1 : len(value)-1]
+	if len(value) < 2 {
+		return "", false
+	}
+	quote := value[0]
+	if (quote != '\'' && quote != '"' && quote != '`') || value[len(value)-1] != quote {
+		return "", false
+	}
+	inner := value[1 : len(value)-1]
+	if !utf8.ValidString(inner) {
+		return "", false
+	}
+	var builder strings.Builder
+	for index := 0; index < len(inner); {
+		ch := inner[index]
+		if ch == quote {
+			// An unescaped matching quote terminates the literal; because this
+			// is not the final delimiter, the expression is not one literal.
+			return "", false
+		}
+		if ch != '\\' {
+			if quote != '`' && (ch == '\n' || ch == '\r' || ch < 0x20) {
+				return "", false
+			}
+			r, size := utf8.DecodeRuneInString(inner[index:])
+			if r == utf8.RuneError && size == 1 {
+				return "", false
+			}
+			builder.WriteRune(r)
+			index += size
+			continue
+		}
+		index++
+		if index >= len(inner) {
+			return "", false
+		}
+		escaped := inner[index]
+		index++
+		switch escaped {
+		case '\n':
+			continue
+		case '\r':
+			if index < len(inner) && inner[index] == '\n' {
+				index++
+			}
+			continue
+		case '\'', '"', '\\', '/', '`':
+			builder.WriteByte(escaped)
+		case 'b':
+			builder.WriteByte('\b')
+		case 'f':
+			builder.WriteByte('\f')
+		case 'n':
+			builder.WriteByte('\n')
+		case 'r':
+			builder.WriteByte('\r')
+		case 't':
+			builder.WriteByte('\t')
+		case 'v':
+			builder.WriteByte('\v')
+		case '0':
+			if index < len(inner) && inner[index] >= '0' && inner[index] <= '9' {
+				return "", false
+			}
+			builder.WriteByte(0)
+		case 'x':
+			r, next, ok := decodeDevWebHexEscape(inner, index, 2)
+			if !ok {
+				return "", false
+			}
+			builder.WriteRune(r)
+			index = next
+		case 'u':
+			r, next, ok := decodeDevWebUnicodeEscape(inner, index)
+			if !ok {
+				return "", false
+			}
+			index = next
+			if utf16.IsSurrogate(r) {
+				if r < 0xD800 || r > 0xDBFF ||
+					index+2 > len(inner) ||
+					inner[index] != '\\' ||
+					inner[index+1] != 'u' {
+					return "", false
+				}
+				low, lowNext, lowOK := decodeDevWebUnicodeEscape(inner, index+2)
+				if !lowOK || low < 0xDC00 || low > 0xDFFF {
+					return "", false
+				}
+				r = utf16.DecodeRune(r, low)
+				index = lowNext
+			}
+			if !utf8.ValidRune(r) {
+				return "", false
+			}
+			builder.WriteRune(r)
+		default:
+			return "", false
 		}
 	}
-	return strings.ReplaceAll(value, `\"`, `"`)
+	return builder.String(), true
+}
+
+func decodeDevWebHexEscape(value string, start int, digits int) (rune, int, bool) {
+	end := start + digits
+	if start < 0 || digits <= 0 || end > len(value) {
+		return 0, start, false
+	}
+	parsed, err := strconv.ParseUint(value[start:end], 16, 32)
+	if err != nil {
+		return 0, start, false
+	}
+	return rune(parsed), end, true
+}
+
+func decodeDevWebUnicodeEscape(value string, start int) (rune, int, bool) {
+	if start < len(value) && value[start] == '{' {
+		endOffset := strings.IndexByte(value[start+1:], '}')
+		if endOffset < 1 {
+			return 0, start, false
+		}
+		end := start + 1 + endOffset
+		digits := value[start+1 : end]
+		if len(digits) > 6 {
+			return 0, start, false
+		}
+		parsed, err := strconv.ParseUint(digits, 16, 32)
+		r := rune(parsed)
+		if err != nil || !utf8.ValidRune(r) || utf16.IsSurrogate(r) {
+			return 0, start, false
+		}
+		return r, end + 1, true
+	}
+	return decodeDevWebHexEscape(value, start, 4)
 }
 
 func jsObjectLiteral(raw string) string {

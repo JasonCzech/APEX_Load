@@ -220,7 +220,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
 	attachImportReplayPreflight(result.Script, req.Format, preflight)
 
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	s.writeScriptImportResponseWithSourceSecrets(w, r, http.StatusOK, scriptImportResponseOptions{
 		Result:                result,
 		Script:                result.Script,
 		Warnings:              result.Warnings,
@@ -232,7 +232,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
 		Preflight:             preflight,
 		ProtectedRequirements: protectedRequirements,
-	}))
+	})
 }
 
 // handleExportScript handles POST /api/v1/scripts/{id}/export
@@ -259,7 +259,7 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 
 	filename := req.Filename
 	if strings.TrimSpace(filename) == "" {
-		filename = stored.Name + ".json"
+		filename = disclosureSafeScriptName(stored.Name, stored.Script) + ".json"
 	}
 
 	// Confine the export to APEXLOAD_EXPORT_DIR (default ./exports). The
@@ -341,7 +341,7 @@ func (s *Server) handleDownloadScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := sanitizeFilename(stored.Name) + ".json"
+	filename := sanitizeFilename(disclosureSafeScriptName(stored.Name, stored.Script)) + ".json"
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	w.WriteHeader(http.StatusOK)
@@ -380,31 +380,43 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
+	if err := validateJavaVMParameterSafety(
+		script,
+		isCredentialPreservingImport(script) || isCredentialPreservingImport(stored.Script),
+	); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Updates must pass the same disclosure-safe binding gate as creates. In
-	// particular, a PUT must not become a back door for introducing a new raw
-	// password, token, or executable [REDACTED] sentinel into durable storage.
-	projected := maskScriptSecrets(script)
-	if projected == nil {
-		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
-		return
-	}
-	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-		writeSecretBindingsRequired(w, unresolved)
-		return
-	}
-	// Persist the projection so non-executable import/review metadata is scrubbed
-	// too; requirements deliberately cover only executable locations.
-	script = projected
-	if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	if isCredentialPreservingImport(script) || isCredentialPreservingImport(stored.Script) {
+		var err error
+		script, err = preparePersistentLibraryScript(script, stored.Script)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else {
+		// Updates must pass the same disclosure-safe binding gate as creates. In
+		// particular, a PUT must not become a back door for introducing a new raw
+		// password, token, or executable [REDACTED] sentinel into durable storage.
+		projected := maskScriptSecrets(script)
+		if projected == nil {
+			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
+			return
+		}
+		if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+			writeSecretBindingsRequired(w, unresolved)
+			return
+		}
+		// Persist the projection so non-executable import/review metadata is scrubbed
+		// too; requirements deliberately cover only executable locations.
+		script = projected
+		if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
-	if issues := validateScript(script); len(issues) > 0 {
+	if issues := validateStoredExecutionScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
@@ -426,7 +438,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "folder_id": updated.FolderID})
+	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": disclosureSafeScriptName(updated.Name, updated.Script), "folder_id": updated.FolderID})
 
 	writeJSON(w, http.StatusOK, maskStoredScript(updated))
 }
@@ -442,21 +454,30 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
-	var brunoArtifacts []storage.BrunoSourceArtifact
-	if brunoStore, ok := s.store.(storage.BrunoImportStore); ok && stored.Protocol == "bruno" {
-		if revisions, listErr := brunoStore.ListBrunoSourceRevisions(id, stored.ProjectID); listErr == nil {
-			seen := make(map[string]struct{})
-			for _, revision := range revisions {
-				for _, artifactID := range []string{revision.RawArtifactID, revision.SanitizedArtifactID} {
-					if _, exists := seen[artifactID]; exists {
-						continue
-					}
-					artifact, getErr := brunoStore.GetBrunoSourceArtifact(artifactID, stored.ProjectID)
-					if getErr == nil {
-						brunoArtifacts = append(brunoArtifacts, *artifact)
-						seen[artifactID] = struct{}{}
-					}
+	var importSourceArtifacts []storage.BrunoSourceArtifact
+	if importSourceStore, ok := s.store.(storage.BrunoImportStore); ok {
+		revisions, listErr := importSourceStore.ListBrunoSourceRevisions(id, stored.ProjectID)
+		if listErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to prepare retained import source cleanup")
+			return
+		}
+		seen := make(map[string]struct{})
+		for _, revision := range revisions {
+			for _, artifactID := range []string{revision.RawArtifactID, revision.SanitizedArtifactID} {
+				artifactID = strings.TrimSpace(artifactID)
+				if artifactID == "" {
+					continue
 				}
+				if _, exists := seen[artifactID]; exists {
+					continue
+				}
+				artifact, getErr := importSourceStore.GetBrunoSourceArtifact(artifactID, stored.ProjectID)
+				if getErr != nil {
+					writeError(w, http.StatusInternalServerError, "failed to prepare retained import source cleanup")
+					return
+				}
+				importSourceArtifacts = append(importSourceArtifacts, *artifact)
+				seen[artifactID] = struct{}{}
 			}
 		}
 	}
@@ -473,8 +494,8 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	s.cleanupUnreferencedBrunoArtifacts(brunoArtifacts)
-	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
+	s.cleanupUnreferencedBrunoArtifacts(importSourceArtifacts)
+	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script), "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 

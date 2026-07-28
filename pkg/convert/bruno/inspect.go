@@ -58,6 +58,9 @@ func Inspect(input Input) (*Result, error) {
 		if err := validateNativeYAMLFiles(rawFiles); err != nil {
 			return nil, err
 		}
+		if err := rejectReservedNativeCredentialMarkers(rawFiles); err != nil {
+			return nil, err
+		}
 	}
 	root := detectRoot(rawFiles, input.RootPath)
 	if outputMode == OutputModeNativeRequests {
@@ -138,6 +141,13 @@ func Inspect(input Input) (*Result, error) {
 			})
 		}
 	}
+	nativeExecutionFiles := sanitizedFiles
+	if outputMode == OutputModeNativeRequests {
+		sanitizedFiles, err = publicizeNativeCredentialMarkers(sanitizedFiles, requirements)
+		if err != nil {
+			return nil, err
+		}
+	}
 	rawArchive, err := deterministicTAR(rawFiles)
 	if err != nil {
 		return nil, fmt.Errorf("build raw Bruno bundle: %w", err)
@@ -154,7 +164,6 @@ func Inspect(input Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	nativeExecutionFiles := sanitizedFiles
 	if outputMode == OutputModeNativeRequests {
 		_, projectedRequirements, _, _, projectionErr := nativeRequestScripts(
 			input,
@@ -170,7 +179,11 @@ func Inspect(input Input) (*Result, error) {
 		}
 		projectedRequirements = nativeProjectedVariableRequirements(projectedRequirements)
 		if len(projectedRequirements) > 0 {
-			sanitizedFiles, _, err = applyNativeProjectedVariableSecrets(sanitizedFiles, projectedRequirements)
+			sanitizedFiles, _, err = applyNativeProjectedVariableSecrets(
+				sanitizedFiles,
+				projectedRequirements,
+				false,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -618,9 +631,19 @@ func sanitizeFiles(
 				preserveNativeCredentialTemplates,
 			)
 		case ext == ".env" || path.Base(file.Path) == ".env":
-			content, current = sanitizeDotEnv(file.Path, file.Data, suggestionNames)
+			content, current = sanitizeDotEnv(
+				file.Path,
+				file.Data,
+				suggestionNames,
+				preserveNativeCredentialTemplates,
+			)
 		case ext == ".bru":
-			content, current = sanitizeBRU(file.Path, file.Data, suggestionNames)
+			content, current = sanitizeBRU(
+				file.Path,
+				file.Data,
+				suggestionNames,
+				preserveNativeCredentialTemplates,
+			)
 		}
 		if sanitizeErr != nil {
 			return nil, nil, nil, fmt.Errorf("sanitize %q: %w", file.Path, sanitizeErr)
@@ -902,6 +925,9 @@ func sanitizeStructuredFile(
 							scalarValue,
 						)
 						scalarNode.Value = requirement.Replacement
+						if preserveNativeCredentialTemplates {
+							scalarNode.Value = nativeCredentialProjectionReplacement(requirement)
+						}
 						scalarNode.Tag = "!!str"
 						requirements = append(requirements, requirement)
 						continue
@@ -1061,6 +1087,9 @@ func sanitizeJSONFile(
 						scalar,
 					)
 					typed[key] = requirement.Replacement
+					if preserveNativeCredentialTemplates {
+						typed[key] = nativeCredentialProjectionReplacement(requirement)
+					}
 					requirements = append(requirements, requirement)
 					continue
 				}
@@ -1101,7 +1130,12 @@ func structuredScalarString(value any) (string, bool) {
 	}
 }
 
-func sanitizeDotEnv(filename string, data []byte, suggestionNames *secretSuggestionRegistry) ([]byte, []SecretRequirement) {
+func sanitizeDotEnv(
+	filename string,
+	data []byte,
+	suggestionNames *secretSuggestionRegistry,
+	useProjectionMarkers bool,
+) ([]byte, []SecretRequirement) {
 	lines := strings.Split(string(data), "\n")
 	requirements := make([]SecretRequirement, 0)
 	for index, line := range lines {
@@ -1126,13 +1160,22 @@ func sanitizeDotEnv(filename string, data []byte, suggestionNames *secretSuggest
 			key,
 			strings.Trim(value, `"'`),
 		)
-		lines[index] = line[:eq+1] + requirement.Replacement
+		replacement := requirement.Replacement
+		if useProjectionMarkers {
+			replacement = nativeCredentialProjectionReplacement(requirement)
+		}
+		lines[index] = line[:eq+1] + replacement
 		requirements = append(requirements, requirement)
 	}
 	return []byte(strings.Join(lines, "\n")), requirements
 }
 
-func sanitizeBRU(filename string, data []byte, suggestionNames *secretSuggestionRegistry) ([]byte, []SecretRequirement) {
+func sanitizeBRU(
+	filename string,
+	data []byte,
+	suggestionNames *secretSuggestionRegistry,
+	useProjectionMarkers bool,
+) ([]byte, []SecretRequirement) {
 	requirements := make([]SecretRequirement, 0)
 	occurrence := 0
 	content := bruHeadersBlockPattern.ReplaceAllStringFunc(string(data), func(block string) string {
@@ -1159,7 +1202,11 @@ func sanitizeBRU(filename string, data []byte, suggestionNames *secretSuggestion
 				value,
 			)
 			requirements = append(requirements, requirement)
-			lines[index] = match[1] + match[2] + match[3] + match[4] + requirement.Replacement + match[6]
+			replacement := requirement.Replacement
+			if useProjectionMarkers {
+				replacement = nativeCredentialProjectionReplacement(requirement)
+			}
+			lines[index] = match[1] + match[2] + match[3] + match[4] + replacement + match[6]
 		}
 		return strings.Join(lines, "\n")
 	})
@@ -1179,7 +1226,11 @@ func sanitizeBRU(filename string, data []byte, suggestionNames *secretSuggestion
 			strings.TrimSpace(strings.Trim(match[3], `"'`)),
 		)
 		requirements = append(requirements, requirement)
-		return match[1] + match[2] + ": " + requirement.Replacement
+		replacement := requirement.Replacement
+		if useProjectionMarkers {
+			replacement = nativeCredentialProjectionReplacement(requirement)
+		}
+		return match[1] + match[2] + ": " + replacement
 	})
 	return []byte(content), requirements
 }

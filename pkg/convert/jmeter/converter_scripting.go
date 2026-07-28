@@ -247,10 +247,10 @@ func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *Conve
 	*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", startIndex), samplerLabel, "scripting", "converted", fmt.Sprintf("JMeter %s safe-subset script was translated into %d engine action(s).", name, recognized)))
 }
 
-// preserveJMeterScriptSource retains the legacy metadata key without retaining
-// the source body. The protected source file remains the authority for an
-// operator-controlled re-import; public conversion results contain only this
-// disclosure-safe marker.
+// preserveJMeterScriptSource retains the exact gated source in the destination
+// script. The runtime never evaluates this metadata, and ordinary API
+// projections scrub it, but an authorized operator does not lose embedded
+// credentials or need the original archive merely to finish the import.
 func preserveJMeterScriptSource(script *dsl.Script, element, scriptText string) {
 	if script == nil {
 		return
@@ -265,7 +265,7 @@ func preserveJMeterScriptSource(script *dsl.Script, element, scriptText string) 
 		script.Metadata.Import.Preserved = map[string]any{}
 	}
 	existing, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
-	existing = append(existing, fmt.Sprintf("%s: [SOURCE LOGIC OMITTED]", element))
+	existing = append(existing, fmt.Sprintf("%s: %s", element, scriptText))
 	script.Metadata.Import.Preserved["jsr223_sources"] = existing
 }
 

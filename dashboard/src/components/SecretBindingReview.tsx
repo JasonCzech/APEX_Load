@@ -49,9 +49,12 @@ interface RequirementGroup {
   suggestedName: string
 }
 
+type DestinationChoice = 'preserve' | 'project-secret'
+
 export interface PreparedSecretBindings {
   valid: boolean
   configureLaterCount: number
+  selectedBindingCount: number
 }
 
 interface SecretBindingCommitPlan extends PreparedSecretBindings {
@@ -81,7 +84,16 @@ function groupRequirements(requirements: SecretBindingRequirement[]): Requiremen
   for (const requirement of requirements) {
     const suggestedName = requirement.suggested_name?.trim() || ''
     const scope = requirementScope(requirement)
-    const key = suggestedName ? `${scope}:name:${suggestedName}` : `${scope}:requirement:${requirement.id}`
+    // A preserved occurrence and an unresolved occurrence are different
+    // destination decisions even when the importer suggests the same logical
+    // name. Grouping them together would make the unresolved occurrence force
+    // an otherwise runnable imported literal into Project Secrets.
+    const destinationClass = requirement.destination_value_preserved === true
+      ? 'preserved'
+      : 'binding-required'
+    const key = suggestedName
+      ? `${scope}:name:${suggestedName}:destination:${destinationClass}`
+      : `${scope}:requirement:${requirement.id}`
     const existing = groups.get(key)
     if (existing) {
       existing.requirements.push(requirement)
@@ -124,6 +136,7 @@ function semanticRequirementsIdentity(requirements: readonly SecretBindingRequir
       script_id: requirement.script_id ?? '',
       script_name: requirement.script_name ?? '',
       source_value_available: requirement.source_value_available === true,
+      destination_value_preserved: requirement.destination_value_preserved === true,
     }))
     .sort((left, right) => {
       const leftKey = `${left.id}\u0000${left.path}\u0000${left.occurrence ?? ''}`
@@ -134,6 +147,28 @@ function semanticRequirementsIdentity(requirements: readonly SecretBindingRequir
 
 function initialGroupValues(groups: RequirementGroup[]): Record<string, string> {
   return Object.fromEntries(groups.map(group => [group.key, group.suggestedName]))
+}
+
+function groupCanPreserveDestinationValue(group: RequirementGroup): boolean {
+  return (
+    group.requirements.length > 0
+    && group.requirements.every(requirement => requirement.destination_value_preserved === true)
+  )
+}
+
+function initialDestinationChoices(groups: RequirementGroup[]): Record<string, DestinationChoice> {
+  return Object.fromEntries(groups.map(group => [
+    group.key,
+    groupCanPreserveDestinationValue(group) ? 'preserve' : 'project-secret',
+  ]))
+}
+
+function effectiveDestinationChoice(
+  group: RequirementGroup,
+  choices: Readonly<Record<string, DestinationChoice>>,
+): DestinationChoice {
+  if (!groupCanPreserveDestinationValue(group)) return 'project-secret'
+  return choices[group.key] === 'project-secret' ? 'project-secret' : 'preserve'
 }
 
 function bindingNameError(value: string): string {
@@ -158,6 +193,14 @@ function normalizeStatusMap(response: unknown): Map<string, ProjectSecretStatus>
       : []
   return new Map(items.map(status => [status.name, status]))
 }
+
+function collisionSafeSecretName(base: string, ordinal: number): string {
+  const suffix = `_${ordinal}`
+  return `${base.slice(0, MAX_SECRET_BINDING_NAME_LENGTH - suffix.length)}${suffix}`
+}
+
+const MAX_COLLISION_CANDIDATES = 256
+const COLLISION_PROBE_BATCH_SIZE = 32
 
 const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(function SecretBindingReview({
   requirements,
@@ -213,6 +256,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     reviewGenerationRef.current += 1
   }
   const [names, setNames] = useState<Record<string, string>>(() => initialGroupValues(groups))
+  const [destinationChoices, setDestinationChoices] = useState<Record<string, DestinationChoice>>(
+    () => initialDestinationChoices(groups),
+  )
   const [values, setValues] = useState<Record<string, string>>({})
   const valuesRef = useRef<Record<string, string>>({})
   const [statuses, setStatuses] = useState<Map<string, ProjectSecretStatus>>(new Map())
@@ -231,6 +277,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const preserveEditsForNextReviewGenerationRef = useRef(false)
   const settledSourceSessionRef = useRef('')
   const notifiedSourceSessionRef = useRef('')
+  // Only names whose create-only provider mutation was confirmed belong here.
+  // Collision candidates remain speculative until create/migration completes.
+  const committedValueNamesRef = useRef(new Set<string>())
+  const collisionResolvedNamesRef = useRef(new Map<string, string>())
   const discardSourceSessionInFlightRef = useRef<{ id: string; promise: Promise<void> } | null>(null)
   const activeSourceSessionIdentityRef = useRef(`${projectId || ''}\u0000${sourceSecretSessionId || ''}`)
   const sourceSessionPropIdentityRef = useRef(activeSourceSessionIdentityRef.current)
@@ -246,8 +296,11 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       preserveEditsForNextReviewGenerationRef.current = false
       if (!preserveEdits) {
         setNames(initialGroupValues(groups))
+        setDestinationChoices(initialDestinationChoices(groups))
         valuesRef.current = {}
         setValues({})
+        committedValueNamesRef.current.clear()
+        collisionResolvedNamesRef.current.clear()
       }
       setStatuses(new Map())
       setStoreProvider('')
@@ -283,6 +336,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     // above unless an explicitly marked same-scope parameterization transition
     // is preserving the edit; unmount always drops the final retained object.
     valuesRef.current = {}
+    committedValueNamesRef.current.clear()
+    collisionResolvedNamesRef.current.clear()
   }, [])
 
   const validationErrors = useMemo(
@@ -296,6 +351,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const conflictingValueNames = useMemo(() => {
     const valuesByName = new Map<string, Set<string>>()
     for (const group of groups) {
+      if (effectiveDestinationChoice(group, destinationChoices) !== 'project-secret') continue
       const name = (names[group.key] || '').trim()
       const value = values[group.key] || ''
       if (!name || !value) continue
@@ -304,27 +360,36 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       valuesByName.set(name, seen)
     }
     return new Set(Array.from(valuesByName.entries()).filter(([, seen]) => seen.size > 1).map(([name]) => name))
-  }, [groups, names, values])
+  }, [destinationChoices, groups, names, values])
 
   const activeValidNames = useMemo(
     () => Array.from(new Set(groups
+      .filter(group => effectiveDestinationChoice(group, destinationChoices) === 'project-secret')
       .map(group => (names[group.key] || '').trim())
       .filter(isValidSecretBindingName))).sort(),
-    [groups, names],
+    [destinationChoices, groups, names],
   )
 
-  const uniqueValidNames = useMemo(
-    () => Array.from(new Set([
-      ...activeValidNames,
-      ...migrationGroups.map(group => group.suggestedName.trim()),
-    ]
-      .filter(isValidSecretBindingName))).sort(),
-    [activeValidNames, migrationGroups],
+  const visibleRequirementIDs = useMemo(
+    () => new Set(requirements.map(requirement => requirement.id)),
+    [requirements],
   )
 
   const sourceMigrationControlled = typeof onExternalSourceMigrationChange === 'function'
   const sourceMigrationSelected = sourceMigrationControlled ? externalSourceMigrationSelected : migrateSourceValues
   const effectiveSourceMigrationSelected = sourceMigrationSelected && !sourceSessionUnavailable
+
+  const uniqueValidNames = useMemo(
+    () => Array.from(new Set([
+      ...activeValidNames,
+      ...(effectiveSourceMigrationSelected
+        ? migrationGroups
+          .filter(group => group.requirements.some(requirement => !visibleRequirementIDs.has(requirement.id)))
+          .map(group => group.suggestedName.trim())
+        : []),
+    ].filter(isValidSecretBindingName))).sort(),
+    [activeValidNames, effectiveSourceMigrationSelected, migrationGroups, visibleRequirementIDs],
+  )
 
   useEffect(() => {
     if (!sourceSecretSessionExpiresAt) return
@@ -332,7 +397,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     if (!Number.isFinite(expiresAt)) return
     const expireSession = () => {
       setSourceSessionUnavailable(true)
-      setSourceSessionNotice('Detected source credential values expired. Enter values manually now, configure them later, or restart the import.')
+      setSourceSessionNotice('Optional source-value migration into Project Secrets has expired. Any preserved imported destination values remain runnable; credentials set to Use project secret can be configured manually, or you can re-run the import to migrate them.')
       setMigrateSourceValues(false)
       if (sourceMigrationControlled) onExternalSourceMigrationChange(false)
     }
@@ -384,12 +449,17 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     const bindings: SecretBindingSelection[] = []
     const writesByName = new Map<string, string>()
     const sourceAvailableNames = new Set<string>()
+    const selectedNames = new Set<string>()
     const activeNamesByRequirement = new Map<string, string>()
     let valid = groups.length > 0
 
     for (const group of groups) {
+      if (effectiveDestinationChoice(group, destinationChoices) !== 'project-secret') continue
       const name = (names[group.key] || '').trim()
+      const value = values[group.key] || ''
+      const sourceValueAvailable = group.requirements.some(requirement => requirement.source_value_available)
       if (validationErrors[group.key] || conflictingValueNames.has(name)) valid = false
+      if (name) selectedNames.add(name)
       for (const requirement of group.requirements) {
         const binding: SecretBindingSelection = {
           requirement_id: requirement.id,
@@ -408,19 +478,26 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         bindings.push(binding)
         activeNamesByRequirement.set(requirement.id, name)
       }
-      const value = values[group.key] || ''
       if (name && value) writesByName.set(name, value)
-      if (name && group.requirements.some(requirement => requirement.source_value_available)) {
+      if (name && sourceValueAvailable) {
         sourceAvailableNames.add(name)
       }
     }
-    const migrationSelections = migrationGroups.flatMap(group => group.requirements.map(requirement => ({
-      requirement_id: requirement.id,
-      secret_name: activeNamesByRequirement.get(requirement.id) || group.suggestedName.trim(),
-    }))).filter(selection => isValidSecretBindingName(selection.secret_name))
+    const migrationSelections = migrationGroups.flatMap(group => group.requirements.flatMap(requirement => {
+      const activeName = activeNamesByRequirement.get(requirement.id)
+      if (!activeName && (
+        visibleRequirementIDs.has(requirement.id)
+        || requirement.destination_value_preserved === true
+      )) return []
+      const migrationName = activeName || group.suggestedName.trim()
+      return [{
+        requirement_id: requirement.id,
+        secret_name: collisionResolvedNamesRef.current.get(migrationName) || migrationName,
+      }]
+    })).filter(selection => isValidSecretBindingName(selection.secret_name))
 
     const pendingNames = new Set<string>()
-    for (const name of activeValidNames) {
+    for (const name of selectedNames) {
       const configured = statuses.get(name)?.configured === true
       const hasManualValue = writesByName.has(name)
       const willMigrate = effectiveSourceMigrationSelected && sourceAvailableNames.has(name)
@@ -432,18 +509,20 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       secrets: Array.from(writesByName, ([name, value]) => ({ name, value })),
       valid,
       configureLaterCount: pendingNames.size,
+      selectedBindingCount: bindings.length,
       // Externally controlled migrations (for example Bruno commits) are
       // performed by that import's atomic server-side commit, not by the
       // generic source-session endpoint used by this component.
       migrateSourceValues: !sourceMigrationControlled && effectiveSourceMigrationSelected,
       migrationSelections,
     }
-  }, [activeValidNames, conflictingValueNames, effectiveSourceMigrationSelected, groups, migrationGroups, names, sourceMigrationControlled, statuses, validationErrors, values])
+  }, [conflictingValueNames, destinationChoices, effectiveSourceMigrationSelected, groups, migrationGroups, names, sourceMigrationControlled, statuses, validationErrors, values, visibleRequirementIDs])
 
   const preparedSummary = useMemo<PreparedSecretBindings>(() => ({
     valid: prepared.valid,
     configureLaterCount: prepared.configureLaterCount,
-  }), [prepared.configureLaterCount, prepared.valid])
+    selectedBindingCount: prepared.selectedBindingCount,
+  }), [prepared.configureLaterCount, prepared.selectedBindingCount, prepared.valid])
 
   useEffect(() => {
     // Never lift write-only values, binding payloads, or migration intent into
@@ -492,7 +571,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     try {
       let currentStatuses = statuses
       let currentStoreWritable = storeWritable
-      const requestsGovernedMutation = prepared.secrets.length > 0 || effectiveSourceMigrationSelected
+      const requestsGovernedMutation = (
+        prepared.secrets.length > 0
+        || (effectiveSourceMigrationSelected && prepared.migrationSelections.length > 0)
+      )
       if (projectId && uniqueValidNames.length > 0 && typeof api.getProjectSecretStatuses === 'function') {
         setProbeState('loading')
         setProbeError('')
@@ -523,21 +605,110 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         throw new Error('The project secret store cannot be verified for this credential operation.')
       }
       if (!requestIsCurrent()) return false
-      const secretsToCreate = prepared.secrets.filter(secret => currentStatuses.get(secret.name)?.configured !== true)
+      // Project-secret writes and protected source migrations are create-only.
+      // A configured logical name might contain an unrelated value, and the
+      // status API intentionally cannot compare that value with the imported
+      // one. Resolve every such collision to a fresh name rather than silently
+      // binding the imported script to an existing credential.
+      const incomingValueNames = new Set(prepared.secrets.map(secret => secret.name))
+      if (effectiveSourceMigrationSelected) {
+        for (const selection of prepared.migrationSelections) {
+          incomingValueNames.add(selection.secret_name)
+        }
+      }
+      const reservedNames = new Set(incomingValueNames)
+      const claimedNames = new Set<string>()
+      const resolvedNames = new Map<string, string>()
+      for (const originalName of Array.from(incomingValueNames).sort()) {
+        let resolvedName = originalName
+        if (
+          !committedValueNamesRef.current.has(resolvedName)
+          && (currentStatuses.get(resolvedName)?.configured === true || claimedNames.has(resolvedName))
+        ) {
+          let resolved = false
+          const candidates: string[] = []
+          for (let ordinal = 2; candidates.length < MAX_COLLISION_CANDIDATES; ordinal += 1) {
+            const candidate = collisionSafeSecretName(originalName, ordinal)
+            if (reservedNames.has(candidate) || claimedNames.has(candidate)) continue
+            candidates.push(candidate)
+          }
+          for (let offset = 0; offset < candidates.length && !resolved; offset += COLLISION_PROBE_BATCH_SIZE) {
+            const batch = candidates.slice(offset, offset + COLLISION_PROBE_BATCH_SIZE)
+            const unknownNames = batch.filter(candidate => !currentStatuses.has(candidate))
+            if (unknownNames.length > 0) {
+              if (!projectId || typeof api.getProjectSecretStatuses !== 'function') {
+                throw new Error('The project secret store cannot resolve a collision-safe credential name.')
+              }
+              const response = await api.getProjectSecretStatuses(projectId, unknownNames)
+              if (!requestIsCurrent()) return false
+              const probedStatuses = normalizeStatusMap(response)
+              const completedStatuses = unknownNames.map(name => [
+                name,
+                probedStatuses.get(name) || { name, configured: false },
+              ] as const)
+              currentStatuses = new Map([...currentStatuses, ...probedStatuses, ...completedStatuses])
+            }
+            const availableName = batch.find(candidate => currentStatuses.get(candidate)?.configured !== true)
+            if (availableName) {
+              resolvedName = availableName
+              resolved = true
+            }
+          }
+          if (!resolved) {
+            throw new Error(`Unable to allocate a collision-safe project secret name for ${originalName}.`)
+          }
+        }
+        resolvedNames.set(originalName, resolvedName)
+        if (originalName !== resolvedName) collisionResolvedNamesRef.current.set(originalName, resolvedName)
+        claimedNames.add(resolvedName)
+      }
+      if (Array.from(resolvedNames).some(([originalName, resolvedName]) => originalName !== resolvedName)) {
+        setNames(current => Object.fromEntries(Object.entries(current).map(([key, name]) => [
+          key,
+          resolvedNames.get(name.trim()) || name,
+        ])))
+      }
+      const resolveName = (name: string) => resolvedNames.get(name) || name
+      const resolvedBindings = prepared.bindings.map(binding => {
+        const resolvedBinding: SecretBindingSelection = {
+          requirement_id: binding.requirement_id,
+          secret_name: resolveName(binding.secret_name),
+        }
+        if (typeof binding.script_index === 'number') {
+          Object.defineProperty(resolvedBinding, 'script_index', {
+            configurable: false,
+            enumerable: false,
+            value: binding.script_index,
+          })
+        }
+        return resolvedBinding
+      })
+      const resolvedSecrets = prepared.secrets.map(secret => ({
+        ...secret,
+        name: resolveName(secret.name),
+      }))
+      const resolvedMigrationSelections = prepared.migrationSelections.map(selection => ({
+        ...selection,
+        secret_name: resolveName(selection.secret_name),
+      }))
+      const secretsToCreate = resolvedSecrets.filter(secret => !committedValueNamesRef.current.has(secret.name))
       if (secretsToCreate.length > 0) {
         if (!projectId) throw new Error('Select a project before storing secret values.')
         if (!currentStoreWritable) throw new Error('The configured project secret provider is read-only.')
         await api.createProjectSecrets(projectId, secretsToCreate)
+        for (const secret of secretsToCreate) committedValueNamesRef.current.add(secret.name)
         if (!requestIsCurrent()) return false
       }
       if (prepared.migrateSourceValues) {
         if (!projectId || !sourceSecretSessionId) {
           throw new Error('The protected source-secret session is unavailable.')
         }
-        const namesWithManualValues = new Set(prepared.secrets.map(secret => secret.name))
-        const migrationSelections = prepared.migrationSelections.filter(selection => {
-          const configured = currentStatuses.get(selection.secret_name)?.configured === true
-          return !namesWithManualValues.has(selection.secret_name) && !configured
+        const namesWithManualValues = new Set(resolvedSecrets.map(secret => secret.name))
+        const migrationSelections = resolvedMigrationSelections.filter(selection => {
+          return (
+            !namesWithManualValues.has(selection.secret_name)
+            && !committedValueNamesRef.current.has(selection.secret_name)
+          )
         })
         if (migrationSelections.length > 0) {
           if (!requestIsCurrent()) return false
@@ -548,9 +719,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
               secrets: migrationSelections,
             })
           } catch (cause: unknown) {
+            const failureMetadata = getSourceSecretSessionFailureMetadata(cause)
+            for (const name of failureMetadata.committedNames) committedValueNamesRef.current.add(name)
             if (!requestIsCurrent()) return false
             const failureMessage = formatSourceSecretSessionFailure(cause)
-            const failureMetadata = getSourceSecretSessionFailureMetadata(cause)
             if (failureMetadata.retained) {
               // The provider confirmed that the protected source session is
               // still fenced and retryable. Do not run the uncertainty-path
@@ -579,6 +751,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
             setProbeRetryGeneration(current => current + 1)
             return false
           }
+          for (const selection of migrationSelections) {
+            committedValueNamesRef.current.add(selection.secret_name)
+          }
           const migrationStillBelongsToCurrentReview = requestIsCurrent()
           // A successful source migration also consumes the single-use
           // session. Settle it before applying bindings, even when the user
@@ -590,7 +765,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           settledSourceSessionRef.current = sourceSecretSessionId
           if (notifiedSourceSessionRef.current !== sourceSecretSessionId) {
             notifiedSourceSessionRef.current = sourceSecretSessionId
-            onSourceSessionSettled?.(sourceSecretSessionId, prepared.migrationSelections)
+            onSourceSessionSettled?.(sourceSecretSessionId, resolvedMigrationSelections)
           }
           setMigrateSourceValues(false)
           setProbeRetryGeneration(current => current + 1)
@@ -605,7 +780,13 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         settledSourceSessionRef.current !== sourceSecretSessionId
         && !requestIsCurrent()
       ) return false
-      await onApply(prepared.bindings)
+      // A preservation-marked import with no explicit operator selection must
+      // keep the reviewed runtime value byte-for-byte. Calling a generic
+      // binding endpoint with an empty selection can still rebuild/mask that
+      // draft, so zero selections are a deliberate local no-op.
+      if (resolvedBindings.length > 0) {
+        await onApply(resolvedBindings)
+      }
       if (!sourceMigrationControlled && !preserveSourceSessionAfterApply && sourceSecretSessionId && settledSourceSessionRef.current !== sourceSecretSessionId) {
         try {
           await discardSourceSession()
@@ -654,6 +835,32 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     setError('')
   }
 
+  const updateDestinationChoice = (group: RequirementGroup, choice: DestinationChoice) => {
+    if (choice === 'preserve' && !groupCanPreserveDestinationValue(group)) return
+    setDestinationChoices(current => ({ ...current, [group.key]: choice }))
+    if (choice === 'preserve') {
+      setValues(current => {
+        if (!current[group.key]) return current
+        const next = { ...current, [group.key]: '' }
+        valuesRef.current = next
+        return next
+      })
+      const anotherBoundSourceGroup = groups.some(candidate => (
+        candidate.key !== group.key
+        && effectiveDestinationChoice(candidate, destinationChoices) === 'project-secret'
+        && candidate.requirements.some(requirement => requirement.source_value_available)
+      ))
+      if (!anotherBoundSourceGroup && effectiveSourceMigrationSelected) {
+        if (sourceMigrationControlled) {
+          onExternalSourceMigrationChange(false)
+        } else {
+          setMigrateSourceValues(false)
+        }
+      }
+    }
+    setError('')
+  }
+
   const updateValue = (key: string, value: string) => {
     setValues(current => {
       const next = { ...current, [key]: value }
@@ -664,8 +871,15 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   }
 
   const hasSourceValues = groups.some(group => group.requirements.some(requirement => requirement.source_value_available))
+  const hasBoundSourceValues = groups.some(group => (
+    effectiveDestinationChoice(group, destinationChoices) === 'project-secret'
+    && group.requirements.some(requirement => requirement.source_value_available)
+  ))
   const sourceMigrationOffered = sourceMigrationAllowed && (sourceMigrationControlled || Boolean(sourceSecretSessionId))
-  const sourceMigrationSelectable = sourceMigrationOffered && !sourceSessionUnavailable
+  const sourceMigrationSelectable = sourceMigrationOffered && !sourceSessionUnavailable && hasBoundSourceValues
+  const preservedGroupCount = groups.filter(group => (
+    effectiveDestinationChoice(group, destinationChoices) === 'preserve'
+  )).length
   const providerLabel = storeProvider || 'project secret store'
 
   return (
@@ -674,8 +888,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         <div>
           <h4 id={titleId}>Credentials ({groups.length})</h4>
           <p>
-            Required by this script; stored in Project Secrets. Only scripts referencing this logical name are affected.
-            Add values now if you want, or configure them later in Project Secrets; the script stores only <code>{'{{secret.NAME}}'}</code> references.
+            Choose how each imported credential is stored in the destination. A server-confirmed imported value can remain
+            runnable as-is, or you can replace it with a <code>{'{{secret.NAME}}'}</code> project-secret reference and
+            configure it now or configure it later in Project Secrets.
           </p>
         </div>
         {!onPreparedChange && (
@@ -686,6 +901,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       </div>
 
       <div className="credentials-card-summary" role="status">
+        <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
         <span>{prepared.configureLaterCount} to configure later</span>
         <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} ready to create</span>
         <span>
@@ -713,7 +929,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           />
           <span>
             Import detected credential values
-            <small>Admin-only, create-only migration. Existing project secrets are never overwritten.</small>
+            <small>
+              Applies only to credentials set to Use project secret. Admin-only, create-only migration; existing project secrets are never overwritten.
+              {!hasBoundSourceValues && ' Choose Use project secret below to enable migration.'}
+            </small>
           </span>
         </label>
       )}
@@ -741,24 +960,44 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           const helpId = `${inputId}-help`
           const nameErrorId = `${inputId}-name-error`
           const valueConflictErrorId = `${inputId}-value-conflict-error`
+          const preserveId = `${inputId}-preserve`
+          const projectSecretId = `${inputId}-project-secret`
           const name = names[group.key] ?? ''
-          const nameError = validationErrors[group.key]
+          const canPreserveDestinationValue = groupCanPreserveDestinationValue(group)
+          const bindingSelected = effectiveDestinationChoice(group, destinationChoices) === 'project-secret'
+          const nameError = bindingSelected ? validationErrors[group.key] : ''
           const configured = statuses.get(name.trim())?.configured === true
           const sourceAvailable = group.requirements.some(requirement => requirement.source_value_available)
-          const matchingGroups = groups.filter(candidate => (names[candidate.key] || '').trim() === name.trim())
+          const matchingGroups = groups.filter(candidate => (
+            effectiveDestinationChoice(candidate, destinationChoices) === 'project-secret'
+            && (names[candidate.key] || '').trim() === name.trim()
+          ))
           const finalNameHasManualValue = matchingGroups.some(candidate => Boolean(values[candidate.key]))
           const finalNameHasSourceValue = matchingGroups.some(candidate => candidate.requirements.some(requirement => requirement.source_value_available))
           const sourceAvailableForMigration = sourceAvailable && sourceMigrationSelectable
           const willMigrate = effectiveSourceMigrationSelected && finalNameHasSourceValue
           const willCreate = (finalNameHasManualValue && probeState === 'ready' && storeWritable) || willMigrate
-          const status = configured
+          const configuredNameCollision = configured && willCreate
+          const status = !bindingSelected
+            ? 'Preserved in script'
+            : configuredNameCollision
+            ? 'Will use a new name'
+            : configured
             ? 'Configured'
             : willCreate
               ? 'Will be created'
               : sourceAvailableForMigration
                 ? 'Available from source'
                 : 'Configure later'
-          const statusTone = configured || willCreate ? 'healthy' : sourceAvailableForMigration ? 'warning' : ''
+          const statusTone = !bindingSelected
+            ? 'healthy'
+            : configuredNameCollision
+            ? 'warning'
+            : configured || willCreate
+              ? 'healthy'
+              : sourceAvailableForMigration
+                ? 'warning'
+                : ''
           const valueConflict = conflictingValueNames.has(name.trim())
 
           return (
@@ -777,13 +1016,41 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                 </ul>
               </div>
               <div className="secret-binding-review-control">
+                <fieldset className="secret-binding-review-choice">
+                  <legend>Destination handling</legend>
+                  <label htmlFor={preserveId}>
+                    <input
+                      id={preserveId}
+                      type="radio"
+                      name={`${idPrefix}-destination-${index}`}
+                      checked={!bindingSelected}
+                      disabled={applying || disabled || !canPreserveDestinationValue}
+                      onChange={() => updateDestinationChoice(group, 'preserve')}
+                    />
+                    Preserve imported value
+                  </label>
+                  <label htmlFor={projectSecretId}>
+                    <input
+                      id={projectSecretId}
+                      type="radio"
+                      name={`${idPrefix}-destination-${index}`}
+                      checked={bindingSelected}
+                      disabled={applying || disabled}
+                      onChange={() => updateDestinationChoice(group, 'project-secret')}
+                    />
+                    Use project secret
+                  </label>
+                  {!canPreserveDestinationValue && (
+                    <small>The server did not confirm that this exact destination value was preserved.</small>
+                  )}
+                </fieldset>
                 <label htmlFor={inputId}>Secret reference name</label>
                 <input
                   id={inputId}
                   type="text"
                   value={name}
                   onChange={event => updateName(group.key, event.target.value)}
-                  disabled={applying || disabled}
+                  disabled={applying || disabled || !bindingSelected}
                   aria-describedby={[
                     helpId,
                     nameError ? nameErrorId : '',
@@ -794,7 +1061,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                   spellCheck={false}
                 />
                 <span id={helpId} className="secret-binding-review-reference">
-                  Script reference: <code>{name.trim() ? `{{secret.${name.trim()}}}` : '{{secret.NAME}}'}</code>
+                  {bindingSelected ? 'Script reference' : 'Optional project reference'}: <code>{name.trim() ? `{{secret.${name.trim()}}}` : '{{secret.NAME}}'}</code>
                 </span>
                 {nameError && <span id={nameErrorId} className="secret-binding-review-field-error">{nameError}</span>}
                 {valueConflict && <span id={valueConflictErrorId} className="secret-binding-review-field-error">Reused names must use the same optional value.</span>}
@@ -805,7 +1072,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                   type="password"
                   value={values[group.key] || ''}
                   onChange={event => updateValue(group.key, event.target.value)}
-                  disabled={applying || disabled || !projectId || probeState !== 'ready' || !storeWritable || configured}
+                  disabled={applying || disabled || !bindingSelected || !projectId || probeState !== 'ready' || !storeWritable || configured}
                   autoComplete="new-password"
                   aria-label={`Secret value for ${name || group.requirements[0]?.label || 'credential'}`}
                   placeholder={configured

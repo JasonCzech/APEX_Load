@@ -10,16 +10,19 @@ import ImportDropzone from './ImportDropzone'
 import ImportRuntimeOptions from './ImportRuntimeOptions'
 import BrowserReplayProgress from './BrowserReplayProgress'
 import ReplayPreflightCard from './ReplayPreflightCard'
-import { type SecretBindingReviewHandle } from './SecretBindingReview'
+import { type PreparedSecretBindings, type SecretBindingReviewHandle } from './SecretBindingReview'
 import ScriptImportReview from './ScriptImportReview'
 import SelectorCandidatesReview, { type SelectorCandidate } from './SelectorCandidatesReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
+import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
-import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
+import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, requirementsPreserveDestinationValues, secretBindingRequirementsForScript } from './secretBindingUtils'
 import {
   activeProtectedImportSessionId,
+  credentialPreservingImportDraftRequiresSave,
+  importDraftExpiryStatus,
   invalidateProtectedImportCandidate,
   mergeProtectedParameterizationSelectionIds,
 } from './protectedImportSession'
@@ -583,9 +586,15 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
 }
 
 const endpointTotal = salesforceEndpointTotal
+const IMPORT_DRAFT_EXPIRED_MESSAGE = 'This credential-preserving import draft has expired. Re-run the import before saving, editing, or changing it.'
+
+function importDraftHasExpired(result: ProtocolImportResult | null | undefined): boolean {
+  return importDraftExpiryStatus(result?.import_draft_expires_at)?.expired === true
+}
 
 export default function ProtocolAssetImport({ kind, initialFile, initialMode, projectId, folderId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
+  const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const convertTask = useAsyncTask<ProtocolImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
   const result = convertTask.value
@@ -609,14 +618,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   reviewProjectIdRef.current = projectId
   // The credentials card exposes only non-sensitive CTA/validation metadata;
   // write-only values never cross the component boundary.
-  const [preparedCredentialSummary, setPreparedCredentialSummary] = useState<{
-    configureLaterCount: number
-    valid: boolean
-  } | null>(null)
-  const handleCredentialsPreparedChange = useCallback((prepared: { configureLaterCount: number; valid?: boolean } | null) => {
+  const [preparedCredentialSummary, setPreparedCredentialSummary] = useState<PreparedSecretBindings | null>(null)
+  const handleCredentialsPreparedChange = useCallback((prepared: PreparedSecretBindings | null) => {
     setPreparedCredentialSummary(prepared ? {
       configureLaterCount: prepared.configureLaterCount,
       valid: prepared.valid ?? true,
+      selectedBindingCount: prepared.selectedBindingCount,
     } : null)
   }, [])
   const saveAllInFlightRef = useRef(false)
@@ -627,6 +634,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     result: ProtocolImportResult
   } | null>(null)
   const [saveAllPreparing, setSaveAllPreparing] = useState(false)
+  const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const internalReviewBusyRef = useRef(false)
   const [internalReviewBusy, setInternalReviewBusy] = useState(false)
   const handleInternalReviewBusyChange = useCallback((busy: boolean) => {
@@ -651,6 +659,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [asyncAPISchemaID, setAsyncAPISchemaID] = useState('')
   const [asyncAPISubject, setAsyncAPISubject] = useState('')
   const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)
+  const asyncAPISavedScriptsRef = useRef<Record<number, StoredScript>>({})
+  const [asyncAPISavedScripts, setAsyncAPISavedScripts] = useState<Record<number, StoredScript>>({})
+  const resetAsyncAPISavedScripts = useCallback(() => {
+    asyncAPISavedScriptsRef.current = {}
+    setAsyncAPISavedScripts({})
+  }, [])
   const [conversionScope, setConversionScope] = useState(0)
   const selectedScriptIndexRef = useRef(selectedScriptIndex)
   selectedScriptIndexRef.current = selectedScriptIndex
@@ -708,6 +722,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       }
     }
   }, [result])
+  useEffect(() => {
+    const expiry = Date.parse(result?.import_draft_expires_at || '')
+    if (!Number.isFinite(expiry) || expiry <= Date.now()) return
+    const timeout = window.setTimeout(
+      () => setImportDraftExpiryGeneration(current => current + 1),
+      Math.min(expiry - Date.now() + 10, 2_147_483_647),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [importDraftExpiryGeneration, result?.import_draft_expires_at])
   const [postmanSaveMode, setPostmanSaveMode] = useState<'create' | 'replace'>('create')
   const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
   const [postmanScripts, setPostmanScripts] = useState<StoredScript[]>([])
@@ -715,7 +738,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const resetConvertTask = convertTask.reset
   const resetSaveTask = saveTask.reset
   const invalidateConversionSource = useCallback(() => {
-    void credentialReviewRef.current?.discardSourceSession()
+    sourceSecretSessions.clear('conversion')
     protectedCommitOverridesRef.current = {
       sessionId: '',
       secretBindings: {},
@@ -737,8 +760,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     internalReviewBusyRef.current = false
     setInternalReviewBusy(false)
     setPreparedCredentialSummary(null)
+    resetAsyncAPISavedScripts()
     setMessageError('')
-  }, [advanceReviewGeneration, resetConvertTask, resetSaveTask])
+  }, [advanceReviewGeneration, resetAsyncAPISavedScripts, resetConvertTask, resetSaveTask, sourceSecretSessions])
   const previousProjectIdRef = useRef(projectId)
   useEffect(() => {
     if (previousProjectIdRef.current === projectId) return
@@ -885,6 +909,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       setMessageError(`Please upload ${uploadNounForKind(kind)}.`)
       return
     }
+    resetAsyncAPISavedScripts()
     const sourceGeneration = advanceReviewGeneration()
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = file
@@ -907,8 +932,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         async function guardResponse<T extends ProtocolImportResult>(responsePromise: Promise<T>): Promise<T> {
           const response = await responsePromise
           if (!requestIsCurrent()) {
+            sourceSecretSessions.discardUnaccepted(sourceProjectId, response.source_secret_session_id)
             throw new Error('The import source changed while conversion was running. Review the current input and try again.')
           }
+          sourceSecretSessions.replace('conversion', sourceProjectId, response.source_secret_session_id)
           setConversionScope(sourceGeneration)
           return response
         }
@@ -962,7 +989,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         return guardResponse(api.importWSDL(file, { ...options, soap_version: soapVersion }))
       }, { clearValue: true })
     } catch (error: unknown) {
-      if (requestIsCurrent()) setMessageError(getErrorMessage(error, `${labels.title} failed`))
+      if (requestIsCurrent()) {
+        sourceSecretSessions.clear('conversion')
+        setMessageError(getErrorMessage(error, `${labels.title} failed`))
+      }
     }
   }
 
@@ -979,36 +1009,52 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   // read and update this same canonical snapshot.
   const generatedScripts = importedScripts
   const reviewedScript = generatedScripts[selectedScriptIndex] || generatedScripts[0] || null
+  const asyncAPIMultiScript = kind === 'asyncapi' && generatedScripts.length > 1
+  const asyncAPIPendingScriptIndices = asyncAPIMultiScript
+    ? generatedScripts.flatMap((_script, index) => asyncAPISavedScripts[index] ? [] : [index])
+    : []
+  const asyncAPISelectedScriptSaved = asyncAPIMultiScript && !!asyncAPISavedScripts[selectedScriptIndex]
   const selectedSecretBindingRequirements = reviewedScript
     ? secretBindingRequirementsForScript(result?.secret_binding_requirements, selectedScriptIndex, reviewedScript)
     : []
-  const secretBindingRequirements = kind === 'asyncapi' && generatedScripts.length > 1
-    ? result?.secret_binding_requirements || []
+  const secretBindingRequirements = asyncAPIMultiScript
+    ? asyncAPIPendingScriptIndices.flatMap(index => (
+        secretBindingRequirementsForScript(result?.secret_binding_requirements, index, generatedScripts[index])
+      ))
     : selectedSecretBindingRequirements
   const defaultConfigureLaterCount = new Set(secretBindingRequirements
-    .map(requirement => {
-      const name = requirement.suggested_name?.trim()
-      if (!name) return ''
-      const scope = typeof requirement.script_index === 'number'
-        ? `index:${requirement.script_index}`
-        : requirement.script_id
-          ? `id:${requirement.script_id}`
-          : requirement.script_name
-            ? `name:${requirement.script_name}`
-            : 'unscoped'
-      return `${scope}:${name}`
-    })
-    .filter(Boolean)).size
+      .filter(requirement => requirement.destination_value_preserved !== true)
+      .map(requirement => {
+        const name = requirement.suggested_name?.trim()
+        if (!name) return ''
+        const scope = typeof requirement.script_index === 'number'
+          ? `index:${requirement.script_index}`
+          : requirement.script_id
+            ? `id:${requirement.script_id}`
+            : requirement.script_name
+              ? `name:${requirement.script_name}`
+              : 'unscoped'
+        return `${scope}:${name}`
+      })
+      .filter(Boolean)).size
   const configureLaterCount = preparedCredentialSummary?.configureLaterCount ?? defaultConfigureLaterCount
   const preparedCredentialsValid = preparedCredentialSummary?.valid ?? true
-  const asyncAPIMultiScript = kind === 'asyncapi' && generatedScripts.length > 1
   const asyncAPISelectedSaveLabel = asyncAPIMultiScript
     ? `Save Selected Script (${selectedScriptIndex + 1} of ${generatedScripts.length})`
     : ''
   const asyncAPISaveAllLabel = asyncAPIMultiScript
-    ? `Save All ${generatedScripts.length} Scripts${configureLaterCount > 0 ? ` with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure` : ''}`
+    ? `${asyncAPIPendingScriptIndices.length === generatedScripts.length
+        ? `Save All ${generatedScripts.length} Scripts`
+        : `Save Remaining ${asyncAPIPendingScriptIndices.length} Script${asyncAPIPendingScriptIndices.length === 1 ? '' : 's'}`
+      }${configureLaterCount > 0 ? ` with ${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} to configure` : ''}`
     : ''
+  const importDraftExpired = importDraftHasExpired(result)
   const sourceReview = sourceReviewForImport(result, reviewedScript)
+  const editRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
+    result,
+    reviewedScript,
+    secretBindingRequirements,
+  )
   const harSummary: HARImportSummary | undefined = kind === 'har' ? (result as HARImportResult | null | undefined)?.summary : undefined
   const salesforceReview = kind === 'har' ? salesforceReviewForImport(result, reviewedScript) : null
   const mulesoftReview = preservedReviewForImport<MulesoftReview>(reviewedScript, 'mulesoft_review')
@@ -1141,6 +1187,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }
 
   const handlePromoteRecorderCandidate = (actionIndex: number, candidate: SelectorCandidate) => {
+    if (importDraftHasExpired(latestResultRef.current)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
     advanceReviewGeneration()
     const currentResult = latestResultRef.current
     if (!currentResult) return
@@ -1153,6 +1203,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }
 
   const handleApplyRecorderReplaySuggestion = async (suggestion: ReplayRepairSuggestion) => {
+    if (importDraftHasExpired(latestResultRef.current)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
     if (suggestion.draft_patch_type !== 'promote_selector') {
       setMessageError(`Replay suggestion type "${suggestion.draft_patch_type || 'unknown'}" is not supported for imported-draft repair yet.`)
       return
@@ -1189,8 +1243,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         ? [currentResult.script]
         : []
     const currentGeneratedScripts = currentImportedScripts
-    const currentReviewedScript = currentGeneratedScripts[selectedScriptIndex] || currentGeneratedScripts[0]
+    const currentReviewedScript = currentGeneratedScripts[sourceScriptIndex] || currentGeneratedScripts[0]
     if (!currentResult || !currentReviewedScript || saveAllInFlightRef.current || internalReviewBusyRef.current) return
+    if (importDraftHasExpired(currentResult)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
+    if (kind === 'asyncapi' && currentGeneratedScripts.length > 1 && asyncAPISavedScriptsRef.current[sourceScriptIndex]) {
+      return
+    }
     const activeSave = saveScriptInFlightRef.current
     if (activeSave
       && activeSave.generation === sourceGeneration
@@ -1204,10 +1265,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       && selectedScriptIndexRef.current === sourceScriptIndex
       && latestResultRef.current === currentResult
     setMessageError('')
-    const currentRequirements = kind === 'asyncapi' && currentGeneratedScripts.length > 1
-      ? currentResult?.secret_binding_requirements || []
-      : secretBindingRequirementsForScript(currentResult?.secret_binding_requirements, selectedScriptIndex, currentReviewedScript)
-    if (currentRequirements.length > 0) {
+    const currentRequirements = secretBindingRequirementsForScript(
+      currentResult?.secret_binding_requirements,
+      sourceScriptIndex,
+      currentReviewedScript,
+    )
+    const preservedRequirementsMayRemain = requirementsPreserveDestinationValues(currentRequirements)
+    if (currentRequirements.length > 0 && !preservedRequirementsMayRemain) {
       setMessageError('Resolve every redacted credential binding before saving this script.')
       return
     }
@@ -1261,7 +1325,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('OpenAPI import commit did not return a stored script')
           return storedScript
         })
-        if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
+        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
         return
       }
       if (kind === 'postman') {
@@ -1294,11 +1358,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('Postman import save did not return a stored script')
           return storedScript
         })
-        if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
+        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
         return
       }
       if (kind === 'asyncapi') {
         const savedScript = await saveTask.run(async () => {
+          if (importDraftHasExpired(currentResult)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
           const response = await api.commitAsyncAPIImport({
             script: currentReviewedScript,
             mode: 'create',
@@ -1308,11 +1373,37 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
           return storedScript
         })
-        if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
+        const persisted = withFallbackPersistedScript(savedScript, currentReviewedScript)
+        if (!requestIsCurrent()) {
+          onImported?.({ scripts: [persisted] })
+        } else {
+          if (currentGeneratedScripts.length > 1) {
+            const nextSavedScripts = {
+              ...asyncAPISavedScriptsRef.current,
+              [sourceScriptIndex]: persisted,
+            }
+            asyncAPISavedScriptsRef.current = nextSavedScripts
+            setAsyncAPISavedScripts(nextSavedScripts)
+            const nextPendingIndex = currentGeneratedScripts.findIndex((_script, index) => !nextSavedScripts[index])
+            if (nextPendingIndex >= 0) {
+              advanceReviewGeneration()
+              selectedScriptIndexRef.current = nextPendingIndex
+              setSelectedScriptIndex(nextPendingIndex)
+              onImported?.({ scripts: [persisted], stayInImportReview: true })
+            } else {
+              const orderedScripts = currentGeneratedScripts
+                .map((_script, index) => nextSavedScripts[index])
+                .filter((script): script is StoredScript => !!script)
+              onImported?.({ scripts: orderedScripts })
+            }
+          } else {
+            onImported?.({ scripts: [persisted] })
+          }
+        }
         return
       }
       const savedScript = await saveTask.run(async () => api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null))
-      if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
+      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     } finally {
@@ -1331,6 +1422,28 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         : []
     const currentScript = currentScripts[selectedScriptIndex] || currentScripts[0]
     if (currentScript && currentResult) {
+      if (importDraftHasExpired(currentResult)) {
+        setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+        return
+      }
+      if (kind === 'asyncapi' && currentScripts.length > 1 && asyncAPISavedScriptsRef.current[selectedScriptIndex]) {
+        return
+      }
+      const currentRequirements = kind === 'asyncapi' && currentScripts.length > 1
+        ? currentResult.secret_binding_requirements ?? []
+        : secretBindingRequirementsForScript(
+          currentResult.secret_binding_requirements,
+          selectedScriptIndex,
+          currentScript,
+        )
+      if (credentialPreservingImportDraftRequiresSave(currentResult, currentScript, currentRequirements)) {
+        if (!onImported) {
+          setMessageError('Save this credential-preserving import before opening it in the Visual Editor.')
+          return
+        }
+        void handleSave()
+        return
+      }
       const compatibilityResult = invalidateProtectedImportCandidate(currentResult)
       protectedCommitOverridesRef.current = {
         sessionId: '',
@@ -1345,16 +1458,31 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
   const handleSaveAllAsyncAPIScripts = async () => {
     if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || saveScriptInFlightRef.current || internalReviewBusyRef.current) return
+    if (importDraftHasExpired(latestResultRef.current)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
+    const pendingScriptIndices = generatedScripts.flatMap(
+      (_script, index) => asyncAPISavedScriptsRef.current[index] ? [] : [index],
+    )
+    if (pendingScriptIndices.length === 0) return
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
       && reviewProjectIdRef.current === sourceProjectId
-    const savedScripts: StoredScript[] = []
+    const newlySavedScripts: StoredScript[] = []
+    const newlySavedScriptsByIndex: Record<number, StoredScript> = {}
     saveAllInFlightRef.current = true
     setSaveAllPreparing(true)
     setMessageError('')
     try {
-      if ((latestResultRef.current?.secret_binding_requirements?.length ?? 0) > 0) {
+      const pendingRequirements = pendingScriptIndices.flatMap(index => {
+        const script = latestResultRef.current?.scripts?.[index] || generatedScripts[index]
+        return script
+          ? secretBindingRequirementsForScript(latestResultRef.current?.secret_binding_requirements, index, script)
+          : []
+      })
+      if (pendingRequirements.length > 0) {
         if (!credentialReviewRef.current) {
           setMessageError('Credential preparation is unavailable for these generated scripts.')
           return
@@ -1362,22 +1490,36 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         const committed = await credentialReviewRef.current.commit()
         if (!committed || !requestIsCurrent()) return
       }
+      if (importDraftHasExpired(latestResultRef.current)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       const preparedResult = latestResultRef.current
-      if ((preparedResult?.secret_binding_requirements?.length ?? 0) > 0) {
-        throw new Error('Every generated script must use governed secret references before Save All can begin.')
-      }
       const scriptsToSave = preparedResult?.scripts?.length
         ? preparedResult.scripts
         : generatedScripts
-      if (scriptsToSave.length !== generatedScripts.length || scriptsToSave.some(script => JSON.stringify(script).includes('[REDACTED]'))) {
-        throw new Error('Save All preflight failed because a generated script is stale or still contains a redacted credential sentinel.')
+      const remainingRequirements = pendingScriptIndices.flatMap(index => {
+        const script = scriptsToSave[index]
+        return script
+          ? secretBindingRequirementsForScript(preparedResult?.secret_binding_requirements, index, script)
+          : []
+      })
+      const preservedRequirementsMayRemain = requirementsPreserveDestinationValues(remainingRequirements)
+      if (remainingRequirements.length > 0 && !preservedRequirementsMayRemain) {
+        throw new Error('Every generated script must use governed secret references before Save All can begin.')
+      }
+      if (
+        scriptsToSave.length !== generatedScripts.length
+        || pendingScriptIndices.some(index => !scriptsToSave[index])
+      ) {
+        throw new Error('Save All preflight failed because a generated script is stale or missing.')
       }
       const sourceResult = preparedResult
       await saveTask.run(async () => {
-        for (const script of scriptsToSave) {
+        for (const scriptIndex of pendingScriptIndices) {
+          const script = scriptsToSave[scriptIndex]
+          if (!script) throw new Error('Save All preflight failed because a generated script is missing.')
           if (!requestIsCurrent() || latestResultRef.current !== sourceResult) {
             throw new Error('The import result changed while scripts were being saved. Review the current draft and try again.')
           }
+          if (importDraftHasExpired(sourceResult)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
           const response = await api.commitAsyncAPIImport({
             script,
             mode: 'create',
@@ -1385,25 +1527,46 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           })
           const storedScript = response.stored_script || response.scripts?.[0]
           if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
-          savedScripts.push(withFallbackPersistedScript(storedScript, script))
+          const persisted = withFallbackPersistedScript(storedScript, script)
+          newlySavedScripts.push(persisted)
+          newlySavedScriptsByIndex[scriptIndex] = persisted
           if (!requestIsCurrent() || latestResultRef.current !== sourceResult) {
             throw new Error('The import result changed while scripts were being saved. Review the current draft and try again.')
           }
         }
-        if (!savedScripts[0]) throw new Error('AsyncAPI import commit did not return a stored script')
-        return savedScripts[0]
+        if (!newlySavedScripts[0]) throw new Error('AsyncAPI import commit did not return a stored script')
+        return newlySavedScripts[0]
       })
-      if (requestIsCurrent() && latestResultRef.current === sourceResult) onImported?.({ scripts: savedScripts })
+      if (requestIsCurrent() && latestResultRef.current === sourceResult) {
+        const allSavedScriptsByIndex = {
+          ...asyncAPISavedScriptsRef.current,
+          ...newlySavedScriptsByIndex,
+        }
+        asyncAPISavedScriptsRef.current = allSavedScriptsByIndex
+        setAsyncAPISavedScripts(allSavedScriptsByIndex)
+        const orderedScripts = scriptsToSave
+          .map((_script, index) => allSavedScriptsByIndex[index])
+          .filter((script): script is StoredScript => !!script)
+        onImported?.({ scripts: orderedScripts })
+      }
     } catch (error: unknown) {
       const cleanup = await Promise.allSettled(
-        savedScripts.slice().reverse().map(script => api.deleteScript(script.id)),
+        newlySavedScripts.slice().reverse().map(script => api.deleteScript(script.id)),
       )
       const cleanupFailed = cleanup.some(result => result.status === 'rejected')
+      if (cleanupFailed) {
+        const retainedScripts = newlySavedScripts
+          .slice()
+          .reverse()
+          .filter((_script, index) => cleanup[index]?.status === 'rejected')
+          .reverse()
+        if (retainedScripts.length > 0) onImported?.({ scripts: retainedScripts })
+      }
       if (requestIsCurrent()) {
         const message = getErrorMessage(error, 'Failed to save generated scripts')
         setMessageError(cleanupFailed
           ? `${message} Some partially created scripts could not be removed; review the Script Library before retrying.`
-          : savedScripts.length > 0
+          : newlySavedScripts.length > 0
             ? `${message} Partially created scripts were removed.`
             : message)
       }
@@ -1417,11 +1580,24 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     parameterizedScript: ScriptDefinition,
     _diffs: unknown[],
     selectedIds: string[],
+    importDraftExpiresAt?: string,
   ) => {
     if (!result) return
+    if (importDraftHasExpired(result)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
+    if (asyncAPISelectedScriptSaved) return
     advanceReviewGeneration()
     const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? parameterizedScript : script) : [parameterizedScript]
-    const nextResult = { ...result, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
+    const nextResult = {
+      ...result,
+      script: nextScripts[0],
+      scripts: nextScripts,
+      ...(nextScripts.length === 1 && importDraftExpiresAt
+        ? { import_draft_expires_at: importDraftExpiresAt }
+        : {}),
+    } as ProtocolImportResult
     const sessionId = activeProtectedImportSessionId(result)
     const preserveProtectedCandidate = (kind === 'openapi' || kind === 'postman') && !!sessionId
     if (preserveProtectedCandidate && sessionId) {
@@ -1445,15 +1621,18 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
     if (!result || !reviewedScript) return
+    if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration && reviewProjectIdRef.current === sourceProjectId
     const assertCurrent = () => {
       if (!requestIsCurrent()) throw new Error('The import result changed while credentials were being prepared. Review the current draft and try again.')
+      if (importDraftHasExpired(latestResultRef.current)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
     }
     if (kind === 'asyncapi' && generatedScripts.length > 1) {
       let resolvedResult = result
       for (let scriptIndex = 0; scriptIndex < generatedScripts.length; scriptIndex += 1) {
+        if (asyncAPISavedScriptsRef.current[scriptIndex]) continue
         const script = resolvedResult.scripts[scriptIndex]
         if (!script) continue
         const requirements = secretBindingRequirementsForScript(
@@ -1528,6 +1707,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         ...result,
         script: nextScripts[0],
         scripts: nextScripts,
+        ...(nextScripts.length === 1 && resolved.import_draft_expires_at
+          ? { import_draft_expires_at: resolved.import_draft_expires_at }
+          : {}),
         secret_binding_requirements: replaceSecretBindingRequirementsForScript(
           result.secret_binding_requirements,
           selectedScriptIndex,
@@ -1576,6 +1758,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
   const handleRuntimeOptionsChanged = (updatedScript: ScriptDefinition) => {
     if (!result) return
+    if (importDraftHasExpired(result)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return
+    }
+    if (asyncAPISelectedScriptSaved) return
     advanceReviewGeneration()
     const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? updatedScript : script) : [updatedScript]
     const nextResult = { ...result, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
@@ -1589,7 +1776,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           <h2>{labels.title}</h2>
           <p className="sample-import-subtitle">{labels.subtitle}</p>
         </div>
-        {onClose && <button className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
+        {onClose && <button className="btn btn-secondary" onClick={() => { sourceSecretSessions.clear('conversion'); onClose() }}>Back</button>}
       </div>
 
       <div className="sample-import-card">
@@ -1759,7 +1946,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
             reviewSections={result.review_sections}
-            parameterization={result.parameterization}
+            parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
             secretBindingRequirements={secretBindingRequirements}
             onSecretBindingsApply={handleSecretBindingsApply}
@@ -1768,14 +1955,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
             protectedImportSessionExpiresAt={result.import_session_id ? result.expires_at : undefined}
+            importDraftExpiresAt={result.import_draft_expires_at}
             credentialReviewRef={credentialReviewRef}
             onCredentialsPreparedChange={handleCredentialsPreparedChange}
             onReviewBusyChange={handleInternalReviewBusyChange}
             saving={saveTask.pending}
             reviewBusy={saveAllPreparing || saveTask.pending}
-            saveDisabled={(kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceScriptId)}
+            saveDisabled={asyncAPISelectedScriptSaved || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceScriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceScriptId)}
             onSave={handleSave}
-            onEdit={onEdit ? handleEditReviewedScript : undefined}
+            onEdit={onEdit && !asyncAPISelectedScriptSaved ? handleEditReviewedScript : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
             previewAside={kind === 'recorder-export'
               ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
               : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
@@ -1797,7 +1986,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       onClick={() => { advanceReviewGeneration(); setSelectedScriptIndex(index) }}
                       disabled={saveAllPreparing || saveTask.pending || internalReviewBusy}
                     >
-                      {script.protocol} · {script.name}
+                      {script.protocol} · {script.name}{asyncAPISavedScripts[index] ? ' · Saved' : ''}
                     </button>
                   ))}
                 </div>
@@ -1805,8 +1994,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   className="btn btn-secondary btn-sm"
                   type="button"
                   onClick={handleSaveAllAsyncAPIScripts}
-                  disabled={saveTask.pending || saveAllPreparing || internalReviewBusy || !preparedCredentialsValid}
-                  title={!preparedCredentialsValid ? 'Enter valid secret reference names before saving these scripts.' : undefined}
+                  disabled={importDraftExpired || asyncAPIPendingScriptIndices.length === 0 || saveTask.pending || saveAllPreparing || internalReviewBusy || !preparedCredentialsValid}
+                  title={importDraftExpired
+                    ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
+                    : !preparedCredentialsValid
+                      ? 'Enter valid secret reference names before saving these scripts.'
+                      : undefined}
                 >
                   {saveTask.pending ? 'Saving...' : saveAllPreparing ? 'Preparing credentials...' : asyncAPISaveAllLabel}
                 </button>
@@ -1975,7 +2168,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               draftScope={`${projectId || ''}:${kind}:${conversionScope}:${selectedScriptIndex}`}
               script={reviewedScript}
               onChange={handleRuntimeOptionsChanged}
-              disabled={saveTask.pending}
+              disabled={importDraftExpired || asyncAPISelectedScriptSaved || saveTask.pending}
             />
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">

@@ -29,6 +29,7 @@ const apiMock = {
   addBrowserRecordingNote: vi.fn(),
   previewBrowserRecordingConversion: vi.fn(),
   convertBrowserRecording: vi.fn(),
+  attestBridgedBrowserRecordingImport: vi.fn(),
   setBrowserRecordingSection: vi.fn(),
   setBrowserRecordingPickMode: vi.fn(),
   deleteLastBrowserRecordingStep: vi.fn(),
@@ -208,6 +209,12 @@ describe('BrowserRecorderControlPanel', () => {
       stats: {},
       parameterization: { suggestions: [], summary: { total: 0 } },
     })
+    apiMock.attestBridgedBrowserRecordingImport.mockImplementation(async (scripts: any[]) => ({
+      script: scripts[0],
+      scripts,
+      warnings: [],
+      stats: {},
+    }))
     apiMock.setBrowserRecordingSection.mockImplementation(async (_id: string, section: string) => ({ session: { ...recordingSession, section } }))
     apiMock.setBrowserRecordingPickMode.mockImplementation(async (_id: string, on: boolean) => ({ session: { ...recordingSession, picking: on } }))
     apiMock.deleteLastBrowserRecordingStep.mockResolvedValue({ session: recordingSession })
@@ -263,6 +270,7 @@ describe('BrowserRecorderControlPanel', () => {
     }))
     apiMock.createProjectSecrets.mockResolvedValue({ secrets: [], count: 0 })
     apiMock.migrateImportSecrets.mockResolvedValue({ secrets: [], count: 0 })
+    apiMock.discardImportSecretSession.mockResolvedValue(undefined)
     apiMock.browserRecorderBridge = null
     apiMock.browserRecorderRequestScope = 'api:http://controller.test'
     saveApiResourceViaBridgeMock.mockResolvedValue('unavailable')
@@ -552,6 +560,40 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('3 parameterization suggestions')
   })
 
+  it('discards the superseded protected source session when previewing again', async () => {
+    const session = { ...stoppedSession, project_id: 'project-1' }
+    const first = {
+      script: { name: 'Checkout Flow', project_id: 'project-1', protocol: 'browser', actions: [] },
+      warnings: [],
+      stats: {},
+      parameterization: { suggestions: [], summary: { total: 0 } },
+      source_secret_session_id: 'source-session-old',
+    }
+    const second = {
+      ...first,
+      source_secret_session_id: 'source-session-new',
+    }
+    apiMock.getBrowserRecording.mockResolvedValue({ session })
+    apiMock.previewBrowserRecordingConversion
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(second)
+
+    await renderPanel()
+    await clickButton('Preview Conversion')
+    await flushPromises()
+    await clickButton('Preview Conversion')
+    await flushPromises()
+
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'source-session-old',
+    })
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'source-session-new',
+    })
+  })
+
   it('applies preview parameterization to the browser script that is saved', async () => {
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce({
@@ -614,12 +656,17 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
       selected_ids: ['pz_browser_order'],
     }))
-    // Persistence goes through the server-side conversion endpoint; the
-    // reviewed parameterization is then pushed over the converted script.
+    // Persistence goes through one server-side transaction. The UI sends only
+    // the selected ID; no fallible post-commit update is needed.
     expect(apiMock.createScript).not.toHaveBeenCalled()
-    expect(apiMock.updateScript).toHaveBeenCalledWith('script-9', expect.objectContaining({
-      actions: [expect.objectContaining({ target: 'https://shop.example/orders?order_id={{var.order_id}}' })],
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      expected_script_count: 1,
+      parameterization_selections: [{
+        script_index: 0,
+        selected_ids: ['pz_browser_order'],
+      }],
     }))
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
   })
 
   it('scopes split-script parameterization and saves the updated target script', async () => {
@@ -714,7 +761,7 @@ describe('BrowserRecorderControlPanel', () => {
     await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
     await clickButton('Save to Script Library')
     await flushPromises()
-    await vi.waitFor(() => expect(apiMock.updateScript).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1))
 
     expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
       script: second,
@@ -722,9 +769,15 @@ describe('BrowserRecorderControlPanel', () => {
       selected_ids: ['pz_logout_session'],
     }))
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      expected_script_count: 2,
+      parameterization_selections: [{
+        script_index: 1,
+        selected_ids: ['pz_logout_session'],
+      }],
+    }))
     expect(apiMock.createScript).not.toHaveBeenCalled()
-    expect(apiMock.updateScript).toHaveBeenNthCalledWith(1, 'saved-checkout', first)
-    expect(apiMock.updateScript).toHaveBeenNthCalledWith(2, 'saved-logout', parameterizedSecond)
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
   })
 
   it('prompts for optional credentials and saves a configure-later reference', async () => {
@@ -761,6 +814,197 @@ describe('BrowserRecorderControlPanel', () => {
     // same suggested reference; the kept suggestion needs no follow-up update.
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
     expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
+  })
+
+  it('keeps a preservation-marked browser conversion runnable without applying empty bindings', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    const preservedScript = {
+      ...credentialScript,
+      config: { http: { auth: { password: 'imported-runtime-password' } } },
+      metadata: {
+        import: {
+          source: 'browser_recorder',
+          preserved: { import_value_policy: 'preserve' },
+        },
+      },
+    }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+      ...credentialPreviewResult(),
+      import_draft_expires_at: '2099-07-26T12:30:00Z',
+      script: preservedScript,
+      scripts: [preservedScript],
+      secret_binding_requirements: [{
+        ...credentialRequirement,
+        destination_value_preserved: true,
+      }],
+    })
+
+    await renderPanel({ onImported, onEdit })
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    expect(container.textContent).toContain('Preserved in script')
+    expect(container.textContent).toContain('0 to configure later')
+    expect(container.textContent).not.toContain('Save with 1 secret to configure')
+
+    expect(container.textContent).toContain('Save And Open In Visual Editor')
+    await clickButton('Save And Open In Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
+    expect(onEdit).not.toHaveBeenCalled()
+  })
+
+  it('live-disables credential and parameterization controls when a preserved browser draft expires', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-28T12:00:00Z'))
+    try {
+      const preservedScript = {
+        ...credentialScript,
+        config: { http: { auth: { password: 'operator-known-browser-password' } } },
+        metadata: {
+          import: {
+            source: 'browser_recorder',
+            preserved: { import_value_policy: 'preserve' },
+          },
+        },
+      }
+      apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+      apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+        ...credentialPreviewResult(),
+        import_draft_expires_at: '2026-07-28T12:00:01Z',
+        script: preservedScript,
+        scripts: [preservedScript],
+        secret_binding_requirements: [{
+          ...credentialRequirement,
+          destination_value_preserved: true,
+        }],
+        parameterization: {
+          suggestions: [{
+            id: 'expiring-order-id',
+            kind: 'data_param',
+            var_name: 'ORDER_ID',
+            replacement: '{{param.ORDER_ID}}',
+            sample_value: '123',
+            confidence: 0.95,
+            rule_id: 'test.browser.expiry',
+            rationale: 'Order id should vary by virtual user',
+            auto_apply: true,
+            high_risk: false,
+          }],
+          summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+        },
+      })
+
+      await renderPanel({ onEdit: vi.fn() })
+      await clickButton('Preview Conversion')
+      await flushPromises()
+
+      const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save to Script Library'))!
+      const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save And Open In Visual Editor'))!
+      const applyParameterization = container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')!
+      const useProjectSecret = container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')!
+      expect(save.disabled).toBe(false)
+      expect(edit.disabled).toBe(false)
+      expect(applyParameterization.disabled).toBe(false)
+      expect(useProjectSecret.disabled).toBe(false)
+      expect(container.textContent).toContain('0 to configure later')
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_011)
+        await Promise.resolve()
+      })
+
+      expect(container.textContent).toContain('credential-preserving import draft has expired')
+      expect(save.disabled).toBe(true)
+      expect(edit.disabled).toBe(true)
+      expect(applyParameterization.disabled).toBe(true)
+      expect(useProjectSecret.disabled).toBe(true)
+      expect(Array.from(container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
+        '.secret-binding-review input, .secret-binding-review button',
+      )).every(control => control.disabled)).toBe(true)
+      const refreshPreview = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Preview Conversion'))!
+      expect(refreshPreview.disabled).toBe(false)
+
+      await act(async () => {
+        save.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        edit.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        applyParameterization.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        useProjectSecret.dispatchEvent(new Event('change', { bubbles: true }))
+        await Promise.resolve()
+      })
+      expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
+      expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+      expect(apiMock.applyImportParameterization).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('applies an unchanged suggested project-secret choice inside the headed save conversion', async () => {
+    const onImported = vi.fn()
+    const preservedScript = {
+      ...credentialScript,
+      config: { http: { auth: { password: 'captured-browser-password' } } },
+      metadata: {
+        import: {
+          source: 'browser_recorder',
+          preserved: { import_value_policy: 'preserve' },
+        },
+      },
+    }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+      ...credentialPreviewResult(),
+      script: preservedScript,
+      scripts: [preservedScript],
+      secret_binding_requirements: [{
+        ...credentialRequirement,
+        destination_value_preserved: true,
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValue({
+      script: {
+        ...preservedScript,
+        config: { http: { auth: { password: '{{secret.LOGIN_PASSWORD}}' } } },
+      },
+      secret_binding_requirements: [],
+    })
+
+    await renderPanel({ onImported })
+    await clickButton('Save to Script Library')
+    await flushPromises()
+    expect(container.textContent).toContain('Preserved in script')
+
+    await act(async () => {
+      container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.click()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('Save with 1 secret to configure')
+    await clickButton('Save with 1 secret to configure')
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: preservedScript,
+      script_index: 0,
+      bindings: [{ requirement_id: 'credential-password', secret_name: 'LOGIN_PASSWORD' }],
+    })
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      secret_bindings: [{
+        requirement_id: 'credential-password',
+        secret_name: 'LOGIN_PASSWORD',
+        script_index: 0,
+      }],
+    }))
     expect(apiMock.updateScript).not.toHaveBeenCalled()
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
   })
@@ -982,7 +1226,53 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('saved to the script library')
   })
 
-  it('surfaces a follow-up update failure without losing the converted save', async () => {
+  it('prevents dismissing the panel while an atomic server save is in flight', async () => {
+    const onDismiss = vi.fn()
+    const onImported = vi.fn()
+    let resolveSave!: (value: any) => void
+    const saveRequest = new Promise<any>(resolve => {
+      resolveSave = resolve
+    })
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.convertBrowserRecording.mockImplementationOnce(() => saveRequest)
+
+    await renderPanel({ onDismiss, onImported })
+    await clickButton('Preview Conversion')
+    await flushPromises()
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    const dismiss = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Dismiss') as HTMLButtonElement
+    expect(dismiss.disabled).toBe(true)
+    await act(async () => {
+      dismiss.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onDismiss).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveSave({
+        script: {
+          id: 'script-atomic',
+          name: 'Checkout Flow',
+          protocol: 'browser',
+          version: '1',
+          script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+        },
+        warnings: [],
+        stats: {},
+      })
+      await saveRequest
+    })
+    await flushPromises()
+
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'script-atomic' })],
+    })
+    expect(dismiss.disabled).toBe(false)
+  })
+
+  it('does not use a fallible follow-up update for reviewed parameterization', async () => {
     const onImported = vi.fn()
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce({
@@ -1036,8 +1326,15 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
 
     expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('applying the reviewed changes failed: update denied')
-    expect(onImported).not.toHaveBeenCalled()
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+      expected_script_count: 1,
+      parameterization_selections: [{
+        script_index: 0,
+        selected_ids: ['pz_browser_order'],
+      }],
+    }))
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
   })
 
   it('opens the previewed script in the visual editor', async () => {
@@ -1643,14 +1940,23 @@ describe('BrowserRecorderControlPanel', () => {
 
   it('saves bridge recordings by previewing locally and creating scripts remotely', async () => {
     const onImported = vi.fn()
+    const rawCredential = 'bridge-preview-password-canary'
+    const browserDraft = {
+      name: 'Checkout Flow',
+      protocol: 'browser',
+      actions: [{
+        name: 'Fill password',
+        type: 'browser_fill',
+        value: rawCredential,
+        metadata: { source_marked_secret: true },
+      }],
+    }
+    const httpDraft = { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] }
     apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     apiMock.previewBrowserRecordingConversion.mockResolvedValue({
-      script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
-      scripts: [
-        { name: 'Checkout Flow', protocol: 'browser', actions: [] },
-        { name: 'Checkout Flow (HTTP)', protocol: 'http', actions: [] },
-      ],
+      script: browserDraft,
+      scripts: [browserDraft, httpDraft],
       warnings: [],
       stats: {},
       parameterization: { suggestions: [], summary: { total: 0 } },
@@ -1665,12 +1971,24 @@ describe('BrowserRecorderControlPanel', () => {
 
     expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
     expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
+    expect(apiMock.attestBridgedBrowserRecordingImport).toHaveBeenCalledWith(
+      [browserDraft, httpDraft],
+      undefined,
+    )
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(apiMock.attestBridgedBrowserRecordingImport.mock.invocationCallOrder[0])
+      .toBeLessThan(apiMock.createScript.mock.invocationCallOrder[0])
     // The remote controller never observed the local bridge recording, so the
     // headed-browser session id must not accompany the createScript calls.
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'Checkout Flow' }), undefined, null)
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      name: 'Checkout Flow',
+      actions: [expect.objectContaining({ value: rawCredential })],
+    }), undefined, null)
     expect(apiMock.createScript).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Checkout Flow (HTTP)' }), undefined, null)
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'remote-browser' }), expect.objectContaining({ id: 'remote-http' })] })
+    // Script-library response mocks model the controller's disclosure-safe
+    // response; the raw credential only travels in the attested write.
+    expect(JSON.stringify(onImported.mock.calls)).not.toContain(rawCredential)
     expect(container.textContent).toContain('Saved 2 scripts to the remote script library')
   })
 })

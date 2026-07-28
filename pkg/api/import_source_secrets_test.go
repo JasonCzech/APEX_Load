@@ -189,7 +189,7 @@ func TestSourceSecretValuesTreatAlreadyRedactedSourceAsUnavailable(t *testing.T)
 	}
 }
 
-func TestImportResponseSourceSecretSessionIsPolicyGatedAndDisclosureSafe(t *testing.T) {
+func TestImportResponseSourceSecretSessionIsPolicyGatedAndKeepsEditableCredential(t *testing.T) {
 	server, _, _, projectID := newProjectSecretAPIServer(t)
 	script := &dsl.Script{
 		Name:      "Protected import",
@@ -227,16 +227,24 @@ func TestImportResponseSourceSecretSessionIsPolicyGatedAndDisclosureSafe(t *test
 	if len(requirements) != 1 || !requirements[0].SourceValueAvailable {
 		t.Fatalf("requirements = %#v, want one source-available requirement", requirements)
 	}
-	encoded, err := json.Marshal(enabled)
+	scriptValue, _ := enabled["script"].(map[string]any)
+	encodedScript, err := json.Marshal(scriptValue)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "must-never-reach-the-browser") {
-		t.Fatalf("import response disclosed source credential: %s", encoded)
+	if !strings.Contains(string(encodedScript), "must-never-reach-the-browser") {
+		t.Fatalf("editable import draft lost the operator-supplied credential: %s", encodedScript)
+	}
+	encodedRequirements, err := json.Marshal(requirements)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encodedRequirements), "must-never-reach-the-browser") {
+		t.Fatalf("credential review metadata disclosed the source value: %s", encodedRequirements)
 	}
 }
 
-func TestUploadedImportSourceSecretMigratesServerSideWithoutDisclosure(t *testing.T) {
+func TestUploadedImportSourceSecretMigratesServerSideWithoutReentry(t *testing.T) {
 	server, _, managed, projectID := newProjectSecretAPIServer(t)
 	settings := server.runner.GetSystemSettings()
 	settings.ScriptImports.AllowSourceSecretMigration = true
@@ -262,12 +270,19 @@ func TestUploadedImportSourceSecretMigratesServerSideWithoutDisclosure(t *testin
 	if sessionID == "" || len(requirements) != 1 || !requirements[0].SourceValueAvailable {
 		t.Fatalf("uploaded source-secret response = %#v", response)
 	}
-	encoded, err := json.Marshal(response)
+	encodedScript, err := json.Marshal(response["script"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "uploaded-source-password") {
-		t.Fatalf("uploaded import response disclosed source value: %s", encoded)
+	if !strings.Contains(string(encodedScript), "uploaded-source-password") {
+		t.Fatalf("editable import response lost source value: %s", encodedScript)
+	}
+	encodedRequirements, err := json.Marshal(requirements)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encodedRequirements), "uploaded-source-password") {
+		t.Fatalf("uploaded import review disclosed source value: %s", encodedRequirements)
 	}
 
 	migration := secretAPIRequest(t, server, "POST", "/api/v1/scripts/import/secrets/migrate", map[string]any{

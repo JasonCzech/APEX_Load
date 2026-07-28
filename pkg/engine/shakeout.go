@@ -35,6 +35,11 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 		return fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
 	}
 	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(script, secretResolver)...)
+	importedValues, credentialTemplates, err := inspectImportedCredentials(script)
+	if err != nil {
+		return fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
+	}
+	secretValues = append(secretValues, importedValues...)
 	redactionConfig, err := WithSecretValueRedactionChecked(nil, secretValues)
 	if err != nil {
 		return fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
@@ -53,14 +58,16 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 	defer runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 
 	vu := &VUser{
-		ID:              0,
-		Group:           groupName,
-		Proto:           proto,
-		Script:          script,
-		Metrics:         NewMetricsCollector(16),
-		Variables:       make(map[string]string),
-		SecretResolver:  secretResolver,
-		RedactionConfig: redactionConfig,
+		ID:                           0,
+		Group:                        groupName,
+		Proto:                        proto,
+		Script:                       script,
+		Metrics:                      NewMetricsCollector(16),
+		Variables:                    make(map[string]string),
+		SecretResolver:               secretResolver,
+		RedactionConfig:              redactionConfig,
+		credentialTemplates:          credentialTemplates,
+		credentialTemplatesInspected: true,
 	}
 	vu.bindRuntimeTextRedactor()
 	// Register DSL cleanup as soon as the protocol-backed VUser exists. It runs

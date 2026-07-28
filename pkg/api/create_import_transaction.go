@@ -133,6 +133,24 @@ func (tx *createImportTransaction) item(kind, id string) (LibraryBundleItem, err
 }
 
 func (tx *createImportTransaction) createScript(script *dsl.Script) (*StoredScript, error) {
+	return tx.createScriptWithImportProfile(script, "")
+}
+
+func (tx *createImportTransaction) createImportedScript(
+	script *dsl.Script,
+	sourceProfile string,
+) (*StoredScript, error) {
+	sourceProfile = strings.TrimSpace(sourceProfile)
+	if sourceProfile == "" {
+		return nil, fmt.Errorf("import source profile is required")
+	}
+	return tx.createScriptWithImportProfile(script, sourceProfile)
+}
+
+func (tx *createImportTransaction) createScriptWithImportProfile(
+	script *dsl.Script,
+	sourceProfile string,
+) (*StoredScript, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
@@ -140,7 +158,15 @@ func (tx *createImportTransaction) createScript(script *dsl.Script) (*StoredScri
 	if err != nil {
 		return nil, err
 	}
-	stored, err := tx.server.runner.CreateScriptDurable(script)
+	var stored *StoredScript
+	if sourceProfile == "" {
+		stored, err = tx.server.runner.CreateScriptDurable(script)
+	} else {
+		stored, _, err = tx.server.runner.CreateImportedScriptDurableReportingReplay(
+			script,
+			sourceProfile,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}

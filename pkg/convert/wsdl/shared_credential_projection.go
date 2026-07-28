@@ -15,9 +15,18 @@ import (
 // XML credential projector. WSDL remains responsible only for proving which
 // exact skeleton templates are dynamic and for retaining transient source
 // spellings long enough to redact the source-review copy.
-func finalizeWSDLXMLBody(body []byte, options wsdlCredentialProjectionOptions) ([]byte, []wsdlProjectedSecret, []importreview.Finding, error) {
+func finalizeWSDLXMLBody(
+	body []byte,
+	options wsdlCredentialProjectionOptions,
+) (
+	[]byte,
+	[]wsdlProjectedSecret,
+	[]importreview.Finding,
+	[]credentialpolicy.TargetRef,
+	error,
+) {
 	if len(body) == 0 {
-		return body, nil, nil, nil
+		return body, nil, nil, nil, nil
 	}
 	source := credentialpolicy.SourceRef{
 		Format:  "wsdl",
@@ -25,15 +34,16 @@ func finalizeWSDLXMLBody(body []byte, options wsdlCredentialProjectionOptions) (
 		Pointer: options.Pointer,
 	}
 	projected, projection, err := credentialpolicy.ProjectXML(body, credentialpolicy.Options{
-		Mode:               credentialpolicy.SecretReference,
+		Mode:               credentialpolicy.Preserve,
 		Source:             source,
 		RequestKey:         options.RequestKey,
 		NamePrefix:         "WSDL",
 		Registry:           options.Registry,
 		TrustedWholeValues: wsdlTrustedWholeRuntimeValues(body),
+		TargetField:        "body",
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("shared XML credential projection failed: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("shared XML credential projection failed: %w", err)
 	}
 	review := requestimport.ReviewCredentialProjection(projection, "WSDL SOAP XML")
 	if review.Rejected {
@@ -43,7 +53,7 @@ func finalizeWSDLXMLBody(body []byte, options wsdlCredentialProjectionOptions) (
 				codes = append(codes, finding.Code)
 			}
 		}
-		return nil, nil, nil, fmt.Errorf(
+		return nil, nil, nil, nil, fmt.Errorf(
 			"shared XML credential projection rejected generated SOAP XML: %s",
 			strings.Join(uniqueSortedStrings(codes), ", "),
 		)
@@ -68,7 +78,7 @@ func finalizeWSDLXMLBody(body []byte, options wsdlCredentialProjectionOptions) (
 			SourceValues: sourceValues,
 		})
 	}
-	return projected, secrets, review.Findings, nil
+	return projected, secrets, review.Findings, projection.PreservedTargets, nil
 }
 
 func wsdlTrustedWholeRuntimeValues(body []byte) map[string]struct{} {

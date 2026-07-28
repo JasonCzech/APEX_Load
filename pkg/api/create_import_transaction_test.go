@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -166,6 +167,9 @@ func TestHandleConvertBrowserRecordingRollbackPreservesConcurrentMutation(t *tes
 		base:                         base,
 	}
 	artifact := recordedBrowserArtifact()
+	artifact.Steps[0].Masked = false
+	artifact.Steps[0].MarkSecret = true
+	artifact.Steps[0].Value = "split-rollback-captured-password"
 	artifact.Markers = []recbrowser.Marker{
 		{Kind: recbrowser.MarkerTransactionStart, Name: "Login", Timestamp: artifact.StartedAt.Add(500 * time.Millisecond)},
 		{Kind: recbrowser.MarkerTransactionEnd, Name: "Login", Timestamp: artifact.StartedAt.Add(1500 * time.Millisecond)},
@@ -196,6 +200,16 @@ func TestHandleConvertBrowserRecordingRollbackPreservesConcurrentMutation(t *tes
 	}
 	if current.Name != "Concurrent Browser Edit" || len(current.Actions) == 0 || current.Actions[0].Name != "peer-owned-action" {
 		t.Fatalf("durable script = %#v, want concurrent edit preserved", current)
+	}
+	currentJSON, err := json.Marshal(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(currentJSON, []byte("split-rollback-captured-password")) {
+		t.Fatalf("concurrently edited imported script lost captured credential: %s", currentJSON)
+	}
+	if strings.Contains(response.Body.String(), "split-rollback-captured-password") {
+		t.Fatalf("failed atomic import response disclosed captured credential: %s", response.Body.String())
 	}
 	claims, err := server.loadLibraryImportClaims()
 	if err != nil {

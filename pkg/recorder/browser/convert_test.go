@@ -738,8 +738,14 @@ func TestConvertMarkSecretFill(t *testing.T) {
 
 	result := Convert(session, ConvertOptions{})
 	fill := result.Script.Actions[1]
-	if fill.Value != "{{env.API_TOKEN}}" {
-		t.Errorf("marked-secret fill = %q, want {{env.API_TOKEN}}", fill.Value)
+	if fill.Value != "abc123" {
+		t.Errorf("marked-secret fill = %q, want captured executable value", fill.Value)
+	}
+	if fill.Metadata["source_marked_secret"] != true {
+		t.Errorf("marked-secret metadata = %#v, want source_marked_secret=true", fill.Metadata)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[len(result.Warnings)-1], "preserved for replay") {
+		t.Errorf("marked-secret warnings = %#v, want disclosure-safe preservation review", result.Warnings)
 	}
 }
 

@@ -4996,7 +4996,7 @@
                     "type": "string"
                   },
                   "password": {
-                    "description": "Password secret template.",
+                    "description": "Password secret template or retained imported value.",
                     "type": "string"
                   },
                   "user": {

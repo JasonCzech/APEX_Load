@@ -13,6 +13,7 @@ const apiMock = {
   uploadImportAsset: vi.fn(),
   createScript: vi.fn(),
   applySecretBindings: vi.fn(),
+  discardImportSecretSession: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -97,6 +98,7 @@ describe('SampleScriptImport', () => {
       },
       uploaded_at: '2026-06-22T00:00:00Z',
     })
+    apiMock.discardImportSecretSession.mockResolvedValue(undefined)
   })
 
   afterEach(async () => {
@@ -145,6 +147,7 @@ describe('SampleScriptImport', () => {
     await act(async () => {
       resolveImport?.({
         script: { name: 'Stale result', protocol: 'http', config: { base_url: 'https://stale.test' }, actions: [] },
+        source_secret_session_id: 'stale-sample-session',
         warnings: [],
         correlations: [],
         stats: { format: 'rest_json', total_requests: 1, converted_actions: 0, assertions: 0, extractors: 0, correlations_detected: 0 },
@@ -154,6 +157,47 @@ describe('SampleScriptImport', () => {
 
     expect(container.textContent).not.toContain('3. Review Generated Script')
     expect(container.textContent).not.toContain('Stale result')
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'stale-sample-session',
+    })
+  })
+
+  it('publishes a completed save even when the sample review changes in flight', async () => {
+    const onImported = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
+    await act(async () => {
+      root.render(<SampleScriptImport projectId="project-1" onImported={onImported} />)
+    })
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Sample'))?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save To Script Library'))?.click()
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Order Flow Sample"]')
+    await act(async () => {
+      if (nameInput) setControlValue(nameInput, 'Changed after save started')
+    })
+    await act(async () => {
+      resolveSave({
+        id: 'saved-after-change',
+        name: 'POST_v1_session',
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      })
+      await Promise.resolve()
+    })
+
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'saved-after-change' })],
+    }))
   })
 
   it('renders the Java over HTTP sample close action as a Back button', async () => {
@@ -274,6 +318,83 @@ describe('SampleScriptImport', () => {
         }),
       })],
     }))
+  })
+
+  it('saves a credential-preserving sample before opening the persisted editor', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    const importedScript = {
+      name: 'Imported Login Sample',
+      version: '1.0.0',
+      protocol: 'http',
+      metadata: {
+        import: {
+          source: 'sample-import',
+          preserved: {
+            server_import_attestation_v1: 'protected:sample-login',
+          },
+        },
+      },
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: 'password=imported-runtime-password',
+      }],
+    }
+    apiMock.importSample.mockResolvedValueOnce({
+      scripts: [importedScript],
+      script: importedScript,
+      import_draft_expires_at: '2099-07-26T12:30:00Z',
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: {
+        format: 'rest_json',
+        total_requests: 1,
+        converted_actions: 1,
+        assertions: 0,
+        extractors: 0,
+        correlations_detected: 0,
+      },
+      summary: {},
+      secret_binding_requirements: [{
+        id: 'login-password',
+        path: '/actions/0/body',
+        label: 'Login password',
+        context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD',
+        destination_value_preserved: true,
+      }],
+    })
+
+    await act(async () => root.render(
+      <SampleScriptImport onImported={onImported} onEdit={onEdit} />,
+    ))
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Convert Sample'))!
+    await act(async () => convertButton.click())
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Save And Open In Visual Editor')
+    expect(editButton).toBeDefined()
+    await act(async () => editButton?.click())
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ body: 'password=imported-runtime-password' })],
+    }), undefined, null)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'script-1' })],
+    }))
+    expect(onEdit).not.toHaveBeenCalled()
   })
 
   it('applies a prefilled secret reference from the primary save action', async () => {

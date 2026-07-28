@@ -16,6 +16,8 @@ import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
+import { credentialPreservingImportDraftRequiresSave } from './protectedImportSession'
+import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
 import './EnterpriseArchiveImport.css'
 
 interface Props {
@@ -51,6 +53,7 @@ function sourceReviewForJMeter(result?: ImportResult | null, script?: ScriptDefi
 
 export default function JMeterImport({ initialFile, projectId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
+  const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const fileRef = useRef<HTMLInputElement>(null)
   const dropzoneRef = useRef<HTMLDivElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -87,7 +90,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const [credentialActionInProgress, setCredentialActionInProgress] = useState(false)
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const invalidateReview = useCallback(() => {
-    void credentialReviewRef.current?.discardSourceSession()
+    sourceSecretSessions.clear('review')
     advanceReviewGeneration()
     setWorkingMode(null)
     setSaving(false)
@@ -96,7 +99,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     setNotice('')
     setParameterizationApplyingByScript({})
     setCredentialActionInProgress(false)
-  }, [advanceReviewGeneration])
+  }, [advanceReviewGeneration, sourceSecretSessions])
   const [options, setOptions] = useState({
     name: '',
     base_url: '',
@@ -115,6 +118,11 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const primaryScript = getPrimaryScript(result)
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
   const parameterization = result?.parameterization
+  const editRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
+    result,
+    primaryScript,
+    result?.secret_binding_requirements,
+  )
   const desktop = isDesktopSurface()
   const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
@@ -225,12 +233,19 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      if (!requestIsCurrent()) return
+      if (!requestIsCurrent()) {
+        sourceSecretSessions.discardUnaccepted(sourceProjectId, response.source_secret_session_id)
+        return
+      }
+      sourceSecretSessions.replace('review', sourceProjectId, response.source_secret_session_id)
       setResult(response)
       setReviewMode('conversion')
       setNotice('Conversion complete. Review the generated scripts, warnings, and assumptions before saving.')
     } catch (error: unknown) {
-      if (requestIsCurrent()) setError(getErrorMessage(error, 'JMeter import failed'))
+      if (requestIsCurrent()) {
+        sourceSecretSessions.clear('review')
+        setError(getErrorMessage(error, 'JMeter import failed'))
+      }
     } finally {
       if (requestIsCurrent()) setWorkingMode(null)
     }
@@ -256,18 +271,30 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
-      if (!requestIsCurrent()) return
+      if (!requestIsCurrent()) {
+        sourceSecretSessions.discardUnaccepted(sourceProjectId, response.source_secret_session_id)
+        return
+      }
+      sourceSecretSessions.replace('review', sourceProjectId, response.source_secret_session_id)
       setResult(response)
       setReviewMode('validation')
       setNotice('Validation complete. Review the generated scripts and warnings before saving.')
     } catch (error: unknown) {
-      if (requestIsCurrent()) setError(getErrorMessage(error, 'JMeter validation failed'))
+      if (requestIsCurrent()) {
+        sourceSecretSessions.clear('review')
+        setError(getErrorMessage(error, 'JMeter validation failed'))
+      }
     } finally {
       if (requestIsCurrent()) setWorkingMode(null)
     }
   }
 
-  const handleParameterizationApplied = (scriptIndex: number) => (parameterizedScript: ScriptDefinition) => {
+  const handleParameterizationApplied = (scriptIndex: number) => (
+    parameterizedScript: ScriptDefinition,
+    _diffs: unknown[],
+    _selectedIds: string[],
+    importDraftExpiresAt?: string,
+  ) => {
     credentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advanceReviewGeneration()
     setSaving(false)
@@ -275,7 +302,12 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
       if (!prev) return prev
       const scripts = (prev.scripts || []).map((script, index) => (index === scriptIndex ? parameterizedScript : script))
       const primary = scriptIndex === 0 ? parameterizedScript : prev.script
-      return { ...prev, scripts, script: primary }
+      return {
+        ...prev,
+        scripts,
+        script: primary,
+        ...(scripts.length === 1 ? { import_draft_expires_at: importDraftExpiresAt } : {}),
+      }
     })
   }
 
@@ -300,14 +332,14 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
       })
       const savedScripts = withFallbackPersistedScripts(response.scripts, resultToSave.scripts)
       const scenarioText = response.scenario ? ' and scenario draft' : ''
-      if (!requestIsCurrent()) return
-      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
       if (savedScripts.length) {
         onImported?.({
           scripts: savedScripts,
           scenario: response.scenario,
         })
       }
+      if (!requestIsCurrent()) return
+      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
@@ -316,8 +348,22 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   }
 
   const handleEditConverted = () => {
-    const currentScript = getPrimaryScript(latestResultRef.current)
-    if (currentScript) onEdit?.(currentScript)
+    const currentResult = latestResultRef.current
+    const currentScript = getPrimaryScript(currentResult)
+    if (!currentScript) return
+    if (credentialPreservingImportDraftRequiresSave(
+      currentResult,
+      currentScript,
+      currentResult?.secret_binding_requirements,
+    )) {
+      if (!onImported) {
+        setError('Save this credential-preserving import before opening it in the Visual Editor.')
+        return
+      }
+      void handleSaveConverted()
+      return
+    }
+    onEdit?.(currentScript)
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
@@ -353,6 +399,9 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
           ...resolvedResult,
           scripts: resolvedResult.scripts.map((entry, index) => index === scriptIndex ? resolved.script : entry),
           script: scriptIndex === 0 ? resolved.script : resolvedResult.script,
+          ...(resolvedResult.scripts.length === 1
+            ? { import_draft_expires_at: resolved.import_draft_expires_at }
+            : {}),
           secret_binding_requirements: replaceSecretBindingRequirementsForScript(
             resolvedResult.secret_binding_requirements,
             scriptIndex,
@@ -393,7 +442,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { sourceSecretSessions.clear('review'); onClose() }}>Back</button>}
       </div>
 
       <div
@@ -563,6 +612,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            importDraftExpiresAt={result.import_draft_expires_at}
             credentialReviewRef={credentialReviewRef}
             saving={saving}
             reviewBusy={parameterizationApplying}
@@ -570,7 +620,9 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
             onEdit={onEdit && primaryScript ? handleEditConverted : undefined}
-            editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave
+              ? (result.scripts.length > 1 ? 'Save All And Open First Script In Visual Editor' : 'Save And Open In Visual Editor')
+              : (result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor')}
             previewTitle="Import Preview"
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
           >

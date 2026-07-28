@@ -2,6 +2,7 @@ package jmeter
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -479,7 +480,7 @@ func TestConvertJMXAdvancedSamplerFidelity(t *testing.T) {
 		t.Fatalf("metadata = %#v, want transaction", action.Metadata)
 	}
 	if action.Auth == nil || action.Auth.Type != "digest" ||
-		action.Auth.Username != "digest-user" || action.Auth.Password != "{{secret.JMETER_PASSWORD}}" {
+		action.Auth.Username != "digest-user" || action.Auth.Password != "digest-pass" {
 		t.Fatalf("action auth = %#v, want native digest credentials", action.Auth)
 	}
 	if containsJMeterDiagnostic(result, "Digest auth cannot be executed") {
@@ -1168,7 +1169,7 @@ func TestConvertJMXPreservesHeaderManagerOccurrenceOrderAndCase(t *testing.T) {
 	}
 	action := result.Scripts[0].Actions[0]
 	wantNames := []string{"X-Trace", "x-trace", "X-Trace", "Cookie"}
-	wantValues := []string{"one", "two", "three", "{{secret.JMETER_COOKIE}}"}
+	wantValues := []string{"one", "two", "three", "session=abc"}
 	if len(action.HeaderList) != len(wantNames) {
 		t.Fatalf("header list = %#v, want %d occurrences", action.HeaderList, len(wantNames))
 	}
@@ -1177,7 +1178,7 @@ func TestConvertJMXPreservesHeaderManagerOccurrenceOrderAndCase(t *testing.T) {
 			t.Fatalf("header_list[%d] = %#v, want %s: %s", index, action.HeaderList[index], wantNames[index], wantValues[index])
 		}
 	}
-	if len(action.Headers) != 2 || action.Headers["X-Trace"] != "three" || action.Headers["Cookie"] != "{{secret.JMETER_COOKIE}}" {
+	if len(action.Headers) != 2 || action.Headers["X-Trace"] != "three" || action.Headers["Cookie"] != "session=abc" {
 		t.Fatalf("compatibility header map = %#v, want case-insensitive last occurrences", action.Headers)
 	}
 	if got := result.Scripts[0].Config.HTTP.DefaultHeaders; len(got) != 2 || got["X-Trace"] != "three" {
@@ -1188,6 +1189,80 @@ func TestConvertJMXPreservesHeaderManagerOccurrenceOrderAndCase(t *testing.T) {
 	}
 	if issues := dsl.ValidateScriptIssues(result.Scripts[0]); len(issues) != 0 {
 		t.Fatalf("header-list draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertJMXRetainsInvalidHeaderBytesOnlyInGatedEnvelope(t *testing.T) {
+	const (
+		headerName  = "Authorization"
+		headerValue = "Bearer jmeter-inert-header-canary-58c1\r\nX-Injected: yes"
+	)
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <HeaderManager testname="Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer jmeter-inert-header-canary-58c1&#13;&#10;X-Injected: yes</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Request" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/private</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX(
+		[]byte(jmx),
+		ConvertOptions{FileName: "invalid-header.jmx", BaseURL: "https://api.example.com"},
+	)
+	if err != nil {
+		t.Fatalf("ConvertJMX: %v", err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 1 {
+		t.Fatalf("scripts = %#v", result.Scripts)
+	}
+	script := result.Scripts[0]
+	action := script.Actions[0]
+	if len(action.HeaderList) != 0 || len(action.Headers) != 0 ||
+		len(script.Config.HTTP.DefaultHeaders) != 0 {
+		t.Fatalf(
+			"invalid header remained transport-active: action list %#v map %#v defaults %#v",
+			action.HeaderList,
+			action.Headers,
+			script.Config.HTTP.DefaultHeaders,
+		)
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("invalid header draft was not gated: %#v", action.Metadata)
+	}
+	pairs := jmeterPreservedHeaderBytePairs(t, action)
+	if len(pairs) == 0 {
+		t.Fatal("no exact inert header occurrence was retained")
+	}
+	for _, pair := range pairs {
+		if pair[0] != headerName || pair[1] != headerValue {
+			t.Fatalf("preserved header = %q: %q, want %q: %q", pair[0], pair[1], headerName, headerValue)
+		}
+	}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("inert preserved header required reentry: %#v", result.SecretRequirements)
+	}
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
 	}
 }
 
@@ -1233,8 +1308,11 @@ func TestConvertJMXReviewGatesUnsupportedAuthWithoutBasicApproximation(t *testin
 				t.Fatalf("global auth = %#v, unsupported source auth must not be approximated", script.Config.HTTP.Auth)
 			}
 			action := script.Actions[0]
-			if action.Auth == nil || action.Auth.Type != httpprotocol.AuthTypeNone {
-				t.Fatalf("action auth = %#v, want explicit no-auth on blocked draft", action.Auth)
+			if action.Auth == nil ||
+				action.Auth.Type != strings.ToLower(mechanism) ||
+				action.Auth.Username != "source-user" ||
+				action.Auth.Password != "source-password" {
+				t.Fatalf("action auth = %#v, want exact source auth retained on blocked draft", action.Auth)
 			}
 			if action.Metadata["execution_blocker"] != "import_review_required" {
 				t.Fatalf("metadata = %#v, want durable import review blocker", action.Metadata)
@@ -1416,26 +1494,21 @@ func TestConvertJMXProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *tes
 		}
 		script := result.Scripts[0]
 		action := script.Actions[0]
-		if !strings.Contains(action.Target, "{{secret.") {
-			t.Fatalf("run %d: target = %q, want projected query credential", run, action.Target)
+		if !strings.Contains(action.Target, urlCanary) {
+			t.Fatalf("run %d: target = %q, want preserved query credential", run, action.Target)
 		}
-		if !strings.Contains(action.Headers["X-Api-Key"], "{{secret.") {
-			t.Fatalf("run %d: header = %q, want projected credential", run, action.Headers["X-Api-Key"])
+		if action.Headers["X-Api-Key"] != headerCanary {
+			t.Fatalf("run %d: header = %q, want preserved credential", run, action.Headers["X-Api-Key"])
 		}
-		if !strings.Contains(action.Body, `"password":"{{secret.`) ||
+		if !strings.Contains(action.Body, `"password":"`+bodyCanary+`"`) ||
 			!strings.Contains(action.Body, `"note":"byte-exact"`) {
-			t.Fatalf("run %d: body = %q, want projected password with nonsensitive bytes retained", run, action.Body)
+			t.Fatalf("run %d: body = %q, want preserved password with nonsensitive bytes retained", run, action.Body)
 		}
-		if !strings.Contains(script.Config.HTTP.Auth.Password, "{{secret.") {
-			t.Fatalf("run %d: auth = %#v, want projected password", run, script.Config.HTTP.Auth)
+		if script.Config.HTTP.Auth.Password != passwordCanary {
+			t.Fatalf("run %d: auth = %#v, want preserved password", run, script.Config.HTTP.Auth)
 		}
-		if len(result.SecretRequirements) != 4 {
-			t.Fatalf("run %d: requirements = %#v, want URL/header/body/auth requirements", run, result.SecretRequirements)
-		}
-		for _, requirement := range result.SecretRequirements {
-			if requirement.Value != "" || requirement.SourceValueAvailable {
-				t.Fatalf("run %d: public requirement retained protected material: %#v", run, requirement)
-			}
+		if len(result.SecretRequirements) != 0 {
+			t.Fatalf("run %d: requirements = %#v, preserved credentials need no reentry", run, result.SecretRequirements)
 		}
 		if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 			t.Fatalf("run %d: validation issues = %v", run, issues)
@@ -1448,9 +1521,13 @@ func TestConvertJMXProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *tes
 		if err != nil {
 			t.Fatalf("run %d: marshal result: %v", run, err)
 		}
+		sourceReview, err := json.Marshal(result.SourceReview)
+		if err != nil {
+			t.Fatalf("run %d: marshal source review: %v", run, err)
+		}
 		for _, canary := range []string{urlCanary, headerCanary, passwordCanary, bodyCanary} {
-			if strings.Contains(string(payload), canary) {
-				t.Fatalf("run %d: result disclosed canary %q: %s", run, canary, payload)
+			if strings.Contains(string(sourceReview), canary) {
+				t.Fatalf("run %d: source review disclosed canary %q: %s", run, canary, sourceReview)
 			}
 		}
 		hash := sha256.Sum256(payload)
@@ -1537,6 +1614,43 @@ func TestConvertJMXAppliesSamplerScopedHeaderManager(t *testing.T) {
 	if headerValue(plain, "X-Shared") != "shared-value" {
 		t.Fatalf("thread-group header did not reach the sibling sampler: %#v", plain.HeaderList)
 	}
+}
+
+func jmeterPreservedHeaderBytePairs(t *testing.T, action dsl.Action) [][2]string {
+	t.Helper()
+	marker, ok := action.Metadata[dsl.ImportHeaderFidelityMetadataKey].(map[string]any)
+	if !ok {
+		t.Fatalf("missing header fidelity marker: %#v", action.Metadata)
+	}
+	var occurrences []map[string]any
+	switch values := marker["omitted_occurrences"].(type) {
+	case []map[string]any:
+		occurrences = values
+	case []any:
+		for _, raw := range values {
+			if occurrence, ok := raw.(map[string]any); ok {
+				occurrences = append(occurrences, occurrence)
+			}
+		}
+	}
+	var out [][2]string
+	for _, occurrence := range occurrences {
+		name, nameOK := occurrence[dsl.ImportHeaderFidelityPreservedNameBase64Key].(string)
+		value, valueOK := occurrence[dsl.ImportHeaderFidelityPreservedValueBase64Key].(string)
+		if !nameOK || !valueOK {
+			continue
+		}
+		nameBytes, err := base64.StdEncoding.DecodeString(name)
+		if err != nil {
+			t.Fatalf("decode preserved header name: %v", err)
+		}
+		valueBytes, err := base64.StdEncoding.DecodeString(value)
+		if err != nil {
+			t.Fatalf("decode preserved header value: %v", err)
+		}
+		out = append(out, [2]string{string(nameBytes), string(valueBytes)})
+	}
+	return out
 }
 
 func headerValue(action dsl.Action, name string) string {

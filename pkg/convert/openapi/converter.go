@@ -1319,7 +1319,7 @@ func finalizeOpenAPIRequestAction(action dsl.Action, path, method, sourceFile, a
 	// rejection.
 	if openAPISharedCredentialProjectionSafe(action) {
 		options.Credentials = &requestimport.CredentialProjectionOptions{
-			Mode:                         credentialpolicy.SecretReference,
+			Mode:                         credentialpolicy.Preserve,
 			Registry:                     names,
 			NamePrefix:                   "OPENAPI",
 			SensitiveNames:               sensitiveNames,
@@ -1698,10 +1698,6 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 	}
 	if strings.Contains(preferred, "xml") {
 		body := xmlForSchema(media.Schema, res, location, columns)
-		projected := scrub.Value(body, scrub.Policy{})
-		if projected != body {
-			return projected, preferred, cols, append([]string{"unsafe_xml_credential_projection"}, encodingReviewCodes...), sensitiveNames
-		}
 		reviewCodes := append(sensitiveNonStringSchemaCodes(media.Schema, res, location), encodingReviewCodes...)
 		return body, preferred, cols, reviewCodes, sensitiveNames
 	}
@@ -1762,7 +1758,9 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 			column := sanitizeColumnName(name)
 			if scalarSchema(prop) {
 				if schemaCredentialField(name, prop) {
-					if schemaNeedsRawJSONPlaceholder(prop) {
+					if authored, ok := authoredSchemaValue(prop); ok {
+						value = authored
+					} else if schemaNeedsRawJSONPlaceholder(prop) {
 						value = zeroValueForSensitiveSchema(prop)
 					} else {
 						value = openAPICredentialReference(name)
@@ -1845,7 +1843,11 @@ func formURLEncodedExample(s schema, res resolver, location string, columns colu
 	for _, field := range fields {
 		column := sanitizeColumnName(field)
 		if schemaCredentialField(field, resolved.Properties[field]) {
-			parts = append(parts, escapeQueryKey(field)+"="+openAPICredentialReference(field))
+			value := openAPICredentialReference(field)
+			if authored, ok := authoredSchemaWireValue(resolved.Properties[field]); ok {
+				value = url.QueryEscape(authored)
+			}
+			parts = append(parts, escapeQueryKey(field)+"="+value)
 			continue
 		}
 		columns.add(column, resolved.Properties[field])
@@ -1908,7 +1910,11 @@ func multipartFormExample(s schema, res resolver, location string, columns colum
 		}
 		b.WriteString(`Content-Disposition: form-data; name="` + wireName + `"` + "\r\n\r\n")
 		if sensitive {
-			b.WriteString(openAPICredentialReference(name) + "\r\n")
+			value := openAPICredentialReference(name)
+			if authored, ok := authoredSchemaWireValue(prop); ok {
+				value = authored
+			}
+			b.WriteString(value + "\r\n")
 		} else {
 			b.WriteString("{{data.openapi." + column + "}}\r\n")
 		}
@@ -1990,7 +1996,11 @@ func renderGovernedExample(value any, contentType string) (string, []string) {
 	rendered := renderExample(value, contentType)
 	projected := scrub.Value(rendered, scrub.Policy{})
 	if projected != rendered {
-		return projected, []string{"unsafe_structured_credential_projection"}
+		// This is the executable destination draft. Keep the operator-supplied
+		// bytes exact and gate the request for review; response/source-review
+		// projection independently removes the credential. Returning the scrubbed
+		// text here would make the imported request permanently unreplayable.
+		return rendered, []string{"unsafe_structured_credential_projection"}
 	}
 	return rendered, nil
 }
@@ -2135,17 +2145,11 @@ func projectJSONExampleCredentials(value any, path []string) (any, bool) {
 		for key, child := range typed {
 			childPath := append(append([]string(nil), path...), key)
 			if credential.SensitiveName(key) {
-				switch child.(type) {
-				case string:
-					// Keep the literal only inside the in-process effective
-					// request. The shared credential projector replaces it and
-					// moves the value into its non-serializable requirement
-					// before the action is exposed.
-					out[key] = child
-				default:
-					out[key] = zeroSensitiveJSONValue(child)
-					unsafe = true
-				}
+				// Authored examples are executable source data. Preserve their
+				// exact JSON type and value; the shared projector records the
+				// review finding without converting a number, boolean, object,
+				// or array to a placeholder the operator must reconstruct.
+				out[key] = child
 				continue
 			}
 			projected, childUnsafe := projectJSONExampleCredentials(child, childPath)
@@ -2164,25 +2168,6 @@ func projectJSONExampleCredentials(value any, path []string) (any, bool) {
 		return out, unsafe
 	default:
 		return value, false
-	}
-}
-
-func zeroSensitiveJSONValue(value any) any {
-	switch value.(type) {
-	case nil:
-		return nil
-	case bool:
-		return false
-	case float32, float64, int, int8, int16, int32, int64, json.Number:
-		return 0
-	case uint, uint8, uint16, uint32, uint64:
-		return 0
-	case []any:
-		return []any{}
-	case map[string]any:
-		return map[string]any{}
-	default:
-		return nil
 	}
 }
 
@@ -2373,7 +2358,11 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 			for _, propName := range properties {
 				column := sanitizeColumnName(name + "_" + propName)
 				if schemaCredentialField(propName, s.Properties[propName]) || credential.SensitiveName(name+"."+propName) {
-					pairs = append(pairs, queryTemplatePair{key: name + "[" + propName + "]", value: openAPICredentialReference(name, propName)})
+					value := openAPICredentialReference(name, propName)
+					if authored, ok := authoredSchemaWireValue(s.Properties[propName]); ok {
+						value = url.QueryEscape(authored)
+					}
+					pairs = append(pairs, queryTemplatePair{key: name + "[" + propName + "]", value: value})
 					continue
 				}
 				columns.add(column, s.Properties[propName])
@@ -2385,7 +2374,11 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 				for _, propName := range properties {
 					column := sanitizeColumnName(name + "_" + propName)
 					if schemaCredentialField(propName, s.Properties[propName]) || credential.SensitiveName(name+"."+propName) {
-						pairs = append(pairs, queryTemplatePair{key: propName, value: openAPICredentialReference(name, propName)})
+						value := openAPICredentialReference(name, propName)
+						if authored, ok := authoredSchemaWireValue(s.Properties[propName]); ok {
+							value = url.QueryEscape(authored)
+						}
+						pairs = append(pairs, queryTemplatePair{key: propName, value: value})
 						continue
 					}
 					columns.add(column, s.Properties[propName])
@@ -2397,7 +2390,11 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 			for _, propName := range properties {
 				column := sanitizeColumnName(name + "_" + propName)
 				if schemaCredentialField(propName, s.Properties[propName]) || credential.SensitiveName(name+"."+propName) {
-					parts = append(parts, propName, openAPICredentialReference(name, propName))
+					value := openAPICredentialReference(name, propName)
+					if authored, ok := authoredSchemaWireValue(s.Properties[propName]); ok {
+						value = url.QueryEscape(authored)
+					}
+					parts = append(parts, propName, value)
 					continue
 				}
 				columns.add(column, s.Properties[propName])
@@ -2531,20 +2528,56 @@ func parameterSchema(param parameter) schema {
 func openAPIParameterTemplate(param parameter) (string, bool) {
 	name := strings.TrimSpace(param.Name)
 	if schemaCredentialField(name, parameterSchema(param)) {
-		switch strings.ToLower(strings.TrimSpace(param.In)) {
-		case "header", "query":
-			if value, ok := authoredParameterValue(param); ok {
-				if literal, ok := value.(string); ok {
-					// This literal exists only in the effective request. The
-					// source-neutral projector externalizes it before the DSL
-					// action is returned.
-					return literal, true
+		if value, ok := authoredParameterValue(param); ok {
+			if literal, ok := authoredWireValue(value); ok {
+				switch strings.ToLower(strings.TrimSpace(param.In)) {
+				case "path":
+					literal = url.PathEscape(literal)
+				case "query":
+					literal = url.QueryEscape(literal)
 				}
+				// This literal exists only in the effective request. The shared
+				// Preserve-mode projector marks it for review while retaining
+				// it in the durable destination.
+				return literal, true
 			}
 		}
 		return openAPICredentialReference(name), true
 	}
 	return "{{data.openapi." + sanitizeColumnName(name) + "}}", false
+}
+
+func authoredSchemaValue(current schema) (any, bool) {
+	switch {
+	case current.Example != nil:
+		return current.Example, true
+	case current.Default != nil:
+		return current.Default, true
+	case len(current.Enum) > 0:
+		return current.Enum[0], true
+	default:
+		return nil, false
+	}
+}
+
+func authoredSchemaWireValue(current schema) (string, bool) {
+	value, ok := authoredSchemaValue(current)
+	if !ok {
+		return "", false
+	}
+	return authoredWireValue(value)
+}
+
+func authoredWireValue(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case bool, float32, float64, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, json.Number:
+		return fmt.Sprint(typed), true
+	default:
+		return "", false
+	}
 }
 
 func authoredParameterValue(param parameter) (any, bool) {
@@ -2705,6 +2738,10 @@ func selectOpenAPISecurityAlternative(requirements []map[string][]string, scheme
 				}
 			case "oauth2", "openidconnect":
 				authSchemes++
+			case "basic":
+				// Swagger 2.0 represents HTTP Basic as type: basic rather than
+				// the OpenAPI 3 type: http / scheme: basic pair.
+				authSchemes++
 			case "apikey":
 				in := strings.ToLower(strings.TrimSpace(scheme.In))
 				if scheme.Name == "" || (in != "header" && in != "query" && in != "cookie") {
@@ -2750,6 +2787,12 @@ func applyOpenAPISecurityScheme(action *dsl.Action, name string, scopes []string
 				Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}",
 				Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}",
 			}
+		}
+	case "basic":
+		action.Auth = &dsl.AuthConfig{
+			Type:     "basic",
+			Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}",
+			Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}",
 		}
 	case "apikey":
 		secret := "{{secret." + openAPISecretName(name, "API_KEY") + "}}"
