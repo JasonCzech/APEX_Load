@@ -1878,6 +1878,56 @@ describe('ProtocolAssetImport', () => {
     }))
   })
 
+  it('saves imports into the folder the authoring surface is showing', async () => {
+    // Before this was wired, every ProtocolAssetImport mount dropped folderId
+    // even though the authoring surface already passed it to ScriptEditor and
+    // EnterpriseArchiveImport. Imports silently landed at the project root, and
+    // the AsyncAPI commit sent no folder field at all.
+    apiMock.commitAsyncAPIImport.mockResolvedValue({
+      stored_script: {
+        id: 'script-asyncapi-kafka',
+        name: 'Orders Kafka',
+        protocol: 'kafka',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: { name: 'Orders Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' }, actions: [] },
+      },
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="asyncapi" projectId="project-1" folderId="folder-9" />)
+    })
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) return
+    const file = new File(['asyncapi: 3.0.0'], 'orders.asyncapi.yaml', { type: 'application/yaml' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const saveAll = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save All 2 Scripts'))
+    expect(saveAll).toBeDefined()
+    if (!saveAll) return
+    await act(async () => {
+      saveAll.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      folder_id: 'folder-9',
+    }))
+  })
+
   it('keeps AsyncAPI Save All disabled until deferred parameterization finishes', async () => {
     const firstScript = {
       name: 'Deferred Kafka', version: '1.0.0', protocol: 'kafka', config: { base_url: '' },
@@ -2489,7 +2539,7 @@ describe('ProtocolAssetImport', () => {
           }),
         }),
       }),
-    }), 'project-1')
+    }), 'project-1', null)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ id: 'script-saved' })],
     }))
@@ -2792,7 +2842,7 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({ auth: { token: '{{secret.RECORDER_TOKEN}}' } }),
       actions: [expect.objectContaining({ selector: 'role=button[name="Sign in"]' })],
-    }), 'project-1')
+    }), 'project-1', null)
   })
 
   it('opens the repaired canonical recorder draft in the editor when no credentials are pending', async () => {

@@ -259,7 +259,7 @@ describe('SampleScriptImport', () => {
         base_url: 'https://api.example.com',
         pacing: { type: 'fixed_delay', delay_ms: 2500 },
       }),
-    }), undefined)
+    }), undefined, null)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({
         id: 'script-1',
@@ -340,7 +340,7 @@ describe('SampleScriptImport', () => {
       actions: [expect.objectContaining({
         headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
       })],
-    }), undefined)
+    }), undefined, null)
   })
 
   it('keeps a newer conversion when an older credential application resolves late', async () => {
@@ -406,7 +406,7 @@ describe('SampleScriptImport', () => {
           auth: expect.objectContaining({ password: '{{secret.SAMPLE_LOGIN_PASSWORD}}' }),
         }),
       }),
-    }), undefined)
+    }), undefined, null)
     expect(JSON.stringify(apiMock.createScript.mock.calls[0]?.[0])).not.toContain('"password":"SAMPLE_LOGIN_PASSWORD"')
   })
 
@@ -631,7 +631,7 @@ describe('SampleScriptImport', () => {
           body_encoding: 'base64',
         }),
       }),
-    }), undefined)
+    }), undefined, null)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({
         protocol: 'java_http',
@@ -691,7 +691,7 @@ describe('SampleScriptImport', () => {
       config: expect.objectContaining({
         java_http: expect.objectContaining({ codec: 'java_serialized_object_base64' }),
       }),
-    }), undefined)
+    }), undefined, null)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ protocol: 'java_http' })],
     }))
