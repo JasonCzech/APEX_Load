@@ -33,6 +33,11 @@ interface Props {
   initialFile?: File | null
   initialMode?: string | null
   projectId?: string
+  // folderId is the destination folder for scripts saved from this import,
+  // matching EnterpriseArchiveImport and ScriptEditor. A script that already
+  // carries its own folder_id keeps it; this only supplies a default for the
+  // common case of importing while a folder is open.
+  folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
@@ -579,7 +584,7 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
 
 const endpointTotal = salesforceEndpointTotal
 
-export default function ProtocolAssetImport({ kind, initialFile, initialMode, projectId, onImported, onEdit, onClose }: Props) {
+export default function ProtocolAssetImport({ kind, initialFile, initialMode, projectId, folderId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const convertTask = useAsyncTask<ProtocolImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
@@ -1246,7 +1251,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               : undefined,
             project_id: sourceProjectId,
             name: currentReviewedScript.name,
-            folder_id: currentReviewedScript.folder_id ?? null,
+            folder_id: currentReviewedScript.folder_id ?? folderId ?? null,
             mode: openAPISaveMode,
             target_script_id: openAPISaveMode === 'replace' ? openAPIReplaceScriptId : undefined,
             replace_mode: openAPISaveMode === 'replace' ? openAPIReplaceMode : undefined,
@@ -1280,7 +1285,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               : undefined,
             project_id: sourceProjectId,
             name: currentReviewedScript.name,
-            folder_id: currentReviewedScript.folder_id ?? null,
+            folder_id: currentReviewedScript.folder_id ?? folderId ?? null,
             mode: postmanSaveMode,
             target_script_id: postmanSaveMode === 'replace' ? postmanReplaceScriptId : undefined,
           }
@@ -1294,7 +1299,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       }
       if (kind === 'asyncapi') {
         const savedScript = await saveTask.run(async () => {
-          const response = await api.commitAsyncAPIImport({ script: currentReviewedScript, mode: 'create' })
+          const response = await api.commitAsyncAPIImport({
+            script: currentReviewedScript,
+            mode: 'create',
+            folder_id: currentReviewedScript.folder_id ?? folderId ?? null,
+          })
           const storedScript = response.stored_script || response.scripts?.[0]
           if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
           return storedScript
@@ -1302,7 +1311,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
         return
       }
-      const savedScript = await saveTask.run(async () => api.createScript(scriptToSave, sourceProjectId))
+      const savedScript = await saveTask.run(async () => api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null))
       if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
@@ -1369,7 +1378,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!requestIsCurrent() || latestResultRef.current !== sourceResult) {
             throw new Error('The import result changed while scripts were being saved. Review the current draft and try again.')
           }
-          const response = await api.commitAsyncAPIImport({ script, mode: 'create' })
+          const response = await api.commitAsyncAPIImport({
+            script,
+            mode: 'create',
+            folder_id: script.folder_id ?? folderId ?? null,
+          })
           const storedScript = response.stored_script || response.scripts?.[0]
           if (!storedScript) throw new Error('AsyncAPI import commit did not return a stored script')
           savedScripts.push(withFallbackPersistedScript(storedScript, script))

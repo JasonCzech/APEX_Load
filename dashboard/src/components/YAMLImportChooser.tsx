@@ -8,12 +8,13 @@ import ProtocolAssetImport from './ProtocolAssetImport'
 interface Props {
   initialFiles?: File[] | null
   projectId?: string
+  folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
 }
 
-export default function YAMLImportChooser({ initialFiles, projectId, onImported, onEdit, onClose }: Props) {
+export default function YAMLImportChooser({ initialFiles, projectId, folderId, onImported, onEdit, onClose }: Props) {
   const [selection, setSelection] = useState<{
     source: File[] | null | undefined
     choice: 'bruno' | 'openapi' | null
@@ -29,7 +30,7 @@ export default function YAMLImportChooser({ initialFiles, projectId, onImported,
     return <BrunoImport initialFiles={initialFiles} projectId={projectId} onImported={onImported} onClose={() => setChoice(null)} />
   }
   if (choice === 'openapi') {
-    return <ProtocolAssetImport kind="openapi" initialFile={initialFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEdit} onClose={() => setChoice(null)} />
+    return <ProtocolAssetImport kind="openapi" initialFile={initialFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEdit} onClose={() => setChoice(null)} />
   }
   return (
     <div className="bruno-import">

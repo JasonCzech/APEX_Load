@@ -158,16 +158,16 @@ function ScriptsAuthoringContent({
       )
     case 'sample':
       return renderCreateOptionsSurface(
-        <SampleScriptImport initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <SampleScriptImport initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'protocol-import':
       if (importLauncher === 'yaml_chooser') {
         return renderCreateOptionsSurface(
-          <YAMLImportChooser initialFiles={importFiles || undefined} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+          <YAMLImportChooser initialFiles={importFiles || undefined} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         )
       }
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'oracle-review':
       return renderCreateOptionsSurface(
@@ -175,35 +175,35 @@ function ScriptsAuthoringContent({
       )
     case 'devweb-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="devweb" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="devweb" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'har-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="har" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="har" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'recorder-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="recorder-export" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="recorder-export" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'openapi-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="openapi" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="openapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'raml-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="raml" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="raml" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'postman-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="postman" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="postman" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'wsdl-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="wsdl" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="wsdl" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'asyncapi-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="asyncapi" initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="asyncapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     default:
       return null

@@ -68,6 +68,8 @@ type AssetUploadState = Record<string, { pending?: boolean; error?: string; file
 interface Props {
   initialFiles?: File[] | null
   projectId?: string
+  // Destination folder for saved scripts; see ProtocolAssetImport.
+  folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   onClose?: () => void
@@ -410,7 +412,7 @@ function inferSampleFormatFromFile(file: File | undefined, fallback: SampleForma
   return fallback
 }
 
-export default function SampleScriptImport({ initialFiles, projectId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
+export default function SampleScriptImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose, preset: initialPreset = 'default' }: Props) {
   const api = useApi()
   const primaryFileRef = useRef<HTMLInputElement>(null)
   const secondaryFileRef = useRef<HTMLInputElement>(null)
@@ -813,7 +815,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     setMessageError('')
     try {
       const savedScript = await saveTask.run(async () => {
-        return api.createScript(scriptToSave, sourceProjectId)
+        return api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null)
       })
       if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
