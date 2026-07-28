@@ -479,8 +479,12 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	var candidateClaim *importsession.Claim
 	var candidateLease *importCandidateClaimLease
 	var candidateRequirements []credentialpolicy.Requirement
+	// candidateSource is unredacted uploaded source. It is zeroed on every exit
+	// path, including the error ones, so it does not outlive the request.
+	var candidateSource []byte
 	defer func() {
 		clearCredentialRequirementValues(candidateRequirements)
+		clear(candidateSource)
 		if candidateClaim != nil {
 			s.releaseImportCandidateClaim(candidateClaim)
 		}
@@ -520,6 +524,8 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 		candidate := protectedCandidate.Script
 		candidateRequirements = protectedCandidate.CredentialRequirements
 		protectedCandidate.CredentialRequirements = nil
+		candidateSource = protectedCandidate.RawSource
+		protectedCandidate.RawSource = nil
 		candidateClaim = claim
 		candidateLease = s.startImportCandidateClaimLease(claim)
 		defer candidateLease.stop()
@@ -585,6 +591,11 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 			return
 		}
 		if candidateClaim != nil {
+			// Retain before completing the claim. Completion releases the session
+			// object that holds the only copy of the raw source, so the order here
+			// is what makes retention possible at all rather than a preference.
+			_, actor, _ := s.resolveAuditActor(r)
+			s.retainProtectedImportSource(r.Context(), stored.Script, spec.sourceProfile, candidateSource, actor)
 			candidateLease.stop()
 			if err := s.completeImportCandidateClaim(r.Context(), candidateClaim); err != nil {
 				slog.Error("failed to finalize committed import session", "source", spec.sourceProfile, "session_id", req.ImportSessionID, "error", err)

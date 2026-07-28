@@ -20,7 +20,7 @@ import (
 const (
 	importCandidateSessionTTL      = 30 * time.Minute
 	importCandidateSessionMaxBytes = importsession.MaxPayloadBytes
-	importCandidateSessionVersion  = 1
+	importCandidateSessionVersion  = 2
 	importCandidateClaimRenewEvery = 10 * time.Second
 )
 
@@ -30,8 +30,30 @@ type importCandidateEnvelope struct {
 	ProjectID              string                                 `json:"project_id"`
 	Script                 dsl.Script                             `json:"script"`
 	CredentialRequirements []importCandidateCredentialRequirement `json:"credential_requirements,omitempty"`
-	CreatedAt              time.Time                              `json:"created_at"`
-	ExpiresAt              time.Time                              `json:"expires_at"`
+	// RawSource is the unmodified uploaded document, retained so a committed
+	// script can be traced back to what was actually imported.
+	//
+	// It is carried here rather than written as an artifact at inspect time
+	// because most inspections are never committed: writing then would leave an
+	// orphaned encrypted object for every abandoned import. The session object is
+	// already encrypted at rest and already expires on its own, so deferring the
+	// artifact write to commit means abandonment cleans up for free.
+	//
+	// This is unredacted source and must be treated as credential material: it is
+	// cleared after use, never logged, and never returned in a response. A v1
+	// payload has no such field and decodes with RawSource empty, which disables
+	// retention for that session -- the safe direction during an upgrade.
+	RawSource       []byte    `json:"raw_source,omitempty"`
+	RawSourceFormat string    `json:"raw_source_format,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	ExpiresAt       time.Time `json:"expires_at"`
+}
+
+// importCandidateSource is the uploaded document a caller wants retained.
+// A zero value disables retention for that import.
+type importCandidateSource struct {
+	Bytes  []byte
+	Format string
 }
 
 // importCandidateCredentialRequirement is intentionally scoped to the
@@ -45,6 +67,11 @@ type importCandidateCredentialRequirement struct {
 type protectedImportCandidate struct {
 	Script                 *dsl.Script
 	CredentialRequirements []credentialpolicy.Requirement
+	// RawSource is unredacted uploaded source. Treat it like a credential:
+	// clearProtectedImportCandidate zeroes it, and it must never reach a
+	// response body or a log line.
+	RawSource       []byte
+	RawSourceFormat string
 }
 
 func (s *Server) protectedImportSessionManager() (*importsession.Manager, error) {
@@ -69,7 +96,7 @@ func (s *Server) protectedImportSessionManager() (*importsession.Manager, error)
 }
 
 func (s *Server) registerImportCandidateSession(r *http.Request, profile string, script *dsl.Script) (string, time.Time, error) {
-	return s.registerImportCandidateSessionWithRequirements(r, profile, script, nil)
+	return s.registerImportCandidateSessionWithRequirements(r, profile, script, nil, importCandidateSource{})
 }
 
 func (s *Server) registerImportCandidateSessionWithRequirements(
@@ -77,6 +104,7 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 	profile string,
 	script *dsl.Script,
 	requirements []credentialpolicy.Requirement,
+	source importCandidateSource,
 ) (string, time.Time, error) {
 	if r == nil || script == nil {
 		return "", time.Time{}, errors.New("protected import candidate is required")
@@ -108,6 +136,10 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 		Script:    *script,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
+	}
+	if len(source.Bytes) > 0 {
+		envelope.RawSource = source.Bytes
+		envelope.RawSourceFormat = strings.ToLower(strings.TrimSpace(source.Format))
 	}
 	payload, err := marshalImportCandidateEnvelope(envelope, requirements)
 	if err != nil {
@@ -183,7 +215,11 @@ func (s *Server) claimProtectedImportCandidateSession(
 		_ = manager.Release(claimed.Claim)
 		return nil, nil, errors.New("protected import candidate is invalid")
 	}
-	if envelope.Version != importCandidateSessionVersion ||
+	// Accept every version this build understands, not just the current one. A
+	// session is claimed by whichever binary is running when the user finishes
+	// reviewing, so pinning to the newest version would fail every import that
+	// was still open across a deploy. v1 simply carries no retained source.
+	if !supportedImportCandidateSessionVersion(envelope.Version) ||
 		!strings.EqualFold(strings.TrimSpace(envelope.Profile), profile) ||
 		normalizeProjectID(envelope.ProjectID) != projectID {
 		clearCredentialRequirementValues(requirements)
@@ -198,10 +234,24 @@ func (s *Server) claimProtectedImportCandidateSession(
 		return nil, nil, importsession.ErrSessionExpired
 	}
 	script := envelope.Script
+	// claimed.Payload is cleared by the deferred clear above, and RawSource
+	// aliases into it after json.Unmarshal, so the bytes must be copied out
+	// before that fires or the caller would see a zeroed buffer.
+	rawSource := append([]byte(nil), envelope.RawSource...)
+	clear(envelope.RawSource)
 	return &protectedImportCandidate{
 		Script:                 &script,
 		CredentialRequirements: requirements,
+		RawSource:              rawSource,
+		RawSourceFormat:        envelope.RawSourceFormat,
 	}, &claimed.Claim, nil
+}
+
+// supportedImportCandidateSessionVersion reports whether this build can decode a
+// stored candidate envelope. Versions are additive: v2 added retained raw
+// source, so a v1 payload is still valid and simply retains nothing.
+func supportedImportCandidateSessionVersion(version int) bool {
+	return version >= 1 && version <= importCandidateSessionVersion
 }
 
 func marshalImportCandidateEnvelope(
@@ -285,6 +335,8 @@ func clearProtectedImportCandidate(candidate *protectedImportCandidate) {
 	}
 	clearCredentialRequirementValues(candidate.CredentialRequirements)
 	candidate.CredentialRequirements = nil
+	clear(candidate.RawSource)
+	candidate.RawSource = nil
 }
 
 func (s *Server) releaseImportCandidateClaim(claim *importsession.Claim) {
