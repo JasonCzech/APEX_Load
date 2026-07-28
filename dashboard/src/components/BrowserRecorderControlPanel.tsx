@@ -131,6 +131,12 @@ export interface BrowserRecorderControlPanelProps {
   sessionId: string
   /** Rendered as its own chrome-less page (popup window route). */
   standalone?: boolean
+  /**
+   * Destination folder for saved recordings. Absent in standalone mode, which
+   * is a popup route with no surrounding folder context, so those saves keep
+   * landing at the project root.
+   */
+  folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition) => void
   /** Docked mode: remove the panel from the studio after the user is done. */
@@ -140,6 +146,7 @@ export interface BrowserRecorderControlPanelProps {
 export default function BrowserRecorderControlPanel({
   sessionId,
   standalone = false,
+  folderId,
   onImported,
   onEdit,
   onDismiss,
@@ -633,7 +640,7 @@ export default function BrowserRecorderControlPanel({
     const created: StoredScript[] = []
     try {
       for (const script of scripts) {
-        const stored = await api.createScript(script, session?.project_id)
+        const stored = await api.createScript(script, session?.project_id, script.folder_id ?? folderId ?? null)
         created.push(stored)
       }
     } catch (error: unknown) {

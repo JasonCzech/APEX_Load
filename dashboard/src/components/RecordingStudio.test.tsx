@@ -1076,7 +1076,7 @@ describe("RecordingStudio", () => {
         }),
       }),
       undefined,
-      undefined,
+      null,
       "rec-1",
     );
     expect(container.textContent).toContain(
@@ -1213,7 +1213,7 @@ describe("RecordingStudio", () => {
         ],
       }),
       undefined,
-      undefined,
+      null,
       "rec-1",
     );
   });
@@ -1329,7 +1329,7 @@ describe("RecordingStudio", () => {
         ],
       }),
       "proj-1",
-      undefined,
+      null,
       "rec-1",
     );
     expect(onImported).toHaveBeenCalled();
@@ -1554,7 +1554,7 @@ describe("RecordingStudio", () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Unsaved Preview", protocol: "http" }),
       undefined,
-      undefined,
+      null,
       "rec-1",
     );
     expect(onImported).toHaveBeenCalledWith(
@@ -1978,6 +1978,7 @@ describe("RecordingStudio", () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Salesforce Capture HTTP" }),
       undefined,
+      null,
     );
     await act(async () => {
       resolveSave?.({

@@ -1,9 +1,10 @@
-import { lazy, type ReactNode } from 'react'
+import { lazy, useState, type ReactNode } from 'react'
 import { type ScriptDefinition } from '../types/scripts'
 import { Project, type StoredScript } from '../types'
 import { type ImportKind } from './ProtocolAssetImport'
 import { type AuthoringReturnTarget, type DraftEditorFocus, type ImportedSaveResult, type ScriptsAuthoringSubView } from './useScriptsAuthoringState'
 import LazyLoadBoundary from './LazyLoadBoundary'
+import ImportDestinationFolder from './ImportDestinationFolder'
 
 const ScriptEditor = lazy(() => import('./ScriptEditor'))
 const EnterpriseArchiveImport = lazy(() => import('./EnterpriseArchiveImport'))
@@ -42,12 +43,14 @@ export interface ScriptsAuthoringSurfaceProps {
   onReturnToDraftSource: () => void
 }
 
-function renderCreateOptionsSurface(
+function createOptionsSurface(
   content: ReactNode,
-  hidden = false,
+  hidden: boolean,
+  destination: ReactNode,
 ) {
   return (
     <div className="page" hidden={hidden}>
+      {destination}
       {content}
     </div>
   )
@@ -104,6 +107,24 @@ function ScriptsAuthoringContent({
   onEditDraft,
   onReturnToDraftSource,
 }: ScriptsAuthoringSurfaceProps) {
+  // Nothing supplies the folderId prop today: ScriptsAuthoringShell, the only
+  // caller, does not pass one, and FolderTree is mounted nowhere. Every import
+  // and recorder surface already accepted a destination folder, so the plumbing
+  // existed while silently always resolving to the project root. This state, fed
+  // by the control below, is what makes that plumbing do anything. The prop is
+  // kept as the initial value so a caller can seed it later.
+  const [destinationFolderId, setDestinationFolderId] = useState(folderId ?? '')
+  const destinationFolderControl = (
+    <ImportDestinationFolder
+      projectId={projectId}
+      value={destinationFolderId}
+      onChange={setDestinationFolderId}
+    />
+  )
+  // Empty string is "project root"; the save APIs expect null rather than "".
+  const destinationFolderValue = destinationFolderId || null
+  const renderCreateOptionsSurface = (content: ReactNode, hidden = false) =>
+    createOptionsSurface(content, hidden, destinationFolderControl)
   const enterpriseArchiveEditReturnTarget: AuthoringReturnTarget = {
     subView: 'import',
     label: 'Back to Converted Script',
@@ -113,7 +134,7 @@ function ScriptsAuthoringContent({
     onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
   }
   const renderEnterpriseArchiveImportSurface = (hidden = false) => renderCreateOptionsSurface(
-    <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} />,
+    <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} />,
     hidden,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
@@ -130,14 +151,14 @@ function ScriptsAuthoringContent({
                 {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
               </div>
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={folderId} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={closeCreateEditor} />
             </div>
           </div>
         )
       }
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={folderId} onSave={onSaved} onClose={closeCreateEditor} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} folderId={folderId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} folderId={destinationFolderValue} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">
@@ -154,20 +175,20 @@ function ScriptsAuthoringContent({
       )
     case 'recorder':
       return renderCreateOptionsSurface(
-        <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <RecordingStudio activeProject={activeProject} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'sample':
       return renderCreateOptionsSurface(
-        <SampleScriptImport initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <SampleScriptImport initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'protocol-import':
       if (importLauncher === 'yaml_chooser') {
         return renderCreateOptionsSurface(
-          <YAMLImportChooser initialFiles={importFiles || undefined} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+          <YAMLImportChooser initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
         )
       }
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'oracle-review':
       return renderCreateOptionsSurface(
@@ -175,35 +196,35 @@ function ScriptsAuthoringContent({
       )
     case 'devweb-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="devweb" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="devweb" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'har-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="har" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="har" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'recorder-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="recorder-export" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="recorder-export" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'openapi-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="openapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="openapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'raml-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="raml" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="raml" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'postman-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="postman" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="postman" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'wsdl-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="wsdl" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="wsdl" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'asyncapi-import':
       return renderCreateOptionsSurface(
-        <ProtocolAssetImport kind="asyncapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <ProtocolAssetImport kind="asyncapi" initialFile={importFiles?.[0] || null} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     default:
       return null
