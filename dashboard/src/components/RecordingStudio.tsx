@@ -550,6 +550,9 @@ function openBrowserRecorderPanelPopup(panelURL: string): void {
 
 interface RecordingStudioProps {
   activeProject?: Project | null;
+  // Destination folder for saved recordings, matching the import surfaces. A
+  // recording started while a folder is open belongs in that folder.
+  folderId?: string | null;
   onImported?: (result: ImportedSaveResult) => void;
   onEdit?: (script: ScriptDefinition) => void;
   onClose?: () => void;
@@ -557,6 +560,7 @@ interface RecordingStudioProps {
 
 export default function RecordingStudio({
   activeProject,
+  folderId,
   onImported,
   onEdit,
   onClose,
@@ -1883,7 +1887,7 @@ export default function RecordingStudio({
       const savedScript = await api.createScript(
         script,
         sourceProjectId,
-        undefined,
+        script.folder_id ?? folderId ?? null,
         sourceRecordingSessionId,
       );
       if (!requestIsCurrent()) return;
@@ -1995,7 +1999,11 @@ export default function RecordingStudio({
       // The Salesforce-analyzed draft is not a verbatim conversion of the
       // recording, so it can never pass the server's provenance attestation —
       // save it without claiming the recording session as its source.
-      const savedScript = await api.createScript(script, sourceProjectId);
+      const savedScript = await api.createScript(
+        script,
+        sourceProjectId,
+        script.folder_id ?? folderId ?? null,
+      );
       if (!requestIsCurrent()) return;
       showFeedback(
         `Salesforce HTTP script "${script.name}" saved to the script library`,
@@ -2562,6 +2570,7 @@ export default function RecordingStudio({
           {browserPanelSessionId && (
             <BrowserRecorderControlPanel
               sessionId={browserPanelSessionId}
+              folderId={folderId}
               onImported={onImported}
               onEdit={onEdit}
               onDismiss={() => {

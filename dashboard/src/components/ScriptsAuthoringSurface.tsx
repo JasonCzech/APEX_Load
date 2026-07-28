@@ -154,7 +154,7 @@ function ScriptsAuthoringContent({
       )
     case 'recorder':
       return renderCreateOptionsSurface(
-        <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        <RecordingStudio activeProject={activeProject} folderId={folderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'sample':
       return renderCreateOptionsSurface(
