@@ -161,6 +161,13 @@ export default function BrowserRecorderControlPanel({
   onDismiss,
 }: BrowserRecorderControlPanelProps) {
   const api = useApi()
+  const panelActiveRef = useRef(true)
+  useEffect(() => {
+    panelActiveRef.current = true
+    return () => {
+      panelActiveRef.current = false
+    }
+  }, [])
   const [loadedSession, setSession] = useState<BrowserRecorderSession | null>(null)
   const session = loadedSession?.id === sessionId ? loadedSession : null
   const [loadError, setLoadError] = useState('')
@@ -231,7 +238,7 @@ export default function BrowserRecorderControlPanel({
     }
   }
   const renderedSessionScope = sessionScopeRef.current
-  const isCurrentSession = () => sessionScopeRef.current === renderedSessionScope
+  const isCurrentSession = () => panelActiveRef.current && sessionScopeRef.current === renderedSessionScope
 
   const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
     setFeedback(msg)
@@ -784,6 +791,14 @@ export default function BrowserRecorderControlPanel({
         : 'an unexpected error occurred'
 
       if (cleanupFailures.length > 0) {
+        const retainedScripts = cleanupFailures.map(stored => {
+          const createdIndex = created.indexOf(stored)
+          return withFallbackPersistedScript(stored, scripts[createdIndex])
+        })
+        onImported?.({
+          scripts: retainedScripts,
+          stayInImportReview: true,
+        })
         const remaining = cleanupFailures.map(stored => `“${stored.name}”`).join(', ')
         throw new Error(
           `Could not save all scripts: ${saveError}. Automatic cleanup failed for ${remaining}; delete ${cleanupFailures.length === 1 ? 'it' : 'them'} from the Script Library before retrying.`,
@@ -902,6 +917,7 @@ export default function BrowserRecorderControlPanel({
         }
         if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
         persisted = await saveScriptsWithRollback(remoteScripts, () => {
+          if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
           if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
         })
       } else {
@@ -918,7 +934,7 @@ export default function BrowserRecorderControlPanel({
         // Persistence already succeeded. Publish the durable result to the
         // captured owner callback so a late panel/session transition cannot
         // leave newly created scripts untracked.
-        onImported?.({ scripts: persisted })
+        onImported?.({ scripts: persisted, stayInImportReview: true })
         return
       }
       setSavedScript(persisted[0])
@@ -1300,6 +1316,7 @@ export default function BrowserRecorderControlPanel({
       if (!isCurrentSession()) return
       if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       const persisted = await saveScriptsWithRollback(scripts, () => {
+        if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
         if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       })
       void discardSourceSecretSession(
@@ -1309,7 +1326,7 @@ export default function BrowserRecorderControlPanel({
         // The durable save succeeded. Unmount/dismiss cleanup will retry.
       })
       if (!isCurrentSession()) {
-        onImported?.({ scripts: persisted })
+        onImported?.({ scripts: persisted, stayInImportReview: true })
         return
       }
       setSavedScript(persisted[0])
@@ -1431,6 +1448,9 @@ export default function BrowserRecorderControlPanel({
         {onDismiss && !live && (
           <button type="button" className="rec-inline-action" disabled={busy} onClick={() => {
             if (busy) return
+            panelActiveRef.current = false
+            previewReviewGenerationRef.current += 1
+            salesforceReviewGenerationRef.current += 1
             void previewCredentialReviewRef.current?.discardSourceSession()
             void salesforceCredentialReviewRef.current?.discardSourceSession()
             onDismiss()

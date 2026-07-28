@@ -149,7 +149,11 @@ func preparePersistentLibraryScriptWithImportTrust(
 		// omit or mask it, but cannot erase the attestation while executable
 		// imported values are being reconciled from the durable prior.
 		ensureCredentialPreservingImportMetadata(preserved, sourceProfile)
-		if err := reconcileMaskedScriptSecrets(preserved, prior); err != nil {
+		if err := reconcileMaskedScriptSecretsWithTrust(
+			preserved,
+			prior,
+			trustedImport,
+		); err != nil {
 			return nil, err
 		}
 		if !trustedImport && prior != nil {

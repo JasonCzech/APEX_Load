@@ -1,0 +1,70 @@
+package openapi
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestConvertRedactsCredentialEquivalentsFromReviewSurfacesOnly(t *testing.T) {
+	const canary = "openapi-review-surface-password-8f31"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{
+    "title":"` + canary + `",
+    "version":"` + canary + `"
+  },
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{
+    "/accounts":{
+      "post":{
+        "operationId":"` + canary + `",
+        "requestBody":{
+          "content":{
+            "application/json":{
+              "example":{"password":"` + canary + `"}
+            }
+          }
+        },
+        "responses":{"204":{"description":"ok"}}
+      }
+    }
+  }
+}`})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Script == nil || len(result.Script.Actions) != 1 {
+		t.Fatalf("script = %#v, want one executable action", result.Script)
+	}
+	action := result.Script.Actions[0]
+	if action.Name != sanitizeName(canary) || !strings.Contains(action.Body, canary) {
+		t.Fatalf(
+			"executable action changed while projecting review text: name=%q body=%q",
+			action.Name,
+			action.Body,
+		)
+	}
+
+	payload, err := json.Marshal(struct {
+		Warnings     []string
+		Unsupported  any
+		Correlations any
+		Stats        ConvertStats
+		Summary      ReviewSummary
+		SourceReview any
+	}{
+		Warnings:     result.Warnings,
+		Unsupported:  result.Unsupported,
+		Correlations: result.Correlations,
+		Stats:        result.Stats,
+		Summary:      result.Summary,
+		SourceReview: result.SourceReview,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal review surfaces: %v", err)
+	}
+	if strings.Contains(string(payload), canary) {
+		t.Fatalf("review surfaces disclosed retained credential: %s", payload)
+	}
+}

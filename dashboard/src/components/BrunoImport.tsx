@@ -659,12 +659,23 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           secret_bindings: secretBindingsRef.current,
           conflict_resolutions: conflictResolutions,
         })
-      if (!requestIsCurrent()) return
       const importedScripts = outputMode === 'native_requests'
         ? validatedNativeCommitScripts(response, selectedNativeCandidates)
         : null
       if (outputMode === 'canonical' && !isCanonicalCommitResponse(response)) {
         throw new Error('Canonical Bruno commit response is missing its script and revision.')
+      }
+      if (!requestIsCurrent()) {
+        // The commit endpoint is the durable boundary. Back/project changes
+        // must prevent navigation, but cannot make the confirmed batch or
+        // canonical script disappear from the library until a manual refresh.
+        onImported?.({
+          scripts: importedScripts || (isCanonicalCommitResponse(response)
+            ? [storedScriptFromDefinition(response.script)]
+            : []),
+          stayInImportReview: true,
+        })
+        return
       }
       setMigrateSecrets(false)
       setPreparedSecrets(null)

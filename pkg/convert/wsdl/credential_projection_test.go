@@ -83,6 +83,12 @@ func TestConvertWSDLPreservesSensitiveSchemaLiteralsAndEnvelopeBytes(t *testing.
 	if blocker := action.Metadata["execution_blocker"]; blocker != nil {
 		t.Fatalf("informational credential preservation finding blocked execution: %#v", action.Metadata)
 	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil ||
+		result.Script.Metadata.Import.Source != "wsdl" ||
+		result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] !=
+			dsl.ImportPreservedCredentialPolicyPreserve {
+		t.Fatalf("WSDL script has no import credential-preservation marker: %#v", result.Script.Metadata)
+	}
 	rawTargets, err := json.Marshal(
 		action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey],
 	)

@@ -495,6 +495,7 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   block_non_applicable: false,
 }
 const EMPTY_REPLAY_VALIDATION_WARNINGS: string[] = []
+const EMPTY_SUPPLEMENTAL_FILES: File[] = []
 
 interface BrowserReplayEvidenceSummary {
   events: number
@@ -751,6 +752,15 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
   }) || null
 }
 
+const validationReviewTabs = [
+  { id: 'overview', label: 'Conversion Complete' },
+  { id: 'preserved', label: 'Preserved Source Settings' },
+  { id: 'dsl', label: 'DSL Preview' },
+  { id: 'source', label: 'Source Mapping' },
+] as const
+
+type ValidationReviewTab = typeof validationReviewTabs[number]['id']
+
 export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const apiRef = useRef(api)
@@ -791,12 +801,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const runtimeCoverageCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
   const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
+  const [validationReviewTab, setValidationReviewTab] = useState<ValidationReviewTab>('overview')
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
   type ImportSaveScope = {
     itemId: string
     generation: number
+    operationGeneration: number
     scriptIndex: number
     projectId: string | undefined
     optionsIdentity: string
@@ -887,8 +899,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     }
     return Promise.all(discards).then(() => undefined)
   }, [discardSourceSecretSession, sourceSecretSessionKey])
-  const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
-    void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
+  const fenceOperationScopes = useCallback((itemIds?: readonly string[]) => {
     operationGenerationRef.current += 1
     const ids = itemIds || importItemsRef.current.map(item => item.id)
     ids.forEach(id => {
@@ -904,15 +915,24 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     if (invalidatesActiveReviewArtifactSave) {
       reviewArtifactSaveInFlightRef.current = null
     }
+    return invalidatesActiveReviewArtifactSave
+  }, [])
+  const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
+    void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
+    const invalidatesActiveReviewArtifactSave = fenceOperationScopes(itemIds)
     setWorkingMode(null)
     setScriptSaveInProgress(false)
     if (invalidatesActiveReviewArtifactSave) {
       setReviewArtifactSaving(false)
     }
-  }, [discardQueuedSourceSecretSessions])
+  }, [discardQueuedSourceSecretSessions, fenceOperationScopes])
   useEffect(() => () => {
+    // Back is not the only way this surface can disappear: project and route
+    // transitions may unmount it directly. Fence the refs synchronously so an
+    // already-started batch cannot issue its next durable write.
+    fenceOperationScopes()
     void discardQueuedSourceSecretSessions(importItemsRef.current)
-  }, [discardQueuedSourceSecretSessions])
+  }, [discardQueuedSourceSecretSessions, fenceOperationScopes])
   const previousProjectIdRef = useRef(projectId)
   useEffect(() => {
     if (previousProjectIdRef.current === projectId) return
@@ -940,7 +960,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     })))
   }, [invalidateOperationScopes, projectId])
   const selectedHARFile = selectedItem?.harFile ?? null
-  const selectedSupplementalFiles = selectedItem?.supplementalFiles || []
+  const selectedSupplementalFiles = selectedItem?.supplementalFiles || EMPTY_SUPPLEMENTAL_FILES
   const result = selectedItem?.result ?? null
   const reviewMode = selectedItem?.reviewMode ?? null
   const reviewMatchesCurrentOptions = !result || selectedItem?.reviewOptionsIdentity === importOptionsIdentity(options)
@@ -971,7 +991,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
-  const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive'
+  const convertButtonLabel = queuedFileCount > 1 ? `Convert ${queuedFileCount} Loadrunner Script Archives` : 'Convert Loadrunner Script Archive'
   const conversionGateMessage = workingMode === 'convert'
     ? 'Conversion is saving validated scripts and will open the saved script in the editor.'
     : queuedFileCount === 0
@@ -997,6 +1017,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const replayValidationWarnings = replayScopeMatches ? rawReplayValidationWarnings : EMPTY_REPLAY_VALIDATION_WARNINGS
   const replayValidationSession = replayScopeMatches ? rawReplayValidationSession : null
   const reviewScope = `${selectedItem?.id || ''}:${selectedItem?.reviewGeneration ?? -1}:${activeResultScriptIndex}:${projectId || ''}`
+  useEffect(() => {
+    setValidationReviewTab('overview')
+  }, [projectId, selectedItem?.id, selectedItem?.reviewGeneration])
   useEffect(() => {
     const activeSave = reviewArtifactSaveInFlightRef.current
     setReviewArtifactSaving(Boolean(activeSave))
@@ -1193,7 +1216,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
       : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
     : (reviewMode === 'validation'
-      ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive')
+      ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Loadrunner Script Archives` : 'Convert Loadrunner Script Archive')
       : (selectedResultScriptSaved
       ? 'Saved to Script Library'
       : (browserReplayInProgress
@@ -1213,7 +1236,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       : 'The latest draft browser replay completed. Review the draft browser replay results before saving it to the library.')
   const reviewSubtitle = reviewMode === 'validation'
     ? (saveBlockedByMigrationPolicy
-        ? 'This preview came from the dry-run validator. Conversion can continue, but saving will remain blocked until migration readiness blockers are resolved or the active policy is relaxed.'
+        ? 'This preview came from the dry-run validator. Conversion can continue, but saving will remain blocked until migration readiness blockers are resolved or the Migration Block Policy in Conversion Options is relaxed.'
         : (browserReplayInProgress
         ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
@@ -1224,7 +1247,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               : 'This preview came from the dry-run validator. Save the review artifact before script promotion.')
               : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
     : (saveBlockedByMigrationPolicy
-        ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the active policy is relaxed.'
+        ? 'Review the generated script, preserved metadata, and warnings. Saving is disabled until the migration readiness blockers are resolved or the Migration Block Policy in Conversion Options is relaxed.'
         : (browserReplayInProgress
         ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
@@ -1278,6 +1301,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     newlySavedScripts: StoredScript[],
     pendingNotice: string,
     completedNotice: string,
+    requestIsCurrent: () => boolean,
   ) => {
     // Keep the ref in lockstep with the committed snapshot because the caller
     // may immediately choose the next pending generated lane before React
@@ -1301,10 +1325,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     await discardQueuedSourceSecretSessions(nextItems)
     const allSavedScripts = collectSavedEnterpriseArchiveScripts(nextItems)
     if (allSavedScripts.length > 0 && onImported) {
-      onImported({ scripts: allSavedScripts })
+      onImported({
+        scripts: allSavedScripts,
+        ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+      })
       return
     }
-    setNotice(completedNotice)
+    if (requestIsCurrent()) setNotice(completedNotice)
   }
 
   const rollbackStaleCreatedScripts = async (scripts: readonly StoredScript[]) => {
@@ -1322,7 +1349,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         retained.push(script)
       }
     }
-    if (retained.length > 0) onImported?.({ scripts: retained.reverse() })
+    if (retained.length > 0) {
+      onImported?.({
+        scripts: retained.reverse(),
+        stayInImportReview: true,
+      })
+    }
   }
 
   const replaceOptionsAndInvalidate = (nextOptions: ImportOptions) => {
@@ -1420,24 +1452,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
 
   const openSalesforceNativePreviewInEditor = () => {
     if (!salesforceNativeScript || !onEdit || combinedJavaVuserGate) return
-    if (editRequiresCredentialPreservingSave) {
-      if (!onImported) {
-        setError('Save this credential-preserving import before opening it in the Visual Editor.')
-        return
-      }
-      if (reviewMode === 'validation') {
-        void convertValidatedItems(validatedItemIds)
-      } else {
-        void handleSaveConverted()
-      }
-      return
-    }
-    void (async () => {
-      const preparedScript = await prepareImportedScriptForEditor()
-      if (!preparedScript) return
-      void discardQueuedSourceSecretSessions()
-      onEdit(salesforceNativeScript)
-    })()
+    // native_preview is currently embedded in summary evidence. The API
+    // disclosure-sanitizes that evidence and does not attach the executable
+    // draft attestation used by top-level candidates. Opening it could put a
+    // literal [REDACTED] value into an otherwise runnable script. Keep the
+    // preview review-only until the backend exposes it as its own attested
+    // top-level candidate; the exact-replay candidate remains available.
+    setError('Salesforce Native Preview is review-only until it is returned as a separately attested import candidate. Open Exact Replay to keep imported credential values runnable without re-entry.')
   }
 
   const openImportedRuntimeSettingsInEditor = (area: string) => {
@@ -2068,6 +2089,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const useNameOverride = targetItems.length === 1
 
     for (const item of targetItems) {
+      if (!requestIsCurrent(item)) break
       try {
         const res = await request(item.file, {
           name: useNameOverride ? reviewOptions.name || undefined : undefined,
@@ -2179,6 +2201,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       : item))
 
     for (const item of targetItems) {
+      if (!requestIsCurrent(item)) break
       let conversionResult: EnterpriseArchiveImportResult | null = null
       const itemSavedScripts: StoredScript[] = []
       try {
@@ -2338,6 +2361,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         savedScripts,
         `${savedNotice} Continue reviewing the remaining archive drafts before leaving this import.`,
         savedNotice,
+        () => operationGenerationRef.current === operationGeneration
+          && reviewProjectIdRef.current === sourceProjectId,
       )
       return
     }
@@ -2472,6 +2497,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     try {
       const sourceItemId = selectedItem.id
       const sourceGeneration = selectedItem.reviewGeneration
+      const sourceOperationGeneration = operationGenerationRef.current
       const sourceScriptIndex = activeResultScriptIndex
       const sourceProjectId = reviewProjectIdRef.current
       const sourceOptionsIdentity = selectedItem.reviewOptionsIdentity || ''
@@ -2487,6 +2513,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       saveScope = {
         itemId: sourceItemId,
         generation: sourceGeneration,
+        operationGeneration: sourceOperationGeneration,
         scriptIndex: sourceScriptIndex,
         projectId: sourceProjectId,
         optionsIdentity: sourceOptionsIdentity,
@@ -2496,6 +2523,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       requestIsCurrent = () => {
         const current = importItemsRef.current.find(item => item.id === sourceItemId)
         return Boolean(sourceItemId)
+          && operationGenerationRef.current === sourceOperationGeneration
           && current?.reviewGeneration === sourceGeneration
           && getEnterpriseArchiveResultScripts(current?.result || null)[sourceScriptIndex] === currentImportedScript
           && selectedItemIdRef.current === sourceItemId
@@ -2516,7 +2544,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         return
       }
       if (saveBlockedByMigrationPolicy) {
-        setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
+        setError('Saving is disabled by the Migration Block Policy configured in Conversion Options. Relax that policy or resolve the blocking runtime settings first.')
         return
       }
       if (browserReplayInProgress) {
@@ -2584,6 +2612,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         [persistedScript],
         `Saved ${persistedScript.name} to the script library. Continue reviewing the remaining generated scripts before leaving this import.`,
         `Saved ${persistedScript.name} to the script library.`,
+        requestIsCurrent,
       )
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save script'))
@@ -2789,6 +2818,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const saveScope: ImportSaveScope = {
       itemId: preparedReview.itemId,
       generation: preparedReview.generation,
+      operationGeneration: operationGenerationRef.current,
       scriptIndex: preparedReview.scriptIndex,
       projectId: preparedReview.projectId,
       optionsIdentity: preparedReview.optionsIdentity,
@@ -2800,7 +2830,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const requestIsCurrent = () => {
       const currentItem = importItemsRef.current.find(item => item.id === saveScope.itemId)
       const latestReview = latestPreparedReviewRef.current
-      return selectedItemIdRef.current === saveScope.itemId
+      return operationGenerationRef.current === saveScope.operationGeneration
+        && selectedItemIdRef.current === saveScope.itemId
         && selectedResultScriptIndexRef.current === saveScope.scriptIndex
         && reviewProjectIdRef.current === saveScope.projectId
         && currentItem?.reviewGeneration === saveScope.generation
@@ -2854,6 +2885,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           required_evidence: currentReviewArtifact.required_evidence || currentDetectedProtocol?.required_evidence || [],
         },
       })
+      // Authoring sessions are durable even if the operator leaves while the
+      // request is in flight. Refresh the parent-owned session list without
+      // replacing whichever authoring surface is now active.
+      onImported?.({ scripts: [], stayInImportReview: true })
       if (!requestIsCurrent()) return
       setNotice(`${currentCombinedJavaVuserApprovalReady ? 'Combined Java Vuser draft' : currentCombinedJavaVuser ? 'Combined Java Vuser review artifact' : 'Review artifact'} saved as authoring session ${session.name || session.id}.`)
     } catch (error: unknown) {
@@ -2878,10 +2913,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     <div className="lr-import">
       <div className="lr-import-header">
         <div>
-          <h2>Import Enterprise Script Archive</h2>
+          <h2>Import Loadrunner Script Archive</h2>
           <p className="lr-subtitle">Upload a ZIP containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata. APEX Load routes executable HTTP, SOAP, browser, database, and network archives while preserving review artifacts for sources that still require evidence or external runners.</p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void discardQueuedSourceSecretSessions(); onClose() }}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
+          invalidateOperationScopes()
+          onClose()
+        }}>Back</button>}
       </div>
 
       {/* Drop zone */}
@@ -2976,7 +3014,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
 
       {/* Options */}
       <div className="lr-conversion-row">
-        <div className="lr-options">
+        <div className="lr-options" id="migration-block-policy-options">
           <div className="lr-options-header">
             <h3 className="lr-section-title">Conversion Options</h3>
             {hasRuntimeCoverage && (
@@ -3004,6 +3042,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               <input type="checkbox" checked={options.salesforce_native} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
               <span>Build Salesforce native preview</span>
             </label>
+            <div className="lr-policy-heading">
+              <strong>Migration Block Policy</strong>
+              <span>These settings control which migration-readiness results prevent saving.</span>
+            </div>
             <label className="lr-checkbox">
               <input type="checkbox" checked={options.block_partial} onChange={e => replaceOptionsAndInvalidate({ ...options, block_partial: e.target.checked })} />
               <span>Treat partial runtime settings as blockers</span>
@@ -3208,7 +3250,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         <p>Protocol-aware detection uses .usr metadata plus source signatures. Conflicting evidence is gated for review instead of being saved as an executable script.</p>
       </div>
 
-      {protocolCoverageSections.length > 0 && (
+      {protocolCoverageSections.length > 0 && workingMode === null && reviewMode === null && (
         <div className="lr-preserved" aria-label="enterprise protocol import coverage">
           <div className="lr-preserved-header">
             <h4>Import Coverage</h4>
@@ -3364,7 +3406,47 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               </div>
             </div>
           )}
-          <ScriptImportReview
+          <div className="lr-validation-review-tabs" role="tablist" aria-label="Script archive review sections">
+              {validationReviewTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  id={`lr-validation-review-tab-${tab.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={validationReviewTab === tab.id}
+                  aria-controls="lr-validation-review-panel"
+                  tabIndex={validationReviewTab === tab.id ? 0 : -1}
+                  className={validationReviewTab === tab.id ? 'active' : ''}
+                  onClick={() => setValidationReviewTab(tab.id)}
+                  onKeyDown={event => {
+                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                    event.preventDefault()
+                    const currentIndex = validationReviewTabs.findIndex(item => item.id === validationReviewTab)
+                    const nextIndex = event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? validationReviewTabs.length - 1
+                        : event.key === 'ArrowRight'
+                          ? (currentIndex + 1) % validationReviewTabs.length
+                          : (currentIndex - 1 + validationReviewTabs.length) % validationReviewTabs.length
+                    const nextTab = validationReviewTabs[nextIndex]
+                    setValidationReviewTab(nextTab.id)
+                    event.currentTarget.parentElement
+                      ?.querySelector<HTMLButtonElement>(`#lr-validation-review-tab-${nextTab.id}`)
+                      ?.focus()
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+          </div>
+          <div
+            id="lr-validation-review-panel"
+            role="tabpanel"
+            aria-labelledby={`lr-validation-review-tab-${validationReviewTab}`}
+            className="lr-validation-review-panel"
+          >
+            <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
             reviewGeneration={reviewScope}
             subtitle={reviewSubtitle}
@@ -3397,9 +3479,17 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 : handleSaveConverted}
             onEdit={importedEditorAvailable ? () => { openImportedScriptInEditor() } : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
-            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
+            previewTitle="DSL Preview"
+            previewAside={sourceReview
+              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} />
+              : <div className="lr-review-tab-empty">No source mapping was generated for this archive.</div>}
+            showPreview={validationReviewTab === 'dsl'}
+            showPreviewAside={validationReviewTab === 'source'}
           >
-
+            <div
+              className="lr-validation-review-overview"
+              hidden={validationReviewTab !== 'overview'}
+            >
             {saveBlockedByProtocolGate && detectedProtocol && (
               <div className="lr-warnings lr-protocol-gate">
                 <div className="lr-review-section">
@@ -3618,7 +3708,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   <div className="lr-salesforce-lane-header">
                     <div>
                       <strong>Salesforce Native Preview</strong>
-                      <span>{salesforceNativeScript ? 'Draft Ready' : 'Needs Evidence'}</span>
+                      <span>{salesforceNativeScript ? 'Review Only' : 'Needs Evidence'}</span>
                     </div>
                     <small>{salesforceTransactionCount(salesforceReview)} transactions</small>
                   </div>
@@ -3655,7 +3745,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   {importedEditorAvailable && salesforceNativeScript && renderEditorActionButtons([
                     {
                       key: 'salesforce-native-open',
-                      label: 'Open Native Preview',
+                      label: 'Review Native Preview Limitation',
                       onClick: openSalesforceNativePreviewInEditor,
                     },
                   ], sectionActionStyle)}
@@ -3798,7 +3888,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                           renderEditorActionButtons([
                             salesforceNativeScript ? {
                               key: `${suggestion.id}:native-preview`,
-                              label: 'Open Native Preview',
+                              label: 'Review Native Preview Limitation',
                               onClick: openSalesforceNativePreviewInEditor,
                             } : null,
                             {
@@ -3815,8 +3905,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               </div>
             )}
 
-            {importMetadata && (
-              <div className="lr-preserved">
+            </div>
+
+            <div
+              className="lr-validation-review-preserved"
+              hidden={validationReviewTab !== 'preserved'}
+            >
+              {importMetadata ? (
+                <div className="lr-preserved">
                 <div className="lr-preserved-header">
                   <h4>Preserved Source Settings</h4>
                   <span>These values will be saved with the APEX Load script.</span>
@@ -3919,7 +4015,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                     <div className="lr-preserved-card">
                       <span className="lr-preserved-label">Migration Readiness</span>
                       <strong>{migrationReadiness.score_pct}%</strong>
-                      <small>{migrationReadiness.blocked ? 'Blocked by current policy' : migrationReadiness.summary || 'Ready for review'}</small>
+                      <small>{migrationReadiness.blocked ? 'Blocked by the Migration Block Policy in Conversion Options' : migrationReadiness.summary || 'Ready for review'}</small>
                       {renderEditorActionButtons([
                         importedEditorAvailable ? {
                           key: 'summary-migration-runtime-review',
@@ -4180,9 +4276,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   <summary>View preserved metadata JSON</summary>
                   <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
                 </details>
-              </div>
-            )}
-          </ScriptImportReview>
+                </div>
+              ) : (
+                <div className="lr-review-tab-empty">No preserved source settings were generated for this archive.</div>
+              )}
+            </div>
+            </ScriptImportReview>
+          </div>
         </div>
       )}
     </div>

@@ -547,6 +547,8 @@ export function ScriptJsonInsightsView({
   importedParameterFileMappings,
   onApplyRepairSuggestion,
   onOpenParameterData,
+  onOpenErrorDetails,
+  onOpenWarningDetails,
   onSelectActionProblem,
   onSelectExtractor,
   parameterInspectorItems,
@@ -563,6 +565,8 @@ export function ScriptJsonInsightsView({
   importedParameterFileMappings: ImportedParameterFileMapping[]
   onApplyRepairSuggestion: (suggestion: ScriptRepairSuggestion) => void
   onOpenParameterData: () => void
+  onOpenErrorDetails: () => void
+  onOpenWarningDetails: () => void
   onSelectActionProblem: (row: ScriptPhaseActionRow) => void
   onSelectExtractor: (item: ExtractorInspectorItem) => void
   parameterInspectorItems: string[]
@@ -576,7 +580,31 @@ export function ScriptJsonInsightsView({
       <div className="utility-card">
         <div className="utility-card-header">
           <strong>Problems</strong>
-          <span>{errorCount} error{errorCount === 1 ? '' : 's'} • {warningCount} warning{warningCount === 1 ? '' : 's'}</span>
+          <span className="utility-problem-summary">
+            {errorCount > 0 ? (
+              <button
+                type="button"
+                className="script-health-token danger issue-pill-button"
+                aria-label={`View ${errorCount} error ${errorCount === 1 ? 'detail' : 'details'}`}
+                onClick={onOpenErrorDetails}
+              >
+                {errorCount} error{errorCount === 1 ? '' : 's'}
+              </button>
+            ) : <span>0 errors</span>}
+            {' '}
+            <span aria-hidden="true">•</span>
+            {' '}
+            {warningCount > 0 ? (
+              <button
+                type="button"
+                className="script-health-token warning issue-pill-button"
+                aria-label={`View ${warningCount} warning ${warningCount === 1 ? 'detail' : 'details'}`}
+                onClick={onOpenWarningDetails}
+              >
+                {warningCount} warning{warningCount === 1 ? '' : 's'}
+              </button>
+            ) : <span>0 warnings</span>}
+          </span>
         </div>
         {scriptLevelIssues.length > 0 || actionProblems.length > 0 ? (
           <ul className="utility-list">

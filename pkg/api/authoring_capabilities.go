@@ -269,7 +269,7 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 		},
 		{
 			ID:          "enterprise_archive",
-			Title:       "Import Enterprise Script Archive",
+			Title:       "Import Loadrunner Script Archive",
 			Description: "Convert an enterprise script archive ZIP into an APEX Load script and keep unsupported source functions visible for cleanup.",
 			Badge:       "ESA",
 			Category:    "Legacy & Tool Exports",
@@ -344,7 +344,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 	sources := []AuthoringSourceCapability{
 		{
 			Source:      "enterprise_script_archive",
-			DisplayName: "Enterprise Script Archive",
+			DisplayName: "Loadrunner Script Archive",
 			Status:      "active",
 			Acquisition: []string{"zip_upload", "validate_only"},
 			Features: AuthoringFeatures{

@@ -710,6 +710,15 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 	status := "changed"
 	if localHash == remoteHash {
 		status = "synced"
+	} else if normalizeLibraryKind(req.Kind) == "script" {
+		localItem := libraryBundleItem(localBundle, req.Kind, localID)
+		remoteItem := libraryBundleItem(bundle, req.Kind, remoteItemID)
+		if localItem != nil && remoteItem != nil &&
+			libraryScriptHashesEquivalent(localItem.Script, remoteItem.Script) &&
+			libraryScriptHashMatches(localItem.Script, localHash) &&
+			libraryScriptHashMatches(remoteItem.Script, remoteHash) {
+			status = "synced"
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"remote":      s.sanitizeLibraryRemote(&remote),
@@ -750,17 +759,26 @@ func (s *Server) resolveLibraryTransferHandlerProject(req LibraryTransferRequest
 }
 
 func libraryBundleItemHash(bundle *LibraryBundle, kind, id string) string {
-	if bundle == nil {
+	item := libraryBundleItem(bundle, kind, id)
+	if item == nil {
 		return ""
+	}
+	return strings.TrimSpace(item.ContentHash)
+}
+
+func libraryBundleItem(bundle *LibraryBundle, kind, id string) *LibraryBundleItem {
+	if bundle == nil {
+		return nil
 	}
 	kind = normalizeLibraryKind(kind)
 	id = strings.TrimSpace(id)
-	for _, item := range bundle.Items {
+	for index := range bundle.Items {
+		item := &bundle.Items[index]
 		if normalizeLibraryKind(item.Kind) == kind && strings.TrimSpace(item.SourceItemID) == id {
-			return strings.TrimSpace(item.ContentHash)
+			return item
 		}
 	}
-	return ""
+	return nil
 }
 
 // allowedRemoteProjectID resolves the only remote project that a non-admin

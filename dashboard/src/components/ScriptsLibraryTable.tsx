@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 
 import { AuthoringHealthInput, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
@@ -7,6 +7,8 @@ import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtil
 import { SortIndicator } from './SortIndicator'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import { isAddressableScriptId } from './scriptIdentity'
+import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
 
 export interface ScriptLibraryFederation {
   sourceFilter: LibrarySourceFilter
@@ -226,6 +228,7 @@ export default function ScriptsLibraryTable({
   onConfigureSecrets,
   onRetrySecretStatus,
 }: Props) {
+  const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   const showSource = Boolean(federation)
   const columnCount = (showSource ? 1 : 0) + 7
   const showLocal = !federation || federation.sourceFilter !== 'host'
@@ -248,19 +251,28 @@ export default function ScriptsLibraryTable({
           </tr>
         </thead>
         <tbody>
-          {localScripts.map((script) => {
+          {localScripts.map((script, scriptIndex) => {
+            const scriptId = script.id || ''
+            const scriptAddressable = isAddressableScriptId(script.id)
+            const rowKey = scriptAddressable
+              ? scriptId
+              : `legacy-unaddressable:${script.ref_key || script.name}:${scriptIndex}`
             const healthSummary = authoringHealthSummary(script)
-            const secretStatus = secretStatusByScript[script.id]
-            const secretStatusState = secretStatusStateByScript[script.id]
+            const secretStatus = scriptAddressable ? secretStatusByScript[scriptId] : undefined
+            const secretStatusState = scriptAddressable ? secretStatusStateByScript[scriptId] : 'error'
+            const missingSecrets = secretStatus?.missing || []
             const requiresSecrets = (secretStatus?.required.length || 0) > 0 || scriptContainsSecretReferences(script)
-            const secretStatusUnknown = requiresSecrets && secretStatusState !== undefined && secretStatusState !== 'ready'
-            const configureSecretsAvailable = onConfigureSecrets && ((secretStatus?.missing.length || 0) > 0 || secretStatusUnknown)
-            const hostItem = federation?.hostItemForLocal(script.id)
-            const syncStatus = federation?.syncStatusForLocal(script.id) || 'local only'
+            const secretStatusUnknown = !scriptAddressable
+              || (requiresSecrets && secretStatusState !== undefined && secretStatusState !== 'ready')
+            const configureSecretsAvailable = scriptAddressable
+              && onConfigureSecrets
+              && (missingSecrets.length > 0 || secretStatusUnknown)
+            const hostItem = scriptAddressable ? federation?.hostItemForLocal(scriptId) : undefined
+            const syncStatus = scriptAddressable ? federation?.syncStatusForLocal(scriptId) || 'local only' : 'unavailable'
             const conflict = syncStatus === 'conflict'
             return (
-              <Fragment key={script.id}>
-                <tr key={script.id}>
+              <Fragment key={rowKey}>
+                <tr>
                   {showSource && (
                     <td>
                       <span className="script-health-token">Local</span>
@@ -270,9 +282,13 @@ export default function ScriptsLibraryTable({
                     <button
                       type="button"
                       className="script-row-toggle"
-                      aria-expanded={expandedScriptId === script.id}
-                      aria-controls={`script-runs-${script.id}`}
-                      onClick={() => onToggleScriptRuns(script)}
+                      aria-expanded={scriptAddressable && expandedScriptId === scriptId}
+                      aria-controls={scriptAddressable ? `script-runs-${scriptId}` : undefined}
+                      disabled={!scriptAddressable}
+                      title={scriptAddressable ? undefined : 'This legacy script has no addressable ID and must be repaired before it can be opened.'}
+                      onClick={() => {
+                        if (scriptAddressable) onToggleScriptRuns(script)
+                      }}
                     >
                       {script.name}
                     </button>
@@ -280,12 +296,12 @@ export default function ScriptsLibraryTable({
                       <span className="protocol-badge">{script.protocol}</span>
                       <span className="script-health-token">v{script.version || '—'}</span>
                       <ReferenceKeyBadge value={script.ref_key} />
-                      {githubStatusLabel(github?.statusByScript?.[script.id]) && (
+                      {scriptAddressable && githubStatusLabel(github?.statusByScript?.[scriptId]) && (
                         <span
-                          className={`script-health-token ${githubStatusClass(github?.statusByScript?.[script.id])}`}
-                          title={github?.statusByScript?.[script.id]?.html_url}
+                          className={`script-health-token ${githubStatusClass(github?.statusByScript?.[scriptId])}`}
+                          title={github?.statusByScript?.[scriptId]?.html_url}
                         >
-                          {githubStatusLabel(github?.statusByScript?.[script.id])}
+                          {githubStatusLabel(github?.statusByScript?.[scriptId])}
                         </span>
                       )}
                     </div>
@@ -293,23 +309,103 @@ export default function ScriptsLibraryTable({
                   <td aria-label="Scenario usage">
                     <span className={`protocol-badge ${secretStatusUnknown ? 'warning' : authoringHealthClass(script)}`}>
                       {secretStatusUnknown
-                        ? secretStatusState === 'loading' ? 'Checking secrets' : 'Secret status unavailable'
+                        ? !scriptAddressable
+                          ? 'Script unavailable'
+                          : secretStatusState === 'loading' ? 'Checking secrets' : 'Secret status unavailable'
                         : authoringHealthLabel(script)}
                     </span>
-                    {(script.authoring_health || (secretStatus?.missing.length || 0) > 0 || secretStatusUnknown) && (
+                    {(script.authoring_health || missingSecrets.length > 0 || secretStatusUnknown) && (
                       <div className="script-health-inline">
-                        {!secretStatusUnknown && script.authoring_health && healthSummary.blockers > 0 && <span className="script-health-token danger">{healthSummary.blockers} blockers</span>}
-                        {!secretStatusUnknown && script.authoring_health && healthSummary.warnings > 0 && <span className="script-health-token warning">{healthSummary.warnings} warnings</span>}
+                        {!secretStatusUnknown && script.authoring_health && healthSummary.blockers > 0 && (
+                          <button
+                            type="button"
+                            className="script-health-token danger issue-pill-button"
+                            aria-label={`View ${healthSummary.blockers} blocker ${healthSummary.blockers === 1 ? 'detail' : 'details'} for ${script.name}`}
+                            onClick={() => setIssueDialog({
+                              title: `${script.name} blockers`,
+                              issues: script.authoring_health!.inputs
+                                .filter(input => input.status === 'blocker')
+                                .map((input, index) => ({
+                                  id: `${input.key}-${index}`,
+                                  severity: 'blocker',
+                                  title: input.key.replace(/_/g, ' '),
+                                  description: input.summary,
+                                  count: input.count,
+                                  source: 'Authoring health',
+                                })),
+                            })}
+                          >
+                            {healthSummary.blockers} blocker{healthSummary.blockers === 1 ? '' : 's'}
+                          </button>
+                        )}
+                        {!secretStatusUnknown && script.authoring_health && healthSummary.warnings > 0 && (
+                          <button
+                            type="button"
+                            className="script-health-token warning issue-pill-button"
+                            aria-label={`View ${healthSummary.warnings} warning ${healthSummary.warnings === 1 ? 'detail' : 'details'} for ${script.name}`}
+                            onClick={() => setIssueDialog({
+                              title: `${script.name} warnings`,
+                              issues: script.authoring_health!.inputs
+                                .filter(input => input.status === 'warning' || input.status === 'needs_review')
+                                .map((input, index) => ({
+                                  id: `${input.key}-${index}`,
+                                  severity: 'warning',
+                                  title: input.key.replace(/_/g, ' '),
+                                  description: input.summary,
+                                  count: input.count,
+                                  source: input.status === 'needs_review' ? 'Needs review' : 'Authoring health',
+                                })),
+                            })}
+                          >
+                            {healthSummary.warnings} warning{healthSummary.warnings === 1 ? '' : 's'}
+                          </button>
+                        )}
                         {!secretStatusUnknown && script.authoring_health && healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">ready</span>}
                         {secretStatusUnknown && (
-                          <span className="script-health-token warning">
-                            {secretStatusState === 'loading' ? 'secret status pending' : 'secret status unknown'}
-                          </span>
+                          <button
+                            type="button"
+                            className="script-health-token warning issue-pill-button"
+                            aria-label={`View secret status details for ${script.name}`}
+                            onClick={() => setIssueDialog({
+                              title: `${script.name} secret status`,
+                              issues: [{
+                                id: 'secret-status',
+                                severity: 'warning',
+                                title: !scriptAddressable
+                                  ? 'Missing script ID'
+                                  : secretStatusState === 'loading' ? 'Secret status pending' : 'Secret status unavailable',
+                                description: !scriptAddressable
+                                  ? 'This legacy script has no addressable ID and must be repaired before its credential configuration can be checked.'
+                                  : secretStatusState === 'loading'
+                                    ? 'Credential configuration is still being checked. This script is not considered ready until the check completes.'
+                                    : 'Credential configuration could not be verified. Retry the check or open Project Secrets to configure values.',
+                                source: 'Project secrets',
+                              }],
+                            })}
+                          >
+                            {!scriptAddressable
+                              ? 'missing script id'
+                              : secretStatusState === 'loading' ? 'secret status pending' : 'secret status unknown'}
+                          </button>
                         )}
-                        {(secretStatus?.missing.length || 0) > 0 && (
-                          <span className="script-health-token warning">
-                            {secretStatus.missing.length} secret{secretStatus.missing.length === 1 ? '' : 's'} missing
-                          </span>
+                        {missingSecrets.length > 0 && (
+                          <button
+                            type="button"
+                            className="script-health-token warning issue-pill-button"
+                            aria-label={`View ${missingSecrets.length} missing secret ${missingSecrets.length === 1 ? 'detail' : 'details'} for ${script.name}`}
+                            onClick={() => setIssueDialog({
+                              title: `${script.name} missing secrets`,
+                              issues: missingSecrets.map((name, index) => ({
+                                id: `${name}-${index}`,
+                                severity: 'warning',
+                                title: name,
+                                description: 'This required project secret has not been configured.',
+                                source: 'Project secrets',
+                              })),
+                            })}
+                          >
+                            {missingSecrets.length} secret{missingSecrets.length === 1 ? '' : 's'} missing
+                          </button>
                         )}
                       </div>
                     )}
@@ -328,16 +424,20 @@ export default function ScriptsLibraryTable({
                   <td className="cell-muted">{formatDate(script.created_at)}</td>
                   <td className="cell-muted">{formatDate(script.last_run_at)}</td>
                   <td style={{ textAlign: 'right' }}>
-                    {canManageScripts ? (
+                    {!scriptAddressable ? (
+                      <span className="cell-muted" title="This legacy row has no script ID. Repair it before using script actions.">
+                        Unavailable
+                      </span>
+                    ) : canManageScripts ? (
                       <>
-                        <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
+                        <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>Edit</button>
                         {configureSecretsAvailable && (
                           <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onConfigureSecrets?.(script) }}>Configure secrets</button>
                         )}
                         {secretStatusUnknown && secretStatusState === 'error' && onRetrySecretStatus && (
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onRetrySecretStatus(script) }}>Retry secret check</button>
                         )}
-                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(script.id) }}>Delete</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>Delete</button>
                         {github?.enabled && (
                           <button
                             className="btn btn-sm btn-ghost"
@@ -354,7 +454,7 @@ export default function ScriptsLibraryTable({
                               title={conflict ? 'Compare this conflict before transferring.' : federation.actionBlockedReason}
                             >Push</button>
                             {hostItem?.local_item_id && (
-                              <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); federation.onCompare(script.id, hostItem) }}>Compare</button>
+                              <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); federation.onCompare(scriptId, hostItem) }}>Compare</button>
                             )}
                           </>
                         )}
@@ -364,12 +464,12 @@ export default function ScriptsLibraryTable({
                     )}
                   </td>
                 </tr>
-                {expandedScriptId === script.id && (
-                  <tr className="no-hover" id={`script-runs-${script.id}`}>
+                {scriptAddressable && expandedScriptId === scriptId && (
+                  <tr className="no-hover" id={`script-runs-${scriptId}`}>
                     <td colSpan={columnCount} style={{ background: 'var(--bg-primary)' }}>
                       <div style={{ padding: '10px 4px' }}>
                         <div className="cell-muted" style={{ marginBottom: 8 }}>
-                          Linked Scenario Runs {loadingRunsFor === script.id ? '(loading...)' : `(${(scriptRuns[script.id] || []).length})`}
+                          Linked Scenario Runs {loadingRunsFor === scriptId ? '(loading...)' : `(${(scriptRuns[scriptId] || []).length})`}
                         </div>
                         {script.authoring_health?.inputs?.length ? (
                           <div className="script-health-detail">
@@ -384,11 +484,11 @@ export default function ScriptsLibraryTable({
                             <div className="cell-muted">{healthSummary.summaryInput?.summary}</div>
                           </div>
                         ) : null}
-                        {(secretStatus?.missing.length || 0) > 0 && (
+                        {missingSecrets.length > 0 && (
                           <div className="script-health-detail">
                             <span className="results-compare-label">Missing Project Secrets</span>
                             <div className="archive-report-badges">
-                              {secretStatus.missing.map(name => <span key={name} className="archive-chip danger">{name}</span>)}
+                              {missingSecrets.map(name => <span key={name} className="archive-chip danger">{name}</span>)}
                             </div>
                             {onConfigureSecrets && (
                               <button className="btn btn-secondary btn-sm" type="button" onClick={() => onConfigureSecrets(script)}>
@@ -421,7 +521,7 @@ export default function ScriptsLibraryTable({
                             </div>
                           </div>
                         )}
-                        {(scriptRuns[script.id] || []).length === 0 ? (
+                        {(scriptRuns[scriptId] || []).length === 0 ? (
                           <div className="cell-muted">No linked scenario runs for this script yet.</div>
                         ) : (
                           <div className="data-table">
@@ -437,7 +537,7 @@ export default function ScriptsLibraryTable({
                                 </tr>
                               </thead>
                               <tbody>
-                                {getSortedInnerRuns(scriptRuns[script.id] || []).map((run) => (
+                                {getSortedInnerRuns(scriptRuns[scriptId] || []).map((run) => (
                                   <tr key={run.id}>
                                     <td className="cell-name">
                                       {onSelectScenario ? (
@@ -528,6 +628,13 @@ export default function ScriptsLibraryTable({
           )}
         </tbody>
       </table>
+      {issueDialog && (
+        <IssueDetailsDialog
+          title={issueDialog.title}
+          issues={issueDialog.issues}
+          onClose={() => setIssueDialog(null)}
+        />
+      )}
     </div>
   )
 }

@@ -571,6 +571,7 @@ func clearEnterpriseRuntimeSourceValues(config *RuntimeConfig) {
 	for index := range config.JavaVMParameterRows {
 		config.JavaVMParameterRows[index] = disclosureSafeJavaVMParameterRow(config.JavaVMParameterRows[index])
 	}
+	config.javaVMParameterSourceRows = nil
 }
 
 // splitEnterpriseProxyUserinfo ensures credentials embedded in a proxy URL do

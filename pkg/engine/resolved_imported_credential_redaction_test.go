@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -235,6 +237,204 @@ func TestImportedCredentialValuesIncludesDecodedURLUsernameBeforeProtocolInit(t 
 	}
 	if !containsExactString(values, username) {
 		t.Fatalf("runtime credential values = %#v, want decoded URL username %q", values, username)
+	}
+}
+
+func TestResolvedOpenAPIPathCredentialAllowsOtherParameterLengthsToChange(t *testing.T) {
+	const password = "path-password-7319"
+	sourceSegment := "prefix-" + password + "-{{data.openapi.tenant}}-suffix"
+	passwordStart := len("prefix-")
+	passwordEnd := passwordStart + len(password)
+	shape := []byte(sourceSegment)
+	for index := passwordStart; index < passwordEnd; index++ {
+		shape[index] = 0
+	}
+	shapeHash := sha256.Sum256(shape)
+	pointer := fmt.Sprintf(
+		"openapi-path-v1:cGFzc3dvcmQ:%d:%x:%d-%d:%d-%d",
+		len(sourceSegment),
+		shapeHash,
+		passwordStart,
+		passwordEnd,
+		passwordStart,
+		passwordEnd,
+	)
+	targets := []any{map[string]any{
+		"request_key": "GET /accounts/{password}/{tenant}",
+		"field":       "url.path",
+		"index":       2,
+		"pointer":     pointer,
+	}}
+	action := dsl.Action{
+		Name:   "path credential",
+		Type:   "GET",
+		Method: "GET",
+		Target: "/accounts/" + sourceSegment,
+		Metadata: map[string]any{
+			"openapi": map[string]any{
+				"path": "/accounts/prefix-{password}-{tenant}-suffix",
+			},
+			dsl.ImportPreservedCredentialTargetsMetadataKey: targets,
+		},
+	}
+	script := credentialPreservingRuntimeScript(action)
+	values, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues: %v", err)
+	}
+	if !containsExactString(values, password) {
+		t.Fatalf("source credential values = %#v, want authored password", values)
+	}
+
+	resolved := &protocol.Action{
+		Name:     action.Name,
+		Type:     action.Type,
+		Method:   action.Method,
+		Target:   "/accounts/prefix-" + password + "-a-much-longer-tenant-suffix",
+		Metadata: action.Metadata,
+	}
+	if _, err := resolvedActionCredentialValues(script, resolved); err != nil {
+		t.Fatalf("resolvedActionCredentialValues rejected valid interpolation: %v", err)
+	}
+}
+
+func TestOpenAPIPathCredentialLocatorIsSelfContainedWithoutSourceMetadata(t *testing.T) {
+	const password = "self-contained-path-password-7319"
+	sourceSegment := "prefix-" + password + "-{{data.openapi.tenant}}-suffix"
+	passwordStart := len("prefix-")
+	passwordEnd := passwordStart + len(password)
+	shape := []byte(sourceSegment)
+	for index := passwordStart; index < passwordEnd; index++ {
+		shape[index] = 0
+	}
+	shapeHash := sha256.Sum256(shape)
+	pointer := fmt.Sprintf(
+		"openapi-path-v1:cGFzc3dvcmQ:%d:%x:%d-%d:%d-%d",
+		len(sourceSegment),
+		shapeHash,
+		passwordStart,
+		passwordEnd,
+		passwordStart,
+		passwordEnd,
+	)
+	action := dsl.Action{
+		Name:   "path credential",
+		Type:   "GET",
+		Method: "GET",
+		Target: "/accounts/" + sourceSegment,
+		Metadata: map[string]any{
+			dsl.ImportPreservedCredentialTargetsMetadataKey: []any{map[string]any{
+				"request_key": "GET /accounts/{password}/{tenant}",
+				"field":       "url.path",
+				"index":       2,
+				"pointer":     pointer,
+			}},
+		},
+	}
+	script := credentialPreservingRuntimeScript(action)
+	originalTarget := script.Actions[0].Target
+
+	values, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues without optional OpenAPI metadata: %v", err)
+	}
+	if !containsExactString(values, password) {
+		t.Fatalf("source credential values = %#v, want exact authored password", values)
+	}
+	if script.Actions[0].Target != originalTarget {
+		t.Fatalf("credential inspection changed executable target to %q", script.Actions[0].Target)
+	}
+	config, err := WithSecretValueRedactionChecked(nil, values)
+	if err != nil {
+		t.Fatalf("construct exact runtime matcher: %v", err)
+	}
+	if got := config.ScrubText("echo=" + password); strings.Contains(got, password) {
+		t.Fatalf("component-only echo was not redacted: %q", got)
+	}
+
+	resolved := &protocol.Action{
+		Name:     action.Name,
+		Type:     action.Type,
+		Method:   action.Method,
+		Target:   "/accounts/prefix-" + password + "-a-much-longer-tenant-suffix",
+		Metadata: action.Metadata,
+	}
+	if _, err := resolvedActionCredentialValues(script, resolved); err != nil {
+		t.Fatalf("resolved path rejected self-contained locator: %v", err)
+	}
+	if resolved.Target != "/accounts/prefix-"+password+"-a-much-longer-tenant-suffix" {
+		t.Fatalf("resolved target bytes changed to %q", resolved.Target)
+	}
+}
+
+func TestLegacyBodyCredentialFallbackTracksParameterAndResolvedDataValues(t *testing.T) {
+	const (
+		parameterPassword = "parameter-password-7319"
+		resolvedPassword  = "resolved-data-password-6248"
+	)
+	action := dsl.Action{
+		Name:   "legacy login",
+		Type:   "POST",
+		Method: "POST",
+		Target: "/login",
+		HeaderList: dsl.HeaderList{{
+			Name: "Content-Type", Value: "application/json",
+		}},
+		Body: `{"password":"{{param.legacy_password}}",` +
+			`"token":"{{data.users.session_token}}","ordinary":"visible"}`,
+	}
+	script := credentialPreservingRuntimeScript(action)
+	script.Parameters = []dsl.Parameter{{
+		Name: "legacy_password", Type: "list", Values: []string{parameterPassword},
+	}}
+
+	values, plan, err := inspectImportedCredentials(script)
+	if err != nil {
+		t.Fatalf("inspectImportedCredentials: %v", err)
+	}
+	if !containsExactString(values, parameterPassword) {
+		t.Fatalf("authored credential values = %#v, want parameter value", values)
+	}
+	if plan == nil {
+		t.Fatal("authored credential templates were not recorded")
+	}
+	for _, expression := range []string{
+		"param.legacy_password",
+		"data.users.session_token",
+	} {
+		if _, exists := plan.expressions[expression]; !exists {
+			t.Fatalf("credential template plan omitted %q: %#v", expression, plan.expressions)
+		}
+	}
+	if script.Actions[0].Body != action.Body {
+		t.Fatal("authored executable request body changed during inspection")
+	}
+
+	resolvedBody := []byte(
+		`{"password":"` + parameterPassword + `","token":"` +
+			resolvedPassword + `","ordinary":"visible"}`,
+	)
+	resolved := &protocol.Action{
+		Name:   action.Name,
+		Type:   action.Type,
+		Method: action.Method,
+		Target: action.Target,
+		HeaderList: protocol.HeaderList{{
+			Name: "Content-Type", Value: "application/json",
+		}},
+		Body: append([]byte(nil), resolvedBody...),
+	}
+	resolvedValues, err := resolvedActionCredentialValues(script, resolved)
+	if err != nil {
+		t.Fatalf("resolvedActionCredentialValues: %v", err)
+	}
+	for _, want := range []string{parameterPassword, resolvedPassword} {
+		if !containsExactString(resolvedValues, want) {
+			t.Fatalf("resolved credential values = %#v, want %q", resolvedValues, want)
+		}
+	}
+	if !bytes.Equal(resolved.Body, resolvedBody) {
+		t.Fatalf("resolved executable request body changed to %q", resolved.Body)
 	}
 }
 

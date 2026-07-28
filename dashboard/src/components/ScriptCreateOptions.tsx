@@ -204,7 +204,7 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
   },
   {
     id: 'enterprise_archive',
-    title: 'Import Enterprise Script Archive',
+    title: 'Import Loadrunner Script Archive',
     description: 'Convert an enterprise script archive ZIP into an APEX Load script and keep unsupported source functions visible for cleanup.',
     badge: 'ESA',
     category: 'Legacy & Tool Exports',

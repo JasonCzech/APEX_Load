@@ -20,6 +20,9 @@ func TestExtractProjectedRedactions(t *testing.T) {
 		ok        bool
 	}{
 		{name: "whole scalar", raw: "literal-password", projected: maskedScriptSecret, want: []string{"literal-password"}, ok: true},
+		{name: "sentinel-like credential", raw: "prefix" + maskedScriptSecret + "suffix", projected: maskedScriptSecret, want: []string{"prefix" + maskedScriptSecret + "suffix"}, ok: true},
+		{name: "credential equals sentinel", raw: maskedScriptSecret, projected: maskedScriptSecret, want: []string{maskedScriptSecret}, ok: true},
+		{name: "bearer credential equals sentinel", raw: "Bearer " + maskedScriptSecret, projected: "Bearer " + maskedScriptSecret, want: []string{maskedScriptSecret}, ok: true},
 		{name: "bearer wrapper", raw: "Bearer literal-token", projected: "Bearer " + maskedScriptSecret, want: []string{"literal-token"}, ok: true},
 		{name: "multiple values", raw: `user=alice&password=s3cr3t`, projected: `user=` + maskedScriptSecret + `&password=` + maskedScriptSecret, want: []string{"alice", "s3cr3t"}, ok: true},
 		{name: "credential contains projected delimiter", raw: `Bearer first; x=embedded; x=second`, projected: `Bearer ` + maskedScriptSecret + `; x=` + maskedScriptSecret, ok: false},
@@ -41,6 +44,56 @@ func TestExtractProjectedRedactions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSourceSecretValuesRetainSentinelLikeCredentials(t *testing.T) {
+	credentialValue := "prefix" + maskedScriptSecret + "suffix"
+	raw := &dsl.Script{
+		Name: "Sentinel source", Protocol: "http", ProjectID: "project-a",
+		Config: dsl.ScriptConfig{
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Password: credentialValue},
+			},
+		},
+		Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+	}
+	projected := maskScriptSecrets(raw)
+	requirements := discoverSecretBindingRequirements(projected, 0)
+	if len(requirements) != 1 {
+		t.Fatalf("requirements = %#v, want one password", requirements)
+	}
+	values := sourceSecretValuesForImportNodes(
+		importResponseRawScriptValue(raw),
+		importResponseRawScriptValue(projected),
+		requirements,
+	)
+	if got := values[requirements[0].ID]; got != credentialValue {
+		t.Fatalf("source credential = %q, want exact sentinel-like value", got)
+	}
+}
+
+func TestPreservedBindingReviewRetainsCredentialEqualToSentinel(t *testing.T) {
+	raw := &dsl.Script{
+		Name: "Sentinel password", Protocol: "http", ProjectID: "project-a",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Username: "operator", Password: maskedScriptSecret},
+			},
+		},
+		Actions: []dsl.Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}},
+	}
+
+	resolved, requirements, err := applyPreservedRedactedSecretBindings(raw, 0, nil)
+	if err != nil {
+		t.Fatalf("apply preserved bindings: %v", err)
+	}
+	if resolved == nil || resolved.Config.HTTP.Auth.Password != maskedScriptSecret {
+		t.Fatalf("resolved password = %#v, want exact authored sentinel", resolved)
+	}
+	if len(requirements) != 1 || !requirements[0].DestinationValuePreserved {
+		t.Fatalf("requirements = %#v, want exact destination value preserved", requirements)
 	}
 }
 
@@ -169,7 +222,7 @@ func TestSourceSecretProjectUsesAuthorizedImportScopeWhenDraftOmitsProject(t *te
 	}
 }
 
-func TestSourceSecretValuesTreatAlreadyRedactedSourceAsUnavailable(t *testing.T) {
+func TestSourceSecretValuesPreserveLiteralRedactionSentinelCredential(t *testing.T) {
 	script := &dsl.Script{
 		Name:      "Already redacted",
 		Protocol:  "http",
@@ -184,8 +237,17 @@ func TestSourceSecretValuesTreatAlreadyRedactedSourceAsUnavailable(t *testing.T)
 	}
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
 	requirements := response["secret_binding_requirements"].([]SecretBindingRequirement)
-	if values := sourceSecretValuesForImportResponse(scriptImportResponseOptions{Script: script}, requirements); len(values) != 0 {
-		t.Fatalf("redacted source produced migratable values: %#v", values)
+	values := sourceSecretValuesForImportResponse(
+		scriptImportResponseOptions{Script: script},
+		requirements,
+	)
+	if len(values) != 1 {
+		t.Fatalf("literal sentinel credential values = %#v, want one exact value", values)
+	}
+	for _, value := range values {
+		if value != maskedScriptSecret {
+			t.Fatalf("literal sentinel credential = %q, want %q", value, maskedScriptSecret)
+		}
 	}
 }
 

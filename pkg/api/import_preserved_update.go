@@ -12,13 +12,13 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// restoreServerOwnedImportSecurityMetadata keeps the importer-owned runtime
-// artifact marker and disclosure/redaction locators across an ordinary masked
-// read-modify-write. They are deliberately visible (but value-free) in a
-// disclosure projection so editors can round-trip them, yet clients must not
-// be able to delete or rewrite them and thereby expose a raw artifact
-// reference, parameter table, or retained request credential on a later read
-// or runtime diagnostic.
+// restoreServerOwnedImportSecurityMetadata keeps importer-owned runtime
+// artifacts, opaque repair payloads, and disclosure/redaction locators across
+// an ordinary masked read-modify-write. They are deliberately visible (but
+// value-free) in a disclosure projection so editors can round-trip them, yet
+// clients must not be able to delete or rewrite them and thereby expose or
+// destroy a raw artifact, repair source, parameter table, or retained request
+// credential.
 //
 // Trusted importer updates bypass this helper and may replace the locator set
 // with a newly projected source revision.
@@ -30,6 +30,15 @@ func restoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		dsl.ImportPreservedRuntimeArtifactKey,
 		dsl.ImportPreservedCredentialParameterNamesKey,
 		dsl.ImportPreservedCredentialTargetsMetadataKey,
+		"jsr223_sources",
+		"k6_gated_source",
+		"postman_event_sources",
+		"credential_traversal_source_snapshot_base64",
+		"devweb_gated_source",
+		dsl.ImportPreservedJMeterJDBCSourcesKey,
+		dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey,
+		dsl.ImportPreservedEnterpriseJavaVMSourceKey,
+		dsl.ImportPreservedEnterpriseJavaJDBCSourceKey,
 		storage.ImportSourceCommitFenceMetadataKey,
 		"recorded_input_secret_columns",
 	} {

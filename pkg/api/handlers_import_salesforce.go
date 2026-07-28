@@ -120,6 +120,18 @@ func augmentHARImportWithSalesforce(result *har.ConvertResult, data []byte, proj
 		augmentation.Correlations = review.NativePreview.Correlations
 		if augmentation.Script != nil {
 			augmentation.Script.ProjectID = normalizeProjectID(projectID)
+			// The native builder starts from the HAR script and therefore
+			// inherits its import metadata. Once the native Salesforce rewrite
+			// is selected, provenance must describe the destination behavior,
+			// not the intermediate HAR adapter. This assignment is intentional
+			// even when the shared HAR finalizer already populated Source.
+			if augmentation.Script.Metadata == nil {
+				augmentation.Script.Metadata = &dsl.ScriptMetadata{}
+			}
+			if augmentation.Script.Metadata.Import == nil {
+				augmentation.Script.Metadata.Import = &dsl.ImportMetadata{}
+			}
+			augmentation.Script.Metadata.Import.Source = "salesforce"
 		}
 		nativeApplied = true
 	}

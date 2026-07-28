@@ -779,8 +779,9 @@ func prepareTransientExecutableScript(
 	if trusted {
 		// This path is restricted to an unchanged server-owned durable import
 		// snapshot. Preserve its exact executable values, including JVM argv,
-		// while still rejecting an orphan response sentinel and stripping
-		// non-executable review material before it enters a runtime session.
+		// including credentials whose literal bytes resemble a disclosure
+		// sentinel, while stripping non-executable review material before it
+		// enters a runtime session.
 		candidate := cloneScriptDefinition(script)
 		if candidate == nil {
 			writeError(w, http.StatusBadRequest, "failed to prepare imported script for replay")
@@ -791,7 +792,7 @@ func prepareTransientExecutableScript(
 			writeError(w, http.StatusBadRequest, "failed to sanitize imported script review evidence")
 			return nil, false
 		}
-		if err := reconcileMaskedScriptSecrets(candidate, nil); err != nil {
+		if err := reconcileMaskedScriptSecretsWithTrust(candidate, nil, true); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return nil, false
 		}

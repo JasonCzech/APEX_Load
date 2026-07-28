@@ -308,9 +308,13 @@ func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store Idempot
 	if store == nil || !isMutatingMethod(r.Method) {
 		return true
 	}
-	// CI run creation owns its idempotency contract: the same key must return the
-	// same run rather than the generic mutation layer's duplicate-key conflict.
-	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs" {
+	// These creates own durable idempotency contracts: the same key returns the
+	// committed resource rather than the generic mutation layer's duplicate-key
+	// conflict.
+	if r.Method == http.MethodPost && (r.URL.Path == "/api/v1/ci/runs" ||
+		r.URL.Path == "/api/v1/scripts/import/jmeter/save" ||
+		(strings.HasPrefix(r.URL.Path, "/api/v1/browser-recorder/sessions/") &&
+			strings.HasSuffix(r.URL.Path, "/convert"))) {
 		return true
 	}
 	rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))

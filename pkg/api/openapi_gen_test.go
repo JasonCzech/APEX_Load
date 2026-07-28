@@ -359,6 +359,14 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 		t.Error("CI run create is missing its handler-declared 202 response")
 	}
 
+	jmeterSave := spec.Paths["/api/v1/scripts/import/jmeter/save"]["post"]
+	if !operationHasParameter(jmeterSave, "header", "Idempotency-Key") {
+		t.Error("JMeter import save is missing its handler-read Idempotency-Key header")
+	}
+	if _, ok := jmeterSave.Responses["409"]; !ok {
+		t.Error("JMeter import save is missing its handler-declared 409 response")
+	}
+
 	authoringCreate := spec.Paths["/api/v1/scripts/authoring/sessions"]["post"]
 	if authoringCreate.RequestBody == nil || !authoringCreate.RequestBody.Required {
 		t.Fatal("authoring-session create is missing its required request body")

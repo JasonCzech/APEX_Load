@@ -23,6 +23,7 @@ import (
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // browserRecordingAvailability reports whether this controller can launch a
@@ -1125,10 +1126,6 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusUnprocessableEntity, "browser recording did not produce an executable script: "+err.Error())
 			return
 		}
-		// Reserve a fresh create-only ID before the durable import journal is
-		// prepared. Rollback is then fenced to the exact created version.
-		importedScript.ID = uuid.NewString()
-		importedScript.RefKey = ""
 		if strings.TrimSpace(importedScript.Version) == "" {
 			importedScript.Version = "1"
 		}
@@ -1180,8 +1177,6 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 			} else if validationErr := validateConvertedScriptForCommit(importedHTTPScript); validationErr != nil {
 				warnings = append(warnings, "HTTP script persistence skipped: "+validationErr.Error())
 			} else {
-				importedHTTPScript.ID = uuid.NewString()
-				importedHTTPScript.RefKey = ""
 				if strings.TrimSpace(importedHTTPScript.Version) == "" {
 					importedHTTPScript.Version = "1"
 				}
@@ -1222,15 +1217,117 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		)
 		return
 	}
+	projectID := normalizeProjectID(info.ProjectID)
+	_, actorSubject, _ := s.resolveAuditActor(r)
+	// One stopped recording is one durable conversion operation. The exact
+	// scripts and save options are fenced by the keyed request HMAC below; do
+	// not fold secret-binding names or other caller options into an
+	// independently observable operation identity.
+	operationID := strings.TrimSpace(actorSubject) + "\x00session:" + id
+	requestDigest, err := s.directImportScriptsRequestDigest(transactionScripts, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fingerprint browser recording conversion: "+err.Error())
+		return
+	}
+	attempt, receiptReplay, err := s.claimDirectImportAttempt(
+		projectID,
+		"browser_recorder",
+		operationID,
+		requestDigest,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrDirectImportReceiptBusy):
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusConflict, "this browser recording conversion is already being saved")
+		case errors.Is(err, storage.ErrDirectImportReceiptConflict):
+			writeError(w, http.StatusConflict, "browser recording conversion changed after it was first saved")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to reserve browser recording conversion: "+err.Error())
+		}
+		return
+	}
+	assetIdentitySeed := directImportOperationHash(projectID, "browser_recorder", operationID)
+	if attempt != nil && attempt.receipt != nil {
+		assetIdentitySeed = attempt.receipt.ID
+	}
+	for index, script := range transactionScripts {
+		script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
+		script.RefKey = ""
+	}
+
+	writeSavedConversion := func(
+		allStored []*StoredScript,
+		recordCompletion bool,
+	) {
+		storedScripts, httpStored := splitBrowserRecordingStoredScripts(
+			allStored,
+			preparedHTTPScript != nil,
+		)
+		responseWarnings := append([]string(nil), warnings...)
+		if httpStored != nil {
+			responseWarnings = append(responseWarnings, httpWarnings...)
+			responseWarnings = append(responseWarnings, fmt.Sprintf(
+				"also created HTTP script %q (%s) from the recorded HAR",
+				disclosureSafeScriptName(httpStored.Name, httpStored.Script),
+				httpStored.ID,
+			))
+		}
+		s.writeSavedBrowserRecordingConversion(
+			w, r, id, result, httpScript, responseWarnings,
+			storedScripts, httpStored, recordCompletion,
+		)
+	}
+	if receiptReplay {
+		stored, _, loadErr := s.loadDirectImportReceiptAssets(attempt)
+		if loadErr != nil {
+			writeError(w, http.StatusConflict, "completed browser recording receipt is inconsistent: "+loadErr.Error())
+			return
+		}
+		writeSavedConversion(stored, false)
+		return
+	}
+	if attempt != nil && !attempt.created {
+		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to recover prior browser recording transaction: "+recoverErr.Error())
+			return
+		}
+		if renewErr := attempt.renew(); renewErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to renew browser recording receipt after recovery: "+renewErr.Error())
+			return
+		}
+		stored, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
+			projectID,
+			deterministicScriptIDs(transactionScripts),
+			"",
+		)
+		if loadErr == nil && storedScenario == nil && directImportPreparedAssetsMatch(
+			s, stored, transactionScripts, nil, nil,
+		) {
+			if completeErr := attempt.complete(stored, nil); completeErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to reconcile browser recording receipt: "+completeErr.Error())
+				return
+			}
+			writeSavedConversion(stored, true)
+			return
+		}
+	}
+
 	transaction, err := newCreateImportTransaction(s, "browser-recording", transactionScripts, "", nil)
 	if err != nil {
+		if attempt != nil {
+			if cleanupErr := attempt.rollback(nil); cleanupErr != nil {
+				slog.Warn("failed to release browser recording receipt", "recording_session_id", id, "error", cleanupErr)
+			}
+		}
 		writeError(w, http.StatusInternalServerError, "failed to prepare converted scripts: "+err.Error())
 		return
 	}
-	committed := false
+	finished := false
+	assetsCommitted := false
 	defer func() {
-		if !committed {
-			if cleanupErr := transaction.rollback(); cleanupErr != nil {
+		if !finished && !assetsCommitted {
+			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
 				slog.Warn("failed to fully compensate browser recording conversion", "recording_session_id", id, "error", cleanupErr)
 			}
 		}
@@ -1238,6 +1335,10 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 
 	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
 	for _, importedScript := range preparedScripts {
+		if err := attempt.renew(); err != nil {
+			writeError(w, http.StatusConflict, "browser recording receipt ownership was lost; retry conversion")
+			return
+		}
 		stored, err := transaction.createImportedScript(
 			importedScript,
 			"browser_recorder",
@@ -1248,10 +1349,12 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		}
 		storedScripts = append(storedScripts, stored)
 	}
-	primary := storedScripts[0]
-
 	var httpStored *StoredScript
 	if preparedHTTPScript != nil {
+		if err := attempt.renew(); err != nil {
+			writeError(w, http.StatusConflict, "browser recording receipt ownership was lost; retry conversion")
+			return
+		}
 		httpStored, err = transaction.createImportedScript(
 			preparedHTTPScript,
 			"browser_recording_har",
@@ -1260,24 +1363,68 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusInternalServerError, "failed to save converted HTTP script: "+err.Error())
 			return
 		}
-		warnings = append(warnings, httpWarnings...)
-		warnings = append(warnings, fmt.Sprintf(
-			"also created HTTP script %q (%s) from the recorded HAR",
-			disclosureSafeScriptName(httpStored.Name, httpStored.Script),
-			httpStored.ID,
-		))
+	}
+	if err := attempt.renew(); err != nil {
+		writeError(w, http.StatusConflict, "browser recording receipt ownership was lost; retry conversion")
+		return
 	}
 	if err := transaction.commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit converted scripts: "+err.Error())
 		return
 	}
-	committed = true
+	assetsCommitted = true
+	allStored := append([]*StoredScript(nil), storedScripts...)
+	if httpStored != nil {
+		allStored = append(allStored, httpStored)
+	}
+	if attempt != nil {
+		if err := attempt.complete(allStored, nil); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to finalize browser recording receipt: "+err.Error())
+			return
+		}
+	}
+	finished = true
+	writeSavedConversion(allStored, true)
+}
 
-	disclosedPrimaryName := disclosureSafeScriptName(primary.Name, primary.Script)
-	s.browserRecording.NotifyConverted(id, primary.ID, disclosedPrimaryName)
-	s.recordAuditEvent(r, "browser_recording.convert", "success", "script", primary.ID, primary.ProjectID,
-		map[string]any{"recording_session_id": id, "name": disclosedPrimaryName, "actions": result.Stats.ConvertedActions,
-			"scripts": len(storedScripts), "http_script": httpStored != nil})
+func splitBrowserRecordingStoredScripts(
+	all []*StoredScript,
+	hasHTTP bool,
+) ([]*StoredScript, *StoredScript) {
+	if !hasHTTP || len(all) == 0 {
+		return all, nil
+	}
+	return all[:len(all)-1], all[len(all)-1]
+}
+
+func (s *Server) writeSavedBrowserRecordingConversion(
+	w http.ResponseWriter,
+	r *http.Request,
+	recordingID string,
+	result *recbrowser.ConvertResult,
+	httpScript *dsl.Script,
+	warnings []string,
+	storedScripts []*StoredScript,
+	httpStored *StoredScript,
+	recordCompletion bool,
+) {
+	if result == nil || len(storedScripts) == 0 || storedScripts[0] == nil {
+		writeError(w, http.StatusInternalServerError, "browser recording receipt contains no primary script")
+		return
+	}
+	primary := storedScripts[0]
+	if recordCompletion {
+		disclosedPrimaryName := disclosureSafeScriptName(primary.Name, primary.Script)
+		s.browserRecording.NotifyConverted(recordingID, primary.ID, disclosedPrimaryName)
+		s.recordAuditEvent(r, "browser_recording.convert", "success", "script", primary.ID, primary.ProjectID,
+			map[string]any{
+				"recording_session_id": recordingID,
+				"name":                 disclosedPrimaryName,
+				"actions":              result.Stats.ConvertedActions,
+				"scripts":              len(storedScripts),
+				"http_script":          httpStored != nil,
+			})
+	}
 
 	sourceHTTPForResponse := httpScript
 	if httpStored == nil {

@@ -1440,3 +1440,85 @@ func TestProjectCredentialsKeepsBaseAndTargetURLBindingsDistinct(t *testing.T) {
 		t.Fatalf("URL requirements were conflated: %#v", report.Requirements)
 	}
 }
+
+func TestFinalizeActionPreservesSchemaDeclaredWholeBodyCredential(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		kind      BodyKind
+		mediaType string
+		payload   string
+		wantField string
+	}{
+		{
+			name:      "plain text",
+			kind:      BodyRaw,
+			mediaType: "text/plain",
+			payload:   "aB9xQ7mL4vN2",
+			wantField: "body.opaque",
+		},
+		{
+			name:      "JSON scalar",
+			kind:      BodyJSON,
+			mediaType: "application/json",
+			payload:   `"cD8wR6pK3sM1"`,
+			wantField: "body.json",
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			action, report, err := FinalizeAction(EffectiveRequest{
+				Key:    "whole-body-" + test.name,
+				Name:   test.name,
+				Method: "POST",
+				Target: "/login",
+				Body: Body{
+					Kind:      test.kind,
+					MediaType: test.mediaType,
+					Payload:   []byte(test.payload),
+				},
+				Source: SourceRef{Format: "fixture", Pointer: "/password"},
+			}, FinalizeOptions{
+				Credentials: &CredentialProjectionOptions{
+					Mode:               credentialpolicy.Preserve,
+					SensitiveWholeBody: true,
+				},
+				ActionPath: "actions[0]",
+			})
+			if err != nil {
+				t.Fatalf("FinalizeAction: %v", err)
+			}
+			if action.Body != test.payload {
+				t.Fatalf("body = %q, want exact %q", action.Body, test.payload)
+			}
+			if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+				t.Fatalf("whole-body credential was blocked: %#v", action.Metadata)
+			}
+			rawTargets, err := json.Marshal(
+				action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey],
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var targets []credentialpolicy.TargetRef
+			if err := json.Unmarshal(rawTargets, &targets); err != nil {
+				t.Fatal(err)
+			}
+			if len(targets) != 1 || targets[0].Field != test.wantField {
+				t.Fatalf("whole-body credential targets = %#v", targets)
+			}
+			foundPreserved := false
+			for _, finding := range report.Findings {
+				if finding.Code == "import_credential_preserved" {
+					foundPreserved = true
+					break
+				}
+			}
+			if len(report.Requirements) != 0 || !foundPreserved {
+				t.Fatalf("whole-body credential report = %#v", report)
+			}
+		})
+	}
+}

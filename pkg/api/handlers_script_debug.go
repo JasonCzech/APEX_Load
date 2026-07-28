@@ -115,6 +115,15 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+		if isCredentialPreservingImport(stored.Script) &&
+			matchesStoredScriptDisclosureProjection(script, stored.Script) {
+			// The editor echoes the disclosure-safe GET projection even when
+			// the operator has made no changes. Execute the server-owned
+			// durable snapshot so projected sentinels never replace imported
+			// credentials or parameter data.
+			script = stored.Script
+			req.trustedPreservedImport = true
+		}
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}

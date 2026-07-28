@@ -1292,11 +1292,19 @@ func ResolveDataSourceDelimiter(source DataSource, content string) rune {
 	delimiter := strings.TrimSpace(source.Delimiter)
 	switch strings.ToLower(delimiter) {
 	case "":
+		// Older enterprise imports omitted an explicit comma because CSV used
+		// to be the implicit default. Detect self-contained inline data before
+		// applying the legacy .dat-as-tab fallback when the source declares a
+		// tabular schema. Sources with neither a header nor multiple declared
+		// columns retain the historical tab default, avoiding guesses from
+		// commas in single-column values.
+		if source.FirstRowHeader || len(source.Columns) > 1 {
+			if detected := DetectDataSourceDelimiter(content); detected != 0 {
+				return detected
+			}
+		}
 		if source.Type == "dat" {
 			return '\t'
-		}
-		if detected := DetectDataSourceDelimiter(content); detected != 0 {
-			return detected
 		}
 		return ','
 	case "auto":

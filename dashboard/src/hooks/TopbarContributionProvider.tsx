@@ -24,6 +24,8 @@ export interface TopbarAction {
 export interface TopbarMetaChip {
   id: string
   label: string
+  onClick?: () => void
+  ariaLabel?: string
   hidden?: boolean
   title?: string
   tone?: TopbarMetaTone

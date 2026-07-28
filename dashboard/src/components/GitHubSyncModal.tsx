@@ -26,6 +26,7 @@ import SecretBindingReview, {
 } from './SecretBindingReview'
 import { refreshedSecretBindingRequirements } from './secretBindingUtils'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
+import { type ImportedSaveResult } from './useScriptsAuthoringState'
 
 type GitHubSyncModalProps = {
   mode: 'push' | 'import'
@@ -34,7 +35,7 @@ type GitHubSyncModalProps = {
   projectId?: string
   onClose: () => void
   onPushed?: (response: GitHubPushResponse) => void
-  onImported?: (saved: StoredScript) => void
+  onImported?: (result: ImportedSaveResult) => void
 }
 
 const STATUS_TONE: Record<string, string> = {
@@ -292,7 +293,10 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
     // returned script so the caller can track and refresh the created record.
     // Silently dropping this response leaves a real script orphaned in the
     // destination library.
-    onImported?.(saved)
+    onImported?.({
+      scripts: [saved],
+      ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+    })
     if (!requestIsCurrent()) return
     closeModal()
   }

@@ -100,6 +100,12 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     setParameterizationApplyingByScript({})
     setCredentialActionInProgress(false)
   }, [advanceReviewGeneration, sourceSecretSessions])
+  useEffect(() => () => {
+    // Route transitions can unmount this importer without invoking Back.
+    // Fence any completed persistence response from navigating over the next
+    // authoring surface while still publishing it for a library refresh.
+    reviewGenerationRef.current += 1
+  }, [])
   const [options, setOptions] = useState({
     name: '',
     base_url: '',
@@ -336,6 +342,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         onImported?.({
           scripts: savedScripts,
           scenario: response.scenario,
+          ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
         })
       }
       if (!requestIsCurrent()) return
@@ -442,7 +449,10 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { sourceSecretSessions.clear('review'); onClose() }}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
+          invalidateReview()
+          onClose()
+        }}>Back</button>}
       </div>
 
       <div
@@ -677,8 +687,8 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
                 <span>{result.summary?.file_name || file?.name}</span>
               </div>
               <div className="lr-preserved-grid">
-                {(result.scripts || []).map((script: ScriptDefinition) => (
-                  <div className="lr-preserved-card" key={script.name}>
+                {(result.scripts || []).map((script: ScriptDefinition, scriptIndex) => (
+                  <div className="lr-preserved-card" key={`${scriptIndex}-${script.name}`}>
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>
                     <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count, action) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>

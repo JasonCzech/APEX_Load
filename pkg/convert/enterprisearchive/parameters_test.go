@@ -40,6 +40,12 @@ Type="Table"
 	if source.Name != "spi_info" || source.Path != "" || source.FileName != "SPI_Info.dat" || !source.FirstRowHeader || len(source.Columns) != 0 {
 		t.Fatalf("data source = %#v, want first-row-header SPI_Info.dat source", source)
 	}
+	if source.Delimiter != "," {
+		t.Fatalf("data source delimiter = %q, want explicit comma", source.Delimiter)
+	}
+	if got := dsl.ResolveDataSourceDelimiter(source, source.InlineData); got != ',' {
+		t.Fatalf("runtime delimiter = %q, want comma", got)
+	}
 }
 
 func TestParseParameterFileKeepsGeneratedColumnWithoutMatchingHeader(t *testing.T) {

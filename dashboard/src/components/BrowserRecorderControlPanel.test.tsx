@@ -1117,6 +1117,56 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('saved to the script library')
   })
 
+  it('stops a split bridge save after a session switch and rolls back the completed write', async () => {
+    const onImported = vi.fn()
+    const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
+    const second = { name: 'Logout', protocol: 'browser', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
+    const nextSession = { ...stoppedSession, id: 'brec-2', name: 'Second Recording' }
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
+    apiMock.getBrowserRecording
+      .mockResolvedValueOnce({ session: { ...stoppedSession, project_id: 'project-1' } })
+      .mockResolvedValueOnce({ session: { ...nextSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue({
+      script: first,
+      scripts: [first, second],
+      warnings: [],
+      stats: {},
+      parameterization: { suggestions: [], summary: { total: 0 } },
+    })
+    let resolveFirstSave!: (value: unknown) => void
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => {
+      resolveFirstSave = resolve
+    }))
+    apiMock.deleteScript.mockResolvedValueOnce({ deleted: 'saved-checkout' })
+
+    await renderPanel({ onImported })
+    await clickButton('Save to Script Library')
+    await flushPromises()
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-2" onImported={onImported} />)
+    })
+    await flushPromises()
+    await act(async () => {
+      resolveFirstSave({
+        id: 'saved-checkout',
+        name: first.name,
+        protocol: first.protocol,
+        version: '1',
+        created_at: '2026-05-12T20:10:00Z',
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
+    expect(onImported).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Second Recording')
+  })
+
   it('identifies bridge scripts requiring manual cleanup when rollback fails', async () => {
     const onImported = vi.fn()
     const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
@@ -1140,7 +1190,10 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
 
     expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
-    expect(onImported).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'saved-checkout' })],
+      stayInImportReview: true,
+    })
     expect(container.textContent).toContain('Automatic cleanup failed for “Checkout”')
     expect(container.textContent).toContain('delete it from the Script Library before retrying')
   })
@@ -1270,6 +1323,56 @@ describe('BrowserRecorderControlPanel', () => {
       scripts: [expect.objectContaining({ id: 'script-atomic' })],
     })
     expect(dismiss.disabled).toBe(false)
+  })
+
+  it('publishes an atomic save non-navigating when the panel switches sessions before completion', async () => {
+    const onImported = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    const saveRequest = new Promise(resolve => {
+      resolveSave = resolve
+    })
+    const secondSession = {
+      ...stoppedSession,
+      id: 'brec-2',
+      name: 'Second Recording',
+    }
+    apiMock.getBrowserRecording
+      .mockResolvedValueOnce({ session: stoppedSession })
+      .mockResolvedValueOnce({ session: secondSession })
+    apiMock.convertBrowserRecording.mockImplementationOnce(() => saveRequest)
+
+    await renderPanel({ onImported })
+    await clickButton('Preview Conversion')
+    await flushPromises()
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-2" onImported={onImported} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      resolveSave({
+        script: {
+          id: 'script-late-session',
+          name: 'Checkout Flow',
+          protocol: 'browser',
+          version: '1',
+          script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
+        },
+        warnings: [],
+        stats: {},
+      })
+      await saveRequest
+    })
+    await flushPromises()
+
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'script-late-session' })],
+      stayInImportReview: true,
+    })
+    expect(container.textContent).toContain('Second Recording')
   })
 
   it('does not use a fallible follow-up update for reviewed parameterization', async () => {

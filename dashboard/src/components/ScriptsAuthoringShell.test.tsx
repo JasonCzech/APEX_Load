@@ -160,7 +160,7 @@ const importSurfaces = [
     { id: 'standard_api', label: 'Standard API', description: 'Use the normal sample converter.', default: true },
     { id: 'java_http', label: 'Java over HTTP', description: 'Promote samples into java_http drafts.', default: false },
   ]),
-  surface('enterprise_archive', 'Import Enterprise Script Archive', 'Archive', 'Legacy & Tool Exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
+  surface('enterprise_archive', 'Import Loadrunner Script Archive', 'Archive', 'Legacy & Tool Exports', 10, 'enterprise_archive', 'Convert LoadRunner enterprise script archives.'),
   surface('jmeter', 'Import JMeter', 'JMeter', 'Legacy & Tool Exports', 20, 'jmeter', 'Convert JMeter plans into deterministic script drafts.'),
   surface('devweb', 'DevWeb Source', 'DevWeb', 'Legacy & Tool Exports', 30, 'devweb', 'Convert DevWeb source projects.'),
   surface('k6', 'k6 Script', 'k6', 'Legacy & Tool Exports', 40, 'k6', 'Convert k6 JavaScript scripts into Apex Load drafts.'),
@@ -306,7 +306,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Request / Response Sample')
     expect(container.textContent).toContain('Java over HTTP')
     expect(container.textContent).not.toContain('Import Java over HTTP')
-    expect(container.textContent).toContain('Import Enterprise Script Archive')
+    expect(container.textContent).toContain('Import Loadrunner Script Archive')
     expect(container.textContent).toContain('Import JMeter')
     expect(container.textContent).toContain('DevWeb Source')
     expect(container.textContent).toContain('k6 Script')
@@ -334,7 +334,7 @@ describe('ScriptsAuthoringShell', () => {
     await clickButton('RAML / Anypoint')
     expect(actions.openImportSurface).toHaveBeenCalledWith('raml', null)
 
-    await clickButton('Import Enterprise Script Archive')
+    await clickButton('Import Loadrunner Script Archive')
     expect(actions.openImportSurface).toHaveBeenCalledWith('enterprise_archive', null)
 
     await clickButton('Oracle E-Business / Siebel Review')

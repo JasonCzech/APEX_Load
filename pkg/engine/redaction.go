@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"math"
 	"net/url"
 	"regexp"
 	"sort"
@@ -103,8 +102,6 @@ var payloadRedactionPatterns = []payloadReplacement{
 		repl: redactedPayloadValue,
 	},
 }
-
-var highEntropyTokenPattern = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
 
 type payloadReplacement struct {
 	re   *regexp.Regexp
@@ -915,12 +912,10 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 		}
 	}
 	redacted = scrubRuntimeSecretText(redacted, config)
-	redacted = highEntropyTokenPattern.ReplaceAllStringFunc(redacted, func(candidate string) string {
-		if !looksSensitiveToken(candidate) {
-			return candidate
-		}
-		return redactedPayloadValue
-	})
+	// The shared scrubber performs URL-aware bare-token redaction. Keeping a
+	// second context-free high-entropy pass here caused ordinary URL paths such
+	// as :443/Services/... to be mistaken for credentials before the URL-aware
+	// layer could preserve their structure.
 	return scrub.Value(redacted, scrub.Policy{})
 }
 
@@ -993,45 +988,4 @@ func expandRuntimeSecretPlaceholders(value string) string {
 		offset = end
 	}
 	return out.String()
-}
-
-func looksSensitiveToken(value string) bool {
-	if len(value) < 24 {
-		return false
-	}
-
-	hasLetter := false
-	hasDigit := false
-	for _, ch := range value {
-		switch {
-		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z':
-			hasLetter = true
-		case ch >= '0' && ch <= '9':
-			hasDigit = true
-		}
-	}
-	if !hasLetter || !hasDigit {
-		return false
-	}
-
-	return shannonEntropy(value) >= 4.0
-}
-
-func shannonEntropy(value string) float64 {
-	if value == "" {
-		return 0
-	}
-
-	counts := make(map[rune]float64)
-	for _, ch := range value {
-		counts[ch]++
-	}
-
-	length := float64(len([]rune(value)))
-	entropy := 0.0
-	for _, count := range counts {
-		p := count / length
-		entropy -= p * math.Log2(p)
-	}
-	return entropy
 }

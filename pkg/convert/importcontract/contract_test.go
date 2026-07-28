@@ -62,13 +62,13 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "0cb6ed628d2af15b686d376d527a64e0cba0dc8fadedd10d6084763da699d561",
+	"har":      "2941c93093c9a2fd2e98a15499f3890b751eaf3dbc3cb4ab99a5170da9cd051f",
 	"jmeter":   "4dc8ac1a0a6512eb5d6d32a6dfa2b3e1f9911457fa748b274307833f6f854162",
 	"k6":       "ad3473a1f5752e85de836f10dc1577fe47b89cab4dcb12a0c45ca429b0af762c",
-	"openapi":  "a28a2a528a280c9d0c699eab213b3a18ed1eb67a1c77b888370473e22527af6c",
+	"openapi":  "5e2c943038817074188f11976ea67241a63c3509acfc9dbb204735856aba6ba3",
 	"postman":  "84bc234a9d609b99955696e58afa1f7f45f5d07a15dbe7c7fe092f5c36d01947",
-	"raw_http": "12a13efb99fef4e3f9a019881e85d7f47b27775de2e70b235c4796bf9de4736d",
-	"wsdl":     "c5af6f18258b6e4fea868ebbe6f9955e7b7a8665aec504dd9c5995cb06241adf",
+	"raw_http": "9db5248a05074b18cf32f05634c12b826cf5c4974978c2e53e98feef886aad19",
+	"wsdl":     "06ccb7e2fc6fdd9c96cff016c486dfafc29816a9aea2b21de93f305f1f9badae",
 }
 
 func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
@@ -89,9 +89,7 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			if importer.name == "har" {
 				requireIntentionalDelta(t, "har_request_http_version_fidelity")
 			}
-			if importer.name == "postman" || importer.name == "jmeter" || importer.name == "k6" {
-				requireIntentionalDelta(t, "credential_preserving_import_marker")
-			}
+			requireIntentionalDelta(t, "credential_preserving_import_marker")
 			if importer.name != "wsdl" {
 				requireIntentionalDelta(t, "http_imports_disable_implicit_traceparent")
 			}

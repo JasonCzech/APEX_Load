@@ -932,6 +932,76 @@ func TestSavedScriptDebugStartsResolveRefKeyToCanonicalID(t *testing.T) {
 	}
 }
 
+func TestSavedImportedScriptDebugUsesDurableCredentialsForUnchangedProjection(t *testing.T) {
+	const importedAuthorization = "Bearer imported-debug-password"
+	executed := make(chan *protocol.Action, 1)
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		executed <- action
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: http.StatusOK}, nil
+	})
+	server := recordingTestServer(t)
+	stored, created, err := server.runner.CreateImportedScriptDurableReportingReplay(&dsl.Script{
+		ID:        "trusted-debug-import",
+		Name:      "Trusted debug import",
+		Version:   "1.0.0",
+		Protocol:  protocolName,
+		ProjectID: "p1",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{
+			Name:   "request",
+			Type:   http.MethodGet,
+			Method: http.MethodGet,
+			Target: "/",
+			Headers: map[string]string{
+				"Authorization": importedAuthorization,
+			},
+		}},
+	}, "enterprise_archive")
+	if err != nil {
+		t.Fatalf("store imported script: %v", err)
+	}
+	if !created || stored == nil || stored.Script == nil {
+		t.Fatalf("stored import = %#v, created=%v", stored, created)
+	}
+	projected := maskScriptSecrets(stored.Script)
+	if projected == nil || projected.Actions[0].Headers["Authorization"] != "Bearer "+maskedScriptSecret {
+		t.Fatalf("disclosure projection did not mask imported authorization: %#v", projected)
+	}
+	edited := cloneScriptDefinition(projected)
+	edited.Actions[0].Target = "/edited"
+	if matchesStoredScriptDisclosureProjection(edited, stored.Script) {
+		t.Fatal("edited disclosure projection inherited durable import trust")
+	}
+
+	body, err := json.Marshal(ScriptDebugStartRequest{
+		ProjectID:       stored.ProjectID,
+		ReplaySessionID: "55555555-5555-4555-8555-555555555555",
+		Script:          projected,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/debug/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", stored.ID)
+	resp := httptest.NewRecorder()
+
+	server.handleStartScriptDebugScript(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	select {
+	case action := <-executed:
+		if got := action.Headers["Authorization"]; got != importedAuthorization {
+			t.Fatalf("executed Authorization = %q, want durable imported value", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("debug action did not execute")
+	}
+	_, _ = server.scriptDebug.Stop("55555555-5555-4555-8555-555555555555")
+}
+
 func TestHandleStartScriptDebugRejectsInvalidAndCrossProjectCollidingSessionIDs(t *testing.T) {
 	t.Run("invalid id", func(t *testing.T) {
 		server := NewServer(ServerConfig{})

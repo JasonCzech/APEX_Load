@@ -475,6 +475,12 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     setAssetUploads({})
     return generation
   }, [advanceReviewGeneration, resetConvertTask, resetSaveTask, sourceSecretSessions])
+  useEffect(() => () => {
+    // Route transitions can unmount this importer without invoking Back.
+    // Fence any persistence response so it refreshes the library without
+    // navigating over whichever authoring surface replaced this review.
+    reviewGenerationRef.current += 1
+  }, [])
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
     invalidateSampleSource()
     dispatchOptions({ type: 'update', field, value })
@@ -831,7 +837,10 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       const savedScript = await saveTask.run(async () => {
         return api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null)
       })
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
+      onImported?.({
+        scripts: [withFallbackPersistedScript(savedScript, scriptToSave)],
+        ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+      })
     } catch (error: unknown) {
       if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
@@ -946,7 +955,10 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { sourceSecretSessions.clear('conversion'); onClose() }}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
+          invalidateSampleSource()
+          onClose()
+        }}>Back</button>}
       </div>
 
       <div className="sample-import-card">

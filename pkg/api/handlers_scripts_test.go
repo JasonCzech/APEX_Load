@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
@@ -5802,6 +5803,17 @@ func normalizeImportEnvelopeTimestamps(t *testing.T, value any) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, child := range typed {
+			if key == jmeterDirectImportOperationKey {
+				operationID, ok := child.(string)
+				if !ok {
+					t.Fatalf("%s = %#v, want UUID string", key, child)
+				}
+				if _, err := uuid.Parse(operationID); err != nil {
+					t.Fatalf("%s = %q, want UUID: %v", key, operationID, err)
+				}
+				typed[key] = "<jmeter-import-operation>"
+				continue
+			}
 			if key == "imported_at" {
 				importedAt, ok := child.(string)
 				if !ok {

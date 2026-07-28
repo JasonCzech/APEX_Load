@@ -211,9 +211,10 @@ func buildParameterDataSource(dataSourceName, dataFile, dataContent, column, del
 		FirstRowHeader: firstRowHeader,
 		Columns:        columns,
 	}
-	if normalized := normalizeParameterDelimiter(delimiter); normalized != "," {
-		dataSource.Delimiter = normalized
-	}
+	// Preserve the importer's resolved delimiter even when it is a comma.
+	// An empty delimiter is not neutral for .dat sources: the shared runtime
+	// resolver interprets it as tab for LoadRunner compatibility.
+	dataSource.Delimiter = normalizeParameterDelimiter(delimiter)
 	return dataSource
 }
 

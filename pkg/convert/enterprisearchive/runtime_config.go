@@ -108,6 +108,7 @@ type RuntimeConfig struct {
 	JavaVMParametersRaw              string
 	JavaVMParameterRows              []string // verbatim source rows, in command-line order; see orderedJavaVMParameterRows
 	JavaVMParametersParseError       string
+	javaVMParameterSourceRows        []string
 	javaVMParameterRejections        []javaVMParameterRejection
 	javaVMParameterExposureReviews   []javaVMParameterRejection
 	JavaVMUseXBootClasspath          *bool
@@ -560,6 +561,10 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		// argv list is discarded on a parse error, so these strings are the only
 		// remaining record of what the archive configured.
 		for _, row := range rows {
+			rc.javaVMParameterSourceRows = append(
+				rc.javaVMParameterSourceRows,
+				row.value,
+			)
 			rc.JavaVMParameterRows = append(
 				rc.JavaVMParameterRows,
 				disclosureSafeJavaVMParameterRow(row.value),
@@ -617,8 +622,6 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 				)
 			}
 			if blockingIssues := javaVMParameterIssuesBySensitivity(validationIssues, false); len(blockingIssues) > 0 {
-				first := blockingIssues[0]
-				rc.JavaVMParametersParseError = first.Error()
 				for _, issue := range blockingIssues {
 					rejection := javaVMParameterRejection{
 						tokenIndex: issue.Index,
@@ -633,13 +636,15 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 					}
 					rc.javaVMParameterRejections = append(rc.javaVMParameterRejections, rejection)
 				}
-				// Fail closed across the entire argv collection. Retaining safe
-				// siblings would create a command line the source never ran.
-				parameters = nil
-				rc.JavaVMParametersRaw = credential.Redacted
-				for index := range rc.JavaVMParameterRows {
-					rc.JavaVMParameterRows[index] = credential.Redacted
-				}
+				// The draft remains execution-gated, so retain every structurally
+				// valid sibling exactly for operator repair and omit only tokens
+				// the runner can never accept. In particular, a credential-bearing
+				// -D property must not disappear merely because a neighboring
+				// process-control option was unsafe.
+				parameters = javaVMParametersWithoutStructuralIssues(
+					parameters,
+					blockingIssues,
+				)
 			}
 		}
 		for _, rejection := range rc.javaVMParameterRejections {
@@ -2804,6 +2809,38 @@ func executableJavaVMParameters(parameters []string) []string {
 		return nil
 	}
 	return append([]string(nil), parameters...)
+}
+
+func javaVMParametersWithoutStructuralIssues(
+	parameters []string,
+	issues []javarunner.ValidationIssue,
+) []string {
+	if len(parameters) == 0 {
+		return nil
+	}
+	rejected := make(map[int]struct{}, len(issues))
+	for _, issue := range issues {
+		if issue.Category == javarunner.VMParameterSensitiveProperty {
+			continue
+		}
+		if issue.Index >= 0 && issue.Index < len(parameters) {
+			rejected[issue.Index] = struct{}{}
+		}
+	}
+	if len(rejected) == 0 {
+		return append([]string(nil), parameters...)
+	}
+	out := make([]string, 0, len(parameters)-len(rejected))
+	for index, parameter := range parameters {
+		if _, omit := rejected[index]; omit {
+			continue
+		}
+		out = append(out, parameter)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func disclosureSafeJavaVMParameterRow(value string) string {

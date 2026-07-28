@@ -242,6 +242,20 @@ function renderTopbarAction(action: TopbarAction) {
 
 function renderTopbarMetaChip(chip: TopbarMetaChip) {
   if (chip.hidden) return null;
+  if (chip.onClick) {
+    return (
+      <button
+        key={chip.id}
+        type="button"
+        className={`topbar-meta-chip issue-pill-button ${chip.tone || "default"}`}
+        title={chip.title}
+        aria-label={chip.ariaLabel}
+        onClick={chip.onClick}
+      >
+        {chip.label}
+      </button>
+    );
+  }
   return (
     <span
       key={chip.id}

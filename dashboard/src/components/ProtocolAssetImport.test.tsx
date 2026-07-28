@@ -2515,6 +2515,79 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Partially created scripts were removed.')
   })
 
+  it('fences AsyncAPI Save All after Back and reports an unremoved committed survivor without navigation', async () => {
+    const onClose = vi.fn()
+    const onImported = vi.fn()
+    let resolveFirstSave!: (value: unknown) => void
+    apiMock.commitAsyncAPIImport.mockReturnValueOnce(new Promise(resolve => {
+      resolveFirstSave = resolve
+    }))
+    apiMock.deleteScript.mockRejectedValueOnce(new Error('cleanup unavailable'))
+
+    await act(async () => root.render(
+      <ProtocolAssetImport
+        kind="asyncapi"
+        projectId="project-1"
+        onClose={onClose}
+        onImported={onImported}
+      />,
+    ))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['asyncapi: 3.0.0'], 'orders.yaml')],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save All 2 Scripts'))?.click()
+      await Promise.resolve()
+    })
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.trim() === 'Back')?.click()
+    })
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveFirstSave({
+        stored_script: {
+          id: 'asyncapi-survivor',
+          name: 'Orders Kafka',
+          protocol: 'kafka',
+          version: '1.0.0',
+          created_at: '2026-01-01T00:00:00Z',
+          script: {
+            name: 'Orders Kafka',
+            version: '1.0.0',
+            protocol: 'kafka',
+            config: { base_url: '' },
+            actions: [],
+          },
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteScript).toHaveBeenCalledWith('asyncapi-survivor')
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'asyncapi-survivor' })],
+      stayInImportReview: true,
+    })
+  })
+
   it('passes optional Postman environment files to validation imports', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)

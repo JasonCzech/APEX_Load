@@ -206,6 +206,58 @@ describe('JMeterImport', () => {
 
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ id: 'jmeter-saved-after-change' })],
+      stayInImportReview: true,
+    }))
+  })
+
+  it('publishes a batch save completed after Back without navigating away from the next review', async () => {
+    const onClose = vi.fn()
+    const onImported = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    apiMock.saveJMeterImport.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" onClose={onClose} onImported={onImported} />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['<jmeterTestPlan />'], 'save-back-race.jmx')],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Validate Only'))?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.trim() === 'Back')?.click()
+    })
+    await act(async () => {
+      resolveSave({
+        count: 1,
+        scripts: [{
+          id: 'jmeter-saved-after-back',
+          name: 'Auth_Users',
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        }],
+      })
+      await Promise.resolve()
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'jmeter-saved-after-back' })],
+      stayInImportReview: true,
     }))
   })
 
@@ -608,6 +660,7 @@ describe('JMeterImport', () => {
   })
 
   it('uses script indexes for duplicate legacy names when parameterizing a multi-script review', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const first = { name: 'Shared Override', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'First', type: 'request', method: 'GET', target: '/first' }] }
     const second = { name: 'Shared Override', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Second', type: 'request', method: 'GET', target: '/second' }] }
     apiMock.validateJMeterImport.mockResolvedValueOnce({
@@ -648,6 +701,8 @@ describe('JMeterImport', () => {
         expect.objectContaining({ actions: [expect.objectContaining({ target: '/second?parameterized=true' })] }),
       ],
     }))
+    expect(consoleError.mock.calls.some(call => String(call[0]).includes('same key'))).toBe(false)
+    consoleError.mockRestore()
   })
 
   it('ignores a late credential result after a newer JMeter review', async () => {

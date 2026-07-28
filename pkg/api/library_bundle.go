@@ -699,8 +699,7 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 }
 
 type preflightLibraryScript struct {
-	localID     string
-	contentHash string
+	script *dsl.Script
 }
 
 // preflightLibraryImport validates the complete dependency graph and every
@@ -756,7 +755,8 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 			conflict(item, "script payload has inconsistent source project ownership")
 			continue
 		}
-		if strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != hashLibraryScript(item.Script) {
+		if strings.TrimSpace(item.ContentHash) == "" ||
+			!libraryScriptHashMatches(item.Script, item.ContentHash) {
 			conflict(item, "declared content hash does not match script payload")
 			continue
 		}
@@ -771,8 +771,11 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 					continue
 				}
 				prior = local.Script
-				localHash := hashLibraryScript(local.Script)
-				if localHash != link.LocalContentHash && item.ContentHash != link.RemoteContentHash && localHash != item.ContentHash {
+				localChanged := !libraryScriptHashMatches(local.Script, link.LocalContentHash)
+				remoteChanged := !libraryScriptHashMatches(item.Script, link.RemoteContentHash)
+				converged := libraryScriptHashesEquivalent(local.Script, item.Script) ||
+					libraryScriptHashMatches(local.Script, item.ContentHash)
+				if localChanged && remoteChanged && !converged {
 					conflict(item, "local and remote script changed since last sync")
 					continue
 				}
@@ -796,7 +799,7 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 			conflict(item, strings.Join(issues, "; "))
 			continue
 		}
-		plannedScripts[item.SourceItemID] = preflightLibraryScript{localID: localID, contentHash: item.ContentHash}
+		plannedScripts[item.SourceItemID] = preflightLibraryScript{script: item.Script}
 	}
 
 	for _, item := range req.Bundle.Items {
@@ -827,7 +830,9 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 		for _, group := range item.Scenario.Request.Groups {
 			sourceID := strings.TrimSpace(group.ScriptID)
 			if planned, ok := plannedScripts[sourceID]; ok {
-				if dependency, exists := dependencies[sourceID]; exists && strings.TrimSpace(dependency.ContentHash) != "" && dependency.ContentHash != planned.contentHash {
+				if dependency, exists := dependencies[sourceID]; exists &&
+					strings.TrimSpace(dependency.ContentHash) != "" &&
+					!libraryScriptHashMatches(planned.script, dependency.ContentHash) {
 					conflict(item, "referenced script content does not match dependency hash: "+sourceID)
 					valid = false
 					break
@@ -845,7 +850,9 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 				valid = false
 				break
 			}
-			if dependency, exists := dependencies[sourceID]; exists && strings.TrimSpace(dependency.ContentHash) != "" && dependency.ContentHash != hashLibraryScript(stored.Script) {
+			if dependency, exists := dependencies[sourceID]; exists &&
+				strings.TrimSpace(dependency.ContentHash) != "" &&
+				!libraryScriptHashMatches(stored.Script, dependency.ContentHash) {
 				conflict(item, "referenced script content does not match dependency hash: "+sourceID)
 				valid = false
 				break
@@ -958,8 +965,8 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	if item.Script == nil || (strings.TrimSpace(item.ProjectID) != "" && normalizeProjectID(item.Script.ProjectID) != normalizeProjectID(item.ProjectID)) {
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "script payload has inconsistent source project ownership"}
 	}
-	computedHash := hashLibraryScript(item.Script)
-	if strings.TrimSpace(item.ContentHash) == "" || item.ContentHash != computedHash {
+	if strings.TrimSpace(item.ContentHash) == "" ||
+		!libraryScriptHashMatches(item.Script, item.ContentHash) {
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match script payload"}
 	}
 	link := s.libraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID)
@@ -972,8 +979,11 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 			if normalizeProjectID(local.ProjectID) != projectID {
 				return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "existing sync link belongs to a different destination project"}
 			}
-			localHash := hashLibraryScript(local.Script)
-			if localHash != link.LocalContentHash && item.ContentHash != link.RemoteContentHash && localHash != item.ContentHash {
+			localChanged := !libraryScriptHashMatches(local.Script, link.LocalContentHash)
+			remoteChanged := !libraryScriptHashMatches(item.Script, link.RemoteContentHash)
+			converged := libraryScriptHashesEquivalent(local.Script, item.Script) ||
+				libraryScriptHashMatches(local.Script, item.ContentHash)
+			if localChanged && remoteChanged && !converged {
 				return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: "local and remote script changed since last sync"}
 			}
 			prior = local
@@ -1074,7 +1084,9 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		if normalizeProjectID(stored.ProjectID) != projectID {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script belongs to a different destination project"}
 		}
-		if dependency, ok := dependencies[sourceScriptID]; !mappedDependency && ok && strings.TrimSpace(dependency.ContentHash) != "" && hashLibraryScript(stored.Script) != dependency.ContentHash {
+		if dependency, ok := dependencies[sourceScriptID]; !mappedDependency && ok &&
+			strings.TrimSpace(dependency.ContentHash) != "" &&
+			!libraryScriptHashMatches(stored.Script, dependency.ContentHash) {
 			return "", "", &LibraryConflict{Kind: "scenario", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "referenced script content does not match dependency hash: " + sourceScriptID}
 		}
 	}

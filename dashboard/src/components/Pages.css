@@ -4284,6 +4284,12 @@
   margin-bottom: 12px;
 }
 
+.utility-problem-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .library-toolbar {
   display: flex;
   align-items: flex-end;

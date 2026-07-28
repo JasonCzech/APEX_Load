@@ -1619,9 +1619,16 @@ describe("RecordingStudio", () => {
     });
   });
 
-  it("treats preview scripts with empty ids as unsaved drafts", async () => {
+  it("treats preview scripts with empty ids as unsaved drafts and reconciles a save after Back", async () => {
     const onImported = vi.fn();
     const onEdit = vi.fn();
+    const onClose = vi.fn();
+    let resolveSave: ((value: unknown) => void) | undefined;
+    apiMock.createScript.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
     apiMock.previewRecordingConversion.mockResolvedValueOnce({
       script: {
         id: "",
@@ -1637,7 +1644,13 @@ describe("RecordingStudio", () => {
     });
 
     await act(async () => {
-      root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />);
+      root.render(
+        <RecordingStudio
+          onImported={onImported}
+          onEdit={onEdit}
+          onClose={onClose}
+        />,
+      );
     });
     await flushPromises();
     await openProxyAdvanced(container);
@@ -1676,14 +1689,35 @@ describe("RecordingStudio", () => {
       null,
       "rec-1",
     );
+    const backButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Back",
+    );
+    await act(async () => {
+      backButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSave?.({
+        id: "saved-unsaved-preview",
+        name: "Unsaved Preview",
+        protocol: "http",
+        version: "1.0.0",
+        created_at: "2026-05-17T00:00:00Z",
+      });
+      await Promise.resolve();
+    });
+    await flushPromises();
     expect(onImported).toHaveBeenCalledWith(
       expect.objectContaining({
         scripts: [
           expect.objectContaining({
+            id: "saved-unsaved-preview",
             name: "Unsaved Preview",
             protocol: "http",
           }),
         ],
+        stayInImportReview: true,
       }),
     );
   });

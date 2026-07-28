@@ -402,6 +402,21 @@ func schemaCreateTableStatements() []string {
 			-- Revisit only if some profile starts deriving keys from client input.
 			UNIQUE(project_id, idempotency_key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS direct_import_receipts (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			source_profile TEXT NOT NULL,
+			operation_key_hash TEXT NOT NULL,
+			request_sha256 TEXT NOT NULL,
+			state TEXT NOT NULL CHECK(state IN ('pending', 'complete')),
+			owner_token TEXT NOT NULL DEFAULT '',
+			lease_expires_at DATETIME,
+			script_ids_json TEXT NOT NULL DEFAULT '[]',
+			scenario_id TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(project_id, source_profile, operation_key_hash)
+		)`,
 		`CREATE TABLE IF NOT EXISTS tests (
 			id TEXT PRIMARY KEY,
 			ref_key TEXT,
@@ -1277,6 +1292,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_project_active ON bruno_source_revisions(project_id, active_flag)`, "idx_bruno_revisions_project_active"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_bruno_revisions_one_active ON bruno_source_revisions(script_id, project_id) WHERE active_flag = 1`, "idx_bruno_revisions_one_active"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_native_batches_project_created ON bruno_native_import_batches(project_id, created_at)`, "idx_bruno_native_batches_project_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_direct_import_receipts_pending_lease ON direct_import_receipts(state, lease_expires_at)`, "idx_direct_import_receipts_pending_lease"},
 	{`CREATE INDEX IF NOT EXISTS idx_project_secrets_project_updated ON project_secrets(project_id, updated_at)`, "idx_project_secrets_project_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_project_secret_provider_metadata_project_updated ON project_secret_provider_metadata(project_id, updated_at)`, "idx_project_secret_provider_metadata_project_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_protected_source_secret_sessions_expiry ON protected_source_secret_sessions(expires_at)`, "idx_protected_source_secret_sessions_expiry"},
@@ -1301,10 +1317,10 @@ var schemaIndexes = []schemaIndex{
 }
 
 func (s *SQLiteStore) init() error {
-	// Import tables retain their original Bruno-era physical names. Detect a
-	// database already mutated by the short-lived format-neutral rename before
-	// CREATE TABLE can silently create empty legacy tables beside it.
-	if err := s.validateImportPhysicalTableLayout(); err != nil {
+	// Import tables retain their original Bruno-era physical names. Restore a
+	// database opened by the short-lived format-neutral release before CREATE
+	// TABLE can silently create empty legacy tables beside its populated ones.
+	if err := s.ensureCompatibleImportPhysicalTableLayout(); err != nil {
 		return err
 	}
 	for _, q := range schemaCreateTableStatements() {
@@ -1324,6 +1340,12 @@ func (s *SQLiteStore) init() error {
 	if err := s.backfillSanitizedSourceAvailability(); err != nil {
 		return err
 	}
+	if err := s.backfillGitHubCheckLinkKinds(); err != nil {
+		return err
+	}
+	if err := s.backfillBlankScriptIDs(); err != nil {
+		return err
+	}
 	if err := s.RepairLegacyScriptRecordings(); err != nil {
 		return err
 	}
@@ -1331,9 +1353,6 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.backfillArchiveFinalizationIntentTokens(); err != nil {
-		return err
-	}
-	if err := s.backfillGitHubCheckLinkKinds(); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`UPDATE github_script_links SET remote_blob_sha = last_commit_sha WHERE (remote_blob_sha IS NULL OR remote_blob_sha = '') AND last_commit_sha IS NOT NULL AND last_commit_sha != ''`); err != nil {

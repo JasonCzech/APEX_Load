@@ -467,6 +467,7 @@ func (s *SQLiteStore) GetScript(id string) (*dsl.Script, error) {
 	if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
 		return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 	}
+	recognizeLegacyCredentialPreservingImport(&script)
 
 	return &script, nil
 }
@@ -513,6 +514,7 @@ func (s *SQLiteStore) ListScripts(projectID string, folderID *string) ([]*dsl.Sc
 		if err := decodeStoredScriptJSON(&script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON); err != nil {
 			return nil, fmt.Errorf("decode script %s: %w", script.ID, err)
 		}
+		recognizeLegacyCredentialPreservingImport(&script)
 		scripts = append(scripts, &script)
 	}
 	return scripts, rows.Err()

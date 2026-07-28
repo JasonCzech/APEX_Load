@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"strings"
 	"testing"
@@ -96,6 +97,276 @@ func TestRetainedSchemaCredentialRedactsEveryRuntimeBoundary(t *testing.T) {
 	}
 	_, err = multi.Run(context.Background())
 	assertRedacted("multi-group load", err)
+}
+
+func TestImportedCredentialValuesForDisclosureFailsClosedBesideStaleLocator(t *testing.T) {
+	const pin = "731"
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "openapi",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "verify",
+			Type:   "POST",
+			Method: "POST",
+			Target: "/verify",
+			HeaderList: dsl.HeaderList{{
+				Name:  "Content-Type",
+				Value: "application/json",
+			}},
+			Body: `{"code":` + pin + `}`,
+			Metadata: map[string]any{
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+					map[string]any{"field": "body.json", "pointer": "/code"},
+					map[string]any{"field": "body.json", "pointer": "/removed"},
+				},
+			},
+		}},
+	}
+
+	if _, err := ImportedCredentialValues(script); err == nil {
+		t.Fatal("strict runtime inspection accepted a stale locator")
+	}
+	if values, err := ImportedCredentialValuesForDisclosure(script); err == nil ||
+		values != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure() = %#v, %v; want stale locator to fail closed", values, err)
+	}
+}
+
+func TestImportedCredentialValuesAcceptsNativeHTTPSequenceCredentialSurfaces(t *testing.T) {
+	const (
+		cookieValue = "session-native-7319"
+		password    = "basic-native-6248"
+	)
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_archive",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "sequence",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Params: map[string]any{
+				"requests": []map[string]any{{
+					"name":   "request",
+					"type":   "GET",
+					"method": "GET",
+					"target": "/resource",
+					"header_list": []map[string]any{{
+						"name":  "Cookie",
+						"value": "sid=" + cookieValue,
+					}},
+					"auth": &dsl.AuthConfig{
+						Type:     "basic",
+						Username: "operator",
+						Password: password,
+					},
+					"metadata": map[string]any{
+						dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+							map[string]any{
+								"field": "actions[0].params.requests[0].header_list",
+								"index": 0,
+							},
+							map[string]any{
+								"field": "actions[0].params.requests[0].auth.password",
+							},
+						},
+					},
+				}},
+			},
+		}},
+	}
+
+	values, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+	}
+	for _, want := range []string{cookieValue, password} {
+		if !containsExactString(values, want) {
+			t.Fatalf("retained values = %#v, want native sequence credential %q", values, want)
+		}
+	}
+	request := script.Actions[0].Params["requests"].([]map[string]any)[0]
+	if got := request["header_list"].([]map[string]any)[0]["value"]; got != "sid="+cookieValue {
+		t.Fatalf("native sequence header mutated to %#v", got)
+	}
+	if got := request["auth"].(*dsl.AuthConfig).Password; got != password {
+		t.Fatalf("native sequence auth password mutated to %q", got)
+	}
+}
+
+func TestLegacyImportedRequestBodiesCollectTypedCredentialsWithoutLocators(t *testing.T) {
+	const multipartBoundary = "legacy-credential-boundary"
+	tests := []struct {
+		name        string
+		contentType string
+		body        string
+		want        []string
+		notWant     []string
+	}{
+		{
+			name:        "JSON",
+			contentType: "application/json",
+			body:        `{"password":"json-password-7319","ordinary":"visible-json-value"}`,
+			want:        []string{"json-password-7319"},
+			notWant:     []string{"visible-json-value"},
+		},
+		{
+			name:        "XML element and attribute",
+			contentType: "application/soap+xml",
+			body: `<Envelope sessionToken="xml-attribute-token-7319">` +
+				`<password>xml-password-6248</password>` +
+				`<ordinary>visible-xml-value</ordinary></Envelope>`,
+			want:    []string{"xml-attribute-token-7319", "xml-password-6248"},
+			notWant: []string{"visible-xml-value"},
+		},
+		{
+			name:        "form",
+			contentType: "application/x-www-form-urlencoded",
+			body:        "password=form-password-7319&ordinary=visible-form-value",
+			want:        []string{"form-password-7319"},
+			notWant:     []string{"visible-form-value"},
+		},
+		{
+			name:        "multipart",
+			contentType: "multipart/form-data; boundary=" + multipartBoundary,
+			body: "--" + multipartBoundary + "\r\n" +
+				"Content-Disposition: form-data; name=\"password\"\r\n\r\n" +
+				"multipart-password-7319\r\n--" + multipartBoundary + "--\r\n",
+			want: []string{"multipart-password-7319"},
+		},
+		{
+			name:        "GraphQL envelope",
+			contentType: "application/json",
+			body: `{"query":"mutation($input: String!) { login(password: $input, token: \"inline-graphql-token-7319\") }",` +
+				`"variables":{"input":"graphql-variable-password-6248","ordinary":"visible-variable"}}`,
+			want:    []string{"inline-graphql-token-7319", "graphql-variable-password-6248"},
+			notWant: []string{"visible-variable"},
+		},
+		{
+			name:        "GraphQL request",
+			contentType: "application/graphql",
+			body:        `mutation { login(password: "graphql-password-7319") }`,
+			want:        []string{"graphql-password-7319"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			action := dsl.Action{
+				Name:   "legacy request",
+				Type:   "POST",
+				Method: "POST",
+				Target: "/login",
+				HeaderList: dsl.HeaderList{{
+					Name:  "Content-Type",
+					Value: test.contentType,
+				}},
+				Body: test.body,
+			}
+			script := &dsl.Script{
+				Protocol: "http",
+				Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+					Source: "postman",
+					Preserved: map[string]any{
+						dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+					},
+				}},
+				Actions: []dsl.Action{action},
+			}
+			originalBody := script.Actions[0].Body
+
+			values, err := ImportedCredentialValues(script)
+			if err != nil {
+				t.Fatalf("ImportedCredentialValues: %v", err)
+			}
+			for _, want := range test.want {
+				if !containsExactString(values, want) {
+					t.Fatalf("retained body values = %#v, want %q", values, want)
+				}
+			}
+			for _, notWant := range test.notWant {
+				if containsExactString(values, notWant) {
+					t.Fatalf("retained body values = %#v, included ordinary value %q", values, notWant)
+				}
+			}
+			config, err := WithSecretValueRedactionChecked(nil, values)
+			if err != nil {
+				t.Fatalf("construct runtime matcher: %v", err)
+			}
+			for _, want := range test.want {
+				if got := config.ScrubText("echo=" + want); strings.Contains(got, want) {
+					t.Fatalf("credential echo %q was not redacted: %q", want, got)
+				}
+			}
+			if script.Actions[0].Body != originalBody {
+				t.Fatalf("credential inspection changed executable body bytes")
+			}
+		})
+	}
+}
+
+func TestLegacyBodyCredentialFallbackIgnoresReviewOnlyActionBodies(t *testing.T) {
+	const reviewOnlyCredential = "review-source-password-7319"
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "postman",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "review omitted source behavior",
+			Type: "review_required",
+			Body: `{"password":"` + reviewOnlyCredential + `"}`,
+		}},
+	}
+
+	values, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues: %v", err)
+	}
+	if containsExactString(values, reviewOnlyCredential) {
+		t.Fatalf("review-only body was treated as an executable request credential: %#v", values)
+	}
+}
+
+func TestLegacyBodyCredentialFallbackFailsClosedForMalformedDeclaredStructure(t *testing.T) {
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "postman",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "legacy request",
+			Type:   "POST",
+			Method: "POST",
+			Target: "/login",
+			HeaderList: dsl.HeaderList{{
+				Name: "Content-Type", Value: "application/json",
+			}},
+			Body: `{"password":"unterminated`,
+		}},
+	}
+	if _, err := ImportedCredentialValues(script); err == nil {
+		t.Fatal("malformed declared JSON credential body did not fail closed")
+	}
+	script.Actions[0].Body = `{"ordinary":"intentionally malformed`
+	if _, err := ImportedCredentialValues(script); err != nil {
+		t.Fatalf("malformed noncredential load-test payload was unnecessarily blocked: %v", err)
+	}
 }
 
 func TestImportedCredentialValuesIncludesRecordedResourceURLCredentials(t *testing.T) {
@@ -509,6 +780,248 @@ func TestImportedCredentialValuesDereferencesEnterpriseConfigLocatorsAndComponen
 		script.Config.Database.DSN != dsn ||
 		script.Config.JavaVuser.AdditionalVMParameters[0] != jvmArgument {
 		t.Fatalf("credential collection mutated durable config: %#v", script.Config)
+	}
+}
+
+func TestImportedCredentialValuesKeepsLiteralDSNSiblingsWhenTemplateIsPresent(t *testing.T) {
+	const literalPassword = "literal-dsn-sibling-password-3d71"
+	dsn := "postgres://db-user:" + literalPassword +
+		"@db.example.test/orders?sslpassword={{secret.DB_CERT_PASSWORD}}"
+	script := &dsl.Script{
+		Protocol: "database",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_script_archive",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Config: dsl.ScriptConfig{
+			Database: dsl.DatabaseConfig{DSN: dsn},
+		},
+	}
+
+	values, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues: %v", err)
+	}
+	if !containsExactString(values, literalPassword) {
+		t.Fatalf("retained DSN values = %#v, want literal sibling password", values)
+	}
+	if containsExactString(values, dsn) ||
+		containsExactString(values, "{{secret.DB_CERT_PASSWORD}}") {
+		t.Fatalf("retained DSN values contain an unresolved template composite: %#v", values)
+	}
+}
+
+func TestImportedCredentialValuesDereferencesAuthoredPathCredential(t *testing.T) {
+	const (
+		encoded = "Q7m%2FL4v"
+		decoded = "Q7m/L4v"
+	)
+	script := &dsl.Script{
+		Protocol: "http",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "openapi",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "path credential",
+			Type:   "request",
+			Method: "GET",
+			Target: "/accounts/prefix-" + encoded + "-suffix",
+			Metadata: map[string]any{
+				"openapi": map[string]any{
+					"path": "/accounts/prefix-{password}-suffix",
+				},
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+					map[string]any{
+						"request_key": "GET /accounts/prefix-{password}-suffix",
+						"field":       "url.path",
+						"index":       2,
+						"pointer":     "password",
+					},
+				},
+			},
+		}},
+	}
+
+	values, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues: %v", err)
+	}
+	for _, want := range []string{encoded, decoded} {
+		if !containsExactString(values, want) {
+			t.Fatalf("retained path values = %#v, want %q", values, want)
+		}
+	}
+}
+
+func TestCredentialValuesFromComposedPathSegmentWithOtherParameters(t *testing.T) {
+	tests := []struct {
+		name       string
+		template   string
+		parameter  string
+		executable string
+		want       []string
+	}{
+		{
+			name:       "target after ordinary parameter",
+			template:   "prefix-{tenant}-{password}-suffix",
+			parameter:  "password",
+			executable: "prefix-acme-path-password-7319-suffix",
+			want:       []string{"path-password-7319"},
+		},
+		{
+			name:       "target before ordinary parameter",
+			template:   "prefix-{password}-{tenant}-suffix",
+			parameter:  "password",
+			executable: "prefix-secret7319-acme-suffix",
+			want:       []string{"secret7319"},
+		},
+		{
+			name:       "repeated target",
+			template:   "prefix-{password}-middle-{password}-suffix",
+			parameter:  "password",
+			executable: "prefix-first-password-middle-second-password-suffix",
+			want:       []string{"first-password", "second-password"},
+		},
+		{
+			name:       "encoded target",
+			template:   "prefix-{tenant}-{password}-suffix",
+			parameter:  "password",
+			executable: "prefix-acme-Q7m%2FL4v-suffix",
+			want:       []string{"Q7m%2FL4v"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := credentialValuesFromComposedPathSegment(
+				test.template,
+				test.parameter,
+				test.executable,
+			)
+			if !ok {
+				t.Fatalf(
+					"credentialValuesFromComposedPathSegment(%q, %q, %q) did not match",
+					test.template,
+					test.parameter,
+					test.executable,
+				)
+			}
+			if len(got) != len(test.want) {
+				t.Fatalf("values = %#v, want %#v", got, test.want)
+			}
+			for index := range test.want {
+				if got[index] != test.want[index] {
+					t.Fatalf("values = %#v, want %#v", got, test.want)
+				}
+			}
+		})
+	}
+}
+
+func TestCredentialValuesFromComposedPathSegmentRejectsAmbiguousEmptyTarget(t *testing.T) {
+	if values, ok := credentialValuesFromComposedPathSegment(
+		"{password}{tenant}",
+		"password",
+		"acme-path-password-7319",
+	); ok || values != nil {
+		t.Fatalf("ambiguous adjacent placeholder values = %#v, %t; want fail closed", values, ok)
+	}
+}
+
+func TestImportedCredentialValuesForDisclosureDecodesProtectedRepairSources(t *testing.T) {
+	const (
+		vmPassword   = "protected-vm-password-4f72"
+		jdbcPassword = "protected-jdbc-password-8c31"
+	)
+	encode := func(value string) string {
+		return base64.StdEncoding.EncodeToString([]byte(value))
+	}
+	script := &dsl.Script{
+		Protocol: "java_vuser",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_script_archive",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+				dsl.ImportPreservedEnterpriseJavaVMSourceKey: map[string]any{
+					"version": 1,
+					"rows_base64": []string{
+						encode("-javaagent:https://operator:" + vmPassword + "@agent.example.test/agent.jar"),
+					},
+				},
+				dsl.ImportPreservedEnterpriseJavaJDBCSourceKey: map[string]any{
+					"version": 1,
+					"connections": []map[string]any{{
+						"driver_base64": encode("postgres"),
+						"dsn_base64": encode(
+							"postgres://db-user:" + jdbcPassword + "@db.example.test/app",
+						),
+						"reason":     "unsupported",
+						"source_ref": "Action.java line 4",
+					}},
+				},
+			},
+		}},
+	}
+
+	runtimeValues, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues: %v", err)
+	}
+	for _, password := range []string{vmPassword, jdbcPassword} {
+		if containsExactString(runtimeValues, password) {
+			t.Fatalf("runtime values include inert repair-source password %q: %#v", password, runtimeValues)
+		}
+	}
+	disclosureValues, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+	}
+	for _, password := range []string{vmPassword, jdbcPassword} {
+		if !containsExactString(disclosureValues, password) {
+			t.Fatalf("disclosure values = %#v, want decoded repair-source password %q", disclosureValues, password)
+		}
+	}
+}
+
+func TestImportedCredentialValuesAcceptsEffectiveRequestBaseURLLocators(t *testing.T) {
+	const (
+		username = "effective-request-user-6c42"
+		password = "effective-request-password-9d17"
+		token    = "effective-request-token-4f83"
+	)
+	script := &dsl.Script{
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://" + username + ":" + password +
+				"@api.example.test?access_token=" + token + "&region=east",
+		},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "openapi",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []map[string]any{
+					{"field": "base_url.userinfo"},
+					{"field": "base_url.query", "index": 0},
+				},
+			},
+		}},
+	}
+
+	values, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+	}
+	for _, expected := range []string{username, password, token} {
+		if !containsExactString(values, expected) {
+			t.Fatalf("values = %#v, want %q", values, expected)
+		}
+	}
+	if containsExactString(values, "east") {
+		t.Fatalf("values = %#v, nonsensitive query value was governed", values)
 	}
 }
 

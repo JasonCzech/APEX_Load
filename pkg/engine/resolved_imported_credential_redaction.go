@@ -57,12 +57,26 @@ func resolvedActionCredentialValues(script *dsl.Script, action *protocol.Action)
 		return collector.values, nil
 	}
 
-	collector.collectResolvedActionKnownCredentials(action)
 	targets, err := decodeImportedCredentialTargets(
 		action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey],
 	)
 	if err != nil {
 		return nil, err
+	}
+	collector.collectResolvedActionKnownCredentials(action)
+	if len(targets) == 0 && strings.TrimSpace(action.Method) != "" && len(action.Body) > 0 {
+		body, mediaType, err := resolvedActionBody(action)
+		if err != nil {
+			return nil, err
+		}
+		if err := collector.collectLegacyRequestBodyCredentials(
+			body,
+			mediaType,
+			0,
+			&legacyCredentialBodyBudget{},
+		); err != nil {
+			return nil, err
+		}
 	}
 	for _, target := range targets {
 		if err := collector.collectResolvedActionTarget(action, target); err != nil {

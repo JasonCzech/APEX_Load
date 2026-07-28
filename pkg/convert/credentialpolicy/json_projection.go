@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jasonczech/apexload/pkg/credential"
 )
 
 // ProjectJSON projects sensitive string members without decoding the document
@@ -71,6 +73,9 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 		if containsSensitiveNameHintWithOptions(payload, options) {
 			return nil, rejected(options.Source, "credential_json_malformed_sensitive"), nil, nil
 		}
+		if options.KnownCredentialMatcher != nil {
+			return nil, rejected(options.Source, "credential_json_known_value_malformed"), nil, nil
+		}
 		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_malformed"), nil, nil
 	}
 	parser.skipSpace()
@@ -83,7 +88,9 @@ func projectJSONWithQueries(payload []byte, options Options) ([]byte, Result, []
 					"credential_json_trailing_value",
 				), nil, nil
 		}
-		if containsSensitiveNameHintWithOptions(payload[parser.index:], options) || len(parser.replacements) > 0 {
+		if containsSensitiveNameHintWithOptions(payload[parser.index:], options) ||
+			len(parser.replacements) > 0 ||
+			options.KnownCredentialMatcher != nil {
 			return nil, rejected(options.Source, "credential_json_trailing_value_sensitive"), nil, nil
 		}
 		return append([]byte(nil), payload...), blocked(options.Source, "credential_json_trailing_value"), nil, nil
@@ -175,6 +182,57 @@ func (parser *jsonProjectionParser) parseValue(
 		}
 		if captureGraphQLQuery {
 			parser.graphQLQueries = append(parser.graphQLQueries, decoded)
+			if sensitiveName == "" &&
+				parser.options.KnownCredentialMatcher != nil &&
+				graphQLExecutableSource([]byte(decoded), parser.options) {
+				projectedQuery, queryResult, err := projectKnownGraphQLScalars(
+					[]byte(decoded),
+					parser.options,
+				)
+				if err != nil {
+					return err
+				}
+				parser.result.Merge(queryResult)
+				if queryResult.Disposition != Rejected &&
+					!bytes.Equal(projectedQuery, []byte(decoded)) {
+					encoded, err := json.Marshal(string(projectedQuery))
+					if err != nil {
+						return errors.New("projected GraphQL JSON string could not be encoded")
+					}
+					parser.replacements = append(parser.replacements, replacement{
+						start: valueStart,
+						end:   end,
+						value: encoded,
+					})
+				}
+			} else if sensitiveName == "" &&
+				parser.options.KnownCredentialMatcher != nil &&
+				knownCredentialScalarMatch(parser.options, decoded) {
+				encoded, err := json.Marshal(credential.Redacted)
+				if err != nil {
+					return errors.New("projected JSON query string could not be encoded")
+				}
+				parser.replacements = append(parser.replacements, replacement{
+					start: valueStart,
+					end:   end,
+					value: encoded,
+				})
+				return nil
+			}
+		}
+		if sensitiveName == "" &&
+			!captureGraphQLQuery &&
+			knownCredentialScalarMatch(parser.options, decoded) {
+			encoded, err := json.Marshal(credential.Redacted)
+			if err != nil {
+				return errors.New("projected JSON string could not be encoded")
+			}
+			parser.replacements = append(parser.replacements, replacement{
+				start: valueStart,
+				end:   end,
+				value: encoded,
+			})
+			return nil
 		}
 		if sensitiveName == "" {
 			return nil
@@ -228,6 +286,15 @@ func (parser *jsonProjectionParser) parseValue(
 		if err := parser.consumeNumber(); err != nil {
 			return err
 		}
+	}
+	if knownCredentialScalarBytesMatch(
+		parser.options,
+		parser.payload[valueStart:parser.index],
+	) {
+		parser.result.Merge(rejected(
+			parser.options.Source,
+			"credential_json_known_non_string_unsupported",
+		))
 	}
 	if sensitiveName != "" {
 		if parser.options.Mode == Preserve {

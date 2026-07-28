@@ -91,7 +91,7 @@ func TestImportResponseMarksPreservationPerCredentialOccurrence(t *testing.T) {
 	if !states["/config/http/auth/password"] {
 		t.Fatalf("auth password state = %#v, want source value preserved", states)
 	}
-	if states["/config/http/proxy/password"] {
-		t.Fatalf("proxy password state = %#v, authored sentinel is not preserved", states)
+	if !states["/config/http/proxy/password"] {
+		t.Fatalf("proxy password state = %#v, exact authored value must remain preserved", states)
 	}
 }

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/jasonczech/apexload/pkg/credential"
 )
 
 // ProjectRequestBody applies the shared structured credential policy to wire
@@ -124,6 +126,9 @@ func ProjectRequestBody(payload []byte, contentType string, options Options) ([]
 				return nil, Result{}, err
 			}
 			return []byte(projected), result, nil
+		}
+		if knownCredentialScalarBytesMatch(options, payload) {
+			return []byte(credential.Redacted), exactResult(), nil
 		}
 		return append([]byte(nil), payload...), exactResult(), nil
 	}
@@ -284,6 +289,9 @@ func ProjectMultipartWire(
 		if containsSensitiveNameHintWithOptions(payload, options) {
 			return nil, rejected(options.Source, "credential_multipart_malformed_sensitive"), nil
 		}
+		if options.KnownCredentialMatcher != nil {
+			return nil, rejected(options.Source, "credential_multipart_known_value_malformed"), nil
+		}
 		return append([]byte(nil), payload...), blocked(options.Source, "credential_multipart_malformed"), nil
 	}
 	input := Multipart{Boundary: boundary, Parts: make([]MultipartPart, len(parts))}
@@ -301,6 +309,63 @@ func ProjectMultipartWire(
 		return nil, Result{}, errors.New("multipart projection changed part count")
 	}
 	var replacements []replacement
+	preambleEnd, epilogueStart, envelopeOK := multipartEnvelopeSpans(
+		payload,
+		boundary,
+	)
+	if !envelopeOK {
+		return nil, Result{}, errors.New("multipart projection lost envelope delimiters")
+	}
+	if options.KnownCredentialMatcher != nil {
+		preamble := payload[:preambleEnd]
+		if knownCredentialScalarBytesMatch(options, preamble) {
+			replacements = append(replacements, replacement{
+				start: 0,
+				end:   preambleEnd,
+				value: redactMultipartPreamble(preamble),
+			})
+		}
+		epilogue := payload[epilogueStart:]
+		if knownCredentialScalarBytesMatch(options, epilogue) {
+			replacements = append(replacements, replacement{
+				start: epilogueStart,
+				end:   len(payload),
+				value: []byte(credential.Redacted),
+			})
+		}
+	}
+	if knownCredentialScalarMatch(options, boundary) {
+		disclosureBoundary := disclosureMultipartBoundaryReplacement(boundary)
+		disclosureMarker := []byte("--" + disclosureBoundary)
+		if bytes.Contains(payload, disclosureMarker) {
+			return nil,
+				rejected(options.Source, "credential_multipart_disclosure_boundary_collision"),
+				nil
+		}
+		marker := []byte("--" + boundary)
+		from := 0
+		for {
+			start, closing, lineEnd, ok := nextMultipartDelimiter(
+				payload,
+				marker,
+				from,
+			)
+			if !ok {
+				return nil,
+					rejected(options.Source, "credential_multipart_disclosure_boundary_missing"),
+					nil
+			}
+			replacements = append(replacements, replacement{
+				start: start + 2,
+				end:   start + 2 + len(boundary),
+				value: []byte(disclosureBoundary),
+			})
+			if closing {
+				break
+			}
+			from = lineEnd
+		}
+	}
 	for partIndex := range parts {
 		wirePart := parts[partIndex]
 		projectedPart := projected.Parts[partIndex]
@@ -331,6 +396,44 @@ func ProjectMultipartWire(
 		}
 	}
 	return applyReplacements(payload, replacements), result, nil
+}
+
+func multipartEnvelopeSpans(
+	payload []byte,
+	boundary string,
+) (preambleEnd int, epilogueStart int, ok bool) {
+	marker := []byte("--" + boundary)
+	start, closing, lineEnd, found := nextMultipartDelimiter(payload, marker, 0)
+	if !found || closing {
+		return 0, 0, false
+	}
+	preambleEnd = start
+	from := lineEnd
+	for {
+		_, closing, nextLineEnd, found := nextMultipartDelimiter(
+			payload,
+			marker,
+			from,
+		)
+		if !found {
+			return 0, 0, false
+		}
+		if closing {
+			return preambleEnd, nextLineEnd, true
+		}
+		from = nextLineEnd
+	}
+}
+
+func redactMultipartPreamble(preamble []byte) []byte {
+	switch {
+	case bytes.HasSuffix(preamble, []byte("\r\n")):
+		return []byte(credential.Redacted + "\r\n")
+	case bytes.HasSuffix(preamble, []byte("\n")):
+		return []byte(credential.Redacted + "\n")
+	default:
+		return []byte(credential.Redacted)
+	}
 }
 
 func parseMultipartWire(payload []byte, boundary string, options Options) ([]multipartWirePart, error) {

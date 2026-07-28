@@ -35,6 +35,7 @@ import {
   type ReplayPreflight,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
 import {
   addCorrelationExtractorIfMissing,
   applyCorrelationRepairToAction,
@@ -634,6 +635,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const [scriptRecordingStatus, setScriptRecordingStatus] = useState<ScriptRecordingStatus | null>(null)
   const [scriptRecordingStatusState, setScriptRecordingStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [scriptRecordingStatusRetryGeneration, setScriptRecordingStatusRetryGeneration] = useState(0)
+  const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   // Object-repository logical names for the per-action object_ref autocomplete.
   const [objectRefSuggestions, setObjectRefSuggestions] = useState<string[]>([])
   useEffect(() => {
@@ -1686,6 +1688,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
     selectAuthorPhaseIndex(row.phase, row.actionIndex)
   }
+  const selectAuthorPhaseActionRef = useRef(selectAuthorPhaseAction)
+  selectAuthorPhaseActionRef.current = selectAuthorPhaseAction
 
   const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
     const { row } = item
@@ -4543,6 +4547,46 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const actionProblemRows = scriptPhaseActionRows.flatMap((row) =>
     (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).map(issue => ({ issue, row })),
   )
+  const editorIssueDetails = useMemo<IssueDetail[]>(() => {
+    const structured = [
+      ...scriptLevelIssues.map(issue => ({
+        id: issue.id,
+        severity: issue.severity,
+        title: issue.message,
+        source: 'Script',
+      })),
+      ...actionProblemRows.map(({ issue, row }) => ({
+        id: issue.id,
+        severity: issue.severity,
+        title: issue.message,
+        source: `${row.phaseLabel} ${row.actionIndex + 1}${row.action.name ? ` · ${row.action.name}` : ''}`,
+        onSelect: () => selectAuthorPhaseActionRef.current(row),
+      })),
+    ] satisfies IssueDetail[]
+    const operational: IssueDetail[] = [
+      ...warnings.map((message, index) => ({
+        id: `runtime-warning-${index}`,
+        severity: 'warning' as const,
+        title: message,
+        source: 'Validation or replay',
+      })),
+      ...(error ? [{
+        id: 'current-error',
+        severity: 'error' as const,
+        title: error,
+        source: 'Current operation',
+      }] : []),
+      ...(jsonParseMessage ? [{
+        id: 'json-parse-error',
+        severity: 'error' as const,
+        title: jsonParseMessage,
+        source: 'Script JSON',
+      }] : []),
+    ]
+    return [...structured, ...operational]
+  }, [actionProblemRows, error, jsonParseMessage, scriptLevelIssues, warnings])
+  const editorIssueDetailsRef = useRef(editorIssueDetails)
+  editorIssueDetailsRef.current = editorIssueDetails
   const toggleSelectedBreakpoint = () => {
     const authorSelectedAction = authorCodeFocus && !authorCodeFocus.stepPath?.length
       ? {
@@ -4611,6 +4655,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         label: `${problemCount} issue${problemCount === 1 ? '' : 's'}`,
         tone: problemCount > 0 ? 'danger' : 'success',
         hidden: problemCount === 0 && !validationEvidence,
+        onClick: problemCount > 0
+          ? () => setIssueDialog({ title: 'Script issues', issues: editorIssueDetailsRef.current })
+          : undefined,
+        ariaLabel: problemCount > 0 ? `View ${problemCount} script issue ${problemCount === 1 ? 'detail' : 'details'}` : undefined,
       },
     ],
     controls: (
@@ -6306,6 +6354,14 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   importedParameterFileMappings={importedParameterFileMappings}
                   onApplyRepairSuggestion={applyRepairSuggestion}
                   onOpenParameterData={() => openCenterTab('parameter-data')}
+                  onOpenErrorDetails={() => setIssueDialog({
+                    title: 'Script errors',
+                    issues: editorIssueDetails.filter(issue => issue.severity === 'error' || issue.severity === 'blocker'),
+                  })}
+                  onOpenWarningDetails={() => setIssueDialog({
+                    title: 'Script warnings',
+                    issues: editorIssueDetails.filter(issue => issue.severity === 'warning'),
+                  })}
                   onSelectActionProblem={selectAuthorPhaseAction}
                   onSelectExtractor={(item) => {
                     if (item.phase === 'action') selectAuthorAction(item.actionIndex)
@@ -6371,6 +6427,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               alt={replayScreenshotSelection.alt}
               onClose={closeReplayScreenshot}
               src={replayScreenshotSelection.src}
+            />
+          )}
+          {issueDialog && (
+            <IssueDetailsDialog
+              title={issueDialog.title}
+              issues={issueDialog.issues}
+              onClose={() => setIssueDialog(null)}
             />
           )}
         </div>

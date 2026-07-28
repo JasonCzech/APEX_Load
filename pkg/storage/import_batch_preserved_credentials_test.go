@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -281,6 +282,93 @@ func TestTrustedGenericJavaImportBatchMasksVMCredentialInReceipt(t *testing.T) {
 	if got := retry.Scripts[0].Config.JavaVuser.AdditionalVMParameters; len(got) != 2 ||
 		got[0] != "-Xmx512m" || got[1] != scrub.Redacted {
 		t.Fatalf("receipt Java VM parameters = %#v", got)
+	}
+}
+
+func TestTrustedGenericImportBatchPersistsProtectedJavaSourceEnvelopes(t *testing.T) {
+	const canary = "protected-java-source-password-canary"
+	store := newBrunoImportTestStore(t)
+	commit := genericImportBatchFixture(
+		"enterprise_native",
+		"enterprise-native-commit-v1",
+		"trusted-enterprise-source-session",
+		"trusted-enterprise-source-sha",
+	)
+	commit.TrustPreservedExecutableCredentials = true
+	script := commit.Scripts[0]
+	script.Metadata = preservedImportBatchCredentialScript().Metadata
+	vmRow := "-Dservice.password=" + canary
+	jdbcDSN := `{"jdbc_url":"jdbc:acme://db.example.test/orders","username":"operator","password":"` +
+		canary + `"}`
+	encodedVMRow := base64.StdEncoding.EncodeToString([]byte(vmRow))
+	encodedJDBC := base64.StdEncoding.EncodeToString([]byte(jdbcDSN))
+	script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey] =
+		map[string]any{
+			"version":     1,
+			"rows_base64": []string{encodedVMRow},
+		}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaJDBCSourceKey] =
+		map[string]any{
+			"version": 1,
+			"connections": []map[string]any{{
+				"driver_base64": "",
+				"dsn_base64":    encodedJDBC,
+				"reason":        "jdbc_connection_driver_unsupported",
+				"source_ref":    "Actions.java line 4",
+			}},
+		}
+
+	created, err := store.CommitImportBatch(commit)
+	if err != nil {
+		t.Fatalf("CommitImportBatch: %v", err)
+	}
+	livePayload, err := json.Marshal(created.Scripts[0].Metadata.Import.Preserved)
+	if err != nil {
+		t.Fatalf("marshal live protected metadata: %v", err)
+	}
+	if !bytes.Contains(livePayload, []byte(encodedVMRow)) ||
+		!bytes.Contains(livePayload, []byte(encodedJDBC)) {
+		t.Fatalf("live protected source envelopes lost exact bytes: %s", livePayload)
+	}
+	stored, err := store.GetScript(script.ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	storedPayload, err := json.Marshal(stored.Metadata.Import.Preserved)
+	if err != nil {
+		t.Fatalf("marshal stored protected metadata: %v", err)
+	}
+	if !bytes.Contains(storedPayload, []byte(encodedVMRow)) ||
+		!bytes.Contains(storedPayload, []byte(encodedJDBC)) {
+		t.Fatalf("durable protected source envelopes lost exact bytes: %s", storedPayload)
+	}
+
+	var receiptJSON string
+	if err := store.db.QueryRow(
+		`SELECT scripts_json FROM bruno_native_import_batches WHERE id = ?`,
+		created.Receipt.ID,
+	).Scan(&receiptJSON); err != nil {
+		t.Fatalf("read receipt scripts_json: %v", err)
+	}
+	if strings.Contains(receiptJSON, canary) ||
+		strings.Contains(receiptJSON, encodedVMRow) ||
+		strings.Contains(receiptJSON, encodedJDBC) {
+		t.Fatalf("receipt disclosed protected Java source envelope: %s", receiptJSON)
+	}
+}
+
+func TestImportBatchRejectsProtectedJavaSourceEnvelopeWithoutTrustedContext(t *testing.T) {
+	script := preservedImportBatchCredentialScript()
+	script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey] =
+		map[string]any{
+			"version": 1,
+			"rows_base64": []string{
+				base64.StdEncoding.EncodeToString([]byte("-Dpassword=forged")),
+			},
+		}
+	err := validateImportBatchCredentialSafety(script, false)
+	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
+		t.Fatalf("untrusted protected envelope error = %v, want unmanaged", err)
 	}
 }
 

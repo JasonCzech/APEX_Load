@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/credential"
+	"golang.org/x/text/encoding/ianaindex"
 )
 
 // Disposition describes whether a projected value can be replayed without
@@ -88,9 +89,22 @@ type Options struct {
 	// runtime references. Only ProjectHeaders consumes this field; every other
 	// request component still passes through the shared credential policy.
 	PreGovernedHeaderOccurrences map[int]struct{}
-	TargetField                  string
-	multipartDepth               int
-	preserveSourceExpression     bool
+	// KnownCredentialMatcher is an optional disclosure-only hook for literal
+	// credentials already proven on another request surface. Structured
+	// projectors invoke it only for semantic scalar values, never member names,
+	// MIME boundaries, XML namespaces, or grammar tokens. A match redacts the
+	// complete scalar so unrelated wire bytes retain their authored spelling.
+	// Import conversion must leave this nil: executable projection is governed
+	// by source fields and requirements, not cross-field value equivalence.
+	KnownCredentialMatcher   func(string) bool
+	TargetField              string
+	multipartDepth           int
+	preserveSourceExpression bool
+	knownCredentialBudget    *knownCredentialComparisonBudget
+}
+
+type knownCredentialComparisonBudget struct {
+	remainingBytes int64
 }
 
 // Result is the common sidecar returned by projection functions.
@@ -122,6 +136,15 @@ type HeaderOccurrence struct {
 	Name   string
 	Value  string
 	Source SourceRef
+}
+
+const DisclosureMultipartBoundary = "apex-redacted-boundary"
+
+func disclosureMultipartBoundaryReplacement(boundary string) string {
+	if boundary == DisclosureMultipartBoundary {
+		return DisclosureMultipartBoundary + "-alternate"
+	}
+	return DisclosureMultipartBoundary
 }
 
 // AuthFields is the typed portion of effective request authentication.
@@ -226,6 +249,9 @@ func normalizeOptions(options Options) (Options, error) {
 	if !options.Mode.Valid() {
 		return options, fmt.Errorf("unsupported credential projection mode %q", options.Mode)
 	}
+	if options.KnownCredentialMatcher != nil && options.Mode != Redact {
+		return options, errors.New("known credential matcher requires redact projection mode")
+	}
 	defaults := DefaultLimits()
 	if options.Limits.MaxBytes == 0 {
 		options.Limits.MaxBytes = defaults.MaxBytes
@@ -242,6 +268,18 @@ func normalizeOptions(options Options) (Options, error) {
 	if options.Limits.MaxBytes < 1 || options.Limits.MaxDepth < 1 ||
 		options.Limits.MaxValues < 1 || options.Limits.MaxParts < 1 {
 		return options, errors.New("credential projection limits must be positive")
+	}
+	if options.KnownCredentialMatcher != nil &&
+		options.knownCredentialBudget == nil {
+		remaining := int64(options.Limits.MaxBytes)
+		if remaining > (1<<62)/2 {
+			remaining = 1 << 62
+		} else {
+			remaining *= 2
+		}
+		options.knownCredentialBudget = &knownCredentialComparisonBudget{
+			remainingBytes: remaining,
+		}
 	}
 	if options.Registry == nil {
 		options.Registry = NewNameRegistry()
@@ -672,6 +710,17 @@ func ProjectHeaders(input []HeaderOccurrence, options Options) ([]HeaderOccurren
 		if !credential.SensitiveHeader(out[index].Name) {
 			governedName, sensitive := governedSensitiveName(out[index].Name, options)
 			if !sensitive {
+				if options.KnownCredentialMatcher != nil {
+					if structuralMIMEHeader(out[index].Name) {
+						out[index].Value = RedactKnownMIMEHeader(
+							out[index].Name,
+							out[index].Value,
+							boundedKnownCredentialMatcher(options),
+						)
+					} else if knownCredentialScalarMatch(options, out[index].Value) {
+						out[index].Value = credential.Redacted
+					}
+				}
 				continue
 			}
 			sensitiveName = governedName
@@ -698,6 +747,203 @@ func ProjectHeaders(input []HeaderOccurrence, options Options) ([]HeaderOccurren
 		result.Merge(item)
 	}
 	return out, result, nil
+}
+
+// RedactKnownMIMEHeader applies disclosure-only matching to the value-bearing
+// portions of MIME headers while retaining bounded grammar tokens. It is shared
+// by ordered request-header projection and script disclosure so malformed MIME
+// values cannot hide credentials behind a structural-header exemption.
+func RedactKnownMIMEHeader(
+	name string,
+	value string,
+	matcher func(string) bool,
+) string {
+	if matcher == nil {
+		return value
+	}
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "content-type":
+		return redactKnownContentTypeParameters(value, matcher)
+	case "content-disposition":
+		return RedactKnownMultipartFilename(value, matcher)
+	case "content-transfer-encoding":
+		if standardDisclosureTransferEncoding(value) ||
+			privateDisclosureMIMEToken(value) {
+			return value
+		}
+		if matcher(value) {
+			return credential.Redacted
+		}
+		return value
+	case "mime-version":
+		if strings.TrimSpace(value) == "1.0" {
+			return value
+		}
+		if matcher(value) {
+			return credential.Redacted
+		}
+		return value
+	default:
+		return value
+	}
+}
+
+func redactKnownContentTypeParameters(
+	contentType string,
+	matcher func(string) bool,
+) string {
+	mediaType, parameters, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil {
+		if matcher(contentType) {
+			return credential.Redacted
+		}
+		return contentType
+	}
+	changed := false
+	for name, value := range parameters {
+		normalizedName := strings.ToLower(strings.TrimSpace(name))
+		switch {
+		case normalizedName == "boundary" &&
+			strings.HasPrefix(strings.ToLower(mediaType), "multipart/"):
+			if matcher(value) {
+				parameters[name] = disclosureMultipartBoundaryReplacement(value)
+				changed = true
+			}
+		case normalizedName == "charset" &&
+			(registeredDisclosureCharset(value) ||
+				privateDisclosureMIMEToken(value)):
+			// Charset selects wire decoding. Resolve registered names through
+			// x/text's IANA MIME index and permit syntactically valid x- private
+			// extensions without maintaining a partial local registry.
+			continue
+		default:
+			if matcher(value) {
+				parameters[name] = credential.Redacted
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return contentType
+	}
+	return mime.FormatMediaType(mediaType, parameters)
+}
+
+func validDisclosureMIMEToken(value string) bool {
+	if value == "" {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if character <= 0x20 || character >= 0x7f ||
+			strings.ContainsRune(`()<>@,;:\"/[]?=`, rune(character)) {
+			return false
+		}
+	}
+	return true
+}
+
+func standardDisclosureTransferEncoding(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "7bit", "8bit", "binary", "quoted-printable", "base64":
+		return true
+	default:
+		return false
+	}
+}
+
+func privateDisclosureMIMEToken(value string) bool {
+	value = strings.TrimSpace(value)
+	return len(value) > 2 &&
+		strings.EqualFold(value[:2], "x-") &&
+		validDisclosureMIMEToken(value)
+}
+
+func registeredDisclosureCharset(value string) bool {
+	value = strings.TrimSpace(value)
+	if !validDisclosureMIMEToken(value) {
+		return false
+	}
+	_, err := ianaindex.MIME.Encoding(value)
+	return err == nil
+}
+
+// RedactKnownMultipartFilename masks credential-equal descriptive parameters
+// without changing the multipart field name or disposition grammar. The
+// form-data name parameter identifies the executable field and is therefore
+// structural; filename, filename*, and extension parameters are disclosure
+// values and must not become an escape hatch for a credential copied from
+// another request surface.
+func RedactKnownMultipartFilename(
+	contentDisposition string,
+	matcher func(string) bool,
+) string {
+	if matcher == nil {
+		return contentDisposition
+	}
+	disposition, parameters, err := mime.ParseMediaType(
+		strings.TrimSpace(contentDisposition),
+	)
+	if err != nil {
+		// A malformed structural header cannot be rewritten field-by-field.
+		// Fail closed only when the complete value is known to contain a
+		// credential; otherwise preserve the authored disclosure spelling.
+		if matcher(contentDisposition) {
+			return credential.Redacted
+		}
+		return contentDisposition
+	}
+	changed := false
+	for name, value := range parameters {
+		if strings.EqualFold(strings.TrimSpace(name), "name") ||
+			value == "" || !matcher(value) {
+			continue
+		}
+		parameters[name] = credential.Redacted
+		changed = true
+	}
+	if !changed {
+		return contentDisposition
+	}
+	return mime.FormatMediaType(disposition, parameters)
+}
+
+// RedactKnownMultipartBoundary rewrites a credential-equal multipart boundary
+// to the fixed disclosure boundary used by ProjectMultipartWire. It leaves all
+// nonmultipart and unmatched Content-Type values unchanged.
+func RedactKnownMultipartBoundary(
+	contentType string,
+	matcher func(string) bool,
+) string {
+	if matcher == nil {
+		return contentType
+	}
+	mediaType, parameters, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil {
+		if matcher(contentType) {
+			return credential.Redacted
+		}
+		return contentType
+	}
+	if !strings.HasPrefix(strings.ToLower(mediaType), "multipart/") {
+		return contentType
+	}
+	boundary := parameters["boundary"]
+	if boundary == "" || !matcher(boundary) {
+		return contentType
+	}
+	parameters["boundary"] = disclosureMultipartBoundaryReplacement(boundary)
+	return mime.FormatMediaType(mediaType, parameters)
+}
+
+func structuralMIMEHeader(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "content-type", "content-disposition", "content-transfer-encoding",
+		"mime-version":
+		return true
+	default:
+		return false
+	}
 }
 
 // executableSchemeCredentialHeader reports whether a credential header is
@@ -1047,6 +1293,11 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 		if containsSensitiveNameHintWithOptions([]byte(raw), options) {
 			return "", nil, rejected(options.Source, code), nil
 		}
+		if options.KnownCredentialMatcher != nil {
+			return "", nil,
+				rejected(options.Source, "credential_form_known_value_malformed"),
+				nil
+		}
 		return raw, nil, blocked(options.Source, code), nil
 	}
 	result := exactResult()
@@ -1075,6 +1326,10 @@ func projectFormURLEncoded(raw string, options Options, targetField string) (str
 			rawValue = projected
 			field.RawValue = rawValue
 			result.Merge(item)
+		} else if knownCredentialScalarMatch(options, field.Value) {
+			field.Value = credential.Redacted
+			rawValue = credential.Redacted
+			field.RawValue = rawValue
 		}
 		segment := field.RawName
 		if field.HadEquals {
@@ -1198,13 +1453,27 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 		}
 		totalBytes += size
 	}
-	out := Multipart{Boundary: input.Boundary, Parts: make([]MultipartPart, len(input.Parts))}
+	projectedBoundary := input.Boundary
+	if knownCredentialScalarMatch(options, input.Boundary) {
+		projectedBoundary = disclosureMultipartBoundaryReplacement(input.Boundary)
+	}
+	out := Multipart{Boundary: projectedBoundary, Parts: make([]MultipartPart, len(input.Parts))}
 	result := exactResult()
 	for index := range input.Parts {
 		part := input.Parts[index]
 		out.Parts[index] = part
 		out.Parts[index].Headers = append([]HeaderOccurrence(nil), part.Headers...)
 		out.Parts[index].Body = append([]byte(nil), part.Body...)
+		if options.KnownCredentialMatcher != nil {
+			if knownCredentialScalarMatch(options, out.Parts[index].FileName) {
+				out.Parts[index].FileName = credential.Redacted
+			}
+			out.Parts[index].ContentType = RedactKnownMIMEHeader(
+				"Content-Type",
+				out.Parts[index].ContentType,
+				boundedKnownCredentialMatcher(options),
+			)
+		}
 		headerOptions := options
 		headerOptions.Source = chooseSource(part.Source, options.Source)
 		headerOptions.TargetField = appendTargetField(
@@ -1452,6 +1721,20 @@ func ProjectGraphQL(input GraphQL, options Options) (GraphQL, Result, error) {
 			return GraphQL{}, rejected(options.Source, "credential_graphql_inline_literal_unsupported"), nil
 		}
 	}
+	if options.KnownCredentialMatcher != nil {
+		projectedQuery, knownResult, err := projectKnownGraphQLScalars(
+			out.Query,
+			options,
+		)
+		if err != nil {
+			return GraphQL{}, Result{}, err
+		}
+		result.Merge(knownResult)
+		if knownResult.Disposition == Rejected {
+			return GraphQL{}, result, nil
+		}
+		out.Query = projectedQuery
+	}
 	if len(bytes.TrimSpace(input.Variables)) == 0 {
 		return out, result, nil
 	}
@@ -1654,6 +1937,9 @@ func malformedXMLProjection(payload []byte, options Options) ([]byte, Result, er
 	if containsSensitiveNameHintWithOptions(payload, options) {
 		return nil, rejected(options.Source, "credential_xml_malformed"), nil
 	}
+	if options.KnownCredentialMatcher != nil {
+		return nil, rejected(options.Source, "credential_xml_known_value_malformed"), nil
+	}
 	return append([]byte(nil), payload...), blocked(options.Source, "credential_xml_malformed"), nil
 }
 
@@ -1668,12 +1954,18 @@ type xmlFrame struct {
 	textEnd    int
 	hasContent bool
 	source     SourceRef
+	// knownTextStart indexes the disclosure-projected XML string-value buffer
+	// at this element's start. The shared buffer contains descendant character
+	// data exactly once, avoiding depth × payload memory while still detecting
+	// a credential split across text, CDATA, and neutral child elements.
+	knownTextStart int
 }
 
 func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 	result := exactResult()
 	var replacements []replacement
 	var stack []xmlFrame
+	var knownLogicalText []byte
 	values := 0
 	targetOccurrences := make(map[string]int)
 	nextTargetOccurrence := func(field, pointer string) int {
@@ -1685,6 +1977,23 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 	for cursor := 0; cursor < len(payload); {
 		openRelative := bytes.IndexByte(payload[cursor:], '<')
 		if openRelative < 0 {
+			logicalText := html.UnescapeString(string(payload[cursor:]))
+			projectedLogicalText := logicalText
+			logicalTextMatched := false
+			if cursor < len(payload) &&
+				!xmlProjectionStackSuppressed(stack) {
+				logicalTextMatched = knownCredentialScalarMatch(
+					options,
+					logicalText,
+				)
+				if logicalTextMatched {
+					projectedLogicalText = credential.Redacted
+				}
+				knownLogicalText = append(
+					knownLogicalText,
+					projectedLogicalText...,
+				)
+			}
 			if len(stack) > 0 && cursor < len(payload) {
 				frame := &stack[len(stack)-1]
 				if len(bytes.TrimSpace(payload[cursor:])) > 0 {
@@ -1693,9 +2002,23 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 					frame.hasContent = true
 				}
 			}
+			if logicalTextMatched {
+				replacements = append(replacements, replacement{
+					start: cursor,
+					end:   len(payload),
+					value: []byte(credential.Redacted),
+				})
+				values++
+			}
+			if values > options.Limits.MaxValues {
+				return nil,
+					rejected(options.Source, "credential_xml_value_limit_exceeded"),
+					nil
+			}
 			break
 		}
 		open := cursor + openRelative
+		logicalText := html.UnescapeString(string(payload[cursor:open]))
 		if len(stack) > 0 && open > cursor && len(bytes.TrimSpace(payload[cursor:open])) > 0 {
 			frame := &stack[len(stack)-1]
 			if frame.textStart != 0 || frame.hasContent {
@@ -1704,6 +2027,33 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 			frame.textStart = cursor
 			frame.textEnd = open
 			frame.hasContent = true
+		}
+		logicalTextMatched := false
+		if open > cursor &&
+			!xmlProjectionStackSuppressed(stack) {
+			logicalTextMatched = knownCredentialScalarMatch(
+				options,
+				logicalText,
+			)
+			if logicalTextMatched {
+				knownLogicalText = append(
+					knownLogicalText,
+					credential.Redacted...,
+				)
+			} else {
+				knownLogicalText = append(
+					knownLogicalText,
+					logicalText...,
+				)
+			}
+		}
+		if logicalTextMatched {
+			replacements = append(replacements, replacement{
+				start: cursor,
+				end:   open,
+				value: []byte(credential.Redacted),
+			})
+			values++
 		}
 		closeIndex, err := xmlTagEnd(payload, open)
 		if err != nil {
@@ -1755,6 +2105,43 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 					value: sanitizedXMLMarkup(tag),
 				})
 				result.Merge(blocked(options.Source, "credential_xml_unsupported_markup_review_required"))
+			} else if !suppressed && options.KnownCredentialMatcher != nil {
+				scalarStart, scalarEnd, ok := xmlUnsupportedScalarSpan(
+					payload,
+					open,
+					closeIndex+1,
+				)
+				logicalTextMatched := ok && knownCredentialScalarMatch(
+					options,
+					string(payload[scalarStart:scalarEnd]),
+				)
+				if logicalTextMatched {
+					replacements = append(replacements, replacement{
+						start: scalarStart,
+						end:   scalarEnd,
+						value: []byte(credential.Redacted),
+					})
+					values++
+				}
+				if ok && len(stack) > 0 &&
+					bytes.HasPrefix(tag, []byte("<![CDATA[")) {
+					if logicalTextMatched {
+						knownLogicalText = append(
+							knownLogicalText,
+							credential.Redacted...,
+						)
+					} else {
+						knownLogicalText = append(
+							knownLogicalText,
+							payload[scalarStart:scalarEnd]...,
+						)
+					}
+				}
+			}
+			if values > options.Limits.MaxValues {
+				return nil,
+					rejected(options.Source, "credential_xml_value_limit_exceeded"),
+					nil
 			}
 			cursor = closeIndex + 1
 			continue
@@ -1765,6 +2152,17 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 			}
 			frame := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
+			if !frame.sensitive && !frame.suppressed &&
+				frame.knownTextStart >= 0 &&
+				frame.knownTextStart <= len(knownLogicalText) &&
+				knownCredentialScalarBytesMatch(
+					options,
+					knownLogicalText[frame.knownTextStart:],
+				) {
+				return nil,
+					rejected(options.Source, "credential_xml_known_value_split_content"),
+					nil
+			}
 			if frame.sensitive {
 				if frame.hasChild {
 					if options.Mode == Preserve {
@@ -1842,6 +2240,11 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 					result.Merge(item)
 				}
 			}
+			if values > options.Limits.MaxValues {
+				return nil,
+					rejected(options.Source, "credential_xml_value_limit_exceeded"),
+					nil
+			}
 			cursor = closeIndex + 1
 			continue
 		}
@@ -1889,7 +2292,21 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 				sensitiveName = elementSensitiveName
 				sensitive = true
 			}
-			if suppressed || attr.namespace || !sensitive {
+			if suppressed || attr.namespace {
+				continue
+			}
+			if !sensitive {
+				if knownCredentialScalarMatch(
+					options,
+					html.UnescapeString(string(payload[attr.valueStart:attr.valueEnd])),
+				) {
+					replacements = append(replacements, replacement{
+						start: attr.valueStart,
+						end:   attr.valueEnd,
+						value: []byte(credential.Redacted),
+					})
+					values++
+				}
 				continue
 			}
 			field := appendTargetField(
@@ -1933,12 +2350,13 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 		}
 		if !selfClosing {
 			stack = append(stack, xmlFrame{
-				name:       firstNonEmpty(elementSensitiveName, xmlLocalName(name)),
-				path:       elementPath,
-				sensitive:  !suppressed && elementSensitive,
-				suppressed: suppressed,
-				contentAt:  closeIndex + 1,
-				source:     source,
+				name:           firstNonEmpty(elementSensitiveName, xmlLocalName(name)),
+				path:           elementPath,
+				sensitive:      !suppressed && elementSensitive,
+				suppressed:     suppressed,
+				contentAt:      closeIndex + 1,
+				source:         source,
+				knownTextStart: len(knownLogicalText),
 			})
 		}
 		cursor = closeIndex + 1
@@ -1947,6 +2365,81 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 		return nil, result, nil
 	}
 	return applyReplacements(payload, replacements), result, nil
+}
+
+func knownCredentialScalarMatch(options Options, value string) bool {
+	if options.KnownCredentialMatcher == nil {
+		return false
+	}
+	if !reserveKnownCredentialComparison(options, len(value)) {
+		return true
+	}
+	return options.KnownCredentialMatcher(value)
+}
+
+func knownCredentialScalarBytesMatch(options Options, value []byte) bool {
+	if options.KnownCredentialMatcher == nil {
+		return false
+	}
+	if !reserveKnownCredentialComparison(options, len(value)) {
+		return true
+	}
+	return options.KnownCredentialMatcher(string(value))
+}
+
+func reserveKnownCredentialComparison(options Options, size int) bool {
+	if options.knownCredentialBudget == nil {
+		return true
+	}
+	if size < 0 ||
+		int64(size) > options.knownCredentialBudget.remainingBytes {
+		options.knownCredentialBudget.remainingBytes = 0
+		return false
+	}
+	options.knownCredentialBudget.remainingBytes -= int64(size)
+	return true
+}
+
+func boundedKnownCredentialMatcher(options Options) func(string) bool {
+	if options.KnownCredentialMatcher == nil {
+		return nil
+	}
+	return func(value string) bool {
+		return knownCredentialScalarMatch(options, value)
+	}
+}
+
+func xmlProjectionStackSuppressed(stack []xmlFrame) bool {
+	for index := range stack {
+		if stack[index].sensitive || stack[index].suppressed {
+			return true
+		}
+	}
+	return false
+}
+
+func xmlUnsupportedScalarSpan(
+	payload []byte,
+	start int,
+	end int,
+) (int, int, bool) {
+	if start < 0 || end > len(payload) || end <= start {
+		return 0, 0, false
+	}
+	tag := payload[start:end]
+	switch {
+	case bytes.HasPrefix(tag, []byte("<!--")) &&
+		bytes.HasSuffix(tag, []byte("-->")):
+		return start + 4, end - 3, true
+	case bytes.HasPrefix(tag, []byte("<![CDATA[")) &&
+		bytes.HasSuffix(tag, []byte("]]>")):
+		return start + 9, end - 3, true
+	default:
+		// XML declarations, processing instructions, and DTD declarations
+		// contain grammar/schema values. Cross-field equality must not rewrite
+		// those structural tokens.
+		return 0, 0, false
+	}
 }
 
 func xmlUnsupportedMarkup(tag []byte) bool {

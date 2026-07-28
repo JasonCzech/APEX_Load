@@ -319,7 +319,7 @@ export default function ProjectSecretsPanel({
             onClick={() => { void createSecret() }}
             disabled={!canCreate || !writable || !createSupported || !normalizedNewName || !newValue || Boolean(nameError) || Boolean(busyName)}
           >
-            {busyName === normalizedNewName ? 'Creating...' : 'Create Secret'}
+            {busyName && busyName === normalizedNewName ? 'Creating...' : 'Create Secret'}
           </button>
         </div>
         {nameError && <p id={nameErrorId} className="settings-error-inline" role="alert">{nameError}</p>}

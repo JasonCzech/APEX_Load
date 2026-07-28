@@ -220,6 +220,53 @@ func TestFinalizeScriptRejectsInvalidDraftInvariant(t *testing.T) {
 	}
 }
 
+func TestFinalizersBackfillCredentialPreservationMetadataFromGeneratedSource(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		finalize func(*dsl.Script) (*Result, error)
+	}{
+		{
+			name: "FinalizeScript",
+			finalize: func(script *dsl.Script) (*Result, error) {
+				return FinalizeScript(script, nil, FinalizeOptions{})
+			},
+		},
+		{
+			name: "Draft.Finalize",
+			finalize: func(script *dsl.Script) (*Result, error) {
+				return (&Draft{Script: script}).Finalize(FinalizeOptions{})
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			script := validBaseScript()
+			script.GeneratedFrom = "fixture-import"
+			script.Actions = []dsl.Action{{
+				Name: "request", Type: "request", Method: "GET", Target: "/",
+			}}
+
+			result, err := test.finalize(script)
+			if err != nil {
+				t.Fatalf("finalize: %v", err)
+			}
+			if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+				t.Fatalf("import metadata was not created: %#v", result.Script.Metadata)
+			}
+			if got := result.Script.Metadata.Import.Source; got != "fixture-import" {
+				t.Fatalf("import source = %q, want fixture-import", got)
+			}
+			if got := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey]; got !=
+				dsl.ImportPreservedCredentialPolicyPreserve {
+				t.Fatalf("credential policy = %#v, want preserve", got)
+			}
+		})
+	}
+}
+
 func TestFinalizeScriptRecognizesLegacyImporterFilePlaceholder(t *testing.T) {
 	script := validBaseScript()
 	script.Actions = []dsl.Action{{

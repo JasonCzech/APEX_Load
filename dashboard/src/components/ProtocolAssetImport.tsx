@@ -613,6 +613,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     setReviewGeneration(next)
     return next
   }, [])
+  useEffect(() => () => {
+    // Route/project transitions can unmount the importer without invoking its
+    // Back button. Invalidate captured save scopes synchronously so a
+    // sequential Save All cannot start another commit after unmount.
+    reviewGenerationRef.current += 1
+  }, [])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
@@ -1325,7 +1331,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('OpenAPI import commit did not return a stored script')
           return storedScript
         })
-        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
+        onImported?.({
+          scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)],
+          ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+        })
         return
       }
       if (kind === 'postman') {
@@ -1358,7 +1367,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('Postman import save did not return a stored script')
           return storedScript
         })
-        onImported?.({ scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)] })
+        onImported?.({
+          scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)],
+          ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+        })
         return
       }
       if (kind === 'asyncapi') {
@@ -1375,7 +1387,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         })
         const persisted = withFallbackPersistedScript(savedScript, currentReviewedScript)
         if (!requestIsCurrent()) {
-          onImported?.({ scripts: [persisted] })
+          onImported?.({ scripts: [persisted], stayInImportReview: true })
         } else {
           if (currentGeneratedScripts.length > 1) {
             const nextSavedScripts = {
@@ -1403,7 +1415,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         return
       }
       const savedScript = await saveTask.run(async () => api.createScript(scriptToSave, sourceProjectId, scriptToSave.folder_id ?? folderId ?? null))
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
+      onImported?.({
+        scripts: [withFallbackPersistedScript(savedScript, scriptToSave)],
+        ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+      })
     } catch (error: unknown) {
       if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     } finally {
@@ -1560,7 +1575,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           .reverse()
           .filter((_script, index) => cleanup[index]?.status === 'rejected')
           .reverse()
-        if (retainedScripts.length > 0) onImported?.({ scripts: retainedScripts })
+        if (retainedScripts.length > 0) {
+          onImported?.({
+            scripts: retainedScripts,
+            stayInImportReview: true,
+          })
+        }
       }
       if (requestIsCurrent()) {
         const message = getErrorMessage(error, 'Failed to save generated scripts')
@@ -1776,7 +1796,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           <h2>{labels.title}</h2>
           <p className="sample-import-subtitle">{labels.subtitle}</p>
         </div>
-        {onClose && <button className="btn btn-secondary" onClick={() => { sourceSecretSessions.clear('conversion'); onClose() }}>Back</button>}
+        {onClose && <button className="btn btn-secondary" onClick={() => {
+          invalidateConversionSource()
+          onClose()
+        }}>Back</button>}
       </div>
 
       <div className="sample-import-card">

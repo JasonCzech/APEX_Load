@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -791,19 +792,64 @@ func (s *Server) recoverLibraryImportClaim(claim libraryImportClaim) error {
 		if !exists || current == nil {
 			journal.recordItem(claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink, nil)
 		} else if claim.BeforeScript == nil {
-			if hashLibraryScript(current.Script) != claim.IntendedHash {
+			matchesImport, err := s.libraryImportClaimScriptHashMatches(
+				claim,
+				current.Script,
+				claim.IntendedHash,
+			)
+			if err != nil {
+				return err
+			}
+			if ownedLink != nil && strings.TrimSpace(ownedLink.LocalContentHash) != "" {
+				matchesLink, err := s.libraryImportClaimScriptHashMatches(
+					claim,
+					current.Script,
+					ownedLink.LocalContentHash,
+				)
+				if err != nil {
+					return err
+				}
+				matchesImport = matchesImport || matchesLink
+			}
+			if !matchesImport {
 				// A later editor won without adopting this claim's link token.
 				// Restore only the link and preserve their asset.
 				journal.recordItem(claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink, nil)
 				break
 			}
 			journal.recordScript(nil, current, claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink)
-		} else if current.Script != nil && hashLibraryScript(current.Script) == hashLibraryScript(claim.BeforeScript.Script) {
+		} else if matchesBefore, err := s.libraryImportClaimScriptsEquivalent(
+			claim,
+			current.Script,
+			claim.BeforeScript.Script,
+		); err != nil {
+			return err
+		} else if matchesBefore {
 			journal.recordItem(claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink, nil)
-		} else if hashLibraryScript(current.Script) == claim.IntendedHash {
-			journal.recordScript(claim.BeforeScript, current, claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink)
 		} else {
-			journal.recordItem(claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink, nil)
+			matchesIntended, err := s.libraryImportClaimScriptHashMatches(
+				claim,
+				current.Script,
+				claim.IntendedHash,
+			)
+			if err != nil {
+				return err
+			}
+			if !matchesIntended && ownedLink != nil {
+				matchesIntended, err = s.libraryImportClaimScriptHashMatches(
+					claim,
+					current.Script,
+					ownedLink.LocalContentHash,
+				)
+				if err != nil {
+					return err
+				}
+			}
+			if matchesIntended {
+				journal.recordScript(claim.BeforeScript, current, claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink)
+			} else {
+				journal.recordItem(claim.RemoteID, claim.ProjectID, claim.Kind, claim.SourceInstanceID, claim.SourceItemID, claim.BeforeLink, ownedLink, nil)
+			}
 		}
 	case "scenario":
 		current, exists, err := s.libraryRecoveryScenario(claim.LocalItemID)
@@ -861,4 +907,37 @@ func (s *Server) recoverLibraryImportClaim(claim libraryImportClaim) error {
 		return fmt.Errorf("unsupported claim kind %q", claim.Kind)
 	}
 	return journal.rollback()
+}
+
+func (s *Server) libraryImportClaimScriptHashMatches(
+	claim libraryImportClaim,
+	script *dsl.Script,
+	expected string,
+) (bool, error) {
+	if strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+		digest, err := s.directImportExactScriptDigest(script)
+		if err != nil {
+			return false, fmt.Errorf("fingerprint direct import recovery script: %w", err)
+		}
+		return digest == strings.TrimSpace(expected), nil
+	}
+	return libraryScriptHashMatches(script, expected), nil
+}
+
+func (s *Server) libraryImportClaimScriptsEquivalent(
+	claim libraryImportClaim,
+	left, right *dsl.Script,
+) (bool, error) {
+	if strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+		leftDigest, err := s.directImportExactScriptDigest(left)
+		if err != nil {
+			return false, fmt.Errorf("fingerprint current direct import recovery script: %w", err)
+		}
+		rightDigest, err := s.directImportExactScriptDigest(right)
+		if err != nil {
+			return false, fmt.Errorf("fingerprint prior direct import recovery script: %w", err)
+		}
+		return leftDigest == rightDigest, nil
+	}
+	return libraryScriptHashesEquivalent(left, right), nil
 }

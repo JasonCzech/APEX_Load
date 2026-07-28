@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func normalizeLibraryKind(value string) string {
@@ -41,10 +42,136 @@ func hashLibraryScript(script *dsl.Script) string {
 	copied.FolderID = nil
 	copied.CreatedAt = time.Time{}
 	copied.UpdatedAt = time.Time{}
+	// Legacy importer rows gain this server-owned marker when read from durable
+	// storage. Canonicalize the pre-upgrade view by adding the marker to the hash
+	// copy. Do not remove it generally: marker-bearing modern scripts must retain
+	// their established hash.
+	if source, legacy := storage.LegacyCredentialPreservingImportSource(copied); legacy {
+		if copied.Metadata == nil {
+			copied.Metadata = &dsl.ScriptMetadata{}
+		}
+		if copied.Metadata.Import == nil {
+			copied.Metadata.Import = &dsl.ImportMetadata{Source: source}
+		} else if strings.TrimSpace(copied.Metadata.Import.Source) == "" {
+			copied.Metadata.Import.Source = source
+		}
+		if copied.Metadata.Import.Preserved == nil {
+			copied.Metadata.Import.Preserved = make(map[string]any)
+		}
+		if _, exists := copied.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey]; !exists {
+			copied.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] =
+				dsl.ImportPreservedCredentialPolicyPreserve
+		}
+	}
 	if copied.Metadata != nil && copied.Metadata.Import != nil && copied.Metadata.Import.Preserved != nil {
 		delete(copied.Metadata.Import.Preserved, javaVuserApprovalEvidenceKey)
 	}
 	return hashCanonical(copied)
+}
+
+// libraryScriptHashMatches accepts the current canonical hash and the bounded
+// pre-import-value-policy hash for known legacy importer output. Older
+// library.sync_links.v1 rows captured the latter before durable reads began
+// injecting the server-owned preservation marker. The compatibility candidate
+// is used only for comparisons; newly written links and modern marker-bearing
+// scripts keep the current canonical hash.
+func libraryScriptHashMatches(script *dsl.Script, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return false
+	}
+	if hashLibraryScript(script) == expected {
+		return true
+	}
+	for _, candidate := range legacyImportLibraryScriptHashCandidates(script) {
+		if candidate == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func libraryScriptHashesEquivalent(left, right *dsl.Script) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	leftHash := hashLibraryScript(left)
+	rightHash := hashLibraryScript(right)
+	return leftHash == rightHash ||
+		libraryScriptHashMatches(left, rightHash) ||
+		libraryScriptHashMatches(right, leftHash)
+}
+
+func legacyImportLibraryScriptHashCandidates(script *dsl.Script) []string {
+	source, legacy := storage.LegacyCredentialPreservingImportSource(script)
+	if !legacy {
+		return nil
+	}
+	copied := canonicalLibraryScriptHashCopy(script)
+	if copied == nil {
+		return nil
+	}
+	// The oldest recorder rows had exact source-less GeneratedBy provenance and
+	// no metadata container at all. For an inbound rolling-version bundle this
+	// is already the complete pre-policy hash shape; durable recognition has
+	// not yet had a chance to allocate metadata.import.
+	if copied.Metadata == nil || copied.Metadata.Import == nil {
+		return []string{hashCanonical(copied)}
+	}
+	delete(
+		copied.Metadata.Import.Preserved,
+		dsl.ImportPreservedCredentialPolicyKey,
+	)
+	candidates := []string{hashCanonical(copied)}
+
+	// Some historical rows did not carry metadata.import.source. Recognition
+	// fills it from the bounded GeneratedBy/GeneratedFrom classifier. Accept
+	// that exact pre-recognition shape as a second legacy candidate.
+	if strings.EqualFold(
+		strings.TrimSpace(copied.Metadata.Import.Source),
+		strings.TrimSpace(source),
+	) {
+		withoutSource := cloneScriptDefinition(copied)
+		withoutSource.Metadata.Import.Source = ""
+		candidates = append(candidates, hashCanonical(withoutSource))
+
+		// The recorder's oldest rows omitted import metadata entirely. Only
+		// remove empty compatibility-created containers; authored import
+		// fields and runtime policy remain part of the hash.
+		if withoutSource.Metadata.Import.SourceScriptName == "" &&
+			len(withoutSource.Metadata.Import.Preserved) == 0 {
+			withoutImport := cloneScriptDefinition(withoutSource)
+			withoutImport.Metadata.Import = nil
+			candidates = append(candidates, hashCanonical(withoutImport))
+			if withoutImport.Metadata.RuntimePolicy == nil {
+				withoutMetadata := cloneScriptDefinition(withoutImport)
+				withoutMetadata.Metadata = nil
+				candidates = append(candidates, hashCanonical(withoutMetadata))
+			}
+		}
+	}
+	return candidates
+}
+
+func canonicalLibraryScriptHashCopy(script *dsl.Script) *dsl.Script {
+	if script == nil {
+		return nil
+	}
+	copied := maskScriptSecrets(script)
+	if copied == nil {
+		return nil
+	}
+	copied.ID = ""
+	copied.RefKey = ""
+	copied.ProjectID = ""
+	copied.FolderID = nil
+	copied.CreatedAt = time.Time{}
+	copied.UpdatedAt = time.Time{}
+	if copied.Metadata != nil && copied.Metadata.Import != nil &&
+		copied.Metadata.Import.Preserved != nil {
+		delete(copied.Metadata.Import.Preserved, javaVuserApprovalEvidenceKey)
+	}
+	return copied
 }
 
 func hashLibraryScenario(scenario *StoredScenario) string {
@@ -199,11 +326,29 @@ func (s *Server) annotateRemoteCatalogItem(remoteID string, projectID string, it
 	item.LocalItemID = link.LocalItemID
 	item.RemoteItemID = firstNonEmpty(link.RemoteItemID, item.ID)
 	item.SyncStatus = "synced"
-	if item.ContentHash != "" && item.ContentHash != link.RemoteContentHash {
+	remoteChanged := item.ContentHash != "" && item.ContentHash != link.RemoteContentHash
+	var localScript *dsl.Script
+	if normalizeLibraryKind(item.Kind) == "script" {
+		if stored, ok := s.runner.GetScript(link.LocalItemID); ok && stored != nil {
+			localScript = stored.Script
+		}
+		if remoteChanged && localScript != nil &&
+			libraryScriptHashMatches(localScript, item.ContentHash) &&
+			libraryScriptHashMatches(localScript, link.RemoteContentHash) {
+			remoteChanged = false
+		}
+	}
+	if remoteChanged {
 		item.SyncStatus = "stale"
 	}
-	if localHash, err := s.localLibraryItemHash(item.Kind, link.LocalItemID); err == nil && localHash != link.LocalContentHash {
-		if localHash == item.ContentHash {
+	if localHash, err := s.localLibraryItemHash(item.Kind, link.LocalItemID); err == nil &&
+		localHash != link.LocalContentHash &&
+		!s.localLibraryItemHashMatches(item.Kind, link.LocalItemID, link.LocalContentHash) {
+		localMatchesRemote := localHash == item.ContentHash
+		if localScript != nil && libraryScriptHashMatches(localScript, item.ContentHash) {
+			localMatchesRemote = true
+		}
+		if localMatchesRemote {
 			item.SyncStatus = "synced"
 			return item
 		}
@@ -214,6 +359,15 @@ func (s *Server) annotateRemoteCatalogItem(remoteID string, projectID string, it
 		}
 	}
 	return item
+}
+
+func (s *Server) localLibraryItemHashMatches(kind, id, expected string) bool {
+	if normalizeLibraryKind(kind) == "script" {
+		script, ok := s.runner.GetScript(id)
+		return ok && script != nil && libraryScriptHashMatches(script.Script, expected)
+	}
+	hash, err := s.localLibraryItemHash(kind, id)
+	return err == nil && hash == strings.TrimSpace(expected)
 }
 
 func (s *Server) localLibraryItemHash(kind string, id string) (string, error) {

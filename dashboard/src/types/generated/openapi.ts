@@ -29894,7 +29894,11 @@ export interface operations {
     };
   };
   "handleSaveJMeterImport": {
-    parameters?: never;
+    parameters: {
+      "header"?: {
+        "Idempotency-Key"?: string;
+      };
+    };
     requestBody: {
       content: {
         "application/json": {
@@ -29920,6 +29924,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

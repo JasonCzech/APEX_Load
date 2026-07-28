@@ -474,9 +474,24 @@ func markCredentialParameterProvenance(
 }
 
 func markCredentialPreservingImport(script *dsl.Script) {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
-		strings.TrimSpace(script.Metadata.Import.Source) == "" {
+	if script == nil {
 		return
+	}
+	source := strings.TrimSpace(script.GeneratedFrom)
+	if script.Metadata != nil && script.Metadata.Import != nil {
+		source = firstNonEmpty(strings.TrimSpace(script.Metadata.Import.Source), source)
+	}
+	if source == "" {
+		return
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		script.Metadata.Import.Source = source
 	}
 	if script.Metadata.Import.Preserved == nil {
 		script.Metadata.Import.Preserved = make(map[string]any)
@@ -963,6 +978,10 @@ func (draft *Draft) Finalize(options FinalizeOptions) (*Result, error) {
 	if draft == nil || draft.Script == nil {
 		return nil, errors.New("request import draft is required")
 	}
+	// Some adapters use Project followed by Draft.Finalize directly instead of
+	// the FinalizeScript convenience path. Establish the same durable import
+	// provenance and runtime credential-redaction contract for both entry points.
+	markCredentialPreservingImport(draft.Script)
 	if options.UnresolvedBindings < 0 {
 		return nil, errors.New("unresolved binding count must be non-negative")
 	}

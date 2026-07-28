@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -182,20 +183,52 @@ func TestImportResponseFailsClosedWhenDraftAttestationCapacityIsUnavailable(t *t
 }
 
 func TestOpaqueImportSourcePayloadsAreAttestedAndRetainedDurably(t *testing.T) {
-	keys := []string{
-		"jsr223_sources",
-		"k6_gated_source",
-		"postman_event_sources",
-		"credential_traversal_source_snapshot_base64",
-		dsl.ImportPreservedJMeterJDBCSourcesKey,
-		dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey,
+	cases := []struct {
+		key     string
+		payload func(string) any
+	}{
+		{key: "jsr223_sources"},
+		{key: "k6_gated_source"},
+		{key: "postman_event_sources"},
+		{key: "credential_traversal_source_snapshot_base64"},
+		{key: dsl.ImportPreservedJMeterJDBCSourcesKey},
+		{key: dsl.ImportPreservedEnterpriseUnsupportedProxySourceKey},
+		{
+			key: dsl.ImportPreservedEnterpriseJavaVMSourceKey,
+			payload: func(canary string) any {
+				return map[string]any{
+					"version":     1,
+					"rows_base64": []string{base64.StdEncoding.EncodeToString([]byte("-Dpassword=" + canary))},
+				}
+			},
+		},
+		{
+			key: dsl.ImportPreservedEnterpriseJavaJDBCSourceKey,
+			payload: func(canary string) any {
+				return map[string]any{
+					"version": 1,
+					"connections": []map[string]any{{
+						"driver_base64": base64.StdEncoding.EncodeToString([]byte("postgres")),
+						"dsn_base64": base64.StdEncoding.EncodeToString(
+							[]byte("postgres://operator:" + canary + "@db.example.test/app"),
+						),
+						"reason":     "unsupported",
+						"source_ref": "Fixture.java line 1",
+					}},
+				}
+			},
+		},
 	}
-	for _, key := range keys {
-		t.Run(key, func(t *testing.T) {
-			canary := "opaque-source-credential-" + key + "-8f2c"
+	for _, test := range cases {
+		t.Run(test.key, func(t *testing.T) {
+			canary := "opaque-source-credential-" + test.key + "-8f2c"
+			payload := any("password=" + canary)
+			if test.payload != nil {
+				payload = test.payload(canary)
+			}
 			server := NewServer(ServerConfig{})
 			script := &dsl.Script{
-				ID:        "opaque-" + strings.ReplaceAll(key, "_", "-"),
+				ID:        "opaque-" + strings.ReplaceAll(test.key, "_", "-"),
 				Name:      "Opaque import source",
 				Version:   "1",
 				Protocol:  "http",
@@ -204,7 +237,7 @@ func TestOpaqueImportSourcePayloadsAreAttestedAndRetainedDurably(t *testing.T) {
 				Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
 					Source: "fixture",
 					Preserved: map[string]any{
-						key: "password=" + canary,
+						test.key: payload,
 					},
 				}},
 				Actions: []dsl.Action{{
@@ -237,9 +270,9 @@ func TestOpaqueImportSourcePayloadsAreAttestedAndRetainedDurably(t *testing.T) {
 			if !ok || durable == nil || durable.Script == nil {
 				t.Fatal("opaque source script was not persisted")
 			}
-			got, _ := durable.Script.Metadata.Import.Preserved[key].(string)
-			if got != "password="+canary {
-				t.Fatalf("durable opaque payload = %q", got)
+			got := durable.Script.Metadata.Import.Preserved[test.key]
+			if !jsonValuesEqual(got, payload) {
+				t.Fatalf("durable opaque payload = %#v, want %#v", got, payload)
 			}
 			read := httptest.NewRecorder()
 			server.mux.ServeHTTP(
@@ -250,8 +283,27 @@ func TestOpaqueImportSourcePayloadsAreAttestedAndRetainedDurably(t *testing.T) {
 				strings.Contains(read.Body.String(), canary) {
 				t.Fatalf("ordinary read disclosed opaque payload: %d %s", read.Code, read.Body.String())
 			}
+			maskedEdit := maskScriptSecrets(durable.Script)
+			if maskedEdit == nil {
+				t.Fatal("failed to build masked opaque-source edit")
+			}
+			maskedEdit.Name = "Renamed opaque import"
+			roundTrip, err := preparePersistentLibraryScript(maskedEdit, durable.Script)
+			if err != nil {
+				t.Fatalf("round-trip masked opaque source: %v", err)
+			}
+			got = roundTrip.Metadata.Import.Preserved[test.key]
+			if !jsonValuesEqual(got, payload) {
+				t.Fatalf("round-trip opaque payload = %#v, want %#v", got, payload)
+			}
 		})
 	}
+}
+
+func jsonValuesEqual(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
 func TestDiscardProtectedImportDraftAttestationUsesInspectionProjectScope(t *testing.T) {

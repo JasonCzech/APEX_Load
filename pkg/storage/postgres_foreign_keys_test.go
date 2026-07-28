@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 55; got != want {
+	if got, want := len(specs), 56; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -43,6 +43,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"bruno_native_import_batches.project_id":            "projects.id",
 		"bruno_native_import_batches.raw_artifact_id":       "bruno_source_artifacts.id",
 		"bruno_native_import_batches.sanitized_artifact_id": "bruno_source_artifacts.id",
+		"direct_import_receipts.project_id":                 "projects.id",
 		"scripts.folder_id":                                 "folders.id",
 		"tests.application_id":                              "applications.id",
 		"tests.scenario_id":                                 "scenarios.id",

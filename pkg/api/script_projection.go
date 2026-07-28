@@ -1085,7 +1085,9 @@ func isOpaqueImportSourcePayloadKey(key string) bool {
 	switch normalizeScriptFieldName(key) {
 	case "jsr223sources", "k6gatedsource", "postmaneventsources",
 		"credentialtraversalsourcesnapshotbase64", "devwebgatedsource",
-		"jmeterjdbcsources", "enterpriseunsupportedproxysource":
+		"jmeterjdbcsources", "enterpriseunsupportedproxysource",
+		normalizeScriptFieldName(dsl.ImportPreservedEnterpriseJavaVMSourceKey),
+		normalizeScriptFieldName(dsl.ImportPreservedEnterpriseJavaJDBCSourceKey):
 		return true
 	default:
 		return false
@@ -1722,8 +1724,32 @@ func isScriptSecretBindingsMap(key string) bool {
 // "[REDACTED]" as though it were a credential. Redacted import/source-review
 // evidence is retained as non-executable provenance and intentionally skipped.
 func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error {
+	return reconcileMaskedScriptSecretsWithTrust(incoming, prior, false)
+}
+
+func matchesStoredScriptDisclosureProjection(candidate, stored *dsl.Script) bool {
+	if candidate == nil || stored == nil {
+		return false
+	}
+	projected := maskScriptSecrets(stored)
+	return projected != nil && reflect.DeepEqual(candidate, projected)
+}
+
+func reconcileMaskedScriptSecretsWithTrust(
+	incoming *dsl.Script,
+	prior *dsl.Script,
+	trustedImport bool,
+) error {
 	if incoming == nil {
 		return fmt.Errorf("script is required")
+	}
+	if trustedImport {
+		// A trusted importer supplies the authoritative executable candidate,
+		// not a disclosure projection of the durable prior. Reconciling it
+		// against that prior can silently replace a legitimate new credential
+		// whose bytes happen to equal the projection sentinel (or another
+		// sentinel-free projected value) with the old credential.
+		return nil
 	}
 	hasRedactedRuntimeData := scriptHasRedactedRuntimeCredentialSource(incoming)
 	allowRedactedRuntimeData := hasRedactedRuntimeData &&
@@ -1770,6 +1796,7 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 		rawPrior,
 		"script",
 		allowRedactedRuntimeData,
+		isCredentialPreservingImport(prior),
 	)
 	if err != nil {
 		return err
@@ -1806,7 +1833,7 @@ func scriptAsJSONValue(script *dsl.Script) (any, error) {
 }
 
 func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path string) (any, error) {
-	return reconcileProjectedJSONWithOptions(incoming, projectedPrior, rawPrior, path, false)
+	return reconcileProjectedJSONWithOptions(incoming, projectedPrior, rawPrior, path, false, false)
 }
 
 func reconcileProjectedJSONWithOptions(
@@ -1815,6 +1842,7 @@ func reconcileProjectedJSONWithOptions(
 	rawPrior any,
 	path string,
 	allowRedactedRuntimeData bool,
+	allowLiteralPriorSentinel bool,
 ) (any, error) {
 	switch typed := incoming.(type) {
 	case string:
@@ -1825,8 +1853,7 @@ func reconcileProjectedJSONWithOptions(
 			// different table whose real values were masked only for this read.
 			// Restore that stored value before admitting durable sentinels, or
 			// an unrelated gate would overwrite already-resolved data.
-			if projectedOK && rawOK && typed == projected && typed != raw &&
-				!strings.Contains(raw, maskedScriptSecret) {
+			if projectedOK && rawOK && typed == projected && typed != raw {
 				return raw, nil
 			}
 			return typed, nil
@@ -1838,14 +1865,14 @@ func reconcileProjectedJSONWithOptions(
 		// redacted <messageId> into {{fn.uuid()}}, which is sentinel-free; without
 		// this branch a masked read-modify-write would persist the placeholder and
 		// destroy the recorded correlation id.
-		if projectedOK && rawOK && typed == projected && typed != raw && !strings.Contains(raw, maskedScriptSecret) {
+		if projectedOK && rawOK && typed == projected {
+			if strings.Contains(raw, maskedScriptSecret) && !allowLiteralPriorSentinel {
+				return nil, fmt.Errorf("%s contains an orphan %s sentinel; bind a secret reference instead", path, maskedScriptSecret)
+			}
 			return raw, nil
 		}
 		if !strings.Contains(typed, maskedScriptSecret) {
 			return typed, nil
-		}
-		if projectedOK && rawOK && typed == projected && !strings.Contains(raw, maskedScriptSecret) {
-			return raw, nil
 		}
 		return nil, fmt.Errorf("%s contains an orphan %s sentinel; bind a secret reference instead", path, maskedScriptSecret)
 	case map[string]any:
@@ -1904,6 +1931,7 @@ func reconcileProjectedJSONWithOptions(
 				rawChild,
 				path+"."+key,
 				allowRedactedRuntimeData,
+				allowLiteralPriorSentinel,
 			)
 			if err != nil {
 				return nil, err
@@ -1969,6 +1997,7 @@ func reconcileProjectedJSONWithOptions(
 				rawChild,
 				fmt.Sprintf("%s[%d]", path, i),
 				allowRedactedRuntimeData,
+				allowLiteralPriorSentinel,
 			)
 			if err != nil {
 				return nil, err
@@ -2385,6 +2414,8 @@ func isStableCredentialPreservingActionCollectionEdit(path string, incoming, pro
 	if len(incoming) != len(projected) || !isActionCollectionTraversalPath(path) {
 		return false
 	}
+	primaryKeys := make([]string, len(projected))
+	primaryCounts := make(map[string]int, len(projected))
 	for index := range incoming {
 		incomingMap, incomingOK := incoming[index].(map[string]any)
 		projectedMap, projectedOK := projected[index].(map[string]any)
@@ -2396,6 +2427,45 @@ func isStableCredentialPreservingActionCollectionEdit(path string, incoming, pro
 			credentialPreservingActionIdentity(projectedMap),
 		) {
 			return false
+		}
+		primaryKey, ok := credentialPreservingActionIdentityKey(projectedMap)
+		if !ok {
+			return false
+		}
+		primaryKeys[index] = primaryKey
+		primaryCounts[primaryKey]++
+	}
+
+	// A method/target tuple is not necessarily an action identity. Login
+	// collections commonly contain several POST /login actions with different
+	// credentials. When that routing identity is duplicated, require a unique
+	// source/action discriminator to stay at the same position. If no unique
+	// discriminator exists, only an otherwise byte-for-byte unchanged projected
+	// action is safe: positional restoration then cannot associate a credential
+	// with edited behavior from another action.
+	for index := range incoming {
+		if primaryCounts[primaryKeys[index]] == 1 {
+			continue
+		}
+		incomingMap := incoming[index].(map[string]any)
+		projectedMap := projected[index].(map[string]any)
+		if reflect.DeepEqual(incomingMap, projectedMap) {
+			continue
+		}
+		incomingSecondary, incomingOK := credentialPreservingActionSecondaryIdentity(incomingMap)
+		projectedSecondary, projectedOK := credentialPreservingActionSecondaryIdentity(projectedMap)
+		if !incomingOK || !projectedOK || incomingSecondary != projectedSecondary {
+			return false
+		}
+		for otherIndex := range projected {
+			if otherIndex == index || primaryKeys[otherIndex] != primaryKeys[index] {
+				continue
+			}
+			otherMap := projected[otherIndex].(map[string]any)
+			otherSecondary, otherOK := credentialPreservingActionSecondaryIdentity(otherMap)
+			if !otherOK || otherSecondary == projectedSecondary {
+				return false
+			}
 		}
 	}
 	return true
@@ -2420,6 +2490,35 @@ func credentialPreservingActionIdentity(action map[string]any) map[string]any {
 		}
 	}
 	return identity
+}
+
+func credentialPreservingActionIdentityKey(action map[string]any) (string, bool) {
+	payload, err := json.Marshal(credentialPreservingActionIdentity(action))
+	if err != nil {
+		return "", false
+	}
+	return string(payload), true
+}
+
+func credentialPreservingActionSecondaryIdentity(action map[string]any) (string, bool) {
+	if metadata, ok := action["metadata"].(map[string]any); ok {
+		for _, key := range []string{"candidate_id", "source_refs", "source_mappings", "source_ref"} {
+			value, exists := metadata[key]
+			if !exists {
+				continue
+			}
+			payload, err := json.Marshal(value)
+			if err == nil && string(payload) != "null" && string(payload) != `""` && string(payload) != "[]" {
+				return key + ":" + string(payload), true
+			}
+		}
+	}
+	name, ok := action["name"].(string)
+	name = strings.TrimSpace(name)
+	if !ok || name == "" {
+		return "", false
+	}
+	return "name:" + name, true
 }
 
 func scriptHasRedactedRuntimeCredentialSource(script *dsl.Script) bool {

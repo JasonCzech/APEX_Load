@@ -21,6 +21,12 @@ import (
 
 var importBatchRuntimeTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
 
+const (
+	maxTrustedImportSourceEnvelopeItems = 256
+	maxTrustedImportSourceValueBytes    = 64 << 10
+	maxTrustedImportSourceEnvelopeBytes = 2 << 20
+)
+
 type importBatchCredentialContext struct {
 	dynamicReadiness requestimport.VariableReadiness
 	actionPath       string
@@ -80,6 +86,14 @@ func validateImportBatchCredentialSafety(
 		if err != nil {
 			return unmanagedImportBatchCredential("metadata")
 		}
+		metadata, err = importBatchMetadataForCredentialValidation(
+			metadata,
+			trustPreservedExecutableCredentials &&
+				importBatchPreservesExecutableCredentials(script),
+		)
+		if err != nil {
+			return err
+		}
 		if err := validateImportBatchMetadataCredentials(metadata, "metadata", context, false); err != nil {
 			return err
 		}
@@ -117,6 +131,159 @@ func validateImportBatchCredentialSafety(
 			return nil
 		}
 	})
+}
+
+func importBatchMetadataForCredentialValidation(
+	value any,
+	trustServerSourceEnvelopes bool,
+) (any, error) {
+	root, ok := value.(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	importMetadata, ok := root["import"].(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	preserved, ok := importMetadata["preserved"].(map[string]any)
+	if !ok {
+		return value, nil
+	}
+	for _, entry := range []struct {
+		key      string
+		validate func(any) bool
+	}{
+		{
+			key:      dsl.ImportPreservedEnterpriseJavaVMSourceKey,
+			validate: validTrustedJavaVMSourceEnvelope,
+		},
+		{
+			key:      dsl.ImportPreservedEnterpriseJavaJDBCSourceKey,
+			validate: validTrustedJavaJDBCSourceEnvelope,
+		},
+	} {
+		envelope, exists := preserved[entry.key]
+		if !exists {
+			continue
+		}
+		if !trustServerSourceEnvelopes || !entry.validate(envelope) {
+			return nil, unmanagedImportBatchCredential(
+				"metadata.import.preserved." + entry.key,
+			)
+		}
+		// value is a detached JSON audit copy. Removing a validated server-owned
+		// inert envelope here does not alter the durable executable script; it only
+		// prevents the generic metadata rule from treating repair material as an
+		// unmanaged outbound credential.
+		delete(preserved, entry.key)
+	}
+	return value, nil
+}
+
+func validTrustedJavaVMSourceEnvelope(value any) bool {
+	envelope, ok := value.(map[string]any)
+	if !ok || !validTrustedImportEnvelopeKeys(
+		envelope,
+		"version",
+		"rows_base64",
+	) || !trustedImportEnvelopeVersionOne(envelope["version"]) {
+		return false
+	}
+	rows, ok := envelope["rows_base64"].([]any)
+	if !ok || len(rows) == 0 || len(rows) > maxTrustedImportSourceEnvelopeItems {
+		return false
+	}
+	total := 0
+	for _, raw := range rows {
+		encoded, ok := raw.(string)
+		if !ok || !validTrustedImportSourceBase64(encoded, &total) {
+			return false
+		}
+	}
+	return total <= maxTrustedImportSourceEnvelopeBytes
+}
+
+func validTrustedJavaJDBCSourceEnvelope(value any) bool {
+	envelope, ok := value.(map[string]any)
+	if !ok || !validTrustedImportEnvelopeKeys(
+		envelope,
+		"version",
+		"connections",
+	) || !trustedImportEnvelopeVersionOne(envelope["version"]) {
+		return false
+	}
+	connections, ok := envelope["connections"].([]any)
+	if !ok || len(connections) == 0 ||
+		len(connections) > maxTrustedImportSourceEnvelopeItems {
+		return false
+	}
+	total := 0
+	for _, raw := range connections {
+		connection, ok := raw.(map[string]any)
+		if !ok || !validTrustedImportEnvelopeKeys(
+			connection,
+			"driver_base64",
+			"dsn_base64",
+			"reason",
+			"source_ref",
+		) {
+			return false
+		}
+		for _, key := range []string{"driver_base64", "dsn_base64"} {
+			encoded, ok := connection[key].(string)
+			if !ok || (key == "dsn_base64" && encoded == "") ||
+				!validTrustedImportSourceBase64(encoded, &total) {
+				return false
+			}
+		}
+		for _, key := range []string{"reason", "source_ref"} {
+			text, ok := connection[key].(string)
+			if !ok || len(text) > 4096 || importBatchContainsControl(text) {
+				return false
+			}
+			total += len(text)
+		}
+	}
+	return total <= maxTrustedImportSourceEnvelopeBytes
+}
+
+func validTrustedImportEnvelopeKeys(value map[string]any, allowed ...string) bool {
+	if len(value) != len(allowed) {
+		return false
+	}
+	for _, key := range allowed {
+		if _, ok := value[key]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func trustedImportEnvelopeVersionOne(value any) bool {
+	number, ok := value.(float64)
+	return ok && number == 1
+}
+
+func validTrustedImportSourceBase64(encoded string, total *int) bool {
+	if len(encoded) > base64.StdEncoding.EncodedLen(maxTrustedImportSourceValueBytes) {
+		return false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(decoded) > maxTrustedImportSourceValueBytes {
+		return false
+	}
+	*total += len(decoded)
+	clear(decoded)
+	return *total <= maxTrustedImportSourceEnvelopeBytes
+}
+
+func importBatchContainsControl(value string) bool {
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 func importBatchPreservesExecutableCredentials(script *dsl.Script) bool {

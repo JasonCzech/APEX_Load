@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -195,6 +196,7 @@ type parameter struct {
 	Format   string `json:"format,omitempty" yaml:"format,omitempty"`
 	Example  any    `json:"example,omitempty" yaml:"example,omitempty"`
 	Default  any    `json:"default,omitempty" yaml:"default,omitempty"`
+	Enum     []any  `json:"enum,omitempty" yaml:"enum,omitempty"`
 }
 
 type requestBody struct {
@@ -228,6 +230,7 @@ func (examples *orderedMediaExamples) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -319,7 +322,9 @@ func (s *schema) UnmarshalJSON(data []byte) error {
 		Type any `json:"type,omitempty"`
 		*alias
 	}{alias: (*alias)(s)}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&aux); err != nil {
 		return err
 	}
 	s.Type = normalizeSchemaType(aux.Type, s.Type)
@@ -328,14 +333,38 @@ func (s *schema) UnmarshalJSON(data []byte) error {
 
 func (s *schema) UnmarshalYAML(value *yaml.Node) error {
 	type alias schema
-	aux := struct {
-		Type any `yaml:"type,omitempty"`
-		*alias
-	}{alias: (*alias)(s)}
-	if err := value.Decode(&aux); err != nil {
+	if value == nil {
+		return nil
+	}
+	if value.Kind == yaml.AliasNode {
+		value = value.Alias
+	}
+	if value == nil || value.Kind != yaml.MappingNode {
+		return errors.New("OpenAPI schema must be a mapping")
+	}
+	withoutType := *value
+	withoutType.Content = make([]*yaml.Node, 0, len(value.Content))
+	var typeNode *yaml.Node
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		key := value.Content[index]
+		child := value.Content[index+1]
+		if key.Value == "type" {
+			typeNode = child
+			continue
+		}
+		withoutType.Content = append(withoutType.Content, key, child)
+	}
+	*s = schema{}
+	if err := withoutType.Decode((*alias)(s)); err != nil {
 		return err
 	}
-	s.Type = normalizeSchemaType(aux.Type, s.Type)
+	var rawType any
+	if typeNode != nil {
+		if err := typeNode.Decode(&rawType); err != nil {
+			return err
+		}
+	}
+	s.Type = normalizeSchemaType(rawType, s.Type)
 	return nil
 }
 
@@ -390,6 +419,7 @@ type builtOperation struct {
 	LocationHeader         bool
 	Produced               []producedValue
 	SensitiveRequestFields map[string]string
+	SensitiveWholeBody     bool
 }
 
 type producedValue struct {
@@ -447,15 +477,18 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		)
 	}
 	sourceFileName := openAPISourceFileName(content)
-	sensitiveSourceValues := sensitiveOpenAPISourceValues(doc)
-	reviewContent := scrub.Value(content, scrub.Policy{})
-	for _, sensitiveValue := range sensitiveSourceValues {
-		reviewContent = strings.ReplaceAll(reviewContent, sensitiveValue, scrub.Redacted)
-		if encoded, err := json.Marshal(sensitiveValue); err == nil && len(encoded) >= 2 {
-			reviewContent = strings.ReplaceAll(reviewContent, string(encoded[1:len(encoded)-1]), scrub.Redacted)
+	sensitiveSourceValues, sensitiveTypedSourceValue := sensitiveOpenAPISourceValues(doc)
+	reviewContent := openAPISourceReviewCredentialOmission
+	if !sensitiveTypedSourceValue {
+		reviewContent = scrub.Value(content, scrub.Policy{})
+		for _, sensitiveValue := range sensitiveSourceValues {
+			reviewContent = strings.ReplaceAll(reviewContent, sensitiveValue, scrub.Redacted)
+			if encoded, err := json.Marshal(sensitiveValue); err == nil && len(encoded) >= 2 {
+				reviewContent = strings.ReplaceAll(reviewContent, string(encoded[1:len(encoded)-1]), scrub.Redacted)
+			}
 		}
+		reviewContent, _ = scrub.RedactQuotedValues(reviewContent, sensitiveSourceValues)
 	}
-	reviewContent, _ = scrub.RedactQuotedValues(reviewContent, sensitiveSourceValues)
 	sourceMappings := make([]sourceview.Mapping, 0)
 	res := resolver{doc: doc, diagnostics: &diagnostics}
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
@@ -532,7 +565,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			actionIndex := len(result.Script.Actions)
 			actionPath := fmt.Sprintf("actions[%d]", actionIndex)
-			action, report, err := finalizeOpenAPIRequestAction(action, path, candidate.method, sourceFileName, actionPath, credentialNames, openAPIProvenVariables(result.Script.Init), opInfo.SensitiveRequestFields)
+			action, report, err := finalizeOpenAPIRequestAction(
+				action,
+				path,
+				candidate.method,
+				sourceFileName,
+				actionPath,
+				credentialNames,
+				openAPIProvenVariables(result.Script.Init),
+				opInfo.SensitiveRequestFields,
+				opInfo.SensitiveWholeBody,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("finalize OpenAPI operation %s %s: %w", strings.ToUpper(candidate.method), path, err)
 			}
@@ -591,10 +634,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 	reviewContent, _ = scrub.RedactQuotedValues(reviewContent, protectedSourceValues)
-	reviewContent, sourceReviewOmitted := disclosureSafeOpenAPISourceReview(
-		reviewContent,
-		append(append([]string(nil), sensitiveSourceValues...), protectedSourceValues...),
-	)
+	sourceReviewOmitted := sensitiveTypedSourceValue
+	if !sourceReviewOmitted {
+		reviewContent, sourceReviewOmitted = disclosureSafeOpenAPISourceReview(
+			reviewContent,
+			append(append([]string(nil), sensitiveSourceValues...), protectedSourceValues...),
+		)
+	}
 	result.ProtectedRequirements.Store(finalized.Requirements)
 	for index := range finalized.Requirements {
 		finalized.Requirements[index].Value = ""
@@ -620,6 +666,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			result.SourceReview.SourceFiles[index].Redacted = true
 		}
 	}
+	sanitizeOpenAPIResultReviewText(result)
 	return result, nil
 }
 
@@ -699,15 +746,44 @@ func openAPISourceFileName(content string) string {
 	return "openapi.yaml"
 }
 
-func sensitiveOpenAPISourceValues(doc *document) []string {
+func sensitiveOpenAPISourceValues(doc *document) ([]string, bool) {
 	if doc == nil {
-		return nil
+		return nil, false
 	}
 	schemaResolver := resolver{doc: doc}
 	values := map[string]struct{}{}
-	add := func(value any) {
-		if text, ok := value.(string); ok && text != "" {
-			values[text] = struct{}{}
+	hasTypedValue := false
+	var add func(any)
+	add = func(value any) {
+		switch typed := value.(type) {
+		case string:
+			if typed != "" {
+				values[typed] = struct{}{}
+			}
+		case bool, float32, float64, int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64, json.Number:
+			// JSON's ordinary decoder and YAML's typed decoder do not retain
+			// the original numeric lexeme. A large integer can be rounded and a
+			// scientific value can be normalized before this semantic walk, so
+			// string replacement cannot prove that the source-review copy no
+			// longer contains the authored credential. Keep executable
+			// conversion unchanged and conservatively omit only the review copy.
+			hasTypedValue = true
+			if text, ok := authoredWireValue(typed); ok {
+				values[text] = struct{}{}
+			}
+		case map[string]any:
+			for _, child := range typed {
+				add(child)
+			}
+		case map[any]any:
+			for _, child := range typed {
+				add(child)
+			}
+		case []any:
+			for _, child := range typed {
+				add(child)
+			}
 		}
 	}
 	var walkExample func(any)
@@ -737,7 +813,10 @@ func sensitiveOpenAPISourceValues(doc *document) []string {
 		switch typed := value.(type) {
 		case map[string]any:
 			for key, child := range typed {
-				childSchema := current.Properties[key]
+				childSchema, declared := current.Properties[key]
+				if !declared {
+					childSchema, _ = additionalPropertiesSchema(current)
+				}
 				if schemaCredentialField(key, childSchema) {
 					add(child)
 					continue
@@ -772,6 +851,9 @@ func sensitiveOpenAPISourceValues(doc *document) []string {
 		if current.Items != nil {
 			walkSchema(*current.Items, field)
 		}
+		if additional, ok := additionalPropertiesSchema(current); ok {
+			walkSchema(additional, field)
+		}
 		for _, child := range append(append([]schema(nil), current.OneOf...), append(current.AnyOf, current.AllOf...)...) {
 			walkSchema(child, field)
 		}
@@ -782,6 +864,9 @@ func sensitiveOpenAPISourceValues(doc *document) []string {
 			add(param.Default)
 			add(param.Schema.Example)
 			add(param.Schema.Default)
+			for _, enum := range param.Enum {
+				add(enum)
+			}
 		}
 		walkSchema(param.Schema, param.Name)
 	}
@@ -839,7 +924,7 @@ func sensitiveOpenAPISourceValues(doc *document) []string {
 		out = append(out, value)
 	}
 	sort.Strings(out)
-	return out
+	return out, hasTypedValue
 }
 
 func openAPISourceMapping(sourceFile string, content string, lineIndex sourceview.LineIndex, path string, method string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
@@ -897,7 +982,9 @@ func lineForNeedle(content string, lineIndex sourceview.LineIndex, needle string
 // specs — but returned so the caller can surface them for review.
 func decodeDocument(data []byte) (*document, []srcparse.Finding, error) {
 	var doc document
-	if err := json.Unmarshal(data, &doc); err == nil && (doc.OpenAPI != "" || doc.Swagger != "" || len(doc.Paths) > 0) {
+	jsonDecoder := json.NewDecoder(bytes.NewReader(data))
+	jsonDecoder.UseNumber()
+	if err := jsonDecoder.Decode(&doc); err == nil && (doc.OpenAPI != "" || doc.Swagger != "" || len(doc.Paths) > 0) {
 		if validateErr := srcparse.ValidateJSON(data, srcparse.Limits{}); validateErr != nil {
 			return nil, nil, fmt.Errorf("invalid OpenAPI document: %w", validateErr)
 		}
@@ -1182,6 +1269,11 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		bodySource = swagger2RequestBody(params, op, res, location)
 	}
 	body, contentType, bodyColumns, bodyReviewCodes, sensitiveRequestFields := requestBodyExample(bodySource, res, location, columns)
+	sensitiveWholeBody := openAPIRequestBodyIsWholeCredential(
+		bodySource,
+		res,
+		location,
+	) || openAPIParametersDeclareWholeBodyCredential(params)
 	for _, param := range params {
 		name := strings.TrimSpace(param.Name)
 		if name == "" || credential.SensitiveName(name) ||
@@ -1215,6 +1307,18 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 			},
 		},
 	}
+	pathCredentialTargets, pathCredentialLocatorUnresolved :=
+		openAPIPathCredentialTargets(path, target, params, operationKey)
+	action.Metadata = requestimport.MergePreservedCredentialTargetsMetadata(
+		action.Metadata,
+		pathCredentialTargets,
+	)
+	if pathCredentialLocatorUnresolved {
+		bodyReviewCodes = append(
+			bodyReviewCodes,
+			"path_credential_locator_unresolved",
+		)
+	}
 	securityRequirements := op.Security
 	if securityRequirements == nil {
 		// Operations without their own security requirement inherit the
@@ -1237,6 +1341,7 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		SuccessSchema:          successSchema,
 		LocationHeader:         responseDeclaresLocation(status, responseObject),
 		SensitiveRequestFields: sensitiveRequestFields,
+		SensitiveWholeBody:     sensitiveWholeBody,
 	}
 	if includeAssertion {
 		if hasStatus {
@@ -1253,7 +1358,7 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 // this point is source work (refs, parameter styles, security alternatives,
 // examples); everything below is the common wire projection and readiness
 // contract.
-func finalizeOpenAPIRequestAction(action dsl.Action, path, method, sourceFile, actionPath string, names *credentialpolicy.NameRegistry, provenVars map[string]struct{}, sensitiveNames map[string]string) (dsl.Action, requestimport.Report, error) {
+func finalizeOpenAPIRequestAction(action dsl.Action, path, method, sourceFile, actionPath string, names *credentialpolicy.NameRegistry, provenVars map[string]struct{}, sensitiveNames map[string]string, sensitiveWholeBody bool) (dsl.Action, requestimport.Report, error) {
 	source := credentialpolicy.SourceRef{
 		Format:  "openapi",
 		Path:    sourceFile,
@@ -1323,6 +1428,7 @@ func finalizeOpenAPIRequestAction(action dsl.Action, path, method, sourceFile, a
 			Registry:                     names,
 			NamePrefix:                   "OPENAPI",
 			SensitiveNames:               sensitiveNames,
+			SensitiveWholeBody:           sensitiveWholeBody,
 			ProvenVars:                   provenVars,
 			PreGovernedHeaderOccurrences: openAPIPreGovernedHeaderOccurrences(headers),
 		}
@@ -1742,6 +1848,32 @@ func openAPISchemaCredentialNames(root schema, res resolver, location string) ma
 	return names
 }
 
+func openAPIRequestBodyIsWholeCredential(
+	body *requestBody,
+	res resolver,
+	location string,
+) bool {
+	if body == nil || len(body.Content) == 0 {
+		return false
+	}
+	contentType := preferredContentType(sortedMapKeys(body.Content))
+	media := body.Content[contentType]
+	root := res.resolveSchema(media.Schema, location+" request body", map[string]bool{})
+	return schemaCredentialField("", root)
+}
+
+func openAPIParametersDeclareWholeBodyCredential(params []parameter) bool {
+	for _, param := range params {
+		if !strings.EqualFold(strings.TrimSpace(param.In), "body") {
+			continue
+		}
+		if schemaCredentialField(strings.TrimSpace(param.Name), parameterSchema(param)) {
+			return true
+		}
+	}
+	return false
+}
+
 func schemaCredentialField(name string, current schema) bool {
 	return credential.SensitiveName(name) ||
 		strings.EqualFold(strings.TrimSpace(current.Format), "password")
@@ -1994,14 +2126,12 @@ func renderGovernedExample(value any, contentType string) (string, []string) {
 		}
 	}
 	rendered := renderExample(value, contentType)
-	projected := scrub.Value(rendered, scrub.Policy{})
-	if projected != rendered {
-		// This is the executable destination draft. Keep the operator-supplied
-		// bytes exact and gate the request for review; response/source-review
-		// projection independently removes the credential. Returning the scrubbed
-		// text here would make the imported request permanently unreplayable.
-		return rendered, []string{"unsafe_structured_credential_projection"}
-	}
+	// The shared Preserve-mode projector classifies raw text after the effective
+	// request is assembled. It retains the exact source bytes, records a review
+	// finding and a runtime-redaction locator, and leaves disclosure projection
+	// responsible for masking API/source-review output. Gating this complete
+	// scalar here would make an otherwise faithful import unnecessarily
+	// non-executable.
 	return rendered, nil
 }
 
@@ -2180,8 +2310,15 @@ func sensitiveNonStringSchemaCodes(root schema, res resolver, location string) [
 		}
 		current = res.resolveSchema(current, location, seen)
 		if schemaCredentialField(field, current) && schemaNeedsRawJSONPlaceholder(current) {
-			unsafe = true
-			return
+			// An authored example/default/enum supplies the exact typed wire
+			// value. Preserve-mode JSON projection records a pointer locator
+			// without converting it to a string. A typed credential with no
+			// authored value still needs a blocked zero-value draft because
+			// there is no safe executable value to synthesize.
+			if _, authored := authoredSchemaValue(current); !authored {
+				unsafe = true
+				return
+			}
 		}
 		for _, name := range sortedSchemaPropertyKeys(current.Properties) {
 			walk(current.Properties[name], name, copySeen(seen))
@@ -2332,6 +2469,15 @@ func templatePath(path string, params []parameter, res resolver, location string
 	return target, uniqueSorted(out)
 }
 
+func openAPIPathCredentialTargets(
+	path string,
+	target string,
+	params []parameter,
+	requestKey string,
+) ([]credentialpolicy.TargetRef, bool) {
+	return buildOpenAPIPathCredentialTargets(path, target, params, requestKey)
+}
+
 type queryTemplatePair struct {
 	key     string
 	value   string
@@ -2406,10 +2552,8 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 	}
 	column := sanitizeColumnName(name)
 	if schemaCredentialField(name, s) {
-		if value, ok := authoredParameterValue(param); ok {
-			if literal, stringValue := value.(string); stringValue {
-				return []queryTemplatePair{{key: name, value: url.QueryEscape(literal)}}
-			}
+		if literal, ok := authoredParameterWireValue(param); ok {
+			return []queryTemplatePair{{key: name, value: url.QueryEscape(literal)}}
 		}
 		return []queryTemplatePair{{key: name, value: openAPICredentialReference(name)}}
 	}
@@ -2520,27 +2664,34 @@ func parameterSchema(param parameter) schema {
 		if s.Default == nil {
 			s.Default = param.Default
 		}
+		if len(s.Enum) == 0 && len(param.Enum) > 0 {
+			s.Enum = append([]any(nil), param.Enum...)
+		}
 		return s
 	}
-	return schema{Type: param.Type, Format: param.Format, Example: param.Example, Default: param.Default}
+	return schema{
+		Type:    param.Type,
+		Format:  param.Format,
+		Example: param.Example,
+		Default: param.Default,
+		Enum:    append([]any(nil), param.Enum...),
+	}
 }
 
 func openAPIParameterTemplate(param parameter) (string, bool) {
 	name := strings.TrimSpace(param.Name)
 	if schemaCredentialField(name, parameterSchema(param)) {
-		if value, ok := authoredParameterValue(param); ok {
-			if literal, ok := authoredWireValue(value); ok {
-				switch strings.ToLower(strings.TrimSpace(param.In)) {
-				case "path":
-					literal = url.PathEscape(literal)
-				case "query":
-					literal = url.QueryEscape(literal)
-				}
-				// This literal exists only in the effective request. The shared
-				// Preserve-mode projector marks it for review while retaining
-				// it in the durable destination.
-				return literal, true
+		if literal, ok := authoredParameterWireValue(param); ok {
+			switch strings.ToLower(strings.TrimSpace(param.In)) {
+			case "path":
+				literal = url.PathEscape(literal)
+			case "query":
+				literal = url.QueryEscape(literal)
 			}
+			// This literal exists only in the effective request. The shared
+			// Preserve-mode projector marks it for review while retaining
+			// it in the durable destination.
+			return literal, true
 		}
 		return openAPICredentialReference(name), true
 	}
@@ -2572,8 +2723,16 @@ func authoredWireValue(value any) (string, bool) {
 	switch typed := value.(type) {
 	case string:
 		return typed, true
-	case bool, float32, float64, int, int8, int16, int32, int64,
-		uint, uint8, uint16, uint32, uint64, json.Number:
+	case bool:
+		return strconv.FormatBool(typed), true
+	case float32:
+		return strconv.FormatFloat(float64(typed), 'f', -1, 32), true
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64), true
+	case json.Number:
+		return typed.String(), true
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64:
 		return fmt.Sprint(typed), true
 	default:
 		return "", false
@@ -2595,6 +2754,21 @@ func authoredParameterValue(param parameter) (any, bool) {
 	}
 }
 
+func authoredParameterSourceValue(param parameter) (any, bool) {
+	if value, ok := authoredParameterValue(param); ok {
+		return value, true
+	}
+	return authoredSchemaValue(parameterSchema(param))
+}
+
+func authoredParameterWireValue(param parameter) (string, bool) {
+	value, ok := authoredParameterSourceValue(param)
+	if !ok {
+		return "", false
+	}
+	return authoredWireValue(value)
+}
+
 func sensitiveParameterReviewCodes(params []parameter) []string {
 	for _, param := range params {
 		name := strings.TrimSpace(param.Name)
@@ -2606,8 +2780,8 @@ func sensitiveParameterReviewCodes(params []parameter) []string {
 		if !sensitive {
 			continue
 		}
-		if value, ok := authoredParameterValue(param); ok {
-			if _, stringValue := value.(string); !stringValue {
+		if value, ok := authoredParameterSourceValue(param); ok {
+			if _, representable := authoredWireValue(value); !representable {
 				return []string{"sensitive_non_string_parameter"}
 			}
 		}
@@ -3092,7 +3266,9 @@ func additionalPropertiesSchema(s schema) (schema, bool) {
 	}
 	var sub schema
 	if b, err := json.Marshal(raw); err == nil {
-		_ = json.Unmarshal(b, &sub)
+		decoder := json.NewDecoder(bytes.NewReader(b))
+		decoder.UseNumber()
+		_ = decoder.Decode(&sub)
 	}
 	return sub, true
 }

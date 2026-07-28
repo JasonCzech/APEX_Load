@@ -650,6 +650,79 @@ func TestReconcileMaskedScriptSecretsRestoresOnlyExactPriorProjection(t *testing
 	}
 }
 
+func TestReconcileMaskedScriptSecretsPreservesSentinelLikeImportedCredentials(t *testing.T) {
+	credentialValue := "prefix" + maskedScriptSecret + "suffix"
+	prior := secretBearingScript("sentinel-like", "project-a")
+	prior.Config.HTTP.Auth.Password = credentialValue
+	ensureCredentialPreservingImportMetadata(prior, "fixture")
+	incoming := maskScriptSecrets(prior)
+
+	if err := reconcileMaskedScriptSecrets(incoming, prior); err != nil {
+		t.Fatalf("reconcile sentinel-like credential: %v", err)
+	}
+	if got := incoming.Config.HTTP.Auth.Password; got != credentialValue {
+		t.Fatalf("reconciled password = %q, want exact prior value", got)
+	}
+
+	trustedCreate := secretBearingScript("trusted-sentinel-like", "project-a")
+	trustedCreate.Config.HTTP.Auth.Password = credentialValue
+	if err := reconcileMaskedScriptSecretsWithTrust(trustedCreate, nil, true); err != nil {
+		t.Fatalf("trusted import create rejected exact credential: %v", err)
+	}
+	if got := trustedCreate.Config.HTTP.Auth.Password; got != credentialValue {
+		t.Fatalf("trusted password = %q, want exact imported value", got)
+	}
+
+	trustedReplacePrior := secretBearingScript("trusted-replace-prior", "project-a")
+	trustedReplacePrior.Config.HTTP.Auth.Password = "old-password"
+	trustedReplace := secretBearingScript("trusted-replace", "project-a")
+	trustedReplace.Config.HTTP.Auth.Password = maskedScriptSecret
+	if err := reconcileMaskedScriptSecretsWithTrust(
+		trustedReplace,
+		trustedReplacePrior,
+		true,
+	); err != nil {
+		t.Fatalf("trusted import replace rejected exact sentinel credential: %v", err)
+	}
+	if got := trustedReplace.Config.HTTP.Auth.Password; got != maskedScriptSecret {
+		t.Fatalf("trusted replace password = %q, want exact imported sentinel", got)
+	}
+
+	orphan := secretBearingScript("ordinary-sentinel-like", "project-a")
+	orphan.Config.HTTP.Auth.Password = credentialValue
+	if err := reconcileMaskedScriptSecrets(orphan, nil); err == nil ||
+		!strings.Contains(err.Error(), "orphan") {
+		t.Fatalf("ordinary orphan sentinel-like credential error = %v", err)
+	}
+}
+
+func TestPrepareTransientExecutableScriptPreservesSentinelLikeImportedCredential(t *testing.T) {
+	imported := &dsl.Script{
+		ID: "trusted-replay-sentinel", Name: "Trusted replay sentinel", Version: "1", Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{
+				Type:     "basic",
+				Username: "operator",
+				Password: maskedScriptSecret,
+			}},
+		},
+		Actions: []dsl.Action{{
+			Name: "Request", Type: "request", Method: http.MethodGet, Target: "/",
+		}},
+	}
+	ensureCredentialPreservingImportMetadata(imported, "fixture")
+
+	response := httptest.NewRecorder()
+	prepared, ok := prepareTransientExecutableScript(response, imported, true)
+	if !ok {
+		t.Fatalf("trusted replay preparation status = %d body=%s", response.Code, response.Body.String())
+	}
+	if got := prepared.Config.HTTP.Auth.Password; got != maskedScriptSecret {
+		t.Fatalf("trusted replay password = %q, want exact imported value", got)
+	}
+}
+
 func TestReconcileMaskedScriptSecretsFailsClosedWhenCredentialActionsReorder(t *testing.T) {
 	prior := &dsl.Script{
 		ID: "reordered-credentials", Name: "Credential actions", Version: "1", Protocol: "http",
@@ -679,6 +752,37 @@ func TestReconcileMaskedScriptSecretsFailsClosedWhenCredentialActionsReorder(t *
 		err := reconcileMaskedScriptSecrets(incoming, prior)
 		if err == nil || !strings.Contains(err.Error(), "changed while containing redacted credentials") {
 			t.Fatalf("reordered credential action error = %v", err)
+		}
+		for index, action := range incoming.Actions {
+			got := action.Headers["Authorization"]
+			if !strings.Contains(got, maskedScriptSecret) {
+				t.Fatalf("action %d Authorization = %q, raw prior credential was restored", index, got)
+			}
+		}
+	})
+
+	t.Run("same-route reorder cannot positionally swap credentials", func(t *testing.T) {
+		sameRoutePrior := &dsl.Script{
+			ID: "same-route-credentials", Name: "Same route credentials", Version: "1", Protocol: "http",
+			Actions: []dsl.Action{
+				{
+					Name: "Admin login", Type: "request", Method: http.MethodPost, Target: "/login",
+					Headers:    map[string]string{"Authorization": "Bearer admin-token"},
+					Extractors: []dsl.Extractor{{Name: "admin-session", Type: "jsonpath", Expression: "$.session"}},
+				},
+				{
+					Name: "User login", Type: "request", Method: http.MethodPost, Target: "/login",
+					Headers:    map[string]string{"Authorization": "Bearer user-token"},
+					Extractors: []dsl.Extractor{{Name: "user-session", Type: "jsonpath", Expression: "$.session"}},
+				},
+			},
+		}
+		incoming := maskScriptSecrets(sameRoutePrior)
+		incoming.Actions[0], incoming.Actions[1] = incoming.Actions[1], incoming.Actions[0]
+
+		err := reconcileMaskedScriptSecrets(incoming, sameRoutePrior)
+		if err == nil || !strings.Contains(err.Error(), "changed while containing redacted credentials") {
+			t.Fatalf("same-route reordered credential action error = %v", err)
 		}
 		for index, action := range incoming.Actions {
 			got := action.Headers["Authorization"]

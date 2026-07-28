@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -361,6 +363,80 @@ func TestMaskedUpdateCannotRemoveImportedCredentialRuntimeRedactionLocators(t *t
 	}
 	if len(values) != 1 || values[0] != credentialValue {
 		t.Fatalf("runtime credential redaction values = %#v, want %q", values, credentialValue)
+	}
+}
+
+func TestMaskedOpenAPIPathUpdateRetainsSelfContainedCredentialLocator(t *testing.T) {
+	const credentialValue = "path-password-7319"
+	segment := "pre-" + credentialValue + "-post"
+	start := len("pre-")
+	end := start + len(credentialValue)
+	shape := []byte(segment)
+	for index := start; index < end; index++ {
+		shape[index] = 0
+	}
+	shapeHash := sha256.Sum256(shape)
+	pointer := fmt.Sprintf(
+		"openapi-path-v1:cGFzc3dvcmQ:%d:%x:%d-%d:%d-%d",
+		len(segment),
+		shapeHash,
+		start,
+		end,
+		start,
+		end,
+	)
+	source := &dsl.Script{
+		ID: "openapi-path-locator-fence", Name: "OpenAPI path locator fence",
+		Version: "1", Protocol: "http", ProjectID: "project-a",
+		Config: dsl.ScriptConfig{BaseURL: "https://origin.example.test"},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "request", Method: http.MethodGet,
+			Target: "/auth/" + segment,
+			Metadata: map[string]any{
+				"openapi": map[string]any{
+					"path": "/auth/pre-{password}-post",
+				},
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []map[string]any{{
+					"field":   "url.path",
+					"index":   2,
+					"pointer": pointer,
+				}},
+			},
+		}},
+	}
+	prior := importedCredentialContextScript(t, source)
+	masked := maskScriptSecrets(prior)
+	if masked == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	delete(masked.Actions[0].Metadata, "openapi")
+
+	persisted, err := preparePersistentLibraryScript(masked, prior)
+	if err != nil {
+		t.Fatalf("masked update without optional OpenAPI metadata: %v", err)
+	}
+	if got := persisted.Actions[0].Target; got != source.Actions[0].Target {
+		t.Fatalf("persisted target = %q, want exact executable %q", got, source.Actions[0].Target)
+	}
+	if _, restored := persisted.Actions[0].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]; !restored {
+		t.Fatal("ordinary update removed the self-contained OpenAPI credential locator")
+	}
+	if _, restored := persisted.Actions[0].Metadata["openapi"]; restored {
+		t.Fatal("optional OpenAPI source metadata was unexpectedly recreated")
+	}
+	values, err := engine.ImportedCredentialValues(persisted)
+	if err != nil {
+		t.Fatalf("runtime credential redaction values: %v", err)
+	}
+	if !containsString(values, credentialValue) {
+		t.Fatalf("runtime credential values = %#v, want path component %q", values, credentialValue)
+	}
+	redaction, err := engine.WithSecretValueRedactionChecked(nil, values)
+	if err != nil {
+		t.Fatalf("construct runtime redaction matcher: %v", err)
+	}
+	if got := redaction.ScrubText("echo=" + credentialValue); strings.Contains(got, credentialValue) {
+		t.Fatalf("component-only response echo escaped redaction: %q", got)
 	}
 }
 

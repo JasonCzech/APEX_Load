@@ -197,6 +197,47 @@ describe('SampleScriptImport', () => {
 
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ id: 'saved-after-change' })],
+      stayInImportReview: true,
+    }))
+  })
+
+  it('publishes a save completed after Back without navigating away from the next review', async () => {
+    const onClose = vi.fn()
+    const onImported = vi.fn()
+    let resolveSave!: (value: unknown) => void
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
+    await act(async () => {
+      root.render(<SampleScriptImport projectId="project-1" onClose={onClose} onImported={onImported} />)
+    })
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Sample'))?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Save To Script Library'))?.click()
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.trim() === 'Back')?.click()
+    })
+    await act(async () => {
+      resolveSave({
+        id: 'saved-after-back',
+        name: 'POST_v1_session',
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      })
+      await Promise.resolve()
+    })
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [expect.objectContaining({ id: 'saved-after-back' })],
+      stayInImportReview: true,
     }))
   })
 

@@ -1118,10 +1118,7 @@ func applyPreservedRedactedSecretBindings(
 			continue
 		}
 		requirement.DestinationValuePreserved =
-			!strings.EqualFold(
-				strings.TrimSpace(values[requirement.Occurrence]),
-				maskedScriptSecret,
-			)
+			values[requirement.Occurrence] != ""
 	}
 	return &result, remaining, nil
 }
@@ -1246,12 +1243,11 @@ func annotateSecretBindingDestinationValues(
 			continue
 		}
 		sourceValue := values[requirement.Occurrence]
-		// An authored sentinel is an unresolved credential, not evidence that the
-		// destination retained a source value. All other uniquely aligned source
-		// segments remain in the credential-preserving candidate. Portable
-		// {{secret.*}} references are not projected into requirements at all.
-		requirement.DestinationValuePreserved =
-			!strings.EqualFold(strings.TrimSpace(sourceValue), maskedScriptSecret)
+		// Every non-empty authored occurrence remains in the exact
+		// credential-preserving candidate, including a password whose literal
+		// bytes happen to equal the disclosure sentinel. Portable {{secret.*}}
+		// references are not projected into requirements at all.
+		requirement.DestinationValuePreserved = sourceValue != ""
 	}
 	return requirements
 }

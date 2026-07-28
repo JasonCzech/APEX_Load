@@ -311,7 +311,9 @@ describe('GitHubSyncModal (import)', () => {
     expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
     expect(JSON.stringify(createBody)).not.toContain('[REDACTED]')
     expect(JSON.stringify(createBody)).toContain('{{secret.LOGIN_TOKEN}}')
-    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-imported' }))
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'script-imported' })],
+    })
     expect(onClose).toHaveBeenCalledOnce()
   })
 
@@ -609,9 +611,12 @@ describe('GitHubSyncModal (import)', () => {
       await Promise.resolve()
     })
 
-    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'script-imported-after-cancel',
-    }))
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({
+        id: 'script-imported-after-cancel',
+      })],
+      stayInImportReview: true,
+    })
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
@@ -682,7 +687,9 @@ describe('GitHubSyncModal (import)', () => {
     await flushPromises()
 
     expect(createBody).toEqual({ script: resolvedDraft, project_id: 'team-a' })
-    expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ id: 'script-imported' }))
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: 'script-imported' })],
+    })
     expect(onClose).toHaveBeenCalledOnce()
   })
 })

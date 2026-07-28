@@ -50418,6 +50418,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -50427,6 +50433,13 @@ paths:
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleSaveJMeterImport

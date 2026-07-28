@@ -58,7 +58,7 @@ func sourceSecretValuesForImportNodes(rawValue, projectedValue any, requirements
 			continue
 		}
 		value := segments[requirement.Occurrence]
-		if value == "" || strings.Contains(value, maskedScriptSecret) {
+		if value == "" {
 			continue
 		}
 		values[requirement.ID] = value

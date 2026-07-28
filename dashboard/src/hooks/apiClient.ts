@@ -361,20 +361,34 @@ function mergeAbortSignals(
 
 function createTimeoutSignal(timeoutMs?: number): {
   signal?: AbortSignal;
+  deadline?: Promise<never>;
   clear: () => void;
   timedOut: () => boolean;
 } {
   if (!timeoutMs || timeoutMs <= 0) {
-    return { signal: undefined, clear: () => {}, timedOut: () => false };
+    return {
+      signal: undefined,
+      deadline: undefined,
+      clear: () => {},
+      timedOut: () => false,
+    };
   }
   const controller = new AbortController();
   let firedByTimeout = false;
-  const timer = window.setTimeout(() => {
-    firedByTimeout = true;
-    controller.abort();
-  }, timeoutMs);
+  let timer = 0;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = window.setTimeout(() => {
+      firedByTimeout = true;
+      controller.abort();
+      // Some embedded/native fetch transports do not settle when their signal
+      // is aborted. Reject independently so a configured timeout is always a
+      // hard deadline for callers and UI busy states.
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
   return {
     signal: controller.signal,
+    deadline,
     clear: () => window.clearTimeout(timer),
     timedOut: () => firedByTimeout,
   };
@@ -400,7 +414,7 @@ export function apiFetch(
   const { timeoutMs, signal, ...init } = options ?? {};
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
-  return fetch(target, {
+  const pendingFetch = fetch(target, {
     ...init,
     signal: mergedSignal,
     credentials: init?.credentials ?? "include",
@@ -409,7 +423,10 @@ export function apiFetch(
       isDesktopController ? buildDevPreviewHeaders() : {},
       isDesktopController,
     ),
-  }).catch((error: unknown) => {
+  });
+  return (timeout.deadline
+    ? Promise.race([pendingFetch, timeout.deadline])
+    : pendingFetch).catch((error: unknown) => {
     if (isTimeoutAbort(error, timeout.timedOut())) {
       throw new Error(`Request timed out after ${timeoutMs}ms`);
     }
@@ -471,7 +488,7 @@ export function apiFetchFromOrigin(
   const { timeoutMs, signal, ...init } = options ?? {};
   const timeout = createTimeoutSignal(timeoutMs);
   const mergedSignal = mergeAbortSignals(signal, timeout.signal);
-  return fetch(target, {
+  const pendingFetch = fetch(target, {
     ...init,
     signal: mergedSignal,
     credentials: init?.credentials ?? "include",
@@ -480,7 +497,10 @@ export function apiFetchFromOrigin(
       isDesktopController ? buildDevPreviewHeaders() : {},
       isDesktopController,
     ),
-  }).catch((error: unknown) => {
+  });
+  return (timeout.deadline
+    ? Promise.race([pendingFetch, timeout.deadline])
+    : pendingFetch).catch((error: unknown) => {
     if (isTimeoutAbort(error, timeout.timedOut())) {
       throw new Error(`Request timed out after ${timeoutMs}ms`);
     }

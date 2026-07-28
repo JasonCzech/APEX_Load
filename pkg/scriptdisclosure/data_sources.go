@@ -110,7 +110,7 @@ func projectDataSourceTable(
 			}
 			value := records[rowIndex][columnIndex]
 			if value == "" || isPortableBinding(value) ||
-				strings.Contains(value, credential.Redacted) {
+				value == credential.Redacted {
 				continue
 			}
 			records[rowIndex][columnIndex] = credential.Redacted

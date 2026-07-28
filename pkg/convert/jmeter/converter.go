@@ -377,6 +377,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if opts.ScenarioDraft && len(result.Scripts) > 0 {
 		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
 	}
+	SanitizeDisplayLabels(result.Scripts, result.ScenarioDraft)
 	result.Findings = importreview.NormalizeFindings(allFindings)
 	result.SecretRequirements = publicJMeterCredentialRequirements(allRequirements)
 	reviewContent, residualSourceRedacted := redactJMeterResidualSource(string(data))
@@ -402,6 +403,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if residualSourceRedacted || variableSourceRedacted {
 		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
 	}
+	sanitizeJMeterResultReviewText(result)
 	return result, nil
 }
 

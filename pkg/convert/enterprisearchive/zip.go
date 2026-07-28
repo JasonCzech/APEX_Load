@@ -1,6 +1,7 @@
 package enterprisearchive
 
 import (
+	"encoding/base64"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -208,7 +209,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if trueClientScope.Status == trueclient.ScopeReviewOnly {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s import is review-only; validate selectors, waits, runtime settings, and replay evidence before promotion.", trueClientScope.DisplayName))
 		}
-		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+		if err := finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
 			Files:                files,
 			ProjectFileName:      projectFileName,
 			ProjectSections:      projectSections,
@@ -217,7 +218,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			RuntimeConfig:        runtimeCfg,
 			ParameterFileNames:   parameterFileNames,
 			TrueClientInspection: trueClientInspection,
-		})
+		}); err != nil {
+			return nil, err
+		}
 		return result, nil
 	}
 	if javaArchive {
@@ -231,7 +234,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		mergeJavaVuserRuntimeSettingsIntoResult(result, opts.RuntimeSettings)
 		applyJavaVMRuntimeSettingsReview(result, runtimeCfg, files)
-		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+		if err := finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
 			Files:              files,
 			ProjectFileName:    projectFileName,
 			ProjectSections:    projectSections,
@@ -240,7 +243,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 			ParsedActions:      javaSourcesAsParsedActions(orderedJavaSourceActionFiles(projectConfig, files), files),
-		})
+		}); err != nil {
+			return nil, err
+		}
 		return result, nil
 	}
 
@@ -334,7 +339,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if opts.RuntimeSettings != nil && result.Script != nil {
 			mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 		}
-		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+		if err := finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
 			Files:              files,
 			ProjectFileName:    projectFileName,
 			ProjectSections:    projectSections,
@@ -343,7 +348,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 			ParsedActions:      parsedActions,
-		})
+		}); err != nil {
+			return nil, err
+		}
 		attachImportFidelityReport(result, files, projectConfig, parsedActions)
 		return result, nil
 	}
@@ -374,7 +381,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if convertErr != nil {
 		return nil, convertErr
 	}
-	finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
+	if err := finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
 		Files:              files,
 		ProjectFileName:    projectFileName,
 		ProjectSections:    projectSections,
@@ -383,7 +390,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		RuntimeConfig:      runtimeCfg,
 		ParameterFileNames: parameterFileNames,
 		ParsedActions:      parsedActions,
-	})
+	}); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -515,9 +524,12 @@ type archiveFinalizationContext struct {
 	ParsedActions        []*ParsedAction
 }
 
-func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFinalizationContext) {
+func finalizeEnterpriseArchiveImportResult(
+	result *ConvertResult,
+	ctx archiveFinalizationContext,
+) error {
 	if result == nil {
-		return
+		return nil
 	}
 	appendCSourceParseFailureGates(result, ctx.ParsedActions)
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
@@ -566,8 +578,18 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 		}
 		resolveTemplatedBaseURL(result)
 	}
+	if err := applyJavaVMParameterRejectionReview(
+		result,
+		scripts,
+		ctx.RuntimeConfig,
+		ctx.RuntimeFileName,
+	); err != nil {
+		return err
+	}
+	// JVM validation can omit structurally unsafe tokens while retaining safe
+	// siblings. Project credential locators only after that filtering so their
+	// occurrence indexes describe the final executable configuration.
 	applyEnterpriseRuntimeBindings(result, scripts, ctx)
-	applyJavaVMParameterRejectionReview(result, scripts, ctx.RuntimeConfig, ctx.RuntimeFileName)
 	applyRuntimeProfileSelectionReview(result, scripts, ctx)
 	applyEnterpriseRuntimeFidelityReview(result, scripts, ctx)
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
@@ -577,6 +599,8 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
 	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
+	sanitizeEnterpriseResultReviewText(result)
+	return nil
 }
 
 const javaVMParameterExecutionBlocker = "java_vm_parameters_require_safe_replacement"
@@ -687,9 +711,9 @@ func applyJavaVMParameterRejectionReview(
 	scripts []*dsl.Script,
 	runtimeCfg *RuntimeConfig,
 	runtimeFileName string,
-) {
+) error {
 	if result == nil {
-		return
+		return nil
 	}
 	runtimeFile := normalizeRuntimeArchivePath(runtimeFileName)
 	if runtimeFile == "" && runtimeCfg != nil && len(runtimeCfg.RuntimeFiles) > 0 {
@@ -718,6 +742,11 @@ func applyJavaVMParameterRejectionReview(
 		}
 		scriptRejections := append([]javaVMParameterRejection(nil), rejections...)
 		scriptExposureReviews := append([]javaVMParameterRejection(nil), exposureReviews...)
+		sourceParameters := append(
+			[]string(nil),
+			script.Config.JavaVuser.AdditionalVMParameters...,
+		)
+		var rejectedDirectRows []string
 		validationIssues := validateImportedJavaVMParameters(
 			script.Config.JavaVuser.AdditionalVMParameters,
 		)
@@ -729,13 +758,38 @@ func applyJavaVMParameterRejectionReview(
 			})
 		}
 		if structuralIssues := javaVMParameterIssuesBySensitivity(validationIssues, false); len(structuralIssues) > 0 {
-			script.Config.JavaVuser.AdditionalVMParameters = nil
+			script.Config.JavaVuser.AdditionalVMParameters =
+				javaVMParametersWithoutStructuralIssues(
+					script.Config.JavaVuser.AdditionalVMParameters,
+					structuralIssues,
+				)
 			for _, issue := range structuralIssues {
+				if issue.Index >= 0 && issue.Index < len(sourceParameters) {
+					rejectedDirectRows = append(
+						rejectedDirectRows,
+						sourceParameters[issue.Index],
+					)
+				}
 				scriptRejections = append(scriptRejections, javaVMParameterRejection{
 					sourceKey:  "config.java_vuser.additional_vm_parameters",
 					tokenIndex: issue.Index,
 					category:   issue.Category,
 				})
+			}
+		}
+		preservedSourceRows := rejectedDirectRows
+		if runtimeCfg != nil && len(runtimeCfg.javaVMParameterSourceRows) > 0 {
+			preservedSourceRows = append(
+				append([]string(nil), runtimeCfg.javaVMParameterSourceRows...),
+				preservedSourceRows...,
+			)
+		}
+		if len(scriptRejections) > 0 && len(preservedSourceRows) > 0 {
+			if err := preserveRejectedJavaVMSourceRows(
+				script,
+				preservedSourceRows,
+			); err != nil {
+				return fmt.Errorf("retain rejected Java VM source rows: %w", err)
 			}
 		}
 		if len(scriptExposureReviews) > 0 {
@@ -784,6 +838,7 @@ func applyJavaVMParameterRejectionReview(
 		)
 	}
 	result.Warnings = uniqueSortedStrings(result.Warnings)
+	return nil
 }
 
 func attachJavaVMParameterExposureReview(
@@ -935,6 +990,62 @@ func applyEnterpriseRuntimeFidelityReview(
 	if warningsChanged {
 		result.Warnings = uniqueSortedStrings(result.Warnings)
 	}
+}
+
+const (
+	maxProtectedJavaVMSourceRows       = 256
+	maxProtectedJavaVMSourceValueBytes = 64 << 10
+	maxProtectedJavaVMSourceTotalBytes = 2 << 20
+)
+
+func preserveRejectedJavaVMSourceRows(script *dsl.Script, rows []string) error {
+	if script == nil || len(rows) == 0 {
+		return nil
+	}
+	if len(rows) > maxProtectedJavaVMSourceRows {
+		return fmt.Errorf(
+			"%d rows exceed the %d-item protected-source limit",
+			len(rows),
+			maxProtectedJavaVMSourceRows,
+		)
+	}
+	if script.Metadata == nil {
+		script.Metadata = &dsl.ScriptMetadata{}
+	}
+	if script.Metadata.Import == nil {
+		script.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if strings.TrimSpace(script.Metadata.Import.Source) == "" {
+		script.Metadata.Import.Source = "enterprise_script_archive"
+	}
+	if script.Metadata.Import.Preserved == nil {
+		script.Metadata.Import.Preserved = make(map[string]any)
+	}
+	encoded := make([]string, len(rows))
+	totalBytes := 0
+	for index, row := range rows {
+		if len(row) > maxProtectedJavaVMSourceValueBytes {
+			return fmt.Errorf(
+				"row %d exceeds the %d-byte protected-source value limit",
+				index,
+				maxProtectedJavaVMSourceValueBytes,
+			)
+		}
+		totalBytes += len(row)
+		if totalBytes > maxProtectedJavaVMSourceTotalBytes {
+			return fmt.Errorf(
+				"rows exceed the %d-byte protected-source total limit",
+				maxProtectedJavaVMSourceTotalBytes,
+			)
+		}
+		encoded[index] = base64.StdEncoding.EncodeToString([]byte(row))
+	}
+	script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey] =
+		map[string]any{
+			"version":     1,
+			"rows_base64": encoded,
+		}
+	return nil
 }
 
 // enterpriseDeclaredRuntimeHTTPVersion returns only an explicitly authored

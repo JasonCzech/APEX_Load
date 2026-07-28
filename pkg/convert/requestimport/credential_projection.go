@@ -22,7 +22,12 @@ type CredentialProjectionOptions struct {
 	// SensitiveNames carries source-schema credential annotations for fields
 	// whose names alone are not governed by the shared vocabulary.
 	SensitiveNames map[string]string
-	ProvenVars     map[string]struct{}
+	// SensitiveWholeBody marks a schema-declared credential whose complete
+	// request body is the value (for example text/plain with format: password).
+	// Preserve mode retains the exact wire bytes and adds a runtime-redaction
+	// locator even when the payload itself contains no credential-shaped name.
+	SensitiveWholeBody bool
+	ProvenVars         map[string]struct{}
 	// SourceVariables carries importer-proven source literals behind translated
 	// {{var.*}} references. The shared policy consults it only on credential
 	// surfaces; it is never serialized into the request or report.
@@ -344,6 +349,35 @@ func ProjectCredentials(request EffectiveRequest, options CredentialProjectionOp
 			}
 			aggregate.Merge(bodyResult)
 		}
+	}
+	if options.SensitiveWholeBody && len(projected.Body.Payload) > 0 {
+		bodyCredential := credentialpolicy.Result{
+			Disposition: credentialpolicy.ExecutableExact,
+			Findings: []credentialpolicy.Finding{{
+				Code:        "import_credential_preserved",
+				Source:      bodyOptions.Source,
+				Disposition: credentialpolicy.ExecutableExact,
+			}},
+		}
+		if options.Mode != credentialpolicy.Preserve {
+			bodyCredential.Disposition = credentialpolicy.Rejected
+			bodyCredential.Findings[0].Code =
+				"credential_sensitive_whole_body_unsupported"
+			bodyCredential.Findings[0].Disposition = credentialpolicy.Rejected
+		} else {
+			field := "body.opaque"
+			if projected.Body.Kind == BodyJSON {
+				// The runtime JSON locator resolves the root scalar to its
+				// decoded value, so an error that echoes the password without
+				// JSON quoting is still redacted.
+				field = "body.json"
+			}
+			bodyCredential.PreservedTargets = []credentialpolicy.TargetRef{{
+				RequestKey: request.Key,
+				Field:      field,
+			}}
+		}
+		aggregate.Merge(bodyCredential)
 	}
 	if options.Mode == credentialpolicy.Preserve &&
 		projected.Body.Encoding == BodyEncodingText &&

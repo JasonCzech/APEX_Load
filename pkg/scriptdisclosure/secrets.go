@@ -136,23 +136,24 @@ func (c *secretCollector) addNode(value any) {
 }
 
 func (c *secretCollector) add(value string) {
-	if value == "" || strings.Contains(value, credential.Redacted) || isPortableBinding(value) {
+	if value == "" || isPortableBinding(value) {
 		return
 	}
 	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return
-	}
-	for _, scheme := range []string{"Bearer", "Basic", "Digest"} {
-		if len(trimmed) > len(scheme) &&
-			strings.EqualFold(trimmed[:len(scheme)], scheme) &&
-			trimmed[len(scheme)] == ' ' {
-			c.add(strings.TrimSpace(trimmed[len(scheme):]))
-			return
+	if trimmed != "" {
+		for _, scheme := range []string{"Bearer", "Basic", "Digest"} {
+			if len(trimmed) > len(scheme) &&
+				strings.EqualFold(trimmed[:len(scheme)], scheme) &&
+				trimmed[len(scheme)] == ' ' {
+				c.add(strings.TrimSpace(trimmed[len(scheme):]))
+				return
+			}
 		}
 	}
 	c.values[value] = struct{}{}
-	c.values[trimmed] = struct{}{}
+	if trimmed != "" {
+		c.values[trimmed] = struct{}{}
+	}
 }
 
 func (c *secretCollector) collectURL(value string) {
@@ -199,7 +200,7 @@ func (c *secretCollector) collectScriptCredentialTargets(script *dsl.Script) {
 	for _, target := range targets {
 		field := strings.ToLower(strings.TrimSpace(target.Field))
 		switch {
-		case strings.Contains(field, "config.base_url"):
+		case importedBaseURLTargetField(field):
 			c.collectURLTarget(script.Config.BaseURL, target)
 		case strings.Contains(field, "config.http.proxy.url"):
 			c.collectURLTarget(script.Config.HTTP.Proxy.URL, target)
@@ -232,6 +233,14 @@ func (c *secretCollector) collectScriptCredentialTargets(script *dsl.Script) {
 			}
 		}
 	}
+}
+
+func importedBaseURLTargetField(field string) bool {
+	field = strings.ToLower(strings.TrimSpace(field))
+	return field == "base_url" ||
+		strings.HasPrefix(field, "base_url.") ||
+		field == "config.base_url" ||
+		strings.HasPrefix(field, "config.base_url.")
 }
 
 func (c *secretCollector) collectURLTarget(

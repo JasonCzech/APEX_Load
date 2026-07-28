@@ -545,4 +545,25 @@ describe("dev preview API headers", () => {
     fetchMock.mockRestore();
     vi.useRealTimers();
   });
+
+  it("rejects at the configured timeout when fetch ignores abort", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+      () => new Promise<Response>(() => {}),
+    );
+
+    const pending = request("/projects/demo/secrets", {
+      method: "POST",
+      body: JSON.stringify({ secrets: [{ name: "TOKEN", value: "value" }] }),
+      timeoutMs: 50,
+    });
+    const rejects = expect(pending).rejects.toThrow(
+      "Request timed out after 50ms",
+    );
+
+    await vi.advanceTimersByTimeAsync(60);
+    await rejects;
+    fetchMock.mockRestore();
+    vi.useRealTimers();
+  });
 });

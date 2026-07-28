@@ -62,6 +62,25 @@ func runtimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResol
 		protocol.ConfigString(config, "browser_http_credentials_username") != "" || protocol.ConfigString(config, "browser_http_credentials_password") != "")
 	addBasic("browser_proxy_username", "browser_proxy_password",
 		protocol.ConfigString(config, "browser_proxy_username") != "" || protocol.ConfigString(config, "browser_proxy_password") != "")
+	databaseSource := strings.TrimSpace(script.Config.Database.DSN)
+	if databaseSource == "" {
+		databaseSource = strings.TrimSpace(script.Config.Database.DSNSecret)
+	}
+	if databaseSource != "" &&
+		(scriptPreservesImportedCredentialValues(script) ||
+			script.Config.Database.DSNSecret != "" ||
+			strings.Contains(databaseSource, "{{secret.")) {
+		resolvedDSN := strings.TrimSpace(protocol.ConfigString(config, "database_dsn"))
+		if resolvedDSN == "" {
+			resolvedDSN = strings.TrimSpace(protocol.ConfigString(config, "database_dsn_secret"))
+		}
+		collector := importedCredentialCollector{
+			resolved: true,
+			seen:     make(map[string]struct{}),
+		}
+		collector.collectDSN(resolvedDSN)
+		values = append(values, collector.values...)
+	}
 	return values
 }
 

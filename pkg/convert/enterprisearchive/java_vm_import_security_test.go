@@ -3,12 +3,15 @@ package enterprisearchive
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 func TestValidateImportedJavaVMParametersAllowsSafeOpaqueValuesWithoutNormalization(t *testing.T) {
@@ -299,12 +302,14 @@ Java_VM_Params=-Dlabel=` + credential.Redacted,
 					t.Fatalf("executable arguments lost canary: %#v", rc.JavaVMAdditionalParameters)
 				}
 			} else {
-				if len(rc.JavaVMAdditionalParameters) != 0 {
-					t.Fatalf("partially retained structurally unsafe arguments: %#v", rc.JavaVMAdditionalParameters)
+				if issues := validateImportedJavaVMParameterStructure(
+					rc.JavaVMAdditionalParameters,
+				); len(issues) != 0 {
+					t.Fatalf("structurally unsafe arguments survived: %#v", issues)
 				}
 				if len(rc.javaVMParameterRejections) == 0 ||
-					rc.JavaVMParametersParseError == "" {
-					t.Fatalf("rejections/error = %#v / %q, want value-free rejection", rc.javaVMParameterRejections, rc.JavaVMParametersParseError)
+					rc.JavaVMParametersParseError != "" {
+					t.Fatalf("rejections/error = %#v / %q, want token-level value-free rejection", rc.javaVMParameterRejections, rc.JavaVMParametersParseError)
 				}
 			}
 			serialized, err := json.Marshal(rc.RuntimeIssues)
@@ -405,6 +410,10 @@ Action=Actions.java
 }
 
 func TestConvertZipDirectRuntimeOverrideStillBlocksUnsafeJavaVMOption(t *testing.T) {
+	const (
+		canary         = "mixed-direct-runtime-password"
+		rejectedCanary = "rejected-javaagent-password"
+	)
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)
 	addJavaZipFile(t, writer, "JavaOverride/JavaOverride.usr", `[General]
@@ -423,15 +432,21 @@ Action=Actions.java
 	result, err := ConvertZip(archive.Bytes(), ConvertOptions{
 		RuntimeSettings: &dsl.ScriptConfig{
 			JavaVuser: dsl.JavaVuserConfig{
-				AdditionalVMParameters: []string{"-Xmx512m", "-javaagent:/tmp/untrusted.jar"},
+				AdditionalVMParameters: []string{
+					"-Dservice.password=" + canary,
+					"-Xmx512m",
+					"-javaagent:https://agent-user:" + rejectedCanary +
+						"@agent.example.test/untrusted.jar",
+				},
 			},
 		},
 	})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; len(got) != 0 {
-		t.Fatalf("structurally unsafe VM override survived: %#v", got)
+	want := []string{"-Dservice.password=" + canary, "-Xmx512m"}
+	if got := result.Script.Config.JavaVuser.AdditionalVMParameters; !reflect.DeepEqual(got, want) {
+		t.Fatalf("filtered VM override = %#v, want safe siblings %#v", got, want)
 	}
 	if len(result.Script.Actions) == 0 ||
 		result.Script.Actions[0].Metadata["execution_blocker"] != javaVMParameterExecutionBlocker {
@@ -439,6 +454,158 @@ Action=Actions.java
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "structurally unsafe") {
 		t.Fatalf("warnings = %#v", result.Warnings)
+	}
+	envelope, ok := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey].(map[string]any)
+	rows, rowsOK := envelope["rows_base64"].([]string)
+	if !ok || !rowsOK || len(rows) != 1 {
+		t.Fatalf("rejected direct JVM source envelope = %#v", envelope)
+	}
+	decoded, decodeErr := base64.StdEncoding.DecodeString(rows[0])
+	if decodeErr != nil || !strings.Contains(string(decoded), rejectedCanary) {
+		t.Fatalf("rejected direct JVM row = %q / %v", decoded, decodeErr)
+	}
+	projected, err := scriptdisclosure.Project(result.Script)
+	if err != nil {
+		t.Fatalf("project disclosure-safe script: %v", err)
+	}
+	projectedJSON, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatalf("marshal disclosure-safe script: %v", err)
+	}
+	if strings.Contains(string(projectedJSON), rejectedCanary) {
+		t.Fatalf("disclosure projection leaked rejected JVM credential: %s", projectedJSON)
+	}
+}
+
+func TestConvertZipRetainsMalformedCredentialVMRowOnlyInDurableDraft(t *testing.T) {
+	const canary = "malformed-vm-row-password"
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	addJavaZipFile(t, writer, "JavaMalformed/JavaMalformed.usr", `[General]
+Type=Java Vuser
+ScriptLanguage=JAVA
+[Actions]
+Action=Actions.java
+`)
+	addJavaZipFile(t, writer, "JavaMalformed/Actions.java", `public class Actions {
+  public int action() throws Throwable { return 0; }
+}`)
+	addJavaZipFile(t, writer, "JavaMalformed/default.cfg", `[JavaVM:Options]
+Java_VM_Params="-Dservice.password=`+canary)
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+
+	result, err := ConvertZip(archive.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
+		t.Fatalf("import metadata = %#v", result.Script.Metadata)
+	}
+	envelope, ok := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey].(map[string]any)
+	rows, rowsOK := envelope["rows_base64"].([]string)
+	if !ok || !rowsOK || len(rows) != 1 {
+		t.Fatalf("protected malformed JVM source envelope = %#v", envelope)
+	}
+	decoded, decodeErr := base64.StdEncoding.DecodeString(rows[0])
+	if decodeErr != nil || !strings.Contains(string(decoded), canary) {
+		t.Fatalf("protected malformed JVM source rows = %#v / %v", rows, decodeErr)
+	}
+	if len(result.Script.Actions) == 0 ||
+		result.Script.Actions[0].Metadata["execution_blocker"] !=
+			javaVMParameterExecutionBlocker {
+		t.Fatalf("malformed JVM source was not gated: %#v", result.Script.Actions)
+	}
+
+	projected, err := scriptdisclosure.Project(result.Script)
+	if err != nil {
+		t.Fatalf("project disclosure-safe script: %v", err)
+	}
+	payload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatalf("marshal disclosure-safe script: %v", err)
+	}
+	if strings.Contains(string(payload), canary) {
+		t.Fatalf("disclosure projection leaked protected JVM source row: %s", payload)
+	}
+}
+
+func TestPreserveRejectedJavaVMSourceRowsEnforcesStorageBounds(t *testing.T) {
+	rows := func(count int, bytesPerRow int) []string {
+		values := make([]string, count)
+		for index := range values {
+			values[index] = strings.Repeat("x", bytesPerRow)
+		}
+		return values
+	}
+	tests := []struct {
+		name    string
+		rows    []string
+		wantErr bool
+	}{
+		{
+			name: "maximum item count",
+			rows: rows(maxProtectedJavaVMSourceRows, 1),
+		},
+		{
+			name: "maximum value size",
+			rows: rows(1, maxProtectedJavaVMSourceValueBytes),
+		},
+		{
+			name: "maximum total size",
+			rows: rows(
+				maxProtectedJavaVMSourceTotalBytes/
+					maxProtectedJavaVMSourceValueBytes,
+				maxProtectedJavaVMSourceValueBytes,
+			),
+		},
+		{
+			name:    "item count exceeded",
+			rows:    rows(maxProtectedJavaVMSourceRows+1, 1),
+			wantErr: true,
+		},
+		{
+			name:    "value size exceeded",
+			rows:    rows(1, maxProtectedJavaVMSourceValueBytes+1),
+			wantErr: true,
+		},
+		{
+			name: "total size exceeded",
+			rows: rows(
+				(maxProtectedJavaVMSourceTotalBytes/
+					maxProtectedJavaVMSourceValueBytes)+1,
+				maxProtectedJavaVMSourceValueBytes,
+			),
+			wantErr: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			script := &dsl.Script{}
+			err := preserveRejectedJavaVMSourceRows(script, test.rows)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("protected Java VM source bounds accepted oversized input")
+				}
+				if script.Metadata != nil && script.Metadata.Import != nil &&
+					script.Metadata.Import.Preserved != nil {
+					if _, exists := script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey]; exists {
+						t.Fatal("oversized protected Java VM source was partially persisted")
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("preserveRejectedJavaVMSourceRows: %v", err)
+			}
+			if script.Metadata == nil || script.Metadata.Import == nil {
+				t.Fatalf("protected source metadata = %#v", script.Metadata)
+			}
+			if _, exists := script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey]; !exists {
+				t.Fatal("boundary-sized protected Java VM source was not retained")
+			}
+		})
 	}
 }
 

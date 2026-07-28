@@ -15,6 +15,7 @@ import SecretBindingReview, {
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
+import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
 import './ScriptImportReview.css'
 
 const severityRank: Record<string, number> = {
@@ -87,6 +88,8 @@ interface Props {
   editLabel?: string
   previewTitle?: string
   previewAside?: ReactNode
+  showPreview?: boolean
+  showPreviewAside?: boolean
   onSave?: () => void
   onEdit?: () => void
   children?: ReactNode
@@ -125,6 +128,8 @@ export default function ScriptImportReview({
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
   previewAside,
+  showPreview = true,
+  showPreviewAside = true,
   onSave,
   onEdit,
   children,
@@ -137,6 +142,7 @@ export default function ScriptImportReview({
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
+  const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   const parameterizationApplyingRef = useRef(false)
   const credentialActionRequestRef = useRef<CredentialActionRequest | null>(null)
   const credentialActionRequestIdRef = useRef(0)
@@ -335,6 +341,49 @@ export default function ScriptImportReview({
     if (left !== right) return left - right
     return a.title.localeCompare(b.title)
   })
+  const blockerDetails: IssueDetail[] = sortedReviewSections
+    .filter(section => section.severity === 'blocker')
+    .flatMap(section => section.items.length > 0
+      ? section.items.map((item, index) => ({
+          id: `${section.key}-blocker-${index}`,
+          severity: 'blocker' as const,
+          title: section.title,
+          description: item,
+          source: section.summary || 'Import review',
+        }))
+      : [{
+          id: `${section.key}-blocker`,
+          severity: 'blocker' as const,
+          title: section.title,
+          description: section.summary,
+          source: 'Import review',
+        }])
+  const warningDetails: IssueDetail[] = [
+    ...sortedReviewSections
+      .filter(section => section.severity === 'warning')
+      .flatMap(section => section.items.length > 0
+        ? section.items.map((item, index) => ({
+            id: `${section.key}-warning-${index}`,
+            severity: 'warning' as const,
+            title: section.title,
+            description: item,
+            source: section.summary || 'Import review',
+          }))
+        : [{
+            id: `${section.key}-warning`,
+            severity: 'warning' as const,
+            title: section.title,
+            description: section.summary,
+            source: 'Import review',
+          }]),
+    ...warnings.map((warning, index) => ({
+      id: `import-warning-${index}`,
+      severity: 'warning' as const,
+      title: warningsTitle.replace(/\s*\(\d+\)\s*$/, ''),
+      description: warning,
+      source: 'Import conversion',
+    })),
+  ]
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
@@ -412,6 +461,31 @@ export default function ScriptImportReview({
 
       {children}
 
+      {(blockerDetails.length > 0 || warningDetails.length > 0) && (
+        <div className="script-import-review-issue-summary" aria-label="Import issue summary">
+          {blockerDetails.length > 0 && (
+            <button
+              type="button"
+              className="script-health-token danger issue-pill-button"
+              aria-label={`View ${blockerDetails.length} import blocker ${blockerDetails.length === 1 ? 'detail' : 'details'}`}
+              onClick={() => setIssueDialog({ title: 'Import blockers', issues: blockerDetails })}
+            >
+              {blockerDetails.length} blocker{blockerDetails.length === 1 ? '' : 's'}
+            </button>
+          )}
+          {warningDetails.length > 0 && (
+            <button
+              type="button"
+              className="script-health-token warning issue-pill-button"
+              aria-label={`View ${warningDetails.length} import warning ${warningDetails.length === 1 ? 'detail' : 'details'}`}
+              onClick={() => setIssueDialog({ title: 'Import warnings', issues: warningDetails })}
+            >
+              {warningDetails.length} warning{warningDetails.length === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
+      )}
+
       {parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (
         <ParameterizationReview
           parameterization={parameterization}
@@ -467,11 +541,18 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      {previewPane}
-      {previewAside && (
+      {showPreview && previewPane}
+      {showPreviewAside && previewAside && (
         <div className="script-import-review-preview-aside">
           {previewAside}
         </div>
+      )}
+      {issueDialog && (
+        <IssueDetailsDialog
+          title={issueDialog.title}
+          issues={issueDialog.issues}
+          onClose={() => setIssueDialog(null)}
+        />
       )}
     </div>
   )

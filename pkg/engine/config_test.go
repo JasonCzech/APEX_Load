@@ -200,6 +200,46 @@ func TestBuildProtoConfig_ResolvesNamedDedicatedSecrets(t *testing.T) {
 	}
 }
 
+func TestRuntimeProtocolCompositeValuesIncludeResolvedImportedDSN(t *testing.T) {
+	const (
+		literalPassword = "literal-dsn-password-9c42"
+		runtimePassword = "runtime-dsn-password-7e15"
+	)
+	unresolved := "postgres://db-user:" + literalPassword +
+		"@db.example.test/app?sslpassword={{secret.DB_CERT_PASSWORD}}"
+	resolved := "postgres://db-user:" + literalPassword +
+		"@db.example.test/app?sslpassword=" + runtimePassword
+	script := &dsl.Script{
+		Protocol: "database",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_script_archive",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Config: dsl.ScriptConfig{
+			Database: dsl.DatabaseConfig{DSN: unresolved},
+		},
+	}
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "DB_CERT_PASSWORD" {
+			return runtimePassword, true
+		}
+		return "", false
+	})
+
+	values := runtimeProtocolAuthCompositeValues(script, resolver)
+	for _, want := range []string{resolved, literalPassword, runtimePassword} {
+		if !containsExactString(values, want) {
+			t.Fatalf("runtime protocol credential values = %#v, want %q", values, want)
+		}
+	}
+	if containsExactString(values, unresolved) ||
+		containsExactString(values, "{{secret.DB_CERT_PASSWORD}}") {
+		t.Fatalf("runtime protocol credential values retain unresolved template: %#v", values)
+	}
+}
+
 func TestBuildProtoConfigBrunoPreservesSourceKeyAndResolvesOnlyBindingValue(t *testing.T) {
 	resolver := SecretResolverFunc(func(name string) (string, bool) {
 		if name == "PROJECT_API_TOKEN" {

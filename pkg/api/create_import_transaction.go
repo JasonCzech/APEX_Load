@@ -44,7 +44,15 @@ func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Sc
 	}
 	projectID = normalizeProjectID(projectID)
 	remoteID := "direct-import:" + source
-	sourceInstanceID := source + ":" + uuid.NewString()
+	identityParts := []string{projectID, strings.TrimSpace(scenarioID)}
+	for _, script := range scripts {
+		if script == nil {
+			identityParts = append(identityParts, "")
+			continue
+		}
+		identityParts = append(identityParts, strings.TrimSpace(script.ID))
+	}
+	sourceInstanceID := source + ":" + directImportSHA256(identityParts...)
 	bundle := LibraryBundle{
 		BundleID: uuid.NewString(),
 		Source:   LibraryBundleSource{InstanceID: sourceInstanceID, ProjectID: projectID},
@@ -68,13 +76,17 @@ func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Sc
 		if _, duplicate := items[key]; duplicate {
 			return nil, fmt.Errorf("planned import contains duplicate script id %s", id)
 		}
+		exactDigest, err := server.directImportExactScriptDigest(script)
+		if err != nil {
+			return nil, fmt.Errorf("fingerprint planned import script %d: %w", index+1, err)
+		}
 		item := LibraryBundleItem{
 			Kind:             "script",
 			SourceInstanceID: sourceInstanceID,
 			SourceItemID:     id,
 			ProjectID:        normalizeProjectID(script.ProjectID),
 			Name:             script.Name,
-			ContentHash:      hashLibraryScript(script),
+			ContentHash:      exactDigest,
 			Script:           script,
 		}
 		items[key] = item
@@ -159,10 +171,11 @@ func (tx *createImportTransaction) createScriptWithImportProfile(
 		return nil, err
 	}
 	var stored *StoredScript
+	created := false
 	if sourceProfile == "" {
-		stored, err = tx.server.runner.CreateScriptDurable(script)
+		stored, created, err = tx.server.runner.CreateScriptDurableReportingReplay(script)
 	} else {
-		stored, _, err = tx.server.runner.CreateImportedScriptDurableReportingReplay(
+		stored, created, err = tx.server.runner.CreateImportedScriptDurableReportingReplay(
 			script,
 			sourceProfile,
 		)
@@ -170,7 +183,9 @@ func (tx *createImportTransaction) createScriptWithImportProfile(
 	if err != nil {
 		return nil, err
 	}
-	tx.journal.recordScript(nil, stored, tx.remoteID, tx.projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, nil, nil)
+	if created {
+		tx.journal.recordScript(nil, stored, tx.remoteID, tx.projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, nil, nil)
+	}
 	if err := tx.claims.markApplied(item, false); err != nil {
 		return stored, fmt.Errorf("checkpoint imported script %s: %w", stored.ID, err)
 	}
@@ -183,10 +198,27 @@ func (tx *createImportTransaction) createScenario(id string, request CreateScena
 		return nil, err
 	}
 	stored, err := tx.server.runner.StoreScenarioWithIDCreateOnly(id, request)
+	created := err == nil
+	if errors.Is(err, errScenarioConcurrentChange) {
+		// A crash can leave the deterministic scenario durable after its direct
+		// import transaction committed but before the idempotency receipt was
+		// finalized. Adopt only an exact request-equivalent row.
+		_ = tx.server.runner.reloadStoredScenarios()
+		if existing, ok := tx.server.runner.GetScenario(id); ok &&
+			tx.server.libraryScenarioRequestRecoveryHash(
+				createScenarioRequestFromStored(existing),
+			) == item.ContentHash {
+			stored = existing
+			created = false
+			err = nil
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	tx.journal.recordScenario(nil, stored, tx.remoteID, tx.projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, nil, nil)
+	if created {
+		tx.journal.recordScenario(nil, stored, tx.remoteID, tx.projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, nil, nil)
+	}
 	if err := tx.claims.markApplied(item, false); err != nil {
 		return stored, fmt.Errorf("checkpoint imported scenario %s: %w", stored.ID, err)
 	}

@@ -120,6 +120,18 @@ describe('ScriptsLibraryTable federation', () => {
     const chipTexts = Array.from(detail?.querySelectorAll('.archive-chip') || []).map(chip => chip.textContent || '')
     expect(chipTexts[0]).toContain('data source fit · blocker · 1')
     expect(chipTexts[1]).toContain('runtime parity · warning · 8')
+
+    const blockerButton = findButton('1 blocker')
+    expect(blockerButton?.getAttribute('aria-label')).toContain('Imported Upgrade')
+    await act(async () => { blockerButton?.click() })
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Data-source fit checks found missing columns')
+
+    await act(async () => {
+      ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
+    })
+    const warningButton = findButton('1 warning')
+    await act(async () => { warningButton?.click() })
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Runtime parity has partial')
   })
 
   it('surfaces missing project secrets and links to configuration', async () => {

@@ -571,6 +571,13 @@ export default function RecordingStudio({
   onClose,
 }: RecordingStudioProps) {
   const api = useApi();
+  const studioActiveRef = useRef(true);
+  useEffect(() => {
+    studioActiveRef.current = true;
+    return () => {
+      studioActiveRef.current = false;
+    };
+  }, []);
   const sourceSecretSessions = useSourceSecretSessionLifecycle(
     api.discardImportSecretSession,
   );
@@ -1975,6 +1982,7 @@ export default function RecordingStudio({
     const sourceRecordingSessionId =
       convertedSourceRecordingSessionIDRef.current || undefined;
     const requestIsCurrent = () =>
+      studioActiveRef.current &&
       convertedReviewGenerationRef.current === sourceGeneration &&
       refreshScopeRef.current === sourceRecorderScope;
     try {
@@ -2012,6 +2020,7 @@ export default function RecordingStudio({
       const persistedScript = withFallbackPersistedScript(savedScript, script);
       onImported?.({
         scripts: [persistedScript],
+        ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
       });
       if (!requestIsCurrent()) return;
       showFeedback(
@@ -2021,7 +2030,7 @@ export default function RecordingStudio({
       if (requestIsCurrent()) showFeedback(e.message, "error");
     } finally {
       convertedSaveInFlightRef.current = false;
-      setConvertedSaveInProgress(false);
+      if (studioActiveRef.current) setConvertedSaveInProgress(false);
     }
   };
 
@@ -2151,6 +2160,7 @@ export default function RecordingStudio({
     const sourceRecorderScope = refreshScopeRef.current;
     const sourceProjectId = sourceRecorderScope.projectId;
     const requestIsCurrent = () =>
+      studioActiveRef.current &&
       salesforceReviewGenerationRef.current === sourceGeneration &&
       refreshScopeRef.current === sourceRecorderScope;
     try {
@@ -2166,6 +2176,7 @@ export default function RecordingStudio({
       );
       onImported?.({
         scripts: [withFallbackPersistedScript(savedScript, script)],
+        ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
       });
       if (!requestIsCurrent()) return;
       showFeedback(
@@ -2175,7 +2186,7 @@ export default function RecordingStudio({
       if (requestIsCurrent()) showFeedback(e.message, "error");
     } finally {
       salesforceSaveInFlightRef.current = false;
-      setSalesforceSaveInProgress(false);
+      if (studioActiveRef.current) setSalesforceSaveInProgress(false);
     }
   };
 
@@ -2307,6 +2318,9 @@ export default function RecordingStudio({
             type="button"
             className="btn btn-secondary"
             onClick={() => {
+              studioActiveRef.current = false;
+              convertedReviewGenerationRef.current += 1;
+              salesforceReviewGenerationRef.current += 1;
               void convertedCredentialReviewRef.current?.discardSourceSession();
               void salesforceCredentialReviewRef.current?.discardSourceSession();
               onClose();

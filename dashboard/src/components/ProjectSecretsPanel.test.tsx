@@ -89,6 +89,9 @@ describe('ProjectSecretsPanel', () => {
     expect(container.textContent).toContain('encrypted_database')
     expect(container.textContent).toContain('Editors may create missing secrets')
     expect(container.textContent).not.toContain('existing-secret-value')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Create Secret')).toBeDefined()
+    expect(container.textContent).not.toContain('Creating...')
 
     const createInputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
     act(() => {

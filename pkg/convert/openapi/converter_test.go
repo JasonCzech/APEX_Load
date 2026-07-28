@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 func TestOpenAPIEffectiveBodyDecodesBase64DSLRepresentation(t *testing.T) {
@@ -871,7 +872,7 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(
           "type": "object",
           "properties": {
             "password": {"type": "string", "example": "json-pass"},
-            "pin": {"type": "integer", "format": "password", "example": 731}
+            "pin": {"type": "integer", "format": "password", "example": 731904621337}
           }
         }}}},
         "responses": {"200": {"description": "ok"}}
@@ -907,7 +908,7 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(
         "responses": {"200": {"description": "ok"}}
       }
     },
-    "/accounts/{password}": {
+    "/accounts/prefix-{password}-suffix": {
       "get": {
         "operationId": "parameterCredentials",
         "parameters": [
@@ -931,7 +932,7 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(
 
 	jsonAction := openAPIActionFull(result, "jsonCredential")
 	if !strings.Contains(jsonAction.Body, `"password": "json-pass"`) ||
-		!strings.Contains(jsonAction.Body, `"pin": 731`) {
+		!strings.Contains(jsonAction.Body, `"pin": 731904621337`) {
 		t.Fatalf("JSON body did not retain typed authored credentials: %s", jsonAction.Body)
 	}
 	formAction := openAPIActionFull(result, "formCredential")
@@ -947,7 +948,7 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(
 		t.Fatalf("XML body did not retain authored password: %q", xmlAction.Body)
 	}
 	paramsAction := openAPIActionFull(result, "parameterCredentials")
-	if !strings.Contains(paramsAction.Target, "/accounts/path-pass") ||
+	if !strings.Contains(paramsAction.Target, "/accounts/prefix-path-pass-suffix") ||
 		!strings.Contains(paramsAction.Target, "filter[api_key]=query-pass") {
 		t.Fatalf("parameter target did not retain authored credentials: %q", paramsAction.Target)
 	}
@@ -956,6 +957,31 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesAcrossRequestSurfaces(
 	}
 	if paramsAction.Headers["Cookie"] != "session_token=cookie-pass" {
 		t.Fatalf("cookie credential = %q, want exact authored value", paramsAction.Headers["Cookie"])
+	}
+	assertOpenAPIScriptDisclosureRedacted(
+		t,
+		result,
+		"json-pass",
+		"731904621337",
+		"form-pass",
+		"multipart-pass",
+		"xml-pass",
+		"path-pass",
+		"header-pass",
+		"cookie-pass",
+		"query-pass",
+	)
+	for _, actionName := range []string{
+		"jsonCredential",
+		"formCredential",
+		"multipartCredential",
+		"xmlCredential",
+		"parameterCredentials",
+	} {
+		action := openAPIActionFull(result, actionName)
+		if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+			t.Fatalf("%s execution blocker = %#v, authored credentials have exact wire values", actionName, blocker)
+		}
 	}
 }
 
@@ -1245,6 +1271,8 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesWithoutTypeCorruption(
     "parameters":[
       {"name":"X-API-Key","in":"header","schema":{"type":"string","example":"` + canary + `"}},
       {"name":"access_token","in":"query","schema":{"type":"string","default":"` + canary + `"}},
+      {"name":"pin","in":"query","schema":{"type":"integer","format":"password","example":731}},
+      {"name":"session_token","in":"cookie","schema":{"type":"boolean","default":true}},
       {"name":"page","in":"query","schema":{"type":"integer","default":7}}
     ],
     "requestBody":{"content":{"application/json":{"example":{
@@ -1266,6 +1294,12 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesWithoutTypeCorruption(
 	if !strings.Contains(action.Target, "access_token="+canary) {
 		t.Fatalf("target = %q, want preserved query credential", action.Target)
 	}
+	if !strings.Contains(action.Target, "pin=731") {
+		t.Fatalf("target = %q, want typed credential example serialized exactly", action.Target)
+	}
+	if action.Headers["Cookie"] != "session_token=true" {
+		t.Fatalf("cookie = %q, want typed credential default serialized exactly", action.Headers["Cookie"])
+	}
 	var body map[string]any
 	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
 		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
@@ -1286,9 +1320,270 @@ func TestConvertOpenAPIPreservesAuthoredCredentialExamplesWithoutTypeCorruption(
 	if len(result.Script.DataSources) == 0 || !strings.Contains(result.Script.DataSources[0].InlineData, "\n7\n") {
 		t.Fatalf("nonsensitive authored default was not preserved in data source: %#v", result.Script.DataSources)
 	}
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+		t.Fatalf("authored scalar credentials must remain executable, blocker = %#v", blocker)
+	}
 }
 
-func TestConvertOpenAPIPreservesGatedPlainTextCredentialExample(t *testing.T) {
+func TestConvertSwagger2PreservesTypedCredentialEnum(t *testing.T) {
+	const pin = "73190462"
+	result, err := Convert(ImportRequest{Content: `{
+  "swagger":"2.0",
+  "info":{"title":"Typed enum","version":"1"},
+  "host":"api.example.test",
+  "schemes":["https"],
+  "paths":{"/sessions":{"get":{
+    "operationId":"getSession",
+    "parameters":[{
+      "name":"pin",
+      "in":"query",
+      "type":"integer",
+      "format":"password",
+      "enum":[` + pin + `]
+    }],
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "getSession")
+	if !strings.Contains(action.Target, "pin="+pin) {
+		t.Fatalf("target = %q, want authored typed enum", action.Target)
+	}
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+		t.Fatalf("typed credential enum must remain executable, blocker = %#v", blocker)
+	}
+	assertOpenAPISourceReviewRedacted(t, result, pin)
+}
+
+func TestConvertOmitsSourceReviewForTypedCredentialLexemes(t *testing.T) {
+	tests := []struct {
+		name               string
+		content            string
+		sourceLexeme       string
+		wantJSONTargetPart string
+	}{
+		{
+			name:         "JSON large integer",
+			sourceLexeme: "9007199254740993",
+			content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Typed credential","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/verify":{"post":{
+    "operationId":"verify",
+    "parameters":[{
+      "name":"credential",
+      "in":"query",
+      "schema":{"type":"integer","format":"password","example":9007199254740993}
+    }],
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`,
+			wantJSONTargetPart: "credential=9007199254740993",
+		},
+		{
+			name:         "JSON scientific number",
+			sourceLexeme: "9.007199254740993e+15",
+			content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Typed credential","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/verify":{"post":{
+    "operationId":"verify",
+    "parameters":[{
+      "name":"credential",
+      "in":"query",
+      "schema":{"type":"number","format":"password","example":9.007199254740993e+15}
+    }],
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`,
+			wantJSONTargetPart: "credential=9.007199254740993e%2B15",
+		},
+		{
+			name:         "JSON boolean",
+			sourceLexeme: "true",
+			content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Typed credential","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/verify":{"post":{
+    "operationId":"verify",
+    "parameters":[{
+      "name":"credential",
+      "in":"query",
+      "schema":{"type":"boolean","format":"password","example":true}
+    }],
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`,
+			wantJSONTargetPart: "credential=true",
+		},
+		{
+			name:         "JSON additional-properties credential schema",
+			sourceLexeme: "9007199254740993",
+			content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Typed credential","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "components":{"schemas":{"CredentialMap":{
+    "type":"object",
+    "additionalProperties":{
+      "type":"integer",
+      "format":"password",
+      "example":9007199254740993
+    }
+  }}},
+  "paths":{"/verify":{"post":{
+    "operationId":"verify",
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`,
+		},
+		{
+			name:         "YAML large integer",
+			sourceLexeme: "9007199254740993",
+			content: `openapi: 3.0.3
+info:
+  title: Typed credential
+  version: "1"
+servers:
+  - url: https://api.example.test
+paths:
+  /verify:
+    post:
+      operationId: verify
+      parameters:
+        - name: credential
+          in: query
+          schema:
+            type: integer
+            format: password
+            example: 9007199254740993
+      responses:
+        "204":
+          description: ok
+`,
+		},
+		{
+			name:         "YAML scientific number",
+			sourceLexeme: "9.007199254740993e+15",
+			content: `openapi: 3.0.3
+info:
+  title: Typed credential
+  version: "1"
+servers:
+  - url: https://api.example.test
+paths:
+  /verify:
+    post:
+      operationId: verify
+      parameters:
+        - name: credential
+          in: query
+          schema:
+            type: number
+            format: password
+            example: 9.007199254740993e+15
+      responses:
+        "204":
+          description: ok
+`,
+		},
+		{
+			name:         "YAML boolean",
+			sourceLexeme: "true",
+			content: `openapi: 3.0.3
+info:
+  title: Typed credential
+  version: "1"
+servers:
+  - url: https://api.example.test
+paths:
+  /verify:
+    post:
+      operationId: verify
+      parameters:
+        - name: credential
+          in: query
+          schema:
+            type: boolean
+            format: password
+            example: true
+      responses:
+        "204":
+          description: ok
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Convert(ImportRequest{Content: test.content})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			action := openAPIActionFull(result, "verify")
+			if test.wantJSONTargetPart != "" &&
+				!strings.Contains(action.Target, test.wantJSONTargetPart) {
+				t.Fatalf("target = %q, want exact JSON numeric lexeme %q", action.Target, test.wantJSONTargetPart)
+			}
+			if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+				t.Fatalf("authored typed credential became blocked: %#v", blocker)
+			}
+			if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
+				t.Fatalf("source review = %#v, want one omitted source file", result.SourceReview)
+			}
+			source := result.SourceReview.SourceFiles[0]
+			if !source.Redacted || source.Content != openAPISourceReviewCredentialOmission {
+				t.Fatalf("source review file = %#v target=%q, want conservative typed-credential omission", source, action.Target)
+			}
+			if strings.Contains(source.Content, test.sourceLexeme) {
+				t.Fatalf("source review disclosed typed credential lexeme %q", test.sourceLexeme)
+			}
+		})
+	}
+}
+
+func TestConvertSwagger2PreservesNamedWholeBodyCredential(t *testing.T) {
+	const canary = "G7vQ2mX9cL4"
+	result, err := Convert(ImportRequest{Content: `{
+  "swagger":"2.0",
+  "info":{"title":"Body credential","version":"1"},
+  "host":"api.example.test",
+  "schemes":["https"],
+  "consumes":["application/json"],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createSession",
+    "parameters":[{
+      "name":"password",
+      "in":"body",
+      "schema":{"type":"string"},
+      "example":"` + canary + `"
+    }],
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createSession")
+	if action.Body != `"`+canary+`"` {
+		t.Fatalf("body = %q, want exact JSON string credential", action.Body)
+	}
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+		t.Fatalf("named whole-body credential must remain executable, blocker = %#v", blocker)
+	}
+	if _, ok := action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]; !ok {
+		t.Fatalf("named whole-body credential has no runtime locator: %#v", action.Metadata)
+	}
+	assertOpenAPIScriptDisclosureRedacted(t, result, canary)
+	assertOpenAPISourceReviewRedacted(t, result, canary)
+}
+
+func TestConvertOpenAPIPreservesExecutablePlainTextCredentialExample(t *testing.T) {
 	const canary = "openapi-plain-text-password-42B7"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -1296,7 +1591,11 @@ func TestConvertOpenAPIPreservesGatedPlainTextCredentialExample(t *testing.T) {
   "servers":[{"url":"https://api.example.test"}],
   "paths":{"/sessions":{"post":{
     "operationId":"createPlainSession",
-    "requestBody":{"content":{"text/plain":{"example":"password=` + canary + `"}}},
+    "requestBody":{"content":{"text/plain":{"schema":{
+      "type":"string",
+      "format":"password",
+      "example":"` + canary + `"
+    }}}},
     "responses":{"204":{"description":"ok"}}
   }}}
 }`})
@@ -1304,17 +1603,22 @@ func TestConvertOpenAPIPreservesGatedPlainTextCredentialExample(t *testing.T) {
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := openAPIActionFull(result, "createPlainSession")
-	if action.Body != "password="+canary {
+	if action.Body != canary {
 		t.Fatalf("plain-text body = %q, want exact authored bytes", action.Body)
 	}
-	if action.Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("plain-text review gate = %#v", action.Metadata)
+	if blocker := action.Metadata["execution_blocker"]; blocker != nil && blocker != "" {
+		t.Fatalf("complete plain-text credential must remain executable, blocker = %#v", blocker)
 	}
-	review, _ := action.Metadata["import_review"].(map[string]any)
-	codes, _ := review["reason_codes"].([]string)
-	if !containsString(codes, "unsafe_structured_credential_projection") {
-		t.Fatalf("plain-text review codes = %#v", review)
+	if _, ok := action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]; !ok {
+		t.Fatalf("plain-text action has no runtime credential locator: %#v", action.Metadata)
 	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil ||
+		result.Script.Metadata.Import.Source != "openapi" ||
+		result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] !=
+			dsl.ImportPreservedCredentialPolicyPreserve {
+		t.Fatalf("plain-text script has no preservation policy marker: %#v", result.Script.Metadata)
+	}
+	assertOpenAPIScriptDisclosureRedacted(t, result, canary)
 	assertOpenAPISourceReviewRedacted(t, result, canary)
 }
 
@@ -2000,6 +2304,26 @@ func assertOpenAPISourceReviewRedacted(t *testing.T, result *ConvertResult, valu
 	for _, value := range values {
 		if strings.Contains(string(encoded), value) {
 			t.Fatalf("source review disclosed imported credential %q: %s", value, encoded)
+		}
+	}
+}
+
+func assertOpenAPIScriptDisclosureRedacted(t *testing.T, result *ConvertResult, values ...string) {
+	t.Helper()
+	if result == nil || result.Script == nil {
+		t.Fatal("script is missing")
+	}
+	projected, err := scriptdisclosure.Project(result.Script)
+	if err != nil {
+		t.Fatalf("project disclosure-safe script: %v", err)
+	}
+	encoded, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatalf("marshal disclosure-safe script: %v", err)
+	}
+	for _, value := range values {
+		if strings.Contains(string(encoded), value) {
+			t.Fatalf("script disclosure disclosed imported credential %q: %s", value, encoded)
 		}
 	}
 }

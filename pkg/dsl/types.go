@@ -56,6 +56,15 @@ const (
 	// in executable HTTP config. The proxy stays disabled and review-gated; the
 	// protected record avoids forcing the operator to re-enter its credentials.
 	ImportPreservedEnterpriseUnsupportedProxySourceKey = "enterprise_unsupported_proxy_source"
+	// ImportPreservedEnterpriseJavaVMSourceKey retains exact source JVM rows
+	// that could not be parsed or executed as-is. Values are base64 encoded and
+	// inert; trusted persistence keeps them for repair while all disclosure
+	// projections mask the envelope.
+	ImportPreservedEnterpriseJavaVMSourceKey = "enterprise_java_vm_source"
+	// ImportPreservedEnterpriseJavaJDBCSourceKey retains exact JDBC connection
+	// material for adapter-unsupported or conflicting Java connections. The
+	// envelope is inert and base64 encoded so repair never requires re-entry.
+	ImportPreservedEnterpriseJavaJDBCSourceKey = "enterprise_java_jdbc_source"
 )
 
 type Script struct {

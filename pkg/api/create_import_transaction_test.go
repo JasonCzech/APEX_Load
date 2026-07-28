@@ -266,3 +266,209 @@ func TestCreateImportTransactionRecoversScriptAndScenarioAfterCrash(t *testing.T
 		t.Fatalf("recovered transaction claims remain: %#v", claims)
 	}
 }
+
+func TestExpiredDirectImportClaimPreservesCredentialOnlyConcurrentEdit(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "100ms")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-credential-edit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	server := NewServer(ServerConfig{Store: base})
+	script := libraryTestScript(
+		uuid.NewString(),
+		"Credential Crash Script",
+		storage.DefaultProjectID,
+		"/credential",
+	)
+	script.GeneratedBy = "jmeter-import"
+	script.GeneratedFrom = "jmeter"
+	script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+		Source: "jmeter",
+		Preserved: map[string]any{
+			dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+		},
+	}}
+	script.Config.HTTP.Auth = dsl.AuthConfig{
+		Type: "basic", Username: "operator", Password: "original-import-password",
+	}
+	transaction, err := newCreateImportTransaction(
+		server,
+		"credential-crash-test",
+		[]*dsl.Script{script},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transaction.createImportedScript(script, "jmeter"); err != nil {
+		t.Fatal(err)
+	}
+
+	edited, err := base.GetScript(script.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited.Config.HTTP.Auth.Password = "peer-edited-import-password"
+	if err := base.SaveScript(edited); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate process loss before the transaction claim is committed. The
+	// replacement controller may clean the exact partial create, but a
+	// credential-only peer edit is a different asset and must survive.
+	transaction.claims.stopHeartbeat()
+	time.Sleep(150 * time.Millisecond)
+	replacement := NewServer(ServerConfig{Store: base})
+	if err := replacement.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("recover direct import with credential-only edit: %v", err)
+	}
+	preserved, err := base.GetScript(script.ID)
+	if err != nil {
+		t.Fatalf("credential-only concurrent edit was deleted: %v", err)
+	}
+	if preserved.Config.HTTP.Auth.Password != "peer-edited-import-password" {
+		t.Fatalf(
+			"credential-only concurrent edit changed during recovery: %q",
+			preserved.Config.HTTP.Auth.Password,
+		)
+	}
+	claims, err := replacement.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		t.Fatalf("recovered direct-import claims remain: %#v", claims)
+	}
+}
+
+func TestStaleDirectReceiptRetryCannotBeDeletedByOldClaimRecovery(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "100ms")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "direct-import-stale-retry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	firstServer := NewServer(ServerConfig{Store: base})
+	prepared := libraryTestScript(
+		"",
+		"Stale Retry Script",
+		storage.DefaultProjectID,
+		"/stale-retry",
+	)
+	prepared.GeneratedBy = "jmeter-import"
+	prepared.GeneratedFrom = "jmeter"
+	prepared.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+		Source: "jmeter",
+		Preserved: map[string]any{
+			dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+		},
+	}}
+	prepared.Config.HTTP.Auth = dsl.AuthConfig{
+		Type: "basic", Username: "operator", Password: "stale-retry-password",
+	}
+	requestDigest, err := firstServer.directImportScriptsRequestDigest(
+		[]*dsl.Script{prepared},
+		map[string]any{"profile": "jmeter"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const operationID = "stale-retry-operation"
+	firstAttempt, replay, err := firstServer.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || replay || firstAttempt == nil || !firstAttempt.created {
+		t.Fatalf("first receipt claim = %#v replay=%v err=%v", firstAttempt, replay, err)
+	}
+	prepared.ID = deterministicDirectImportAssetID(firstAttempt.receipt.ID, "script", 0)
+	firstTransaction, err := newCreateImportTransaction(
+		firstServer,
+		"jmeter",
+		[]*dsl.Script{prepared},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := firstTransaction.createImportedScript(prepared, "jmeter"); err != nil {
+		t.Fatal(err)
+	}
+	// Crash after the deterministic asset is written but before either the
+	// write-ahead claims or the receipt are completed.
+	firstTransaction.claims.stopHeartbeat()
+	time.Sleep(directImportReceiptLease() + 50*time.Millisecond)
+
+	replacement := NewServer(ServerConfig{Store: base})
+	retryDraft := cloneScriptDefinition(prepared)
+	retryDraft.ID = ""
+	retryDraft.CreatedAt = time.Time{}
+	retryDraft.UpdatedAt = time.Time{}
+	retryDigest, err := replacement.directImportScriptsRequestDigest(
+		[]*dsl.Script{retryDraft},
+		map[string]any{"profile": "jmeter"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retryAttempt, replay, err := replacement.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		retryDigest,
+	)
+	if err != nil || replay || retryAttempt == nil || retryAttempt.created {
+		t.Fatalf("stale receipt claim = %#v replay=%v err=%v", retryAttempt, replay, err)
+	}
+
+	// This is the handler's stale-takeover ordering: compensate the expired
+	// matching claims first, then create and commit a fresh transaction using
+	// the same deterministic asset IDs.
+	if err := replacement.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("recover old direct-import claims: %v", err)
+	}
+	if _, err := base.GetScript(prepared.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("old partial asset survived claim recovery: %v", err)
+	}
+	if err := retryAttempt.renew(); err != nil {
+		t.Fatal(err)
+	}
+	retryDraft.ID = prepared.ID
+	retryTransaction, err := newCreateImportTransaction(
+		replacement,
+		"jmeter",
+		[]*dsl.Script{retryDraft},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := retryTransaction.createImportedScript(retryDraft, "jmeter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := retryTransaction.commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := retryAttempt.complete([]*StoredScript{stored}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	if err := replacement.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("late old-claim recovery: %v", err)
+	}
+	committed, err := base.GetScript(prepared.ID)
+	if err != nil {
+		t.Fatalf("committed retry asset was deleted by old recovery: %v", err)
+	}
+	if committed.Config.HTTP.Auth.Password != "stale-retry-password" {
+		t.Fatalf("committed retry credential changed: %q", committed.Config.HTTP.Auth.Password)
+	}
+}

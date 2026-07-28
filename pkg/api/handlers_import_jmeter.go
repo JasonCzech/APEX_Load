@@ -3,6 +3,7 @@ package api
 // handlers_import_jmeter — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
@@ -319,6 +321,10 @@ func countJMeterExtractors(result *jmeter.ConvertResult) int {
 }
 
 func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Request, status int, result *jmeter.ConvertResult) {
+	// Every preview gets a public, opaque operation identity. Normal clients
+	// echo it with the scripts on save, allowing a lost successful response to
+	// converge without collapsing two intentional previews of identical input.
+	stampJMeterDirectImportOperation(result, uuid.NewString())
 	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
 	protocolCompat := buildJMeterProtocolCompatReport(result, unsupportedElements)
 	for _, script := range result.Scripts {
@@ -345,6 +351,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// OpenAPI-Responses: 201
 func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Scripts       []dsl.Script          `json:"scripts"`
@@ -356,6 +363,31 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	if len(req.Scripts) == 0 {
 		writeError(w, http.StatusBadRequest, "at least one script is required")
 		return
+	}
+	previewOperationID, err := jmeterDirectImportOperationID(req.Scripts)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	operationID := ""
+	if headerKey := strings.TrimSpace(r.Header.Get("Idempotency-Key")); headerKey != "" {
+		if len(headerKey) > 512 {
+			writeError(w, http.StatusBadRequest, "Idempotency-Key must be at most 512 bytes")
+			return
+		}
+		for _, value := range []byte(headerKey) {
+			if value < 0x21 || value > 0x7e {
+				writeError(w, http.StatusBadRequest, "Idempotency-Key must contain visible ASCII characters only")
+				return
+			}
+		}
+		operationID = "header:" + headerKey
+	} else if previewOperationID != "" {
+		operationID = "preview:" + previewOperationID
+	}
+	if operationID != "" {
+		_, actorSubject, _ := s.resolveAuditActor(r)
+		operationID = strings.TrimSpace(actorSubject) + "\x00" + operationID
 	}
 
 	// Prepare and validate the whole import before the first durable write. This
@@ -377,11 +409,6 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
 		}
-		// Reserve a fresh ID before the durable write-ahead journal is prepared.
-		// Create-only persistence and conditional compensation then share the same
-		// ownership fence across crashes and concurrent edits.
-		safeScript.ID = uuid.NewString()
-		safeScript.RefKey = ""
 		if strings.TrimSpace(safeScript.Version) == "" {
 			safeScript.Version = "1"
 		}
@@ -405,6 +432,63 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 		}
+	}
+	// The executable request/auth fields remain byte-faithful, but a JMeter
+	// label can repeat one of those credentials. Project descriptive names only
+	// after resolving the caller's original script_name references, then carry
+	// the sanitized names into both durable scripts and the scenario.
+	jmeter.SanitizeDisplayLabels(preparedScripts, req.ScenarioDraft)
+
+	projectID := normalizeProjectID(preparedScripts[0].ProjectID)
+	for _, script := range preparedScripts {
+		if normalizeProjectID(script.ProjectID) != projectID {
+			writeError(w, http.StatusBadRequest, "JMeter scripts must belong to one project")
+			return
+		}
+	}
+	requestDigest, err := directJMeterImportRequestDigest(s, preparedScripts, req.ScenarioDraft)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to fingerprint JMeter import: "+err.Error())
+		return
+	}
+	attempt, receiptReplay, err := s.claimDirectImportAttempt(
+		projectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, storage.ErrDirectImportReceiptBusy):
+			w.Header().Set("Retry-After", "2")
+			writeError(w, http.StatusConflict, "this JMeter import save is already in progress")
+		case errors.Is(err, storage.ErrDirectImportReceiptConflict):
+			writeError(w, http.StatusConflict, "Idempotency-Key was already used for a different JMeter import")
+		default:
+			writeError(w, http.StatusInternalServerError, "failed to reserve JMeter import: "+err.Error())
+		}
+		return
+	}
+	assetIdentitySeed := ""
+	if attempt != nil && attempt.receipt != nil {
+		// The receipt ID is server-random and stable across retries. IDs never
+		// derive from caller header text (which an operator might accidentally
+		// populate with sensitive material).
+		assetIdentitySeed = attempt.receipt.ID
+	} else if previewOperationID != "" {
+		// Lightweight stores have no receipt support; the preview operation ID
+		// is still a server-issued random value.
+		assetIdentitySeed = directImportOperationHash(projectID, "jmeter", operationID)
+	}
+	for index, script := range preparedScripts {
+		if assetIdentitySeed != "" {
+			script.ID = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
+		} else {
+			// Legacy clients that neither echo a preview operation ID nor supply
+			// Idempotency-Key retain create-another semantics.
+			script.ID = uuid.NewString()
+		}
+		script.RefKey = ""
 	}
 
 	scriptIDsByName := make(map[string]string, len(preparedScripts))
@@ -447,7 +531,11 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			})
 		}
 		if len(groups) > 0 {
-			scenarioID = uuid.NewString()
+			if assetIdentitySeed != "" {
+				scenarioID = deterministicDirectImportAssetID(assetIdentitySeed, "scenario", 0)
+			} else {
+				scenarioID = uuid.NewString()
+			}
 			request := CreateScenarioRequest{
 				Name:         firstNonEmpty(req.ScenarioDraft.Name, "Imported JMeter Scenario"),
 				Duration:     firstNonEmpty(req.ScenarioDraft.Duration, "5m"),
@@ -458,15 +546,71 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if receiptReplay {
+		storedScripts, storedScenario, loadErr := s.loadDirectImportReceiptAssets(attempt)
+		if loadErr != nil {
+			writeError(w, http.StatusConflict, "completed JMeter import receipt is inconsistent: "+loadErr.Error())
+			return
+		}
+		writeJSON(
+			w,
+			http.StatusCreated,
+			savedJMeterImportResponse(storedScripts, storedScenario),
+		)
+		return
+	}
+
+	// A stale pending receipt can represent a crash after all assets committed
+	// but before the receipt was finalized. Heal that state without entering a
+	// new rollback journal, but only when every deterministic asset is exact.
+	if attempt != nil && !attempt.created {
+		// The receipt lease is longer than the write-ahead claim lease. Recover
+		// any expired partial transaction before deciding whether its assets are
+		// a completed operation that can be adopted.
+		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to recover prior JMeter import transaction: "+recoverErr.Error())
+			return
+		}
+		if renewErr := attempt.renew(); renewErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to renew JMeter import receipt after recovery: "+renewErr.Error())
+			return
+		}
+		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
+			projectID,
+			deterministicScriptIDs(preparedScripts),
+			scenarioID,
+		)
+		if loadErr == nil && directImportPreparedAssetsMatch(
+			s, storedScripts, preparedScripts, storedScenario, scenarioRequest,
+		) {
+			if completeErr := attempt.complete(storedScripts, storedScenario); completeErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to reconcile JMeter import receipt: "+completeErr.Error())
+				return
+			}
+			writeJSON(
+				w,
+				http.StatusCreated,
+				savedJMeterImportResponse(storedScripts, storedScenario),
+			)
+			return
+		}
+	}
+
 	transaction, err := newCreateImportTransaction(s, "jmeter", preparedScripts, scenarioID, scenarioRequest)
 	if err != nil {
+		if attempt != nil {
+			if cleanupErr := attempt.rollback(nil); cleanupErr != nil {
+				slog.Warn("failed to release JMeter import receipt", "error", cleanupErr)
+			}
+		}
 		writeError(w, http.StatusInternalServerError, "failed to prepare imported assets: "+err.Error())
 		return
 	}
-	committed := false
+	finished := false
+	assetsCommitted := false
 	defer func() {
-		if !committed {
-			if cleanupErr := transaction.rollback(); cleanupErr != nil {
+		if !finished && !assetsCommitted {
+			if cleanupErr := attempt.rollback(transaction); cleanupErr != nil {
 				slog.Warn("failed to fully compensate JMeter import", "error", cleanupErr)
 			}
 		}
@@ -474,6 +618,10 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 
 	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
 	for _, safeScript := range preparedScripts {
+		if err := attempt.renew(); err != nil {
+			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
+			return
+		}
 		stored, err := transaction.createImportedScript(safeScript, "jmeter")
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
@@ -484,21 +632,49 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 
 	var storedScenario *StoredScenario
 	if scenarioRequest != nil {
+		if err := attempt.renew(); err != nil {
+			writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
+			return
+		}
 		storedScenario, err = transaction.createScenario(scenarioID, *scenarioRequest)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to save scenario draft: "+err.Error())
 			return
 		}
 	}
+	if err := attempt.renew(); err != nil {
+		writeError(w, http.StatusConflict, "JMeter import receipt ownership was lost; retry the save")
+		return
+	}
 	if err := transaction.commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to commit imported assets: "+err.Error())
 		return
 	}
-	committed = true
+	assetsCommitted = true
+	if attempt != nil {
+		if err := attempt.complete(storedScripts, storedScenario); err != nil {
+			// Keep the pending receipt and deterministic assets. A stale retry
+			// will verify and finalize them; compensating after the transaction's
+			// durable commit would reintroduce a lost-response race.
+			writeError(w, http.StatusInternalServerError, "failed to finalize JMeter import receipt: "+err.Error())
+			return
+		}
+	}
+	finished = true
+	writeJSON(
+		w,
+		http.StatusCreated,
+		savedJMeterImportResponse(storedScripts, storedScenario),
+	)
+}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
+func savedJMeterImportResponse(
+	storedScripts []*StoredScript,
+	storedScenario *StoredScenario,
+) map[string]any {
+	return map[string]any{
 		"scripts":  maskStoredScripts(storedScripts),
 		"scenario": storedScenario,
 		"count":    len(storedScripts),
-	})
+	}
 }

@@ -32,6 +32,15 @@
   justify-content: flex-end;
 }
 
+.script-import-review-issue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--subtle-fill);
+}
+
 .script-import-review-warnings,
 .script-import-review-unsupported,
 .script-import-review-sections,
@@ -444,9 +453,9 @@
 .script-import-review-session {
   margin: 0 0 1rem;
   padding: 0.65rem 0.8rem;
-  border: 1px solid var(--border-color, #d7dee8);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--surface-muted, #f6f8fb);
-  color: var(--text-secondary, #44546a);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   font-size: 0.875rem;
 }

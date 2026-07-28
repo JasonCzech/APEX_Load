@@ -970,7 +970,7 @@ describe('BrunoImport', () => {
     expect(labels.get('orphan')).toBe('[missing parent: missing] / Orphan')
   })
 
-  it('does not navigate to a native script when a commit finishes after Back', async () => {
+  it('refreshes without navigating when a native commit finishes after Back', async () => {
     const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
     const inspection = nativeInspectionFixture()
     const candidate = inspection.result.scripts[0]
@@ -1043,7 +1043,10 @@ describe('BrunoImport', () => {
       await pendingCommit
       await Promise.resolve()
     })
-    expect(onImported).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({
+      scripts: [expect.objectContaining({ id: candidate.planned_script_id })],
+      stayInImportReview: true,
+    })
     expect(container.textContent).not.toContain('Native batch saved')
   })
 

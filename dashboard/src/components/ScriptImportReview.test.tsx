@@ -86,6 +86,56 @@ describe('ScriptImportReview', () => {
     expect(container.textContent).toContain('schema reference external.yaml')
     expect(container.textContent).toContain('Import Review (1)')
     expect(container.textContent).toContain('Multipart file upload needs a governed file value.')
+
+    const warningButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === '1 warning') as HTMLButtonElement
+    act(() => warningButton.click())
+    const dialog = document.body.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toContain('Import Diagnostics')
+    expect(dialog?.textContent).toContain('Multipart file upload needs a governed file value.')
+  })
+
+  it('opens blocker and conversion-warning summaries independently', () => {
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          reviewGeneration="issue-pills"
+          title="Review Generated Script"
+          script={script}
+          warnings={['A generated placeholder needs review.']}
+          reviewSections={[{
+            key: 'blocked-runtime',
+            title: 'Runtime prerequisite',
+            severity: 'blocker',
+            summary: 'A runner is required.',
+            items: ['Configure an approved external runner.'],
+          }]}
+        />,
+      )
+    })
+
+    const button = (label: string) => Array.from(container.querySelectorAll('button'))
+      .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement
+    act(() => button('1 blocker').click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Configure an approved external runner.')
+    act(() => {
+      ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
+    })
+    act(() => button('1 warning').click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('A generated placeholder needs review.')
+  })
+
+  it('uses theme-aware contrast for credential-preserving session notices', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const css = readFileSync(`${cwd}/src/components/ScriptImportReview.css`, 'utf8')
+    const sessionRule = css.match(/\.script-import-review-session\s*\{([^}]*)\}/)?.[1] || ''
+
+    expect(sessionRule).toContain('border: 1px solid var(--border);')
+    expect(sessionRule).toContain('background: var(--bg-secondary);')
+    expect(sessionRule).toContain('color: var(--text-primary);')
+    expect(sessionRule).not.toContain('--surface-muted')
   })
 
   it('renders generated preview as a collapsible section before source comparison content', () => {

@@ -8,6 +8,7 @@ import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import AuthoringSessionsPanel from './AuthoringSessionsPanel'
 import ScriptsAuthoringShell from './ScriptsAuthoringShell'
 import ScriptsLibraryTable, { type ScriptLibraryFederation } from './ScriptsLibraryTable'
+import { isAddressableScriptId } from './scriptIdentity'
 import ObjectRepositoryPanel from './ObjectRepositoryPanel'
 import CorrelationRulesetPanel from './CorrelationRulesetPanel'
 import PageViewToggle from './PageViewToggle'
@@ -170,20 +171,26 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       setSecretStatusStateByScript({})
       return
     }
+    const addressableScripts = scripts.filter(script => isAddressableScriptId(script.id))
     if (typeof api.getScriptSecretStatus !== 'function') {
       setSecretStatusByScript({})
-      setSecretStatusStateByScript(Object.fromEntries(scripts.map(script => [script.id, 'error'])))
+      setSecretStatusStateByScript(Object.fromEntries(addressableScripts.map(script => [script.id, 'error'])))
+      return
+    }
+    if (addressableScripts.length === 0) {
+      setSecretStatusByScript({})
+      setSecretStatusStateByScript({})
       return
     }
     let cancelled = false
     setSecretStatusByScript({})
-    setSecretStatusStateByScript(Object.fromEntries(scripts.map(script => [script.id, 'loading'])))
+    setSecretStatusStateByScript(Object.fromEntries(addressableScripts.map(script => [script.id, 'loading'])))
     let nextIndex = 0
     const worker = async () => {
       while (!cancelled) {
         const index = nextIndex
         nextIndex += 1
-        const script = scripts[index]
+        const script = addressableScripts[index]
         if (!script) return
         try {
           const status = await api.getScriptSecretStatus(script.id)
@@ -197,7 +204,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       }
     }
     void Promise.all(Array.from(
-      { length: Math.min(SECRET_STATUS_CONCURRENCY, scripts.length) },
+      { length: Math.min(SECRET_STATUS_CONCURRENCY, addressableScripts.length) },
       () => worker(),
     ))
     return () => {
@@ -398,11 +405,14 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     )
   }, [])
 
-  const handleGithubImported = useCallback((saved: StoredScript) => {
-    setGithubNotice(`Imported "${saved.name}" from GitHub.`)
+  const handleGithubImported = useCallback((result: ImportedSaveResult) => {
+    const saved = result.scripts[0]
+    if (saved) setGithubNotice(`Imported "${saved.name}" from GitHub.`)
     void refresh()
+    void refreshAuthoringSessions()
+    if (result.stayInImportReview || !saved) return
     handleSavedScript(saved)
-  }, [handleSavedScript, refresh])
+  }, [handleSavedScript, refresh, refreshAuthoringSessions])
 
   const handleGithubBulkImport = useCallback(async () => {
     if (!activeProjectId) {
@@ -480,7 +490,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       return () => { cancelled = true }
     }
     void (async () => {
-      const statuses = await Promise.all(scripts.slice(0, 100).map(async script => {
+      const statuses = await Promise.all(scripts
+        .filter(script => isAddressableScriptId(script.id))
+        .slice(0, 100)
+        .map(async script => {
         try {
           return [script.id, await githubApi.scriptStatus(script.id)] as const
         } catch {
@@ -497,7 +510,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     return () => { cancelled = true }
   }, [githubApi, githubReady, scripts])
 
-  const knownScriptIds = useMemo(() => new Set(scripts.map(script => script.id)), [scripts])
+  const knownScriptIds = useMemo(
+    () => new Set(scripts.filter(script => isAddressableScriptId(script.id)).map(script => script.id)),
+    [scripts],
+  )
 
   const federationRemoteRows = useMemo(() => {
     if (releaseFilter !== 'all') return []

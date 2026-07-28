@@ -61,6 +61,27 @@ func TestValidateScriptIssuesRejectsHeaderAsData(t *testing.T) {
 	assertIssueContains(t, issues, `first record matches declared columns while first_row_header is false`)
 }
 
+func TestResolveDataSourceDelimiterDetectsLegacyCommaDelimitedDat(t *testing.T) {
+	source := DataSource{
+		Name:           "accounts",
+		Type:           "dat",
+		InlineData:     "billingAccountNumber,billingMarket\n177054701279,337116375\n",
+		FirstRowHeader: true,
+	}
+	if got := ResolveDataSourceDelimiter(source, source.InlineData); got != ',' {
+		t.Fatalf("ResolveDataSourceDelimiter() = %q, want comma", got)
+	}
+
+	singleColumn := DataSource{
+		Name:       "notes",
+		Type:       "dat",
+		InlineData: "hello, world\ngoodbye, world\n",
+	}
+	if got := ResolveDataSourceDelimiter(singleColumn, singleColumn.InlineData); got != '\t' {
+		t.Fatalf("single-column legacy .dat delimiter = %q, want tab fallback", got)
+	}
+}
+
 func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {
 	seed := int64(42)
 	script := &Script{

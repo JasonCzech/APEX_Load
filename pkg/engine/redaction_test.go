@@ -59,6 +59,11 @@ func TestScrubSensitiveText(t *testing.T) {
 			want: `https://archive.example.test/customers/customer-1234`,
 		},
 		{
+			name: "does not redact long service URL paths",
+			in:   `https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberContractDetails.jws`,
+			want: `https://csi-gw-ext.att.com:443/Services/com/cingular/csi/edp/InquireSubscriberContractDetails.jws`,
+		},
+		{
 			name: "preserves benign payloads",
 			in:   `{"status":"ok","id":"cart-1"}`,
 			want: `{"status":"ok","id":"cart-1"}`,

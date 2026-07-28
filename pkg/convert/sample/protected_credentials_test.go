@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -36,6 +37,12 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	}
 	if !strings.Contains(string(scriptJSON), value) {
 		t.Fatal("destination script lost the executable imported credential")
+	}
+	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil ||
+		result.Script.Metadata.Import.Source != "rest_json" ||
+		result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] !=
+			dsl.ImportPreservedCredentialPolicyPreserve {
+		t.Fatalf("destination script has no import credential-preservation marker: %#v", result.Script.Metadata)
 	}
 
 	requirements := result.ProtectedRequirements.Take()
