@@ -864,8 +864,8 @@ describe('BrowserRecorderControlPanel', () => {
 
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
     // The headed-browser recording session id is never sent to createScript.
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, first, 'project-1')
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, second, 'project-1')
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, first, 'project-1', null)
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, second, 'project-1', null)
     expect(apiMock.deleteScript).toHaveBeenCalledTimes(1)
     expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
     expect(onImported).not.toHaveBeenCalled()
@@ -1132,6 +1132,35 @@ describe('BrowserRecorderControlPanel', () => {
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'checkout-flow.har')
   })
 
+  it('saves a recording into the folder the studio is showing', async () => {
+    // Recorder saves previously passed no folder at all, so a recording made
+    // while a folder was open landed at the project root -- the same defect the
+    // import surfaces had. Standalone popup mode still has no folder context and
+    // correctly keeps passing null.
+    apiMock.getBrowserRecording.mockResolvedValue({ session: salesforceStoppedSession })
+    apiMock.createScript.mockResolvedValue({
+      id: 'script-salesforce-1',
+      name: 'Checkout Flow Salesforce HTTP',
+      protocol: 'http',
+      version: '1.0.0',
+      created_at: '2026-05-12T20:10:00Z',
+      script: { name: 'Checkout Flow Salesforce HTTP', protocol: 'http', actions: [] },
+    })
+
+    await renderPanel({ folderId: 'folder-9' })
+
+    await clickButton('Review Salesforce HTTP Draft')
+    await flushPromises()
+    await clickButton('Save Salesforce HTTP Script')
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }),
+      undefined,
+      'folder-9',
+    )
+  })
+
   it('reviews Salesforce-family HAR traffic as a native HTTP draft', async () => {
     const onEdit = vi.fn()
     const onImported = vi.fn()
@@ -1166,7 +1195,7 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Save Salesforce HTTP Script')
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }), undefined)
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }), undefined, null)
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-salesforce-1' })] })
   })
 
@@ -1223,7 +1252,7 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       config: { http: { auth: { token: '{{secret.SALESFORCE_TOKEN}}' } } },
-    }), 'project-1')
+    }), 'project-1', null)
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'saved-salesforce-login' })] })
   })
 
@@ -1639,8 +1668,8 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
     // The remote controller never observed the local bridge recording, so the
     // headed-browser session id must not accompany the createScript calls.
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'Checkout Flow' }), undefined)
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Checkout Flow (HTTP)' }), undefined)
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'Checkout Flow' }), undefined, null)
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Checkout Flow (HTTP)' }), undefined, null)
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'remote-browser' }), expect.objectContaining({ id: 'remote-http' })] })
     expect(container.textContent).toContain('Saved 2 scripts to the remote script library')
   })
