@@ -224,12 +224,7 @@ func resolveRunLogicFile(files map[string]string, project *ProjectConfig, cfgNam
 	if direct != "" {
 		if len(mappedFiles) > 1 ||
 			(mapped != "" && !runtimePointersIdentifySameArchiveFile(files, direct, mapped)) {
-			// The active cfg still names one unambiguous run-logic file; only the
-			// .usr profile mapping disagrees. Keep the cfg pointer so the archive's
-			// authored iterations and pacing survive, and require review for the
-			// disagreement. Dropping to APEX defaults here would silently replace a
-			// known load profile with an unrelated one.
-			return direct, fmt.Sprintf("Run-logic profile conflict: matching .usr profiles point to %q while the active cfg points to %q; the active cfg pointer was used and review is required.", strings.Join(mappedFiles, ", "), direct)
+			return "", fmt.Sprintf("Run-logic profile conflict: matching .usr profiles point to %q while the active cfg points to %q; using APEX pacing defaults and requiring review.", strings.Join(mappedFiles, ", "), direct)
 		}
 		return direct, ""
 	}

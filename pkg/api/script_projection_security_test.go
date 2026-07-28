@@ -891,6 +891,191 @@ func TestReconcileMaskedScriptSecretsKeepsClientEditOfProjectedField(t *testing.
 	}
 }
 
+func TestReconcileMaskedScriptSecretsAllowsGatedRedactedRuntimeData(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "imported parameter table",
+		Version:  "1.0.0",
+		Protocol: "http",
+		DataSources: []dsl.DataSource{{
+			Name:       "passwords",
+			Type:       "file",
+			InlineData: "Password\n[REDACTED]\n",
+			Strategy:   "sequential",
+		}},
+		Actions: []dsl.Action{{
+			Name:   "Submit",
+			Type:   "request",
+			Method: "POST",
+			Target: "/login",
+			Metadata: map[string]any{
+				"execution_blocker": credentialParameterSourceRedactedBlocker,
+			},
+		}},
+	}
+
+	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
+		t.Fatalf("create reconciliation rejected gated redacted runtime data: %v", err)
+	}
+	raw, err := scriptAsJSONValue(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jsonValueContainsExecutableMaskedSecret(raw, "") {
+		t.Fatal("generic sentinel detection incorrectly exempted runtime data without gate context")
+	}
+	if jsonValueContainsExecutableMaskedSecretWithOptions(raw, "", true) {
+		t.Fatal("gate-aware sentinel detection treated redacted runtime data as an orphan")
+	}
+	incoming := maskScriptSecrets(script)
+	if incoming == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	if err := reconcileMaskedScriptSecrets(incoming, script); err != nil {
+		t.Fatalf("update reconciliation rejected gated redacted runtime data: %v", err)
+	}
+	if got := incoming.DataSources[0].InlineData; got != "Password\n[REDACTED]\n" {
+		t.Fatalf("reconciled inline data = %q, want disclosure-safe table shape preserved", got)
+	}
+}
+
+func TestReconcileMaskedScriptSecretsRejectsUngatedRedactedRuntimeData(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "unsafe parameter table",
+		Version:  "1.0.0",
+		Protocol: "http",
+		DataSources: []dsl.DataSource{{
+			Name:       "passwords",
+			Type:       "file",
+			InlineData: "Password\n[REDACTED]\n",
+			Strategy:   "sequential",
+		}},
+		Actions: []dsl.Action{{
+			Name:   "Submit",
+			Type:   "request",
+			Method: "POST",
+			Target: "/login",
+		}},
+	}
+
+	err := reconcileMaskedScriptSecrets(script, nil)
+	if err == nil || !strings.Contains(err.Error(), credentialParameterSourceRedactedBlocker) {
+		t.Fatalf("ungated redacted runtime data error = %v, want required execution gate", err)
+	}
+}
+
+func TestReconcileMaskedScriptSecretsRestoresProjectedRuntimeDataWithoutGate(t *testing.T) {
+	const rawTable = "Password\npassword=do-not-disclose-1234567890\n"
+	prior := &dsl.Script{
+		Name:     "resolved parameter table",
+		Version:  "1.0.0",
+		Protocol: "http",
+		DataSources: []dsl.DataSource{{
+			Name:       "passwords",
+			Type:       "file",
+			InlineData: rawTable,
+			Strategy:   "sequential",
+		}},
+		Actions: []dsl.Action{{
+			Name: "Submit", Type: "request", Method: "POST", Target: "/login",
+		}},
+	}
+	incoming := maskScriptSecrets(prior)
+	if incoming == nil || !strings.Contains(incoming.DataSources[0].InlineData, maskedScriptSecret) {
+		t.Fatalf("projected runtime table = %#v, want disclosure-safe sentinel", incoming)
+	}
+	if err := reconcileMaskedScriptSecrets(incoming, prior); err != nil {
+		t.Fatalf("update reconciliation rejected a projected stored runtime table: %v", err)
+	}
+	if got := incoming.DataSources[0].InlineData; got != rawTable {
+		t.Fatalf("reconciled inline data = %q, want stored value restored", got)
+	}
+}
+
+func TestReconcileMaskedScriptSecretsDoesNotOverwriteResolvedTableWhenAnotherTableRemainsGated(t *testing.T) {
+	const rawTable = "Password\npassword=do-not-disclose-1234567890\n"
+	prior := &dsl.Script{
+		Name:     "mixed parameter tables",
+		Version:  "1.0.0",
+		Protocol: "http",
+		DataSources: []dsl.DataSource{
+			{Name: "resolved", Type: "file", InlineData: rawTable, Strategy: "sequential"},
+			{Name: "still_redacted", Type: "file", InlineData: "Password\n[REDACTED]\n", Strategy: "sequential"},
+		},
+		Actions: []dsl.Action{{
+			Name: "Submit", Type: "request", Method: "POST", Target: "/login",
+			Metadata: map[string]any{"execution_blocker": credentialParameterSourceRedactedBlocker},
+		}},
+	}
+	incoming := maskScriptSecrets(prior)
+	if incoming == nil || !strings.Contains(incoming.DataSources[0].InlineData, maskedScriptSecret) {
+		t.Fatalf("projected mixed runtime tables = %#v, want resolved table masked", incoming)
+	}
+	if err := reconcileMaskedScriptSecrets(incoming, prior); err != nil {
+		t.Fatalf("update reconciliation rejected mixed gated runtime data: %v", err)
+	}
+	if got := incoming.DataSources[0].InlineData; got != rawTable {
+		t.Fatalf("resolved table was overwritten by its projection: %q", got)
+	}
+	if got := incoming.DataSources[1].InlineData; got != "Password\n[REDACTED]\n" {
+		t.Fatalf("durable redacted table = %q, want sentinel preserved", got)
+	}
+}
+
+func TestReconcileMaskedScriptSecretsCanResolveGatedTableBesideMaskedSibling(t *testing.T) {
+	const rawTable = "Password\npassword=do-not-disclose-1234567890\n"
+	prior := &dsl.Script{
+		Name:     "mixed parameter tables",
+		Version:  "1.0.0",
+		Protocol: "http",
+		DataSources: []dsl.DataSource{
+			{Name: "resolved", Type: "file", InlineData: rawTable, Strategy: "sequential"},
+			{Name: "still_redacted", Type: "file", InlineData: "Password\n[REDACTED]\n", Strategy: "sequential"},
+		},
+		Actions: []dsl.Action{{
+			Name: "Submit", Type: "request", Method: "POST", Target: "/login",
+			Metadata: map[string]any{"execution_blocker": credentialParameterSourceRedactedBlocker},
+		}},
+	}
+	incoming := maskScriptSecrets(prior)
+	if incoming == nil || !strings.Contains(incoming.DataSources[0].InlineData, maskedScriptSecret) {
+		t.Fatalf("projected mixed runtime tables = %#v, want resolved table masked", incoming)
+	}
+	incoming.DataSources[1].InlineData = "Password\napproved-value\n"
+	incoming.Actions[0].Metadata = nil
+	if err := reconcileMaskedScriptSecrets(incoming, prior); err != nil {
+		t.Fatalf("resolving one gated table beside a masked sibling failed: %v", err)
+	}
+	if got := incoming.DataSources[0].InlineData; got != rawTable {
+		t.Fatalf("resolved sibling table = %q, want stored value restored", got)
+	}
+	if got := incoming.DataSources[1].InlineData; got != "Password\napproved-value\n" {
+		t.Fatalf("replacement table = %q, want client-approved value", got)
+	}
+}
+
+func TestReconcileMaskedScriptSecretsRejectsGatedRuntimeTableReordering(t *testing.T) {
+	prior := &dsl.Script{
+		Name: "ordered parameter tables", Version: "1.0.0", Protocol: "http",
+		DataSources: []dsl.DataSource{
+			{Name: "first", Type: "file", InlineData: "Password\npassword=first-secret-1234567890\n"},
+			{Name: "second", Type: "file", InlineData: "Password\n[REDACTED]\n"},
+		},
+		Actions: []dsl.Action{{
+			Name: "Submit", Type: "request", Method: "POST", Target: "/login",
+			Metadata: map[string]any{"execution_blocker": credentialParameterSourceRedactedBlocker},
+		}},
+	}
+	incoming := maskScriptSecrets(prior)
+	if incoming == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	incoming.DataSources[0], incoming.DataSources[1] = incoming.DataSources[1], incoming.DataSources[0]
+	err := reconcileMaskedScriptSecrets(incoming, prior)
+	if err == nil || !strings.Contains(err.Error(), "changed while containing redacted credentials") {
+		t.Fatalf("reordered gated runtime tables error = %v, want fail-closed identity check", err)
+	}
+}
+
 // A genuinely edited value must still be taken from the client.
 func TestReconcileKeepsClientEditsOverStoredValue(t *testing.T) {
 	got, err := reconcileProjectedJSON("edited by user", "projected", "stored raw", "script.actions.0.body")

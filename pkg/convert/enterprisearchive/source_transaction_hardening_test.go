@@ -299,6 +299,111 @@ Broken=Broken.c
 	}
 }
 
+func TestConvertZipFailsClosedForMissingOrAmbiguousDeclaredCSource(t *testing.T) {
+	tests := []struct {
+		name            string
+		actionPointer   string
+		sourceFiles     map[string]string
+		wantFailureKind string
+	}{
+		{
+			name:            "qualified pointer is not substituted by another directory",
+			actionPointer:   "profiles/a/Action.c",
+			wantFailureKind: "missing_source_file",
+			sourceFiles: map[string]string{
+				"profiles/b/Action.c": `int Action()
+{
+	web_url("wrong-file-canary", "URL=https://wrong-source.invalid/", LAST);
+	return 0;
+}`,
+			},
+		},
+		{
+			name:            "unqualified pointer with duplicate basenames is ambiguous",
+			actionPointer:   "Action.c",
+			wantFailureKind: "ambiguous_source_file",
+			sourceFiles: map[string]string{
+				"profiles/a/Action.c": `int Action()
+{
+	web_url("first-canary", "URL=https://first-source.invalid/", LAST);
+	return 0;
+}`,
+				"profiles/b/Action.c": `int Action()
+{
+	web_url("second-canary", "URL=https://second-source.invalid/", LAST);
+	return 0;
+}`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			files := map[string]string{
+				"SourceGate.usr": `[General]
+Type=Web
+[Actions]
+Init=vuser_init.c
+Action=` + test.actionPointer,
+				"vuser_init.c": `int vuser_init()
+{
+	web_url("healthy-init", "URL=https://example.test/", LAST);
+	return 0;
+}`,
+			}
+			for name, content := range test.sourceFiles {
+				files[name] = content
+			}
+			result, err := ConvertZip(buildSourceZip(t, files), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip: %v", err)
+			}
+			if result.Script == nil {
+				t.Fatalf("result = %#v, want healthy sibling plus source gate", result)
+			}
+			gate := findCSourceParseFailureGate(result.Script)
+			if gate == nil ||
+				gate.Metadata["source_file"] != test.actionPointer ||
+				gate.Metadata["execution_blocker"] != cSourceParseFailureCode {
+				t.Fatalf("parse gate = %#v, want %q blocker for %q", gate, test.wantFailureKind, test.actionPointer)
+			}
+			kinds, ok := gate.Metadata["source_parse_failures"].([]string)
+			if !ok || !containsString(kinds, test.wantFailureKind) {
+				t.Fatalf("parse failure kinds = %#v, want %q", gate.Metadata["source_parse_failures"], test.wantFailureKind)
+			}
+			for _, actions := range [][]dsl.Action{result.Script.Init, result.Script.Actions, result.Script.Teardown} {
+				for _, action := range actions {
+					// SourceReview intentionally preserves the operator's source
+					// archive. Verify that rejected files did not become
+					// executable action fields; the value-free gate metadata is
+					// checked separately above.
+					action.Metadata = nil
+					payload, marshalErr := json.Marshal(action)
+					if marshalErr != nil {
+						t.Fatalf("json.Marshal: %v", marshalErr)
+					}
+					for _, canary := range []string{"wrong-file-canary", "wrong-source.invalid", "first-canary", "second-canary"} {
+						if strings.Contains(string(payload), canary) {
+							t.Fatalf("source resolver imported a rejected same-basename file %q: %s", canary, payload)
+						}
+					}
+				}
+			}
+			if result.FidelityReport == nil ||
+				result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+				t.Fatalf("fidelity report = %#v, want source-analysis gate to block promotion", result.FidelityReport)
+			}
+			if _, engineErr := engine.New(engine.Config{
+				Script:   result.Script,
+				VUsers:   1,
+				Duration: time.Millisecond,
+			}); engineErr == nil || !strings.Contains(engineErr.Error(), cSourceParseFailureCode) {
+				t.Fatalf("engine.New error = %v, want durable parse failure gate", engineErr)
+			}
+		})
+	}
+}
+
 func TestMalformedTransactionFallbackWorkAndEvidenceAreBounded(t *testing.T) {
 	var source strings.Builder
 	source.WriteString("Action()\n{\n")

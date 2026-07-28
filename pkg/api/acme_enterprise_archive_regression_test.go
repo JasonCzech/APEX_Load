@@ -241,6 +241,44 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 			t.Errorf("enterprise archive HTTP import unexpectedly emitted %q: %s", field, response.Body.String())
 		}
 	}
+
+	savablePayload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatalf("marshal projected ACME script for save: %v", err)
+	}
+	var savable dsl.Script
+	if err := json.Unmarshal(savablePayload, &savable); err != nil {
+		t.Fatalf("clone projected ACME script for save: %v", err)
+	}
+	savable.ID = ""
+	savable.ProjectID = projectID
+	createResponse := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{
+		"project_id": projectID,
+		"script":     &savable,
+	})
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf(
+			"save imported ACME script status = %d, want %d; body=%s",
+			createResponse.Code,
+			http.StatusCreated,
+			createResponse.Body.String(),
+		)
+	}
+	scripts := server.runner.ListScripts()
+	if len(scripts) != 1 || scripts[0] == nil || scripts[0].Script == nil {
+		t.Fatalf("saved ACME scripts = %#v, want one durable script", scripts)
+	}
+	saved := scripts[0].Script
+	if saved.Config.ThinkTime.Type != "recorded" ||
+		saved.Config.Pacing.Type != "fixed_interval" ||
+		saved.Config.Pacing.IntervalMs != 5000 ||
+		saved.Config.RunLogic.Iterations != 1 {
+		t.Fatalf("saved ACME runtime config = %#v", saved.Config)
+	}
+	savedAction := acmeImportedActionContaining(t, saved, "<soap:Envelope")
+	if !acmeActionHasExecutionBlocker(savedAction, credentialParameterSourceRedactedBlocker) {
+		t.Fatalf("saved ACME script lost its redacted parameter execution gate: %#v", savedAction.Metadata)
+	}
 }
 
 func buildSanitizedACMEArchive(t *testing.T) []byte {

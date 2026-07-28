@@ -1728,8 +1728,27 @@ func TestCommandArgsHarnessJarOnlyUsesJar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(args, " "); got != "-XX:+DisableAttachMechanism -Dcom.ibm.tools.attach.enable=no -XX:-HeapDumpOnOutOfMemoryError -jar /opt/apex/harness.jar --class Actions --method full_lifecycle" {
+	if got := strings.Join(args, " "); got != "-XX:+DisableAttachMechanism -Dcom.ibm.tools.attach.enable=no -XX:-HeapDumpOnOutOfMemoryError -XX:-CreateCoredumpOnCrash -jar /opt/apex/harness.jar --class Actions --method full_lifecycle" {
 		t.Fatalf("args = %q, want -jar form", got)
+	}
+}
+
+func TestCommandArgsLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
+	j := &JavaVuser{cfg: configuration{
+		RunnerCommand: "java",
+		HarnessJar:    "/opt/apex/harness.jar",
+		ResolvedJDK:   &javarunner.ResolvedJDK{Major: 8},
+	}}
+	args, err := j.commandArgs(runCommand{ClassName: "Actions", Method: "full_lifecycle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "CreateCoredumpOnCrash") {
+		t.Fatalf("legacy Java 8 args include unsupported crash-core flag: %q", joined)
+	}
+	if !strings.Contains(joined, "-XX:-HeapDumpOnOutOfMemoryError") {
+		t.Fatalf("legacy Java 8 args lost compatible heap-dump suppression: %q", joined)
 	}
 }
 
@@ -1752,6 +1771,7 @@ func TestCommandArgsApplyVMParametersAndDedicatedClassLoader(t *testing.T) {
 	want := []string{
 		"-Xmx512m", "-Dlabel=hello world",
 		"-XX:+DisableAttachMechanism", "-Dcom.ibm.tools.attach.enable=no", "-XX:-HeapDumpOnOutOfMemoryError",
+		"-XX:-CreateCoredumpOnCrash",
 		"-cp", "/opt/apex/harness.jar", defaultHarnessMain,
 		"--class", "Actions", "--method", "full_lifecycle",
 	}

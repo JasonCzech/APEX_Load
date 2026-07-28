@@ -250,39 +250,45 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var parsedActions []*ParsedAction
 	var parseErrors []string
 	for _, actionFile := range orderedSourceActionFiles(projectConfig, files) {
-		content, ok := findFile(files, actionFile)
-		if !ok {
-			// Try case-insensitive
-			for name, c := range files {
-				if strings.EqualFold(filepath.Base(name), actionFile) {
-					content = c
-					ok = true
-					break
+		resolvedActionFile, content, ambiguous := findSourceArchiveFile(files, actionFile)
+		phase := sourceActionPhaseForProjectFile(projectConfig, actionFile)
+		if resolvedActionFile == "" || len(ambiguous) > 0 {
+			kind := "missing_source_file"
+			if len(ambiguous) > 0 {
+				kind = "ambiguous_source_file"
+			}
+			parsedActions = append(parsedActions, &ParsedAction{
+				Filename: actionFile,
+				Phase:    phase,
+				ParseFailures: []CSourceParseFailure{{
+					Filename: actionFile,
+					Phase:    phase,
+					Kind:     kind,
+				}},
+			})
+			parseErrors = appendUnique(parseErrors, actionFile)
+			continue
+		}
+		parsed, err := ParseActionFile(resolvedActionFile, inlineSourceStringConstants(content, sourceConstants))
+		if parsed != nil {
+			parsed.Phase = phase
+			for index := range parsed.Functions {
+				parsed.Functions[index].Phase = parsed.Phase
+			}
+			for index := range parsed.ParseFailures {
+				if parsed.ParseFailures[index].Phase == "" {
+					parsed.ParseFailures[index].Phase = parsed.Phase
 				}
+			}
+			if err == nil || len(parsed.Functions) > 0 || len(parsed.ParseFailures) > 0 {
+				parsedActions = append(parsedActions, parsed)
 			}
 		}
-		if ok {
-			parsed, err := ParseActionFile(actionFile, inlineSourceStringConstants(content, sourceConstants))
-			if parsed != nil {
-				parsed.Phase = sourceActionPhaseForProjectFile(projectConfig, actionFile)
-				for index := range parsed.Functions {
-					parsed.Functions[index].Phase = parsed.Phase
-				}
-				for index := range parsed.ParseFailures {
-					if parsed.ParseFailures[index].Phase == "" {
-						parsed.ParseFailures[index].Phase = parsed.Phase
-					}
-				}
-				if err == nil || len(parsed.Functions) > 0 || len(parsed.ParseFailures) > 0 {
-					parsedActions = append(parsedActions, parsed)
-				}
-			}
-			if err != nil {
-				// Parser diagnostics can echo arbitrary source tokens. Persist
-				// only the affected filename; detailed durable gates use
-				// value-free failure kinds and line numbers.
-				parseErrors = appendUnique(parseErrors, actionFile)
-			}
+		if err != nil {
+			// Parser diagnostics can echo arbitrary source tokens. Persist
+			// only the affected filename; detailed durable gates use
+			// value-free failure kinds and line numbers.
+			parseErrors = appendUnique(parseErrors, actionFile)
 		}
 	}
 
@@ -831,26 +837,42 @@ func orderedSourceActionFiles(projectConfig *ProjectConfig, files map[string]str
 		if name == "" {
 			continue
 		}
-		key := strings.ToLower(filepath.Base(name))
-		if _, exists := seen[key]; exists {
+		resolved, _, _ := findSourceArchiveFile(files, name)
+		if resolved == "" && !sourceActionPointerRequired(projectConfig, name) {
 			continue
 		}
-		if _, ok := findFile(files, name); !ok {
-			found := false
-			for fileName := range files {
-				if strings.EqualFold(filepath.Base(fileName), filepath.Base(name)) {
-					found = true
-					break
-				}
-			}
-			if !found {
-				continue
-			}
+		key := strings.ToLower(normalizeRuntimeArchivePath(name))
+		if resolved != "" {
+			key = strings.ToLower(normalizeRuntimeArchivePath(resolved))
+		}
+		if _, exists := seen[key]; exists {
+			continue
 		}
 		seen[key] = struct{}{}
 		ordered = append(ordered, name)
 	}
 	return ordered
+}
+
+// findSourceArchiveFile resolves lifecycle source pointers with the same
+// fail-closed path semantics as runtime profiles. Qualified pointers are exact;
+// basename fallback is allowed only for an unqualified pointer with one unique
+// archive match.
+func findSourceArchiveFile(files map[string]string, requested string) (string, string, []string) {
+	return findRuntimeArchiveFile(files, requested)
+}
+
+func sourceActionPointerRequired(projectConfig *ProjectConfig, name string) bool {
+	if projectConfig == nil || len(projectConfig.SourceActionFiles) == 0 {
+		return strings.EqualFold(filepath.Base(strings.TrimSpace(name)), "Action.c")
+	}
+	normalized := normalizeRuntimeArchivePath(name)
+	for _, sourceFile := range projectConfig.SourceActionFiles {
+		if strings.EqualFold(normalizeRuntimeArchivePath(sourceFile.Name), normalized) {
+			return true
+		}
+	}
+	return false
 }
 
 func sourceActionPhase(fileName string) string {
@@ -867,12 +889,29 @@ func sourceActionPhase(fileName string) string {
 
 func sourceActionPhaseForProjectFile(projectConfig *ProjectConfig, fileName string) string {
 	if projectConfig != nil {
+		normalized := normalizeRuntimeArchivePath(fileName)
 		for _, sourceFile := range projectConfig.SourceActionFiles {
-			if strings.EqualFold(strings.TrimSpace(sourceFile.Name), strings.TrimSpace(fileName)) ||
-				strings.EqualFold(filepath.Base(sourceFile.Name), filepath.Base(fileName)) {
+			if strings.EqualFold(normalizeRuntimeArchivePath(sourceFile.Name), normalized) {
 				if phase := strings.TrimSpace(sourceFile.Phase); phase != "" {
 					return normalizeSourcePhase(phase)
 				}
+			}
+		}
+		// Preserve the historical unqualified-basename fallback only when it is
+		// unambiguous. Two declared paths with the same basename may belong to
+		// different lifecycle phases and must never alias one another.
+		if !strings.Contains(normalized, "/") {
+			matchedPhase := ""
+			matches := 0
+			for _, sourceFile := range projectConfig.SourceActionFiles {
+				if !strings.EqualFold(filepath.Base(sourceFile.Name), filepath.Base(fileName)) {
+					continue
+				}
+				matches++
+				matchedPhase = normalizeSourcePhase(sourceFile.Phase)
+			}
+			if matches == 1 && matchedPhase != "" {
+				return matchedPhase
 			}
 		}
 	}

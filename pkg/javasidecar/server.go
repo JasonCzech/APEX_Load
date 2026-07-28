@@ -1470,6 +1470,7 @@ func (s *Server) verifyHarness(ctx context.Context, prepared preparedRuntime) *s
 		return nil
 	}
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
+		JavaMajor:   prepared.jdk.Major,
 		HarnessJar:  prepared.harnessJar,
 		HarnessMain: defaultHarnessMain,
 		HarnessArgs: []string{"--health"},
@@ -1547,6 +1548,7 @@ func (s *Server) runHarness(ctx context.Context, prepared preparedRuntime, comma
 	}
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
 		VMParameters:         prepared.vmParameters,
+		JavaMajor:            prepared.jdk.Major,
 		HarnessJar:           prepared.harnessJar,
 		ScriptClasspath:      prepared.scriptClasspath,
 		SharedClasspath:      prepared.sharedClasspath,

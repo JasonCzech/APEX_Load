@@ -411,10 +411,11 @@ func TestServerHealthCapabilitiesAndExecution(t *testing.T) {
 	}
 
 	args := readLines(t, fixture.argsFile)
-	if len(args) < 8 || args[0] != vmToken || args[1] != "-Xmx128m" ||
+	if len(args) < 9 || args[0] != vmToken || args[1] != "-Xmx128m" ||
 		args[2] != "-XX:+DisableAttachMechanism" ||
 		args[3] != "-Dcom.ibm.tools.attach.enable=no" ||
-		args[4] != "-XX:-HeapDumpOnOutOfMemoryError" {
+		args[4] != "-XX:-HeapDumpOnOutOfMemoryError" ||
+		args[5] != "-XX:-CreateCoredumpOnCrash" {
 		t.Fatalf("launcher args = %#v; exact VM tokens were not first", args)
 	}
 	for _, argument := range args {

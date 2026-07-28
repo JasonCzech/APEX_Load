@@ -3,6 +3,7 @@ package javarunner
 import (
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -25,6 +26,7 @@ func TestBuildCommandOrdersVMParametersAndClasspaths(t *testing.T) {
 	want := []string{
 		"-Xmx512m", "-Dlabel=hello world",
 		enforcedDisableAttachMechanism, enforcedDisableOpenJ9Attach, enforcedDisableHeapDumpOnOOM,
+		enforcedDisableCrashCoreDump,
 		"-cp", classpath, "Harness",
 		"--class", "Actions", "--method", "action",
 	}
@@ -57,6 +59,7 @@ func TestBuildCommandDedicatedClassLoaderSeparatesUserClasspath(t *testing.T) {
 		enforcedDisableAttachMechanism,
 		enforcedDisableOpenJ9Attach,
 		enforcedDisableHeapDumpOnOOM,
+		enforcedDisableCrashCoreDump,
 		"-cp", "/runner/harness.jar", "Harness", "--class", "Actions",
 	}
 	if !reflect.DeepEqual(plan.Args, wantArgs) {
@@ -80,10 +83,33 @@ func TestBuildCommandPreservesHarnessJarLaunchCompatibility(t *testing.T) {
 		enforcedDisableAttachMechanism,
 		enforcedDisableOpenJ9Attach,
 		enforcedDisableHeapDumpOnOOM,
+		enforcedDisableCrashCoreDump,
 		"-jar", "/runner/harness.jar",
 	}
 	if !reflect.DeepEqual(plan.Args, want) {
 		t.Fatalf("Args = %#v, want %#v", plan.Args, want)
+	}
+}
+
+func TestBuildCommandLegacyJavaOmitsUnsupportedCrashCoreFlag(t *testing.T) {
+	plan, err := BuildCommand(CommandSpec{
+		JavaMajor:  8,
+		HarnessJar: "/runner/harness.jar",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(plan.Args, enforcedDisableCrashCoreDump) {
+		t.Fatalf("legacy Java 8 command includes unsupported crash-core flag: %#v", plan.Args)
+	}
+	for _, required := range []string{
+		enforcedDisableAttachMechanism,
+		enforcedDisableOpenJ9Attach,
+		enforcedDisableHeapDumpOnOOM,
+	} {
+		if !slices.Contains(plan.Args, required) {
+			t.Fatalf("legacy Java 8 command lost required enforcement %q: %#v", required, plan.Args)
+		}
 	}
 }
 
@@ -117,7 +143,7 @@ func TestBuildCommandRejectsUnsafeVMParameterWithoutExposingValue(t *testing.T) 
 	}
 }
 
-func TestBuildCommandRejectsCallerControlledHeapDumpTriggers(t *testing.T) {
+func TestBuildCommandRejectsCallerControlledDiagnosticDumpTriggers(t *testing.T) {
 	for _, parameter := range []string{
 		"-XX:+HeapDumpOnOutOfMemoryError",
 		"-XX:-HeapDumpOnOutOfMemoryError",
@@ -127,10 +153,12 @@ func TestBuildCommandRejectsCallerControlledHeapDumpTriggers(t *testing.T) {
 		"-XX:-HeapDumpAfterFullGC",
 		"-XX:+CrashOnOutOfMemoryError",
 		"-XX:-CrashOnOutOfMemoryError",
+		"-XX:+CreateCoredumpOnCrash",
+		"-XX:-CreateCoredumpOnCrash",
 	} {
 		t.Run(parameter, func(t *testing.T) {
 			if _, err := BuildCommand(CommandSpec{VMParameters: []string{parameter}}); err == nil {
-				t.Fatalf("BuildCommand accepted heap-dump trigger override %q", parameter)
+				t.Fatalf("BuildCommand accepted diagnostic-dump trigger override %q", parameter)
 			}
 		})
 	}

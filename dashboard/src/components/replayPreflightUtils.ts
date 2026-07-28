@@ -1,5 +1,9 @@
 import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProjectSecretStatus } from '../types/secrets'
+import {
+  actionExecutionBlockers,
+  actionMetadataBool,
+} from './scriptActionHelpers'
 
 type ScriptWithPhases = ScriptDefinition & {
   init?: ScriptActionDefinition[]
@@ -8,6 +12,7 @@ type ScriptWithPhases = ScriptDefinition & {
 
 const REPLAY_TEMPLATE_REF_PATTERN = /\{\{\s*(var|env|data|param|secret)\.([a-zA-Z0-9_.-]+)/g
 const REPLAY_PREFLIGHT_MAX_CONTROL_DEPTH = 32
+const REPLAY_REVIEW_GATE_MAX_CONTROL_DEPTH = 64
 const DEDICATED_PROJECT_SECRET_FIELDS = new Set([
   'dsn_secret',
   'sasl_password_secret',
@@ -47,6 +52,112 @@ function phaseReplayActions(script: ScriptDefinition): ScriptActionDefinition[] 
     ...(script.actions || []),
     ...(phasedScript.teardown || []),
   ]
+}
+
+function actionMetadataString(action: ScriptActionDefinition, key: string): string {
+  const value = action.metadata?.[key]
+  return typeof value === 'string' ? value.trim().toLowerCase() : ''
+}
+
+function reviewRequiredAction(action: ScriptActionDefinition): boolean {
+  return actionMetadataBool(action, 'review_required')
+    || actionMetadataBool(action, 'promotion_blocker')
+    || actionMetadataString(action, 'review_gate') === 'bruno_javascript'
+}
+
+function durableImportReviewGateAction(action: ScriptActionDefinition): boolean {
+  const gate = actionMetadataString(action, 'review_gate')
+  const profile = actionMetadataString(action, 'source_profile')
+  return gate.startsWith('bruno_') || (profile === 'bruno_native' && reviewRequiredAction(action))
+}
+
+function reviewGatedJavaScriptAction(action: ScriptActionDefinition): boolean {
+  return action.type?.trim().toLowerCase() === 'browser_evaluate_js'
+    && (
+      actionMetadataString(action, 'review_gate') === 'javascript'
+      || actionMetadataBool(action, 'review_required')
+      || actionMetadataBool(action, 'promotion_blocker')
+    )
+}
+
+function appendReviewGateIssues(
+  action: ScriptActionDefinition,
+  path: string,
+  script: ScriptDefinition,
+  issues: string[],
+): void {
+  const blockers = actionExecutionBlockers(action)
+  const name = action.name?.trim()
+  const label = name ? `${path} "${name}"` : path
+  if (blockers.length > 0) {
+    issues.push(
+      `${label}: execution blocker ${blockers.join(', ')} blocks replay until the imported behavior is resolved`,
+    )
+  }
+  if (durableImportReviewGateAction(action)) {
+    issues.push(`${label}: review-required action blocks replay until review metadata is removed`)
+    return
+  }
+  if (script.protocol?.trim().toLowerCase() !== 'browser') return
+  const policy = script.config.browser?.review_policy
+  if (reviewGatedJavaScriptAction(action)) {
+    if (!policy?.allow_reviewed_javascript) {
+      issues.push(
+        `${label}: review-gated JavaScript requires config.browser.review_policy.allow_reviewed_javascript=true before replay`,
+      )
+    }
+    return
+  }
+  if (reviewRequiredAction(action) && !policy?.allow_review_required) {
+    issues.push(
+      `${label}: review-required action requires config.browser.review_policy.allow_review_required=true before replay`,
+    )
+  }
+}
+
+function collectReviewGateIssues(
+  actions: ScriptActionDefinition[],
+  pathPrefix: string,
+  depth: number,
+  script: ScriptDefinition,
+  issues: string[],
+): void {
+  if (depth > REPLAY_REVIEW_GATE_MAX_CONTROL_DEPTH) {
+    issues.push(`${pathPrefix}: action nesting exceeds ${REPLAY_REVIEW_GATE_MAX_CONTROL_DEPTH} levels`)
+    return
+  }
+  actions.forEach((action, index) => {
+    const path = `${pathPrefix}[${index}]`
+    appendReviewGateIssues(action, path, script, issues)
+
+    if (action.type?.trim().toLowerCase() === 'http_sequence') {
+      const requests = action.params && Array.isArray(action.params.requests)
+        ? action.params.requests
+        : []
+      requests.forEach((request, requestIndex) => {
+        if (!request || typeof request !== 'object' || Array.isArray(request)) return
+        appendReviewGateIssues(
+          request as ScriptActionDefinition,
+          `${path}.params.requests[${requestIndex}]`,
+          script,
+          issues,
+        )
+      })
+    }
+
+    if (!action.control) return
+    collectReviewGateIssues(action.control.steps || [], `${path}.control.steps`, depth + 1, script, issues)
+    collectReviewGateIssues(action.control.else || [], `${path}.control.else`, depth + 1, script, issues)
+  })
+}
+
+function executionGateIssues(script: ScriptDefinition): string[] {
+  const phasedScript = script as ScriptWithPhases
+  const issues: string[] = []
+  collectReviewGateIssues(phasedScript.init || [], 'init', 1, script, issues)
+  collectReviewGateIssues(script.actions || [], 'actions', 1, script, issues)
+  collectReviewGateIssues(phasedScript.teardown || [], 'teardown', 1, script, issues)
+  return issues.sort()
 }
 
 function controlShellAction(action: ScriptActionDefinition): ScriptActionDefinition {
@@ -350,6 +461,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   const browserRequired = script.protocol === 'browser'
   const prerequisites = runtimePrerequisites(script, browserRequired)
   const hasRequiredFields = Boolean(script.name && definitionCount > 0)
+  const gateIssues = executionGateIssues(script)
 
   const checks = [
     {
@@ -357,6 +469,12 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
       label: 'Script validation',
       status: hasRequiredFields ? 'pass' : 'fail',
       detail: hasRequiredFields ? 'Ready' : 'Script name and actions are required.',
+    },
+    {
+      id: 'review_gates',
+      label: 'Review gates',
+      status: gateIssues.length > 0 ? 'fail' : 'pass',
+      detail: gateIssues.length > 0 ? gateIssues.join('; ') : 'No review-gated actions block replay.',
     },
     {
       id: 'variables',
@@ -386,7 +504,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   if (browserRequired) checks.push(browserEvidenceCaptureCheck(script))
 
   return {
-    valid: hasRequiredFields && missingVariableList.length === 0 && dataWarnings.length === 0,
+    valid: hasRequiredFields && gateIssues.length === 0 && missingVariableList.length === 0 && dataWarnings.length === 0,
     action_count: definitionCount,
     expected_action_count: expectedCount,
     data_source_count: script.data_sources?.length || 0,
@@ -396,6 +514,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
     required_secrets: requiredSecretList,
     missing_secrets: requiredSecretList,
     runtime_prerequisites: prerequisites,
+    issues: gateIssues,
     warnings: dataWarnings,
     checks,
   }

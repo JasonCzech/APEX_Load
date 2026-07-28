@@ -27,6 +27,7 @@ import (
 )
 
 const maskedScriptSecret = scrub.Redacted
+const credentialParameterSourceRedactedBlocker = "credential_parameter_source_redacted"
 
 var scriptSecretTemplatePattern = regexp.MustCompile(`\{\{\s*secret\.(` + engine.LogicalSecretNameInputPattern + `)\s*\}\}`)
 var scriptPortableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
@@ -936,6 +937,15 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	if incoming == nil {
 		return fmt.Errorf("script is required")
 	}
+	hasRedactedRuntimeData := scriptHasRedactedRuntimeDataSource(incoming)
+	allowRedactedRuntimeData := hasRedactedRuntimeData &&
+		scriptHasExecutionBlockerCode(incoming, credentialParameterSourceRedactedBlocker)
+	if prior == nil && hasRedactedRuntimeData && !allowRedactedRuntimeData {
+		return fmt.Errorf(
+			"script contains redacted runtime data without the required %s execution gate",
+			credentialParameterSourceRedactedBlocker,
+		)
+	}
 	incomingJSON, err := scriptAsJSONValue(incoming)
 	if err != nil {
 		return err
@@ -947,7 +957,11 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	// projection over the stored value and destroyed it. Whenever a prior version
 	// exists we reconcile, and reconcileProjectedJSON restores only values the
 	// client returned byte-identical to the projection.
-	hasMaskedSecret := jsonValueContainsExecutableMaskedSecret(incomingJSON, "")
+	hasMaskedSecret := jsonValueContainsExecutableMaskedSecretWithOptions(
+		incomingJSON,
+		"",
+		allowRedactedRuntimeData,
+	)
 	if prior == nil {
 		if hasMaskedSecret {
 			return fmt.Errorf("script contains an orphan %s sentinel; bind a secret reference instead", maskedScriptSecret)
@@ -962,7 +976,13 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	if err != nil {
 		return err
 	}
-	reconciled, err := reconcileProjectedJSON(incomingJSON, projectedPrior, rawPrior, "script")
+	reconciled, err := reconcileProjectedJSONWithOptions(
+		incomingJSON,
+		projectedPrior,
+		rawPrior,
+		"script",
+		allowRedactedRuntimeData,
+	)
 	if err != nil {
 		return err
 	}
@@ -989,8 +1009,31 @@ func scriptAsJSONValue(script *dsl.Script) (any, error) {
 }
 
 func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path string) (any, error) {
+	return reconcileProjectedJSONWithOptions(incoming, projectedPrior, rawPrior, path, false)
+}
+
+func reconcileProjectedJSONWithOptions(
+	incoming any,
+	projectedPrior any,
+	rawPrior any,
+	path string,
+	allowRedactedRuntimeData bool,
+) (any, error) {
 	switch typed := incoming.(type) {
 	case string:
+		if allowRedactedRuntimeData && isRuntimeDataTableTraversalPath(path) {
+			projected, projectedOK := projectedPrior.(string)
+			raw, rawOK := rawPrior.(string)
+			// A script may contain one still-gated imported table alongside a
+			// different table whose real values were masked only for this read.
+			// Restore that stored value before admitting durable sentinels, or
+			// an unrelated gate would overwrite already-resolved data.
+			if projectedOK && rawOK && typed == projected && typed != raw &&
+				!strings.Contains(raw, maskedScriptSecret) {
+				return raw, nil
+			}
+			return typed, nil
+		}
 		projected, projectedOK := projectedPrior.(string)
 		raw, rawOK := rawPrior.(string)
 		// An unmodified projection must restore the stored value even when the
@@ -1017,7 +1060,8 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 			isDurablyImportReviewGatedAction(rawMap)
 		incomingReviewOnly := isNonExecutableReviewAction(typed) ||
 			isDurablyImportReviewGatedAction(typed)
-		if priorWasReviewOnly && !incomingReviewOnly && jsonValueContainsExecutableMaskedSecret(typed, path) {
+		if priorWasReviewOnly && !incomingReviewOnly &&
+			jsonValueContainsExecutableMaskedSecretWithOptions(typed, path, allowRedactedRuntimeData) {
 			return nil, fmt.Errorf("%s promotes redacted review evidence into executable fields; bind a secret reference instead", path)
 		}
 		if incomingReviewOnly {
@@ -1040,7 +1084,13 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 			if rawMap != nil {
 				rawChild = rawMap[key]
 			}
-			reconciled, err := reconcileProjectedJSON(child, projectedChild, rawChild, path+"."+key)
+			reconciled, err := reconcileProjectedJSONWithOptions(
+				child,
+				projectedChild,
+				rawChild,
+				path+"."+key,
+				allowRedactedRuntimeData,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -1050,28 +1100,43 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 	case []any:
 		projectedSlice, projectedOK := projectedPrior.([]any)
 		rawSlice, _ := rawPrior.([]any)
-		if jsonValueContainsExecutableMaskedSecret(typed, path) && (!projectedOK || !reflect.DeepEqual(typed, projectedSlice)) {
-			for i, child := range typed {
-				incomingMap, incomingOK := child.(map[string]any)
-				if !incomingOK || i >= len(projectedSlice) {
-					continue
+		containsMaskedSecret := jsonValueContainsExecutableMaskedSecretWithOptions(
+			typed,
+			path,
+			allowRedactedRuntimeData,
+		)
+		if allowRedactedRuntimeData && path == "script.data_sources" {
+			// The gate permits durable table sentinels, not positional
+			// reassociation. Keep detecting them at the collection boundary so
+			// a reorder cannot restore a prior raw table into a different name.
+			containsMaskedSecret = jsonValueContainsExecutableMaskedSecret(typed, path)
+		}
+		if containsMaskedSecret &&
+			(!projectedOK || !reflect.DeepEqual(typed, projectedSlice)) {
+			if !isStableRuntimeDataSourceEdit(path, typed, projectedSlice) {
+				for i, child := range typed {
+					incomingMap, incomingOK := child.(map[string]any)
+					if !incomingOK || i >= len(projectedSlice) {
+						continue
+					}
+					projectedMap, _ := projectedSlice[i].(map[string]any)
+					var rawMap map[string]any
+					if i < len(rawSlice) {
+						rawMap, _ = rawSlice[i].(map[string]any)
+					}
+					priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) ||
+						isNonExecutableReviewAction(rawMap) ||
+						isDurablyImportReviewGatedAction(projectedMap) ||
+						isDurablyImportReviewGatedAction(rawMap)
+					incomingReviewOnly := isNonExecutableReviewAction(incomingMap) ||
+						isDurablyImportReviewGatedAction(incomingMap)
+					if priorWasReviewOnly && !incomingReviewOnly &&
+						jsonValueContainsExecutableMaskedSecretWithOptions(incomingMap, path, allowRedactedRuntimeData) {
+						return nil, fmt.Errorf("%s[%d] promotes redacted review evidence into executable fields; bind a secret reference instead", path, i)
+					}
 				}
-				projectedMap, _ := projectedSlice[i].(map[string]any)
-				var rawMap map[string]any
-				if i < len(rawSlice) {
-					rawMap, _ = rawSlice[i].(map[string]any)
-				}
-				priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) ||
-					isNonExecutableReviewAction(rawMap) ||
-					isDurablyImportReviewGatedAction(projectedMap) ||
-					isDurablyImportReviewGatedAction(rawMap)
-				incomingReviewOnly := isNonExecutableReviewAction(incomingMap) ||
-					isDurablyImportReviewGatedAction(incomingMap)
-				if priorWasReviewOnly && !incomingReviewOnly && jsonValueContainsExecutableMaskedSecret(incomingMap, path) {
-					return nil, fmt.Errorf("%s[%d] promotes redacted review evidence into executable fields; bind a secret reference instead", path, i)
-				}
+				return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
 			}
-			return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
 		}
 		out := make([]any, len(typed))
 		for i, child := range typed {
@@ -1082,7 +1147,13 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 			if i < len(rawSlice) {
 				rawChild = rawSlice[i]
 			}
-			reconciled, err := reconcileProjectedJSON(child, projectedChild, rawChild, fmt.Sprintf("%s[%d]", path, i))
+			reconciled, err := reconcileProjectedJSONWithOptions(
+				child,
+				projectedChild,
+				rawChild,
+				fmt.Sprintf("%s[%d]", path, i),
+				allowRedactedRuntimeData,
+			)
 			if err != nil {
 				return nil, err
 			}
@@ -1095,6 +1166,14 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 }
 
 func jsonValueContainsExecutableMaskedSecret(value any, path string) bool {
+	return jsonValueContainsExecutableMaskedSecretWithOptions(value, path, false)
+}
+
+func jsonValueContainsExecutableMaskedSecretWithOptions(
+	value any,
+	path string,
+	allowRedactedRuntimeData bool,
+) bool {
 	switch typed := value.(type) {
 	case string:
 		return strings.Contains(typed, maskedScriptSecret)
@@ -1107,22 +1186,114 @@ func jsonValueContainsExecutableMaskedSecret(value any, path string) bool {
 				continue
 			}
 			childPath := appendJSONPointer(path, key)
+			// Redacted imported parameter rows are safe durable placeholders,
+			// not a project-secret binding. reconcileMaskedScriptSecrets permits
+			// them only while the script retains the matching execution gate.
+			if allowRedactedRuntimeData && isRuntimeDataTableTraversalPath(childPath) {
+				continue
+			}
 			// Must mirror discoverRedactedValues: a provenance entry raises no
 			// binding requirement, so treating it as an orphan sentinel here would
 			// reject a save the user has no way to satisfy.
 			if isImportProvenanceMetadataPath(childPath) {
 				continue
 			}
-			if jsonValueContainsExecutableMaskedSecret(child, childPath) {
+			if jsonValueContainsExecutableMaskedSecretWithOptions(child, childPath, allowRedactedRuntimeData) {
 				return true
 			}
 		}
 	case []any:
 		for index, child := range typed {
-			if jsonValueContainsExecutableMaskedSecret(child, appendJSONPointer(path, strconv.Itoa(index))) {
+			if jsonValueContainsExecutableMaskedSecretWithOptions(
+				child,
+				appendJSONPointer(path, strconv.Itoa(index)),
+				allowRedactedRuntimeData,
+			) {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// isStableRuntimeDataSourceEdit permits field-level reconciliation for a
+// same-size, same-order data-source list. This lets an operator replace one
+// gated imported table while a different table is still masked for transport.
+// Renames, additions, removals, duplicates, and reordering remain rejected so
+// a projected sentinel can never be restored into the wrong source.
+func isStableRuntimeDataSourceEdit(path string, incoming, projected []any) bool {
+	if path != "script.data_sources" || len(incoming) != len(projected) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(incoming))
+	for index := range incoming {
+		incomingMap, incomingOK := incoming[index].(map[string]any)
+		projectedMap, projectedOK := projected[index].(map[string]any)
+		if !incomingOK || !projectedOK {
+			return false
+		}
+		incomingName, incomingOK := incomingMap["name"].(string)
+		projectedName, projectedOK := projectedMap["name"].(string)
+		incomingName = strings.TrimSpace(incomingName)
+		projectedName = strings.TrimSpace(projectedName)
+		if !incomingOK || !projectedOK || incomingName == "" || incomingName != projectedName {
+			return false
+		}
+		if _, duplicate := seen[incomingName]; duplicate {
+			return false
+		}
+		seen[incomingName] = struct{}{}
+	}
+	return true
+}
+
+func scriptHasRedactedRuntimeDataSource(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	for _, source := range script.DataSources {
+		if strings.Contains(source.InlineData, maskedScriptSecret) {
+			return true
+		}
+	}
+	return false
+}
+
+func scriptHasExecutionBlockerCode(script *dsl.Script, want string) bool {
+	if script == nil || strings.TrimSpace(want) == "" {
+		return false
+	}
+	found := false
+	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		for _, blocker := range executionReviewBlockerCodes(ref.Metadata()) {
+			if strings.EqualFold(strings.TrimSpace(blocker), strings.TrimSpace(want)) {
+				found = true
+				return nil
+			}
+		}
+		return nil
+	})
+	return found && err == nil
+}
+
+func isRuntimeDataTableTraversalPath(path string) bool {
+	if isRuntimeDataTableJSONPath(path) {
+		return true
+	}
+
+	const (
+		reconcilePrefix = "script.data_sources["
+		reconcileSuffix = "].inline_data"
+		hybridPrefix    = "script.data_sources/"
+		hybridSuffix    = "/inline_data"
+	)
+	if strings.HasPrefix(path, reconcilePrefix) && strings.HasSuffix(path, reconcileSuffix) {
+		index := strings.TrimSuffix(strings.TrimPrefix(path, reconcilePrefix), reconcileSuffix)
+		return index != "" && isDecimalToken(index)
+	}
+	if strings.HasPrefix(path, hybridPrefix) && strings.HasSuffix(path, hybridSuffix) {
+		index := strings.TrimSuffix(strings.TrimPrefix(path, hybridPrefix), hybridSuffix)
+		return index != "" && isDecimalToken(index)
 	}
 	return false
 }

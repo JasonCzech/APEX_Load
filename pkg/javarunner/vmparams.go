@@ -257,6 +257,7 @@ func validateVMParameter(parameter string) string {
 		"-xx:+heapdumpbeforefullgc", "-xx:-heapdumpbeforefullgc",
 		"-xx:+heapdumpafterfullgc", "-xx:-heapdumpafterfullgc",
 		"-xx:+crashonoutofmemoryerror", "-xx:-crashonoutofmemoryerror",
+		"-xx:+createcoredumponcrash", "-xx:-createcoredumponcrash",
 		"-xx:+perfdatasavetofile", "-xx:-perfdatasavetofile":
 		return VMParameterDiagnosticFilePath
 	}

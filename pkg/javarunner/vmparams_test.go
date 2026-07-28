@@ -95,6 +95,8 @@ func TestValidateVMParametersRejectsUnsafeStructures(t *testing.T) {
 		{name: "heap dump after full GC disabled by caller", value: "-XX:-HeapDumpAfterFullGC", category: VMParameterDiagnosticFilePath},
 		{name: "crash on OOM enabled", value: "-XX:+CrashOnOutOfMemoryError", category: VMParameterDiagnosticFilePath},
 		{name: "crash on OOM disabled by caller", value: "-XX:-CrashOnOutOfMemoryError", category: VMParameterDiagnosticFilePath},
+		{name: "crash core dump enabled", value: "-XX:+CreateCoredumpOnCrash", category: VMParameterDiagnosticFilePath},
+		{name: "crash core dump disabled by caller", value: "-XX:-CreateCoredumpOnCrash", category: VMParameterDiagnosticFilePath},
 		{name: "error file", value: "-XX:ErrorFile=/tmp/hs_err.log", category: VMParameterDiagnosticFilePath},
 		{name: "replay data file", value: "-XX:ReplayDataFile=/tmp/replay", category: VMParameterDiagnosticFilePath},
 		{name: "shared archive file", value: "-XX:SharedArchiveFile=/tmp/app.jsa", category: VMParameterDiagnosticFilePath},

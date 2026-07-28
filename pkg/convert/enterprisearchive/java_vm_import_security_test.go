@@ -165,6 +165,11 @@ Java_VM_Params=-Xmx512m -XX:+HeapDumpAfterFullGC`,
 Java_VM_Params=-Xmx512m -XX:+CrashOnOutOfMemoryError`,
 		},
 		{
+			name: "crash core dump",
+			content: `[JavaVM:Options]
+Java_VM_Params=-Xmx512m -XX:+CreateCoredumpOnCrash`,
+		},
+		{
 			name: "management server",
 			content: `[JavaVM:Options]
 Java_VM_Params=-Xmx512m -XX:+ManagementServer`,

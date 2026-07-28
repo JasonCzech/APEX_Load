@@ -124,7 +124,7 @@ func (s *Server) startPersistentSession(
 		return nil, &safeFailure{code: "target_method_invalid"}
 	}
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
-		VMParameters: prepared.vmParameters, HarnessJar: prepared.harnessJar,
+		VMParameters: prepared.vmParameters, JavaMajor: prepared.jdk.Major, HarnessJar: prepared.harnessJar,
 		ScriptClasspath: prepared.scriptClasspath, SharedClasspath: prepared.sharedClasspath,
 		DedicatedClassLoader: prepared.dedicatedLoader, HarnessMain: defaultHarnessMain,
 		HarnessArgs: []string{"--class", strings.TrimSpace(request.Command.ClassName), "--method", method, "--session"},

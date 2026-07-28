@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
-import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus } from './replayPreflightUtils'
+import {
+  buildLocalReplayPreflight,
+  reconcileReplayPreflightSecretStatus,
+  replayPreflightStatusLabel,
+} from './replayPreflightUtils'
 
 const baseScript: ScriptDefinition = {
   name: 'API Smoke',
@@ -19,6 +23,117 @@ const baseScript: ScriptDefinition = {
 }
 
 describe('buildLocalReplayPreflight', () => {
+  it('reports durable execution blockers as replay-blocking readiness failures', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        metadata: {
+          execution_blocker: 'credential_parameter_source_redacted',
+        },
+      }],
+    })
+
+    expect(preflight.valid).toBe(false)
+    expect(preflight.issues).toEqual([
+      'actions[0] "Get profile": execution blocker credential_parameter_source_redacted blocks replay until the imported behavior is resolved',
+    ])
+    expect(preflight.checks?.find(check => check.id === 'review_gates')).toMatchObject({
+      status: 'fail',
+      detail: expect.stringContaining('credential_parameter_source_redacted'),
+    })
+    expect(replayPreflightStatusLabel(preflight)).toBe('Needs attention')
+  })
+
+  it('finds execution blockers throughout sequence and deeply nested control surfaces', () => {
+    let nested: ScriptActionDefinition = {
+      name: 'Deep blocked request',
+      type: 'GET',
+      method: 'GET',
+      target: '/deep',
+      metadata: { execution_blocker: 'deep_import_gate' },
+    }
+    for (let depth = 0; depth < 33; depth += 1) {
+      nested = {
+        name: `Loop ${depth}`,
+        type: 'control_loop',
+        target: '',
+        control: { steps: [nested], count: 1 },
+      }
+    }
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [
+        nested,
+        {
+          name: 'Sequence',
+          type: 'http_sequence',
+          target: '',
+          params: {
+            requests: [{
+              name: 'Blocked child',
+              type: 'GET',
+              target: '/child',
+              metadata: { execution_blockers: ['second_gate', 'first_gate'] },
+            }],
+          },
+        },
+      ],
+    })
+
+    expect(preflight.valid).toBe(false)
+    expect(preflight.issues).toEqual(expect.arrayContaining([
+      expect.stringContaining('deep_import_gate'),
+      'actions[1].params.requests[0] "Blocked child": execution blocker first_gate, second_gate blocks replay until the imported behavior is resolved',
+    ]))
+  })
+
+  it('mirrors durable importer and browser review-policy gates', () => {
+    const durable = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        metadata: { review_gate: 'bruno_missing_variables' },
+      }],
+    })
+    expect(durable.valid).toBe(false)
+    expect(durable.issues).toEqual([
+      'actions[0] "Get profile": review-required action blocks replay until review metadata is removed',
+    ])
+
+    const browserAction: ScriptActionDefinition = {
+      name: 'Evaluate imported JavaScript',
+      type: 'BROWSER_EVALUATE_JS',
+      target: 'document.title',
+      metadata: { review_gate: 'javascript' },
+    }
+    const blocked = buildLocalReplayPreflight({
+      ...baseScript,
+      protocol: 'browser',
+      config: {
+        base_url: 'https://app.example.com',
+        browser: { review_policy: { allow_reviewed_javascript: false } },
+      },
+      actions: [browserAction],
+    })
+    expect(blocked.valid).toBe(false)
+    expect(blocked.issues).toEqual([
+      'actions[0] "Evaluate imported JavaScript": review-gated JavaScript requires config.browser.review_policy.allow_reviewed_javascript=true before replay',
+    ])
+
+    const allowed = buildLocalReplayPreflight({
+      ...baseScript,
+      protocol: 'browser',
+      config: {
+        base_url: 'https://app.example.com',
+        browser: { review_policy: { allow_reviewed_javascript: true } },
+      },
+      actions: [browserAction],
+    })
+    expect(allowed.valid).toBe(true)
+    expect(allowed.issues).toEqual([])
+  })
+
   it('uses seeded variables and parameters as available replay variables', () => {
     const preflight = buildLocalReplayPreflight({
       ...baseScript,

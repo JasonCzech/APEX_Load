@@ -82,7 +82,7 @@ RunLogicPaceConstTime="5"`,
 	}
 }
 
-func TestResolveRuntimeConfigFlagsProfileConflictAndInvalidBounds(t *testing.T) {
+func TestResolveRuntimeConfigProfileConflictUsesDefaultsWithoutReadingEitherUSP(t *testing.T) {
 	files := map[string]string{
 		"active.cfg": `[General]
 DefaultRunLogic=direct.usp`,
@@ -100,22 +100,26 @@ RunLogicPaceType="ASAP"`,
 		RunLogicProfiles: map[string]string{"Profile": "mapped.usp"},
 	}
 	cfgName, rc := resolveRuntimeConfig(files, project)
-	if rc.Iterations != 1 || rc.MinDelayMs != 0 || rc.MaxDelayMs != 0 {
-		t.Fatalf("invalid values did not use defaults: %#v", rc)
+	if rc.Iterations != 1 || rc.PacingType != "none" ||
+		rc.MinDelayMs != 0 || rc.MaxDelayMs != 0 {
+		t.Fatalf("conflicting profile did not use APEX defaults: %#v", rc)
 	}
-	if len(rc.RuntimeIssues) < 3 {
-		t.Fatalf("issues = %#v, want conflict, iterations, and bounds", rc.RuntimeIssues)
+	if len(rc.RuntimeIssues) != 2 {
+		t.Fatalf("issues = %#v, want conflict and default-iteration findings only", rc.RuntimeIssues)
 	}
 	sections := selectedRuntimeSections(collectRuntimeSections(files), cfgName, rc)
 	parity := applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(sections, "http"), rc)
 	pacing := runtimeParityEntryByID(t, parity, "pacing")
-	if strings.Join(pacing.RuntimeFiles, ",") != "active.cfg,direct.usp" {
-		t.Fatalf("pacing provenance = %#v, want cfg/USP union", pacing.RuntimeFiles)
+	if strings.Join(pacing.RuntimeFiles, ",") != "active.cfg" {
+		t.Fatalf("pacing provenance = %#v, want the cfg containing the conflicting direct pointer", pacing.RuntimeFiles)
 	}
-	for _, evidence := range []string{"profile conflict", "invalid random delay bounds"} {
-		if !strings.Contains(strings.ToLower(pacing.Notes), evidence) {
+	for _, evidence := range []string{"profile conflict", "direct.usp", "mapped.usp", "using APEX pacing defaults"} {
+		if !strings.Contains(strings.ToLower(pacing.Notes), strings.ToLower(evidence)) {
 			t.Fatalf("pacing notes = %q, missing %q", pacing.Notes, evidence)
 		}
+	}
+	if strings.Contains(strings.ToLower(pacing.Notes), "invalid random delay bounds") {
+		t.Fatalf("rejected direct USP was parsed after selection conflict: %q", pacing.Notes)
 	}
 }
 
@@ -1208,12 +1212,13 @@ RunLogicPaceConstTime=5`,
 
 func TestResolveRunLogicComparesResolvedArchiveIdentities(t *testing.T) {
 	tests := []struct {
-		name         string
-		files        map[string]string
-		mapped       string
-		wantIssue    bool
-		wantPacing   string
-		wantInterval int
+		name           string
+		files          map[string]string
+		mapped         string
+		wantIssue      bool
+		wantIterations int
+		wantPacing     string
+		wantInterval   int
 	}{
 		{
 			name: "qualified direct and unique unqualified mapped pointer",
@@ -1224,8 +1229,9 @@ DefaultRunLogic=profiles/a/selected.usp`,
 RunLogicNumOfIterations=2
 RunLogicPaceType=ASAP`,
 			},
-			mapped:     "selected.usp",
-			wantPacing: "none",
+			mapped:         "selected.usp",
+			wantIterations: 2,
+			wantPacing:     "none",
 		},
 		{
 			name: "ambiguous unqualified mapped pointer remains conflict",
@@ -1240,9 +1246,10 @@ RunLogicNumOfIterations=3
 RunLogicPaceType=Const
 RunLogicPaceConstTime=9`,
 			},
-			mapped:     "selected.usp",
-			wantIssue:  true,
-			wantPacing: "none",
+			mapped:         "selected.usp",
+			wantIssue:      true,
+			wantIterations: 1,
+			wantPacing:     "none",
 		},
 		{
 			name: "different resolved files remain conflict",
@@ -1257,9 +1264,10 @@ RunLogicNumOfIterations=3
 RunLogicPaceType=Const
 RunLogicPaceConstTime=9`,
 			},
-			mapped:     "profiles/b/other.usp",
-			wantIssue:  true,
-			wantPacing: "none",
+			mapped:         "profiles/b/other.usp",
+			wantIssue:      true,
+			wantIterations: 1,
+			wantPacing:     "none",
 		},
 		{
 			name: "unqualified direct and qualified mapped pointer resolve to different duplicate basenames",
@@ -1274,9 +1282,10 @@ RunLogicNumOfIterations=3
 RunLogicPaceType=Const
 RunLogicPaceConstTime=9`,
 			},
-			mapped:     "profiles/a/selected.usp",
-			wantIssue:  true,
-			wantPacing: "none",
+			mapped:         "profiles/a/selected.usp",
+			wantIssue:      true,
+			wantIterations: 1,
+			wantPacing:     "none",
 		},
 	}
 	for _, test := range tests {
@@ -1287,7 +1296,7 @@ RunLogicPaceConstTime=9`,
 				RunLogicProfiles: map[string]string{"active": test.mapped},
 			}
 			_, rc := resolveRuntimeConfig(test.files, project)
-			if rc.Iterations != 2 ||
+			if rc.Iterations != test.wantIterations ||
 				rc.PacingType != test.wantPacing ||
 				rc.IntervalMs != test.wantInterval ||
 				runtimeConfigHasIssue(rc, "pacing") != test.wantIssue {

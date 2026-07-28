@@ -2324,6 +2324,7 @@ func (j *JavaVuser) commandArgs(cmd runCommand) ([]string, error) {
 		}
 		plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
 			VMParameters:         j.cfg.AdditionalVMParameters,
+			JavaMajor:            resolvedJavaMajor(j.cfg.ResolvedJDK),
 			HarnessJar:           j.cfg.HarnessJar,
 			ScriptClasspath:      j.cfg.ScriptClasspath,
 			SharedClasspath:      sharedClasspath,
@@ -2356,6 +2357,13 @@ func (j *JavaVuser) commandArgs(cmd runCommand) ([]string, error) {
 	}
 	args = append(args, harnessArgs...)
 	return args, nil
+}
+
+func resolvedJavaMajor(jdk *javarunner.ResolvedJDK) int {
+	if jdk == nil {
+		return 0
+	}
+	return jdk.Major
 }
 
 func (j *JavaVuser) decorateRunCommand(command *runCommand) {

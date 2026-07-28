@@ -72,6 +72,9 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.Blockers = append(report.Blockers, javaVuserLifecycleFidelityBlockers(result)...)
 		if result.Script != nil {
 			report.SecretGated = countSecretGatedActions(result.Script)
+			if countCSourceParseFailureGates(result.Script) > 0 {
+				report.Blockers = append(report.Blockers, "One or more C lifecycle source files were missing, ambiguous, or incompletely parsed.")
+			}
 			report.ParameterParity = buildParameterParity(result.Script, files, projectConfig)
 			if result.Script.Protocol == "jms-solace" && !result.Script.Config.JMS.Mock {
 				report.Blockers = append(report.Blockers, "Real Solace JMS replay requires an approved adapter or governed sidecar runner plus runtime credentials/truststore before promotion.")
@@ -100,6 +103,29 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.PromotionStatus = ImportPromotionBlocked
 	}
 	return report
+}
+
+func countCSourceParseFailureGates(script *dsl.Script) int {
+	if script == nil {
+		return 0
+	}
+	count := 0
+	var walk func([]dsl.Action)
+	walk = func(actions []dsl.Action) {
+		for _, action := range actions {
+			if strings.TrimSpace(stringMapValue(action.Metadata, "execution_blocker", "")) == cSourceParseFailureCode {
+				count++
+			}
+			if action.Control != nil {
+				walk(action.Control.Steps)
+				walk(action.Control.Else)
+			}
+		}
+	}
+	walk(script.Init)
+	walk(script.Actions)
+	walk(script.Teardown)
+	return count
 }
 
 func javaReviewPathKey(value string) string {
@@ -172,10 +198,13 @@ func fidelityHasJavaVuserRun(actions []dsl.Action) bool {
 
 func buildFidelitySourceFiles(files map[string]string, projectConfig *ProjectConfig) []ImportFidelitySourceFile {
 	sourceActions := map[string]SourceActionFile{}
+	sourceActionsByBase := map[string][]SourceActionFile{}
 	if projectConfig != nil {
 		for _, sourceFile := range projectConfig.SourceActionFiles {
-			key := strings.ToLower(filepath.Base(sourceFile.Name))
+			key := strings.ToLower(normalizeRuntimeArchivePath(sourceFile.Name))
 			sourceActions[key] = sourceFile
+			base := strings.ToLower(filepath.Base(sourceFile.Name))
+			sourceActionsByBase[base] = append(sourceActionsByBase[base], sourceFile)
 		}
 	}
 	names := make([]string, 0, len(files))
@@ -191,7 +220,15 @@ func buildFidelitySourceFiles(files map[string]string, projectConfig *ProjectCon
 			Role:     sourceFileRole(name),
 			Bytes:    len(files[name]),
 		}
-		if action, ok := sourceActions[strings.ToLower(filepath.Base(name))]; ok {
+		action, ok := sourceActions[strings.ToLower(normalizeRuntimeArchivePath(name))]
+		if !ok {
+			candidates := sourceActionsByBase[strings.ToLower(filepath.Base(name))]
+			if len(candidates) == 1 &&
+				!strings.Contains(normalizeRuntimeArchivePath(candidates[0].Name), "/") {
+				action, ok = candidates[0], true
+			}
+		}
+		if ok {
 			entry.Phase = action.Phase
 			entry.Language = convertutil.FirstNonEmpty(action.Language, entry.Language)
 			entry.Role = "lifecycle_action"

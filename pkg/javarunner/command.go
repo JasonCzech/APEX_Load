@@ -10,12 +10,17 @@ const DefaultHarnessMain = "Harness"
 const enforcedDisableAttachMechanism = "-XX:+DisableAttachMechanism"
 const enforcedDisableOpenJ9Attach = "-Dcom.ibm.tools.attach.enable=no"
 const enforcedDisableHeapDumpOnOOM = "-XX:-HeapDumpOnOutOfMemoryError"
+const enforcedDisableCrashCoreDump = "-XX:-CreateCoredumpOnCrash"
 
 // CommandSpec describes the operator- and script-owned portions of a direct
 // Java harness launch. VMParameters are already exact argv tokens; no quoting
 // or shell expansion is performed.
 type CommandSpec struct {
-	VMParameters         []string
+	VMParameters []string
+	// JavaMajor is the already-probed launcher major. Zero means unknown and
+	// keeps the modern fail-closed defaults. The explicit legacy Java 8 lane
+	// omits flags introduced after Java 8 so its JVM can still start.
+	JavaMajor            int
 	HarnessJar           string
 	ScriptClasspath      []string
 	SharedClasspath      []string
@@ -62,16 +67,21 @@ func BuildCommand(spec CommandSpec) (CommandPlan, error) {
 		Args: append([]string(nil), spec.VMParameters...),
 	}
 	// Every VUser JVM in a sidecar shares an OS identity and working directory.
-	// Enforce both HotSpot and OpenJ9 attach isolation, plus vendor-compatible
-	// OOM heap-dump suppression, after all caller-owned VM tokens so
-	// last-option precedence cannot reopen a sibling-memory or heap-artifact
-	// disclosure path.
+	// Enforce both HotSpot and OpenJ9 attach isolation, OOM heap-dump
+	// suppression, and HotSpot crash-core suppression after all caller-owned VM
+	// tokens so last-option precedence cannot reopen a sibling-memory or
+	// heap-artifact disclosure path. CreateCoredumpOnCrash was introduced in
+	// HotSpot 9, so the operator-enabled legacy Java 8 lane cannot receive it;
+	// OpenJ9 ignores an unrecognized -XX: option, but HotSpot 8 fails startup.
 	plan.Args = append(
 		plan.Args,
 		enforcedDisableAttachMechanism,
 		enforcedDisableOpenJ9Attach,
 		enforcedDisableHeapDumpOnOOM,
 	)
+	if spec.JavaMajor != 8 {
+		plan.Args = append(plan.Args, enforcedDisableCrashCoreDump)
+	}
 	if spec.DedicatedClassLoader {
 		if harnessJar == "" {
 			return CommandPlan{}, fmt.Errorf("dedicated Java class loader requires an operator harness jar")

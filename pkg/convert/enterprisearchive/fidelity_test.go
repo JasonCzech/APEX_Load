@@ -82,6 +82,33 @@ func TestBuildImportFidelityReportOtherExternalRunnerRemainsBlocked(t *testing.T
 	}
 }
 
+func TestBuildFidelitySourceFilesKeepsQualifiedDuplicateBasenamePhases(t *testing.T) {
+	files := map[string]string{
+		"lifecycle/init/Action.c":   "int InitAction() { return 0; }",
+		"lifecycle/main/Action.c":   "int Action() { return 0; }",
+		"lifecycle/finish/Action.c": "int EndAction() { return 0; }",
+	}
+	project := &ProjectConfig{SourceActionFiles: []SourceActionFile{
+		{Name: "lifecycle/init/Action.c", Phase: "init", Language: "c"},
+		{Name: "lifecycle/main/Action.c", Phase: "action", Language: "c"},
+		{Name: "lifecycle/finish/Action.c", Phase: "teardown", Language: "c"},
+	}}
+	report := BuildImportFidelityReport(&ConvertResult{}, files, project, nil)
+	got := make(map[string]string, len(report.SourceFiles))
+	for _, sourceFile := range report.SourceFiles {
+		got[sourceFile.Path] = sourceFile.Phase
+	}
+	for path, phase := range map[string]string{
+		"lifecycle/init/Action.c":   "init",
+		"lifecycle/main/Action.c":   "action",
+		"lifecycle/finish/Action.c": "teardown",
+	} {
+		if got[path] != phase {
+			t.Fatalf("source phases = %#v, want %s=%s", got, path, phase)
+		}
+	}
+}
+
 func combinedJavaVuserFidelityResult() *ConvertResult {
 	return &ConvertResult{
 		DetectedProtocol: &DetectedProtocol{
