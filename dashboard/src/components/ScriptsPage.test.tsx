@@ -12,6 +12,8 @@ import ScriptsPage from './ScriptsPage'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  // The authoring surface now renders a destination-folder control.
+  listFolders: vi.fn(() => Promise.resolve({ folders: [], count: 0 })),
   listScripts: vi.fn(),
   getScript: vi.fn(),
   getScriptSecretStatus: vi.fn(),
