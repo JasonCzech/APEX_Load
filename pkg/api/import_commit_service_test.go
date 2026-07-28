@@ -985,6 +985,28 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 	if committed.StoredScript.ID != initial.ID {
 		t.Fatalf("reconciled script id = %q, want %q", committed.StoredScript.ID, initial.ID)
 	}
+	// Pin the client-visible flags, not just the durable script id. This retry
+	// reconciles rather than replays: the interrupted first attempt never
+	// persisted a row, so the retry genuinely creates one and must say so.
+	//
+	// Note what this does NOT cover. The idempotent_replay=true branch needs a
+	// retry against a commit that already persisted, and after a successful
+	// commit the session claim is completed, so a retry is rejected at claim time
+	// rather than reaching the replay branch. That branch is effectively
+	// unreachable for this path until a durable receipt exists (Phase 5.1) --
+	// which is exactly why completeImportCandidateClaim stays epoch-fenced.
+	var replayFlags struct {
+		Created          bool `json:"created"`
+		IdempotentReplay bool `json:"idempotent_replay"`
+		Replaced         bool `json:"replaced"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &replayFlags); err != nil {
+		t.Fatal(err)
+	}
+	if replayFlags.Replaced || !replayFlags.Created || replayFlags.IdempotentReplay {
+		t.Fatalf("reconciled create flags = created:%v idempotent_replay:%v replaced:%v, want true/false/false",
+			replayFlags.Created, replayFlags.IdempotentReplay, replayFlags.Replaced)
+	}
 	scripts, err := store.ListScripts(candidate.ProjectID, nil)
 	if err != nil {
 		t.Fatal(err)
