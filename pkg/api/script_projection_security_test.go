@@ -65,6 +65,20 @@ func secretBearingScript(id, projectID string) *dsl.Script {
 	}
 }
 
+func TestDisclosureSafeScriptNameSurvivesLargeCredentialSource(t *testing.T) {
+	script := secretBearingScript("large-name-projection", "project-a")
+	script.Actions[0].Params = map[string]any{
+		"ordinary_blob": strings.Repeat("x", 4<<20),
+	}
+
+	if got := disclosureSafeScriptName("acc_wls_reg_1", script); got != "acc_wls_reg_1" {
+		t.Fatalf("disclosureSafeScriptName() = %q, want stored name", got)
+	}
+	if got := disclosureSafeScriptName("global-password", script); got != maskedScriptSecret {
+		t.Fatalf("credential-equal script name = %q, want redacted", got)
+	}
+}
+
 // seedLegacySecretScript models a pre-upgrade in-memory row. Current durable
 // persistence APIs reject these plaintext credentials; projection/export tests
 // still need to prove that an upgraded legacy row cannot be disclosed.

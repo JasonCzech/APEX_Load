@@ -5,10 +5,39 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestProjectBudgetFallbackPreservesTypedTimestamps(t *testing.T) {
+	script, secrets := largeCredentialBearingLabelSource()
+	script.CreatedAt = time.Date(2026, time.July, 28, 12, 0, 0, 0, time.UTC)
+	script.UpdatedAt = script.CreatedAt.Add(time.Minute)
+
+	projected, err := ProjectWithCredentialSource(script, script)
+	if err != nil {
+		t.Fatalf("ProjectWithCredentialSource: %v", err)
+	}
+	if !projected.CreatedAt.Equal(script.CreatedAt) || !projected.UpdatedAt.Equal(script.UpdatedAt) {
+		t.Fatalf(
+			"projected timestamps = %s/%s, want %s/%s",
+			projected.CreatedAt,
+			projected.UpdatedAt,
+			script.CreatedAt,
+			script.UpdatedAt,
+		)
+	}
+	if projected.Name != script.Name {
+		t.Fatalf("projected script name = %q, want %q", projected.Name, script.Name)
+	}
+	if payload, err := json.Marshal(projected); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(string(payload), secrets[0]) {
+		t.Fatal("budget fallback disclosed a known credential")
+	}
+}
 
 func TestProjectPreservesRequestSemanticsAndMasksKnownCredentialEverywhere(t *testing.T) {
 	const secret = "receipt-projector-canary-7f4c"
@@ -1116,6 +1145,17 @@ func TestKnownCredentialComparisonBudgetFailsClosedDeterministically(t *testing.
 		key: "method", schemaScalar: true,
 	}); got != "GET" {
 		t.Fatalf("budget fallback corrupted schema discriminator: %q", got)
+	}
+	p.knownSecrets = []string{"credential-name"}
+	if got := p.projectString("ordinary-name", projectionContext{
+		key: "name", scriptName: true,
+	}); got != "ordinary-name" {
+		t.Fatalf("budget fallback corrupted ordinary script name: %q", got)
+	}
+	if got := p.projectString("credential-name", projectionContext{
+		key: "name", scriptName: true,
+	}); got != credential.Redacted {
+		t.Fatalf("budget fallback disclosed credential-equal script name: %q", got)
 	}
 }
 

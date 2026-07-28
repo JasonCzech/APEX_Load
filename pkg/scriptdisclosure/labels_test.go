@@ -2,12 +2,30 @@ package scriptdisclosure
 
 import (
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func largeCredentialBearingLabelSource() (*dsl.Script, []string) {
+	params := make(map[string]any, 21)
+	secrets := make([]string, 20)
+	for index := range secrets {
+		secrets[index] = "large-label-secret-" + strconv.Itoa(index)
+		params["field_"+strconv.Itoa(index)+"_password"] = secrets[index]
+	}
+	params["ordinary_blob"] = strings.Repeat("x", 4<<20)
+	return &dsl.Script{
+		Name: "Large imported script", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "request", Type: "POST", Method: "POST", Target: "/",
+			Params: params,
+		}},
+	}, secrets
+}
 
 func TestProjectLabelUsesCredentialSourcesWithoutChangingThem(t *testing.T) {
 	const password = "label-password-canary-83d2"
@@ -27,6 +45,22 @@ func TestProjectLabelUsesCredentialSourcesWithoutChangingThem(t *testing.T) {
 	}
 	if source.Config.HTTP.Auth.Password != password {
 		t.Fatalf("ProjectLabel changed executable password to %q", source.Config.HTTP.Auth.Password)
+	}
+}
+
+func TestProjectLabelsBoundsOnlyOutputComparisonForLargeCredentialSource(t *testing.T) {
+	source, secrets := largeCredentialBearingLabelSource()
+
+	got := ProjectLabels([]string{
+		"acc_wls_reg_1",
+		"run " + secrets[0],
+	}, source)
+
+	if got[0] != "acc_wls_reg_1" {
+		t.Fatalf("ordinary large-script label = %q, want unchanged", got[0])
+	}
+	if strings.Contains(got[1], secrets[0]) || !strings.Contains(got[1], credential.Redacted) {
+		t.Fatalf("credential-bearing large-script label = %q, want credential redacted", got[1])
 	}
 }
 

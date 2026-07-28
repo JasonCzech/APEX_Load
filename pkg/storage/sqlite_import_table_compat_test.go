@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 // seedLegacyBrunoSchema is a fixed fixture for the physical table identities
@@ -217,6 +219,116 @@ func TestFreshDatabaseUsesLegacyBrunoPhysicalImportTables(t *testing.T) {
 		if renamedExists {
 			t.Fatalf("fresh database unexpectedly created %s", table.renamed)
 		}
+	}
+}
+
+func TestBrokenReverseMigrationForeignKeysAreRepairedForScriptDelete(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "broken-reverse-migration.db")
+	initial, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("create initial store: %v", err)
+	}
+	if err := initial.Close(); err != nil {
+		t.Fatalf("close initial store: %v", err)
+	}
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	if _, err := raw.Exec(`PRAGMA legacy_alter_table = OFF`); err != nil {
+		t.Fatalf("disable legacy alter table: %v", err)
+	}
+	for _, table := range importPhysicalTables() {
+		if _, err := raw.Exec(`ALTER TABLE ` + table.legacy + ` RENAME TO ` + table.renamed); err != nil {
+			t.Fatalf("rename %s to %s: %v", table.legacy, table.renamed, err)
+		}
+	}
+	if _, err := raw.Exec(`PRAGMA legacy_alter_table = ON`); err != nil {
+		t.Fatalf("enable legacy alter table: %v", err)
+	}
+	for _, table := range importPhysicalTables() {
+		if _, err := raw.Exec(`ALTER TABLE ` + table.renamed + ` RENAME TO ` + table.legacy); err != nil {
+			t.Fatalf("reverse rename %s to %s: %v", table.renamed, table.legacy, err)
+		}
+	}
+	now := time.Now().UTC()
+	if _, err := raw.Exec(`INSERT INTO bruno_source_artifacts (
+		id, project_id, artifact_kind, backend_key, sha256, size_bytes,
+		encryption_json, lifecycle_state, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"repair-artifact", "project-1", "raw", "repair/key", "repair-sha", 12,
+		`{"alg":"test"}`, "active", now,
+	); err != nil {
+		t.Fatalf("seed artifact in broken schema: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO bruno_source_revisions (
+		id, script_id, project_id, active_flag, raw_artifact_id,
+		sanitized_artifact_id, sanitized_available, source_format,
+		compatibility_version, identity_map_json, import_options_json,
+		security_profile_json, change_summary_json, secret_bindings_json,
+		canonical_script_json, created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"repair-revision", "source-script", "project-1", 1, "repair-artifact",
+		"repair-artifact", 0, "bruno_native", "v1", `{}`, `{}`, `{}`, `{}`, `{}`, `{}`, now,
+	); err != nil {
+		t.Fatalf("seed revision in broken schema: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close broken raw db: %v", err)
+	}
+
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("open repaired store: %v", err)
+	}
+	defer store.Close()
+	var foreignKeysEnabled int
+	if err := store.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeysEnabled); err != nil {
+		t.Fatalf("read foreign_keys after repair: %v", err)
+	}
+	if foreignKeysEnabled != 1 {
+		t.Fatalf("foreign_keys after repair = %d, want 1", foreignKeysEnabled)
+	}
+
+	for _, table := range []string{"bruno_source_revisions", "bruno_native_import_batches"} {
+		broken, err := store.importTableHasRenamedForeignKeyTarget(
+			table,
+			"import_source_artifacts",
+			"import_source_revisions",
+		)
+		if err != nil {
+			t.Fatalf("inspect repaired %s: %v", table, err)
+		}
+		if broken {
+			t.Fatalf("%s still references removed generic import tables", table)
+		}
+	}
+	var repairedArtifactID string
+	if err := store.db.QueryRow(
+		`SELECT raw_artifact_id FROM bruno_source_revisions WHERE id = ?`,
+		"repair-revision",
+	).Scan(&repairedArtifactID); err != nil {
+		t.Fatalf("read revision preserved by repair: %v", err)
+	}
+	if repairedArtifactID != "repair-artifact" {
+		t.Fatalf("preserved revision artifact = %q, want repair-artifact", repairedArtifactID)
+	}
+
+	script := &dsl.Script{ID: "delete-after-fk-repair", Name: "Delete after FK repair", Protocol: "http"}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("save script after repair: %v", err)
+	}
+	stored, err := store.GetScript(script.ID)
+	if err != nil {
+		t.Fatalf("get script after repair: %v", err)
+	}
+	deleted, err := store.DeleteScriptIfUnchanged(stored.ID, stored.UpdatedAt)
+	if err != nil {
+		t.Fatalf("delete script after repair: %v", err)
+	}
+	if !deleted {
+		t.Fatal("delete script after repair reported no deletion")
 	}
 }
 

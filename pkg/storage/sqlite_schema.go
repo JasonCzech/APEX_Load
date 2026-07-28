@@ -1337,6 +1337,9 @@ func (s *SQLiteStore) init() error {
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
+	if err := s.repairLegacyImportForeignKeyTargets(); err != nil {
+		return err
+	}
 	if err := s.backfillSanitizedSourceAvailability(); err != nil {
 		return err
 	}

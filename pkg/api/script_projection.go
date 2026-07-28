@@ -805,16 +805,7 @@ func disclosureSafeScriptName(name string, credentialSource *dsl.Script) string 
 	if credentialSource == nil {
 		return scrubScriptText(name, false)
 	}
-	probe := cloneScriptDefinition(credentialSource)
-	if probe == nil {
-		return maskedScriptSecret
-	}
-	probe.Name = name
-	projected := maskScriptSecrets(probe)
-	if projected == nil {
-		return maskedScriptSecret
-	}
-	return projected.Name
+	return scriptdisclosure.ProjectLabel(name, credentialSource)
 }
 
 func maskStoredScripts(scripts []*StoredScript) []*StoredScript {

@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // Import persistence keeps the Bruno-era physical table names even though the
@@ -208,6 +209,188 @@ func (s *SQLiteStore) ensureCompatibleImportPhysicalTableLayout() error {
 		}
 	}
 	return tx.Commit()
+}
+
+// repairLegacyImportForeignKeyTargets fixes SQLite schemas produced by the
+// short-lived generic import-table migration when it was reversed with
+// legacy_alter_table enabled. In that state the physical tables have their
+// compatible Bruno names again, but the child-table declarations still point
+// at import_source_artifacts/import_source_revisions. SQLite resolves those
+// missing parents even for a zero-row DELETE, so every script deletion fails
+// and rolls back.
+func (s *SQLiteStore) repairLegacyImportForeignKeyTargets() error {
+	if s.db.dialect != storeDialectSQLite {
+		return nil
+	}
+	revisionsBroken, err := s.importTableHasRenamedForeignKeyTarget(
+		"bruno_source_revisions",
+		"import_source_artifacts",
+		"import_source_revisions",
+	)
+	if err != nil {
+		return err
+	}
+	batchesBroken, err := s.importTableHasRenamedForeignKeyTarget(
+		"bruno_native_import_batches",
+		"import_source_artifacts",
+	)
+	if err != nil {
+		return err
+	}
+	if !revisionsBroken && !batchesBroken {
+		return nil
+	}
+
+	if _, err := s.db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable foreign keys for import schema repair: %w", err)
+	}
+	defer func() {
+		_, _ = s.db.Exec(`PRAGMA foreign_keys = ON`)
+	}()
+	if _, err := s.db.Exec(`PRAGMA legacy_alter_table = ON`); err != nil {
+		return fmt.Errorf("enable legacy alter-table behavior for import schema repair: %w", err)
+	}
+	defer func() {
+		_, _ = s.db.Exec(`PRAGMA legacy_alter_table = OFF`)
+	}()
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin import foreign-key repair: %w", err)
+	}
+	defer tx.Rollback()
+
+	if revisionsBroken {
+		for _, statement := range []string{
+			`CREATE TABLE bruno_source_revisions_fk_repair (
+				id TEXT PRIMARY KEY,
+				script_id TEXT NOT NULL REFERENCES scripts(id),
+				project_id TEXT NOT NULL REFERENCES projects(id),
+				parent_revision_id TEXT REFERENCES bruno_source_revisions(id),
+				active_flag INTEGER NOT NULL DEFAULT 0,
+				raw_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+				sanitized_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+				sanitized_available INTEGER NOT NULL DEFAULT 0,
+				source_format TEXT NOT NULL,
+				compatibility_version TEXT NOT NULL,
+				identity_map_json TEXT NOT NULL,
+				import_options_json TEXT NOT NULL,
+				dependency_snapshot_ref TEXT,
+				security_profile_json TEXT NOT NULL,
+				change_summary_json TEXT NOT NULL,
+				secret_bindings_json TEXT NOT NULL,
+				canonical_script_json TEXT NOT NULL,
+				created_by TEXT,
+				created_at DATETIME NOT NULL
+			)`,
+			`INSERT INTO bruno_source_revisions_fk_repair (
+				id, script_id, project_id, parent_revision_id, active_flag,
+				raw_artifact_id, sanitized_artifact_id, sanitized_available,
+				source_format, compatibility_version, identity_map_json,
+				import_options_json, dependency_snapshot_ref, security_profile_json,
+				change_summary_json, secret_bindings_json, canonical_script_json,
+				created_by, created_at
+			) SELECT
+				id, script_id, project_id, parent_revision_id, active_flag,
+				raw_artifact_id, sanitized_artifact_id, sanitized_available,
+				source_format, compatibility_version, identity_map_json,
+				import_options_json, dependency_snapshot_ref, security_profile_json,
+				change_summary_json, secret_bindings_json, canonical_script_json,
+				created_by, created_at
+			FROM bruno_source_revisions`,
+			`DROP TABLE bruno_source_revisions`,
+			`ALTER TABLE bruno_source_revisions_fk_repair RENAME TO bruno_source_revisions`,
+			`CREATE INDEX idx_bruno_revisions_script_created ON bruno_source_revisions(script_id, created_at)`,
+			`CREATE INDEX idx_bruno_revisions_project_active ON bruno_source_revisions(project_id, active_flag)`,
+			`CREATE UNIQUE INDEX idx_bruno_revisions_one_active ON bruno_source_revisions(script_id, project_id) WHERE active_flag = 1`,
+		} {
+			if _, err := tx.Exec(statement); err != nil {
+				return fmt.Errorf("repair bruno_source_revisions foreign keys: %w", err)
+			}
+		}
+	}
+	if batchesBroken {
+		for _, statement := range []string{
+			`CREATE TABLE bruno_native_import_batches_fk_repair (
+				id TEXT PRIMARY KEY,
+				project_id TEXT NOT NULL REFERENCES projects(id),
+				source_profile TEXT NOT NULL DEFAULT 'bruno_native',
+				receipt_version INTEGER NOT NULL DEFAULT 1,
+				idempotency_key TEXT NOT NULL,
+				request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1',
+				request_sha256 TEXT NOT NULL,
+				raw_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+				sanitized_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+				candidate_ids_json TEXT NOT NULL,
+				script_ids_json TEXT NOT NULL,
+				scripts_json TEXT NOT NULL DEFAULT '[]',
+				created_by TEXT,
+				created_at DATETIME NOT NULL,
+				UNIQUE(project_id, idempotency_key)
+			)`,
+			`INSERT INTO bruno_native_import_batches_fk_repair (
+				id, project_id, source_profile, receipt_version, idempotency_key,
+				request_digest_profile, request_sha256, raw_artifact_id,
+				sanitized_artifact_id, candidate_ids_json, script_ids_json,
+				scripts_json, created_by, created_at
+			) SELECT
+				id, project_id, source_profile, receipt_version, idempotency_key,
+				request_digest_profile, request_sha256, raw_artifact_id,
+				sanitized_artifact_id, candidate_ids_json, script_ids_json,
+				scripts_json, created_by, created_at
+			FROM bruno_native_import_batches`,
+			`DROP TABLE bruno_native_import_batches`,
+			`ALTER TABLE bruno_native_import_batches_fk_repair RENAME TO bruno_native_import_batches`,
+			`CREATE INDEX idx_bruno_native_batches_project_created ON bruno_native_import_batches(project_id, created_at)`,
+		} {
+			if _, err := tx.Exec(statement); err != nil {
+				return fmt.Errorf("repair bruno_native_import_batches foreign keys: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit import foreign-key repair: %w", err)
+	}
+	if _, err := s.db.Exec(`PRAGMA legacy_alter_table = OFF`); err != nil {
+		return fmt.Errorf("restore alter-table behavior after import schema repair: %w", err)
+	}
+	if _, err := s.db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		return fmt.Errorf("restore foreign keys after import schema repair: %w", err)
+	}
+	var foreignKeysEnabled int
+	if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeysEnabled); err != nil {
+		return fmt.Errorf("verify foreign keys after import schema repair: %w", err)
+	}
+	if foreignKeysEnabled != 1 {
+		return fmt.Errorf("foreign keys remained disabled after import schema repair")
+	}
+	return nil
+}
+
+func (s *SQLiteStore) importTableHasRenamedForeignKeyTarget(table string, targets ...string) (bool, error) {
+	rows, err := s.db.Query(`PRAGMA foreign_key_list(` + table + `)`)
+	if err != nil {
+		return false, fmt.Errorf("inspect %s foreign keys: %w", table, err)
+	}
+	defer rows.Close()
+	renamed := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		renamed[strings.ToLower(strings.TrimSpace(target))] = struct{}{}
+	}
+	for rows.Next() {
+		var id, sequence int
+		var target, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &sequence, &target, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return false, fmt.Errorf("scan %s foreign key: %w", table, err)
+		}
+		if _, broken := renamed[strings.ToLower(strings.TrimSpace(target))]; broken {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("inspect %s foreign keys: %w", table, err)
+	}
+	return false, nil
 }
 
 // backfillSanitizedSourceAvailability marks pre-existing revisions as having a

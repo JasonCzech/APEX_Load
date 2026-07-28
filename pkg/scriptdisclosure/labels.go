@@ -84,6 +84,5 @@ func newLabelProjector(credentialSource *dsl.Script) (*projector, error) {
 		}
 	}
 	p.knownSecrets = collector.sorted()
-	p.configureKnownMatching(len(sourcePayload))
 	return p, nil
 }

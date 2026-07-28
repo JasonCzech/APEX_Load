@@ -57,6 +57,7 @@ type projectionContext struct {
 	sequenceParams bool
 	scriptMetadata bool
 	importMetadata bool
+	scriptName     bool
 	extractor      bool
 	extractorList  bool
 }
@@ -242,6 +243,7 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				sequenceParams: httpSequence &&
 					normalized == "params",
 				extractorList: ctx.action && normalized == "extractors",
+				scriptName:    depth == 0 && normalized == "name",
 			}
 			if depth == 0 && normalized == "metadata" {
 				childContext.untypedMap = false
@@ -410,6 +412,9 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 		// copied credential merely because the text happens to match one.
 		return value
 	}
+	if ctx.scriptName {
+		return p.replaceKnownLabel(value)
+	}
 	if ctx.javaVMArgument && javarunner.ContainsSensitiveVMParameterValue(value) {
 		return credential.Redacted
 	}
@@ -484,6 +489,22 @@ func (p *projector) replaceKnown(value string) string {
 	if !p.reserveKnownComparison(len(value)) {
 		return credential.Redacted
 	}
+	return p.replaceKnownValues(value)
+}
+
+func (p *projector) replaceKnownLabel(value string) string {
+	if value == "" || len(p.knownSecrets) == 0 {
+		return value
+	}
+	secretCount := int64(len(p.knownSecrets))
+	if secretCount <= 0 ||
+		int64(len(value)) > maxKnownCredentialComparisonWork/secretCount {
+		return credential.Redacted
+	}
+	return p.replaceKnownValues(value)
+}
+
+func (p *projector) replaceKnownValues(value string) string {
 	for _, secret := range p.knownSecrets {
 		if value == secret {
 			return credential.Redacted
@@ -658,7 +679,7 @@ func isDisclosureSchemaDiscriminator(key string) bool {
 		"redirectpolicy", "retrybackoff", "bodymode", "onmiss",
 		"convert", "update", "selection", "onexhaustion", "delimiter",
 		"charset", "timezone", "contenttype", "generatedby",
-		"generatedfrom":
+		"generatedfrom", "createdat", "updatedat":
 		return true
 	default:
 		return false
