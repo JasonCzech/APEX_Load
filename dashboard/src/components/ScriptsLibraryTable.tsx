@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 
 import { AuthoringHealthInput, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
+import type { ScriptValidationResponse } from '../types/scripts'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
 import { type ScriptSecretStatus } from '../types/secrets'
 import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
@@ -54,6 +55,7 @@ interface Props {
   secretStatusStateByScript?: Record<string, 'loading' | 'ready' | 'error'>
   onConfigureSecrets?: (script: StoredScript) => void
   onRetrySecretStatus?: (script: StoredScript) => void
+  onValidateScriptDetails?: (id: string) => Promise<ScriptValidationResponse>
 }
 
 function scriptContainsSecretReferences(script: StoredScript): boolean {
@@ -227,8 +229,85 @@ export default function ScriptsLibraryTable({
   secretStatusStateByScript = {},
   onConfigureSecrets,
   onRetrySecretStatus,
+  onValidateScriptDetails,
 }: Props) {
   const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
+  const openBlockerIssues = async (script: StoredScript) => {
+    const blockerInputs = script.authoring_health?.inputs.filter(input => input.status === 'blocker') || []
+    const validationInput = blockerInputs.find(input => input.key === 'validation_issues')
+    const summaryIssues: IssueDetail[] = blockerInputs
+      .filter(input => input.key !== 'validation_issues')
+      .map((input, index) => ({
+        id: `${input.key}-${index}`,
+        severity: 'blocker',
+        title: input.key.replace(/_/g, ' '),
+        description: input.summary,
+        count: input.count,
+        source: 'Authoring health',
+      }))
+    if (!validationInput || !onValidateScriptDetails || !isAddressableScriptId(script.id)) {
+      setIssueDialog({
+        title: `${script.name} blockers`,
+        issues: [
+          ...(validationInput ? [{
+            id: 'validation-issues',
+            severity: 'blocker' as const,
+            title: 'validation issues',
+            description: validationInput.summary,
+            count: validationInput.count,
+            source: 'Authoring health',
+          }] : []),
+          ...summaryIssues,
+        ],
+      })
+      return
+    }
+
+    setIssueDialog({
+      title: `${script.name} blockers`,
+      issues: [{
+        id: 'validation-loading',
+        severity: 'info',
+        title: 'Loading validation details',
+        description: 'Checking the stored script for exact validation failures…',
+        source: 'Script validation',
+      }],
+    })
+    try {
+      const result = await onValidateScriptDetails(script.id)
+      const exactIssues: IssueDetail[] = (result.issues || []).map((issue, index) => ({
+        id: `validation-${index}`,
+        severity: 'blocker',
+        title: `Validation issue ${index + 1}`,
+        description: issue,
+        source: 'Script validation',
+      }))
+      setIssueDialog({
+        title: `${script.name} blockers`,
+        issues: [
+          ...(exactIssues.length > 0 ? exactIssues : [{
+            id: 'validation-empty',
+            severity: 'info' as const,
+            title: 'Validation passed',
+            description: 'No current validation issues were returned. Refresh the library to update its health summary.',
+            source: 'Script validation',
+          }]),
+          ...summaryIssues,
+        ],
+      })
+    } catch (error) {
+      setIssueDialog({
+        title: `${script.name} blockers`,
+        issues: [{
+          id: 'validation-error',
+          severity: 'warning',
+          title: 'Validation details unavailable',
+          description: error instanceof Error ? error.message : 'The validation request failed.',
+          source: 'Script validation',
+        }, ...summaryIssues],
+      })
+    }
+  }
   const showSource = Boolean(federation)
   const columnCount = (showSource ? 1 : 0) + 7
   const showLocal = !federation || federation.sourceFilter !== 'host'
@@ -321,19 +400,7 @@ export default function ScriptsLibraryTable({
                             type="button"
                             className="script-health-token danger issue-pill-button"
                             aria-label={`View ${healthSummary.blockers} blocker ${healthSummary.blockers === 1 ? 'detail' : 'details'} for ${script.name}`}
-                            onClick={() => setIssueDialog({
-                              title: `${script.name} blockers`,
-                              issues: script.authoring_health!.inputs
-                                .filter(input => input.status === 'blocker')
-                                .map((input, index) => ({
-                                  id: `${input.key}-${index}`,
-                                  severity: 'blocker',
-                                  title: input.key.replace(/_/g, ' '),
-                                  description: input.summary,
-                                  count: input.count,
-                                  source: 'Authoring health',
-                                })),
-                            })}
+                            onClick={() => { void openBlockerIssues(script) }}
                           >
                             {healthSummary.blockers} blocker{healthSummary.blockers === 1 ? '' : 's'}
                           </button>

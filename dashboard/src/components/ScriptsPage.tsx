@@ -892,6 +892,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             secretStatusStateByScript={secretStatusStateByScript}
             onConfigureSecrets={onNavigate ? openProjectSecrets : undefined}
             onRetrySecretStatus={() => setSecretStatusRetryGeneration(generation => generation + 1)}
+            onValidateScriptDetails={api.validateScript}
           />
         </div>
         <div className="page-section">

@@ -134,6 +134,48 @@ describe('ScriptsLibraryTable federation', () => {
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Runtime parity has partial')
   })
 
+  it('loads exact validation failures from a library blocker', async () => {
+    const blockedScript = {
+      ...script,
+      id: 'blocked-script',
+      name: 'Imported Parameters',
+      authoring_health: {
+        score: 47,
+        status: 'blocked',
+        inputs: [
+          {
+            key: 'validation_issues',
+            status: 'blocker',
+            count: 1,
+            summary: 'Script has validation issues that block save or replay.',
+          },
+        ],
+      },
+    } as StoredScript
+    const onValidateScriptDetails = vi.fn().mockResolvedValue({
+      script_id: blockedScript.id,
+      valid: false,
+      issues: ['data_sources[0] "merged_parameters": file asset path must be absolute'],
+    })
+
+    await act(async () => {
+      root.render(
+        <ScriptsLibraryTable
+          {...baseProps}
+          scripts={[blockedScript]}
+          onValidateScriptDetails={onValidateScriptDetails}
+        />,
+      )
+    })
+
+    await act(async () => { findButton('1 blocker')?.click() })
+    expect(onValidateScriptDetails).toHaveBeenCalledWith(blockedScript.id)
+    const dialogText = document.body.querySelector('[role="dialog"]')?.textContent || ''
+    expect(dialogText).toContain('Validation issue 1')
+    expect(dialogText).toContain('file asset path must be absolute')
+    expect(dialogText).not.toContain('Script has validation issues that block save or replay.')
+  })
+
   it('surfaces missing project secrets and links to configuration', async () => {
     const onConfigureSecrets = vi.fn()
     await act(async () => {
