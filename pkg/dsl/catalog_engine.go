@@ -59,6 +59,16 @@ func engineActionSpecs() []ActionSpec {
 			Summary:   "Clears every cookie in the VUser's HTTP session at this point (imported from web_cleanup_cookies). Protocols without a cookie store treat it as a no-op.",
 		},
 		{
+			Type:      "cache_clear",
+			Protocols: []string{"*"},
+			Summary:   "Clears the VUser's simulated HTTP response cache at this point. Protocols without a response cache treat it as a no-op.",
+		},
+		{
+			Type:      "http_connections_close",
+			Protocols: []string{"*"},
+			Summary:   "Closes the VUser's idle pooled HTTP connections without interrupting active requests. Protocols without a connection pool treat it as a no-op.",
+		},
+		{
 			Type:         "error_message",
 			Protocols:    []string{"*"},
 			Summary:      "Logs an error-level message rendered from value or a printf-style format.",

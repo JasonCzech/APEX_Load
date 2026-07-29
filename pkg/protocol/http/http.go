@@ -48,6 +48,8 @@ type HTTP struct {
 	dataFormattingChain        []dataFormattingTransform
 	streaming                  *streamingProfile
 	defaultHeaders             map[string]string
+	typedDefaultHeaders        map[string]string
+	defaultHeaderList          protocol.HeaderList
 	authType                   string
 	authHeader                 string // pre-computed Authorization header value
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact
@@ -175,6 +177,8 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 
 	h.defaultHeaders = buildDefaultHeaders(config)
+	h.typedDefaultHeaders = buildTypedDefaultHeaders(config)
+	h.defaultHeaderList = buildDefaultHeaderList(config)
 	h.contentChecks = parseContentChecks(config)
 	h.dataFormattingAutoDetect = parseDataFormattingAutoDetect(config)
 	h.dataFormattingChain = parseDataFormattingChain(config)
@@ -233,7 +237,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
-	effectiveHeaders, headerMapIssues := effectiveAuthoredHeaderList(h.defaultHeaders, action.Headers, action.HeaderList)
+	defaultHeaders := h.defaultHeaders
+	defaultHeaderList := h.defaultHeaderList
+	if action.ResolvedDefaultHeaders {
+		defaultHeaders = mergeDefaultHeaders(h.typedDefaultHeaders, action.DefaultHeaders)
+		defaultHeaderList = action.DefaultHeaderList
+	}
+	effectiveHeaders, headerMapIssues := effectiveAuthoredHeaderList(defaultHeaders, defaultHeaderList, action.Headers, action.HeaderList)
 	headerIssues := append(headerMapIssues, HeaderListIssuesForVersion(effectiveHeaders, h.httpVersion)...)
 	if len(headerIssues) > 0 {
 		err := &HeaderListValidationError{Issues: headerIssues}
@@ -288,11 +298,6 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
 	result.CorrelationID = correlationIDFromHeaders(action.Headers)
 
-	// Apply default headers first
-	for k, v := range h.defaultHeaders {
-		setRequestHeader(req, k, v)
-	}
-
 	authHeader := h.authHeader
 	digestAuth := digestAuthConfig(h.authConfig)
 	actionAuthHeader, actionAuthOverride, actionAuthErr := buildActionAuthHeader(action.Auth)
@@ -315,23 +320,22 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		typedAuthApplied = true
 	}
 
-	headerListNames := headerListNameSet(action.HeaderList)
-	// Apply per-action headers (override defaults)
-	for k, v := range action.Headers {
-		if _, exists := headerListNames[strings.ToLower(strings.TrimSpace(k))]; exists {
-			continue
-		}
-		setRequestHeader(req, k, v)
-	}
-	deleteRequestHeaders(req, headerListNames)
-	for _, header := range action.HeaderList {
+	// Apply the already-projected authored headers after typed auth. This makes
+	// the documented precedence explicit: typed settings, script defaults, then
+	// action headers. The projection has already removed shadowed lower layers.
+	authoredHeaderNames := headerListNameSet(effectiveHeaders)
+	authoredHeaderNames = mergeHeaderNameSets(authoredHeaderNames, headerListNameSet(defaultHeaderList))
+	authoredHeaderNames = mergeHeaderNameSets(authoredHeaderNames, headerListNameSet(action.HeaderList))
+	deleteRequestHeaders(req, authoredHeaderNames)
+	for _, header := range effectiveHeaders {
 		addRequestHeader(req, header.Name, header.Value)
 	}
 	mergeRequestCookieHeaders(req)
 	// Authored headers are authoritative over typed auth. Digest normally
 	// starts without Authorization and retries a 401 challenge, but doing so
 	// here would silently replace an authored value on the second request.
-	if digestAuth != nil && requestHeaderKeyPresent(req.Header, "Authorization") {
+	_, authorizationAuthored := authoredHeaderNames["authorization"]
+	if digestAuth != nil && (requestHeaderKeyPresent(req.Header, "Authorization") || authorizationAuthored) {
 		digestAuth = nil
 	}
 	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == appliedTypedAuthHeader
@@ -754,7 +758,7 @@ extractors:
 		if resp.Request != nil && resp.Request.URL != nil {
 			finalURL = resp.Request.URL
 		}
-		h.resources.fetchPageResources(ctx, finalURL, respBody, result)
+		h.resources.fetchPageResources(ctx, finalURL, respBody, result, req.Header)
 		// Page time includes the resource phase (LR parity).
 		result.Duration = time.Since(result.StartTime)
 	}
@@ -1071,6 +1075,19 @@ func headerListNameSet(headers protocol.HeaderList) map[string]struct{} {
 	return names
 }
 
+func mergeHeaderNameSets(destination, source map[string]struct{}) map[string]struct{} {
+	if len(source) == 0 {
+		return destination
+	}
+	if destination == nil {
+		destination = make(map[string]struct{}, len(source))
+	}
+	for name := range source {
+		destination[name] = struct{}{}
+	}
+	return destination
+}
+
 func deleteRequestHeaders(req *http.Request, names map[string]struct{}) {
 	for name := range names {
 		if name == "host" {
@@ -1090,6 +1107,18 @@ func (h *HTTP) Teardown(_ context.Context) error {
 			_ = jar.clear()
 		}
 	}
+	if h.transport != nil {
+		h.transport.CloseIdleConnections()
+	}
+	if h.oauthTransport != nil && h.oauthTransport != h.transport {
+		h.oauthTransport.CloseIdleConnections()
+	}
+	return nil
+}
+
+// CloseIdleConnections implements protocol.ConnectionController. It affects
+// only currently-idle pooled connections and leaves active requests alone.
+func (h *HTTP) CloseIdleConnections(_ context.Context) error {
 	if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}

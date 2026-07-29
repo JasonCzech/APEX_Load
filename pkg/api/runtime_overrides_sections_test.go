@@ -282,6 +282,11 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 			DefaultHeaders: map[string]string{
 				"Authorization": "Bearer secret", "Cookie": "session=secret", "X-API-Key": "secret", "Accept": "application/json",
 			},
+			DefaultHeaderList: dsl.HeaderList{
+				{Name: "Authorization", Value: "Bearer ordered-secret"},
+				{Name: "Cookie", Value: "dark=secret"},
+				{Name: "Accept", Value: "application/json"},
+			},
 		},
 		BrowserConfig: &dsl.BrowserConfig{
 			HTTPCredentials: dsl.BrowserHTTPCredentials{Username: "browser-user", Password: "browser-password"},
@@ -298,10 +303,18 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 	if masked.HTTP.Auth.Username != "u" || masked.HTTP.DefaultHeaders["Accept"] != "application/json" {
 		t.Fatalf("non-secret http fields should survive: %#v", masked.HTTP)
 	}
-	for _, header := range []string{"Authorization", "Cookie", "X-API-Key"} {
+	for _, header := range []string{"Authorization", "X-API-Key"} {
 		if masked.HTTP.DefaultHeaders[header] != scrub.Redacted {
 			t.Fatalf("sensitive header %s was not redacted: %#v", header, masked.HTTP.DefaultHeaders)
 		}
+	}
+	if masked.HTTP.DefaultHeaders["Cookie"] != "session="+scrub.Redacted {
+		t.Fatalf("cookie names should survive while values are masked: %#v", masked.HTTP.DefaultHeaders)
+	}
+	if masked.HTTP.DefaultHeaderList[0].Value != scrub.Redacted ||
+		masked.HTTP.DefaultHeaderList[1].Value != "dark="+scrub.Redacted ||
+		masked.HTTP.DefaultHeaderList[2].Value != "application/json" {
+		t.Fatalf("ordered default headers were not masked selectively: %#v", masked.HTTP.DefaultHeaderList)
 	}
 	for label, value := range map[string]string{"base_url": masked.BaseURL, "http_proxy_url": masked.HTTP.Proxy.URL, "browser_proxy_server": masked.BrowserConfig.Proxy.Server} {
 		if strings.Contains(value, "url-pass") || strings.Contains(value, "base-pass") || !strings.Contains(value, "REDACTED") {
@@ -392,6 +405,10 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 			Auth:           dsl.AuthConfig{Password: "real", Token: "realtok"},
 			Proxy:          dsl.ProxyConfig{URL: "http://proxy-user:proxy-password@proxy:8080", Username: "realpuser", Password: "realppw"},
 			DefaultHeaders: map[string]string{"Authorization": "Bearer real", "Cookie": "session=real", "Accept": "application/json"},
+			DefaultHeaderList: dsl.HeaderList{
+				{Name: "Authorization", Value: "Bearer ordered-real"},
+				{Name: "Cookie", Value: "dark=real"},
+			},
 		},
 		BrowserConfig: &dsl.BrowserConfig{
 			HTTPCredentials: dsl.BrowserHTTPCredentials{Password: "browser-real"},
@@ -405,6 +422,7 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 	incoming.HTTP.Auth.Token = "newtok"
 	incoming.HTTP.Proxy.Password = ""
 	incoming.HTTP.DefaultHeaders["Cookie"] = ""
+	incoming.HTTP.DefaultHeaderList[1].Value = ""
 	incoming.BrowserConfig.Proxy.Password = ""
 	result := reconcileGroupRuntimeSecrets(incoming, prior)
 	if result.HTTP.Auth.Password != "real" {
@@ -428,12 +446,82 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 	if _, exists := result.HTTP.DefaultHeaders["Cookie"]; exists {
 		t.Fatalf("explicitly cleared cookie header persisted: %#v", result.HTTP.DefaultHeaders)
 	}
+	if len(result.HTTP.DefaultHeaderList) != 1 ||
+		result.HTTP.DefaultHeaderList[0].Value != "Bearer ordered-real" {
+		t.Fatalf("ordered default header reconciliation = %#v", result.HTTP.DefaultHeaderList)
+	}
 	if result.BrowserConfig.HTTPCredentials.Password != "browser-real" || result.BrowserConfig.Proxy.Username != "browser-user" || result.BrowserConfig.ClientCertificates[0].Passphrase != "certificate-real" {
 		t.Fatalf("masked browser credentials were not restored: %#v", result.BrowserConfig)
 	}
 	if result.BrowserConfig.Proxy.Password != "" {
 		t.Fatalf("explicitly cleared browser proxy password persisted: %#v", result.BrowserConfig.Proxy)
 	}
+}
+
+func TestReconcileOrderedSensitiveHeadersUsesStableCookieNamesAndFailsClosed(t *testing.T) {
+	t.Run("removed cookie row does not shift a stored value", func(t *testing.T) {
+		prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{DefaultHeaderList: dsl.HeaderList{
+			{Name: "Cookie", Value: "dark=blue"},
+			{Name: "Cookie", Value: "route=isolated"},
+		}}}
+		incoming := maskRuntimeSettings(prior)
+		incoming.HTTP.DefaultHeaderList = incoming.HTTP.DefaultHeaderList[1:]
+
+		result := reconcileGroupRuntimeSecrets(incoming, prior)
+		if len(result.HTTP.DefaultHeaderList) != 1 ||
+			result.HTTP.DefaultHeaderList[0].Value != "route=isolated" {
+			t.Fatalf("cookie reconciliation shifted a stored value: %#v", result.HTTP.DefaultHeaderList)
+		}
+	})
+
+	t.Run("cookie pairs reconcile independently by name", func(t *testing.T) {
+		prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{DefaultHeaderList: dsl.HeaderList{{
+			Name: "Cookie", Value: "dark=blue; route=isolated",
+		}}}}
+		incoming := maskRuntimeSettings(prior)
+		incoming.HTTP.DefaultHeaderList[0].Value = "route=" + scrub.Redacted
+
+		result := reconcileGroupRuntimeSecrets(incoming, prior)
+		if got := result.HTTP.DefaultHeaderList[0].Value; got != "route=isolated" {
+			t.Fatalf("cookie pair reconciliation = %q, want route=isolated", got)
+		}
+	})
+
+	t.Run("cookie names remain case-sensitive", func(t *testing.T) {
+		prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{DefaultHeaderList: dsl.HeaderList{{
+			Name: "Cookie", Value: "SID=upper; sid=lower",
+		}}}}
+		incoming := maskRuntimeSettings(prior)
+
+		result := reconcileGroupRuntimeSecrets(incoming, prior)
+		if got := result.HTTP.DefaultHeaderList[0].Value; got != "SID=upper; sid=lower" {
+			t.Fatalf("case-sensitive cookie reconciliation = %q", got)
+		}
+	})
+
+	t.Run("orphaned cookie sentinel is removed", func(t *testing.T) {
+		incoming := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{DefaultHeaderList: dsl.HeaderList{{
+			Name: "Cookie", Value: "unknown=" + scrub.Redacted,
+		}}}}
+		result := reconcileGroupRuntimeSecrets(incoming, nil)
+		if len(result.HTTP.DefaultHeaderList) != 0 {
+			t.Fatalf("orphaned cookie sentinel persisted: %#v", result.HTTP.DefaultHeaderList)
+		}
+	})
+
+	t.Run("deleted duplicate sensitive occurrence is ambiguous", func(t *testing.T) {
+		prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{DefaultHeaderList: dsl.HeaderList{
+			{Name: "Authorization", Value: "Bearer first"},
+			{Name: "authorization", Value: "Bearer second"},
+		}}}
+		incoming := maskRuntimeSettings(prior)
+		incoming.HTTP.DefaultHeaderList = incoming.HTTP.DefaultHeaderList[1:]
+
+		result := reconcileGroupRuntimeSecrets(incoming, prior)
+		if len(result.HTTP.DefaultHeaderList) != 0 {
+			t.Fatalf("ambiguous sensitive sentinel restored a value: %#v", result.HTTP.DefaultHeaderList)
+		}
+	})
 }
 
 func TestMaskManagedTestRedactsHTTPSecrets(t *testing.T) {

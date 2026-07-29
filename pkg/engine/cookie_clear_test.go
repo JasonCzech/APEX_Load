@@ -15,6 +15,22 @@ type cookieControllerProtocol struct {
 	clearCalls int
 }
 
+type httpStateControllerProtocol struct {
+	stubProtocol
+	cacheClears      int
+	connectionCloses int
+}
+
+func (p *httpStateControllerProtocol) ClearCache(context.Context) error {
+	p.cacheClears++
+	return nil
+}
+
+func (p *httpStateControllerProtocol) CloseIdleConnections(context.Context) error {
+	p.connectionCloses++
+	return nil
+}
+
 func (c *cookieControllerProtocol) ClearCookies(context.Context) error {
 	c.clearCalls++
 	return nil
@@ -51,6 +67,21 @@ func TestHandleEngineActionCookieClearNoControllerIsNoop(t *testing.T) {
 				t.Fatalf("cookie_clear handled=%v err=%v, want handled with no error", handled, err)
 			}
 		})
+	}
+}
+
+func TestHandleEngineActionDispatchesHTTPStateControls(t *testing.T) {
+	proto := &httpStateControllerProtocol{}
+	vu := &VUser{ID: 1, Group: "g", Script: &dsl.Script{Name: "s"}, Proto: proto}
+
+	for _, actionType := range []string{"cache_clear", "http_connections_close"} {
+		handled, err := vu.handleEngineAction(context.Background(), dsl.Action{Name: actionType, Type: actionType})
+		if !handled || err != nil {
+			t.Fatalf("%s handled=%v err=%v, want handled with no error", actionType, handled, err)
+		}
+	}
+	if proto.cacheClears != 1 || proto.connectionCloses != 1 {
+		t.Fatalf("state calls = cache %d connections %d, want 1 each", proto.cacheClears, proto.connectionCloses)
 	}
 }
 

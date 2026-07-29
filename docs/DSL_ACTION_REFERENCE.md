@@ -26,6 +26,10 @@ to their `source_*` equivalents.
 
 Valid in every script except jms-* and kafka, whose validators accept only their own action types.
 
+### `cache_clear`
+
+Clears the VUser's simulated HTTP response cache at this point. Protocols without a response cache treat it as a no-op.
+
 ### `control_break`
 
 Breaks out of the nearest enclosing control_loop (no-op outside a loop).
@@ -78,6 +82,10 @@ Requires one of: `value`, `params.format`
 | `value` | string |  | Literal message. Required unless params.format is set. |
 | `params.format` | string |  | Printf-style format rendered with params.args. |
 | `params.args` | array |  | Arguments substituted into params.format. |
+
+### `http_connections_close`
+
+Closes the VUser's idle pooled HTTP connections without interrupting active requests. Protocols without a connection pool treat it as a no-op.
 
 ### `rendezvous`
 

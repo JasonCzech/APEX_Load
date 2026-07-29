@@ -130,6 +130,17 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 				return nil, nil, false, err
 			}
 		}
+		for index := range http.DefaultHeaderList {
+			header := &http.DefaultHeaderList[index]
+			header.Value, err = protect(
+				fmt.Sprintf("http.default_header_list.%d.%s", index, header.Name),
+				header.Value,
+				policy.SensitiveHeader(header.Name),
+			)
+			if err != nil {
+				return nil, nil, false, err
+			}
+		}
 	}
 	if protected.BrowserConfig != nil {
 		browser := protected.BrowserConfig

@@ -147,10 +147,10 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
           cache: { simulate_cache: true, cache_content_urls: true, check_newer_versions: true },
         },
       }),
-      { activeSection: 'browser_emulation' },
+      { activeSection: 'http', activeHTTPTransportTab: 'session_cache' },
     )
-    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('.runtime-checkbox-list input[type="checkbox"]'))
-    const simulate = checkboxes.find(cb => cb.closest('label')?.textContent?.includes('Simulate browser cache'))
+    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+    const simulate = checkboxes.find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
     act(() => { simulate?.click() })
     // The children must be cleared alongside the parent, not stranded true+disabled.
     const lastCall = onUpdateField.mock.calls[onUpdateField.mock.calls.length - 1]
@@ -181,7 +181,7 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
     const tabLabels = Array.from(container.querySelectorAll('.http-transport-tab')).map(el => el.textContent)
     expect(tabLabels).not.toContain('Browser Emulation')
     // Stale hidden tab clamps to the first visible panel.
-    expect(container.querySelector('#http-transport-panel-timeouts')).toBeTruthy()
+    expect(container.querySelector('#http-transport-panel-request-defaults')).toBeTruthy()
     expect(container.querySelector('#http-transport-panel-browser')).toBeFalsy()
 
     act(() => root.unmount())
@@ -193,15 +193,15 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
     expect(container.textContent).toContain('Browser Engine')
   })
 
-  it('moves the User-Agent and Accept headers into the Connection sub-tab', () => {
+  it('moves the User-Agent and Accept headers into Request Defaults', () => {
     render(
       httpScript({ browser_emulation: { mode: 'specific', browser_type: 'chrome' } }),
-      { activeSection: 'http', activeHTTPTransportTab: 'connection' },
+      { activeSection: 'http', activeHTTPTransportTab: 'request_defaults' },
     )
-    const connectionPanel = container.querySelector('#http-transport-panel-connection')
-    expect(connectionPanel?.textContent).toContain('User-Agent')
-    expect(connectionPanel?.textContent).toContain('Accept-Encoding')
-    expect(connectionPanel?.textContent).toContain('Accept-Language')
-    expect(connectionPanel?.textContent).toContain('Overridden by the Browser Emulation tab')
+    const defaultsPanel = container.querySelector('#http-transport-panel-request-defaults')
+    expect(defaultsPanel?.textContent).toContain('User-Agent')
+    expect(defaultsPanel?.textContent).toContain('Accept-Encoding')
+    expect(defaultsPanel?.textContent).toContain('Accept-Language')
+    expect(defaultsPanel?.textContent).toContain('Typed Request Behavior')
   })
 })

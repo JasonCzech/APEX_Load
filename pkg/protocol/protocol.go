@@ -281,10 +281,19 @@ type CacheController interface {
 	ClearCache(ctx context.Context) error
 }
 
+// ConnectionController is an optional capability for protocols that pool
+// reusable network connections. The engine invokes CloseIdleConnections for
+// an http_connections_close action. Active requests are never interrupted.
+type ConnectionController interface {
+	// CloseIdleConnections closes only currently-idle pooled connections.
+	CloseIdleConnections(ctx context.Context) error
+}
+
 // Action represents a single operation (HTTP request, message, etc.) to execute.
 type HeaderEntry struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Enabled *bool  `json:"enabled,omitempty"`
 }
 
 type HeaderList []HeaderEntry
@@ -295,6 +304,9 @@ func (headers HeaderList) ToMap() map[string]string {
 	}
 	out := make(map[string]string, len(headers))
 	for _, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
 		if strings.TrimSpace(header.Name) == "" {
 			continue
 		}
@@ -307,37 +319,43 @@ func (headers HeaderList) ToMap() map[string]string {
 }
 
 type Action struct {
-	Name               string                 `json:"name"`
-	Type               string                 `json:"type"`
-	Method             string                 `json:"method,omitempty"`
-	Target             string                 `json:"target"`
-	RedactedTarget     string                 `json:"-"`
-	Selector           string                 `json:"selector,omitempty"`
-	RedactedSelector   string                 `json:"-"`
-	Value              string                 `json:"value,omitempty"`
-	RedactedValue      string                 `json:"-"`
-	Headers            map[string]string      `json:"headers,omitempty"`
-	HeaderList         HeaderList             `json:"header_list,omitempty"`
-	RedactedHeaders    map[string]string      `json:"-"`
-	RedactedHeaderList HeaderList             `json:"-"`
-	Body               []byte                 `json:"body,omitempty"`
-	BodyEncoding       string                 `json:"body_encoding,omitempty"`
-	RedactedBody       []byte                 `json:"-"`
-	Params             map[string]any         `json:"params,omitempty"`
-	RedactedParams     map[string]any         `json:"-"`
-	WaitFor            *WaitCondition         `json:"wait_for,omitempty"`
-	Sync               *BrowserSyncPolicy     `json:"sync,omitempty"`
-	Capture            *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata           map[string]any         `json:"metadata,omitempty"`
-	Extractors         []Extractor            `json:"extractors,omitempty"`
-	Assertions         []Assertion            `json:"assertions,omitempty"`
-	ThinkTime          ThinkTimeConfig        `json:"think_time,omitempty"`
-	Auth               *AuthConfig            `json:"auth,omitempty"`
-	RedactedAuth       *AuthConfig            `json:"-"`
-	TimeoutMs          int                    `json:"timeout_ms,omitempty"`
-	MaxRedirects       *int                   `json:"max_redirects,omitempty"`
-	SOAP               *SOAPActionConfig      `json:"soap,omitempty"`
-	RedactedSOAP       *SOAPActionConfig      `json:"-"`
+	Name               string            `json:"name"`
+	Type               string            `json:"type"`
+	Method             string            `json:"method,omitempty"`
+	Target             string            `json:"target"`
+	RedactedTarget     string            `json:"-"`
+	Selector           string            `json:"selector,omitempty"`
+	RedactedSelector   string            `json:"-"`
+	Value              string            `json:"value,omitempty"`
+	RedactedValue      string            `json:"-"`
+	Headers            map[string]string `json:"headers,omitempty"`
+	HeaderList         HeaderList        `json:"header_list,omitempty"`
+	RedactedHeaders    map[string]string `json:"-"`
+	RedactedHeaderList HeaderList        `json:"-"`
+	// ResolvedDefaultHeaders marks per-VUser default headers interpolated by
+	// the engine for this action. HTTP falls back to its initialized defaults
+	// for direct protocol callers that do not set the marker.
+	ResolvedDefaultHeaders bool                   `json:"-"`
+	DefaultHeaders         map[string]string      `json:"-"`
+	DefaultHeaderList      HeaderList             `json:"-"`
+	Body                   []byte                 `json:"body,omitempty"`
+	BodyEncoding           string                 `json:"body_encoding,omitempty"`
+	RedactedBody           []byte                 `json:"-"`
+	Params                 map[string]any         `json:"params,omitempty"`
+	RedactedParams         map[string]any         `json:"-"`
+	WaitFor                *WaitCondition         `json:"wait_for,omitempty"`
+	Sync                   *BrowserSyncPolicy     `json:"sync,omitempty"`
+	Capture                *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata               map[string]any         `json:"metadata,omitempty"`
+	Extractors             []Extractor            `json:"extractors,omitempty"`
+	Assertions             []Assertion            `json:"assertions,omitempty"`
+	ThinkTime              ThinkTimeConfig        `json:"think_time,omitempty"`
+	Auth                   *AuthConfig            `json:"auth,omitempty"`
+	RedactedAuth           *AuthConfig            `json:"-"`
+	TimeoutMs              int                    `json:"timeout_ms,omitempty"`
+	MaxRedirects           *int                   `json:"max_redirects,omitempty"`
+	SOAP                   *SOAPActionConfig      `json:"soap,omitempty"`
+	RedactedSOAP           *SOAPActionConfig      `json:"-"`
 	// DiscardResponseBodyOnSuccess lets high-volume engine callers avoid a
 	// second full payload copy after extractors/assertions have completed. Error
 	// responses still retain their bounded body evidence.

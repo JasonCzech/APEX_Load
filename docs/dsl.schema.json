@@ -2413,6 +2413,23 @@
             "properties": {
               "type": {
                 "enum": [
+                  "cache_clear"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Clears the VUser's simulated HTTP response cache at this point. Protocols without a response cache treat it as a no-op."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "control_break"
                 ]
               }
@@ -3405,6 +3422,23 @@
             "required": [
               "target"
             ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "http_connections_close"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Closes the VUser's idle pooled HTTP connections without interrupting active requests. Protocols without a connection pool treat it as a no-op."
           }
         },
         {
@@ -6294,6 +6328,7 @@
             "browser_ws_assert",
             "browser_ws_wait",
             "bruno_run",
+            "cache_clear",
             "commit",
             "control_break",
             "control_continue",
@@ -6329,6 +6364,7 @@
             "grpc_client_stream",
             "grpc_server_stream",
             "grpc_unary",
+            "http_connections_close",
             "http_oauth2_token",
             "http_sequence",
             "imap_command",
@@ -7298,6 +7334,9 @@
         "cookies_enabled": {
           "type": "boolean"
         },
+        "default_header_list": {
+          "$ref": "#/$defs/HeaderList"
+        },
         "default_headers": {
           "additionalProperties": {
             "type": "string"
@@ -7357,6 +7396,9 @@
     "HeaderEntry": {
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         },

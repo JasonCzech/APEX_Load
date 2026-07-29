@@ -203,6 +203,38 @@ func TestImportedCredentialValuesAcceptsNativeHTTPSequenceCredentialSurfaces(t *
 	}
 }
 
+func TestImportedRequestHeaderListRejectsInvalidEnabledValue(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  any
+	}{
+		{
+			name: "map slice",
+			raw: []map[string]any{{
+				"name":    "Authorization",
+				"value":   "Bearer {{var.token}}",
+				"enabled": "false",
+			}},
+		},
+		{
+			name: "any slice",
+			raw: []any{map[string]any{
+				"name":    "Cookie",
+				"value":   "route={{secret.route}}",
+				"enabled": 0,
+			}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if headers, ok := importedRequestHeaderList(test.raw); ok || headers != nil {
+				t.Fatalf("importedRequestHeaderList() = %#v, %v; want invalid enabled value rejected", headers, ok)
+			}
+		})
+	}
+}
+
 func TestLegacyImportedRequestBodiesCollectTypedCredentialsWithoutLocators(t *testing.T) {
 	const multipartBoundary = "legacy-credential-boundary"
 	tests := []struct {

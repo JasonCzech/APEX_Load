@@ -249,6 +249,9 @@ func headerListIssuesForVersion(headers protocol.HeaderList, version string, all
 	firstExpectHasContinue := false
 	issues := make([]HeaderListIssue, 0)
 	for index, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
 		name := header.Name
 		canonicalName := strings.ToLower(name)
 		validName := httpguts.ValidHeaderFieldName(name)
@@ -506,32 +509,69 @@ func headerMapIssuesForVersion(headers map[string]string, version string, allowU
 	return issues
 }
 
-// effectiveAuthoredHeaderList projects the actual default/map/list precedence
-// into deterministic occurrences for runtime validation. HeaderList shadows
-// the compatibility map; action headers shadow defaults case-insensitively.
-func effectiveAuthoredHeaderList(defaults, actionHeaders map[string]string, headerList protocol.HeaderList) (protocol.HeaderList, []HeaderListIssue) {
-	listNames := headerNames(headerList)
+// effectiveAuthoredHeaderList projects the actual typed/default/action
+// precedence into deterministic occurrences for runtime validation. Ordered
+// lists shadow their compatibility maps; action headers shadow both default
+// representations case-insensitively.
+func effectiveAuthoredHeaderList(
+	defaults map[string]string,
+	defaultHeaderList protocol.HeaderList,
+	actionHeaders map[string]string,
+	headerList protocol.HeaderList,
+) (protocol.HeaderList, []HeaderListIssue) {
+	defaultListNames := headerNames(defaultHeaderList)
+	actionListNames := headerNames(headerList)
 	actionNames := mapHeaderNames(actionHeaders)
-	out := make(protocol.HeaderList, 0, len(defaults)+len(actionHeaders)+len(headerList))
+	out := make(protocol.HeaderList, 0, len(defaults)+len(defaultHeaderList)+len(actionHeaders)+len(headerList))
 
-	defaultShadows := make(map[string]struct{}, len(actionNames)+len(listNames))
+	defaultShadows := make(map[string]struct{}, len(defaultListNames)+len(actionNames)+len(actionListNames))
+	for name := range defaultListNames {
+		defaultShadows[name] = struct{}{}
+	}
 	for name := range actionNames {
 		defaultShadows[name] = struct{}{}
 	}
-	for name := range listNames {
+	for name := range actionListNames {
 		defaultShadows[name] = struct{}{}
 	}
 	defaultEntries := sortedHeaderMapEntries(defaults, defaultShadows)
-	actionEntries := sortedHeaderMapEntries(actionHeaders, listNames)
+	actionShadows := make(map[string]struct{}, len(actionNames)+len(actionListNames))
+	for name := range actionNames {
+		actionShadows[name] = struct{}{}
+	}
+	for name := range actionListNames {
+		actionShadows[name] = struct{}{}
+	}
+	defaultOrderedEntries := filterHeaderList(defaultHeaderList, actionShadows)
+	actionEntries := sortedHeaderMapEntries(actionHeaders, actionListNames)
+	actionOrderedEntries := filterHeaderList(headerList, nil)
 	mapIssues := headerMapCollisionIssues(defaultEntries, 0)
-	mapIssues = append(mapIssues, headerMapCollisionIssues(actionEntries, len(defaultEntries))...)
+	mapIssues = append(mapIssues, headerMapCollisionIssues(actionEntries, len(defaultEntries)+len(defaultOrderedEntries))...)
 	out = append(out, defaultEntries...)
+	out = append(out, defaultOrderedEntries...)
 	out = append(out, actionEntries...)
-	out = append(out, headerList...)
+	out = append(out, actionOrderedEntries...)
 	if len(out) == 0 {
 		return nil, mapIssues
 	}
 	return out, mapIssues
+}
+
+func filterHeaderList(headers protocol.HeaderList, shadowed map[string]struct{}) protocol.HeaderList {
+	if len(headers) == 0 {
+		return nil
+	}
+	filtered := make(protocol.HeaderList, 0, len(headers))
+	for _, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
+		if _, exists := shadowed[strings.ToLower(strings.TrimSpace(header.Name))]; exists {
+			continue
+		}
+		filtered = append(filtered, header)
+	}
+	return filtered
 }
 
 func sortedHeaderMapEntries(headers map[string]string, shadowed map[string]struct{}) protocol.HeaderList {
@@ -571,7 +611,13 @@ func headerMapCollisionIssues(entries protocol.HeaderList, offset int) []HeaderL
 func headerNames(headers protocol.HeaderList) map[string]struct{} {
 	names := make(map[string]struct{}, len(headers))
 	for _, header := range headers {
-		names[strings.ToLower(header.Name)] = struct{}{}
+		name := strings.ToLower(strings.TrimSpace(header.Name))
+		if name != "" {
+			// An ordered entry remains authoritative for its name even when it
+			// is disabled. This lets the ordered representation intentionally
+			// suppress a stale compatibility-map value.
+			names[name] = struct{}{}
+		}
 	}
 	return names
 }

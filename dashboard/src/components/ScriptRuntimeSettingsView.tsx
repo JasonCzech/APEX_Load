@@ -43,6 +43,17 @@ import {
 import { formatHTTPVersion, HTTP_VERSION_OPTIONS } from './runtimeSettingsModel'
 import { formatPacingTiming } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import HttpRequestDefaultsEditor, {
+  SocketCompatibilityPanel,
+  type HTTPRuntimeActionType,
+} from './HttpRequestDefaultsEditor'
+import {
+  countHTTPDefaultHeaders,
+  countHTTPDefaultHeaderErrors,
+  countPinnedCookies,
+  countPinnedCookieErrors,
+  formatHTTPSettingsSummary,
+} from './httpRequestDefaultsModel'
 
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 
@@ -312,6 +323,7 @@ interface ScriptRuntimeSettingsViewProps {
   canEditProtocol: boolean
   draftScope?: string
   onSave: () => void
+  onAddHTTPRuntimeAction?: (type: HTTPRuntimeActionType) => void
   onSelectHTTPTransportTab: (tab: HTTPTransportTabId) => void
   onSelectSection: (section: RuntimeSettingsSectionId) => void
   onUpdateField: (path: string, value: unknown) => void
@@ -328,6 +340,7 @@ export function ScriptRuntimeSettingsView({
   canEditProtocol,
   draftScope,
   onSave,
+  onAddHTTPRuntimeAction,
   onSelectHTTPTransportTab,
   onSelectSection,
   onUpdateField,
@@ -386,7 +399,7 @@ export function ScriptRuntimeSettingsView({
   const visibleHTTPTransportTabs = HTTP_TRANSPORT_TAB_OPTIONS.filter(tab => httpTransportTabIsAvailable(tab.id, script.protocol))
   const effectiveHTTPTransportTab: HTTPTransportTabId = visibleHTTPTransportTabs.some(tab => tab.id === activeHTTPTransportTab)
     ? activeHTTPTransportTab
-    : (visibleHTTPTransportTabs[0]?.id ?? 'timeouts')
+    : (visibleHTTPTransportTabs[0]?.id ?? 'request_defaults')
 
   // Browser-emulation catalog: seeded with the bundled fallback, refreshed from
   // the controller so dropdowns stay in lockstep with replay UA resolution.
@@ -404,6 +417,24 @@ export function ScriptRuntimeSettingsView({
       ...(script.config.browser_emulation || {}),
       cache: { ...(script.config.browser_emulation?.cache || {}), ...patch },
     })
+  }
+  const httpSettingsValue = {
+    ...(script.config.http || {}),
+    cache_enabled: script.config.http?.cache_enabled ?? browserEmulationCache?.simulate_cache,
+  }
+  const requestDefaultErrorCount = countHTTPDefaultHeaderErrors(httpSettingsValue)
+  const pinnedCookieErrorCount = countPinnedCookieErrors(httpSettingsValue)
+  const updateHTTPSettings = (patch: Partial<NonNullable<ScriptDefinition['config']['http']>>) => {
+    updateField('config.http', { ...script.config.http, ...patch })
+    if (Object.prototype.hasOwnProperty.call(patch, 'cache_enabled')) {
+      updateBrowserEmulationCache(patch.cache_enabled
+        ? { simulate_cache: true }
+        : {
+            simulate_cache: false,
+            cache_content_urls: undefined,
+            check_newer_versions: undefined,
+          })
+    }
   }
 
   const addSoapNamespace = () => {
@@ -1264,17 +1295,28 @@ export function ScriptRuntimeSettingsView({
       <RuntimeSectionIcon section="http" />
       <span className="section-label">HTTP Transport</span>
       <span className="section-summary">
-        {httpVersionSummary}
-        {httpProxySummary !== 'Default'
-          ? ` · ${httpProxySummary}`
-          : script.config.http?.auth?.type
-            ? ` · Auth: ${script.config.http.auth.type}`
-            : ''}
+        {formatHTTPSettingsSummary(
+          httpSettingsValue,
+          Boolean(script.config.browser_emulation?.cache?.new_user_each_iteration),
+        )}
       </span>
       <span className="chevron">{runtimeSectionIsActive('http') ? '▾' : '▸'}</span>
     </button>
     {runtimeSectionIsActive('http') && (
       <div className="section-body">
+        <div className="http-settings-persistent-summary" role="status">
+          <strong>Effective HTTP settings</strong>
+          <span>{formatHTTPSettingsSummary(
+            httpSettingsValue,
+            Boolean(script.config.browser_emulation?.cache?.new_user_each_iteration),
+          )}</span>
+        </div>
+        <label className="http-transport-mobile-select">
+          <span>HTTP settings group</span>
+          <select value={effectiveHTTPTransportTab} onChange={event => setActiveHTTPTransportTab(event.target.value as HTTPTransportTabId)}>
+            {visibleHTTPTransportTabs.map(tab => <option value={tab.id} key={tab.id}>{tab.label}</option>)}
+          </select>
+        </label>
         <div className="http-transport-tabs" role="tablist" aria-label="HTTP Transport option groups">
           {visibleHTTPTransportTabs.map(tab => (
             <button
@@ -1287,10 +1329,55 @@ export function ScriptRuntimeSettingsView({
               className={`http-transport-tab ${effectiveHTTPTransportTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveHTTPTransportTab(tab.id)}
             >
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.id === 'request_defaults' && (
+                <>
+                  <span className="http-tab-count">{countHTTPDefaultHeaders(httpSettingsValue)}</span>
+                  {requestDefaultErrorCount > 0 && <span className="http-tab-error" aria-label={`${requestDefaultErrorCount} request default errors`}>{requestDefaultErrorCount} errors</span>}
+                </>
+              )}
+              {tab.id === 'session_cache' && (
+                <>
+                  <span className="http-tab-count">{countPinnedCookies(httpSettingsValue)}</span>
+                  {pinnedCookieErrorCount > 0 && <span className="http-tab-error" aria-label={`${pinnedCookieErrorCount} pinned cookie errors`}>{pinnedCookieErrorCount} errors</span>}
+                </>
+              )}
             </button>
           ))}
         </div>
+        {effectiveHTTPTransportTab === 'request_defaults' && <div
+          id="http-transport-panel-request-defaults"
+          className="settings-sub-group http-transport-tab-panel"
+          role="tabpanel"
+          aria-labelledby="http-transport-tab-request_defaults"
+        >
+          <HttpRequestDefaultsEditor
+            actions={[...(script.init || []), ...(script.actions || []), ...(script.teardown || [])]}
+            newUserEachIteration={Boolean(script.config.browser_emulation?.cache?.new_user_each_iteration)}
+            onAddRuntimeAction={onAddHTTPRuntimeAction}
+            onChange={updateHTTPSettings}
+            onNewUserEachIterationChange={enabled => updateBrowserEmulationCache({ new_user_each_iteration: enabled })}
+            originLabel="Script default"
+            section="request"
+            value={httpSettingsValue}
+          />
+        </div>}
+        {effectiveHTTPTransportTab === 'session_cache' && <div
+          id="http-transport-panel-session-cache"
+          className="settings-sub-group http-transport-tab-panel"
+          role="tabpanel"
+          aria-labelledby="http-transport-tab-session_cache"
+        >
+          <HttpRequestDefaultsEditor
+            actions={[...(script.init || []), ...(script.actions || []), ...(script.teardown || [])]}
+            newUserEachIteration={Boolean(script.config.browser_emulation?.cache?.new_user_each_iteration)}
+            onAddRuntimeAction={onAddHTTPRuntimeAction}
+            onChange={updateHTTPSettings}
+            onNewUserEachIterationChange={enabled => updateBrowserEmulationCache({ new_user_each_iteration: enabled })}
+            section="session"
+            value={httpSettingsValue}
+          />
+        </div>}
         {effectiveHTTPTransportTab === 'timeouts' && <div
           id="http-transport-panel-timeouts"
           className="settings-sub-group http-transport-tab-panel"
@@ -1334,27 +1421,26 @@ export function ScriptRuntimeSettingsView({
             <label><span>Max Conns/Host</span>
               <input type="number" value={script.config.http?.max_conns_per_host || 100}
                 onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
+            <label><span>Max Idle Connections</span>
+              <input type="number" min={0} value={script.config.http?.max_idle_conns || 0}
+                onChange={e => updateField('config.http', { ...script.config.http, max_idle_conns: Number(e.target.value) || undefined })} /></label>
             <label><span>Max Redirects</span>
               <input type="number" value={script.config.http?.max_redirects ?? 10}
                 onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
-            <label className="full-width"><span>User-Agent</span>
-              <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
-                onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
-            {supportsBrowserEmulation && browserEmulationMode !== '' && (
-              <div className="form-hint full-width">Overridden by the Browser Emulation tab while a browser selection is active.</div>
-            )}
-            <label><span>Accept-Encoding</span>
-              <input value={script.config.http?.accept_encoding || ''} placeholder="gzip, deflate, br"
-                onChange={e => updateField('config.http', { ...script.config.http, accept_encoding: e.target.value })} /></label>
-            <label><span>Accept-Language</span>
-              <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
-                onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
-            {/* Unlike User-Agent, the engine derives Accept-Language from
-                browser_emulation.language regardless of mode, so this hint keys
-                off the language field rather than the mode. */}
-            {supportsBrowserEmulation && Boolean(browserEmulation?.language) && (
-              <div className="form-hint full-width">Overridden by the Browser Emulation tab while a language is selected.</div>
-            )}
+            <label><span>Keep-alive</span>
+              <select value={script.config.http?.keep_alive === false ? 'false' : 'true'}
+                onChange={e => updateField('config.http', { ...script.config.http, keep_alive: e.target.value === 'true' })}>
+                <option value="true">Enabled</option>
+                <option value="false">Disabled</option>
+              </select></label>
+            <details className="http-advanced-options full-width">
+              <summary>Advanced connection guidance</summary>
+              <p>Connection-specific headers require exact HTTP/1.1. Imported unsupported socket options remain in compatibility metadata for review rather than being sent to the operating system.</p>
+            </details>
+            <SocketCompatibilityPanel
+              additionalAttributes={script.config.web_runtime?.additional_attributes}
+              originLabel="Imported script"
+            />
           </div>
         </div>}
         {effectiveHTTPTransportTab === 'tls' && <div
@@ -1708,25 +1794,19 @@ export function ScriptRuntimeSettingsView({
         </div>
         <div className="settings-sub-group">
           <h5>Browser Cache</h5>
+          <div className="http-cache-canonical-note" role="note">
+            <span>Cache enablement and per-iteration cleanup are configured in HTTP Transport → Session &amp; Cache.</span>
+            <button type="button" className="link-button" onClick={() => {
+              selectRuntimeSettingsSection('http')
+              setActiveHTTPTransportTab('session_cache')
+            }}>Open Session &amp; Cache</button>
+          </div>
           <div className="runtime-checkbox-list" aria-label="Browser cache simulation">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={browserEmulationCache?.simulate_cache || false}
-                onChange={e => updateBrowserEmulationCache(e.target.checked
-                  ? { simulate_cache: true }
-                  // Clear the dependent children when disabling the cache; leaving
-                  // them true (but now disabled) is a state the backend validator
-                  // rejects with no reachable control to fix it.
-                  : { simulate_cache: false, cache_content_urls: undefined, check_newer_versions: undefined })}
-              />
-              <span>Simulate browser cache</span>
-            </label>
             <label className="checkbox-label checkbox-label-indented">
               <input
                 type="checkbox"
                 checked={browserEmulationCache?.cache_content_urls || false}
-                disabled={!browserEmulationCache?.simulate_cache}
+                disabled={!httpSettingsValue.cache_enabled}
                 onChange={e => updateBrowserEmulationCache({ cache_content_urls: e.target.checked })}
               />
               <span>Cache URLs requiring content (HTMLs)</span>
@@ -1735,7 +1815,7 @@ export function ScriptRuntimeSettingsView({
               <input
                 type="checkbox"
                 checked={browserEmulationCache?.check_newer_versions || false}
-                disabled={!browserEmulationCache?.simulate_cache}
+                disabled={!httpSettingsValue.cache_enabled}
                 onChange={e => updateBrowserEmulationCache({ check_newer_versions: e.target.checked })}
               />
               <span>Check for newer versions of stored pages on every visit</span>
@@ -1747,14 +1827,6 @@ export function ScriptRuntimeSettingsView({
                 onChange={e => updateBrowserEmulationCache({ download_non_html_resources: e.target.checked })}
               />
               <span>Download non-HTML resources</span>
-            </label>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={browserEmulationCache?.new_user_each_iteration || false}
-                onChange={e => updateBrowserEmulationCache({ new_user_each_iteration: e.target.checked })}
-              />
-              <span>Simulate a new user on each iteration (clear cache on each iteration)</span>
             </label>
             <label className="checkbox-label">
               <input

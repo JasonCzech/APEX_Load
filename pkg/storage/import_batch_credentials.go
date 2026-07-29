@@ -512,7 +512,12 @@ func validateImportBatchConfigCredentials(script *dsl.Script, context importBatc
 	if err := validateImportBatchURL(script.Config.BaseURL, "config.base_url", context); err != nil {
 		return err
 	}
-	if err := validateImportBatchHeaders(script.Config.HTTP.DefaultHeaders, nil, "config.http.default_headers", context); err != nil {
+	if err := validateImportBatchHeaders(
+		script.Config.HTTP.DefaultHeaders,
+		script.Config.HTTP.DefaultHeaderList,
+		"config.http.default_headers",
+		context,
+	); err != nil {
 		return err
 	}
 	if err := validateImportBatchAuth(&script.Config.HTTP.Auth, "config.http.auth", context); err != nil {

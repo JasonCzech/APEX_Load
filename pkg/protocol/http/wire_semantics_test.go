@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -315,6 +316,57 @@ func TestHTTPDiagnosticsDoNotDiscloseRequestURLCredentials(t *testing.T) {
 	if got := runtime.transportErrorMessage(deadlineErr); got != "request timeout: context deadline exceeded" ||
 		strings.Contains(got, canary) {
 		t.Fatalf("transportErrorMessage() = %q, want stable value-free timeout diagnostic", got)
+	}
+}
+
+func TestEffectiveAuthoredHeaderListAppliesDefaultAndActionPrecedence(t *testing.T) {
+	defaults := map[string]string{
+		"User-Agent": "typed-agent",
+		"X-Legacy":   "legacy",
+	}
+	defaultList := protocol.HeaderList{
+		{Name: "X-Legacy", Value: "ordered"},
+		{Name: "X-Repeat", Value: "one"},
+		{Name: "X-Repeat", Value: "two"},
+		{Name: "Cookie", Value: "dark=true"},
+	}
+	actionHeaders := map[string]string{"X-Legacy": "action-map"}
+	actionList := protocol.HeaderList{
+		{Name: "Cookie", Value: "action=true"},
+		{Name: "X-Action", Value: "yes"},
+	}
+
+	got, issues := effectiveAuthoredHeaderList(defaults, defaultList, actionHeaders, actionList)
+	if len(issues) != 0 {
+		t.Fatalf("effectiveAuthoredHeaderList issues = %#v", issues)
+	}
+	want := protocol.HeaderList{
+		{Name: "User-Agent", Value: "typed-agent"},
+		{Name: "X-Repeat", Value: "one"},
+		{Name: "X-Repeat", Value: "two"},
+		{Name: "X-Legacy", Value: "action-map"},
+		{Name: "Cookie", Value: "action=true"},
+		{Name: "X-Action", Value: "yes"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("effective headers = %#v, want %#v", got, want)
+	}
+}
+
+func TestEffectiveAuthoredHeaderListDisabledOrderedEntrySuppressesCompatibilityMap(t *testing.T) {
+	disabled := false
+	got, issues := effectiveAuthoredHeaderList(
+		map[string]string{"X-Disabled": "stale-default", "X-Keep": "default"},
+		protocol.HeaderList{{Name: "x-disabled", Value: "not-sent", Enabled: &disabled}},
+		map[string]string{"X-Action-Disabled": "stale-action"},
+		protocol.HeaderList{{Name: "x-action-disabled", Value: "not-sent", Enabled: &disabled}},
+	)
+	if len(issues) != 0 {
+		t.Fatalf("effectiveAuthoredHeaderList issues = %#v", issues)
+	}
+	want := protocol.HeaderList{{Name: "X-Keep", Value: "default"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("effective headers = %#v, want %#v", got, want)
 	}
 }
 

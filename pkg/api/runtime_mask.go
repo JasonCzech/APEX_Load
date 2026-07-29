@@ -2,8 +2,8 @@ package api
 
 // Masked-secret protocol for runtime overrides.
 //
-// The only secret-bearing field in the current RuntimeSettingsOverride contract
-// is Env (template values injected via {{env.KEY}}). This file keeps stored
+// RuntimeSettingsOverride contains secret-bearing environment, URL, HTTP,
+// browser, authentication, proxy, and header fields. This file keeps stored
 // secrets from leaking on read and keeps a client that echoes the redaction
 // sentinel back on write from clobbering the stored value:
 //
@@ -125,8 +125,8 @@ func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 	return clone
 }
 
-// maskHTTPSecrets redacts the secret-bearing fields of an HTTP override section
-// (auth password/token, proxy username/password) in place on a cloned section.
+// maskHTTPSecrets redacts the secret-bearing fields and header values of an HTTP
+// override section in place on a cloned section.
 func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	if http == nil {
 		return
@@ -147,9 +147,75 @@ func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	policy := scrub.Policy{}
 	for name, value := range http.DefaultHeaders {
 		if value != "" && policy.SensitiveHeader(name) {
+			if strings.EqualFold(strings.TrimSpace(name), "Cookie") {
+				if masked, ok := maskCookieHeaderValue(value); ok {
+					http.DefaultHeaders[name] = masked
+					continue
+				}
+			}
 			http.DefaultHeaders[name] = scrub.Redacted
 		}
 	}
+	for index := range http.DefaultHeaderList {
+		header := &http.DefaultHeaderList[index]
+		if header.Value != "" && policy.SensitiveHeader(header.Name) {
+			if strings.EqualFold(strings.TrimSpace(header.Name), "Cookie") {
+				if masked, ok := maskCookieHeaderValue(header.Value); ok {
+					header.Value = masked
+					continue
+				}
+			}
+			header.Value = scrub.Redacted
+		}
+	}
+}
+
+type cookieHeaderPair struct {
+	name  string
+	value string
+}
+
+func parseCookieHeaderValue(value string) ([]cookieHeaderPair, bool) {
+	parts := strings.Split(value, ";")
+	pairs := make([]cookieHeaderPair, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		separator := strings.IndexByte(part, '=')
+		if separator <= 0 {
+			return nil, false
+		}
+		name := strings.TrimSpace(part[:separator])
+		if name == "" || strings.ContainsAny(name, "\r\n") {
+			return nil, false
+		}
+		pairs = append(pairs, cookieHeaderPair{
+			name:  name,
+			value: strings.TrimSpace(part[separator+1:]),
+		})
+	}
+	return pairs, len(pairs) > 0
+}
+
+func formatCookieHeaderValue(pairs []cookieHeaderPair) string {
+	values := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		values = append(values, pair.name+"="+pair.value)
+	}
+	return strings.Join(values, "; ")
+}
+
+func maskCookieHeaderValue(value string) (string, bool) {
+	pairs, ok := parseCookieHeaderValue(value)
+	if !ok {
+		return "", false
+	}
+	for index := range pairs {
+		pairs[index].value = scrub.Redacted
+	}
+	return formatCookieHeaderValue(pairs), true
 }
 
 func maskBrowserSecrets(browser *dsl.BrowserConfig) {
@@ -591,6 +657,15 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 		if !policy.SensitiveHeader(name) {
 			continue
 		}
+		if strings.EqualFold(strings.TrimSpace(name), "Cookie") && value != scrub.Redacted && value != "" {
+			priorValue, _ := caseInsensitiveMapValue(priorDefaultHeaders(prior), name)
+			if reconciled, keep := reconcileMaskedCookieHeader(value, []string{priorValue}); keep {
+				incoming.DefaultHeaders[name] = reconciled
+			} else {
+				delete(incoming.DefaultHeaders, name)
+			}
+			continue
+		}
 		switch value {
 		case scrub.Redacted:
 			if priorValue, ok := caseInsensitiveMapValue(priorDefaultHeaders(prior), name); ok {
@@ -605,6 +680,100 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 	if len(incoming.DefaultHeaders) == 0 {
 		incoming.DefaultHeaders = nil
 	}
+	priorOccurrences := orderedHeaderOccurrenceCounts(prior)
+	incomingOccurrences := make(map[string]int)
+	for _, header := range incoming.DefaultHeaderList {
+		if policy.SensitiveHeader(header.Name) {
+			incomingOccurrences[strings.ToLower(strings.TrimSpace(header.Name))]++
+		}
+	}
+	priorCookieValues := priorOrderedCookieHeaderValues(prior)
+	occurrences := make(map[string]int)
+	filtered := incoming.DefaultHeaderList[:0]
+	for _, header := range incoming.DefaultHeaderList {
+		canonical := strings.ToLower(strings.TrimSpace(header.Name))
+		ordinal := occurrences[canonical]
+		occurrences[canonical]++
+		if !policy.SensitiveHeader(header.Name) {
+			filtered = append(filtered, header)
+			continue
+		}
+		if canonical == "cookie" && header.Value != scrub.Redacted && header.Value != "" {
+			if reconciled, keep := reconcileMaskedCookieHeader(header.Value, priorCookieValues); keep {
+				header.Value = reconciled
+				filtered = append(filtered, header)
+			}
+			continue
+		}
+		switch header.Value {
+		case scrub.Redacted:
+			// With duplicate sensitive names, an ordinal is trustworthy only
+			// while the occurrence count is unchanged. If a client deleted one
+			// of several masked rows, fail closed instead of restoring a
+			// different stored secret into the surviving row.
+			countStable := priorOccurrences[canonical] == 1 ||
+				priorOccurrences[canonical] == incomingOccurrences[canonical]
+			if priorValue, ok := priorDefaultHeaderListValue(prior, header.Name, ordinal); ok && countStable {
+				header.Value = priorValue
+				filtered = append(filtered, header)
+			}
+		case "":
+			// Empty sensitive values explicitly remove the occurrence.
+		default:
+			filtered = append(filtered, header)
+		}
+	}
+	if len(filtered) == 0 {
+		incoming.DefaultHeaderList = nil
+	} else {
+		incoming.DefaultHeaderList = filtered
+	}
+}
+
+func reconcileMaskedCookieHeader(incoming string, priorValues []string) (string, bool) {
+	pairs, ok := parseCookieHeaderValue(incoming)
+	if !ok {
+		return incoming, incoming != ""
+	}
+	hasSentinel := false
+	for _, pair := range pairs {
+		if pair.value == scrub.Redacted {
+			hasSentinel = true
+			break
+		}
+	}
+	if !hasSentinel {
+		return incoming, true
+	}
+	priorByName := make(map[string][]string)
+	for _, value := range priorValues {
+		priorPairs, parsed := parseCookieHeaderValue(value)
+		if !parsed {
+			continue
+		}
+		for _, pair := range priorPairs {
+			key := strings.TrimSpace(pair.name)
+			priorByName[key] = append(priorByName[key], pair.value)
+		}
+	}
+	filtered := pairs[:0]
+	for _, pair := range pairs {
+		if pair.value != scrub.Redacted {
+			filtered = append(filtered, pair)
+			continue
+		}
+		// Cookie names provide a stable reconciliation key. Duplicate stored
+		// names are ambiguous without row IDs, so their sentinels are removed.
+		values := priorByName[strings.TrimSpace(pair.name)]
+		if len(values) == 1 {
+			pair.value = values[0]
+			filtered = append(filtered, pair)
+		}
+	}
+	if len(filtered) == 0 {
+		return "", false
+	}
+	return formatCookieHeaderValue(filtered), true
 }
 
 func priorDefaultHeaders(prior *dsl.HTTPConfig) map[string]string {
@@ -612,6 +781,50 @@ func priorDefaultHeaders(prior *dsl.HTTPConfig) map[string]string {
 		return nil
 	}
 	return prior.DefaultHeaders
+}
+
+func priorDefaultHeaderListValue(prior *dsl.HTTPConfig, name string, ordinal int) (string, bool) {
+	if prior == nil {
+		return "", false
+	}
+	match := 0
+	for _, header := range prior.DefaultHeaderList {
+		if !strings.EqualFold(strings.TrimSpace(header.Name), strings.TrimSpace(name)) {
+			continue
+		}
+		if match == ordinal {
+			return header.Value, true
+		}
+		match++
+	}
+	return "", false
+}
+
+func orderedHeaderOccurrenceCounts(prior *dsl.HTTPConfig) map[string]int {
+	counts := make(map[string]int)
+	if prior == nil {
+		return counts
+	}
+	policy := scrub.Policy{}
+	for _, header := range prior.DefaultHeaderList {
+		if policy.SensitiveHeader(header.Name) {
+			counts[strings.ToLower(strings.TrimSpace(header.Name))]++
+		}
+	}
+	return counts
+}
+
+func priorOrderedCookieHeaderValues(prior *dsl.HTTPConfig) []string {
+	if prior == nil {
+		return nil
+	}
+	values := make([]string, 0)
+	for _, header := range prior.DefaultHeaderList {
+		if strings.EqualFold(strings.TrimSpace(header.Name), "Cookie") {
+			values = append(values, header.Value)
+		}
+	}
+	return values
 }
 
 func caseInsensitiveMapValue(values map[string]string, key string) (string, bool) {

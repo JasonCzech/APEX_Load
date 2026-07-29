@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 // Per-protocol config appenders extracted from buildProtoConfigWithSecretResolver.
@@ -91,6 +92,13 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	}
 	if len(httpCfg.DefaultHeaders) > 0 {
 		cfg["default_headers"] = httpCfg.DefaultHeaders
+	}
+	if len(httpCfg.DefaultHeaderList) > 0 {
+		headers := make(protocol.HeaderList, 0, len(httpCfg.DefaultHeaderList))
+		for _, header := range httpCfg.DefaultHeaderList {
+			headers = append(headers, protocol.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
+		}
+		cfg["default_header_list"] = headers
 	}
 	appendBrowserEmulationHTTPConfig(cfg, script)
 	if len(script.Config.WebRuntime.ContentChecks) > 0 {

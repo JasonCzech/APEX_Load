@@ -32,6 +32,7 @@ export function asHeaderList(value: unknown): Action['header_list'] {
     .map(header => ({
       name: asString(header.name),
       value: asString(header.value),
+      enabled: typeof header.enabled === 'boolean' ? header.enabled : undefined,
     }))
 }
 
@@ -57,6 +58,10 @@ export function headerListToCompatibilityMap(
     const previous = spelling.get(identity)
     if (previous && previous !== name) delete headers[previous]
     spelling.set(identity, name)
+    if (header.enabled === false) {
+      delete headers[name]
+      continue
+    }
     headers[name] = header.value
   }
   return headers

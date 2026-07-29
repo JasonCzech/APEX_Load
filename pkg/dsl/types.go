@@ -667,10 +667,11 @@ type HTTPConfig struct {
 	Auth AuthConfig `json:"auth,omitempty"`
 
 	// Default headers applied to every request
-	DefaultHeaders map[string]string `json:"default_headers,omitempty"`
-	UserAgent      string            `json:"user_agent,omitempty"`
-	AcceptEncoding string            `json:"accept_encoding,omitempty"` // "gzip, deflate, br"
-	AcceptLanguage string            `json:"accept_language,omitempty"` // "en-US,en;q=0.9"
+	DefaultHeaders    map[string]string `json:"default_headers,omitempty"`
+	DefaultHeaderList HeaderList        `json:"default_header_list,omitempty"`
+	UserAgent         string            `json:"user_agent,omitempty"`
+	AcceptEncoding    string            `json:"accept_encoding,omitempty"` // "gzip, deflate, br"
+	AcceptLanguage    string            `json:"accept_language,omitempty"` // "en-US,en;q=0.9"
 
 	// Redirects
 	MaxRedirects *int `json:"max_redirects,omitempty"` // default: 10, -1 = disable
@@ -792,8 +793,9 @@ type Parameter struct {
 // Imports whose special headers would lose semantics must omit those unsafe
 // occurrences and retain a durable review gate with value-free fidelity evidence.
 type HeaderEntry struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name    string `json:"name"`
+	Value   string `json:"value"`
+	Enabled *bool  `json:"enabled,omitempty"`
 }
 
 type HeaderList []HeaderEntry
@@ -828,6 +830,9 @@ func (headers HeaderList) ToMap() map[string]string {
 	out := make(map[string]string, len(headers))
 	spelling := make(map[string]string, len(headers))
 	for _, header := range headers {
+		if header.Enabled != nil && !*header.Enabled {
+			continue
+		}
 		name := strings.TrimSpace(header.Name)
 		if name == "" {
 			continue

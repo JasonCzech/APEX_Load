@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
-import { type ScriptConfig } from '../types/scripts'
+import { type ScriptActionDefinition, type ScriptConfig } from '../types/scripts'
 import { inheritedPlaceholder as inh } from './runtimeFieldParsers'
 import {
   EMPTY_RUNTIME_DRAFT,
@@ -31,6 +31,16 @@ import {
 import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
 import { formatMillisecondsAsSecondsValue } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import HttpRequestDefaultsEditor, {
+  SocketCompatibilityPanel,
+} from './HttpRequestDefaultsEditor'
+import {
+  countHTTPDefaultHeaders,
+  countHTTPDefaultHeaderErrors,
+  countPinnedCookies,
+  countPinnedCookieErrors,
+  formatHTTPSettingsSummary,
+} from './httpRequestDefaultsModel'
 
 export interface RuntimeEditorGroup {
   name: string
@@ -38,6 +48,8 @@ export interface RuntimeEditorGroup {
   protocol?: string
   /** The group's script DSL config, used to resolve actual script-default values. */
   scriptConfig?: ScriptConfig
+  /** Script requests used by the effective-header precedence inspector. */
+  scriptActions?: ScriptActionDefinition[]
   /** VM-parameter tokens captured from an imported LoadRunner Java script, offered as a picker. */
   importedJavaVMParameters?: string[]
 }
@@ -111,7 +123,7 @@ type RuntimeTabId =
   | 'java_env'
 
 /** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
-type HttpSubTabId = 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
+type HttpSubTabId = 'request_defaults' | 'session_cache' | 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
 
 type HTTPSettings = NonNullable<ScenarioRuntimeSettingsDraft['http']>
 type BrowserSettings = NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>
@@ -166,7 +178,7 @@ export default function RuntimeSettingsGroupEditor({
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
   const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
-  const [rawHttpSubTab, setRawHttpSubTab] = useState<HttpSubTabId>('timeouts')
+  const [rawHttpSubTab, setRawHttpSubTab] = useState<HttpSubTabId>('request_defaults')
 
   // Derived above the empty-groups early return below, because the catalog hook
   // that depends on them must run on every render (Rules of Hooks).
@@ -288,7 +300,7 @@ export default function RuntimeSettingsGroupEditor({
     onChange(index, isRuntimeDraftEmpty(merged) ? undefined : merged)
   }
 
-  const patchHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
+  const editedHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
     const hasCurrentSection = draft.http !== undefined
     const current = hasCurrentSection ? draft.http : inheritedHttp
     const topLevelNext = { ...next }
@@ -324,7 +336,11 @@ export default function RuntimeSettingsGroupEditor({
       if (Object.keys(auth).length > 0) edited.auth = auth
       else delete edited.auth
     }
-    patch({ http: edited })
+    return edited
+  }
+
+  const patchHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
+    patch({ http: editedHttp(next) })
   }
 
   // think_time / pacing carry the full DSL config. Clearing routes through the
@@ -401,7 +417,7 @@ export default function RuntimeSettingsGroupEditor({
 
   // Browser-emulation edits replace the whole section; the first edit
   // materializes the inherited section, mirroring patchBrowserConfig.
-  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
+  const editedBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
     const hasCurrentSection = draft.browser_emulation !== undefined
     const topLevelNext = { ...next }
     delete topLevelNext.cache
@@ -419,7 +435,51 @@ export default function RuntimeSettingsGroupEditor({
       if (Object.keys(cache).length > 0) edited.cache = cache
       else delete edited.cache
     }
-    patch({ browser_emulation: edited })
+    return edited
+  }
+  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
+    patch({ browser_emulation: editedBrowserEmulation(next) })
+  }
+  const httpSettingsValue: HTTPSettings = {
+    ...effectiveHttp,
+    cache_enabled: effectiveHttp.cache_enabled ?? effectiveBrowserEmulation.cache?.simulate_cache,
+  }
+  const httpOriginLabel = draft.http
+    ? 'Group override'
+    : scenarioDefault?.http
+      ? 'Scenario default'
+      : focusGroup.scriptConfig?.http && Object.keys(focusGroup.scriptConfig.http).length > 0
+        ? 'Script default'
+        : 'Engine default'
+  const webOriginLabel = draft.web_runtime?.additional_attributes
+    ? 'Group override'
+    : scenarioDefault?.web_runtime?.additional_attributes
+      ? 'Scenario default'
+      : focusGroup.scriptConfig?.web_runtime?.additional_attributes
+        ? 'Script default'
+        : 'Engine default'
+  const effectiveSocketAttributes = {
+    ...(inheritedWeb.additional_attributes || {}),
+    ...(draft.web_runtime?.additional_attributes || {}),
+  }
+  const requestDefaultErrorCount = countHTTPDefaultHeaderErrors(httpSettingsValue)
+  const pinnedCookieErrorCount = countPinnedCookieErrors(httpSettingsValue)
+  const patchHTTPSettings = (next: Partial<HTTPSettings>) => {
+    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled')) {
+      patchHttp(next)
+      return
+    }
+    const cachePatch = next.cache_enabled
+      ? { simulate_cache: true }
+      : {
+          simulate_cache: false,
+          cache_content_urls: undefined,
+          check_newer_versions: undefined,
+        }
+    patch({
+      http: editedHttp(next),
+      browser_emulation: editedBrowserEmulation({ cache: cachePatch }),
+    })
   }
 
   const browserBoolValue = (a?: boolean, b?: boolean): string => {
@@ -576,15 +636,17 @@ export default function RuntimeSettingsGroupEditor({
 
   // HTTP Transport nested sub-tabs; Browser emulation only for browser groups.
   const httpSubTabs: Array<{ id: HttpSubTabId; label: string; show: boolean }> = [
-    { id: 'timeouts', label: 'Timeouts', show: true },
+    { id: 'request_defaults', label: 'Request Defaults', show: true },
+    { id: 'session_cache', label: 'Session & Cache', show: true },
     { id: 'connection', label: 'Connection', show: true },
+    { id: 'timeouts', label: 'Timeouts', show: true },
     { id: 'tls', label: 'TLS / SSL', show: true },
     { id: 'proxy', label: 'Proxy', show: true },
     { id: 'authentication', label: 'Authentication', show: true },
     { id: 'browser_emulation', label: 'Browser (Playwright)', show: browserApplicable },
   ]
   const visibleHttpSubTabs = httpSubTabs.filter(st => st.show)
-  const httpSubTab: HttpSubTabId = visibleHttpSubTabs.some(st => st.id === rawHttpSubTab) ? rawHttpSubTab : 'timeouts'
+  const httpSubTab: HttpSubTabId = visibleHttpSubTabs.some(st => st.id === rawHttpSubTab) ? rawHttpSubTab : 'request_defaults'
 
   const patchProxy = (next: Partial<NonNullable<NonNullable<ScenarioRuntimeSettingsDraft['http']>['proxy']>>) => {
     patchHttp({ proxy: { ...draft.http?.proxy, ...next } })
@@ -975,6 +1037,20 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'http_transport' && (
           <>
+            <div className="http-settings-persistent-summary" role="status">
+              <strong>Effective HTTP settings</strong>
+              <span>{formatHTTPSettingsSummary(
+                httpSettingsValue,
+                Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration),
+              )}</span>
+              <span className="http-setting-origin">{httpOriginLabel}</span>
+            </div>
+            <label className="http-transport-mobile-select">
+              <span>HTTP settings group</span>
+              <select value={httpSubTab} onChange={event => setRawHttpSubTab(event.target.value as HttpSubTabId)}>
+                {visibleHttpSubTabs.map(st => <option value={st.id} key={st.id}>{st.label}</option>)}
+              </select>
+            </label>
             <div className="http-transport-tabs" role="tablist" aria-label="HTTP transport sections">
               {visibleHttpSubTabs.map(st => (
                 <button
@@ -985,12 +1061,48 @@ export default function RuntimeSettingsGroupEditor({
                   className={`http-transport-tab ${httpSubTab === st.id ? 'active' : ''}`}
                   onClick={() => setRawHttpSubTab(st.id)}
                 >
-                  {st.label}
+                  <span>{st.label}</span>
+                  {st.id === 'request_defaults' && (
+                    <>
+                      <span className="http-tab-count">{countHTTPDefaultHeaders(httpSettingsValue)}</span>
+                      {requestDefaultErrorCount > 0 && <span className="http-tab-error" aria-label={`${requestDefaultErrorCount} request default errors`}>{requestDefaultErrorCount} errors</span>}
+                    </>
+                  )}
+                  {st.id === 'session_cache' && (
+                    <>
+                      <span className="http-tab-count">{countPinnedCookies(httpSettingsValue)}</span>
+                      {pinnedCookieErrorCount > 0 && <span className="http-tab-error" aria-label={`${pinnedCookieErrorCount} pinned cookie errors`}>{pinnedCookieErrorCount} errors</span>}
+                    </>
+                  )}
                 </button>
               ))}
             </div>
 
             <div className="http-transport-tab-panel">
+              {httpSubTab === 'request_defaults' && (
+                <HttpRequestDefaultsEditor
+                  actions={focusGroup.scriptActions}
+                  newUserEachIteration={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)}
+                  onChange={patchHTTPSettings}
+                  onNewUserEachIterationChange={enabled => patchBrowserEmulation({ cache: { new_user_each_iteration: enabled } })}
+                  originLabel={httpOriginLabel}
+                  section="request"
+                  value={httpSettingsValue}
+                />
+              )}
+
+              {httpSubTab === 'session_cache' && (
+                <HttpRequestDefaultsEditor
+                  actions={focusGroup.scriptActions}
+                  newUserEachIteration={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)}
+                  onChange={patchHTTPSettings}
+                  onNewUserEachIterationChange={enabled => patchBrowserEmulation({ cache: { new_user_each_iteration: enabled } })}
+                  originLabel={draft.http ? 'Group override' : 'Inherited'}
+                  section="session"
+                  value={httpSettingsValue}
+                />
+              )}
+
               {httpSubTab === 'timeouts' && (
                 <div className="scenario-browser-grid">
                   <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.connect_timeout_ms)} /></label>
@@ -1015,6 +1127,7 @@ export default function RuntimeSettingsGroupEditor({
                     Inherit uses the next configured layer; an effective empty value auto-negotiates. Explicit versions are exact, and required HTTP/2 never falls back to HTTP/1.1.
                   </div>
                   <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
+                  <label><span>Max idle connections</span><input className="settings-input" type="number" min={0} value={draft.http?.max_idle_conns ?? ''} onChange={event => patchHttp({ max_idle_conns: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_idle_conns)} /></label>
                   <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>
                   <label>
                     <span>Keep-alive</span>
@@ -1024,18 +1137,14 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="false">Disabled</option>
                     </select>
                   </label>
-                  <label><span>User agent</span><input className="settings-input" type="text" value={draft.http?.user_agent || ''} onChange={event => patchHttp({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedHttp.user_agent)} /></label>
-                  <label><span>Accept-Encoding</span><input className="settings-input" type="text" value={draft.http?.accept_encoding || ''} onChange={event => patchHttp({ accept_encoding: event.target.value || undefined })} placeholder={inh(inheritedHttp.accept_encoding)} /></label>
-                  <label><span>Accept-Language</span><input className="settings-input" type="text" value={draft.http?.accept_language || ''} onChange={event => patchHttp({ accept_language: event.target.value || undefined })} placeholder={inh(inheritedHttp.accept_language)} /></label>
-                  {/* Mirror the author page's disclosure: browser emulation is
-                      authoritative for both headers at replay, so a value typed
-                      here would otherwise silently never reach the wire. */}
-                  {Boolean(effectiveBrowserEmulation.mode) && (
-                    <div className="form-hint">User agent is overridden by the Browser Emulation tab while a browser selection is active.</div>
-                  )}
-                  {Boolean(effectiveBrowserEmulation.language) && (
-                    <div className="form-hint">Accept-Language is overridden by the Browser Emulation tab while a language is selected.</div>
-                  )}
+                  <details className="http-advanced-options">
+                    <summary>Advanced connection guidance</summary>
+                    <p>Connection-specific headers require exact HTTP/1.1. Unsupported imported socket options remain review-only compatibility metadata.</p>
+                  </details>
+                  <SocketCompatibilityPanel
+                    additionalAttributes={effectiveSocketAttributes}
+                    originLabel={webOriginLabel}
+                  />
                 </div>
               )}
 
@@ -1316,24 +1425,19 @@ export default function RuntimeSettingsGroupEditor({
                 />
               </label>
             </div>
+            <div className="http-cache-canonical-note" role="note">
+              Cache enablement and per-iteration cleanup are configured in HTTP Transport → Session &amp; Cache.
+              <button type="button" className="link-button" onClick={() => {
+                setRawActiveTab('http_transport')
+                setRawHttpSubTab('session_cache')
+              }}>Open Session &amp; Cache</button>
+            </div>
             <div className="scenario-browser-checkboxes" aria-label="Browser cache simulation">
               <label>
                 <input
                   type="checkbox"
-                  checked={effectiveBrowserEmulation.cache?.simulate_cache || false}
-                  onChange={event => patchBrowserEmulation({ cache: event.target.checked
-                    ? { simulate_cache: true }
-                    // Explicit false (not undefined) so editReplacementSection turns
-                    // the children off rather than restoring the inherited value.
-                    : { simulate_cache: false, cache_content_urls: false, check_newer_versions: false } })}
-                />
-                <span>Simulate browser cache</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
                   checked={effectiveBrowserEmulation.cache?.cache_content_urls || false}
-                  disabled={!effectiveBrowserEmulation.cache?.simulate_cache}
+                  disabled={!httpSettingsValue.cache_enabled}
                   onChange={event => patchBrowserEmulation({ cache: { cache_content_urls: event.target.checked } })}
                 />
                 <span>Cache URLs requiring content (HTMLs)</span>
@@ -1342,7 +1446,7 @@ export default function RuntimeSettingsGroupEditor({
                 <input
                   type="checkbox"
                   checked={effectiveBrowserEmulation.cache?.check_newer_versions || false}
-                  disabled={!effectiveBrowserEmulation.cache?.simulate_cache}
+                  disabled={!httpSettingsValue.cache_enabled}
                   onChange={event => patchBrowserEmulation({ cache: { check_newer_versions: event.target.checked } })}
                 />
                 <span>Check for newer versions of stored pages on every visit</span>
@@ -1354,14 +1458,6 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => patchBrowserEmulation({ cache: { download_non_html_resources: event.target.checked } })}
                 />
                 <span>Download non-HTML resources</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={effectiveBrowserEmulation.cache?.new_user_each_iteration || false}
-                  onChange={event => patchBrowserEmulation({ cache: { new_user_each_iteration: event.target.checked } })}
-                />
-                <span>Simulate a new user on each iteration</span>
               </label>
               <label>
                 <input

@@ -412,8 +412,9 @@ func scrubResolvedProjectionHeaderList(
 	out := make(protocol.HeaderList, len(source))
 	for index, header := range source {
 		out[index] = protocol.HeaderEntry{
-			Name:  scrubSensitiveTextWithConfig(header.Name, config),
-			Value: scrubSensitiveTextWithConfig(header.Value, config),
+			Name:    scrubSensitiveTextWithConfig(header.Name, config),
+			Value:   scrubSensitiveTextWithConfig(header.Value, config),
+			Enabled: header.Enabled,
 		}
 	}
 	return out

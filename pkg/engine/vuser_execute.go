@@ -575,10 +575,16 @@ func actionContainsUnresolvedParameter(action *protocol.Action) bool {
 	if bytesContainUnresolvedParamToken(action.Body) || bytesContainUnresolvedParamToken(action.RedactedBody) {
 		return true
 	}
-	if stringMapContainsUnresolvedParam(action.Headers) || stringMapContainsUnresolvedParam(action.RedactedHeaders) {
+	if stringMapContainsUnresolvedParam(action.Headers) ||
+		stringMapContainsUnresolvedParam(action.RedactedHeaders) ||
+		stringMapContainsUnresolvedParam(action.DefaultHeaders) {
 		return true
 	}
-	for _, list := range []protocol.HeaderList{action.HeaderList, action.RedactedHeaderList} {
+	for _, list := range []protocol.HeaderList{
+		action.HeaderList,
+		action.RedactedHeaderList,
+		action.DefaultHeaderList,
+	} {
 		for _, entry := range list {
 			if anyStringContainsUnresolvedParam(entry.Name, entry.Value) {
 				return true

@@ -206,6 +206,48 @@ func TestHTTPExecuteDownloadsResourcesAndReports(t *testing.T) {
 	}
 }
 
+func TestHTTPExecuteResourcesUseResolvedRequestIdentityHeaders(t *testing.T) {
+	var resourceUserAgent, resourceLanguage string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><img src="/img.png"></body></html>`))
+	})
+	mux.HandleFunc("/img.png", func(w http.ResponseWriter, r *http.Request) {
+		resourceUserAgent = r.Header.Get("User-Agent")
+		resourceLanguage = r.Header.Get("Accept-Language")
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("image"))
+	})
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url":                         ts.URL,
+		"http_download_non_html_resources": true,
+		"user_agent":                       "startup-agent",
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:                   "resolved-resource-identity",
+		Method:                 "GET",
+		Target:                 "/",
+		ResolvedDefaultHeaders: true,
+		DefaultHeaderList: protocol.HeaderList{
+			{Name: "User-Agent", Value: "resolved-agent"},
+			{Name: "Accept-Language", Value: "fr-CA"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("result = %#v, want success", result)
+	}
+	if resourceUserAgent != "resolved-agent" || resourceLanguage != "fr-CA" {
+		t.Fatalf("resource identity = %q / %q, want resolved-agent / fr-CA", resourceUserAgent, resourceLanguage)
+	}
+}
+
 func TestHTTPExecuteCSSResolvesAgainstStylesheetURL(t *testing.T) {
 	var bgHit, wrongHit int32
 	mux := http.NewServeMux()

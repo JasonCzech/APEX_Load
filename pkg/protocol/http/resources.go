@@ -164,7 +164,13 @@ func (f *resourceFetcher) blockedByDownloadFilters(rawURL string) bool {
 // fetchPageResources runs the resource + prefetch waves for one HTML page and
 // aggregates the outcome into the parent result (bytes, NetworkEntries, and
 // resource_* ProtocolEvidence counters). The caller re-stamps result.Duration.
-func (f *resourceFetcher) fetchPageResources(ctx context.Context, pageURL *neturl.URL, body []byte, result *protocol.Result) {
+func (f *resourceFetcher) fetchPageResources(
+	ctx context.Context,
+	pageURL *neturl.URL,
+	body []byte,
+	result *protocol.Result,
+	pageHeaders http.Header,
+) {
 	if f == nil || pageURL == nil || len(body) == 0 || result == nil {
 		return
 	}
@@ -181,7 +187,7 @@ func (f *resourceFetcher) fetchPageResources(ctx context.Context, pageURL *netur
 	}
 
 	stats := &resourceFetchStats{}
-	cssBodies := f.fetchResourceWave(ctx, resources, pageURL.String(), stats, true)
+	cssBodies := f.fetchResourceWave(ctx, resources, pageURL.String(), stats, true, pageHeaders)
 
 	// Second bounded wave: url(...) references discovered in fetched CSS.
 	// Depth stays 1 — CSS-derived resources are fetched but never parsed again.
@@ -197,14 +203,14 @@ func (f *resourceFetcher) fetchPageResources(ctx context.Context, pageURL *netur
 		}
 		seen := stats.seenURLs()
 		cssRefs = f.filterResourceRefs(cssRefs, pageURL, maxPageResources-stats.requested(), seen)
-		f.fetchResourceWave(ctx, cssRefs, pageURL.String(), stats, false)
+		f.fetchResourceWave(ctx, cssRefs, pageURL.String(), stats, false, pageHeaders)
 	}
 
 	// Low-priority prefetch/prerender wave, after all page resources. Skipped
 	// when the action context is already done.
 	if len(prefetch) > 0 && ctx.Err() == nil {
 		prefetch = f.filterResourceRefs(prefetch, pageURL, maxPrefetchResources, stats.seenURLs())
-		f.fetchResourceWave(ctx, prefetch, pageURL.String(), stats, false)
+		f.fetchResourceWave(ctx, prefetch, pageURL.String(), stats, false, pageHeaders)
 	}
 
 	stats.applyTo(result)
@@ -308,7 +314,14 @@ func (s *resourceFetchStats) applyTo(result *protocol.Result) {
 
 // fetchResourceWave fetches one wave with browser-like concurrency bounds and
 // returns the fetched stylesheets (body + own URL) when collectCSS is set.
-func (f *resourceFetcher) fetchResourceWave(ctx context.Context, refs []resourceRef, pageURL string, stats *resourceFetchStats, collectCSS bool) []fetchedCSS {
+func (f *resourceFetcher) fetchResourceWave(
+	ctx context.Context,
+	refs []resourceRef,
+	pageURL string,
+	stats *resourceFetchStats,
+	collectCSS bool,
+	pageHeaders http.Header,
+) []fetchedCSS {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -364,7 +377,7 @@ func (f *resourceFetcher) fetchResourceWave(ctx context.Context, refs []resource
 					}
 					defer func() { <-hostSem }()
 
-					entry, bytes, css, failed, cacheHit := f.h.fetchResource(ctx, ref, pageURL)
+					entry, bytes, css, failed, cacheHit := f.h.fetchResource(ctx, ref, pageURL, pageHeaders)
 					stats.record(entry, bytes, failed, cacheHit)
 					if collectCSS && css != nil {
 						cssMu.Lock()
@@ -401,7 +414,12 @@ type fetchedCSS struct {
 // fetchResource performs one resource GET through the shared client and the
 // simulated browser cache. css is non-nil only for a successfully fetched
 // text/css response small enough to have been fully buffered.
-func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL string) (entry protocol.NetworkEntry, bytes int64, css *fetchedCSS, failed, cacheHit bool) {
+func (h *HTTP) fetchResource(
+	ctx context.Context,
+	ref resourceRef,
+	pageURL string,
+	pageHeaders http.Header,
+) (entry protocol.NetworkEntry, bytes int64, css *fetchedCSS, failed, cacheHit bool) {
 	entry = protocol.NetworkEntry{URL: ref.url, Method: http.MethodGet, ResourceType: ref.resourceType}
 
 	// Generator-wide admission. Acquired before the clock starts so time spent
@@ -434,10 +452,10 @@ func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL strin
 	// behavior explicitly and decode it through the bounded response pipeline.
 	// Ordinary imported requests never acquire this default.
 	req.Header.Set("Accept-Encoding", "gzip")
-	if ua := h.defaultHeaders["User-Agent"]; ua != "" {
+	if ua := pageHeaders.Get("User-Agent"); ua != "" {
 		setRequestHeader(req, "User-Agent", ua)
 	}
-	if lang := h.defaultHeaders["Accept-Language"]; lang != "" {
+	if lang := pageHeaders.Get("Accept-Language"); lang != "" {
 		setRequestHeader(req, "Accept-Language", lang)
 	}
 	if referer := refererForResource(pageURL, ref.url); referer != "" {

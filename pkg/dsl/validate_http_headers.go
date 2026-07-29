@@ -33,11 +33,24 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 	}
 
 	version := script.Config.HTTP.Version
+	defaultListNames := make(map[string]struct{}, len(script.Config.HTTP.DefaultHeaderList))
+	for _, header := range script.Config.HTTP.DefaultHeaderList {
+		if name := strings.ToLower(strings.TrimSpace(header.Name)); name != "" {
+			// Ordered entries are authoritative even when disabled, so a
+			// legacy compatibility-map value cannot reappear during validation.
+			defaultListNames[name] = struct{}{}
+		}
+	}
 	issues := validateHTTPHeaderMapIssues(
 		"config.http.default_headers",
-		effectiveHTTPConfigHeaderMap(script.Config.HTTP),
+		effectiveHTTPConfigHeaderMap(script.Config.HTTP, defaultListNames),
 		version,
 	)
+	issues = append(issues, validateHTTPHeaderListIssues(
+		"config.http.default_header_list",
+		script.Config.HTTP.DefaultHeaderList,
+		version,
+	)...)
 
 	type pendingAction struct {
 		path   string
@@ -81,30 +94,39 @@ func validateHTTPHeaderContractIssues(script *Script) []string {
 	return issues
 }
 
-// effectiveHTTPConfigHeaderMap mirrors protocol/http.buildDefaultHeaders. The
-// named convenience fields are inserted first, then DefaultHeaders is applied
-// with ordinary case-sensitive Go map assignment. Consequently an exact-key
-// DefaultHeaders entry overrides its convenience field, while a case-variant
-// entry remains a second authored key whose ambiguous wire winner must be
-// rejected.
-func effectiveHTTPConfigHeaderMap(config HTTPConfig) map[string]string {
+// effectiveHTTPConfigHeaderMap mirrors protocol/http.buildDefaultHeaders.
+// Authored DefaultHeaders win over typed convenience fields using HTTP's
+// case-insensitive name matching. Case-variant collisions authored within
+// DefaultHeaders itself remain visible so validation can reject them.
+func effectiveHTTPConfigHeaderMap(config HTTPConfig, shadowed map[string]struct{}) map[string]string {
 	headers := make(map[string]string, len(config.DefaultHeaders)+3)
-	if config.UserAgent != "" {
-		headers["User-Agent"] = config.UserAgent
-	}
-	if config.AcceptEncoding != "" {
-		headers["Accept-Encoding"] = config.AcceptEncoding
-	}
-	if config.AcceptLanguage != "" {
-		headers["Accept-Language"] = config.AcceptLanguage
-	}
 	for name, value := range config.DefaultHeaders {
 		headers[name] = value
+	}
+	addTypedHTTPConfigHeader(headers, "User-Agent", config.UserAgent)
+	addTypedHTTPConfigHeader(headers, "Accept-Encoding", config.AcceptEncoding)
+	addTypedHTTPConfigHeader(headers, "Accept-Language", config.AcceptLanguage)
+	for name := range headers {
+		if _, exists := shadowed[strings.ToLower(strings.TrimSpace(name))]; exists {
+			delete(headers, name)
+		}
 	}
 	if len(headers) == 0 {
 		return nil
 	}
 	return headers
+}
+
+func addTypedHTTPConfigHeader(headers map[string]string, name, value string) {
+	if value == "" {
+		return
+	}
+	for existing := range headers {
+		if strings.EqualFold(strings.TrimSpace(existing), name) {
+			return
+		}
+	}
+	headers[name] = value
 }
 
 func validateHTTPActionHeaderContractIssues(label string, action Action, version string) []string {
@@ -151,7 +173,7 @@ func validateHTTPHeaderListIssues(label string, headers HeaderList, version stri
 	}
 	projected := make(protocol.HeaderList, 0, len(headers))
 	for _, header := range headers {
-		projected = append(projected, protocol.HeaderEntry{Name: header.Name, Value: header.Value})
+		projected = append(projected, protocol.HeaderEntry{Name: header.Name, Value: header.Value, Enabled: header.Enabled})
 	}
 	runtimeIssues := httpprotocol.HeaderListIssuesForVersionWithUnresolvedTemplates(projected, version)
 	return formatHTTPHeaderIssues(label, runtimeIssues)

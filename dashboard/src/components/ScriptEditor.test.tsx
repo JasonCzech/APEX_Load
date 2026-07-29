@@ -3503,13 +3503,18 @@ describe('ScriptEditor', () => {
     // The Playwright 'Browser Emulation' sub-tab is browser-protocol-only now;
     // HTTP scripts get the top-level Browser Emulation section instead.
     expect(httpTransportTabs.map(tab => tab.textContent?.trim())).toEqual([
-      'Timeouts',
+      'Request Defaults0',
+      'Session & Cache0',
       'Connection',
+      'Timeouts',
       'TLS / SSL',
       'Proxy',
       'Authentication',
     ])
-    expect(httpTransportTabs.find(tab => tab.textContent?.includes('Timeouts'))?.getAttribute('aria-selected')).toBe('true')
+    expect(httpTransportTabs.find(tab => tab.textContent?.includes('Request Defaults'))?.getAttribute('aria-selected')).toBe('true')
+    await act(async () => {
+      httpTransportTabs.find(tab => tab.textContent?.includes('Timeouts'))?.click()
+    })
     expect(sectionFor('HTTP Transport')?.textContent).toContain('Connect (s)')
     expect(sectionFor('HTTP Transport')?.textContent).not.toContain('Max Conns/Host')
 

@@ -705,21 +705,64 @@ func applyRedirectPolicy(client *http.Client, maxRedirects int) {
 
 func buildDefaultHeaders(config map[string]any) map[string]string {
 	headers := make(map[string]string)
-	if value, ok := config["user_agent"].(string); ok && value != "" {
-		headers["User-Agent"] = value
-	}
-	if value, ok := config["accept_encoding"].(string); ok && value != "" {
-		headers["Accept-Encoding"] = value
-	}
-	if value, ok := config["accept_language"].(string); ok && value != "" {
-		headers["Accept-Language"] = value
-	}
 	if values, ok := config["default_headers"].(map[string]string); ok {
 		for key, value := range values {
 			headers[key] = value
 		}
 	}
+	addTypedHeaderUnlessOverridden(headers, "User-Agent", config["user_agent"])
+	addTypedHeaderUnlessOverridden(headers, "Accept-Encoding", config["accept_encoding"])
+	addTypedHeaderUnlessOverridden(headers, "Accept-Language", config["accept_language"])
 	return headers
+}
+
+func buildTypedDefaultHeaders(config map[string]any) map[string]string {
+	headers := make(map[string]string)
+	addTypedHeaderUnlessOverridden(headers, "User-Agent", config["user_agent"])
+	addTypedHeaderUnlessOverridden(headers, "Accept-Encoding", config["accept_encoding"])
+	addTypedHeaderUnlessOverridden(headers, "Accept-Language", config["accept_language"])
+	return headers
+}
+
+func mergeDefaultHeaders(typed, authored map[string]string) map[string]string {
+	headers := make(map[string]string, len(typed)+len(authored))
+	for name, value := range authored {
+		headers[name] = value
+	}
+	for name, value := range typed {
+		addTypedHeaderUnlessOverridden(headers, name, value)
+	}
+	return headers
+}
+
+func addTypedHeaderUnlessOverridden(headers map[string]string, name string, raw any) {
+	value, ok := raw.(string)
+	if !ok || value == "" {
+		return
+	}
+	for existing := range headers {
+		if strings.EqualFold(strings.TrimSpace(existing), name) {
+			return
+		}
+	}
+	headers[name] = value
+}
+
+func buildDefaultHeaderList(config map[string]any) protocol.HeaderList {
+	switch values := config["default_header_list"].(type) {
+	case protocol.HeaderList:
+		return append(protocol.HeaderList(nil), values...)
+	case []protocol.HeaderEntry:
+		return append(protocol.HeaderList(nil), values...)
+	case []map[string]string:
+		headers := make(protocol.HeaderList, 0, len(values))
+		for _, value := range values {
+			headers = append(headers, protocol.HeaderEntry{Name: value["name"], Value: value["value"]})
+		}
+		return headers
+	default:
+		return nil
+	}
 }
 
 func buildAuthHeader(config map[string]any) (string, string) {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -203,17 +204,32 @@ func TestHTTP_Init_DefaultHeaders(t *testing.T) {
 		"user_agent":      "APEXLoad/1.0",
 		"accept_encoding": "gzip",
 		"accept_language": "en-US",
-		"default_headers": map[string]string{"X-Custom": "value"},
+		"default_headers": map[string]string{"user-agent": "authored", "X-Custom": "value"},
 	})
 
-	if h.defaultHeaders["User-Agent"] != "APEXLoad/1.0" {
-		t.Errorf("User-Agent = %q", h.defaultHeaders["User-Agent"])
+	if _, exists := h.defaultHeaders["User-Agent"]; exists {
+		t.Fatalf("typed User-Agent survived case-insensitive authored override: %#v", h.defaultHeaders)
+	}
+	if h.defaultHeaders["user-agent"] != "authored" {
+		t.Errorf("user-agent = %q", h.defaultHeaders["user-agent"])
 	}
 	if h.defaultHeaders["Accept-Encoding"] != "gzip" {
 		t.Errorf("Accept-Encoding = %q", h.defaultHeaders["Accept-Encoding"])
 	}
 	if h.defaultHeaders["X-Custom"] != "value" {
 		t.Errorf("X-Custom = %q", h.defaultHeaders["X-Custom"])
+	}
+}
+
+func TestHTTP_Init_DefaultHeaderList(t *testing.T) {
+	headers := protocol.HeaderList{
+		{Name: "X-Trace", Value: "one"},
+		{Name: "X-Trace", Value: "two"},
+	}
+	h := initHTTP(t, map[string]any{"default_header_list": headers})
+
+	if !reflect.DeepEqual(h.defaultHeaderList, headers) {
+		t.Fatalf("defaultHeaderList = %#v, want %#v", h.defaultHeaderList, headers)
 	}
 }
 
@@ -1214,6 +1230,94 @@ func TestHTTP_Execute_AuthHeader(t *testing.T) {
 		Method: "GET",
 		Target: "/",
 	})
+}
+
+func TestHTTP_Execute_DisabledOrderedAuthorizationSuppressesTypedAuth(t *testing.T) {
+	disabled := false
+	tests := []struct {
+		name              string
+		defaultHeaderList protocol.HeaderList
+		actionHeaderList  protocol.HeaderList
+	}{
+		{
+			name:              "script default",
+			defaultHeaderList: protocol.HeaderList{{Name: "Authorization", Value: "not-sent", Enabled: &disabled}},
+		},
+		{
+			name:             "action override",
+			actionHeaderList: protocol.HeaderList{{Name: "authorization", Value: "not-sent", Enabled: &disabled}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("Authorization"); got != "" {
+					t.Errorf("Authorization = %q, want disabled ordered row to suppress typed auth", got)
+				}
+				_, _ = w.Write([]byte("ok"))
+			}))
+			defer ts.Close()
+
+			h := initHTTP(t, map[string]any{
+				"base_url":            ts.URL,
+				"auth_type":           "bearer",
+				"auth_token":          "typed-token",
+				"default_header_list": test.defaultHeaderList,
+			})
+			result, err := h.Execute(context.Background(), &protocol.Action{
+				Name:       "disabled-auth",
+				Method:     "GET",
+				Target:     "/",
+				HeaderList: test.actionHeaderList,
+			})
+			if err != nil {
+				t.Fatalf("Execute returned error: %v", err)
+			}
+			if !result.Success {
+				t.Fatalf("result = %#v, want success", result)
+			}
+		})
+	}
+}
+
+func TestHTTP_Execute_UsesPerVUserResolvedDefaultHeaders(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Tenant"); got != "tenant-42" {
+			t.Errorf("X-Tenant = %q, want interpolated default", got)
+		}
+		if got := r.Header.Values("X-Route"); !reflect.DeepEqual(got, []string{"blue", "canary"}) {
+			t.Errorf("X-Route = %#v, want ordered interpolated defaults", got)
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{
+		"base_url": ts.URL,
+		"default_headers": map[string]string{
+			"X-Tenant": "{{var.tenant}}",
+		},
+		"default_header_list": protocol.HeaderList{
+			{Name: "X-Route", Value: "{{var.primary}}"},
+		},
+	})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:                   "resolved-defaults",
+		Method:                 "GET",
+		Target:                 "/",
+		ResolvedDefaultHeaders: true,
+		DefaultHeaders:         map[string]string{"X-Tenant": "tenant-42"},
+		DefaultHeaderList: protocol.HeaderList{
+			{Name: "X-Route", Value: "blue"},
+			{Name: "X-Route", Value: "canary"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("result = %#v, want success", result)
+	}
 }
 
 func TestHTTP_Execute_ActionAuthOverridesGlobalAuth(t *testing.T) {

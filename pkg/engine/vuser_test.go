@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -1291,6 +1292,51 @@ func TestVUser_ResolveAction(t *testing.T) {
 	}
 	if len(resolved.Assertions) != 1 {
 		t.Fatalf("Assertions count = %d", len(resolved.Assertions))
+	}
+}
+
+func TestVUserResolveActionInterpolatesHTTPDefaultHeadersPerVUser(t *testing.T) {
+	t.Setenv("APEXLOAD_DEFAULT_HEADER_ENV", "env-route")
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_DEFAULT_HEADER_ENV")
+	vu := &VUser{
+		Script: &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{
+			DefaultHeaders: map[string]string{
+				"X-Tenant": "{{var.tenant}}",
+			},
+			DefaultHeaderList: dsl.HeaderList{
+				{Name: "X-Route", Value: "{{env.APEXLOAD_DEFAULT_HEADER_ENV}}"},
+				{Name: "X-Repeat", Value: "{{var.first}}"},
+				{Name: "X-Repeat", Value: "{{var.second}}"},
+			},
+		}}},
+		Variables: map[string]string{
+			"tenant": "tenant-42",
+			"first":  "one",
+			"second": "two",
+		},
+	}
+
+	resolved := vu.resolveAction(dsl.Action{Name: "request", Type: "GET", Target: "/"})
+
+	if !resolved.ResolvedDefaultHeaders {
+		t.Fatal("ResolvedDefaultHeaders = false, want engine-owned action defaults")
+	}
+	if got := resolved.DefaultHeaders["X-Tenant"]; got != "tenant-42" {
+		t.Fatalf("X-Tenant = %q, want tenant-42", got)
+	}
+	want := protocol.HeaderList{
+		{Name: "X-Route", Value: "env-route"},
+		{Name: "X-Repeat", Value: "one"},
+		{Name: "X-Repeat", Value: "two"},
+	}
+	if !reflect.DeepEqual(resolved.DefaultHeaderList, want) {
+		t.Fatalf("DefaultHeaderList = %#v, want %#v", resolved.DefaultHeaderList, want)
+	}
+
+	vu.Script.Protocol = "browser"
+	ignored := vu.resolveAction(dsl.Action{Name: "browser action", Type: "navigate", Target: "/"})
+	if ignored.ResolvedDefaultHeaders || len(ignored.DefaultHeaders) != 0 || len(ignored.DefaultHeaderList) != 0 {
+		t.Fatalf("browser action received HTTP transport defaults: %#v", ignored)
 	}
 }
 

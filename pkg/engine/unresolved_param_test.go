@@ -108,6 +108,18 @@ func TestActionContainsUnresolvedParameterCleanActionPasses(t *testing.T) {
 	}
 }
 
+func TestActionContainsUnresolvedParameterChecksResolvedDefaultHeaders(t *testing.T) {
+	tests := []protocol.Action{
+		{DefaultHeaders: map[string]string{"X-Tenant": "{{param.tenant}}"}},
+		{DefaultHeaderList: protocol.HeaderList{{Name: "X-Tenant", Value: "{{param.tenant}}"}}},
+	}
+	for index := range tests {
+		if !actionContainsUnresolvedParameter(&tests[index]) {
+			t.Fatalf("case %d: unresolved default header was not rejected", index)
+		}
+	}
+}
+
 // Structural tripwire: actionContainsUnresolvedParameter walks protocol.Action
 // field by field (deliberately — the json.Marshal catch-all it replaced was
 // both slow and blind to `json:"-"` fields). That trades a maintenance burden
@@ -117,12 +129,14 @@ func TestActionUnresolvedParameterScanCoversEveryStringField(t *testing.T) {
 	// Fields the scan intentionally ignores because they cannot hold a string.
 	nonStringFields := map[string]bool{
 		"TimeoutMs": true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
-		"Capture": true, // BrowserCaptureOptions is all bools
+		"Capture":                true, // BrowserCaptureOptions is all bools
+		"ResolvedDefaultHeaders": true,
 	}
 	covered := map[string]bool{
 		"Name": true, "Type": true, "Method": true, "Target": true, "RedactedTarget": true,
 		"Selector": true, "RedactedSelector": true, "Value": true, "RedactedValue": true,
 		"Headers": true, "HeaderList": true, "RedactedHeaders": true, "RedactedHeaderList": true,
+		"DefaultHeaders": true, "DefaultHeaderList": true,
 		"Body": true, "BodyEncoding": true, "RedactedBody": true,
 		"Params": true, "RedactedParams": true, "Metadata": true,
 		"WaitFor": true, "Sync": true, "Extractors": true, "Assertions": true,

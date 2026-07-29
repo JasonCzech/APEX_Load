@@ -1063,7 +1063,12 @@ func isHeaderMap(key string) bool {
 }
 
 func isHeaderList(key string) bool {
-	return normalizeName(key) == "headerlist"
+	switch normalizeName(key) {
+	case "headerlist", "defaultheaderlist":
+		return true
+	default:
+		return false
+	}
 }
 
 func isSecretBindingsMap(key string) bool {

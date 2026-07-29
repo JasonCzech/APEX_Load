@@ -13,6 +13,11 @@ type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ParameterConfig = ScriptParameterDefinition
 type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai_guardrails' | 'authoring_health'>
+const HTTP_RUNTIME_ACTION_TYPES = new Set(['cookie_clear', 'cache_clear', 'http_connections_close'])
+
+function isHTTPRuntimeAction(action: Action): boolean {
+  return HTTP_RUNTIME_ACTION_TYPES.has(action.type)
+}
 
 export function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, isBrowserScript, isJmsScript, isSoapScript, issues }: {
   action: Action; index: number
@@ -43,6 +48,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
   const isDatabaseScript = protocol === 'database'
   const isNetworkScript = protocol === 'network'
   const isHTTPSequence = action.type === 'http_sequence'
+  const isHTTPRuntimeControl = isHTTPRuntimeAction(action)
   const { selectionState, openSelectionMenu, openParameterEditor } = useActionParameterMenu({
     index,
     onBeginParameterEdit,
@@ -66,15 +72,28 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
             onUpdate={onUpdate}
           />
 
-          {isBrowserScript && action.type.startsWith('browser_') && (
+          {isHTTPRuntimeControl ? (
+            <div className="sub-section http-runtime-action-card" role="note">
+              <h4>HTTP state control</h4>
+              <p>
+                {action.type === 'cookie_clear'
+                  ? 'Clears cookies learned by this VUser. Pinned default cookies remain authored and continue to be sent.'
+                  : action.type === 'cache_clear'
+                    ? 'Clears every response in this VUser’s simulated HTTP cache.'
+                    : 'Closes currently idle pooled HTTP connections without interrupting active requests.'}
+              </p>
+            </div>
+          ) : null}
+
+          {!isHTTPRuntimeControl && isBrowserScript && action.type.startsWith('browser_') && (
             <BrowserActionFields action={action} index={index} onUpdate={onUpdate} />
           )}
 
-          {isControlAction(action) && (
+          {!isHTTPRuntimeControl && isControlAction(action) && (
             <ControlFlowFields action={action} index={index} onUpdate={onUpdate} />
           )}
 
-          {isWebSocketScript ? (
+          {!isHTTPRuntimeControl && (isWebSocketScript ? (
             <WebSocketActionFields
               action={action}
               index={index}
@@ -170,11 +189,11 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
               onUpdateHeader={onUpdateHeader}
               onSelectionMenu={openSelectionMenu}
             />
-          )}
+          ))}
         </>
       )}
 
-      <ActionThinkTimeToggle action={action} index={index} onUpdate={onUpdate} />
+      {!isHTTPRuntimeControl && <ActionThinkTimeToggle action={action} index={index} onUpdate={onUpdate} />}
 
       <ActionParameterMenu selectionState={selectionState} onOpenParameterEditor={openParameterEditor} />
     </div>
@@ -209,7 +228,11 @@ const WEBSOCKET_ACTION_TYPES = ['ws_connect', 'ws_send', 'ws_receive', 'ws_ping'
 const GRPC_ACTION_TYPES = ['grpc_unary', 'grpc_server_stream', 'grpc_client_stream', 'grpc_bidi_stream', ...CONTROL_ACTION_TYPES]
 const DATABASE_ACTION_TYPES = ['db_health', 'db_begin', 'db_query', 'db_exec', 'db_procedure', 'db_commit', 'db_rollback', ...CONTROL_ACTION_TYPES]
 const NETWORK_ACTION_TYPES = ['network_health', 'dns_query', 'tcp_request', 'udp_request', 'ftp_command', 'smtp_send', 'pop3_command', 'imap_command', 'ldap_bind', 'ldap_search', ...CONTROL_ACTION_TYPES]
-const HTTP_ACTION_TYPES = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'http_oauth2_token', ...CONTROL_ACTION_TYPES]
+const HTTP_ACTION_TYPES = [
+  'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS',
+  'http_oauth2_token', 'cookie_clear', 'cache_clear', 'http_connections_close',
+  ...CONTROL_ACTION_TYPES,
+]
 
 interface HTTPSequenceFieldsProps {
   action: Action
@@ -660,6 +683,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
   // http_oauth2_token is an engine action driven by params (no target/headers/body),
   // so it gets a dedicated field editor instead of the generic HTTP request inputs.
   const isOAuthTokenAction = action.type === 'http_oauth2_token'
+  const isRuntimeStateAction = isHTTPRuntimeAction(action)
   const oauthParams = (action.params || {}) as Record<string, unknown>
   const oauthStr = (key: string, fallback = '') => (typeof oauthParams[key] === 'string' ? (oauthParams[key] as string) : fallback)
   const setOAuthParam = (key: string, value: string) => onUpdate(index, 'params', { ...oauthParams, [key]: value })
@@ -714,6 +738,8 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
             </>
           )}
         </>
+      ) : isRuntimeStateAction ? (
+        <div className="form-hint full-width">This action has no request target; it operates on the current VUser’s HTTP state at this exact position.</div>
       ) : (
         <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
       )}

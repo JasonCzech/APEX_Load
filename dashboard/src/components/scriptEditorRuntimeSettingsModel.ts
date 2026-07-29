@@ -63,8 +63,10 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
 export type RuntimeSettingsSectionId = typeof RUNTIME_SETTINGS_SECTION_IDS[number]
 
 export const HTTP_TRANSPORT_TAB_OPTIONS = [
-  { id: 'timeouts', label: 'Timeouts' },
+  { id: 'request_defaults', label: 'Request Defaults' },
+  { id: 'session_cache', label: 'Session & Cache' },
   { id: 'connection', label: 'Connection' },
+  { id: 'timeouts', label: 'Timeouts' },
   { id: 'tls', label: 'TLS / SSL' },
   { id: 'proxy', label: 'Proxy' },
   { id: 'authentication', label: 'Authentication' },

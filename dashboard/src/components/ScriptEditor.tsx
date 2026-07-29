@@ -224,6 +224,7 @@ import {
 } from './scriptEditorParameterDataModel'
 import { useEditorDialogRef } from './useEditorDialogRef'
 import { ScriptRuntimeSettingsSidebar, ScriptRuntimeSettingsView } from './ScriptRuntimeSettingsView'
+import type { HTTPRuntimeActionType } from './HttpRequestDefaultsEditor'
 import {
   transitionScriptProtocol,
 } from './scriptEditorRuntimeSettingsModel'
@@ -2235,6 +2236,24 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     })) as Action
     updatePhaseActionList(phase, actions => [...actions, a])
     selectAuthorPhaseIndex(phase, currentActions.length)
+  }
+
+  const addHTTPRuntimeAction = (type: HTTPRuntimeActionType) => {
+    const labels: Record<HTTPRuntimeActionType, string> = {
+      cookie_clear: 'Clear learned cookies',
+      cache_clear: 'Clear simulated cache',
+      http_connections_close: 'Close idle HTTP connections',
+    }
+    const currentActions = phaseActionsForScript(script, 'action')
+    const nextAction: Action = {
+      name: labels[type],
+      type,
+      target: '',
+    }
+    updatePhaseActionList('action', actions => [...actions, nextAction])
+    setSuccess(`${labels[type]} action added at the end of the action phase.`)
+    setError('')
+    selectAuthorAction(currentActions.length)
   }
 
   const addActionTemplate = (templateKey: string) => {
@@ -5732,6 +5751,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 activeSection={activeRuntimeSettingsSection}
                 canEditProtocol={canEditProtocol}
                 draftScope={`script-editor:${editorResourceScopeVersionRef.current}`}
+                onAddHTTPRuntimeAction={addHTTPRuntimeAction}
                 onSave={handleSave}
                 onSelectHTTPTransportTab={setActiveHTTPTransportTab}
                 onSelectSection={selectRuntimeSettingsSection}

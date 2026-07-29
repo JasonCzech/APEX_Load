@@ -44,6 +44,7 @@ export interface ScriptAssertionDefinition {
 export interface ScriptHeaderEntry {
   name: string
   value: string
+  enabled?: boolean
 }
 
 // --- Correlation diagnose (record-vs-replay) -------------------------------
@@ -212,6 +213,7 @@ export interface HTTPConfig {
   idle_timeout_ms?: number
   version?: string
   max_conns_per_host?: number
+  max_idle_conns?: number
   keep_alive?: boolean
   user_agent?: string
   accept_encoding?: string
@@ -219,6 +221,12 @@ export interface HTTPConfig {
   max_redirects?: number
   proxy_mode?: string
   default_headers?: Record<string, string>
+  default_header_list?: ScriptHeaderEntry[]
+  cookies_enabled?: boolean
+  clear_cookies_per_iteration?: boolean
+  cache_enabled?: boolean
+  traceparent?: boolean
+  traceparent_sampled?: boolean
   tls?: {
     min_version?: string
     insecure_skip_verify?: boolean

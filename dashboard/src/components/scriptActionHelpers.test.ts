@@ -93,6 +93,19 @@ describe('HTTP request fidelity helpers', () => {
       'X-Map-Only': 'preserved',
     })
   })
+
+  it('uses disabled ordered rows to suppress stale compatibility-map values', () => {
+    expect(headerListToCompatibilityMap([
+      { name: 'x-trace', value: 'must-not-return', enabled: false },
+      { name: 'X-Other', value: 'kept' },
+    ], {
+      'X-Trace': 'stale',
+      'X-Map-Only': 'preserved',
+    })).toEqual({
+      'X-Other': 'kept',
+      'X-Map-Only': 'preserved',
+    })
+  })
 })
 
 describe('durable execution blockers', () => {

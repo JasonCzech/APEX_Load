@@ -203,20 +203,19 @@ func TestValidateScriptIssues_HTTPHeaderOccurrenceContract(t *testing.T) {
 		}
 	})
 
-	t.Run("named and default config headers retain runtime map precedence", func(t *testing.T) {
+	t.Run("default config headers override typed settings case-insensitively", func(t *testing.T) {
 		script := httpContractScript("", Action{})
-		script.Config.HTTP.UserAgent = "named"
+		script.Config.HTTP.UserAgent = "bad\r\nagent"
 		script.Config.HTTP.DefaultHeaders = map[string]string{"user-agent": "default"}
+		if issues := ValidateScriptIssues(script); len(issues) != 0 {
+			t.Fatalf("case-insensitive override issues = %v, want none", issues)
+		}
+
+		script.Config.HTTP.DefaultHeaders["User-Agent"] = "second default"
 		joined := strings.Join(ValidateScriptIssues(script), "\n")
 		if !strings.Contains(joined, "config.http.default_headers") ||
 			!strings.Contains(joined, "ambiguous_header_map") {
-			t.Fatalf("case-variant issues = %q, want effective-map collision", joined)
-		}
-
-		script.Config.HTTP.UserAgent = "bad\r\nagent"
-		script.Config.HTTP.DefaultHeaders = map[string]string{"User-Agent": "valid override"}
-		if issues := ValidateScriptIssues(script); len(issues) != 0 {
-			t.Fatalf("exact-key override issues = %v, want none", issues)
+			t.Fatalf("same-layer case-variant issues = %q, want collision", joined)
 		}
 	})
 

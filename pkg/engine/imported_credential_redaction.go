@@ -1852,7 +1852,14 @@ func importedRequestHeaderList(raw any) (dsl.HeaderList, bool) {
 			if !nameOK || !valueOK {
 				return nil, false
 			}
-			out[index] = dsl.HeaderEntry{Name: name, Value: value}
+			enabled, enabledOK := header["enabled"].(bool)
+			if _, exists := header["enabled"]; exists && !enabledOK {
+				return nil, false
+			} else if exists {
+				out[index] = dsl.HeaderEntry{Name: name, Value: value, Enabled: &enabled}
+			} else {
+				out[index] = dsl.HeaderEntry{Name: name, Value: value}
+			}
 		}
 		return out, true
 	case []any:
@@ -1865,7 +1872,14 @@ func importedRequestHeaderList(raw any) (dsl.HeaderList, bool) {
 				if !nameOK || !valueOK {
 					return nil, false
 				}
-				out[index] = dsl.HeaderEntry{Name: name, Value: value}
+				enabled, enabledOK := header["enabled"].(bool)
+				if _, exists := header["enabled"]; exists && !enabledOK {
+					return nil, false
+				} else if exists {
+					out[index] = dsl.HeaderEntry{Name: name, Value: value, Enabled: &enabled}
+				} else {
+					out[index] = dsl.HeaderEntry{Name: name, Value: value}
+				}
 			case dsl.HeaderEntry:
 				out[index] = header
 			default:

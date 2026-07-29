@@ -204,6 +204,13 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
 	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
 	headerList, redactedHeaderList := vu.interpolateHeaderListWithSecrets(action.HeaderList)
+	var defaultHeaders map[string]string
+	var defaultHeaderList protocol.HeaderList
+	resolvedDefaultHeaders := scriptUsesHTTPDefaultHeaders(vu.Script)
+	if resolvedDefaultHeaders {
+		defaultHeaders, _ = vu.interpolateMapWithSecrets(vu.Script.Config.HTTP.DefaultHeaders)
+		defaultHeaderList, _ = vu.interpolateHeaderListWithSecrets(vu.Script.Config.HTTP.DefaultHeaderList)
+	}
 	body, redactedBody := vu.interpolateActionBody(action.Body, action.BodyEncoding)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
@@ -229,6 +236,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		HeaderList:                   headerList,
 		RedactedHeaders:              redactedHeaders,
 		RedactedHeaderList:           redactedHeaderList,
+		ResolvedDefaultHeaders:       resolvedDefaultHeaders,
+		DefaultHeaders:               defaultHeaders,
+		DefaultHeaderList:            defaultHeaderList,
 		Body:                         []byte(body),
 		BodyEncoding:                 action.BodyEncoding,
 		RedactedBody:                 []byte(redactedBody),
@@ -412,6 +422,18 @@ func stringAnyMap(value any) (map[string]any, bool) {
 	}
 }
 
+func scriptUsesHTTPDefaultHeaders(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
+	case "", "http", "soap", "java_http":
+		return true
+	default:
+		return false
+	}
+}
+
 func (vu *VUser) interpolateHeaderListWithSecrets(headers dsl.HeaderList) (protocol.HeaderList, protocol.HeaderList) {
 	if len(headers) == 0 {
 		return nil, nil
@@ -421,8 +443,8 @@ func (vu *VUser) interpolateHeaderListWithSecrets(headers dsl.HeaderList) (proto
 	for _, header := range headers {
 		name, redactedName := vu.interpolateWithSecrets(header.Name)
 		value, redactedValue := vu.interpolateWithSecrets(header.Value)
-		resolved = append(resolved, protocol.HeaderEntry{Name: name, Value: value})
-		redacted = append(redacted, protocol.HeaderEntry{Name: redactedName, Value: redactedValue})
+		resolved = append(resolved, protocol.HeaderEntry{Name: name, Value: value, Enabled: header.Enabled})
+		redacted = append(redacted, protocol.HeaderEntry{Name: redactedName, Value: redactedValue, Enabled: header.Enabled})
 	}
 	return resolved, redacted
 }

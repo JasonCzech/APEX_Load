@@ -3527,6 +3527,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                     scriptId: group.script_id,
                     protocol: script?.protocol,
                     scriptConfig: script?.script?.config,
+                    scriptActions: script?.script
+                      ? [
+                          ...(script.script.init || []),
+                          ...(script.script.actions || []),
+                          ...(script.script.teardown || []),
+                        ]
+                      : undefined,
                     importedJavaVMParameters: readImportedJavaVMParameters(script?.script?.metadata?.import),
                   }
                 })}

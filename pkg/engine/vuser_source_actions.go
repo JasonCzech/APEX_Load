@@ -34,6 +34,10 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, vu.handleSourceRuntimeAction(ctx, action)
 	case "cookie_clear":
 		return true, vu.clearProtocolCookies(ctx)
+	case "cache_clear":
+		return true, vu.clearProtocolCache(ctx)
+	case "http_connections_close":
+		return true, vu.closeProtocolIdleConnections(ctx)
 	case "http_oauth2_token":
 		return true, vu.handleHTTPOAuth2TokenAction(ctx, action)
 	case "source_transaction":
@@ -102,6 +106,19 @@ func (vu *VUser) clearProtocolCache(ctx context.Context) error {
 		return nil
 	}
 	return controller.ClearCache(ctx)
+}
+
+// closeProtocolIdleConnections dispatches to protocols with reusable
+// connection pools. It is intentionally a safe no-op for all other protocols.
+func (vu *VUser) closeProtocolIdleConnections(ctx context.Context) error {
+	if vu == nil || vu.Proto == nil {
+		return nil
+	}
+	controller, ok := vu.Proto.(protocol.ConnectionController)
+	if !ok {
+		return nil
+	}
+	return controller.CloseIdleConnections(ctx)
 }
 
 func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Action) error {

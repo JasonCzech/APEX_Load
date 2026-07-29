@@ -829,9 +829,9 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
-    // http (non-browser) group → 5 sub-tabs, no Browser emulation.
+    // HTTP groups expose request and session editors alongside the typed settings.
     const subTabs = Array.from(container.querySelectorAll('.http-transport-tab')).map(b => (b.textContent || '').trim())
-    expect(subTabs).toEqual(['Timeouts', 'Connection', 'TLS / SSL', 'Proxy', 'Authentication'])
+    expect(subTabs).toEqual(['Request Defaults0', 'Session & Cache0', 'Connection', 'Timeouts', 'TLS / SSL', 'Proxy', 'Authentication'])
     clickTab('Proxy')
     const noProxyInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
       input => (input as HTMLInputElement).placeholder.includes('localhost'),
@@ -861,7 +861,8 @@ describe('RuntimeSettingsGroupEditor', () => {
         />,
       )
     })
-    clickTab('HTTP Transport') // Timeouts sub-tab is active by default
+    clickTab('HTTP Transport')
+    clickTab('Timeouts')
     const placeholders = (sel: string) =>
       Array.from(container.querySelectorAll(sel)).map(i => (i as HTMLInputElement).placeholder)
     // The scenario's section supplies request timeout; connect timeout no longer
@@ -1359,11 +1360,17 @@ describe('RuntimeSettingsGroupEditor', () => {
     const written = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(written?.browser_emulation).toMatchObject({ mode: 'specific', browser_type: 'chrome' })
 
+    clickTab('HTTP Transport')
+    const sessionCacheTab = Array.from(container.querySelectorAll('[role="tab"]'))
+      .find(tab => (tab.textContent || '').startsWith('Session & Cache'))
+    expect(sessionCacheTab).toBeTruthy()
+    act(() => sessionCacheTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Simulate browser cache'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
     expect(cacheCheckbox).toBeTruthy()
     act(() => cacheCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const cacheWritten = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(cacheWritten?.http).toMatchObject({ cache_enabled: true })
     expect(cacheWritten?.browser_emulation?.cache).toMatchObject({ simulate_cache: true })
   })
 
@@ -1429,5 +1436,39 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
     clickTab('HTTP Transport')
     expect(subTabLabels()).toContain('Browser (Playwright)')
+  })
+
+  it('previews the focused script action and its winning action headers', () => {
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        http: {
+          default_header_list: [{ name: 'X-Script', value: 'default' }],
+        },
+      },
+      scriptActions: [{
+        name: 'Create order',
+        type: 'POST',
+        target: 'https://orders.example.test/v1/orders',
+        headers: { 'X-Action': 'create' },
+      }],
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={groups} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+
+    clickTab('HTTP Transport')
+    act(() => findButton('Show preview')?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(container.querySelector<HTMLSelectElement>('.http-effective-preview select')?.value).toBe('0')
+    expect(container.textContent).toContain('Create order')
+    expect(container.textContent).toContain('https://orders.example.test/v1/orders')
+    expect(container.textContent).toContain('X-Action')
+    expect(container.textContent).toContain('Action override')
   })
 })

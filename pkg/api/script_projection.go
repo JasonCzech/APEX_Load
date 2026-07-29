@@ -1702,7 +1702,12 @@ func isScriptHeaderMap(key string) bool {
 }
 
 func isScriptHeaderList(key string) bool {
-	return normalizeScriptFieldName(key) == "headerlist"
+	switch normalizeScriptFieldName(key) {
+	case "headerlist", "defaultheaderlist":
+		return true
+	default:
+		return false
+	}
 }
 
 func isScriptSecretBindingsMap(key string) bool {
