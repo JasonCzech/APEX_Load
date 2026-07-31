@@ -69,6 +69,15 @@ export interface RuntimeSettingsGroupEditorProps {
   overrides: Array<ScenarioRuntimeSettingsDraft | undefined>
   onChange: (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => void
   onApplyToGroups: (sourceIndex: number, targetIndexes: number[]) => void
+  /** Overrides the panel heading (single-target mounts such as the scenario root). */
+  title?: string
+  description?: string
+  /** Hides the Apply-to-groups panel — for mounts that edit one settings object. */
+  hideApplyPanel?: boolean
+  /** Section applicability protocols. A scenario- or test-wide mount passes every
+   *  member protocol so a section applicable to at least one group stays editable;
+   *  unset falls back to the focus group's own protocol. */
+  applicableProtocols?: string[]
 }
 
 const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
@@ -174,6 +183,10 @@ export default function RuntimeSettingsGroupEditor({
   overrides,
   onChange,
   onApplyToGroups,
+  title,
+  description,
+  hideApplyPanel,
+  applicableProtocols,
 }: RuntimeSettingsGroupEditorProps) {
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTargets, setApplyTargets] = useState<number[]>([])
@@ -184,11 +197,17 @@ export default function RuntimeSettingsGroupEditor({
   // that depends on them must run on every render (Rules of Hooks).
   const index = groups.length > 0 ? Math.min(focusedIndex, groups.length - 1) : 0
   const focusGroup = groups[index]
+  // Scenario-/test-wide mounts pass every member protocol; per-group mounts use
+  // the focus group's own protocol.
+  const fieldApplicable = (field: RuntimeFieldKey): boolean => {
+    if (applicableProtocols && applicableProtocols.length > 0) {
+      return applicableProtocols.some(protocol => isRuntimeFieldApplicable(field, protocol))
+    }
+    return isRuntimeFieldApplicable(field, focusGroup?.protocol)
+  }
   // Live catalog (bundled fallback until it resolves) so this editor offers the
   // same browsers the engine can actually resolve — see useBrowserEmulationCatalog.
-  const browserEmulationCatalog = useBrowserEmulationCatalog(
-    isRuntimeFieldApplicable('browser_emulation', focusGroup?.protocol),
-  )
+  const browserEmulationCatalog = useBrowserEmulationCatalog(fieldApplicable('browser_emulation'))
 
   if (groups.length === 0) {
     return (
@@ -277,11 +296,11 @@ export default function RuntimeSettingsGroupEditor({
   const effectiveHttp = draft.http ?? inheritedHttp
   const effectiveBrowser = currentBrowser ?? inheritedBrowser
 
-  const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
-  const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
-  const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
-  const javaVuserApplicable = isRuntimeFieldApplicable('java_vuser', focusGroup.protocol)
-  const browserEmulationApplicable = isRuntimeFieldApplicable('browser_emulation', focusGroup.protocol)
+  const browserApplicable = fieldApplicable('browser')
+  const httpApplicable = fieldApplicable('http')
+  const webRuntimeApplicable = fieldApplicable('web_runtime')
+  const javaVuserApplicable = fieldApplicable('java_vuser')
+  const browserEmulationApplicable = fieldApplicable('browser_emulation')
 
   // Browser emulation replaces as a whole section (mirrors the Go controller).
   const inheritedBrowserEmulation: BrowserEmulationSettings = structuredClone(inheritedOverride?.browser_emulation ?? {})
@@ -658,33 +677,36 @@ export default function RuntimeSettingsGroupEditor({
     patchHttp({ auth: { ...draft.http?.auth, ...next } })
   }
 
+  const applyPanelAvailable = !hideApplyPanel && groups.length > 1
   return (
     <div className="scenario-subpanel">
       <div className="scenario-assignment-header">
         <div>
-          <h4>Per-group runtime overrides</h4>
-          <p>Set runtime for one group; unset fields inherit the script default. Use “Apply to groups” to copy a group’s settings to the others.</p>
+          <h4>{title || 'Per-group runtime overrides'}</h4>
+          <p>{description || 'Set runtime for one group; unset fields inherit the script default. Use “Apply to groups” to copy a group’s settings to the others.'}</p>
         </div>
       </div>
 
-      <div className="scenario-browser-grid">
-        <label>
-          <span>Focus group</span>
-          <select
-            className="settings-input"
-            value={index}
-            onChange={event => onFocusChange(Number(event.target.value))}
-            aria-label="Focus group"
-          >
-            {groups.map((group, groupIndex) => (
-              <option key={`${group.scriptId}-${groupIndex}`} value={groupIndex}>
-                {groupLabel(group, groupIndex)}
-                {group.protocol ? ` · ${group.protocol}` : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {groups.length > 1 && (
+        <div className="scenario-browser-grid">
+          <label>
+            <span>Focus group</span>
+            <select
+              className="settings-input"
+              value={index}
+              onChange={event => onFocusChange(Number(event.target.value))}
+              aria-label="Focus group"
+            >
+              {groups.map((group, groupIndex) => (
+                <option key={`${group.scriptId}-${groupIndex}`} value={groupIndex}>
+                  {groupLabel(group, groupIndex)}
+                  {group.protocol ? ` · ${group.protocol}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       <div className="scenario-run-settings-tabs runtime-override-tabs" role="tablist" aria-label="Per-group runtime sections">
         {visibleTabs.map(tab => (
@@ -721,7 +743,7 @@ export default function RuntimeSettingsGroupEditor({
             </thead>
             <tbody>
               {SUMMARY_FIELDS.map(field => {
-                const applicable = isRuntimeFieldApplicable(field, focusGroup.protocol)
+                const applicable = fieldApplicable(field)
                 if (!applicable) {
                   return (
                     <tr key={field} className="runtime-override-row not-applicable">
@@ -1268,8 +1290,24 @@ export default function RuntimeSettingsGroupEditor({
                     <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser.slow_mo_ms)} /></label>
                     <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>
                     <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>
-                    <label><span>Capture screenshots</span><input className="settings-input" type="text" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })} placeholder={inh(inheritedBrowser.capture_screenshots)} /></label>
-                    <label><span>Download resources</span><input className="settings-input" type="text" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })} placeholder={inh(inheritedBrowser.download_resources)} /></label>
+                    <label>
+                      <span>Capture screenshots</span>
+                      <select className="settings-input" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })}>
+                        <option value="">{inheritedBrowser.capture_screenshots ? `Inherit (${inheritedBrowser.capture_screenshots})` : 'Inherit'}</option>
+                        <option value="off">Off</option>
+                        <option value="on_error">On error</option>
+                        <option value="per_action">Per action</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Download resources</span>
+                      <select className="settings-input" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })}>
+                        <option value="">{inheritedBrowser.download_resources ? `Inherit (${inheritedBrowser.download_resources})` : 'Inherit'}</option>
+                        <option value="none">HTML only</option>
+                        <option value="recorded">Recorded resources</option>
+                        <option value="all">All resources</option>
+                      </select>
+                    </label>
                   </div>
                   <div className="scenario-option-grid">
                     <label className={`scenario-option-card ${effectiveBrowser.client_metrics ? 'selected' : ''}`}>
@@ -1497,6 +1535,7 @@ export default function RuntimeSettingsGroupEditor({
         )}
       </div>
 
+      {applyPanelAvailable && (
       <div className="runtime-apply-row">
         <button type="button" className="secondary-button" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>
           Apply to groups…
@@ -1519,6 +1558,7 @@ export default function RuntimeSettingsGroupEditor({
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

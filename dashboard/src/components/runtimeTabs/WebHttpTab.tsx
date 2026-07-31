@@ -14,13 +14,27 @@ export interface WebHttpTabProps {
   setWeb: (next: WebRuntimeConfig | undefined) => void
 }
 
+function hasWebRuntimeValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === '') return false
+  // A non-empty collection may contain a newly added blank editor row; retain
+  // it so the operator can fill the row instead of having it disappear.
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') return Object.values(value as Record<string, unknown>).some(hasWebRuntimeValue)
+  // Explicit false and zero are meaningful overrides.
+  return true
+}
+
 function isWebEmpty(web: WebRuntimeConfig): boolean {
-  return !Object.values(web).some(value => {
-    if (value === undefined || value === null) return false
-    if (Array.isArray(value)) return value.length > 0
-    if (typeof value === 'object') return Object.keys(value).length > 0
-    return true
-  })
+  return !Object.values(web).some(hasWebRuntimeValue)
+}
+
+function looksLikeIp(value: string): boolean {
+  const trimmed = value.trim()
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(trimmed)
+  if (ipv4) return ipv4.slice(1).every(octet => Number(octet) <= 255)
+  return trimmed.includes(':')
+    && /^[0-9a-fA-F:]+$/.test(trimmed)
+    && (trimmed.match(/:/g)?.length ?? 0) >= 2
 }
 
 /**
@@ -39,6 +53,7 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
   const contentChecks = web?.content_checks ?? []
   const profiles = web?.network_profiles ?? []
   const chain = web?.data_formatting?.chain ?? []
+  const hasInvalidSourceIp = (web?.source_ips ?? []).some(sourceIp => !looksLikeIp(sourceIp))
 
   const patchContentCheck = (index: number, next: Partial<ContentCheckConfig>) => {
     const updated = contentChecks.map((check, i) => (i === index ? { ...check, ...next } : check))
@@ -62,12 +77,14 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
             className="settings-input"
             type="text"
             value={formatList(web?.source_ips)}
+            aria-invalid={hasInvalidSourceIp}
             onChange={event => {
               const ips = parseList(event.target.value)
               patchWeb({ source_ips: ips.length ? ips : undefined })
             }}
             placeholder="10.0.0.1, 10.0.0.2"
           />
+          {hasInvalidSourceIp && <small className="settings-field-error" role="alert">Enter valid IPv4 or IPv6 addresses.</small>}
         </label>
         <label>
           <span>Additional attributes</span>
@@ -97,8 +114,8 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           >
             <option value="">Inherit</option>
             <option value="none">None</option>
-            <option value="allow">Allow list</option>
-            <option value="block">Block list</option>
+            <option value="allow_list">Allow list</option>
+            <option value="block_list">Block list</option>
           </select>
         </label>
         <label>
@@ -124,12 +141,21 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           <span>Mode</span>
           <select className="settings-input" value={web?.network_simulation?.mode || ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, mode: event.target.value || undefined } })}>
             <option value="">Inherit</option>
-            <option value="none">None</option>
+            <option value="max">Maximum throughput</option>
             <option value="preset">Preset</option>
             <option value="custom">Custom</option>
           </select>
         </label>
-        <label><span>Preset</span><input className="settings-input" type="text" value={web?.network_simulation?.preset || ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, preset: event.target.value || undefined } })} placeholder="e.g. 4g, dsl" /></label>
+        <label>
+          <span>Preset</span>
+          <select className="settings-input" value={web?.network_simulation?.preset || ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, preset: event.target.value || undefined } })}>
+            <option value="">Inherit</option>
+            <option value="56k">56k modem</option>
+            <option value="dsl">DSL</option>
+            <option value="t1">T1</option>
+            <option value="10mbps">10 Mbps</option>
+          </select>
+        </label>
         <label><span>Bandwidth (kbps)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.bandwidth_kbps ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, bandwidth_kbps: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.bandwidth_kbps)} /></label>
         <label><span>Latency (ms)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.latency_ms ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, latency_ms: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.latency_ms)} /></label>
         <label><span>Jitter (ms)</span><input className="settings-input" type="number" min={0} value={web?.network_simulation?.jitter_ms ?? ''} onChange={event => patchWeb({ network_simulation: { ...web?.network_simulation, jitter_ms: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.network_simulation?.jitter_ms)} /></label>
@@ -144,14 +170,20 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           <span>Mode</span>
           <select className="settings-input" value={web?.streaming?.mode || ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, mode: event.target.value || undefined } })}>
             <option value="">Inherit</option>
-            <option value="none">None</option>
             <option value="adaptive">Adaptive</option>
             <option value="fixed">Fixed bitrate</option>
           </select>
         </label>
         <label><span>Buffer (seconds)</span><input className="settings-input" type="number" min={0} value={web?.streaming?.buffer_size_seconds ?? ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, buffer_size_seconds: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.streaming?.buffer_size_seconds)} /></label>
         <label><span>Fixed bitrate (kbps)</span><input className="settings-input" type="number" min={0} value={web?.streaming?.fixed_bitrate_kbps ?? ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, fixed_bitrate_kbps: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedWeb?.streaming?.fixed_bitrate_kbps)} /></label>
-        <label><span>Bandwidth estimation</span><input className="settings-input" type="text" value={web?.streaming?.bandwidth_estimation || ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, bandwidth_estimation: event.target.value || undefined } })} placeholder={inh(inheritedWeb?.streaming?.bandwidth_estimation)} /></label>
+        <label>
+          <span>Bandwidth estimation</span>
+          <select className="settings-input" value={web?.streaming?.bandwidth_estimation || ''} onChange={event => patchWeb({ streaming: { ...web?.streaming, bandwidth_estimation: event.target.value || undefined } })}>
+            <option value="">Inherit</option>
+            <option value="rolling">Rolling average</option>
+            <option value="instant">Instant</option>
+          </select>
+        </label>
       </div>
 
       <div className="scenario-assignment-header">
@@ -163,10 +195,10 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
           <label>
             <span>Scope</span>
             <select className="settings-input" value={check.scope || ''} onChange={event => patchContentCheck(index, { scope: event.target.value || undefined })}>
-              <option value="">Body</option>
-              <option value="body">Body</option>
-              <option value="headers">Headers</option>
-              <option value="url">URL</option>
+              <option value="">Any response</option>
+              <option value="any_response">Any response</option>
+              <option value="main_document">Main document</option>
+              <option value="resource">Resource</option>
             </select>
           </label>
           <label className={`scenario-option-card ${check.fail_if_found ? 'selected' : ''}`}>
@@ -189,7 +221,16 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
         <div className="scenario-browser-grid" key={`profile-${index}`}>
           <label><span>Name</span><input className="settings-input" type="text" value={profile.name || ''} onChange={event => patchProfile(index, { name: event.target.value })} placeholder="profile name" /></label>
           <label><span>Weight</span><input className="settings-input" type="number" min={0} value={profile.weight ?? ''} onChange={event => patchProfile(index, { weight: event.target.value === '' ? 0 : Number(event.target.value) })} placeholder="0" /></label>
-          <label><span>Preset</span><input className="settings-input" type="text" value={profile.preset || ''} onChange={event => patchProfile(index, { preset: event.target.value || undefined })} placeholder="e.g. 4g" /></label>
+          <label>
+            <span>Preset</span>
+            <select className="settings-input" value={profile.preset || ''} onChange={event => patchProfile(index, { preset: event.target.value || undefined })}>
+              <option value="">Inherit</option>
+              <option value="56k">56k modem</option>
+              <option value="dsl">DSL</option>
+              <option value="t1">T1</option>
+              <option value="10mbps">10 Mbps</option>
+            </select>
+          </label>
           <label><span>Bandwidth (kbps)</span><input className="settings-input" type="number" min={0} value={profile.bandwidth_kbps ?? ''} onChange={event => patchProfile(index, { bandwidth_kbps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
           <label><span>Latency (ms)</span><input className="settings-input" type="number" min={0} value={profile.latency_ms ?? ''} onChange={event => patchProfile(index, { latency_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Inherit" /></label>
           <button type="button" className="link-button" onClick={() => patchWeb({ network_profiles: profiles.filter((_, i) => i !== index) })}>Remove</button>

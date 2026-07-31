@@ -1336,6 +1336,160 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('120.0')
   })
 
+  it('opens a context menu on a live group row and launches the Runtime Settings dialog', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = requestUrl(input)
+      if (url.includes('/groups/Live%20Checkout/runtime-settings')) {
+        return jsonResponse({
+          test_id: 'live-vuser-1',
+          ref_key: 'RUN-20260608-VUSER',
+          group: 'Live Checkout',
+          group_index: 0,
+          script_name: 'Live Checkout Script',
+          protocol: 'http',
+          status: 'RUNNING',
+          editable: false,
+          editable_reason: 'run is RUNNING; settings were locked when the run left the pre-start queue',
+          editable_fields: ['pacing', 'think_time'],
+          effective_settings: { pacing: { type: 'fixed_delay', delay_ms: 750 } },
+        })
+      }
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const groupRow = container.querySelector('.command-group-row:not(.header)') as HTMLElement
+    expect(groupRow).not.toBeNull()
+    expect(groupRow.tabIndex).toBe(0)
+    await act(async () => {
+      groupRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 140 }))
+    })
+
+    const menu = document.querySelector('.command-group-context-menu') as HTMLElement
+    expect(menu).not.toBeNull()
+    expect(menu.tabIndex).toBe(-1)
+    const menuItems = Array.from(menu.querySelectorAll('button')).map(button => button.textContent?.trim())
+    expect(menuItems).toEqual(['Runtime Settings', 'Parameters'])
+
+    await click(buttonWithin(menu, 'Runtime Settings'))
+    await flush()
+
+    expect(document.querySelector('.command-group-context-menu')).toBeNull()
+    const dialog = document.querySelector('.group-run-settings-dialog') as HTMLElement
+    expect(dialog).not.toBeNull()
+    expect(dialog.textContent).toContain('Runtime Settings — Live Checkout')
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/groups/Live%20Checkout/runtime-settings'),
+      expect.anything(),
+    )
+    // A running run is read-only: the reason banner shows and there is no save action.
+    expect(dialog.textContent).toContain('Read-only')
+    expect(dialog.textContent).toContain('fixed_delay')
+    expect(Array.from(dialog.querySelectorAll('button')).some(button => button.textContent?.includes('Save to run'))).toBe(false)
+  })
+
+  it('exposes group actions as a real button and keeps its keyboard menu inside a narrow viewport', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}))
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(120)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(80)
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const action = container.querySelector('button.command-group-name[aria-haspopup="menu"]') as HTMLButtonElement | null
+    expect(action).not.toBeNull()
+    expect(action?.getAttribute('aria-label')).toBe('Live Checkout group actions')
+    expect(action?.parentElement?.getAttribute('role')).toBe('cell')
+    if (!action) return
+
+    await click(action)
+    await flush()
+
+    const menu = document.querySelector('.command-group-context-menu') as HTMLElement | null
+    expect(menu).not.toBeNull()
+    expect(menu?.style.left).toBe('8px')
+    expect(menu?.style.top).toBe('8px')
+    expect(document.activeElement?.textContent).toContain('Runtime Settings')
+  })
+
+  it('opens the group actions menu from a focused row with Shift+F10', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}))
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const groupRow = container.querySelector('.command-group-row:not(.header)') as HTMLElement
+    groupRow.focus()
+    await act(async () => {
+      groupRow.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'F10',
+        shiftKey: true,
+      }))
+    })
+    await flush()
+
+    expect(document.querySelector('.command-group-context-menu')).not.toBeNull()
+    expect(document.activeElement?.textContent).toContain('Runtime Settings')
+  })
+
+  it('opens the Parameters dialog from the group context menu', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = requestUrl(input)
+      if (url.includes('/groups/Live%20Checkout/parameters')) {
+        return jsonResponse({
+          test_id: 'live-vuser-1',
+          group: 'Live Checkout',
+          group_index: 0,
+          script_name: 'Live Checkout Script',
+          protocol: 'http',
+          status: 'RUNNING',
+          editable: false,
+          editable_reason: 'run is RUNNING; settings were locked when the run left the pre-start queue',
+          parameters: [
+            { name: 'Region', type: 'list', values: ['east', 'west'], update: 'once', selection: 'random' },
+          ],
+          data_sources: [{ name: 'accounts', type: 'csv', columns: ['user', 'region'], row_count: 2 }],
+        })
+      }
+      return jsonResponse({})
+    })
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const groupRow = container.querySelector('.command-group-row:not(.header)') as HTMLElement
+    await act(async () => {
+      groupRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 90, clientY: 100 }))
+    })
+    const menu = document.querySelector('.command-group-context-menu') as HTMLElement
+    await click(buttonWithin(menu, 'Parameters'))
+    await flush()
+
+    const dialog = document.querySelector('.group-run-settings-dialog') as HTMLElement
+    expect(dialog).not.toBeNull()
+    expect(dialog.textContent).toContain('Parameters — Live Checkout')
+    expect(dialog.textContent).toContain('Region')
+    expect(dialog.textContent).toContain('east, west')
+    expect(dialog.textContent).toContain('Data sources: accounts (2 rows): user, region')
+  })
+
+  it('does not offer the group context menu for the local prototype', async () => {
+    await renderPrototype()
+
+    const groupRow = container.querySelector('.command-group-row:not(.header)') as HTMLElement
+    expect(groupRow).not.toBeNull()
+    await act(async () => {
+      groupRow.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 90, clientY: 100 }))
+    })
+
+    expect(document.querySelector('.command-group-context-menu')).toBeNull()
+  })
+
   async function renderPrototype() {
     await act(async () => {
       root.render(<CommandCenterPrototype prototypeMode />)

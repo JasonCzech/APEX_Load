@@ -1,0 +1,10 @@
+[parameter:IterationNo]
+Format="%d"
+OriginalValue=""
+ParamName="IterationNo"
+Type="CurrentIteration"
+[parameter:LGName]
+Format="%s"
+OriginalValue=""
+ParamName="LGName"
+Type="Host"

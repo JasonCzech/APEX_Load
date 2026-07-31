@@ -537,13 +537,13 @@ describe('ApplicationRepositoryPage', () => {
     expect(confirmSpy).toHaveBeenCalledWith('Archive 2 selected items?')
     expect(repositoryApiMock.archiveRelease).toHaveBeenCalledWith('release-1')
     expect(scriptApiMock.getDataPool).toHaveBeenCalledWith('pool-1')
-    expect(scriptApiMock.updateDataPool).toHaveBeenCalledWith('pool-1', expect.objectContaining({
+    expect(scriptApiMock.updateDataPool).toHaveBeenCalledWith('pool-1', {
       name: 'Checkout Users',
       description: 'Seeded user pool',
-      project_id: project.id,
       schema: { username: 'string' },
       archived_at: expect.any(String),
-    }))
+      updated_at: '2026-05-07T00:00:00Z',
+    })
     expect(container.textContent).toContain('Archived 2 selected items.')
 
     await act(async () => {
@@ -597,6 +597,123 @@ describe('ApplicationRepositoryPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('External project secrets retained for administrator cleanup under prefix “apexload/projects/project-1/” (azure_key_vault).')
+
+    confirmSpy.mockRestore()
+  })
+
+  it('awaits every bulk archive and preserves failed selections after partial success', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let resolveReleaseArchive: ((value: unknown) => void) | undefined
+    repositoryApiMock.archiveRelease.mockImplementationOnce(() => new Promise(resolve => {
+      resolveReleaseArchive = resolve
+    }))
+    scriptApiMock.updateDataPool.mockRejectedValueOnce(new Error('pool archive locked'))
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+    const initialReleaseLoads = repositoryApiMock.listProjectReleases.mock.calls.length
+
+    await act(async () => {
+      findCheckbox(container, 'Select 2026.05')?.click()
+      findCheckbox(container, 'Select Checkout Users')?.click()
+    })
+    await act(async () => {
+      findButton(container, 'Archive selected (2)')?.click()
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.archiveRelease).toHaveBeenCalledWith('release-1')
+    expect(scriptApiMock.updateDataPool).toHaveBeenCalled()
+    expect(repositoryApiMock.listProjectReleases).toHaveBeenCalledTimes(initialReleaseLoads)
+    expect(findButton(container, 'Archive selected (2)')?.disabled).toBe(true)
+    expect(container.textContent).not.toContain('Archived 1 selected item')
+    expect(container.textContent).not.toContain('pool archive locked')
+
+    await act(async () => {
+      resolveReleaseArchive?.({
+        id: 'release-1',
+        application_id: application.id,
+        project_id: project.id,
+        name: '2026.05',
+        archived_at: '2026-05-10T00:00:00Z',
+      })
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.listProjectReleases).toHaveBeenCalledTimes(initialReleaseLoads + 1)
+    expect(container.textContent).toContain('Archived 1 selected item; 1 item unchanged.')
+    expect(container.textContent).toContain('Unable to archive 1 selected item; 1 failed item remains selected: Checkout Users: pool archive locked.')
+    expect(findCheckbox(container, 'Select 2026.05')?.checked).toBe(false)
+    expect(findCheckbox(container, 'Select Checkout Users')?.checked).toBe(true)
+    expect(container.textContent).toContain('1 item selected')
+    expect(container.textContent).toContain('Archive selected (1)')
+
+    confirmSpy.mockRestore()
+  })
+
+  it('refreshes after an all-failed bulk archive and keeps every failed row selected', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    repositoryApiMock.archiveRelease.mockRejectedValueOnce(new Error('release archive denied'))
+    scriptApiMock.updateDataPool.mockRejectedValueOnce(new Error('pool archive denied'))
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+    const initialReleaseLoads = repositoryApiMock.listProjectReleases.mock.calls.length
+
+    await act(async () => {
+      findCheckbox(container, 'Select 2026.05')?.click()
+      findCheckbox(container, 'Select Checkout Users')?.click()
+    })
+    await act(async () => {
+      findButton(container, 'Archive selected (2)')?.click()
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.listProjectReleases).toHaveBeenCalledTimes(initialReleaseLoads + 1)
+    expect(container.textContent).not.toContain('Archived 1 selected item')
+    expect(container.textContent).not.toContain('Archived 2 selected items')
+    expect(container.textContent).toContain('Unable to archive 2 selected items; 2 failed items remain selected')
+    expect(container.textContent).toContain('2026.05: release archive denied')
+    expect(container.textContent).toContain('Checkout Users: pool archive denied')
+    expect(findCheckbox(container, 'Select 2026.05')?.checked).toBe(true)
+    expect(findCheckbox(container, 'Select Checkout Users')?.checked).toBe(true)
+    expect(container.textContent).toContain('2 items selected')
 
     confirmSpy.mockRestore()
   })
@@ -707,5 +824,100 @@ describe('ApplicationRepositoryPage', () => {
     expect(projectCheckbox?.checked).toBe(false)
 
     confirmSpy.mockRestore()
+  })
+
+  it('does not let a late manual refresh from the previous domain replace the active catalog', async () => {
+    const secondDomain = { id: 'domain-2', name: 'Payments', created_at: '', updated_at: '' }
+    const secondRepository = { id: 'repo-2', domain_id: secondDomain.id, name: 'Application Repository', created_at: '', updated_at: '' }
+    const secondCategory = { id: 'category-2', domain_id: secondDomain.id, repository_id: secondRepository.id, name: 'Payments', created_at: '', updated_at: '' }
+    const secondProject = { id: 'project-2', domain_id: secondDomain.id, category_id: secondCategory.id, name: 'Payments API', created_at: '', updated_at: '' }
+    const stableCallbacks = {
+      onDomainChange: vi.fn(),
+      onRepositoryRefresh: vi.fn(),
+      onProjectsRefresh: vi.fn(),
+      onProjectCreated: vi.fn(),
+    }
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain, secondDomain]}
+          activeDomain={domain}
+          activeApplication={null}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project, secondProject]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          {...stableCallbacks}
+        />,
+      )
+    })
+    await flushPromises()
+
+    let resolveStaleScripts: ((value: { scripts: Array<{ id: string; name: string; protocol: string; version: string; project_id: string; created_at: string }>; count: number }) => void) | undefined
+    scriptApiMock.listScripts.mockImplementation((projectId: string) => {
+      if (projectId === project.id) {
+        return new Promise(resolve => {
+          resolveStaleScripts = resolve
+        })
+      }
+      return Promise.resolve({
+        scripts: [{
+          id: 'script-2',
+          name: 'Payments Current',
+          protocol: 'http',
+          version: '1.0.0',
+          project_id: secondProject.id,
+          created_at: '2026-05-20T00:00:00Z',
+        }],
+        count: 1,
+      })
+    })
+
+    const refresh = findButton(container, 'Refresh')
+    expect(refresh).toBeTruthy()
+    if (!refresh) return
+    await act(async () => {
+      refresh.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain, secondDomain]}
+          activeDomain={secondDomain}
+          activeApplication={null}
+          applicationRepository={secondRepository}
+          categories={[secondCategory]}
+          projects={[project, secondProject]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          {...stableCallbacks}
+        />,
+      )
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Payments Current')
+
+    await act(async () => {
+      resolveStaleScripts?.({
+        scripts: [{
+          id: 'script-stale',
+          name: 'Retail Stale',
+          protocol: 'http',
+          version: '1.0.0',
+          project_id: project.id,
+          created_at: '2026-05-19T00:00:00Z',
+        }],
+        count: 1,
+      })
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Payments Current')
+    expect(container.textContent).not.toContain('Retail Stale')
   })
 })

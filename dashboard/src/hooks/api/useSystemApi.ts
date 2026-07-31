@@ -258,7 +258,14 @@ export function useSystemApi() {
   const getSystemSettings = useCallback(() => request<DashboardSystemSettings>('/system/settings'), [])
 
   const updateSystemSettings = useCallback(
-    (settings: DashboardSystemSettings) => request<DashboardSystemSettings>('/system/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+    (settings: DashboardSystemSettings) => {
+      const { revision, ...payload } = settings
+      return request<DashboardSystemSettings>('/system/settings', {
+        method: 'PUT',
+        headers: revision ? { 'If-Match': JSON.stringify(revision) } : undefined,
+        body: JSON.stringify(payload),
+      })
+    },
     [],
   )
 

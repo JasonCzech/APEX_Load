@@ -1113,6 +1113,26 @@
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/data-pools/{id}/rows/export",
+      "operationId": "handleExportDataPoolRows",
+      "summary": "Export Data Pool Rows",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/data-pools/{id}/rows/import",
+      "operationId": "handleImportDataPoolRows",
+      "summary": "Import Data Pool Rows",
+      "category": "Data \u0026 Parameters",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
       "method": "DELETE",
       "path": "/api/v1/data-pools/{id}/rows/{row_id}",
       "operationId": "handleDeleteDataPoolRow",
@@ -4771,6 +4791,46 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/groups/{group}/parameters",
+      "operationId": "handleGetTestGroupParameters",
+      "summary": "Get Test Group Parameters",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/tests/{id}/groups/{group}/parameters",
+      "operationId": "handleUpdateTestGroupParameters",
+      "summary": "Update Test Group Parameters",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/groups/{group}/runtime-settings",
+      "operationId": "handleGetTestGroupRuntimeSettings",
+      "summary": "Get Test Group Runtime Settings",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/tests/{id}/groups/{group}/runtime-settings",
+      "operationId": "handleUpdateTestGroupRuntimeSettings",
+      "summary": "Update Test Group Runtime Settings",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",

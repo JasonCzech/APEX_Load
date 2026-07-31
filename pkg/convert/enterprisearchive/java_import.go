@@ -187,6 +187,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	state.emitsTransactions, state.emitsActionTransactions, state.transactionMarkers, state.transactions = javaProgramTransactionStats(runtimeReachability)
 
 	result := convertJavaVuserRunnerDraft(files, opts, detected, program, append([]string(nil), parseWarnings...), state, projectConfig)
+	recordJavaProgramTransactionNames(result, runtimeReachability)
 	applyJavaVuserSourceSelectionGate(result, program)
 	appendJavaCombinedSourceMappingsForEntries(result, program, mappable.entries, externalLifecycle, runtimeReachability)
 	if blockers := javaVuserRunnerSemanticBlockers(runtimeReachability); len(blockers) > 0 {
@@ -4584,6 +4585,34 @@ func javaProgramTransactionStats(reachability javaVuserRuntimeReachability) (emi
 	return emits, actionEmits, markers, transactions
 }
 
+// recordJavaProgramTransactionNames captures every reachable Java transaction
+// publisher for the project-level declared-transaction conservation check.
+// Initializing the map even when no calls are present distinguishes an
+// inspected Java source from importer branches that do not support this check.
+func recordJavaProgramTransactionNames(result *ConvertResult, reachability javaVuserRuntimeReachability) {
+	if result == nil {
+		return
+	}
+	if result.sourceTransactionNames == nil {
+		result.sourceTransactionNames = make(map[string]struct{})
+	}
+	for _, reachable := range reachability.statements {
+		for _, fn := range javaLRToParsedFunctionsBound(
+			reachable.statement,
+			"action",
+			reachable.owner,
+			reachable.current,
+			reachability.evidenceIndex,
+			reachable.variableTypes,
+		) {
+			switch fn.Name {
+			case "lr_start_transaction", "lr_set_transaction":
+				recordSourceTransactionName(result, convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName))
+			}
+		}
+	}
+}
+
 type javaCombinedMappableEntry struct {
 	statement     javaStatement
 	scopeKey      string
@@ -6398,6 +6427,7 @@ func routeJavaLRFunction(result *ConvertResult, state *javaImportState, phase st
 	// rather than being inert markers.
 	switch fn.Name {
 	case "lr_start_transaction":
+		recordSourceTransactionName(result, convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName))
 		state.currentTransaction = fn.StepName
 		state.currentSubTransaction = ""
 		result.Stats.Transactions++

@@ -105,6 +105,11 @@ type ProjectConfig struct {
 	BaseURL           string
 	ThinkTimeMin      float64
 	ThinkTimeMax      float64
+	// Transactions are the transaction names the project declares in
+	// [TransactionsOrder]/[Transactions], in declared order. They let the
+	// importer cross-check that every declared transaction survived
+	// conversion.
+	Transactions []string
 	// runtimePointerConflicts retains conflicting case-insensitive .usr
 	// cfg/run-logic pointer declarations for fail-closed profile resolution.
 	runtimePointerConflicts []runtimeConfigCaseFoldConflict
@@ -991,6 +996,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	scanner.Buffer(make([]byte, 64*1024), maxUSRConfigLineBytes)
 	section := ""
+	transactionNames := make(map[string]struct{})
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -1072,6 +1078,20 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			if strings.TrimSpace(value) != "" {
 				cfg.ExtraFiles = append(cfg.ExtraFiles, value)
 			}
+		case "transactionsorder":
+			if normalizedKey == "order" {
+				names, err := splitProjectTransactionOrder(rawValue)
+				if err != nil {
+					return nil, fmt.Errorf("parse [TransactionsOrder] Order: %w", err)
+				}
+				for _, name := range names {
+					appendProjectTransaction(cfg, transactionNames, name)
+				}
+			}
+		case "transactions":
+			// [Transactions] lists one transaction name per key; values are
+			// normally empty annotations.
+			appendProjectTransaction(cfg, transactionNames, key)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -1185,6 +1205,82 @@ func splitConfigList(value string) []string {
 		}
 	}
 	return out
+}
+
+// splitProjectTransactionOrder parses the quoted comma-separated transaction
+// list VuGen writes in [TransactionsOrder]. Unlike the generic config-list
+// helper, separators inside a transaction name remain part of that name.
+func splitProjectTransactionOrder(value string) ([]string, error) {
+	var names []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+	flush := func() {
+		name := strings.TrimSpace(current.String())
+		current.Reset()
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	for _, character := range value {
+		if escaped {
+			if character != quote && character != '\\' {
+				current.WriteRune('\\')
+			}
+			current.WriteRune(character)
+			escaped = false
+			continue
+		}
+		if quote != 0 {
+			if character == '\\' {
+				escaped = true
+				continue
+			}
+			if character == quote {
+				quote = 0
+				continue
+			}
+			current.WriteRune(character)
+			continue
+		}
+		switch character {
+		case '"', '\'':
+			if strings.TrimSpace(current.String()) == "" {
+				current.Reset()
+				quote = character
+			} else {
+				current.WriteRune(character)
+			}
+		case ',', ';', '|':
+			flush()
+		default:
+			current.WriteRune(character)
+		}
+	}
+	if escaped {
+		current.WriteRune('\\')
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated quoted transaction name")
+	}
+	flush()
+	return names, nil
+}
+
+func appendProjectTransaction(cfg *ProjectConfig, seen map[string]struct{}, name string) {
+	if cfg == nil {
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	identity := strings.ToLower(name)
+	if _, exists := seen[identity]; exists {
+		return
+	}
+	seen[identity] = struct{}{}
+	cfg.Transactions = append(cfg.Transactions, name)
 }
 
 func cleanConfigValue(value string) string {

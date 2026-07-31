@@ -429,7 +429,15 @@ type ManagedTest struct {
 	remoteStopFinalizerRunning   bool
 	remoteMetricsLastPublishedAt time.Time
 	remoteMetricsFlushScheduled  bool
-	remoteGoalUpdateRunning      bool
+	// Accepted/published revisions and the gate make distributed aggregate
+	// publication monotonic when per-target consumers finish out of order.
+	remoteMetricsAcceptedRevision   uint64
+	remoteMetricsPublishedRevision  uint64
+	remoteMetricsPublishGate        chan struct{}
+	remoteGoalAcceptedErrorWindows  map[string]distributedGoalErrorAccumulator
+	remoteGoalPublishedErrorWindows map[string]distributedGoalErrorAccumulator
+	remoteGoalUpdateRunning         bool
+	remoteGoalUpdateRevision        uint64
 	// remoteSecretSnapshots are bounded, run-lifetime-only controller snapshots
 	// shared by initial and evacuation assignments. They are never serialized.
 	remoteSecretSnapshots map[string]distributedRunSecretSnapshot
@@ -444,8 +452,21 @@ type ManagedTest struct {
 	// executionFence is the scheduler-lease owner token captured by the epoch
 	// that created/claimed this run. It is intentionally process-private and is
 	// checked transactionally for every production full-row save.
-	executionFence             string
-	telemetryDiagnostic        telemetryDiagnosticState
+	executionFence      string
+	telemetryDiagnostic telemetryDiagnosticState
+	// Threshold-alert webhook dedupe (guarded by tr.mu): alerts rebuild every
+	// metrics tick while breached, so webhook dispatch fires once per breach
+	// episode. thresholdAlertActive marks episode keys (metric["|"transaction])
+	// already notified for their ongoing episode (cleared on recovery, so it is
+	// bounded by the ≤5 alerts a tick can produce); thresholdAlertNotifiedAt is
+	// the re-notify cooldown keyed PER METRIC (bounded by the fixed metric set)
+	// so rotating hottest-transaction keys cannot amplify webhook volume.
+	// In-memory only — restart/failover may re-notify once.
+	thresholdAlertActive     map[string]bool
+	thresholdAlertNotifiedAt map[string]time.Time
+	// p99BreachConsecutive counts consecutive metrics evaluations with P99
+	// above thresholds.max_p99_latency_ms for the opt-in sustained auto-stop.
+	p99BreachConsecutive       int
 	errorPatterns              map[string]*LiveErrorPattern
 	liveErrorEvidence          map[string][]LiveErrorEvidence
 	vuserScaleRamps            map[string]*vuserScaleRamp
@@ -1024,17 +1045,20 @@ const (
 	maxManagedTestHistory                   = 3600
 	maxManagedTestHistoryBytes              = 64 << 20
 	telemetryDiagnosticSampleInterval       = 5 * time.Second
-	telemetrySustainedBreachWindow          = 15 * time.Second
-	maxTelemetryDiagnosticSamples           = 3
-	maxLiveErrorEvidencePerRun              = 256
-	maxLiveErrorEvidencePerSignature        = 50
-	defaultLiveErrorEvidenceLimit           = 20
-	maxLiveErrorEvidenceLimit               = 100
-	maxLiveErrorPatternsPerRun              = 256
-	slowTransactionDiagnosticThresholdMs    = 1000.0
-	jmsBrokerPressureMinLagMs               = 200.0
-	jmsBrokerPressureLagMultiplier          = 2.0
-	jmsBrokerPressureSendRecvRatio          = 1.5
+	// thresholdAlertRenotifyInterval bounds threshold-alert webhook re-fires: a
+	// metric oscillating around its threshold re-notifies at most this often.
+	thresholdAlertRenotifyInterval       = 5 * time.Minute
+	telemetrySustainedBreachWindow       = 15 * time.Second
+	maxTelemetryDiagnosticSamples        = 3
+	maxLiveErrorEvidencePerRun           = 256
+	maxLiveErrorEvidencePerSignature     = 50
+	defaultLiveErrorEvidenceLimit        = 20
+	maxLiveErrorEvidenceLimit            = 100
+	maxLiveErrorPatternsPerRun           = 256
+	slowTransactionDiagnosticThresholdMs = 1000.0
+	jmsBrokerPressureMinLagMs            = 200.0
+	jmsBrokerPressureLagMultiplier       = 2.0
+	jmsBrokerPressureSendRecvRatio       = 1.5
 	// eventHubsPartitionSkewWarnPct flags a producer transaction whose per-partition
 	// produce volume has a coefficient of variation at/above this percent — a hot
 	// partition that will throttle before the namespace aggregate does.

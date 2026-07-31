@@ -1,6 +1,5 @@
 import type {
   RuntimeSettingsFinding,
-  RuntimeSettingsOverride,
   RuntimeSettingsReview,
 } from '../types/runtimeSettings'
 import type {
@@ -58,6 +57,7 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'java_vuser',
   'web_runtime',
   'log',
+  'imported_source',
 ] as const
 
 export type RuntimeSettingsSectionId = typeof RUNTIME_SETTINGS_SECTION_IDS[number]
@@ -150,7 +150,10 @@ export function runtimeSettingsSectionIsAvailable(section: RuntimeSettingsSectio
     case 'soap': return capability.soap
     case 'java_http': return capability.javaHttp
     case 'java_vuser': return capability.javaVuser
-    case 'web_runtime': return capability.http
+    // Web HTTP/HTML compatibility settings execute on the shared HTTP
+    // transport, so SOAP and Java-over-HTTP scripts edit them too (mirrors the
+    // backend fieldApplicableForProtocol).
+    case 'web_runtime': return capability.httpTransport
     default: return true
   }
 }
@@ -414,6 +417,104 @@ export function formatRuntimeSettingStatusLabel(status: string): string {
   }
 }
 
+/** Per-key classification the importer records for every selected cfg/usp key. */
+export interface ImportedRuntimeSettingDisposition {
+  status?: string
+  parity_id?: string
+  fields?: string[]
+  note?: string
+}
+
+export type ImportedRuntimeFileSections = Record<string, Record<string, string>>
+export type ImportedRuntimeDispositions = Record<string, Record<string, Record<string, ImportedRuntimeSettingDisposition>>>
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+/** Reads metadata.import.preserved.runtime_files (file → section → key → raw value). */
+export function readImportedRuntimeFiles(importMeta?: { preserved?: Record<string, unknown> } | null): Record<string, ImportedRuntimeFileSections> {
+  const files = asRecord(importMeta?.preserved?.runtime_files)
+  if (!files) return {}
+  const result: Record<string, ImportedRuntimeFileSections> = {}
+  for (const [fileName, rawSections] of Object.entries(files)) {
+    const sections = asRecord(rawSections)
+    if (!sections) continue
+    const fileSections: ImportedRuntimeFileSections = {}
+    for (const [sectionName, rawKeys] of Object.entries(sections)) {
+      const keys = asRecord(rawKeys)
+      if (!keys) continue
+      const sectionKeys: Record<string, string> = {}
+      for (const [key, value] of Object.entries(keys)) {
+        sectionKeys[key] = typeof value === 'string' ? value : value == null ? '' : String(value)
+      }
+      fileSections[sectionName] = sectionKeys
+    }
+    if (Object.keys(fileSections).length > 0) result[fileName] = fileSections
+  }
+  return result
+}
+
+/** Reads metadata.import.preserved.runtime_setting_dispositions (file → section → key → disposition). */
+export function readImportedRuntimeSettingDispositions(importMeta?: { preserved?: Record<string, unknown> } | null): ImportedRuntimeDispositions {
+  const files = asRecord(importMeta?.preserved?.runtime_setting_dispositions)
+  if (!files) return {}
+  const result: ImportedRuntimeDispositions = {}
+  for (const [fileName, rawSections] of Object.entries(files)) {
+    const sections = asRecord(rawSections)
+    if (!sections) continue
+    const fileSections: Record<string, Record<string, ImportedRuntimeSettingDisposition>> = {}
+    for (const [sectionName, rawKeys] of Object.entries(sections)) {
+      const keys = asRecord(rawKeys)
+      if (!keys) continue
+      const sectionKeys: Record<string, ImportedRuntimeSettingDisposition> = {}
+      for (const [key, value] of Object.entries(keys)) {
+        const record = asRecord(value)
+        if (!record) continue
+        sectionKeys[key] = {
+          status: typeof record.status === 'string' ? record.status : undefined,
+          parity_id: typeof record.parity_id === 'string' ? record.parity_id : undefined,
+          fields: Array.isArray(record.fields) ? record.fields.filter((field): field is string => typeof field === 'string') : undefined,
+          note: typeof record.note === 'string' ? record.note : undefined,
+        }
+      }
+      fileSections[sectionName] = sectionKeys
+    }
+    if (Object.keys(fileSections).length > 0) result[fileName] = fileSections
+  }
+  return result
+}
+
+export function formatRuntimeDispositionLabel(disposition?: ImportedRuntimeSettingDisposition): string {
+  switch (disposition?.status) {
+    case 'mapped':
+      return disposition.fields?.length ? `Mapped → ${disposition.fields[0]}` : 'Mapped'
+    case 'compatibility_only': return 'Compatibility-only'
+    case 'non_applicable': return 'Not applicable'
+    default: return 'Unclassified'
+  }
+}
+
+/** Counts dispositions by status across every file/section for summary text. */
+export function summarizeImportedRuntimeDispositions(dispositions: ImportedRuntimeDispositions): { mapped: number; compatibility: number; nonApplicable: number; unclassified: number; total: number } {
+  const summary = { mapped: 0, compatibility: 0, nonApplicable: 0, unclassified: 0, total: 0 }
+  for (const sections of Object.values(dispositions)) {
+    for (const keys of Object.values(sections)) {
+      for (const disposition of Object.values(keys)) {
+        summary.total++
+        switch (disposition.status) {
+          case 'mapped': summary.mapped++; break
+          case 'compatibility_only': summary.compatibility++; break
+          case 'non_applicable': summary.nonApplicable++; break
+          default: summary.unclassified++
+        }
+      }
+    }
+  }
+  return summary
+}
+
 export function summarizeRuntimeSettingsReview(review?: RuntimeSettingsReview | null): RuntimeReviewSummary {
   const findings = review?.findings ? review.findings.map(finding => ({ ...finding })) : []
   const blocking = review?.blocking_findings
@@ -432,31 +533,9 @@ export function summarizeRuntimeSettingsReview(review?: RuntimeSettingsReview | 
   }
 }
 
-export function runtimeOverrideFromScriptConfig(config: ScriptConfig): RuntimeSettingsOverride {
-  return {
-    iterations: config.run_logic?.iterations,
-    pacing: config.pacing ? structuredClone(config.pacing) : undefined,
-    think_time: config.think_time ? structuredClone(config.think_time) : undefined,
-    browser: config.browser
-      ? {
-          headless: config.browser.headless,
-          device_profile: config.browser.device_profile,
-          touch_mode: config.browser.touch_mode,
-          orientation: config.browser.orientation,
-        }
-      : undefined,
-    log_level: config.log?.level,
-    auto_transactions: config.run_logic?.auto_transactions,
-    error_handling: config.error_handling ? structuredClone(config.error_handling) : undefined,
-    log: config.log ? structuredClone(config.log) : undefined,
-    run_logic: config.run_logic ? structuredClone(config.run_logic) : undefined,
-    http: config.http ? structuredClone(config.http) : undefined,
-    web_runtime: config.web_runtime ? structuredClone(config.web_runtime) : undefined,
-    browser_config: config.browser ? structuredClone(config.browser) : undefined,
-    browser_emulation: config.browser_emulation ? structuredClone(config.browser_emulation) : undefined,
-    base_url: config.base_url,
-  }
-}
+// One projection for ScriptConfig → RuntimeSettingsOverride across every
+// surface (it also carries java_vuser, which an older local copy here missed).
+export { runtimeOverrideFromScriptConfig } from './runtimeSettingsModel'
 
 export function cloneScriptRuntimeConfig(config: ScriptConfig): ScriptConfig {
   return structuredClone(config)

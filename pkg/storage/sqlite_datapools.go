@@ -3,10 +3,13 @@ package storage
 // SQLite store — datapools. Split from sqlite.go (same package, behavior-preserving).
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,8 +29,11 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	if pool.CreatedAt.IsZero() {
 		pool.CreatedAt = time.Now()
 	}
+	// Postgres timestamptz stores microseconds; without truncation the value
+	// returned to clients (nanoseconds) can never Equal the stored CAS token.
+	pool.CreatedAt = pool.CreatedAt.Truncate(time.Microsecond)
 	pool.ProjectID = normalizeProjectID(pool.ProjectID)
-	pool.UpdatedAt = time.Now()
+	pool.UpdatedAt = time.Now().Truncate(time.Microsecond)
 	schemaJSON, err := json.Marshal(pool.Schema)
 	if err != nil {
 		return fmt.Errorf("marshal data pool schema: %w", err)
@@ -40,17 +46,21 @@ func (s *SQLiteStore) SaveDataPool(pool *SharedDataPool) error {
 	if _, err := lockProjectForOwnedMutation(tx, pool.ProjectID); err != nil {
 		return err
 	}
-	ownerQuery := `SELECT COALESCE(project_id, '') FROM shared_data_pools WHERE id = ?`
+	ownerQuery := `SELECT COALESCE(project_id, ''), updated_at FROM shared_data_pools WHERE id = ?`
 	if tx.dialect == storeDialectPostgres {
 		ownerQuery += ` FOR UPDATE`
 	}
 	var existingProjectID string
-	err = tx.QueryRow(ownerQuery, pool.ID).Scan(&existingProjectID)
+	var existingUpdatedAt time.Time
+	err = tx.QueryRow(ownerQuery, pool.ID).Scan(&existingProjectID, &existingUpdatedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	if err == nil && normalizeProjectID(existingProjectID) != pool.ProjectID {
 		return fmt.Errorf("data pool %q already belongs to project %q", pool.ID, normalizeProjectID(existingProjectID))
+	}
+	if err == nil && !pool.UpdatedAt.After(existingUpdatedAt) {
+		pool.UpdatedAt = existingUpdatedAt.Add(time.Microsecond)
 	}
 	result, err := tx.Exec(`INSERT INTO shared_data_pools (id, name, description, schema_json, project_id, created_at, updated_at, archived_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -118,7 +128,11 @@ func (s *SQLiteStore) UpdateDataPoolIfUnchanged(pool *SharedDataPool, expectedUp
 		return false, nil
 	}
 	pool.ProjectID = normalizeProjectID(currentProjectID)
-	pool.UpdatedAt = time.Now()
+	// Microsecond truncation keeps the returned token matchable on Postgres.
+	pool.UpdatedAt = time.Now().Truncate(time.Microsecond)
+	if !pool.UpdatedAt.After(currentUpdatedAt) {
+		pool.UpdatedAt = currentUpdatedAt.Add(time.Microsecond)
+	}
 	result, err := tx.Exec(`UPDATE shared_data_pools SET name = ?, description = ?, schema_json = ?, archived_at = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, string(schemaJSON), pool.ArchivedAt, pool.UpdatedAt, pool.ID, currentUpdatedRaw)
 	if err != nil {
@@ -226,7 +240,25 @@ func (s *SQLiteStore) DeleteDataPool(id string) error {
 	return tx.Commit()
 }
 
+// DataPoolRowsMutationValidator validates the complete candidate pool snapshot
+// inside the same parent-locked transaction as a direct row mutation.
+type DataPoolRowsMutationValidator func(rows []*SharedDataPoolRow) error
+
 func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
+	return s.saveDataPoolRow(row, nil)
+}
+
+// SaveDataPoolRowIfValid rolls back the row write when validate rejects the
+// resulting full-pool snapshot. The parent pool lock serializes this validation
+// with every built-in direct and bulk row mutation.
+func (s *SQLiteStore) SaveDataPoolRowIfValid(row *SharedDataPoolRow, validate DataPoolRowsMutationValidator) error {
+	if validate == nil {
+		return errors.New("data pool row validator is required")
+	}
+	return s.saveDataPoolRow(row, validate)
+}
+
+func (s *SQLiteStore) saveDataPoolRow(row *SharedDataPoolRow, validate DataPoolRowsMutationValidator) error {
 	if row == nil {
 		return errors.New("data pool row is required")
 	}
@@ -250,7 +282,8 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 	if row.CreatedAt.IsZero() {
 		row.CreatedAt = time.Now()
 	}
-	row.UpdatedAt = time.Now()
+	row.CreatedAt = row.CreatedAt.Truncate(time.Microsecond)
+	row.UpdatedAt = time.Now().Truncate(time.Microsecond)
 	dataJSON, err := json.Marshal(row.Data)
 	if err != nil {
 		return fmt.Errorf("marshal data pool row: %w", err)
@@ -275,8 +308,21 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
+	isNew := errors.Is(err, sql.ErrNoRows)
 	if err == nil && existingPoolID != row.PoolID {
 		return fmt.Errorf("data pool row %q belongs to pool %q, not %q", row.ID, existingPoolID, row.PoolID)
+	}
+	if isNew {
+		// A new row must sort after every existing row even when a prior bulk
+		// import future-dated created_at with its base+i staggering.
+		maxCreated, hasRows, maxErr := maxDataPoolRowCreatedAt(tx, row.PoolID)
+		if maxErr != nil {
+			return maxErr
+		}
+		if hasRows && !row.CreatedAt.After(maxCreated) {
+			row.CreatedAt = maxCreated.Add(time.Microsecond)
+			row.UpdatedAt = row.CreatedAt
+		}
 	}
 	result, err := tx.Exec(`INSERT INTO shared_data_pool_rows (id, pool_id, data_json, status, version, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -291,6 +337,22 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 	} else if affected == 0 {
 		return fmt.Errorf("data pool row %q belongs to another pool", row.ID)
 	}
+	if validate != nil {
+		rows, err := listDataPoolRowsTx(tx, row.PoolID)
+		if err != nil {
+			return err
+		}
+		if err := validate(rows); err != nil {
+			return fmt.Errorf("validate data pool runtime shape: %w", err)
+		}
+	}
+	countDelta := 0
+	if isNew {
+		countDelta = 1
+	}
+	if err := advanceDataPoolRowsPageState(tx, row.PoolID, countDelta); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -298,6 +360,20 @@ func (s *SQLiteStore) SaveDataPoolRow(row *SharedDataPoolRow) error {
 // The row version is the public concurrency token; a stale editor cannot
 // silently overwrite a newer row or move it between pools.
 func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataPoolRow, expectedVersion int) (bool, error) {
+	return s.updateDataPoolRowIfVersion(poolID, row, expectedVersion, nil)
+}
+
+// UpdateDataPoolRowIfVersionAndValid combines row-version CAS with whole-pool
+// runtime validation. A stale version or invalid candidate leaves both the row
+// and the O(1) paging counters unchanged.
+func (s *SQLiteStore) UpdateDataPoolRowIfVersionAndValid(poolID string, row *SharedDataPoolRow, expectedVersion int, validate DataPoolRowsMutationValidator) (bool, error) {
+	if validate == nil {
+		return false, errors.New("data pool row validator is required")
+	}
+	return s.updateDataPoolRowIfVersion(poolID, row, expectedVersion, validate)
+}
+
+func (s *SQLiteStore) updateDataPoolRowIfVersion(poolID string, row *SharedDataPoolRow, expectedVersion int, validate DataPoolRowsMutationValidator) (bool, error) {
 	if row == nil {
 		return false, errors.New("data pool row is required")
 	}
@@ -323,7 +399,7 @@ func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataP
 	if err != nil {
 		return false, fmt.Errorf("marshal data pool row: %w", err)
 	}
-	row.UpdatedAt = time.Now()
+	row.UpdatedAt = time.Now().Truncate(time.Microsecond)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
@@ -343,6 +419,18 @@ func (s *SQLiteStore) UpdateDataPoolRowIfVersion(poolID string, row *SharedDataP
 	}
 	affected, err := result.RowsAffected()
 	if err != nil || affected != 1 {
+		return false, err
+	}
+	if validate != nil {
+		rows, err := listDataPoolRowsTx(tx, poolID)
+		if err != nil {
+			return false, err
+		}
+		if err := validate(rows); err != nil {
+			return false, fmt.Errorf("validate data pool runtime shape: %w", err)
+		}
+	}
+	if err := advanceDataPoolRowsPageState(tx, poolID, 0); err != nil {
 		return false, err
 	}
 	row.Version = expectedVersion + 1
@@ -367,16 +455,95 @@ func (s *SQLiteStore) ListDataPoolRowsPage(poolID string, limit, offset int) ([]
 }
 
 func (s *SQLiteStore) listDataPoolRows(poolID string, limit, offset int) ([]*SharedDataPoolRow, error) {
-	query := `SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at ASC`
+	query := `SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at ASC, id ASC`
 	args := []any{poolID}
 	if limit > 0 {
 		query += ` LIMIT ? OFFSET ?`
 		args = append(args, limit, offset)
 	}
+	return s.scanDataPoolRows(query, args...)
+}
+
+// ListDataPoolRowsPageAfter returns the next page in the pool's stored sort
+// order, so full-pool sweeps (export) avoid O(n²) OFFSET rescans. afterKey is
+// the opaque cursor returned by the previous call ("" for the first page);
+// afterID is the last row's id.
+//
+// On SQLite the cursor is the row's raw stored created_at text: legacy rows
+// were written through time.String() and carry Go monotonic-clock suffixes
+// ("… m=+1.23") that a re-bound time.Time can never equal, so only stored-text
+// vs stored-text comparison is consistent with the column's own (text) sort
+// order. Postgres stores real microsecond timestamps, so the cursor round-trips
+// through RFC3339Nano and compares natively.
+func (s *SQLiteStore) ListDataPoolRowsPageAfter(poolID, afterKey, afterID string, limit int) ([]*SharedDataPoolRow, string, error) {
+	if limit <= 0 {
+		return []*SharedDataPoolRow{}, afterKey, nil
+	}
+	var cursor any = afterKey
+	if s.db.dialect == storeDialectPostgres {
+		parsed := time.Time{}
+		if afterKey != "" {
+			var err error
+			parsed, err = time.Parse(time.RFC3339Nano, afterKey)
+			if err != nil {
+				return nil, "", fmt.Errorf("invalid data pool row cursor %q: %w", afterKey, err)
+			}
+		}
+		cursor = parsed
+	}
+	rows, err := s.db.Query(`SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at, CAST(created_at AS TEXT)
+		FROM shared_data_pool_rows
+		WHERE pool_id = ? AND (created_at > ? OR (created_at = ? AND id > ?))
+		ORDER BY created_at ASC, id ASC LIMIT ?`, poolID, cursor, cursor, afterID, limit)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var out []*SharedDataPoolRow
+	nextKey := afterKey
+	for rows.Next() {
+		var row SharedDataPoolRow
+		var dataJSON string
+		var rawCreated string
+		if err := rows.Scan(&row.ID, &row.PoolID, &dataJSON, &row.Status, &row.Version, &row.CreatedAt, &row.UpdatedAt, &rawCreated); err != nil {
+			return nil, "", err
+		}
+		if dataJSON != "" && dataJSON != "null" {
+			if err := json.Unmarshal([]byte(dataJSON), &row.Data); err != nil {
+				return nil, "", fmt.Errorf("decode data pool row %s: %w", row.ID, err)
+			}
+		}
+		if row.Data == nil {
+			row.Data = map[string]string{}
+		}
+		out = append(out, &row)
+		if s.db.dialect == storeDialectPostgres {
+			nextKey = row.CreatedAt.Format(time.RFC3339Nano)
+		} else {
+			nextKey = rawCreated
+		}
+	}
+	return out, nextKey, rows.Err()
+}
+
+func (s *SQLiteStore) scanDataPoolRows(query string, args ...any) ([]*SharedDataPoolRow, error) {
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
+	return scanDataPoolRowsResult(rows)
+}
+
+func listDataPoolRowsTx(tx *storeTx, poolID string) ([]*SharedDataPoolRow, error) {
+	rows, err := tx.Query(`SELECT id, pool_id, data_json, COALESCE(status, ''), COALESCE(version, 1), created_at, updated_at
+		FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at ASC, id ASC`, poolID)
+	if err != nil {
+		return nil, err
+	}
+	return scanDataPoolRowsResult(rows)
+}
+
+func scanDataPoolRowsResult(rows *sql.Rows) ([]*SharedDataPoolRow, error) {
 	defer rows.Close()
 	var out []*SharedDataPoolRow
 	for rows.Next() {
@@ -396,6 +563,301 @@ func (s *SQLiteStore) listDataPoolRows(poolID string, limit, offset int) ([]*Sha
 		out = append(out, &row)
 	}
 	return out, rows.Err()
+}
+
+// CountDataPoolRows returns the durable O(1) row count maintained by every
+// supported mutation. The scalar subquery preserves the historical missing
+// pool behavior (zero rows, nil error) of COUNT(*) on the child table.
+func (s *SQLiteStore) CountDataPoolRows(poolID string) (int, error) {
+	var count int
+	if err := s.db.QueryRow(`SELECT COALESCE((SELECT row_count FROM shared_data_pools WHERE id = ?), 0)`, poolID).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// DataPoolRowsPageState returns the durable O(1) generation and count used to
+// fence keyset pages. Unlike DataPoolRowsRevision, it never scans or hashes the
+// pool contents on a read path.
+func (s *SQLiteStore) DataPoolRowsPageState(poolID string) (string, int, error) {
+	var revision int64
+	var count int
+	if err := s.db.QueryRow(`SELECT rows_revision, row_count FROM shared_data_pools WHERE id = ?`, poolID).Scan(&revision, &count); err != nil {
+		return "", 0, err
+	}
+	return strconv.FormatInt(revision, 10), count, nil
+}
+
+// DataPoolRowsRevision returns a content/version fingerprint and row count from
+// one database statement. Bulk replace uses it as an optimistic token so a
+// concurrent same-count update or delete+add cannot be silently erased.
+func (s *SQLiteStore) DataPoolRowsRevision(poolID string) (string, int, error) {
+	rows, err := s.db.Query(`SELECT id, COALESCE(status, ''), COALESCE(version, 1), data_json
+		FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY id ASC`, poolID)
+	if err != nil {
+		return "", 0, err
+	}
+	return scanDataPoolRowsRevision(rows)
+}
+
+func advanceDataPoolRowsPageState(tx *storeTx, poolID string, countDelta int) error {
+	result, err := tx.Exec(`UPDATE shared_data_pools
+		SET rows_revision = rows_revision + 1, row_count = row_count + ?
+		WHERE id = ? AND row_count + ? >= 0`, countDelta, poolID, countDelta)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("failed to advance data pool row paging state for %q", poolID)
+	}
+	return nil
+}
+
+// BulkReplaceDataPoolRows inserts rows in a single transaction, optionally
+// deleting the pool's existing rows first. It exists for CSV import: looping
+// SaveDataPoolRow would open a transaction and take the project+pool locks per
+// row. File order is preserved by staggering created_at, which the row listing
+// orders on.
+func (s *SQLiteStore) BulkReplaceDataPoolRows(poolID string, rows []*SharedDataPoolRow, replace bool) error {
+	_, err := s.bulkReplaceDataPoolRows(poolID, rows, replace, -1, "")
+	return err
+}
+
+// BulkReplaceDataPoolRowsIfCount closes the import preparation window: the
+// caller validates a snapshot, then this method verifies under the pool lock
+// that no row was added or removed before applying the append/replace.
+func (s *SQLiteStore) BulkReplaceDataPoolRowsIfCount(poolID string, rows []*SharedDataPoolRow, replace bool, expectedExistingRows int) (bool, error) {
+	if expectedExistingRows < 0 {
+		return false, errors.New("expected existing data pool row count must be non-negative")
+	}
+	return s.bulkReplaceDataPoolRows(poolID, rows, replace, expectedExistingRows, "")
+}
+
+// BulkReplaceDataPoolRowsIfRevision applies a full replacement only when the
+// pool's row identities, versions, statuses, and data still match the snapshot
+// fingerprint captured while the import was prepared.
+func (s *SQLiteStore) BulkReplaceDataPoolRowsIfRevision(poolID string, rows []*SharedDataPoolRow, expectedRevision string) (bool, error) {
+	if strings.TrimSpace(expectedRevision) == "" {
+		return false, errors.New("expected data pool row revision is required")
+	}
+	return s.bulkReplaceDataPoolRows(poolID, rows, true, -1, expectedRevision)
+}
+
+// BulkAppendDataPoolRowsIfUnchanged protects the whole-pool shape check done by
+// CSV append imports. A row update or a delete+add can leave COUNT(*) unchanged
+// while changing columns or bytes enough to cross an engine limit, so count
+// alone is not a sufficient optimistic token for append.
+func (s *SQLiteStore) BulkAppendDataPoolRowsIfUnchanged(poolID string, rows, expectedExistingRows []*SharedDataPoolRow) (bool, error) {
+	expectedRevision, err := dataPoolRowsRevision(expectedExistingRows)
+	if err != nil {
+		return false, err
+	}
+	return s.bulkReplaceDataPoolRows(poolID, rows, false, -1, expectedRevision)
+}
+
+func (s *SQLiteStore) bulkReplaceDataPoolRows(poolID string, rows []*SharedDataPoolRow, replace bool, expectedExistingRows int, expectedRevision string) (bool, error) {
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" {
+		return false, errors.New("data pool id is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := lockDataPoolParentForMutation(tx, poolID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("data pool not found: %s", poolID)
+		}
+		return false, err
+	}
+	var activePool int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM shared_data_pools WHERE id = ? AND archived_at IS NULL`, poolID).Scan(&activePool); err != nil {
+		return false, err
+	}
+	if activePool != 1 {
+		return false, fmt.Errorf("data pool %q is archived; restore it before importing rows", poolID)
+	}
+	var currentRowCount int
+	if err := tx.QueryRow(`SELECT row_count FROM shared_data_pools WHERE id = ?`, poolID).Scan(&currentRowCount); err != nil {
+		return false, err
+	}
+	if expectedExistingRows >= 0 {
+		if currentRowCount != expectedExistingRows {
+			return false, nil
+		}
+	}
+	if expectedRevision != "" {
+		currentRevision, err := dataPoolRowsRevisionTx(tx, poolID)
+		if err != nil {
+			return false, err
+		}
+		if currentRevision != expectedRevision {
+			return false, nil
+		}
+	}
+	if replace {
+		if _, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE pool_id = ?`, poolID); err != nil {
+			return false, err
+		}
+	}
+	// Appended rows must sort after every existing row even when a prior huge
+	// import future-dated created_at past the wall clock (base+i staggering).
+	base := time.Now().Truncate(time.Microsecond)
+	if !replace {
+		maxCreated, hasRows, err := maxDataPoolRowCreatedAt(tx, poolID)
+		if err != nil {
+			return false, err
+		}
+		if hasRows && !base.After(maxCreated) {
+			base = maxCreated.Add(time.Microsecond)
+		}
+	}
+	inserted := make([]*SharedDataPoolRow, 0, len(rows))
+	for i, row := range rows {
+		if row == nil {
+			continue
+		}
+		row.ID = strings.TrimSpace(row.ID)
+		if row.ID == "" {
+			return false, fmt.Errorf("data pool row %d id is required", i)
+		}
+		row.PoolID = poolID
+		if row.Data == nil {
+			row.Data = map[string]string{}
+		}
+		if row.Status == "" {
+			row.Status = "active"
+		}
+		if row.Version <= 0 {
+			row.Version = 1
+		}
+		row.CreatedAt = base.Add(time.Duration(len(inserted)) * time.Microsecond)
+		row.UpdatedAt = row.CreatedAt
+		inserted = append(inserted, row)
+	}
+	// Multi-row VALUES batches keep the project/pool lock hold proportional to
+	// batches, not rows. 100 rows × 7 params stays under every driver's
+	// placeholder ceiling.
+	const bulkInsertBatchRows = 100
+	for start := 0; start < len(inserted); start += bulkInsertBatchRows {
+		end := start + bulkInsertBatchRows
+		if end > len(inserted) {
+			end = len(inserted)
+		}
+		var query strings.Builder
+		query.WriteString(`INSERT INTO shared_data_pool_rows (id, pool_id, data_json, status, version, created_at, updated_at) VALUES `)
+		args := make([]any, 0, (end-start)*7)
+		for i := start; i < end; i++ {
+			if i > start {
+				query.WriteString(", ")
+			}
+			query.WriteString("(?, ?, ?, ?, ?, ?, ?)")
+			row := inserted[i]
+			dataJSON, err := json.Marshal(row.Data)
+			if err != nil {
+				return false, fmt.Errorf("marshal data pool row %d: %w", i, err)
+			}
+			args = append(args, row.ID, row.PoolID, string(dataJSON), row.Status, row.Version, row.CreatedAt, row.UpdatedAt)
+		}
+		if _, err := tx.Exec(query.String(), args...); err != nil {
+			return false, err
+		}
+	}
+	countDelta := len(inserted)
+	if replace {
+		countDelta -= currentRowCount
+	}
+	if len(inserted) > 0 || (replace && currentRowCount > 0) {
+		if err := advanceDataPoolRowsPageState(tx, poolID, countDelta); err != nil {
+			return false, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+type dataPoolRowRevisionValue struct {
+	ID      string            `json:"id"`
+	Status  string            `json:"status"`
+	Version int               `json:"version"`
+	Data    map[string]string `json:"data"`
+}
+
+func dataPoolRowsRevision(rows []*SharedDataPoolRow) (string, error) {
+	ordered := append([]*SharedDataPoolRow(nil), rows...)
+	sort.Slice(ordered, func(left, right int) bool {
+		if ordered[left] == nil {
+			return ordered[right] != nil
+		}
+		if ordered[right] == nil {
+			return false
+		}
+		return ordered[left].ID < ordered[right].ID
+	})
+	hash := sha256.New()
+	encoder := json.NewEncoder(hash)
+	for index, row := range ordered {
+		if row == nil {
+			return "", fmt.Errorf("expected data pool row %d is nil", index)
+		}
+		data := row.Data
+		if data == nil {
+			data = map[string]string{}
+		}
+		if err := encoder.Encode(dataPoolRowRevisionValue{
+			ID: row.ID, Status: row.Status, Version: row.Version, Data: data,
+		}); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil)), nil
+}
+
+func dataPoolRowsRevisionTx(tx *storeTx, poolID string) (string, error) {
+	rows, err := tx.Query(`SELECT id, COALESCE(status, ''), COALESCE(version, 1), data_json
+		FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY id ASC`, poolID)
+	if err != nil {
+		return "", err
+	}
+	revision, _, err := scanDataPoolRowsRevision(rows)
+	return revision, err
+}
+
+func scanDataPoolRowsRevision(rows *sql.Rows) (string, int, error) {
+	defer rows.Close()
+	hash := sha256.New()
+	encoder := json.NewEncoder(hash)
+	count := 0
+	for rows.Next() {
+		var value dataPoolRowRevisionValue
+		var dataJSON string
+		if err := rows.Scan(&value.ID, &value.Status, &value.Version, &dataJSON); err != nil {
+			return "", 0, err
+		}
+		if dataJSON != "" && dataJSON != "null" {
+			if err := json.Unmarshal([]byte(dataJSON), &value.Data); err != nil {
+				return "", 0, fmt.Errorf("decode data pool row %s: %w", value.ID, err)
+			}
+		}
+		if value.Data == nil {
+			value.Data = map[string]string{}
+		}
+		if err := encoder.Encode(value); err != nil {
+			return "", 0, err
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return "", 0, err
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil)), count, nil
 }
 
 // GetDataPoolRowFromPool resolves a row only within its authorized parent pool
@@ -443,8 +905,18 @@ func (s *SQLiteStore) DeleteDataPoolRow(id string) error {
 		}
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ? AND pool_id = ?`, id, poolID); err != nil {
+	result, err := tx.Exec(`DELETE FROM shared_data_pool_rows WHERE id = ? AND pool_id = ?`, id, poolID)
+	if err != nil {
 		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 1 {
+		if err := advanceDataPoolRowsPageState(tx, poolID, -1); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -479,10 +951,30 @@ func (s *SQLiteStore) DeleteDataPoolRowFromPool(poolID string, id string) (bool,
 	if err != nil {
 		return false, err
 	}
+	if count > 0 {
+		if err := advanceDataPoolRowsPageState(tx, poolID, -int(count)); err != nil {
+			return false, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// maxDataPoolRowCreatedAt returns the latest created_at in the pool in the
+// column's own sort order, or hasRows=false for an empty pool. Callers hold the
+// pool lock, so the value cannot move under them.
+func maxDataPoolRowCreatedAt(tx *storeTx, poolID string) (time.Time, bool, error) {
+	var maxCreated time.Time
+	err := tx.QueryRow(`SELECT created_at FROM shared_data_pool_rows WHERE pool_id = ? ORDER BY created_at DESC LIMIT 1`, poolID).Scan(&maxCreated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return maxCreated, true, nil
 }
 
 // lockDataPoolParentForMutation serializes a pool or row mutation with project

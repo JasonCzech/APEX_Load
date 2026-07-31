@@ -33,7 +33,15 @@ const breakpointsFixture = {
 const optionsFixture = { break_on_failure: true } satisfies OptionsBody
 
 const successFixture = {
-  session: { id: 'debug-session-1' },
+  session: {
+    id: 'debug-session-1',
+    status: 'paused',
+    group: 'checkout-debug',
+    protocol: 'http',
+    log_level: 'debug',
+    current_event_index: 0,
+    break_on_failure: false,
+  },
 } satisfies StepSuccessBody
 
 describe('generated OpenAPI transport helpers', () => {
@@ -84,7 +92,17 @@ describe('generated OpenAPI transport helpers', () => {
         ],
       },
       optionsFixture: { break_on_failure: true },
-      successFixture: { session: { id: 'debug-session-1' } },
+      successFixture: {
+        session: {
+          id: 'debug-session-1',
+          status: 'paused',
+          group: 'checkout-debug',
+          protocol: 'http',
+          log_level: 'debug',
+          current_event_index: 0,
+          break_on_failure: false,
+        },
+      },
     })
   })
 })

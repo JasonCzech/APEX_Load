@@ -694,6 +694,7 @@ func TestHandleGetAuditEventsReturnsRecordedSystemSettingsChange(t *testing.T) {
 	settings.General.MaxConcurrentTests = 5
 	body, _ := json.Marshal(settings)
 	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(updateReq, server)
 	updateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateResp, updateReq)
 	if updateResp.Code != http.StatusOK {

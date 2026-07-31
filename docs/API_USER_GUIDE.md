@@ -652,11 +652,15 @@ The assisted-authoring surface is policy-gated and defaults to the deterministic
 
 Data pools are project-scoped reusable row sets. They can be bound to scenarios and overridden per execution-plan entry. Test execution currently supports only `access_mode: read_only`: rows are snapshotted into the run and the durable pool is not mutated. `read_write` and `consume` requests are rejected until durable, HA-safe row coordination is available. Project secrets back the `{{secret.name}}` template namespace and expose metadata/status without returning secret values.
 
+Row `status` is free text; rows whose status is `consumed`, `used`, `disabled`, `inactive`, or `exhausted` are excluded from run snapshots, exports with `?status=active`, and load-model row counts — every other status (including blank) executes. Archiving a pool (`archived_at`) blocks new bindings, imports, and run creation until it is restored; on `PUT /api/v1/data-pools/{id}` an omitted `archived_at` leaves the archive state unchanged, an explicit `null` restores, and a timestamp archives. `PUT` requests must echo the previously read `updated_at` (pools) or `version` (rows) as an optimistic-concurrency token; a mismatch returns `409`.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` / `POST` | `/api/v1/data-pools` | List or create data pools. |
 | `GET` / `PUT` / `DELETE` | `/api/v1/data-pools/{id}` | Read, replace, or delete a pool. |
 | `GET` / `POST` | `/api/v1/data-pools/{id}/rows` | List or append pool rows. |
+| `POST` | `/api/v1/data-pools/{id}/rows/import` | Bulk-load rows from a CSV/TSV upload (`mode=append\|replace`, `delimiter=auto\|comma\|tab`, `header`, `columns`, `dry_run`). |
+| `GET` | `/api/v1/data-pools/{id}/rows/export` | Stream the pool as an `.apexload.csv` round-trip file (`?status=active\|all`); the default `all` form preserves row status. Leading formula characters are apostrophe-guarded, and the APEX preamble remains recognizable after a file is renamed, while ordinary CSV files preserve literal apostrophes. |
 | `PUT` / `DELETE` | `/api/v1/data-pools/{id}/rows/{row_id}` | Replace or delete one row. |
 | `GET` | `/api/v1/projects/{id}/secrets` | List secret metadata and provider capabilities; values are never returned. |
 | `POST` | `/api/v1/projects/{id}/secrets/status` | Check whether named secret requirements are configured. |

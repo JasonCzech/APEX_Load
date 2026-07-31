@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) (*TelemetryDiagnostic, string) {
@@ -104,7 +105,9 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 }
 
 func appendTelemetryBudgetDiagnostic(conditions *[]string, summaries *[]string, signatureParts *[]string, severity *string, condition string, label string, value float64, threshold *float64) {
-	if threshold == nil || value <= 0 || value <= *threshold {
+	// A zero budget is the admin's explicit disable for this diagnostic
+	// (ThresholdSettings documents the nil/0/positive tri-state).
+	if threshold == nil || *threshold <= 0 || value <= 0 || value <= *threshold {
 		return
 	}
 	*conditions = append(*conditions, condition)
@@ -691,6 +694,193 @@ func buildServerTelemetryThresholdAlert(test *ManagedTest, live *LiveMetrics, th
 
 func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings) bool {
 	return thresholds.MaxErrorRatePct != nil && live.ErrorPct > *thresholds.MaxErrorRatePct
+}
+
+// applyThresholdAlertStopActions makes the alert payload describe the action
+// this evaluation will actually take. buildThresholdAlerts marks error-rate
+// breaches as stop candidates, but final-drain, terminal, paused, and otherwise
+// non-running evaluations must not claim a stop was requested.
+func applyThresholdAlertStopActions(alerts []map[string]any, stopForError, stopForP99 bool) {
+	for _, alert := range alerts {
+		metric, _ := alert["metric"].(string)
+		switch metric {
+		case "error_pct":
+			if stopForError {
+				alert["action"] = "stop_requested"
+			} else {
+				delete(alert, "action")
+			}
+		case "p99_ms":
+			if stopForP99 {
+				alert["action"] = "stop_requested"
+			} else {
+				delete(alert, "action")
+			}
+		}
+	}
+}
+
+// thresholdAlertNotificationKey dedupes threshold alerts per metric and, for
+// per-transaction server-telemetry alerts, per transaction. Note that
+// buildServerTelemetryThresholdAlert emits only the single hottest transaction
+// per metric each tick, so per-transaction keys mostly matter when the hottest
+// transaction rotates — each rotation is a distinct key with its own cooldown.
+func thresholdAlertNotificationKey(alert map[string]any) string {
+	metric, _ := alert["metric"].(string)
+	if metric == "" {
+		return ""
+	}
+	if transaction, _ := alert["transaction"].(string); transaction != "" {
+		return metric + "|" + transaction
+	}
+	return metric
+}
+
+// sanitizeThresholdAlertText bounds script-author-controlled text (transaction
+// names) before it is embedded in webhook summaries: control characters can
+// corrupt downstream text handling, Slack mrkdwn interprets <...> links, Teams
+// cards interpret [label](target) links, and unbounded names bloat payloads.
+func sanitizeThresholdAlertText(value string) string {
+	var builder strings.Builder
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune("<>[]()", r) {
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	out := strings.TrimSpace(builder.String())
+	const maxThresholdAlertTextBytes = 120
+	if len(out) > maxThresholdAlertTextBytes {
+		cut := out[:maxThresholdAlertTextBytes]
+		for len(cut) > 0 && !utf8.ValidString(cut) {
+			cut = cut[:len(cut)-1]
+		}
+		out = cut
+	}
+	return out
+}
+
+func thresholdAlertNotificationEvent(test *ManagedTest, status string, alert map[string]any, now time.Time) NotificationEvent {
+	metric, _ := alert["metric"].(string)
+	value, _ := alert["value"].(float64)
+	threshold, _ := alert["threshold"].(float64)
+	severity := "warning"
+	if action, _ := alert["action"].(string); action == "stop_requested" {
+		severity = "danger"
+	}
+	summary := fmt.Sprintf("%s %.2f exceeded threshold %.2f", metric, value, threshold)
+	if metric == "throughput_gap_pct" {
+		summary = fmt.Sprintf("throughput %.2f TPS is below target %.2f TPS", value, threshold)
+		if gap, ok := alert["gap_pct"].(float64); ok && gap > 0 {
+			summary += fmt.Sprintf(" (%.2f%% gap)", gap)
+		}
+	}
+	rawTransaction, _ := alert["transaction"].(string)
+	if transaction := sanitizeThresholdAlertText(rawTransaction); transaction != "" {
+		summary = fmt.Sprintf("%s %.2f exceeded threshold %.2f for transaction %s", metric, value, threshold, transaction)
+	}
+	return NotificationEvent{
+		Type:       "threshold_alert",
+		TestID:     test.ID,
+		ProjectID:  normalizeProjectID(test.ProjectID),
+		TestName:   test.Name,
+		Status:     status,
+		Severity:   severity,
+		Summary:    summary,
+		Conditions: []string{metric},
+		Timestamp:  now,
+	}
+}
+
+// routeThresholdAlertNotifications forwards threshold breaches to the
+// notification webhooks. The hub broadcast repeats every metrics tick while a
+// breach persists, so webhook dispatch fires once per breach episode (episode
+// keys include the transaction), while thresholdAlertRenotifyInterval is
+// enforced PER METRIC: per-transaction episode keys rotate freely with the
+// hottest transaction, and a per-key cooldown would let a rotating hotspot
+// mint a fresh notification every tick. The per-metric cooldown bounds webhook
+// volume to at most one delivery per metric per interval (and bounds the
+// cooldown map to the fixed metric set). An episode that begins inside the
+// cooldown is deferred, not swallowed: it notifies on the first evaluation
+// after the cooldown expires if it is still breaching. A key that recovers
+// re-arms for its next episode. State is in-memory per run, so a controller
+// restart or HA failover mid-breach may re-notify once.
+func (tr *TestRunner) routeThresholdAlertNotifications(test *ManagedTest, alerts []map[string]any, now time.Time) {
+	if tr == nil || test == nil || tr.notifier == nil {
+		return
+	}
+	settings := tr.currentNotificationSettings()
+	tr.mu.Lock()
+	if test.thresholdAlertActive == nil {
+		test.thresholdAlertActive = make(map[string]bool)
+	}
+	if test.thresholdAlertNotifiedAt == nil {
+		test.thresholdAlertNotifiedAt = make(map[string]time.Time)
+	}
+	activeNow := make(map[string]bool, len(alerts))
+	for _, alert := range alerts {
+		episodeKey := thresholdAlertNotificationKey(alert)
+		if episodeKey == "" {
+			continue
+		}
+		metric, _ := alert["metric"].(string)
+		activeNow[episodeKey] = true
+		alreadyNotified := test.thresholdAlertActive[episodeKey]
+		lastNotified := test.thresholdAlertNotifiedAt[metric]
+		if alreadyNotified || (!lastNotified.IsZero() && now.Sub(lastNotified) < thresholdAlertRenotifyInterval) {
+			continue
+		}
+		event := thresholdAlertNotificationEvent(test, test.Status, alert, now)
+		// Consume the episode/cooldown only after the bounded dispatcher admits
+		// at least one matching destination. A breach first observed with no
+		// configured destination, an invalid format, or a saturated dispatcher
+		// is retried on its next evaluation.
+		if !tr.notifier.Dispatch(settings, event) {
+			continue
+		}
+		test.thresholdAlertActive[episodeKey] = true
+		test.thresholdAlertNotifiedAt[metric] = now
+	}
+	for key := range test.thresholdAlertActive {
+		if !activeNow[key] {
+			delete(test.thresholdAlertActive, key)
+		}
+	}
+	tr.mu.Unlock()
+}
+
+// shouldStopForSustainedP99 implements the opt-in sustained-P99 auto-stop: the
+// run stops only after thresholds.p99_latency_stop_consecutive_samples
+// consecutive metrics evaluations above max_p99_latency_ms. Any non-breaching
+// sample (including paused/baseline windows, which report non-breaching
+// values) resets the counter. Disabled (nil/0 samples or nil P99) keeps the
+// alert-only behavior and clears any prior streak.
+func (tr *TestRunner) shouldStopForSustainedP99(test *ManagedTest, live *LiveMetrics, thresholds ThresholdSettings) bool {
+	if tr == nil || test == nil || live == nil {
+		return false
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if test.Status != "RUNNING" || thresholds.P99LatencyStopConsecutiveSamples == nil ||
+		*thresholds.P99LatencyStopConsecutiveSamples <= 0 || thresholds.MaxP99LatencyMs == nil {
+		test.p99BreachConsecutive = 0
+		return false
+	}
+	if live.P99Ms > *thresholds.MaxP99LatencyMs {
+		test.p99BreachConsecutive++
+	} else {
+		test.p99BreachConsecutive = 0
+	}
+	return test.p99BreachConsecutive >= *thresholds.P99LatencyStopConsecutiveSamples
+}
+
+func (tr *TestRunner) testIsRunning(test *ManagedTest) bool {
+	if tr == nil || test == nil {
+		return false
+	}
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return test.Status == "RUNNING"
 }
 
 func shouldStopForGoalStatus(live *LiveMetrics) bool {

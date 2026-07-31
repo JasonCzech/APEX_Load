@@ -497,7 +497,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                           />
                         </label>
                         <div className="pp-entry-pools">
-                          <span className="pp-entry-advanced-label">Data pools</span>
+                          <span className="pp-entry-advanced-label">Data Pools</span>
                           {entry.data_pools.map((dp, di) => (
                             <div className="pp-entry-pool" key={di}>
                               <input aria-label={`Entry ${index + 1} data pool ${di + 1} ID`} value={dp.pool_id} placeholder="pool id" onChange={e => updatePool(index, di, { pool_id: e.target.value })} />
@@ -508,7 +508,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                             </div>
                           ))}
                           <button type="button" className="btn btn-ghost btn-sm" onClick={() => addPool(index)}>
-                            + data pool
+                            + Add data pool
                           </button>
                         </div>
                       </div>

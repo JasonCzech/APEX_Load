@@ -38,7 +38,9 @@ func TestCloneManagedTestForReadLockedDeeplyDetachesMutableFields(t *testing.T) 
 		ComparisonBaseline: &RunComparisonBaseline{
 			Transactions: map[string]*TxMetrics{"checkout": {Name: "checkout", CorrelationIDs: []string{"baseline"}}},
 		},
-		TelemetryHealth: &TelemetryRunHealth{Conditions: []string{"healthy"}, BreachStartedAt: &startedAt},
+		TelemetryHealth:          &TelemetryRunHealth{Conditions: []string{"healthy"}, BreachStartedAt: &startedAt},
+		thresholdAlertActive:     map[string]bool{"error_pct": true},
+		thresholdAlertNotifiedAt: map[string]time.Time{"error_pct": startedAt},
 	}
 
 	before, err := json.Marshal(original)
@@ -62,6 +64,8 @@ func TestCloneManagedTestForReadLockedDeeplyDetachesMutableFields(t *testing.T) 
 	mutatePopulatedLiveMetrics(cloned.LiveMetrics)
 	mutatePopulatedLiveMetrics(cloned.History[0])
 	cloned.ComparisonBaseline.Transactions["checkout"].CorrelationIDs[0] = "changed"
+	cloned.thresholdAlertActive["error_pct"] = false
+	cloned.thresholdAlertNotifiedAt["error_pct"] = startedAt.Add(time.Hour)
 
 	after, err := json.Marshal(original)
 	if err != nil {
@@ -75,6 +79,9 @@ func TestCloneManagedTestForReadLockedDeeplyDetachesMutableFields(t *testing.T) 
 	}
 	if got := original.LiveMetrics.ErrorEvidence[0].Snapshot.NetworkEntries[0].RequestHeaders["x-request"]; got != "before" {
 		t.Fatalf("error evidence snapshot changed through alias: %q", got)
+	}
+	if !original.thresholdAlertActive["error_pct"] || !original.thresholdAlertNotifiedAt["error_pct"].Equal(startedAt) {
+		t.Fatal("threshold alert state changed through read-snapshot alias")
 	}
 
 	summary := cloneManagedTestSummaryForReadLocked(original)

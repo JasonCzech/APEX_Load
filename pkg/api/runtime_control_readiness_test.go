@@ -155,8 +155,18 @@ func TestThrottledRemoteMetricsDoNotAdvanceGoalErrorsWhilePaused(t *testing.T) {
 		TimestampUnixMs: now.Add(time.Second).UnixMilli(),
 		FleetMetrics:    &generatorrpc.MetricAggregate{Errors: 5},
 	})
+	if test.goalControl.cumulativeErrors != 0 || test.goalControl.errorWindowsTracked {
+		t.Fatalf("accepted running batch mutated goal errors before publication: %+v", test.goalControl)
+	}
+	live, _, _, fresh, publication := backend.applyStoredRemoteMetricsBatch(runner, test, "generator-a")
+	if !fresh {
+		t.Fatal("stored running batch was not available for publication")
+	}
+	if result := backend.publishDistributedMetricsRevision(context.Background(), runner, test, live, publication); !result.published {
+		t.Fatalf("running batch publication result = %+v, want published", result)
+	}
 	if test.goalControl.cumulativeErrors != 5 {
-		t.Fatalf("running remote cumulative errors = %d, want 5", test.goalControl.cumulativeErrors)
+		t.Fatalf("published running remote cumulative errors = %d, want 5", test.goalControl.cumulativeErrors)
 	}
 }
 

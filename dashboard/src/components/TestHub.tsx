@@ -16,7 +16,6 @@ import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { overrideFromRuntimeDraft } from './runtimeSettingsModel'
-import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
 import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
@@ -41,18 +40,15 @@ import {
   assignmentFromForm,
   cloneAssignment,
   ensureScenarioGroups,
+  replaceScenarioRuntimeDefaults,
   reseedScenarioGroups,
   runtimeSettingsFromForm,
   scenarioFormStateFromStoredScenario,
 } from './scenarioFormModel'
 import {
   canonicalThinkTimeType,
-  thinkTimeConfigForType,
-  thinkTimeUsesBounds,
-  thinkTimeUsesMean,
-  thinkTimeUsesStdDeviation,
 } from './thinkTimeConfig'
-import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
+import { requestSettingsFocus } from './settingsSectionLayout'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -1079,6 +1075,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       ...current,
       data_pool_id: undefined,
       data_pool_alias: undefined,
+      // Bindings are project-scoped; carrying them across a project switch
+      // would make every save fail cross-project validation with no way to
+      // remove the invisible retained bindings from the wizard.
+      data_pools: [],
       groups: current.groups.map(group => ({ ...group, script_id: '' })),
     }))
   }, [activeProjectId])
@@ -1210,13 +1210,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
     const retainedPools = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
+    // The compact editor surfaces only the first binding. Clearing it must not
+    // wipe bindings 2..N, which the wizard never displays.
     const dataPoolsPayload = draftForm.data_pool_id ? [{
       ...(retainedPools[0] || {}),
       pool_id: draftForm.data_pool_id,
       alias: (draftForm.data_pool_alias || dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
       access_mode: 'read_only' as const,
       selection_strategy: draftForm.data_pool_selection_strategy || 'sequential',
-    }, ...retainedPools.slice(1)] : []
+    }, ...retainedPools.slice(1)] : retainedPools.slice(1)
 
     return buildScenarioUpsertPayload({
       name: draftForm.name || 'Draft scenario',
@@ -1378,7 +1380,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [scenarios])
 
   const openRemoteSettings = useCallback(() => {
-    try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
+    requestSettingsFocus('integrations')
     onNavigate?.('settings')
   }, [onNavigate])
 
@@ -1989,6 +1991,25 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setLoadModelValidation(null)
   }
 
+  // Protocols represented in the scenario, so the scenario-defaults editor keeps
+  // every section editable that at least one group can use. Before any group is
+  // added, every section stays available.
+  const scenarioDefaultProtocols = (() => {
+    const protocols = formGroups
+      .map(group => findScriptById(scripts, group.script_id)?.protocol)
+      .filter((protocol): protocol is string => Boolean(protocol && protocol.trim()))
+    return protocols.length > 0 ? protocols : ['http', 'browser', 'java_vuser']
+  })()
+
+  // The scenario-defaults editor owns the canonical runtime_settings object.
+  // The legacy flat mirrors are kept in sync (Scenario Settings tab) or cleared
+  // (pacing/think-time, which no longer have flat editors) so
+  // runtimeSettingsFromForm composes deterministically from the canonical value.
+  const applyScenarioDefaultRuntime = (next: ScenarioRuntimeSettingsDraft | undefined) => {
+    setForm(prev => replaceScenarioRuntimeDefaults(prev, next))
+    setLoadModelValidation(null)
+  }
+
   // Apply the source group's effective runtime (engine → source script → scenario →
   // source group) to each target. Materializing before protocol filtering prevents
   // an inheriting source from accidentally turning into the target script's defaults.
@@ -2382,8 +2403,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [api, showForm])
 
   const dataPoolLabel = form.data_pool_id
-    ? dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'Shared data configured'
-    : 'No shared data pool'
+    ? dataPools.find(pool => pool.id === form.data_pool_id)?.name || 'Data pool configured'
+    : 'No data pool'
   const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : 'Manual shape')
   const validationLabel = loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
   const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id))
@@ -3344,180 +3365,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             )}
             {runSettingsTab === 'runtime' && (
               <>
-              <div className="scenario-subpanel">
-                <div className="scenario-assignment-header">
-                  <div>
-                    <h4>Scenario runtime defaults</h4>
-                    <p>These defaults apply to every script group unless that group overrides them below.</p>
-                  </div>
-                </div>
-                <div className="scenario-browser-grid">
-                  <label>
-                    <span>Iteration pacing</span>
-                    <select
-                      className="settings-input"
-                      value={form.runtime_pacing_type}
-                      onChange={event => {
-                        const type = event.target.value as ScenarioFormState['runtime_pacing_type']
-                        setForm(prev => {
-                          const runtimeSettings = prev.runtime_settings
-                            ? { ...prev.runtime_settings }
-                            : undefined
-                          if (!type && runtimeSettings) delete runtimeSettings.pacing
-                          return {
-                            ...prev,
-                            runtime_pacing_type: type,
-                            runtime_settings: runtimeSettings,
-                          }
-                        })
-                      }}
-                    >
-                      <option value="">Script default</option>
-                      <option value="none">None</option>
-                      <option value="fixed_delay">Fixed delay</option>
-                      <option value="random_delay">Random delay</option>
-                      <option value="fixed_interval">Fixed interval</option>
-                      <option value="random_interval">Random interval</option>
-                      <option value="tps">Target TPS</option>
-                    </select>
-                  </label>
-                  {form.runtime_pacing_type === 'fixed_delay' && (
-                    <label>
-                      <span>Delay (seconds)</span>
-                      <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_delay_ms} emptyWhenUndefined onChangeMs={delayMs => setForm(prev => ({ ...prev, runtime_pacing_delay_ms: delayMs }))} />
-                    </label>
-                  )}
-                  {form.runtime_pacing_type === 'random_delay' && (
-                    <>
-                      <label>
-                        <span>Minimum delay (seconds)</span>
-                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_min_delay_ms} emptyWhenUndefined onChangeMs={minDelayMs => setForm(prev => ({ ...prev, runtime_pacing_min_delay_ms: minDelayMs }))} />
-                      </label>
-                      <label>
-                        <span>Maximum delay (seconds)</span>
-                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_max_delay_ms} emptyWhenUndefined onChangeMs={maxDelayMs => setForm(prev => ({ ...prev, runtime_pacing_max_delay_ms: maxDelayMs }))} />
-                      </label>
-                    </>
-                  )}
-                  {form.runtime_pacing_type === 'fixed_interval' && (
-                    <label>
-                      <span>Interval (seconds)</span>
-                      <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_interval_ms} emptyWhenUndefined onChangeMs={intervalMs => setForm(prev => ({ ...prev, runtime_pacing_interval_ms: intervalMs }))} />
-                    </label>
-                  )}
-                  {form.runtime_pacing_type === 'random_interval' && (
-                    <>
-                      <label>
-                        <span>Minimum interval (seconds)</span>
-                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_min_interval_ms} emptyWhenUndefined onChangeMs={minIntervalMs => setForm(prev => ({ ...prev, runtime_pacing_min_interval_ms: minIntervalMs }))} />
-                      </label>
-                      <label>
-                        <span>Maximum interval (seconds)</span>
-                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_max_interval_ms} emptyWhenUndefined onChangeMs={maxIntervalMs => setForm(prev => ({ ...prev, runtime_pacing_max_interval_ms: maxIntervalMs }))} />
-                      </label>
-                    </>
-                  )}
-                  {form.runtime_pacing_type === 'tps' && (
-                    <label>
-                      <span>Target TPS</span>
-                      <input className="settings-input" type="number" min={0} value={form.runtime_pacing_tps ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_pacing_tps: event.target.value === '' ? undefined : Number(event.target.value) }))} />
-                    </label>
-                  )}
-                  <label>
-                    <span>Think time mode</span>
-                    <select
-                      className="settings-input"
-                      value={form.runtime_think_time_type}
-                      onChange={event => {
-                        const type = event.target.value as ScenarioFormState['runtime_think_time_type']
-                        setForm(prev => {
-                          const runtimeSettings = prev.runtime_settings
-                            ? { ...prev.runtime_settings }
-                            : undefined
-                          if (!type && runtimeSettings) delete runtimeSettings.think_time
-                          const nextThinkTime = type
-                            ? thinkTimeConfigForType({
-                                type: prev.runtime_think_time_type || 'fixed',
-                                mean_ms: prev.runtime_think_time_ms,
-                                std_ms: prev.runtime_think_time_std_ms,
-                                min_ms: prev.runtime_think_time_min_ms,
-                                max_ms: prev.runtime_think_time_max_ms,
-                                multiplier: prev.runtime_think_time_multiplier,
-                                limit_ms: prev.runtime_think_time_limit_ms,
-                                ignore: prev.runtime_ignore_think_time,
-                              }, type)
-                            : undefined
-                          return {
-                            ...prev,
-                            runtime_think_time_type: type,
-                            runtime_think_time_ms: nextThinkTime?.mean_ms,
-                            runtime_think_time_std_ms: nextThinkTime?.std_ms,
-                            runtime_think_time_min_ms: nextThinkTime?.min_ms,
-                            runtime_think_time_max_ms: nextThinkTime?.max_ms,
-                            runtime_ignore_think_time: type ? prev.runtime_ignore_think_time : false,
-                            runtime_settings: runtimeSettings,
-                          }
-                        })
-                      }}
-                    >
-                      <option value="">Script default</option>
-                      <option value="none">None</option>
-                      <option value="recorded">Replay think time as recorded</option>
-                      <option value="fixed">Fixed</option>
-                      <option value="gaussian">Gaussian</option>
-                      <option value="uniform">Uniform</option>
-                    </select>
-                  </label>
-                  {form.runtime_think_time_type && thinkTimeUsesMean(form.runtime_think_time_type) && (
-                    <label>
-                      <span>Mean (ms)</span>
-                      <input className="settings-input" type="number" min={0} value={form.runtime_think_time_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
-                    </label>
-                  )}
-                  {thinkTimeUsesStdDeviation(form.runtime_think_time_type) && (
-                    <label>
-                      <span>Std dev (ms)</span>
-                      <input className="settings-input" type="number" min={0} value={form.runtime_think_time_std_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_std_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
-                    </label>
-                  )}
-                  {thinkTimeUsesBounds(form.runtime_think_time_type) && (
-                    <>
-                      <label>
-                        <span>Minimum think time (ms)</span>
-                        <input className="settings-input" type="number" min={0} value={form.runtime_think_time_min_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_min_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
-                      </label>
-                      <label>
-                        <span>Maximum think time (ms)</span>
-                        <input className="settings-input" type="number" min={0} value={form.runtime_think_time_max_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_max_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
-                      </label>
-                    </>
-                  )}
-                  {form.runtime_think_time_type && (
-                    <>
-                      <ThinkTimeMultiplierInput
-                        draftScope={`${activeProjectId}:${editingId || 'new-scenario'}:scenario-default`}
-                        label="Think time multiplier"
-                        className="settings-input"
-                        value={form.runtime_think_time_multiplier}
-                        onValueChange={multiplier => setForm(prev => ({
-                          ...prev,
-                          runtime_think_time_multiplier: multiplier,
-                        }))}
-                      />
-                      <label>
-                        <span>Think time cap (ms)</span>
-                        <input className="settings-input" type="number" min={0} value={form.runtime_think_time_limit_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_limit_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} placeholder="No cap" />
-                      </label>
-                    </>
-                  )}
-                </div>
-                {form.runtime_think_time_type && (
-                  <label className="checkbox-label">
-                    <input type="checkbox" checked={form.runtime_ignore_think_time} onChange={event => setForm(prev => ({ ...prev, runtime_ignore_think_time: event.target.checked }))} />
-                    <span>Ignore think time</span>
-                  </label>
-                )}
-              </div>
               <RuntimeSettingsGroupEditor
                 draftScope={`${activeProjectId}:${editingId || 'new-scenario'}`}
                 groups={formGroups.map(group => {
@@ -3544,6 +3391,20 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 overrides={formGroups.map(group => group.runtimeSettings)}
                 onChange={updateGroupRuntime}
                 onApplyToGroups={applyRuntimeToGroups}
+              />
+              <RuntimeSettingsGroupEditor
+                draftScope={`${activeProjectId}:${editingId || 'new-scenario'}:defaults`}
+                title="Scenario runtime defaults"
+                description="These defaults apply to every script group unless that group overrides them above. Unset fields inherit the script and engine defaults."
+                hideApplyPanel
+                groups={[{ name: 'Scenario defaults', scriptId: editingId || 'scenario-defaults' }]}
+                focusedIndex={0}
+                onFocusChange={() => {}}
+                engineDefaults={engineDefaults}
+                applicableProtocols={scenarioDefaultProtocols}
+                overrides={[runtimeSettingsFromForm(form, showBrowserRuntimeSettings)]}
+                onChange={(_, next) => applyScenarioDefaultRuntime(next)}
+                onApplyToGroups={() => {}}
               />
               </>
             )}
@@ -3626,14 +3487,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       return (
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
-            <h4>Shared Data Pool</h4>
-            <p>Attach one shared data pool for scripts that need coordinated parameter data.</p>
+            <h4>Data Pools</h4>
+            <p>Attach one data pool for scripts that need coordinated parameter data.</p>
           </div>
           <div className="settings-grid scenario-core-grid">
             <label className="scenario-field">
-              <span>Shared Data Pool</span>
+              <span>Data Pool</span>
               <select className="settings-input" value={form.data_pool_id || ''} onChange={event => setForm({ ...form, data_pool_id: event.target.value })}>
-                <option value="">No shared data pool</option>
+                <option value="">No data pool</option>
                 {dataPools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}
               </select>
             </label>

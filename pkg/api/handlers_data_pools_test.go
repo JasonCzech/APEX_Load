@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type observedDataPoolCursorStore struct {
+	*storage.SQLiteStore
+	pageStateReads    int
+	fullRevisionReads int
+}
+
+func (s *observedDataPoolCursorStore) DataPoolRowsPageState(poolID string) (string, int, error) {
+	s.pageStateReads++
+	return s.SQLiteStore.DataPoolRowsPageState(poolID)
+}
+
+func (s *observedDataPoolCursorStore) DataPoolRowsRevision(poolID string) (string, int, error) {
+	s.fullRevisionReads++
+	return s.SQLiteStore.DataPoolRowsRevision(poolID)
+}
 
 func TestDataPoolRowResponsesArePaginated(t *testing.T) {
 	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
@@ -51,6 +69,110 @@ func TestDataPoolRowResponsesArePaginated(t *testing.T) {
 		if payload.Limit != 1 || payload.Offset != 1 || len(payload.Rows) != 1 || payload.Rows[0].ID != "api-bounded-row-2" {
 			t.Fatalf("GET %s payload = %#v", path, payload)
 		}
+	}
+}
+
+func TestDataPoolRowCursorPaginationUsesStableKeysetAndRejectsDrift(t *testing.T) {
+	store, err := storage.NewSQLiteStore(t.TempDir() + "/apexload.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	pool := &storage.SharedDataPool{ID: "api-cursor-rows-pool", Name: "Cursor rows", ProjectID: storage.DefaultProjectID}
+	if err := store.SaveDataPool(pool); err != nil {
+		t.Fatalf("SaveDataPool: %v", err)
+	}
+	base := time.Now().UTC().Add(-time.Hour)
+	for i := 1; i <= 5; i++ {
+		id := fmt.Sprintf("cursor-row-%d", i)
+		if err := store.SaveDataPoolRow(&storage.SharedDataPoolRow{
+			ID: id, PoolID: pool.ID, Data: map[string]string{"id": id}, CreatedAt: base.Add(time.Duration(i) * time.Second),
+		}); err != nil {
+			t.Fatalf("SaveDataPoolRow(%s): %v", id, err)
+		}
+	}
+	observedStore := &observedDataPoolCursorStore{SQLiteStore: store}
+	server := NewServer(ServerConfig{Store: observedStore})
+	type cursorPayload struct {
+		Rows       []*storage.SharedDataPoolRow `json:"rows"`
+		Total      int                          `json:"total"`
+		Offset     int                          `json:"offset"`
+		Revision   string                       `json:"revision"`
+		HasMore    bool                         `json:"has_more"`
+		NextCursor string                       `json:"next_cursor"`
+	}
+	getPage := func(path string) (*httptest.ResponseRecorder, cursorPayload) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		var payload cursorPayload
+		if resp.Code == http.StatusOK {
+			if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode %s: %v", path, err)
+			}
+		}
+		return resp, payload
+	}
+
+	firstResponse, first := getPage("/api/v1/data-pools/" + pool.ID + "?limit=2&cursor=")
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first cursor page status = %d body=%s", firstResponse.Code, firstResponse.Body.String())
+	}
+	if len(first.Rows) != 2 || first.Rows[0].ID != "cursor-row-1" || first.Rows[1].ID != "cursor-row-2" ||
+		first.Total != 5 || first.Offset != 0 || !first.HasMore || first.NextCursor == "" || first.Revision == "" {
+		t.Fatalf("first cursor page = %#v", first)
+	}
+	secondPath := "/api/v1/data-pools/" + pool.ID + "/rows?limit=2&cursor=" + url.QueryEscape(first.NextCursor)
+	secondResponse, second := getPage(secondPath)
+	if secondResponse.Code != http.StatusOK {
+		t.Fatalf("second cursor page status = %d body=%s", secondResponse.Code, secondResponse.Body.String())
+	}
+	if len(second.Rows) != 2 || second.Rows[0].ID != "cursor-row-3" || second.Rows[1].ID != "cursor-row-4" ||
+		second.Offset != 2 || !second.HasMore || second.NextCursor == "" || second.Revision != first.Revision {
+		t.Fatalf("second cursor page = %#v", second)
+	}
+
+	if deleted, err := store.DeleteDataPoolRowFromPool(pool.ID, "cursor-row-1"); err != nil || !deleted {
+		t.Fatalf("concurrent delete deleted=%v err=%v", deleted, err)
+	}
+	stalePath := "/api/v1/data-pools/" + pool.ID + "/rows?limit=2&cursor=" + url.QueryEscape(second.NextCursor)
+	staleResponse, _ := getPage(stalePath)
+	if staleResponse.Code != http.StatusConflict || !strings.Contains(staleResponse.Body.String(), "reload from the first page") {
+		t.Fatalf("stale cursor status = %d body=%s, want 409 reload guidance", staleResponse.Code, staleResponse.Body.String())
+	}
+
+	freshResponse, fresh := getPage("/api/v1/data-pools/" + pool.ID + "/rows?limit=2&cursor=")
+	if freshResponse.Code != http.StatusOK {
+		t.Fatalf("fresh cursor page status = %d body=%s", freshResponse.Code, freshResponse.Body.String())
+	}
+	if len(fresh.Rows) != 2 || fresh.Rows[0].ID != "cursor-row-2" || fresh.Rows[1].ID != "cursor-row-3" || fresh.Total != 4 {
+		t.Fatalf("fresh page after delete = %#v", fresh)
+	}
+	if observedStore.fullRevisionReads != 0 {
+		t.Fatalf("cursor paging performed %d full-pool revision scans, want 0", observedStore.fullRevisionReads)
+	}
+	if observedStore.pageStateReads == 0 {
+		t.Fatal("cursor paging did not read the O(1) page state")
+	}
+
+	for _, path := range []string{
+		"/api/v1/data-pools/" + pool.ID + "/rows?limit=2&cursor=not-base64",
+		"/api/v1/data-pools/" + pool.ID + "/rows?limit=2&offset=1&cursor=",
+	} {
+		response, _ := getPage(path)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("GET %s status = %d body=%s, want 400", path, response.Code, response.Body.String())
+		}
+	}
+	otherPool := &storage.SharedDataPool{ID: "api-other-cursor-rows-pool", Name: "Other cursor rows", ProjectID: storage.DefaultProjectID}
+	if err := store.SaveDataPool(otherPool); err != nil {
+		t.Fatalf("SaveDataPool(other): %v", err)
+	}
+	wrongPoolPath := "/api/v1/data-pools/" + otherPool.ID + "/rows?limit=2&cursor=" + url.QueryEscape(first.NextCursor)
+	wrongPoolResponse, _ := getPage(wrongPoolPath)
+	if wrongPoolResponse.Code != http.StatusBadRequest {
+		t.Fatalf("wrong-pool cursor status = %d body=%s, want 400", wrongPoolResponse.Code, wrongPoolResponse.Body.String())
 	}
 }
 

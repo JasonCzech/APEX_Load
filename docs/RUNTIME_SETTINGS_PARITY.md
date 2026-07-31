@@ -38,7 +38,29 @@ The support endpoint publishes six reusable profiles:
 
 ## Streaming And Media Decision
 
-Streaming/media runtime settings are `executed` for HTTP scripts. APEX Load maps imported playback mode, buffer, bitrate, and bandwidth-estimation settings into media-like response pacing so fixed bitrate playback, startup buffering, and adaptive bandwidth estimates affect action duration and transfer telemetry.
+Streaming/media playback settings (`mode`, `buffer_size_seconds`, `fixed_bitrate_kbps`, `bandwidth_estimation`) are `executed` for HTTP scripts. APEX Load maps imported playback mode, buffer, bitrate, and bandwidth-estimation settings into media-like response pacing so fixed bitrate playback, startup buffering, and adaptive bandwidth estimates affect action duration and transfer telemetry. The operational keys real VuGen writes in `[Streaming]` (`StreamTimeout`, `StreamRetryTime`, `StreamSeekMethod`) have no execution path and are classified `compatibility_only`; `StreamLog`/`SaveStreamSnapshot` are VuGen diagnostics and classify `non_applicable`.
+
+## Real VuGen Key Coverage And The No-Silent-Drop Guarantee
+
+The importer reads the section/key vocabulary real VuGen writes, not only APEX-native names:
+
+| VuGen source | Destination |
+| --- | --- |
+| `[ModemSpeed]` `EnableModemSpeed`/`EnableCustomModemSpeed`/`ModemSpeed`/`CustomModemSpeed` (bits per second) | `config.web_runtime.network_simulation` (`max` when both toggles are off, `custom` + Kbps when one is on) |
+| `[FILTERS]` `IncludeFiltersInList`/`ExcludeFiltersInList` | `config.web_runtime.download_filters` (`allow_list`/`block_list`; both lists populated fails to review) |
+| `[Log]` `AutoLog` | `config.log.on_error_only` (JIT "send messages only when an error occurs") |
+| `.usp` `RunLogicRunMode` | Preserved in `config.run_logic.block_scheduling` as `compatibility_only`; the current engine does not consume the field. |
+| `.usp` `[Profile Actions]`/`RunLogicActionOrder` | Preserved in `config.run_logic.action_sequence` as `compatibility_only` (standard lifecycle vocabulary only; custom multi-action orders fail to review); the current engine uses its fixed init/action/teardown lifecycle. |
+| `[Java]` `UseExternalJVM`/`ExternalJREPath` | `config.java_vuser.jdk_selection`/`jdk_home` (java_vuser scripts; non-applicable elsewhere) |
+| `*_extra_arg_N` spill rows (e.g. `BrowserAcceptLanguage_extra_arg_2`) | The base value stays authoritative; divergent spill rows raise a `request_headers` review finding |
+
+Every key of the **selected** cfg/usp receives an explicit per-key disposition — `mapped`, `compatibility_only`, or `non_applicable` — recorded at `metadata.import.preserved.runtime_setting_dispositions` and rendered read-only in the Script Editor's **Imported Source Runtime Settings** section. Unmapped-but-active settings roll up into a `runtime_unmapped` (`compatibility_only`) parity entry and inert/authoring rows into `runtime_non_applicable`, so unexecuted source settings lower the migration-readiness score instead of silently inflating it. The `.usr` `[TransactionsOrder]`/`[Transactions]` declarations are cross-checked against the transactions the converted source actually starts.
+
+`block_scheduling` and `action_sequence` are migration evidence, not current
+execution controls. An executable migration policy should include
+`compatibility_only` in `migration_block_statuses`; this keeps imported random,
+percentage, omitted-phase, or reordered lifecycle semantics review-gated until
+they are replaced with behavior the engine executes.
 
 ## Java Vuser Java VM Settings
 
@@ -48,6 +70,9 @@ Execution remains operator-gated. A specified JDK is resolved only on the select
 
 ## Evidence
 
+- Real VuGen 24.3 golden fixture (full stock cfg/usp key surface) + completeness gate: `pkg/convert/enterprisearchive/runtime_vugen24_golden_test.go`
+- Run-order classification and migration-policy gate: `pkg/convert/enterprisearchive/runtime_execution_fidelity_test.go`
+- Per-key classification tables: `pkg/convert/enterprisearchive/runtime_disposition.go`
 - Unified support matrix and presets: `pkg/api/runtime_settings_support.go`
 - Runtime review, scenario/run gating, and JSON/CSV exports: `pkg/api/runtime_settings_review.go`
 - Scenario validation coverage: `pkg/api/runtime_settings_support_test.go::TestScenarioRuntimeSettingsValidationSurfacesCompatibilityAndBlockers`

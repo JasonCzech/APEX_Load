@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // Decompression-bomb guards: bound the uncompressed size of any single entry
@@ -594,6 +595,7 @@ func finalizeEnterpriseArchiveImportResult(
 	applyEnterpriseRuntimeFidelityReview(result, scripts, ctx)
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
 	finalizeEnterpriseSourceDisclosure(result, ctx.Files, ctx.ParameterFileNames)
+	reviewDeclaredTransactionConservation(result, ctx.ProjectFileName, ctx.ProjectConfig, ctx.RuntimeConfig)
 	for _, script := range scripts {
 		redactArchiveMaskedBodyMetadata(script)
 		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
@@ -2014,6 +2016,54 @@ func applyBrowserEmulationRuntimeSettingsReview(result *ConvertResult, runtimeCf
 	result.Warnings = uniqueSortedStrings(result.Warnings)
 }
 
+// reviewDeclaredTransactionConservation cross-checks the transactions the
+// project declares ([TransactionsOrder]/[Transactions] in the .usr) against
+// the transactions actually started or published in the converted source. A
+// declared name with no publisher is either dead configuration or a dropped
+// call — both deserve review, not silence.
+func reviewDeclaredTransactionConservation(result *ConvertResult, projectFileName string, project *ProjectConfig, runtimeCfg *RuntimeConfig) {
+	if result == nil || result.sourceTransactionNames == nil || project == nil || len(project.Transactions) == 0 {
+		return
+	}
+	const maxDeclaredTransactionEvidence = 40
+	missingCount := 0
+	missingEvidence := make([]string, 0, min(len(project.Transactions), maxDeclaredTransactionEvidence))
+	for _, declared := range project.Transactions {
+		name := strings.TrimSpace(declared)
+		if name == "" {
+			continue
+		}
+		if _, ok := result.sourceTransactionNames[strings.ToLower(name)]; ok {
+			continue
+		}
+		missingCount++
+		if len(missingEvidence) < maxDeclaredTransactionEvidence {
+			missingEvidence = append(missingEvidence, boundedRuntimeReviewEvidence(scrub.Value(name, scrub.Policy{})))
+		}
+	}
+	if missingCount == 0 {
+		return
+	}
+	if omitted := missingCount - len(missingEvidence); omitted > 0 {
+		missingEvidence = append(missingEvidence, fmt.Sprintf("+%d more", omitted))
+	}
+	note := fmt.Sprintf("The project declares %d transactions (%s) that no converted action starts or publishes; verify the source calls were imported.", missingCount, strings.Join(missingEvidence, ", "))
+	if runtimeCfg != nil {
+		var sourceFiles []string
+		if projectFileName = normalizeRuntimeArchivePath(projectFileName); projectFileName != "" {
+			sourceFiles = []string{projectFileName}
+		}
+		runtimeCfg.RuntimeIssues = append(runtimeCfg.RuntimeIssues, RuntimeMigrationIssue{
+			ID:           "transactions",
+			Area:         "Transactions",
+			Notes:        note,
+			RuntimeFiles: sourceFiles,
+		})
+		return
+	}
+	result.Warnings = append(result.Warnings, note)
+}
+
 func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, runtimeCfg *RuntimeConfig, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
 	if script == nil {
 		return
@@ -2039,7 +2089,13 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 		preserved["runtime_files"] = disclosureSafeRuntimeSections(runtimeSections)
 	}
 	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
-	if parity := applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(selectedSections, script.Protocol), runtimeCfg); len(parity) > 0 {
+	dispositions := classifyRuntimeSelectedSections(selectedSections, script.Protocol)
+	if len(dispositions) > 0 {
+		preserved["runtime_setting_dispositions"] = dispositions
+	}
+	parity := applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(selectedSections, script.Protocol), runtimeCfg)
+	parity = appendRuntimeDispositionParityEntries(parity, dispositions)
+	if len(parity) > 0 {
 		preserved["runtime_settings_parity"] = parity
 		preserved["runtime_settings_status_counts"] = RuntimeSettingStatusCounts(parity)
 	}

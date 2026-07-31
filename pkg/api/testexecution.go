@@ -1177,7 +1177,10 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 				if ctx.Err() == nil && !retryAttempt {
 					tr.enqueueStopTeardownRetry(test.ID, forceAbort)
 				}
-				tr.broadcastEvent("test_stopping", test)
+				tr.mu.RLock()
+				stoppingSnapshot := *test
+				tr.mu.RUnlock()
+				tr.broadcastEvent("test_stopping", &stoppingSnapshot)
 				if ctx.Err() != nil {
 					return errors.Join(stopErr, ctx.Err())
 				}
@@ -1248,10 +1251,14 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 		cancel()
 	}
 	tr.mu.RLock()
-	stillStopping := test.Status == "STOPPING"
+	var stoppingSnapshot *ManagedTest
+	if test.Status == "STOPPING" {
+		snapshot := *test
+		stoppingSnapshot = &snapshot
+	}
 	tr.mu.RUnlock()
-	if stillStopping {
-		tr.broadcastEvent("test_stopping", test)
+	if stoppingSnapshot != nil {
+		tr.broadcastEvent("test_stopping", stoppingSnapshot)
 	}
 	return nil
 }
@@ -1835,7 +1842,18 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 	}
 }
 
+type vuserScaleAdmissionGuard func(current *ManagedTest) error
+
 func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers int, cancelExistingRamp bool) error {
+	return tr.scaleVUsersNowWithAdmissionGuard(id, groupName, targetVUsers, cancelExistingRamp, nil)
+}
+
+// scaleVUsersNowWithAdmissionGuard lets an autonomous controller bind its
+// decision to the exact managed run state that produced it. The guard executes
+// under tr.mu after the per-group/topology control gate is acquired and
+// immediately before the durable VUser reservation, so a replacement run or a
+// newer topology/metrics publication cannot inherit a stale decision.
+func (tr *TestRunner) scaleVUsersNowWithAdmissionGuard(id string, groupName string, targetVUsers int, cancelExistingRamp bool, guard vuserScaleAdmissionGuard) error {
 	tr.mu.RLock()
 	resolvedID := tr.resolveRefKeyLocked(id)
 	tr.mu.RUnlock()
@@ -1847,6 +1865,12 @@ func (tr *TestRunner) scaleVUsersNow(id string, groupName string, targetVUsers i
 
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
+	if guard != nil {
+		if err := guard(tr.tests[id]); err != nil {
+			tr.mu.Unlock()
+			return err
+		}
+	}
 	reservation, err := tr.reserveVUserScaleLocked(id, groupName, targetVUsers)
 	if err != nil {
 		tr.mu.Unlock()
@@ -2979,6 +3003,18 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 }
 
 func applyGoalControllerUpdate(tr *TestRunner, test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {
+	applyGoalControllerUpdateWithScaler(tr, test, live, groupVUsers, update, scaleVUsers, false)
+}
+
+// applyGoalControllerUpdateWithManagedScaler is used when a managed run needs
+// stricter scale admission than the ordinary ID-based runner path. The caller's
+// scaler remains responsible for the normal durable reservation and backend
+// mutation; this function only ensures it is not replaced by scaleVUsersNow.
+func applyGoalControllerUpdateWithManagedScaler(tr *TestRunner, test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error) {
+	applyGoalControllerUpdateWithScaler(tr, test, live, groupVUsers, update, scaleVUsers, true)
+}
+
+func applyGoalControllerUpdateWithScaler(tr *TestRunner, test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, update goalControllerUpdate, scaleVUsers func(groupName string, target int) error, preferProvidedScaler bool) {
 	live.GoalStatus = update.Status
 	if !update.ShouldScale {
 		return
@@ -3002,13 +3038,16 @@ func applyGoalControllerUpdate(tr *TestRunner, test *ManagedTest, live *LiveMetr
 			continue
 		}
 		// Production goal scaling must pass through the same atomic admission and
-		// durable accounting reservation as an operator request. The callback is
-		// retained only for isolated unit tests whose runner does not own `test`.
+		// durable accounting reservation as an operator request. Distributed goal
+		// control supplies a stricter publication-fenced scaler; the ordinary
+		// callback remains the fallback for isolated unmanaged test fixtures.
 		tr.mu.RLock()
 		managed := tr.tests != nil && tr.tests[test.ID] == test
 		tr.mu.RUnlock()
 		var err error
-		if managed {
+		if preferProvidedScaler && scaleVUsers != nil {
+			err = scaleVUsers(group.Name, target)
+		} else if managed {
 			err = tr.scaleVUsersNow(test.ID, group.Name, target, false)
 		} else if scaleVUsers != nil {
 			err = scaleVUsers(group.Name, target)

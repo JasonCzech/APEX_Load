@@ -162,6 +162,7 @@ func TestClientDownloadsPUTOmitPreservesValue(t *testing.T) {
 	// PUT a body that omits client_downloads entirely.
 	body := marshalSettingsWithoutKey(t, server.runner.GetSystemSettings(), "client_downloads")
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader([]byte(body)))
+	withCurrentSystemSettingsIfMatch(req, server)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusOK {

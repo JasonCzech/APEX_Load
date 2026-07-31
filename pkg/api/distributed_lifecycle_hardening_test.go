@@ -34,6 +34,12 @@ type blockingStopGeneratorClient struct {
 	startOnce   sync.Once
 }
 
+type observedStopGeneratorClient struct {
+	startupLifecycleFakeClient
+	stopStarted chan struct{}
+	startOnce   sync.Once
+}
+
 type failingDistributedStartStore struct{ err error }
 
 func (s failingDistributedStartStore) SaveTest(*storage.TestRecord) error        { return s.err }
@@ -101,6 +107,11 @@ func (c *blockingStopGeneratorClient) StopTest(ctx context.Context, _ string, _ 
 	case <-ctx.Done():
 		return generatorrpc.StopResult{}, ctx.Err()
 	}
+}
+
+func (c *observedStopGeneratorClient) StopTest(ctx context.Context, testID string, graceful bool) (generatorrpc.StopResult, error) {
+	c.startOnce.Do(func() { close(c.stopStarted) })
+	return c.startupLifecycleFakeClient.StopTest(ctx, testID, graceful)
 }
 
 func TestFetchRemoteArchiveBundlesRequireAllRejectsZeroBundles(t *testing.T) {
@@ -209,6 +220,174 @@ func TestDistributedFailureIsVisibleBeforeRemoteStopCleanupCompletes(t *testing.
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("distributed failure cleanup did not finish after remote stop was released")
+	}
+}
+
+func TestDistributedAbortedStopsRemainingPeersWithoutChangingOutcome(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	abortedSource := &startupLifecycleFakeClient{accept: true}
+	blockingPeer := &blockingStopGeneratorClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: true},
+		stopStarted:                make(chan struct{}),
+		releaseStop:                make(chan struct{}),
+	}
+	const abortError = "operator cancelled generator work"
+	test := &ManagedTest{
+		ID:           "run-generator-aborted-cleanup-order",
+		Name:         "generator aborted cleanup order",
+		Status:       "RUNNING",
+		executionCtx: runCtx,
+		cancel:       cancel,
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-aborted":   abortedSource,
+			"gen-surviving": blockingPeer,
+		},
+		remoteTargetStates: map[string]string{
+			"gen-aborted":   "ABORTED",
+			"gen-surviving": "RUNNING",
+		},
+	}
+	runner := NewTestRunner(1, nil, nil)
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	backend := newDistributedExecutionBackend([]string{"gen-aborted", "gen-surviving"}, 25*time.Millisecond, nil)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		backend.completeDistributedTestRun(runner, test, "ABORTED", abortError)
+	}()
+
+	select {
+	case <-blockingPeer.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("ABORTED cleanup did not attempt to stop the surviving peer")
+	}
+	updated, ok := runner.GetTest(test.ID)
+	if !ok {
+		t.Fatalf("expected managed test %q to remain available", test.ID)
+	}
+	if updated.Status != "ABORTED" || updated.EndedAt == nil || updated.Error != abortError {
+		t.Fatalf("ABORTED outcome while cleanup is blocked = status:%q ended_at:%v error:%q", updated.Status, updated.EndedAt, updated.Error)
+	}
+	select {
+	case <-runCtx.Done():
+	default:
+		t.Fatal("ABORTED completion did not cancel the execution context before peer cleanup")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("ABORTED peer cleanup exceeded its bounded timeout")
+	}
+	abortedSource.mu.Lock()
+	abortedStops := abortedSource.stopped
+	abortedSource.mu.Unlock()
+	if abortedStops != 0 {
+		t.Fatalf("terminal ABORTED source received %d redundant stop calls", abortedStops)
+	}
+	runner.mu.RLock()
+	finalStatus := test.Status
+	finalError := test.Error
+	archive := test.Archive
+	runner.mu.RUnlock()
+	if finalStatus != "ABORTED" || finalError != abortError {
+		t.Fatalf("best-effort cleanup rewrote ABORTED outcome to status:%q error:%q", finalStatus, finalError)
+	}
+	if archive != nil {
+		t.Fatalf("missing best-effort remote archives unexpectedly produced %#v", archive)
+	}
+}
+
+func TestDistributedAbortedCleanupFansOutBeforeBlockedPeerDeadline(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	abortedSource := &startupLifecycleFakeClient{accept: true}
+	blockingPeer := &blockingStopGeneratorClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: true},
+		stopStarted:                make(chan struct{}),
+		releaseStop:                make(chan struct{}),
+	}
+	defer func() {
+		select {
+		case <-blockingPeer.releaseStop:
+		default:
+			close(blockingPeer.releaseStop)
+		}
+	}()
+	fastPeer := &observedStopGeneratorClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: true},
+		stopStarted:                make(chan struct{}),
+	}
+	test := &ManagedTest{
+		ID:           "run-generator-aborted-cleanup-fanout",
+		Name:         "generator aborted cleanup fanout",
+		Status:       "RUNNING",
+		executionCtx: runCtx,
+		cancel:       cancel,
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-aborted":  abortedSource,
+			"gen-blocking": blockingPeer,
+			"gen-fast":     fastPeer,
+		},
+		remoteTargetStates: map[string]string{
+			"gen-aborted":  "ABORTED",
+			"gen-blocking": "RUNNING",
+			"gen-fast":     "RUNNING",
+		},
+	}
+	runner := NewTestRunner(1, nil, nil)
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+	backend := newDistributedExecutionBackend(
+		[]string{"gen-aborted", "gen-blocking", "gen-fast"},
+		500*time.Millisecond,
+		nil,
+	)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		backend.completeDistributedTestRun(runner, test, "ABORTED", "generator aborted")
+	}()
+
+	select {
+	case <-blockingPeer.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("ABORTED cleanup did not dispatch the first surviving peer")
+	}
+	select {
+	case <-fastPeer.stopStarted:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("ABORTED cleanup serialized later peers behind the blocked first peer")
+	}
+	close(blockingPeer.releaseStop)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("ABORTED cleanup did not finish after the blocked peer was released")
+	}
+
+	abortedSource.mu.Lock()
+	sourceStops := abortedSource.stopped
+	abortedSource.mu.Unlock()
+	fastPeer.mu.Lock()
+	fastStops := fastPeer.stopped
+	fastPeer.mu.Unlock()
+	if sourceStops != 0 || fastStops != 1 {
+		t.Fatalf("cleanup stop counts source=%d fast_peer=%d, want 0/1", sourceStops, fastStops)
+	}
+	runner.mu.RLock()
+	finalStatus := test.Status
+	runner.mu.RUnlock()
+	if finalStatus != "ABORTED" {
+		t.Fatalf("parallel cleanup rewrote terminal status to %q", finalStatus)
 	}
 }
 

@@ -202,7 +202,7 @@ describe('ExecutionPlansPanel', () => {
       setValue(container.querySelector('input[placeholder="optional timeslot id"]'), 'slot-1')
     })
     await flush()
-    const addPoolBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '+ data pool')
+    const addPoolBtn = [...container.querySelectorAll('button')].find(b => b.textContent === '+ Add data pool')
     await act(async () => {
       ;(addPoolBtn as HTMLElement).click()
     })

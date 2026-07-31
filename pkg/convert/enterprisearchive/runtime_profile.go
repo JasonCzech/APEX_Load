@@ -124,6 +124,7 @@ func resolveRuntimeConfig(files map[string]string, project *ProjectConfig) (stri
 	discardCfgRunLogicIssuesOverriddenByUSP(rc, cfgName)
 	issueStart := len(rc.RuntimeIssues)
 	applyRuntimeUSP(rc, resolvedUSPName, uspContent)
+	noteRuntimeUSPErrorHandler(rc, resolvedUSPName, uspContent, project, files)
 	setRuntimeIssueFileRange(rc, issueStart, resolvedUSPName)
 	return cfgName, rc
 }
@@ -329,7 +330,8 @@ func sameRuntimeFile(left, right string) bool {
 
 func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
 	resetRuntimePacing(rc)
-	section := findSection(ParseConfigSections(content), "RunLogicRunRoot")
+	uspSections := ParseConfigSections(content)
+	section := findSection(uspSections, "RunLogicRunRoot")
 	if len(section) == 0 {
 		rc.Iterations = 1
 		rc.PacingType = "none"
@@ -358,6 +360,31 @@ func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
 	} else {
 		rc.Iterations = value
 	}
+
+	// RunLogicRunMode is the run-group block scheduling (Sequential/Random).
+	// Preserve recognized source vocabulary in the draft, but keep its support
+	// classification compatibility-only: the current engine does not consume
+	// BlockScheduling. The selected run-logic profile is authoritative, so a
+	// recognized value still replaces any cfg-derived migration evidence.
+	runMode := strings.TrimSpace(valueOf("RunLogicRunMode"))
+	switch strings.ToLower(runMode) {
+	case "":
+		// absent — keep whatever the cfg configured
+	case "sequential":
+		rc.BlockScheduling = "sequential"
+	case "random":
+		rc.BlockScheduling = "random"
+	default:
+		// The selected USP is authoritative. Do not retain a stale cfg value
+		// when its run mode cannot be represented safely.
+		rc.BlockScheduling = ""
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "run_logic_block_scheduling", Area: "Run Logic",
+			Notes: fmt.Sprintf("%s RunLogicRunMode=%q is unsupported; leaving block_scheduling unset while the engine retains its fixed action order, and requiring review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewEvidence(runMode)),
+		})
+	}
+
+	applyRuntimeUSPActionSequence(rc, fileName, uspSections, valueOf("RunLogicActionOrder"))
 
 	mode := strings.TrimSpace(valueOf("RunLogicPaceType"))
 	rc.PacingType = "none"
@@ -403,12 +430,242 @@ func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
 	applyRuntimeUSPCaseFoldConflicts(rc, fileName, content)
 }
 
+// applyRuntimeUSPActionSequence maps the source lifecycle declaration
+// ([Profile Actions] plus the run-root RunLogicActionOrder) onto
+// run_logic.action_sequence as migration evidence. The current engine does not
+// consume this field and instead runs its fixed init/action/teardown lifecycle,
+// so the support matrix remains compatibility-only. Only the standard source
+// lifecycle — optional vuser_init, at most one run action, optional vuser_end —
+// is safe to preserve in this coarse vocabulary; custom multi-action orders
+// fail to review instead of collapsing distinct actions into indistinguishable
+// "action" entries.
+func applyRuntimeUSPActionSequence(rc *RuntimeConfig, fileName string, uspSections map[string]map[string]string, runActionOrder string) {
+	profileSection := findSection(uspSections, "Profile Actions")
+	_, profileNamesRaw, profileNamesPresent := sectionEntryCaseInsensitive(profileSection, "Profile Actions name")
+	if !profileNamesPresent {
+		return
+	}
+	// A selected profile supersedes any cfg-authored fallback. Unsupported
+	// shapes must leave the destination unset instead of retaining stale order.
+	rc.ActionSequence = nil
+	addReviewIssue := func(notes string) {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "run_logic_action_sequence", Area: "Run Logic",
+			Status: RuntimeSettingStatusCompatibilityOnly,
+			Notes:  notes,
+		})
+	}
+	profileNames := splitSourceActionNames(profileNamesRaw)
+	if len(profileNames) == 0 {
+		addReviewIssue(fmt.Sprintf("%s declares an empty [Profile Actions] action list; leaving action_sequence unset and requiring review.", boundedRuntimeReviewEvidence(fileName)))
+		return
+	}
+	runActions := splitSourceActionNames(runActionOrder)
+	if len(runActions) > 1 {
+		addReviewIssue(fmt.Sprintf("%s declares a multi-action run order (%s) that config.run_logic.action_sequence cannot express per-action; the converted script keeps its imported action order and the source order requires review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(runActions)))
+		return
+	}
+	sequence := make([]string, 0, len(profileNames))
+	runActionNames := make([]string, 0, 1)
+	initCount := 0
+	endCount := 0
+	for index, name := range profileNames {
+		switch strings.ToLower(name) {
+		case "vuser_init":
+			initCount++
+			if index != 0 {
+				addReviewIssue(fmt.Sprintf("%s declares vuser_init outside the first lifecycle position (%s); the source order requires review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(profileNames)))
+				return
+			}
+			sequence = append(sequence, "vuser_init")
+		case "vuser_end":
+			endCount++
+			if index != len(profileNames)-1 {
+				addReviewIssue(fmt.Sprintf("%s declares vuser_end outside the final lifecycle position (%s); the source order requires review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(profileNames)))
+				return
+			}
+			sequence = append(sequence, "vuser_end")
+		default:
+			runActionNames = append(runActionNames, name)
+			sequence = append(sequence, "action")
+		}
+	}
+	if initCount > 1 || endCount > 1 || len(runActionNames) != 1 {
+		addReviewIssue(fmt.Sprintf("%s declares a non-standard lifecycle (%s) that config.run_logic.action_sequence cannot express exactly; the converted script keeps its imported action order and the source order requires review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(profileNames)))
+		return
+	}
+	if len(runActions) == 1 && !strings.EqualFold(runActions[0], runActionNames[0]) {
+		addReviewIssue(fmt.Sprintf("%s RunLogicActionOrder names %q, but [Profile Actions] names run action %q; leaving action_sequence unset and requiring review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewEvidence(runActions[0]), boundedRuntimeReviewEvidence(runActionNames[0])))
+		return
+	}
+	rc.ActionSequence = sequence
+}
+
+// splitSourceActionNames splits a comma-separated .usp action list, keeping
+// the source action names intact for evidence (no enum normalization).
+func splitSourceActionNames(value string) []string {
+	parts := strings.Split(value, ",")
+	names := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(strings.Trim(strings.TrimSpace(part), `"`))
+		if trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	return names
+}
+
+// noteRuntimeUSPErrorHandler accounts for the source error-handler run-logic
+// block. APEX has no error-handler action lane, so a real handler action is
+// compatibility-only; the stock scaffold block VuGen writes without a matching
+// action file is recorded as non-applicable rather than a behavior gap.
+func noteRuntimeUSPErrorHandler(rc *RuntimeConfig, fileName, content string, project *ProjectConfig, files map[string]string) {
+	if rc == nil {
+		return
+	}
+	for _, conflict := range runtimeConfigCaseFoldConflicts(content) {
+		if !runtimeConfigConflictMatches(
+			conflict,
+			[]string{"RunLogicErrorHandlerRoot"},
+			[]string{"RunLogicActionOrder", "MercIniTreeSons"},
+		) {
+			continue
+		}
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "run_logic_error_handler", Area: "Run Logic",
+			Status: RuntimeSettingStatusCompatibilityOnly,
+			Notes: fmt.Sprintf(
+				"%s has conflicting case-insensitive error-handler declarations (%s); the handler cannot be proven inert and requires review.",
+				boundedRuntimeReviewEvidence(fileName),
+				boundedRuntimeReviewEvidence(runtimeConfigConflictEvidence(conflict)),
+			),
+		})
+		return
+	}
+	sections := ParseConfigSections(content)
+	root := findSection(sections, "RunLogicErrorHandlerRoot")
+	if len(root) == 0 {
+		return
+	}
+	handlerNames := splitSourceActionNames(runtimeSectionValue(root, "RunLogicActionOrder"))
+	if len(handlerNames) == 0 {
+		handlerNames = splitSourceActionNames(runtimeSectionValue(root, "MercIniTreeSons"))
+	}
+	if len(handlerNames) == 0 {
+		return
+	}
+	actionInventory := sourceActionInventory(project, files)
+	present := make([]string, 0, len(handlerNames))
+	for _, name := range handlerNames {
+		if _, exists := actionInventory[strings.ToLower(strings.TrimSpace(name))]; exists {
+			present = append(present, name)
+		}
+	}
+	if len(present) > 0 {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "run_logic_error_handler", Area: "Run Logic",
+			Status: RuntimeSettingStatusCompatibilityOnly,
+			Notes:  fmt.Sprintf("%s declares an error-handler run-logic block (%s). APEX has no error-handler action lane, so the handler does not execute and requires review.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(present)),
+		})
+		return
+	}
+	if project == nil && files == nil {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "run_logic_error_handler", Area: "Run Logic",
+			Status: RuntimeSettingStatusCompatibilityOnly,
+			Notes:  fmt.Sprintf("%s declares an error-handler run-logic block (%s), but no project/archive inventory was available to prove that it is inert; review is required.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(handlerNames)),
+		})
+		return
+	}
+	rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+		ID: "run_logic_error_handler", Area: "Run Logic",
+		Status: RuntimeSettingStatusNonApplicable,
+		Notes:  fmt.Sprintf("%s declares an error-handler run-logic block (%s), but the project [Actions] list carries no matching action file; the block is inert VuGen scaffolding.", boundedRuntimeReviewEvidence(fileName), boundedRuntimeReviewList(handlerNames)),
+	})
+}
+
+func sourceActionInventory(project *ProjectConfig, files map[string]string) map[string]struct{} {
+	inventory := make(map[string]struct{})
+	add := func(candidate string) {
+		for _, identity := range sourceActionDeclarationIdentities(candidate) {
+			inventory[strings.ToLower(identity)] = struct{}{}
+		}
+	}
+	if project != nil {
+		for _, action := range project.SourceActionFiles {
+			add(action.Function)
+			add(action.Name)
+		}
+		for _, action := range project.ActionFiles {
+			add(action)
+		}
+	}
+	for fileName := range files {
+		if isSupportedLifecycleSourceFile(fileName) {
+			add(fileName)
+		}
+	}
+	return inventory
+}
+
+func sourceActionDeclarationIdentities(candidate string) []string {
+	candidate = normalizeRuntimeArchivePath(candidate)
+	if candidate == "" {
+		return nil
+	}
+	base := candidate
+	if slash := strings.LastIndex(base, "/"); slash >= 0 {
+		base = base[slash+1:]
+	}
+	stem := strings.TrimSuffix(base, filepathExt(base))
+	return []string{candidate, base, stem}
+}
+
 func applyRuntimeUSPCaseFoldConflicts(rc *RuntimeConfig, fileName, content string) {
 	if rc == nil {
 		return
 	}
 	selectedPacingType := rc.PacingType
 	for _, conflict := range runtimeConfigCaseFoldConflicts(content) {
+		if runtimeConfigConflictMatches(
+			conflict,
+			[]string{"RunLogicRunRoot"},
+			[]string{"RunLogicActionOrder"},
+		) || runtimeConfigConflictMatches(
+			conflict,
+			[]string{"Profile Actions"},
+			[]string{"Profile Actions name"},
+		) {
+			rc.ActionSequence = nil
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+				ID: "run_logic_action_sequence", Area: "Run Logic",
+				Status: RuntimeSettingStatusCompatibilityOnly,
+				Notes: fmt.Sprintf(
+					"%s has conflicting case-insensitive action-sequence declarations (%s); leaving action_sequence unset and requiring review.",
+					boundedRuntimeReviewEvidence(fileName),
+					boundedRuntimeReviewEvidence(runtimeConfigConflictEvidence(conflict)),
+				),
+			})
+			continue
+		}
+		if runtimeConfigConflictMatches(
+			conflict,
+			[]string{"RunLogicRunRoot"},
+			[]string{"RunLogicRunMode"},
+		) {
+			// Same fail-closed stance as iterations/pacing: contradictory
+			// case-insensitive run-mode declarations must not silently last-win.
+			rc.BlockScheduling = ""
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+				ID: "run_logic_block_scheduling", Area: "Run Logic",
+				Notes: fmt.Sprintf(
+					"%s has conflicting case-insensitive RunLogicRunMode declarations (%s); leaving block_scheduling unset while the engine retains its fixed action order, and requiring review.",
+					boundedRuntimeReviewEvidence(fileName),
+					boundedRuntimeReviewEvidence(runtimeConfigConflictEvidence(conflict)),
+				),
+			})
+			continue
+		}
 		if runtimeConfigConflictMatches(
 			conflict,
 			[]string{"RunLogicRunRoot"},

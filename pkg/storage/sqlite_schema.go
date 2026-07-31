@@ -218,6 +218,8 @@ func schemaCreateTableStatements() []string {
 			description TEXT,
 			schema_json TEXT,
 			project_id TEXT REFERENCES projects(id),
+			rows_revision BIGINT NOT NULL DEFAULT 0,
+			row_count BIGINT NOT NULL DEFAULT 0,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			archived_at DATETIME
@@ -1139,6 +1141,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.baseline_pinned", query: `ALTER TABLE tests ADD COLUMN baseline_pinned INTEGER DEFAULT 0`},
 		{name: "tests.baseline_pinned_at", query: `ALTER TABLE tests ADD COLUMN baseline_pinned_at DATETIME`},
 		{name: "shared_data_pools.project_id", query: `ALTER TABLE shared_data_pools ADD COLUMN project_id TEXT REFERENCES projects(id)`},
+		{name: "shared_data_pools.rows_revision", query: `ALTER TABLE shared_data_pools ADD COLUMN rows_revision BIGINT NOT NULL DEFAULT 0`},
+		{name: "shared_data_pools.row_count", query: `ALTER TABLE shared_data_pools ADD COLUMN row_count BIGINT NOT NULL DEFAULT 0`},
 		{name: "releases.archived_at", query: `ALTER TABLE releases ADD COLUMN archived_at DATETIME`},
 		{name: "test_interval_summaries.schema_version", query: `ALTER TABLE test_interval_summaries ADD COLUMN schema_version TEXT`},
 		{name: "run_archives.schema_version", query: `ALTER TABLE run_archives ADD COLUMN schema_version TEXT`},
@@ -1243,6 +1247,11 @@ type schemaIndex struct {
 	name  string
 }
 
+var dataPoolRowsPageIndex = schemaIndex{
+	query: `CREATE INDEX IF NOT EXISTS idx_shared_data_pool_rows_pool_created_id ON shared_data_pool_rows(pool_id, created_at, id)`,
+	name:  "idx_shared_data_pool_rows_pool_created_id",
+}
+
 // schemaIndexes holds the unique/partial indexes created after the base tables and
 // migrations. Unique indexes guard against duplicate reference keys; partial
 // indexes skip NULL/empty values so legacy rows awaiting backfill do not collide.
@@ -1273,6 +1282,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_project_time ON capacity_reservations(project_id, start_at, end_at)`, "idx_capacity_reservations_project_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_bound_test ON capacity_reservations(bound_test_id)`, "idx_capacity_reservations_bound_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_tests_timeslot ON tests(timeslot_id)`, "idx_tests_timeslot"},
+	{`CREATE INDEX IF NOT EXISTS idx_scenario_data_pool_bindings_pool ON scenario_data_pool_bindings(pool_id)`, "idx_scenario_data_pool_bindings_pool"},
+	{`CREATE INDEX IF NOT EXISTS idx_shared_data_pools_project ON shared_data_pools(project_id)`, "idx_shared_data_pools_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_fleet_pool_members_pool ON fleet_pool_members(pool_id)`, "idx_fleet_pool_members_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_generator_metadata_pool ON generator_metadata(fleet_pool_id)`, "idx_generator_metadata_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
@@ -1337,6 +1348,15 @@ func (s *SQLiteStore) init() error {
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
 		return err
 	}
+	// The legacy paging-state backfill counts and probes rows by pool. Create
+	// its covering index first so opening an existing installation remains
+	// linear in the row count rather than pools × rows.
+	if _, err := s.db.Exec(dataPoolRowsPageIndex.query); err != nil {
+		return fmt.Errorf("failed to create %s: %w", dataPoolRowsPageIndex.name, err)
+	}
+	if err := s.backfillDataPoolRowPagingState(); err != nil {
+		return err
+	}
 	if err := s.repairLegacyImportForeignKeyTargets(); err != nil {
 		return err
 	}
@@ -1388,6 +1408,25 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	return s.applyTimescaleDB()
+}
+
+// backfillDataPoolRowPagingState initializes the O(1) cursor fence for
+// databases created before rows_revision/row_count existed. Once initialized,
+// every supported row mutation updates both values in its own transaction.
+func (s *SQLiteStore) backfillDataPoolRowPagingState() error {
+	if _, err := s.db.Exec(`UPDATE shared_data_pools
+		SET row_count = (
+				SELECT COUNT(*) FROM shared_data_pool_rows
+				WHERE shared_data_pool_rows.pool_id = shared_data_pools.id
+			),
+			rows_revision = CASE WHEN EXISTS (
+				SELECT 1 FROM shared_data_pool_rows
+				WHERE shared_data_pool_rows.pool_id = shared_data_pools.id
+			) THEN 1 ELSE 0 END
+		WHERE rows_revision = 0 AND row_count = 0`); err != nil {
+		return fmt.Errorf("backfill data pool row paging state: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) backfillArchiveFinalizationIntentTokens() error {

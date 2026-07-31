@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -156,6 +158,7 @@ func TestSystemSettingsAPIAndPersistence(t *testing.T) {
 	}
 	body, _ := json.Marshal(update)
 	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(putReq, server)
 	putResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(putResp, putReq)
 	if putResp.Code != http.StatusOK {
@@ -327,9 +330,15 @@ func TestSystemSettingsRedactsAndPreservesNotificationSecrets(t *testing.T) {
 	if got := webhook["has_api_token"]; got != true {
 		t.Fatalf("has_api_token = %#v, want true", got)
 	}
+	webhook["name"] = "Renamed Dynatrace"
+	renamedPayload, err := json.Marshal(redacted)
+	if err != nil {
+		t.Fatalf("marshal renamed settings: %v", err)
+	}
 
 	putResp := httptest.NewRecorder()
-	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(getResp.Body.Bytes()))
+	putReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(renamedPayload))
+	withCurrentSystemSettingsIfMatch(putReq, server)
 	server.mux.ServeHTTP(putResp, putReq)
 	if putResp.Code != http.StatusOK {
 		t.Fatalf("PUT redacted settings status = %d body=%s", putResp.Code, putResp.Body.String())
@@ -340,6 +349,79 @@ func TestSystemSettingsRedactsAndPreservesNotificationSecrets(t *testing.T) {
 	persisted := server.runner.GetSystemSettings()
 	if got := persisted.Notifications.Webhooks[0].APIToken; got != "dt-secret-token" {
 		t.Fatalf("persisted token = %q, want preserved token", got)
+	}
+	if got := persisted.Notifications.Webhooks[0].Name; got != "Renamed Dynatrace" {
+		t.Fatalf("persisted name = %q, want renamed display label", got)
+	}
+}
+
+func TestPreserveWriteOnlyNotificationTokensUsesUnambiguousStableIdentity(t *testing.T) {
+	dynatrace := func(name, url, token string) NotificationWebhookSettings {
+		return NotificationWebhookSettings{
+			Name: name, Enabled: true, URL: url, Format: notificationFormatDynatrace, APIToken: token,
+		}
+	}
+	const (
+		urlA = "https://a.live.dynatrace.com/api/v2/events/ingest"
+		urlB = "https://b.live.dynatrace.com/api/v2/events/ingest"
+	)
+	tests := []struct {
+		name    string
+		current []NotificationWebhookSettings
+		next    []NotificationWebhookSettings
+		want    []string
+	}{
+		{
+			name:    "display name change",
+			current: []NotificationWebhookSettings{dynatrace("Old name", urlA, "token-a")},
+			next:    []NotificationWebhookSettings{dynatrace("New name", urlA, "")},
+			want:    []string{"token-a"},
+		},
+		{
+			name: "distinct endpoints reorder deterministically",
+			current: []NotificationWebhookSettings{
+				dynatrace("A", urlA, "token-a"),
+				dynatrace("B", urlB, "token-b"),
+			},
+			next: []NotificationWebhookSettings{
+				dynatrace("Renamed B", urlB, ""),
+				dynatrace("Renamed A", urlA, ""),
+			},
+			want: []string{"token-b", "token-a"},
+		},
+		{
+			name: "duplicate current endpoint fails closed",
+			current: []NotificationWebhookSettings{
+				dynatrace("A1", urlA, "token-a1"),
+				dynatrace("A2", urlA, "token-a2"),
+			},
+			next: []NotificationWebhookSettings{dynatrace("A", urlA, "")},
+			want: []string{""},
+		},
+		{
+			name:    "duplicate next endpoint fails closed",
+			current: []NotificationWebhookSettings{dynatrace("A", urlA, "token-a")},
+			next: []NotificationWebhookSettings{
+				dynatrace("A1", urlA, ""),
+				dynatrace("A2", urlA, ""),
+			},
+			want: []string{"", ""},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := preserveWriteOnlySystemSettingsSecrets(
+				SystemSettings{Notifications: NotificationsSettings{Webhooks: tt.next}},
+				SystemSettings{Notifications: NotificationsSettings{Webhooks: tt.current}},
+			)
+			tokens := make([]string, len(got.Notifications.Webhooks))
+			for index, webhook := range got.Notifications.Webhooks {
+				tokens[index] = webhook.APIToken
+			}
+			if !reflect.DeepEqual(tokens, tt.want) {
+				t.Fatalf("tokens = %#v, want %#v", tokens, tt.want)
+			}
+		})
 	}
 }
 
@@ -365,7 +447,7 @@ func TestNormalizeLoadedSystemSettingsBackfillsTelemetryThresholds(t *testing.T)
 			},
 		},
 		Auth: defaultAuthSettings(),
-	}, 2)
+	}, "", 2)
 
 	if normalized.Thresholds.MaxTelemetrySampleAgeMs == nil || *normalized.Thresholds.MaxTelemetrySampleAgeMs != defaultTelemetrySampleAgeBudgetMs {
 		t.Fatalf("sample age threshold = %#v, want default", normalized.Thresholds.MaxTelemetrySampleAgeMs)
@@ -387,6 +469,7 @@ func TestSystemSettingsValidation(t *testing.T) {
 	}
 	body, _ := json.Marshal(invalid)
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(req, server)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusBadRequest {
@@ -396,15 +479,22 @@ func TestSystemSettingsValidation(t *testing.T) {
 
 func TestSystemSettingsValidationRejectsInvalidTelemetryThresholds(t *testing.T) {
 	settings := defaultSystemSettings(2)
-	invalid := 0.0
+	invalid := -1.0
 	settings.Thresholds.MaxTelemetryTransportLagMs = &invalid
 
 	err := validateSystemSettings(settings)
 	if err == nil {
 		t.Fatal("expected invalid telemetry threshold to fail validation")
 	}
-	if got := err.Error(); got != "thresholds.max_telemetry_transport_lag_ms must be > 0" {
+	if got := err.Error(); got != "thresholds.max_telemetry_transport_lag_ms must be >= 0 (0 disables this telemetry budget)" {
 		t.Fatalf("validation error = %q, want telemetry threshold error", got)
+	}
+
+	// 0 is the documented explicit-disable value, not an error.
+	disabled := 0.0
+	settings.Thresholds.MaxTelemetryTransportLagMs = &disabled
+	if err := validateSystemSettings(settings); err != nil {
+		t.Fatalf("zero telemetry budget rejected: %v", err)
 	}
 }
 
@@ -786,7 +876,7 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 			MetricsIntervalSeconds: 2,
 		},
 		Thresholds: ThresholdSettings{},
-	}, 4)
+	}, "", 4)
 
 	if normalized.CapacityPlanning.HeadroomPct != 20 {
 		t.Fatalf("normalized headroom = %v, want 20", normalized.CapacityPlanning.HeadroomPct)
@@ -818,7 +908,7 @@ func TestNormalizeLoadedSystemSettingsBackfillsCapacityPlanningDefaults(t *testi
 		},
 		Thresholds: ThresholdSettings{},
 		Auth:       AuthSettings{Mode: authModeDisabled},
-	}, 4)
+	}, "", 4)
 	if normalizedAlias.Auth.Mode != authModeDev {
 		t.Fatalf("normalized disabled alias auth mode = %q, want %q", normalizedAlias.Auth.Mode, authModeDev)
 	}
@@ -887,6 +977,7 @@ func TestSourceSecretMigrationPolicyRequiresDurableAudit(t *testing.T) {
 		}
 		server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"}
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+		withCurrentSystemSettingsIfMatch(request, server)
 		response := httptest.NewRecorder()
 		server.handleUpdateSystemSettings(response, request)
 		if response.Code != http.StatusServiceUnavailable {
@@ -912,6 +1003,7 @@ func TestSourceSecretMigrationPolicyRequiresDurableAudit(t *testing.T) {
 		}
 		server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "success"}
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+		withCurrentSystemSettingsIfMatch(request, server)
 		response := httptest.NewRecorder()
 		server.handleUpdateSystemSettings(response, request)
 		if response.Code != http.StatusServiceUnavailable {
@@ -925,4 +1017,495 @@ func TestSourceSecretMigrationPolicyRequiresDurableAudit(t *testing.T) {
 			t.Fatalf("durable policy audit intent = %#v, %v", events, err)
 		}
 	})
+}
+
+func TestNotificationCredentialRotationRequiresDurableSecretFreeAudit(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	initial := server.runner.GetSystemSettings()
+	initial.Notifications.Webhooks = []NotificationWebhookSettings{{
+		Name: "Dynatrace", Enabled: true,
+		URL: "https://dynatrace.example.test/api/v2/events/ingest", Format: notificationFormatDynatrace,
+		APIToken: "old-audit-secret",
+	}}
+	if _, err := server.runner.UpdateSystemSettings(initial); err != nil {
+		t.Fatalf("seed notification credential: %v", err)
+	}
+
+	rotated := server.runner.GetSystemSettings()
+	rotated.Notifications.Webhooks[0].APIToken = "new-audit-secret"
+	body, err := json.Marshal(rotated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(request, server)
+	response := httptest.NewRecorder()
+	server.handleUpdateSystemSettings(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("credential intent audit response = %d %s", response.Code, response.Body.String())
+	}
+	if got := server.runner.GetSystemSettings().Notifications.Webhooks[0].APIToken; got != "old-audit-secret" {
+		t.Fatalf("credential changed after required audit failed: %q", got)
+	}
+
+	server.store = store
+	request = httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(request, server)
+	response = httptest.NewRecorder()
+	server.handleUpdateSystemSettings(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("credential rotation response = %d %s", response.Code, response.Body.String())
+	}
+	events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "system.settings.update", Limit: 10})
+	if err != nil {
+		t.Fatalf("list credential audit events: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("credential audit events = %#v, want pending + success", events)
+	}
+	for _, event := range events {
+		encoded, err := json.Marshal(event.Details)
+		if err != nil {
+			t.Fatalf("marshal audit details: %v", err)
+		}
+		if bytes.Contains(encoded, []byte("old-audit-secret")) || bytes.Contains(encoded, []byte("new-audit-secret")) {
+			t.Fatalf("audit event exposed credential material: %s", encoded)
+		}
+		if changed, _ := event.Details["notification_credentials_changed"].(bool); !changed {
+			t.Fatalf("credential audit event omitted change marker: %#v", event.Details)
+		}
+	}
+}
+
+func TestMergeOmittedSectionsPreservesThresholdsAndCapacity(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+
+	maxErr := 2.5
+	constrained := 6
+	saturated := 2
+	full := defaultSystemSettings(10)
+	full.Thresholds.MaxErrorRatePct = &maxErr
+	full.Thresholds.FleetConstrainedAvailableSlots = &constrained
+	full.Thresholds.FleetSaturatedAvailableSlots = &saturated
+	full.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	full.CapacityPlanning.Reservations = []CapacityReservation{{ProjectID: "checkout", ReservedGenerators: 2}}
+	full.ArchiveRetention.Enabled = true
+	full.ArchiveRetention.DefaultRetentionDays = 45
+	full.ScheduleDefaults.BlackoutStartTime = "00:00"
+	full.ScheduleDefaults.BlackoutEndTime = "06:00"
+	full.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Name:    "Perf Alerts",
+		Enabled: true,
+		URL:     "https://hooks.slack.test/services/T000/B000/abc123",
+		Format:  notificationFormatSlack,
+		Events:  []string{"test_failed"},
+	}}}
+
+	body, err := json.Marshal(full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(putResp, withCurrentSystemSettingsIfMatch(httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body)), server))
+	if putResp.Code != http.StatusOK {
+		t.Fatalf("full PUT status = %d body=%s", putResp.Code, putResp.Body.String())
+	}
+
+	// A client that PUTs only the general section (e.g. a hand-written API
+	// client) must not wipe any omitted section.
+	partial := []byte(`{"general":{"api_endpoint":":9191","max_concurrent_tests":4,"metrics_interval_seconds":2}}`)
+	partialResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(partialResp, withCurrentSystemSettingsIfMatch(httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(partial)), server))
+	if partialResp.Code != http.StatusOK {
+		t.Fatalf("partial PUT status = %d body=%s", partialResp.Code, partialResp.Body.String())
+	}
+	after := server.runner.GetSystemSettings()
+	if after.General.APIEndpoint != ":9191" || after.General.MaxConcurrentTests != 4 {
+		t.Fatalf("general section not applied: %+v", after.General)
+	}
+	if after.Thresholds.MaxErrorRatePct == nil || *after.Thresholds.MaxErrorRatePct != 2.5 {
+		t.Fatalf("omitted thresholds wiped: max_error_rate_pct = %#v", after.Thresholds.MaxErrorRatePct)
+	}
+	if after.Thresholds.FleetConstrainedAvailableSlots == nil || *after.Thresholds.FleetConstrainedAvailableSlots != 6 {
+		t.Fatalf("omitted thresholds wiped: fleet_constrained = %#v", after.Thresholds.FleetConstrainedAvailableSlots)
+	}
+	if len(after.CapacityPlanning.Reservations) != 1 || after.CapacityPlanning.Reservations[0].ProjectID != "checkout" {
+		t.Fatalf("omitted capacity reservations wiped: %#v", after.CapacityPlanning.Reservations)
+	}
+	if after.CapacityPlanning.Availability.ConfiguredAvailableGenerators != 5 {
+		t.Fatalf("omitted capacity availability wiped: %#v", after.CapacityPlanning.Availability)
+	}
+	if !after.ArchiveRetention.Enabled || after.ArchiveRetention.DefaultRetentionDays != 45 {
+		t.Fatalf("omitted archive retention wiped: %#v", after.ArchiveRetention)
+	}
+	if len(after.Notifications.Webhooks) != 1 || after.Notifications.Webhooks[0].URL != "https://hooks.slack.test/services/T000/B000/abc123" {
+		t.Fatalf("omitted notifications wiped: %#v", after.Notifications.Webhooks)
+	}
+	if after.ScheduleDefaults.BlackoutStartTime != "00:00" || after.ScheduleDefaults.BlackoutEndTime != "06:00" {
+		t.Fatalf("omitted schedule defaults wiped: %#v", after.ScheduleDefaults)
+	}
+
+	// An explicit empty thresholds section is honored as a reset: SLA thresholds
+	// clear, telemetry budgets return to defaults, everything else stays.
+	reset := []byte(`{"thresholds":{}}`)
+	resetResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resetResp, withCurrentSystemSettingsIfMatch(httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(reset)), server))
+	if resetResp.Code != http.StatusOK {
+		t.Fatalf("explicit thresholds reset status = %d body=%s", resetResp.Code, resetResp.Body.String())
+	}
+	afterReset := server.runner.GetSystemSettings()
+	if afterReset.Thresholds.MaxErrorRatePct != nil {
+		t.Fatalf("explicit thresholds reset was not honored: %#v", afterReset.Thresholds.MaxErrorRatePct)
+	}
+	if afterReset.Thresholds.MaxTelemetrySampleAgeMs == nil || *afterReset.Thresholds.MaxTelemetrySampleAgeMs != defaultTelemetrySampleAgeBudgetMs {
+		t.Fatalf("telemetry budgets not restored to defaults after reset: %#v", afterReset.Thresholds.MaxTelemetrySampleAgeMs)
+	}
+	if len(afterReset.Notifications.Webhooks) != 1 {
+		t.Fatalf("sections omitted by the reset PUT were wiped: %#v", afterReset.Notifications.Webhooks)
+	}
+}
+
+func TestMergeOmittedSystemSettingsSectionsIsComplete(t *testing.T) {
+	current := defaultSystemSettings(5)
+	maxErr := 3.5
+	current.Thresholds.MaxErrorRatePct = &maxErr
+	current.CapacityPlanning.Reservations = []CapacityReservation{{ProjectID: "checkout", ReservedGenerators: 1}}
+	current.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Name:   "hook",
+		URL:    "https://hooks.slack.test/services/T0/B0/x",
+		Format: notificationFormatSlack,
+	}}}
+	current.ScriptImports.AllowSourceSecretMigration = true
+	current.GitHub.Enabled = true
+	current.Prometheus.Enabled = true
+	current.Grafana.Enabled = true
+	current.PowerBI.Enabled = true
+
+	merged := mergeOmittedSystemSettingsSections(SystemSettings{}, current, []byte(`{}`))
+
+	currentValue := reflect.ValueOf(current)
+	mergedValue := reflect.ValueOf(merged)
+	settingsType := reflect.TypeOf(current)
+	for i := 0; i < settingsType.NumField(); i++ {
+		field := settingsType.Field(i)
+		if field.Name == "Revision" {
+			continue
+		}
+		if currentValue.Field(i).IsZero() {
+			t.Fatalf("fixture section %s is the zero value; give it a non-default value in this test when adding a SystemSettings section so the omitted-section guard stays meaningful", field.Name)
+		}
+		if !reflect.DeepEqual(mergedValue.Field(i).Interface(), currentValue.Field(i).Interface()) {
+			t.Fatalf("omitted section %s (json %q) was not preserved; add it to mergeOmittedSystemSettingsSections", field.Name, field.Tag.Get("json"))
+		}
+	}
+
+	// Companion guard: a PRESENT section must be honored as sent, never merged
+	// from current. This catches a merge entry keyed to the wrong JSON name,
+	// which the omitted-body loop above cannot see.
+	for i := 0; i < settingsType.NumField(); i++ {
+		field := settingsType.Field(i)
+		if field.Name == "Revision" {
+			continue
+		}
+		tag := strings.Split(field.Tag.Get("json"), ",")[0]
+		explicit := mergeOmittedSystemSettingsSections(SystemSettings{}, current, []byte(`{"`+tag+`": {}}`))
+		if reflect.DeepEqual(reflect.ValueOf(explicit).Field(i).Interface(), currentValue.Field(i).Interface()) {
+			t.Fatalf("explicit empty section %s (json %q) was overwritten from current; its merge entry is keyed to the wrong JSON name", field.Name, tag)
+		}
+		// encoding/json matches struct fields case-insensitively, so a
+		// case-variant key decodes into the section and must count as present —
+		// otherwise the merge would silently discard the caller's block.
+		caseVariant := mergeOmittedSystemSettingsSections(SystemSettings{}, current, []byte(`{"`+strings.ToUpper(tag)+`": {}}`))
+		if reflect.DeepEqual(reflect.ValueOf(caseVariant).Field(i).Interface(), currentValue.Field(i).Interface()) {
+			t.Fatalf("case-variant present section %s (json %q) was treated as omitted and overwritten from current", field.Name, tag)
+		}
+	}
+}
+
+func TestStoredInvertedFleetThresholdsBlockSubsequentPuts(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	blob := defaultSystemSettings(10)
+	saturated := 9
+	constrained := 3
+	blob.Thresholds.FleetSaturatedAvailableSlots = &saturated
+	blob.Thresholds.FleetConstrainedAvailableSlots = &constrained
+	encoded, err := json.Marshal(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
+		t.Fatalf("SaveSetting: %v", err)
+	}
+
+	// The pre-existing inverted pair loads (write-only rule), but the omitted-
+	// section merge carries it into every subsequent PUT, which must 400 until
+	// the pair is corrected — pin that intentional consequence.
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+	partial := []byte(`{"general":{"api_endpoint":":9191","max_concurrent_tests":4,"metrics_interval_seconds":2}}`)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, withCurrentSystemSettingsIfMatch(httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(partial)), server))
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "fleet_saturated_available_slots") {
+		t.Fatalf("partial PUT over an inverted stored pair = %d %s, want 400 naming the fleet ordering", resp.Code, resp.Body.String())
+	}
+
+	// Correcting the pair in the same PUT unblocks the write.
+	fixed := []byte(`{"general":{"api_endpoint":":9191","max_concurrent_tests":4,"metrics_interval_seconds":2},"thresholds":{"fleet_constrained_available_slots":9,"fleet_saturated_available_slots":3}}`)
+	resp = httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, withCurrentSystemSettingsIfMatch(httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(fixed)), server))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("corrected PUT = %d %s, want 200", resp.Code, resp.Body.String())
+	}
+}
+
+func TestLoadToleratesP99StopSamplesWithoutLevel(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	blob := defaultSystemSettings(10)
+	samples := 3
+	blob.Thresholds.P99LatencyStopConsecutiveSamples = &samples
+	encoded, err := json.Marshal(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
+		t.Fatalf("SaveSetting: %v", err)
+	}
+
+	// The cross-field rule is write-only: a hand-edited blob carrying only the
+	// stop counter must still load instead of resetting the blob to defaults.
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+	loaded := server.runner.GetSystemSettings()
+	if loaded.Thresholds.P99LatencyStopConsecutiveSamples == nil || *loaded.Thresholds.P99LatencyStopConsecutiveSamples != 3 {
+		t.Fatalf("stored counter-only blob lost on load: %#v", loaded.Thresholds.P99LatencyStopConsecutiveSamples)
+	}
+}
+
+func TestSystemSettingsUpdateRejectsInvertedFleetThresholds(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	settings := defaultSystemSettings(10)
+	saturated := 5
+	constrained := 5
+	settings.Thresholds.FleetSaturatedAvailableSlots = &saturated
+	settings.Thresholds.FleetConstrainedAvailableSlots = &constrained
+	if _, err := runner.UpdateSystemSettings(settings); err == nil || !strings.Contains(err.Error(), "thresholds.fleet_saturated_available_slots must be less than thresholds.fleet_constrained_available_slots") {
+		t.Fatalf("inverted fleet thresholds accepted, err=%v", err)
+	}
+
+	ordered := 2
+	settings.Thresholds.FleetSaturatedAvailableSlots = &ordered
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("ordered fleet thresholds rejected: %v", err)
+	}
+}
+
+func TestLoadToleratesInvertedFleetThresholds(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	blob := defaultSystemSettings(10)
+	blob.General.APIEndpoint = ":9797"
+	saturated := 9
+	constrained := 3
+	blob.Thresholds.FleetSaturatedAvailableSlots = &saturated
+	blob.Thresholds.FleetConstrainedAvailableSlots = &constrained
+	encoded, err := json.Marshal(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(systemSettingsStoreKey, string(encoded)); err != nil {
+		t.Fatalf("SaveSetting: %v", err)
+	}
+
+	// The ordering rule is write-time only. A pre-existing inverted pair must
+	// keep loading; leaking it into load validation would silently reset the
+	// whole blob to defaults.
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+	loaded := server.runner.GetSystemSettings()
+	if loaded.General.APIEndpoint != ":9797" {
+		t.Fatalf("stored settings were reset to defaults on load: %+v", loaded.General)
+	}
+	if loaded.Thresholds.FleetSaturatedAvailableSlots == nil || *loaded.Thresholds.FleetSaturatedAvailableSlots != 9 {
+		t.Fatalf("stored inverted fleet threshold lost on load: %#v", loaded.Thresholds.FleetSaturatedAvailableSlots)
+	}
+}
+
+func TestSystemSettingsUpdateRejectsReservationWithoutProject(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	settings := defaultSystemSettings(10)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 4
+	settings.CapacityPlanning.Reservations = []CapacityReservation{{ReservedGenerators: 2}}
+	if _, err := runner.UpdateSystemSettings(settings); err == nil || !strings.Contains(err.Error(), "capacity_planning.reservations[0].project_id is required") {
+		t.Fatalf("reservation without project accepted, err=%v", err)
+	}
+}
+
+func TestSystemSettingsUpdateNormalizesReservationsOnWrite(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+
+	settings := defaultSystemSettings(10)
+	settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = 5
+	settings.CapacityPlanning.Reservations = []CapacityReservation{
+		{ProjectID: " checkout ", ReservedGenerators: 2},
+		// Zero generators with a project is the documented delete-row idiom: it
+		// validates, then normalization drops it before persisting.
+		{ProjectID: "reporting", ReservedGenerators: 0},
+	}
+	// The SQLite store implements the capacity fence, so this write also proves
+	// the fenced path accepts a body containing a to-be-dropped zero-count row.
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings: %v", err)
+	}
+
+	raw, err := store.GetSetting(systemSettingsStoreKey)
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if !strings.Contains(raw, `"project_id":"checkout"`) {
+		t.Fatalf("persisted blob does not contain the trimmed project id: %s", raw)
+	}
+	if strings.Contains(raw, "reporting") {
+		t.Fatalf("persisted blob retains the zero-count reservation: %s", raw)
+	}
+
+	// On-disk shape == post-restart shape: reloading through the normalize path
+	// must be a no-op for what this write persisted.
+	before := server.runner.GetSystemSettings()
+	reopened := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+	afterRestart := reopened.runner.GetSystemSettings()
+	if !reflect.DeepEqual(before.CapacityPlanning, afterRestart.CapacityPlanning) {
+		t.Fatalf("capacity settings changed across restart:\nbefore = %#v\nafter  = %#v", before.CapacityPlanning, afterRestart.CapacityPlanning)
+	}
+}
+
+func TestHeadroomZeroSurvivesReload(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+
+	settings := defaultSystemSettings(10)
+	settings.CapacityPlanning.HeadroomPct = 0
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("headroom 0 rejected on write: %v", err)
+	}
+	if got := server.runner.GetSystemSettings().CapacityPlanning.HeadroomPct; got != 0 {
+		t.Fatalf("headroom after write = %v, want 0", got)
+	}
+
+	reopened := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+	if got := reopened.runner.GetSystemSettings().CapacityPlanning.HeadroomPct; got != 0 {
+		t.Fatalf("headroom after reload = %v, want the explicit 0 preserved (not backfilled to the default)", got)
+	}
+}
+
+func TestNormalizeLoadedSystemSettingsKeepsExplicitZeroHeadroom(t *testing.T) {
+	base := SystemSettings{
+		General: GeneralSettings{
+			APIEndpoint:            ":8080",
+			MaxConcurrentTests:     4,
+			MetricsIntervalSeconds: 2,
+		},
+	}
+
+	legacy := normalizeLoadedSystemSettings(base, `{"capacity_planning":{"generator":{"cpu_cores":4}}}`, 4)
+	if legacy.CapacityPlanning.HeadroomPct != 20 {
+		t.Fatalf("legacy blob without headroom key = %v, want backfilled 20", legacy.CapacityPlanning.HeadroomPct)
+	}
+
+	explicit := normalizeLoadedSystemSettings(base, `{"capacity_planning":{"headroom_pct":0}}`, 4)
+	if explicit.CapacityPlanning.HeadroomPct != 0 {
+		t.Fatalf("explicit zero headroom = %v, want 0 preserved", explicit.CapacityPlanning.HeadroomPct)
+	}
+}
+
+func TestSystemSettingsFromStoredValueKeepsExplicitZeroHeadroom(t *testing.T) {
+	blob := defaultSystemSettings(10)
+	blob.CapacityPlanning.HeadroomPct = 0
+	encoded, err := json.Marshal(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := systemSettingsFromStoredValue(string(encoded), defaultSystemSettings(10))
+	if err != nil {
+		t.Fatalf("systemSettingsFromStoredValue: %v", err)
+	}
+	if loaded.CapacityPlanning.HeadroomPct != 0 {
+		t.Fatalf("fence decode headroom = %v, want the stored 0 (not resurrected to 20)", loaded.CapacityPlanning.HeadroomPct)
+	}
+}
+
+func TestSystemSettingsAllowsZeroTelemetryBudgetAsDisabled(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+
+	settings := defaultSystemSettings(10)
+	zero := 0.0
+	settings.Thresholds.MaxTelemetrySampleAgeMs = &zero
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("zero telemetry budget rejected: %v", err)
+	}
+	if got := server.runner.GetSystemSettings().Thresholds.MaxTelemetrySampleAgeMs; got == nil || *got != 0 {
+		t.Fatalf("stored budget = %#v, want explicit 0", got)
+	}
+
+	reopened := NewServer(ServerConfig{Store: store, MaxConcurrent: 10, Addr: ":8080"})
+	if got := reopened.runner.GetSystemSettings().Thresholds.MaxTelemetrySampleAgeMs; got == nil || *got != 0 {
+		t.Fatalf("budget after reload = %#v, want explicit 0 (not refilled with the default)", got)
+	}
+
+	negative := -1.0
+	settings.Thresholds.MaxTelemetrySampleAgeMs = &negative
+	if _, err := server.runner.UpdateSystemSettings(settings); err == nil || !strings.Contains(err.Error(), "0 disables this telemetry budget") {
+		t.Fatalf("negative telemetry budget accepted, err=%v", err)
+	}
+}
+
+func TestAppendTelemetryBudgetDiagnosticSkipsDisabledBudget(t *testing.T) {
+	var conditions, summaries, signatureParts []string
+	severity := "healthy"
+	disabled := 0.0
+	appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", 99999, &disabled)
+	if len(conditions) != 0 || severity != "healthy" {
+		t.Fatalf("disabled budget produced a diagnostic: conditions=%v severity=%s", conditions, severity)
+	}
+
+	budget := 100.0
+	appendTelemetryBudgetDiagnostic(&conditions, &summaries, &signatureParts, &severity, "stale_sample", "sample age", 250, &budget)
+	if len(conditions) != 1 || severity != "warning" {
+		t.Fatalf("active budget did not fire: conditions=%v severity=%s", conditions, severity)
+	}
 }

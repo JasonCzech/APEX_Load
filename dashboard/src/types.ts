@@ -1,7 +1,7 @@
 // Compatibility barrel for dashboard domain contracts. New API/domain code
 // should import from ./types/<domain>; existing consumers can migrate without a
 // flag day while these re-exports preserve their public type names.
-import type { ScriptActionDefinition, ScriptDefinition } from './types/scripts'
+import type { ScriptActionDefinition, ScriptDefinition, ScriptParameterDefinition } from './types/scripts'
 import type { LibraryImportResultItem, LibraryRemote } from './types/library'
 import type { DashboardAuditEvent } from './types/auth'
 import type {
@@ -922,6 +922,79 @@ export interface TestRunManifest {
   runtime_changes?: TestRunManifestRuntimeChange[]
   archive?: TestRunManifestArchive
   warnings?: string[]
+}
+
+export interface TestGroupParameterDataSource {
+  name: string
+  type?: string
+  columns?: string[]
+  row_count?: number
+}
+
+export interface TestGroupRuntimeSettingsView {
+  test_id: string
+  ref_key?: string
+  group: string
+  group_index: number
+  script_id?: string
+  script_name?: string
+  protocol?: string
+  status: string
+  editable: boolean
+  revision: string
+  editable_reason?: string
+  editable_fields: string[]
+  runtime_settings?: RuntimeSettingsOverride
+  test_runtime_settings?: RuntimeSettingsOverride
+  script_settings?: RuntimeSettingsOverride
+  effective_settings?: RuntimeSettingsOverride
+  imported_runtime_source?: {
+    files?: Record<string, Record<string, Record<string, string>>>
+    dispositions?: Record<string, Record<string, Record<string, {
+      status?: string
+      parity_id?: string
+      fields?: string[]
+      note?: string
+    }>>>
+    truncated?: boolean
+  }
+}
+
+export interface TestGroupRuntimeSettingsUpdateResult {
+  test_id: string
+  group: string
+  fields: string[]
+  no_changes?: boolean
+  changes?: Record<string, { from?: unknown; to?: unknown }>
+  runtime_settings?: RuntimeSettingsOverride
+  review_status?: string
+  revision: string
+}
+
+export interface TestGroupParametersView {
+  test_id: string
+  ref_key?: string
+  group: string
+  group_index: number
+  script_id?: string
+  script_name?: string
+  protocol?: string
+  status: string
+  editable: boolean
+  revision: string
+  editable_reason?: string
+  parameters: ScriptParameterDefinition[]
+  data_sources?: TestGroupParameterDataSource[]
+}
+
+export interface TestGroupParametersUpdateResult {
+  test_id: string
+  group: string
+  changed: string[]
+  no_changes?: boolean
+  changes?: Record<string, unknown>
+  parameters: ScriptParameterDefinition[]
+  revision: string
 }
 
 export interface TransactionEvent {

@@ -461,3 +461,109 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(container.textContent).not.toContain('keeps one JVM, Actions instance, and child loader for its full lifecycle')
   })
 })
+
+describe('ScriptRuntimeSettingsView imported source runtime settings', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  function importedScript(): ScriptDefinition {
+    return {
+      name: 'Imported LR script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://svc.example.test' },
+      actions: [],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          preserved: {
+            runtime_files: {
+              'default.cfg': {
+                WEB: { HTTPVer: '1.1', HttpErrorsAsWarnings: '1', WebRecorderVersion: '8' },
+                ModemSpeed: { EnableModemSpeed: '0' },
+              },
+              'other.cfg': { WEB: { HTTPVer: '1.0' } },
+            },
+            runtime_setting_dispositions: {
+              'default.cfg': {
+                WEB: {
+                  HTTPVer: { status: 'mapped', parity_id: 'http_transport', fields: ['config.http.version'] },
+                  HttpErrorsAsWarnings: { status: 'compatibility_only', note: 'Downgrades HTTP errors to warnings.' },
+                  WebRecorderVersion: { status: 'non_applicable', note: 'VuGen recorder version stamp.' },
+                },
+                ModemSpeed: {
+                  EnableModemSpeed: { status: 'mapped', parity_id: 'network_simulation', fields: ['config.web_runtime.network_simulation'] },
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+  }
+
+  it('renders every preserved key with its disposition badge', () => {
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="imported_source"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={importedScript()}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Imported Source Runtime Settings')
+    expect(container.textContent).toContain('4 settings dispositioned')
+    // Selected profile rows show their dispositions.
+    expect(container.textContent).toContain('Mapped → config.http.version')
+    expect(container.textContent).toContain('Compatibility-only')
+    expect(container.textContent).toContain('Not applicable')
+    expect(container.textContent).toContain('[ModemSpeed]')
+    // Non-selected profiles stay visible as preserved-only evidence.
+    expect(container.textContent).toContain('Not selected at import — preserved only')
+    expect(container.textContent).toContain('Preserved (profile not selected)')
+  })
+
+  it('hides the section entirely when the script was not imported', () => {
+    const script = importedScript()
+    delete script.metadata
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="think"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    expect(container.textContent).not.toContain('Imported Source Runtime Settings')
+  })
+})

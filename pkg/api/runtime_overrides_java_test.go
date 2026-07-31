@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // Scenario-level Java Env overrides: field-merge semantics, group-over-root
@@ -121,6 +122,142 @@ func TestCloneRuntimeSettingsDeepClonesJavaVuser(t *testing.T) {
 	if o.JavaVuser.AdditionalVMParameters[0] != "-Xmx512m" || o.JavaVuser.Classpath[0] != "/a.jar" || !*o.JavaVuser.DedicatedClassLoader {
 		t.Fatalf("clone aliases the original java_vuser section: %#v", o.JavaVuser)
 	}
+}
+
+func TestRuntimeSettingsFromScriptConfigIncludesClosedJavaVuserLayer(t *testing.T) {
+	useXBoot := true
+	config := dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
+		Enabled:                true,
+		RunnerCommand:          "/operator/runner",
+		HarnessJar:             "/operator/harness.jar",
+		MaxProcesses:           20,
+		JDKSelection:           "specified",
+		JDKHome:                "/opt/jdk-21",
+		AdditionalVMParameters: []string{"-Xmx512m"},
+		Classpath:              []string{"/opt/app.jar"},
+		UseXBootClasspath:      &useXBoot,
+	}}
+
+	got := runtimeSettingsFromScriptConfig(config)
+	if got == nil || got.JavaVuser == nil {
+		t.Fatal("script Java Vuser layer was omitted from runtime projection")
+	}
+	if got.JavaVuser.JDKSelection != "specified" || got.JavaVuser.JDKHome != "/opt/jdk-21" ||
+		!reflect.DeepEqual(got.JavaVuser.AdditionalVMParameters, []string{"-Xmx512m"}) ||
+		!reflect.DeepEqual(got.JavaVuser.Classpath, []string{"/opt/app.jar"}) ||
+		got.JavaVuser.UseXBootClasspath == nil || !*got.JavaVuser.UseXBootClasspath {
+		t.Fatalf("Java Vuser runtime projection = %#v", got.JavaVuser)
+	}
+	data, err := json.Marshal(got.JavaVuser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"runner_command", "harness_jar", "max_processes", "enabled"} {
+		if strings.Contains(string(data), forbidden) {
+			t.Fatalf("runtime projection exposed operator field %q: %s", forbidden, data)
+		}
+	}
+}
+
+func TestMaskRuntimeSettingsRedactsAndReconcilesJavaVMArguments(t *testing.T) {
+	const credential = "java-runtime-secret-value-3819"
+	prior := &RuntimeSettingsOverride{JavaVuser: &RuntimeJavaVuserOverride{
+		JDKSelection:           "internal",
+		AdditionalVMParameters: []string{"-Xmx512m", "-Dservice.password=" + credential},
+	}}
+
+	masked := maskRuntimeSettings(prior)
+	if got := masked.JavaVuser.AdditionalVMParameters; len(got) != 2 ||
+		got[0] != "-Xmx512m" || got[1] != scrub.Redacted {
+		t.Fatalf("masked Java VM parameters = %#v", got)
+	}
+	if strings.Contains(mustMarshalJSON(t, masked), credential) {
+		t.Fatal("masked runtime settings leaked a Java VM credential")
+	}
+	masked.JavaVuser.JDKSelection = "specified"
+	reconciled := reconcileGroupRuntimeSecrets(masked, prior)
+	if got := reconciled.JavaVuser.AdditionalVMParameters[1]; got != "-Dservice.password="+credential {
+		t.Fatalf("masked Java VM argument was not restored: %q", got)
+	}
+	if reconciled.JavaVuser.JDKSelection != "specified" {
+		t.Fatalf("sibling Java setting edit was lost: %#v", reconciled.JavaVuser)
+	}
+}
+
+func TestReconcileJavaVuserRuntimeSecretsRequiresSensitiveSameIndex(t *testing.T) {
+	const (
+		databaseSecret = "-Ddatabase.password=java-runtime-database-secret-3819"
+		serviceSecret  = "-Dservice.token=java-runtime-service-secret-7426"
+	)
+	tests := []struct {
+		name     string
+		prior    []string
+		incoming []string
+		want     []string
+	}{
+		{
+			name:     "reordered sentinel stays unresolved",
+			prior:    []string{databaseSecret, "-Xmx512m"},
+			incoming: []string{"-Xmx512m", scrub.Redacted},
+			want:     []string{"-Xmx512m", scrub.Redacted},
+		},
+		{
+			name:     "insertion before sentinel stays unresolved",
+			prior:    []string{databaseSecret, "-Xmx512m"},
+			incoming: []string{"-Xms128m", scrub.Redacted, "-Xmx512m"},
+			want:     []string{"-Xms128m", scrub.Redacted, "-Xmx512m"},
+		},
+		{
+			name:     "deletion before sentinel stays unresolved",
+			prior:    []string{"-Xms128m", databaseSecret, "-Xmx512m"},
+			incoming: []string{scrub.Redacted, "-Xmx512m"},
+			want:     []string{scrub.Redacted, "-Xmx512m"},
+		},
+		{
+			name:     "multiple aligned sensitive arguments restore independently",
+			prior:    []string{databaseSecret, serviceSecret, "-Xmx512m"},
+			incoming: []string{scrub.Redacted, scrub.Redacted, "-Xmx512m"},
+			want:     []string{databaseSecret, serviceSecret, "-Xmx512m"},
+		},
+		{
+			name:     "multiple sensitive arguments fail closed after middle deletion",
+			prior:    []string{databaseSecret, "-Xms128m", serviceSecret},
+			incoming: []string{scrub.Redacted, scrub.Redacted},
+			want:     []string{scrub.Redacted, scrub.Redacted},
+		},
+		{
+			name:     "adjacent sensitive arguments fail closed after deletion",
+			prior:    []string{databaseSecret, serviceSecret},
+			incoming: []string{scrub.Redacted},
+			want:     []string{scrub.Redacted},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			incoming := &RuntimeJavaVuserOverride{
+				AdditionalVMParameters: append([]string(nil), tt.incoming...),
+			}
+			prior := &RuntimeJavaVuserOverride{
+				AdditionalVMParameters: append([]string(nil), tt.prior...),
+			}
+
+			reconcileJavaVuserRuntimeSecrets(incoming, prior)
+
+			if !reflect.DeepEqual(incoming.AdditionalVMParameters, tt.want) {
+				t.Fatalf("reconciled Java VM parameters = %#v, want %#v", incoming.AdditionalVMParameters, tt.want)
+			}
+		})
+	}
+}
+
+func mustMarshalJSON(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestRuntimeJavaVuserOverrideCannotSmuggleOperatorFields(t *testing.T) {

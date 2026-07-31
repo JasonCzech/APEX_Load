@@ -279,4 +279,24 @@ describe('useScriptApi import wrappers', () => {
 
     expect(apiFetch).toHaveBeenCalledWith('/replay/sessions/debug-1/export?format=log')
   })
+
+  it('keeps data-pool exports as blobs instead of materializing a second text copy', async () => {
+    const blob = new Blob(['customer_id,region\nC-1,east\n'], { type: 'text/csv' })
+    const readBlob = vi.fn().mockResolvedValue(blob)
+    ;(apiFetch as Mock).mockResolvedValueOnce({
+      ok: true,
+      headers: new Headers({
+        'Content-Disposition': 'attachment; filename="Customers.csv"',
+      }),
+      blob: readBlob,
+    })
+
+    await expect(api.exportDataPoolRows('pool-1')).resolves.toEqual({
+      blob,
+      filename: 'Customers.csv',
+    })
+
+    expect(apiFetch).toHaveBeenCalledWith('/data-pools/pool-1/rows/export')
+    expect(readBlob).toHaveBeenCalledTimes(1)
+  })
 })

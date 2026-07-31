@@ -418,7 +418,10 @@ func capacityDemandByRegion(test *ManagedTest) map[string]int {
 	return out
 }
 
-func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts) {
+// publishLiveMetrics installs and broadcasts one live snapshot. Optional
+// install guards run while tr.mu is held immediately before any ManagedTest
+// mutation; returning false rejects the snapshot atomically.
+func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, artifacts *runArtifacts, installGuards ...func() bool) bool {
 	now := time.Now()
 	hubStats := HubStats{}
 	if tr.hub != nil {
@@ -450,6 +453,12 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	var previousTelemetryRunHealth *TelemetryRunHealth
 
 	tr.mu.Lock()
+	for _, guard := range installGuards {
+		if guard != nil && !guard() {
+			tr.mu.Unlock()
+			return false
+		}
+	}
 	tests := make([]*ManagedTest, 0, len(tr.tests))
 	for _, candidate := range tr.tests {
 		tests = append(tests, candidate)
@@ -531,6 +540,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	if emitSheddingWarning {
 		tr.broadcastOpenWorkloadShedding(test, sheddedArrivals, now)
 	}
+	return true
 }
 
 func appendManagedTestHistoryWithLimits(test *ManagedTest, point *LiveMetrics, maxPoints int, maxBytes int64) bool {
@@ -824,6 +834,7 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			}
 
 			tr.publishLiveMetrics(test, live, artifacts)
+			tr.evaluateThresholdAlertsAndStops(test, live, true)
 		}
 	}
 }
@@ -852,12 +863,9 @@ func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.Me
 	tr.publishLiveMetrics(test, live, artifacts)
 	go tr.measureNetworkLatency(test, live)
 
-	settings := tr.GetSystemSettings()
-	projectID := normalizeProjectID(test.ProjectID)
-	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
-		alert["project_id"] = projectID
-		tr.hub.BroadcastScopedJSON(test.ID, projectID, alert)
-	}
+	// Broadcast + webhook-route final-drain breaches, but never issue stops
+	// here: the engine has already quiesced (see the function contract above).
+	tr.evaluateThresholdAlertsAndStops(test, live, false)
 	return true
 }
 
@@ -886,6 +894,13 @@ func (tr *TestRunner) evaluateGoalControllerLocked(test *ManagedTest, live *Live
 	return goalControllerUpdate{}, false
 }
 
+// processMetricsSnapshot is a TEST-HARNESS driver for the shared per-sample
+// pipeline (goal controller → publish → evaluateThresholdAlertsAndStops). It
+// has no production callers: live local runs sample through broadcastMetrics'
+// ticker and distributed runs through consumeMetrics — both of which call the
+// same evaluateThresholdAlertsAndStops, with the wiring pinned by
+// TestLiveLocalRunEnforcesErrorRateThreshold. Do not add behavior here that is
+// not also reachable from those live paths.
 func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.MetricsSnapshot, groupVUsers map[string]int, scaleVUsers func(groupName string, target int) error, artifacts *runArtifacts) {
 	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
 	if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
@@ -897,18 +912,44 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 	// Measure network latency in background if not already measured for this interval
 	go tr.measureNetworkLatency(test, live)
 
+	tr.evaluateThresholdAlertsAndStops(test, live, true)
+}
+
+// evaluateThresholdAlertsAndStops runs the per-sample global-threshold actions
+// on a freshly published live snapshot: broadcast threshold_alert events,
+// route them to notification webhooks, and (when allowStops) request the
+// error-rate, sustained-P99, and goal-status auto-stops. This is the single
+// enforcement point shared by the local broadcast ticker, the distributed
+// batch consumers, the final drain (allowStops=false — the engine has already
+// quiesced), and processMetricsSnapshot. Callers must not hold tr.mu.
+func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *LiveMetrics, allowStops bool) {
+	if tr == nil || test == nil || live == nil {
+		return
+	}
 	settings := tr.GetSystemSettings()
 	projectID := normalizeProjectID(test.ProjectID)
-	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
+	alerts := buildThresholdAlerts(test, live, settings.Thresholds)
+
+	// Decide stops before emitting so every alert's "action" reflects what this
+	// evaluation actually does: no stop can be requested when allowStops is
+	// false (final drain, terminal distributed batches), and the sustained-P99
+	// stop must stamp the p99 alert that triggered it.
+	stopForError := allowStops && tr.testIsRunning(test) && shouldStopForErrorThreshold(live, settings.Thresholds)
+	stopForP99 := allowStops && tr.shouldStopForSustainedP99(test, live, settings.Thresholds)
+	applyThresholdAlertStopActions(alerts, stopForError, stopForP99)
+	for _, alert := range alerts {
 		alert["project_id"] = projectID
 		tr.hub.BroadcastScopedJSON(test.ID, projectID, alert)
 	}
+	tr.routeThresholdAlertNotifications(test, alerts, time.Now())
 
-	if shouldStopForErrorThreshold(live, settings.Thresholds) {
+	if stopForError {
 		tr.requestStopIfRunning(test, "threshold stop failed")
 	}
-
-	if shouldStopForGoalStatus(live) {
+	if stopForP99 {
+		tr.requestStopIfRunning(test, "p99 threshold stop failed")
+	}
+	if allowStops && shouldStopForGoalStatus(live) {
 		tr.requestStopIfRunning(test, "goal-oriented stop failed")
 	}
 }

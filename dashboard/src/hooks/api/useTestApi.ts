@@ -21,11 +21,16 @@ import {
   RunArchiveManifest,
   RunArchiveReport,
   ScenarioDataPoolBinding,
+  TestGroupParametersUpdateResult,
+  TestGroupParametersView,
+  TestGroupRuntimeSettingsUpdateResult,
+  TestGroupRuntimeSettingsView,
   TestNote,
   TestRunManifest,
   TestSummary,
   TransactionEvent,
 } from '../../types'
+import type { ScriptParameterDefinition } from '../../types/scripts'
 import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goals'
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
@@ -532,6 +537,36 @@ export function useTestApi() {
 
   const getTestManifest = useCallback((id: string) => request<TestRunManifest>(`/tests/${id}/manifest`), [])
 
+  const getTestGroupRuntimeSettings = useCallback(
+    (id: string, group: string) =>
+      request<TestGroupRuntimeSettingsView>(`/tests/${id}/groups/${encodeURIComponent(group)}/runtime-settings`),
+    [],
+  )
+
+  const updateTestGroupRuntimeSettings = useCallback(
+    (id: string, group: string, data: { runtime_settings: RuntimeSettingsOverride; fields: string[]; expected_revision: string }) =>
+      request<TestGroupRuntimeSettingsUpdateResult>(`/tests/${id}/groups/${encodeURIComponent(group)}/runtime-settings`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    [],
+  )
+
+  const getTestGroupParameters = useCallback(
+    (id: string, group: string) =>
+      request<TestGroupParametersView>(`/tests/${id}/groups/${encodeURIComponent(group)}/parameters`),
+    [],
+  )
+
+  const updateTestGroupParameters = useCallback(
+    (id: string, group: string, data: { parameters: ScriptParameterDefinition[]; expected_revision: string }) =>
+      request<TestGroupParametersUpdateResult>(`/tests/${id}/groups/${encodeURIComponent(group)}/parameters`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    [],
+  )
+
   const getTestArchiveManifest = useCallback((id: string) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`), [])
 
   const verifyTestArchive = useCallback(
@@ -757,6 +792,10 @@ export function useTestApi() {
       getMetrics,
       getTestErrorEvidence,
       getTestManifest,
+      getTestGroupRuntimeSettings,
+      updateTestGroupRuntimeSettings,
+      getTestGroupParameters,
+      updateTestGroupParameters,
       getTestArchiveManifest,
       verifyTestArchive,
       getTestArchiveTransactions,
@@ -840,6 +879,10 @@ export function useTestApi() {
       getMetrics,
       getTestErrorEvidence,
       getTestManifest,
+      getTestGroupRuntimeSettings,
+      updateTestGroupRuntimeSettings,
+      getTestGroupParameters,
+      updateTestGroupParameters,
       getTestArchiveManifest,
       verifyTestArchive,
       getTestArchiveTransactions,

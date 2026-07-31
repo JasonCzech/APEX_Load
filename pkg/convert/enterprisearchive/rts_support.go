@@ -211,10 +211,13 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Area:    "Run Logic",
 			Concept: "Block scheduling",
 			Fields:  []string{"config.run_logic.block_scheduling"},
-			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Supports sequential, random, and percentage scheduling.",
+			Status:  RuntimeSettingStatusCompatibilityOnly,
+			Notes:   "Preserved for migration evidence, but the current engine does not consume block_scheduling and executes the imported action list in its fixed order. Include compatibility_only in the migration block policy until source block scheduling has been reviewed or replaced.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Run Logic", "RunLogic"}, []string{"BlockScheduling"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Run Logic", "RunLogic"}, []string{"BlockScheduling"}),
+			matcher([]string{"RunLogicRunRoot"}, []string{"RunLogicRunMode"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -222,10 +225,14 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Area:    "Run Logic",
 			Concept: "Action sequence",
 			Fields:  []string{"config.run_logic.action_sequence"},
-			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Preserved and enforced by the engine action ordering.",
+			Status:  RuntimeSettingStatusCompatibilityOnly,
+			Notes:   "Preserved for migration evidence, but the current engine does not consume action_sequence: it runs init, the imported action list, and teardown in its fixed lifecycle. Review source omissions, reordering, or custom action order before execution.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Run Logic", "RunLogic"}, []string{"ActionSequence", "Sequence"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Run Logic", "RunLogic"}, []string{"ActionSequence", "Sequence"}),
+			matcher([]string{"RunLogicRunRoot"}, []string{"RunLogicActionOrder"}),
+			matcher([]string{"Profile Actions"}, []string{"Profile Actions name"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -262,7 +269,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "APEX Load executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls for its supported trace envelope.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Log", "Logging"}, []string{"Level", "LogLevel", "LogOptions", "OnErrorOnly", "LogOnErrorOnly", "ExtendedOptions", "ExtendedLogOptions", "ParameterSubstitution", "DataReturned", "AdvancedTrace", "MsgClassParameters", "MsgClassData", "MsgClassFull"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Log", "Logging"}, []string{"Level", "LogLevel", "LogOptions", "OnErrorOnly", "LogOnErrorOnly", "AutoLog", "ExtendedOptions", "ExtendedLogOptions", "ParameterSubstitution", "DataReturned", "AdvancedTrace", "MsgClassParameters", "MsgClassData", "MsgClassFull"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -403,7 +410,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Browser runtime enforces host-based asset filtering.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Download Filters", "DownloadFilters"}, []string{"Mode", "FilterMode", "Hosts", "IncludeHosts", "ExcludeHosts"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Download Filters", "DownloadFilters"}, []string{"Mode", "FilterMode", "Hosts", "IncludeHosts", "ExcludeHosts"}),
+			matcher([]string{"FILTERS"}, []string{"IncludeFiltersInList", "ExcludeFiltersInList"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -425,7 +435,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Browser runtime maps settings onto DevTools network throttling.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Network Speed Simulation", "NetworkSimulation"}, []string{"Mode", "SimulationMode", "Preset", "BandwidthKbps", "Bandwidth", "LatencyMs"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Network Speed Simulation", "NetworkSimulation"}, []string{"Mode", "SimulationMode", "Preset", "BandwidthKbps", "Bandwidth", "LatencyMs"}),
+			matcher([]string{"ModemSpeed"}, []string{"EnableModemSpeed", "EnableCustomModemSpeed", "ModemSpeed", "CustomModemSpeed"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -494,7 +507,7 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "The governed Java Vuser runner resolves an internal JDK or validates the specified JDK home on each assigned runner; specified homes do not silently fall back.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}, []string{"use_jdk", "UseJdk", "jdk_selection", "UseSpecifiedJdk", "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options", "Java"}, []string{"use_jdk", "UseJdk", "jdk_selection", "UseSpecifiedJdk", "UseExternalJVM", "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome", "ExternalJREPath"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{

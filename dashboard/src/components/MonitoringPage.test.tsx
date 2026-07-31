@@ -608,7 +608,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
 
     await clickMonitorTab('Telemetry')
 
@@ -662,10 +662,10 @@ describe('MonitoringPage', () => {
       )
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
     await clickMonitorTab('Telemetry')
     expect(onCategoryChange).toHaveBeenCalledWith('telemetry')
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
 
     await act(async () => {
       root.render(
@@ -882,7 +882,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
     expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('4/4 active')
     expect(container.textContent).toContain('Backend')
@@ -929,7 +929,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
     expect(container.textContent).not.toContain('Active Services')
     const storedOrder = JSON.parse(window.localStorage.getItem('apexload.monitoring.cardOrder') || '[]') as string[]
     expect(storedOrder).not.toContain('active-services')
@@ -1568,5 +1568,149 @@ describe('MonitoringPage', () => {
     })
 
     expect(onSelectTest).toHaveBeenCalledWith('test-adhoc')
+  })
+
+  it('renders SLA threshold alerts with a stop-requested badge and ack control', async () => {
+    const onAcknowledgeThresholdAlert = vi.fn()
+    const onSelectTest = vi.fn()
+    const alerts = [
+      {
+        key: 'test-1:error_pct:',
+        testId: 'test-1',
+        testName: 'Checkout',
+        metric: 'error_pct',
+        value: 7.5,
+        threshold: 5,
+        action: 'stop_requested' as const,
+        firstSeenAt: '2026-07-30T12:00:00Z',
+        lastSeenAt: '2026-07-30T12:00:05Z',
+        acknowledged: false,
+        active: true,
+      },
+      {
+        key: 'test-1:p99_ms:',
+        testId: 'test-1',
+        testName: 'Checkout',
+        metric: 'p99_ms',
+        value: 1830,
+        threshold: 1500,
+        firstSeenAt: '2026-07-30T12:00:00Z',
+        lastSeenAt: '2026-07-30T12:00:05Z',
+        acknowledged: true,
+        active: true,
+      },
+    ]
+
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          telemetryDiagnostics={[]}
+          thresholdAlerts={alerts}
+          onAcknowledgeThresholdAlert={onAcknowledgeThresholdAlert}
+          onSelectTest={onSelectTest}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('SLA Threshold Alerts')
+    expect(container.textContent).toContain('Error rate 7.50% exceeded threshold 5% — auto-stop requested')
+    expect(container.textContent).toContain('P99 latency 1830 ms exceeded threshold 1500 ms')
+    expect(container.textContent).toContain('acknowledged')
+
+    const thresholdCard = Array.from(container.querySelectorAll('.monitor-card, [class*="monitor"]'))
+      .find(el => el.textContent?.includes('SLA Threshold Alerts')) || container
+    const ackButtons = Array.from(thresholdCard.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent === 'Ack')
+    expect(ackButtons.length).toBe(1)
+    await act(async () => {
+      ackButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onAcknowledgeThresholdAlert).toHaveBeenCalledWith('test-1:error_pct:')
+
+    const openButton = Array.from(thresholdCard.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Open')
+    await act(async () => {
+      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onSelectTest).toHaveBeenCalledWith('test-1')
+  })
+
+  it('shows the SLA threshold empty state when no alerts exist', async () => {
+    await act(async () => {
+      root.render(
+        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[]} />,
+      )
+    })
+
+    expect(container.textContent).toContain('SLA Threshold Alerts')
+    expect(container.textContent).toContain('No global SLA threshold breaches on running tests.')
+  })
+
+  it('re-renders the SLA card when threshold alert props change after mount', async () => {
+    const baseAlert = {
+      key: 'test-1:p99_ms:',
+      testId: 'test-1',
+      testName: 'Checkout',
+      metric: 'p99_ms',
+      value: 1830,
+      threshold: 1500,
+      firstSeenAt: '2026-07-30T12:00:00Z',
+      lastSeenAt: '2026-07-30T12:00:05Z',
+      acknowledged: false,
+      active: true,
+    }
+
+    await act(async () => {
+      root.render(
+        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[]} />,
+      )
+    })
+    expect(container.textContent).toContain('No global SLA threshold breaches on running tests.')
+
+    // A live WS alert arrives: the memoized cards must pick up the new prop.
+    await act(async () => {
+      root.render(
+        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[baseAlert]} />,
+      )
+    })
+    expect(container.textContent).toContain('P99 latency 1830 ms exceeded threshold 1500 ms')
+
+    // Acknowledging updates the same entry: the row must re-render as acked.
+    await act(async () => {
+      root.render(
+        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[{ ...baseAlert, acknowledged: true }]} />,
+      )
+    })
+    expect(container.textContent).toContain('acknowledged')
+  })
+
+  it('keeps resolved threshold history without treating it as an active warning', async () => {
+    const resolvedAlert = {
+      key: 'test-1:p99_ms:',
+      testId: 'test-1',
+      testName: 'Checkout',
+      metric: 'p99_ms',
+      value: 1830,
+      threshold: 1500,
+      firstSeenAt: '2026-07-30T12:00:00Z',
+      lastSeenAt: '2026-07-30T12:00:05Z',
+      acknowledged: false,
+      active: false,
+    }
+
+    await act(async () => {
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          telemetryDiagnostics={[]}
+          thresholdAlerts={[resolvedAlert]}
+          onAcknowledgeThresholdAlert={vi.fn()}
+        />,
+      )
+    })
+
+    const thresholdCard = container.querySelector('[data-card-id="threshold-alerts"]')
+    expect(thresholdCard?.textContent).toContain('resolved')
+    expect(thresholdCard?.querySelector('.monitor-header-badge')?.textContent).toBe('clear')
+    expect(Array.from(thresholdCard?.querySelectorAll('button') || []).some(button => button.textContent === 'Ack')).toBe(false)
   })
 })

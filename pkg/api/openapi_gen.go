@@ -105,6 +105,12 @@ const publicRoleText = "Public (no authentication required)"
 type oasResponse struct {
 	Description string                  `yaml:"description"`
 	Content     map[string]oasMediaType `yaml:"content,omitempty"`
+	Headers     map[string]oasHeader    `yaml:"headers,omitempty"`
+}
+
+type oasHeader struct {
+	Description string         `yaml:"description,omitempty"`
+	Schema      oasParamSchema `yaml:"schema"`
 }
 
 type oasParameter struct {

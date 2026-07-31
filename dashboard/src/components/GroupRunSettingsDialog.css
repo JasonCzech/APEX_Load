@@ -1,0 +1,16 @@
+/* Unique sizing/layout layered on the shared editor, table, and menu primitives. */
+.group-run-settings-overlay { z-index: 230; }
+.group-run-settings-dialog {
+  width: min(980px, calc(100vw - 48px));
+  max-height: min(88vh, 900px);
+  background: linear-gradient(var(--bg-card), var(--bg-card)), var(--bg-primary);
+}
+.group-run-settings-messages { padding-bottom: 0; }
+.group-run-settings-messages > * { margin: 0; }
+.group-run-settings-error { white-space: pre-wrap; }
+.group-run-settings-body { flex: 1; min-height: 0; }
+.group-run-settings-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.command-group-context-menu { z-index: 240; }

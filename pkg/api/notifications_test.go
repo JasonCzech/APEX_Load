@@ -355,6 +355,31 @@ func TestNotificationDispatcherRetriesRetryableStatus(t *testing.T) {
 	}
 }
 
+func TestNotificationDedupeKeyIsBoundedHeaderSafeAndDistinct(t *testing.T) {
+	webhook := NotificationWebhookSettings{
+		Name: "ops\r\nX-Injected: true",
+		URL:  "https://hooks.example.test/" + strings.Repeat("long-path-", 200),
+	}
+	event := NotificationEvent{
+		Type:      "threshold_alert",
+		TestID:    "test-123",
+		Status:    "avg_server_processing_ms",
+		Summary:   "breach\r\nX-Injected: true " + strings.Repeat("x", 10_000),
+		Timestamp: time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC),
+	}
+	first := notificationDedupeKey(webhook, event)
+	if len(first) != 64 || strings.ContainsAny(first, "\r\n") {
+		t.Fatalf("dedupe key is not a fixed SHA-256 header value: len=%d key=%q", len(first), first)
+	}
+	if repeat := notificationDedupeKey(webhook, event); repeat != first {
+		t.Fatalf("dedupe key is not deterministic: first=%q repeat=%q", first, repeat)
+	}
+	event.Summary += "different transaction"
+	if second := notificationDedupeKey(webhook, event); second == first {
+		t.Fatalf("distinct event summaries produced the same dedupe key: %q", first)
+	}
+}
+
 func TestNotificationDispatcherCountsFinalFailure(t *testing.T) {
 	t.Setenv(notificationsAllowInsecureHTTPEnv, "true")
 	notificationDeliveryFailuresTotal.Store(0)
@@ -425,7 +450,9 @@ func TestNotificationDispatcherBoundsBurstAndPerDestinationConcurrency(t *testin
 	}
 
 	dispatcher.Close()
-	dispatcher.Dispatch(settings, NotificationEvent{Type: "test_failed", TestID: "after-close", Timestamp: time.Now()})
+	if dispatcher.Dispatch(settings, NotificationEvent{Type: "test_failed", TestID: "after-close", Timestamp: time.Now()}) {
+		t.Fatal("closed dispatcher reported admitting a delivery")
+	}
 	releaseOnce.Do(func() { close(release) })
 	deadline := time.Now().Add(2 * time.Second)
 	for active.Load() != 0 && time.Now().Before(deadline) {

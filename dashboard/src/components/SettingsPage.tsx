@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type Dispatch, type DragEvent, type ReactNode, type SetStateAction } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
@@ -20,7 +20,6 @@ import {
   isIntegrationSettingsSubsectionId,
   isProjectSettingsSubsectionId,
   mergeSettingsOrder,
-  moveSettingsSection,
   PROJECT_SETTINGS_SUBSECTIONS,
   readSettingsSectionArray,
   readSettingsSubsectionId,
@@ -71,21 +70,30 @@ import {
 import {
   applyLiveGeneratorPresetToSettings,
   buildProjectSettingsDraft,
+  capacityDraftIssues,
   DEFAULT_SETTINGS,
   deriveLiveGeneratorPreset,
+  describeSettingsSaveError,
   GENERATOR_PRESETS,
   normalizeDashboardSystemSettings,
   OIDC_PROVIDER_PRESETS,
   projectGitHubDraftFromPolicy,
+  reservationPoolIssues,
+  reservationUsageSummary,
+  settingsIssuesBySection,
+  settingsIssuesForField,
   splitListDraft,
+  TELEMETRY_BUDGET_DEFAULTS,
   usesDefaultGeneratorCapacity,
   validateOptionalPositiveInteger,
   validateProjectDraft,
   validateProjectQuotaField,
-  validateSettings,
+  validateSettingsDetailed,
+  type TelemetryBudgetKey,
 } from './settingsPageModel'
 import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
+import { type DataPoolImportResult } from '../hooks/api/useScriptApi'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
@@ -95,6 +103,10 @@ import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { ApiError } from '../hooks/apiClient'
+import { useFleetApi } from '../hooks/api/useFleetApi'
+import type { FleetPool } from '../types/fleet'
 import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 
 const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
@@ -121,12 +133,39 @@ const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'dynatrace', label: 'Dynatrace Events API v2' },
 ] as const
 
+const DATA_POOL_ROW_PAGE_SIZE = 100
+
+const TELEMETRY_BUDGET_ROWS: Array<{ key: TelemetryBudgetKey; label: string; desc: string }> = [
+  { key: 'max_telemetry_sample_age_ms', label: 'Max Telemetry Sample Age (ms)', desc: 'End-to-end live telemetry budget from collection through controller publish. Always enforced; 0 disables this budget.' },
+  { key: 'max_telemetry_generator_lag_ms', label: 'Max Generator Lag (ms)', desc: 'Budget for generator-side capture, aggregation, and serialization. Always enforced; 0 disables this budget.' },
+  { key: 'max_telemetry_transport_lag_ms', label: 'Max Transport Lag (ms)', desc: 'Budget for generator-to-controller delivery. Always enforced; 0 disables this budget.' },
+  { key: 'max_telemetry_controller_fanout_ms', label: 'Max Controller Fan-out (ms)', desc: 'Budget for controller receipt through websocket publish. Always enforced; 0 disables this budget.' },
+  { key: 'max_telemetry_browser_render_lag_ms', label: 'Max Browser Render Lag (ms)', desc: 'Budget reserved for dashboard client receive-to-render delay. Always enforced; 0 disables this budget.' },
+]
+
+function settingsDraftFieldValue(settings: DashboardSystemSettings, field: string): string | undefined {
+  let value: unknown = settings
+  for (const segment of field.split('.')) {
+    if (Array.isArray(value)) {
+      const index = Number(segment)
+      if (!Number.isInteger(index) || index < 0 || index >= value.length) return undefined
+      value = value[index]
+      continue
+    }
+    if (value === null || typeof value !== 'object') return undefined
+    value = (value as Record<string, unknown>)[segment]
+  }
+  if (value === undefined || value === null) return undefined
+  return String(value)
+}
+
 interface SettingsConfirmDialogProps {
   open: boolean
   title: string
   children: ReactNode
   confirmLabel: string
   confirmClassName?: string
+  confirmDisabled?: boolean
   onCancel: () => void
   onConfirm: () => void
 }
@@ -137,6 +176,7 @@ function SettingsConfirmDialog({
   children,
   confirmLabel,
   confirmClassName = 'btn btn-danger',
+  confirmDisabled = false,
   onCancel,
   onConfirm,
 }: SettingsConfirmDialogProps) {
@@ -171,7 +211,7 @@ function SettingsConfirmDialog({
           {children}
           <div className="settings-inline-actions">
             <button className="btn btn-secondary" type="button" onClick={onCancel}>Cancel</button>
-            <button className={confirmClassName} type="button" onClick={onConfirm}>{confirmLabel}</button>
+            <button className={confirmClassName} type="button" disabled={confirmDisabled} onClick={onConfirm}>{confirmLabel}</button>
           </div>
         </div>
       </div>
@@ -240,6 +280,7 @@ export default function SettingsPage({
   const [auditActorTypeFilter, setAuditActorTypeFilter] = useState('')
   const [auditStatusFilter, setAuditStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
+  const [settingsMutationBusy, setSettingsMutationBusy] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
   const [requestError, setRequestError] = useState('')
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('general')
@@ -249,8 +290,13 @@ export default function SettingsPage({
   const [activeProjectSubsection, setActiveProjectSubsection] = useState<ProjectSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.projectSubsection', 'catalog', isProjectSettingsSubsectionId))
   const [activeIntegrationSubsection, setActiveIntegrationSubsection] = useState<IntegrationSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.integrationSubsection', 'library', isIntegrationSettingsSubsectionId))
   const [confirmingResetAll, setConfirmingResetAll] = useState(false)
-  const [customizingSections] = useState(false)
-  const [draggedSectionId, setDraggedSectionId] = useState<SettingsSectionId | null>(null)
+  // Raw text for capacity number inputs mid-edit: a blank or non-numeric draft
+  // must not snap the stored number to 0, it blocks save with a field error.
+  const [capacityFieldDrafts, setCapacityFieldDrafts] = useState<Record<string, string>>({})
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [saveRecovery, setSaveRecovery] = useState<'' | 'reload'>('')
+  // null = fleet API unavailable (pool validation is skipped).
+  const [fleetPools, setFleetPools] = useState<FleetPool[] | null>(null)
   const [sectionOrder, setSectionOrder] = useState<SettingsSectionId[]>(() => readSettingsSectionArray('apexload.settings.sectionOrder'))
   const [selectedDomainId, setSelectedDomainId] = useState(activeDomain?.id || domains[0]?.id || '')
   const [newDomainName, setNewDomainName] = useState('')
@@ -319,6 +365,33 @@ export default function SettingsPage({
   const [dataPoolRowJson, setDataPoolRowJson] = useState('{\n  "customer_id": "C-10001"\n}')
   const [editingDataPoolRowId, setEditingDataPoolRowId] = useState<string | null>(null)
   const [dataPoolActionError, setDataPoolActionError] = useState('')
+  const [dataPoolActionNotice, setDataPoolActionNotice] = useState('')
+  const [dataPoolRowsTotal, setDataPoolRowsTotal] = useState(0)
+  const [dataPoolRowsNextCursor, setDataPoolRowsNextCursor] = useState<string | null>(null)
+  const [dataPoolRowsHasMore, setDataPoolRowsHasMore] = useState(false)
+  const [dataPoolRowsLoadBusy, setDataPoolRowsLoadBusy] = useState(false)
+  const [dataPoolCatalogMutationBusy, setDataPoolCatalogMutationBusy] = useState(false)
+  // The draft binds the uploaded file to the pool it was previewed against, so
+  // a pool switch during the dry-run upload can never commit into another pool.
+  const [dataPoolImportDraft, setDataPoolImportDraft] = useState<{ poolId: string; file: File; preview: DataPoolImportResult } | null>(null)
+  const [dataPoolImportMode, setDataPoolImportMode] = useState<'append' | 'replace'>('append')
+  const [dataPoolImportBusy, setDataPoolImportBusy] = useState(false)
+  const [dataPoolExportBusy, setDataPoolExportBusy] = useState(false)
+  // Concurrency token captured when the editor opens; looking it up at save
+  // time would silently refresh past another writer's change.
+  const [editingDataPoolRowVersion, setEditingDataPoolRowVersion] = useState<number | null>(null)
+  const [dataPoolRowSaveBusy, setDataPoolRowSaveBusy] = useState(false)
+  const [dataPoolRowDeleteBusy, setDataPoolRowDeleteBusy] = useState(false)
+  const dataPoolImportInputRef = useRef<HTMLInputElement | null>(null)
+  const selectedDataPoolIdRef = useRef('')
+  const settingsLoadGenerationRef = useRef(0)
+  const settingsMutationBusyRef = useRef(false)
+  const dataPoolCatalogMutationBusyRef = useRef(false)
+  const dataPoolRowDeleteBusyRef = useRef(false)
+  const dataPoolLoadGenerationRef = useRef(0)
+  const dataPoolRowsLoadGenerationRef = useRef(0)
+  const activeDataPoolProjectIdRef = useRef(activeProject?.id)
+  activeDataPoolProjectIdRef.current = activeProject?.id
 
   const loadProjectGitHubDraft = useCallback((policy?: GitHubProjectPolicy) => {
     setProjectDraftGitHubEnabled(Boolean(policy?.enabled))
@@ -375,40 +448,65 @@ export default function SettingsPage({
     projectDraftGitHubSyncDirectory,
   ])
 
+  const loadSettings = useCallback(async () => {
+    const generation = ++settingsLoadGenerationRef.current
+    setLoading(true)
+    setRequestError('')
+    setSaveRecovery('')
+    try {
+      const response = normalizeDashboardSystemSettings(await api.getSystemSettings())
+      if (generation !== settingsLoadGenerationRef.current) return
+      let resolvedSettings = response
+      if (usesDefaultGeneratorCapacity(response)) {
+        try {
+          const inventory = await api.getSystemInventory()
+          if (generation !== settingsLoadGenerationRef.current) return
+          resolvedSettings = applyLiveGeneratorPresetToSettings(response, deriveLiveGeneratorPreset(inventory))
+        } catch {
+          if (generation !== settingsLoadGenerationRef.current) return
+          resolvedSettings = response
+        }
+      }
+      if (generation !== settingsLoadGenerationRef.current) return
+      setSettings(resolvedSettings)
+      setSavedSettings(resolvedSettings)
+      setCapacityFieldDrafts({})
+      setLoadFailed(false)
+    } catch (error: unknown) {
+      if (generation !== settingsLoadGenerationRef.current) return
+      setRequestError(getErrorMessage(error, 'Unable to load system settings'))
+      // Keep the form shape intact but disabled (loadFailed gates every
+      // fieldset), so fabricated defaults are never editable or fake-clean.
+      setSettings(DEFAULT_SETTINGS)
+      setSavedSettings(DEFAULT_SETTINGS)
+      setCapacityFieldDrafts({})
+      setLoadFailed(true)
+    } finally {
+      if (generation === settingsLoadGenerationRef.current) setLoading(false)
+    }
+  }, [api])
+
+  useEffect(() => {
+    void loadSettings()
+    return () => {
+      settingsLoadGenerationRef.current += 1
+    }
+  }, [loadSettings])
+
+  const fleetApi = useFleetApi()
   useEffect(() => {
     let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setRequestError('')
-      try {
-        const response = normalizeDashboardSystemSettings(await api.getSystemSettings())
-        let resolvedSettings = response
-        if (usesDefaultGeneratorCapacity(response)) {
-          try {
-            const inventory = await api.getSystemInventory()
-            resolvedSettings = applyLiveGeneratorPresetToSettings(response, deriveLiveGeneratorPreset(inventory))
-          } catch {
-            resolvedSettings = response
-          }
-        }
-        if (!cancelled) {
-          setSettings(resolvedSettings)
-          setSavedSettings(resolvedSettings)
-        }
-      } catch (error: unknown) {
-        if (!cancelled) {
-          setRequestError(getErrorMessage(error, 'Unable to load system settings'))
-          setSettings(DEFAULT_SETTINGS)
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
+    fleetApi.listFleetPools()
+      .then(response => {
+        if (!cancelled) setFleetPools(response.fleet_pools || [])
+      })
+      .catch(() => {
+        if (!cancelled) setFleetPools(null)
+      })
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [fleetApi])
 
   useEffect(() => {
     let cancelled = false
@@ -613,8 +711,23 @@ export default function SettingsPage({
     }
   }, [api])
 
-  const validationErrors = useMemo(() => validateSettings(settings), [settings])
-  const hasUnsavedChanges = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings])
+  const validationIssues = useMemo(() => [
+    ...validateSettingsDetailed(settings),
+    ...capacityDraftIssues(capacityFieldDrafts),
+    ...reservationPoolIssues(settings.capacity_planning.reservations, fleetPools),
+  ], [capacityFieldDrafts, fleetPools, settings])
+  const validationErrors = useMemo(() => validationIssues.map(issue => issue.message), [validationIssues])
+  const issuesBySection = useMemo(() => settingsIssuesBySection(validationIssues), [validationIssues])
+  const hasCapacityDraftChanges = useMemo(
+    () => Object.entries(capacityFieldDrafts).some(
+      ([field, value]) => value !== settingsDraftFieldValue(savedSettings, field),
+    ),
+    [capacityFieldDrafts, savedSettings],
+  )
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(settings) !== JSON.stringify(savedSettings) || hasCapacityDraftChanges,
+    [hasCapacityDraftChanges, settings, savedSettings],
+  )
   const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
   const canManageSystem = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system'), [effectiveAuthAccessResources])
   const canManageDomains = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_domains', false), [effectiveAuthAccessResources])
@@ -622,7 +735,11 @@ export default function SettingsPage({
   const canManageScripts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts'), [effectiveAuthAccessResources])
   const canManageServiceAccounts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_service_accounts'), [effectiveAuthAccessResources])
   const canViewAudit = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'view_audit'), [effectiveAuthAccessResources])
-  const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges && canManageSystem
+  const canSave = validationErrors.length === 0 && !loading && !loadFailed && !settingsMutationBusy && hasUnsavedChanges && canManageSystem
+  const formDisabled = loading || loadFailed || settingsMutationBusy || !canManageSystem
+  const renderFieldIssues = (field: string) => settingsIssuesForField(validationIssues, field).map(message => (
+    <p key={message} className="settings-error-inline settings-field-error" role="alert">{message}</p>
+  ))
   const selectedDomain = useMemo(
     () => domains.find(domain => domain.id === selectedDomainId) || domains.find(domain => domain.id === activeDomain?.id) || domains[0] || null,
     [activeDomain?.id, domains, selectedDomainId],
@@ -734,6 +851,15 @@ export default function SettingsPage({
     settings.capacity_planning.generator.memory_mb,
     settings.capacity_planning.reservations?.length,
   ])
+  const capacityIssueBadges = useMemo(() => {
+    const counts: Partial<Record<CapacitySettingsSubsectionId, number>> = {}
+    ;(issuesBySection.capacity ?? []).forEach(issue => {
+      if (!issue.subsection || !isCapacitySettingsSubsectionId(issue.subsection)) return
+      counts[issue.subsection] = (counts[issue.subsection] ?? 0) + 1
+    })
+    return counts
+  }, [issuesBySection])
+  const reservationUsage = useMemo(() => reservationUsageSummary(settings), [settings])
   const projectSubsectionSummaries = useMemo<Record<ProjectSettingsSubsectionId, string>>(() => ({
     catalog: `${projects.length} project${projects.length === 1 ? '' : 's'}`,
     limits: selectedProject ? selectedProject.name : 'Select project',
@@ -760,6 +886,13 @@ export default function SettingsPage({
     removeStoredItem('apexload.settings.focusSection')
     if (!SETTINGS_SECTIONS.some(section => section.id === targetSection)) return
     setActiveSection(targetSection)
+    const targetSubsection = readStoredString('apexload.settings.focusSubsection')
+    if (targetSubsection) {
+      removeStoredItem('apexload.settings.focusSubsection')
+      if (targetSection === 'capacity' && isCapacitySettingsSubsectionId(targetSubsection)) {
+        setActiveCapacitySubsection(targetSubsection)
+      }
+    }
     window.setTimeout(() => {
       document.getElementById(`settings-section-${targetSection}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
     }, 150)
@@ -880,42 +1013,99 @@ export default function SettingsPage({
     writeStoredJSON('apexload.settings.integrationSubsection', activeIntegrationSubsection)
   }, [activeIntegrationSubsection])
 
-  const loadDataPools = async (preferredId?: string) => {
+  const loadDataPools = useCallback(async (preferredId?: string): Promise<boolean> => {
+    const generation = ++dataPoolLoadGenerationRef.current
+    const projectId = activeProject?.id
     try {
-      const response = await api.listDataPools(activeProject?.id)
+      const response = await api.listDataPools(projectId)
+      if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
       const pools: SharedDataPool[] = response.data_pools || []
       setDataPools(pools)
-      const nextSelected = preferredId || selectedDataPoolId || pools[0]?.id || ''
+      // Only ids from this response are selectable: a project switch must not
+      // carry the previous project's selection into the new project's panel.
+      const isMember = (id?: string) => Boolean(id && pools.some(pool => pool.id === id))
+      const currentSelection = selectedDataPoolIdRef.current
+      const nextSelected = isMember(preferredId) ? (preferredId as string) : isMember(currentSelection) ? currentSelection : (pools[0]?.id || '')
+      // Row loading belongs to the selection effect, which carries the
+      // cancellation guard; fetching here as well raced it with stale results.
+      selectedDataPoolIdRef.current = nextSelected
       setSelectedDataPoolId(nextSelected)
-      if (nextSelected) {
-        const details = await api.getDataPool(nextSelected)
-        setDataPoolRows(details.rows || [])
-      } else {
+      if (!nextSelected) {
         setDataPoolRows([])
+        setDataPoolRowsTotal(0)
+        setDataPoolRowsNextCursor(null)
+        setDataPoolRowsHasMore(false)
       }
       setDataPoolActionError('')
+      return true
     } catch (error: unknown) {
-      setDataPoolActionError(getErrorMessage(error, 'Unable to load shared data pools'))
+      if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
+      setDataPoolActionError(getErrorMessage(error, 'Unable to load data pools'))
+      return false
     }
-  }
+  }, [activeProject?.id, api])
 
   useEffect(() => {
-    loadDataPools()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProject?.id])
+    // Never show or retain a selection from the previous project while the
+    // newly scoped request is in flight.
+    dataPoolLoadGenerationRef.current += 1
+    selectedDataPoolIdRef.current = ''
+    setDataPools([])
+    setSelectedDataPoolId('')
+    setDataPoolRows([])
+    setDataPoolRowsTotal(0)
+    setDataPoolRowsNextCursor(null)
+    setDataPoolRowsHasMore(false)
+    setDataPoolRowsLoadBusy(false)
+    setDataPoolActionNotice('')
+    void loadDataPools()
+    return () => {
+      dataPoolLoadGenerationRef.current += 1
+    }
+  }, [loadDataPools])
 
   useEffect(() => {
     let cancelled = false
+    const generation = ++dataPoolRowsLoadGenerationRef.current
+    selectedDataPoolIdRef.current = selectedDataPoolId
+    setDataPoolImportDraft(null)
+    setDataPoolImportMode('append')
+    setEditingDataPoolRowId(null)
+    setEditingDataPoolRowVersion(null)
+    setDataPoolRows([])
+    setDataPoolRowsTotal(0)
+    setDataPoolRowsNextCursor(null)
+    setDataPoolRowsHasMore(false)
+    setDataPoolRowsLoadBusy(Boolean(selectedDataPoolId))
     const loadRows = async () => {
       if (!selectedDataPoolId) {
         setDataPoolRows([])
+        setDataPoolRowsTotal(0)
+        setDataPoolRowsNextCursor(null)
+        setDataPoolRowsHasMore(false)
         return
       }
       try {
-        const response = await api.getDataPool(selectedDataPoolId)
-        if (!cancelled) setDataPoolRows(response.rows || [])
+        const response = await api.getDataPool(selectedDataPoolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: '' })
+        if (!cancelled && generation === dataPoolRowsLoadGenerationRef.current) {
+          const rows = response.rows || []
+          setDataPoolRows(rows)
+          setDataPoolRowsTotal(response.total ?? rows.length)
+          setDataPoolRowsNextCursor(response.next_cursor || null)
+          setDataPoolRowsHasMore(Boolean(response.next_cursor) && (response.has_more ?? true))
+        }
       } catch (error: unknown) {
-        if (!cancelled) setDataPoolActionError(getErrorMessage(error, 'Unable to load data pool rows'))
+        if (
+          !cancelled
+          && selectedDataPoolIdRef.current === selectedDataPoolId
+          && generation === dataPoolRowsLoadGenerationRef.current
+        ) {
+          setDataPoolActionError(getErrorMessage(error, 'Unable to load data pool rows'))
+        }
+      } finally {
+        if (!cancelled && generation === dataPoolRowsLoadGenerationRef.current) {
+          setDataPoolRowsLoadBusy(false)
+        }
       }
     }
     loadRows()
@@ -972,49 +1162,68 @@ export default function SettingsPage({
     setRequestError('')
   }
 
+  // Capacity number inputs are draft-backed: the raw text is always recorded so
+  // the input shows what the admin typed, and the settings number only changes
+  // when the draft parses. Blank drafts surface as required-field errors via
+  // capacityDraftIssues instead of writing 0. Out-of-range numbers are written
+  // unclamped so validation reports them rather than silently mutating input.
+  const updateCapacityDraftNumber = (field: string, value: string, apply: (parsed: number) => void) => {
+    setCapacityFieldDrafts(prev => ({ ...prev, [field]: value }))
+    const parsed = parseOptionalNumber(value)
+    if (parsed !== undefined) {
+      apply(parsed)
+    }
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const updateCapacityPlanning = (
     key: keyof DashboardSystemSettings['capacity_planning'],
     value: string,
   ) => {
-    setSettings((prev) => ({
-      ...prev,
-      capacity_planning: {
-        ...prev.capacity_planning,
-        [key]: key === 'availability' || key === 'generator' ? prev.capacity_planning[key] : Number(value),
-      },
-    }))
-    setSaveMessage('')
-    setRequestError('')
+    if (key !== 'headroom_pct') return
+    updateCapacityDraftNumber('capacity_planning.headroom_pct', value, parsed => {
+      setSettings(prev => ({
+        ...prev,
+        capacity_planning: { ...prev.capacity_planning, headroom_pct: parsed },
+      }))
+    })
   }
 
   const updateGenerator = (key: keyof DashboardSystemSettings['capacity_planning']['generator'], value: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      capacity_planning: {
-        ...prev.capacity_planning,
-        generator: {
-          ...prev.capacity_planning.generator,
-          [key]: Math.max(0, Number(value) || 0),
+    updateCapacityDraftNumber(`capacity_planning.generator.${key}`, value, parsed => {
+      setSettings(prev => ({
+        ...prev,
+        capacity_planning: {
+          ...prev.capacity_planning,
+          generator: { ...prev.capacity_planning.generator, [key]: parsed },
         },
-      },
-    }))
-    setSaveMessage('')
-    setRequestError('')
+      }))
+    })
   }
 
   const updateAvailability = (key: keyof DashboardSystemSettings['capacity_planning']['availability'], value: string) => {
-    setSettings((prev) => ({
-      ...prev,
-      capacity_planning: {
-        ...prev.capacity_planning,
-        availability: {
-          ...prev.capacity_planning.availability,
-          [key]: key === 'source' ? value : Math.max(0, Number(value) || 0),
+    if (key === 'source') {
+      setSettings(prev => ({
+        ...prev,
+        capacity_planning: {
+          ...prev.capacity_planning,
+          availability: { ...prev.capacity_planning.availability, source: value as DashboardSystemSettings['capacity_planning']['availability']['source'] },
         },
-      },
-    }))
-    setSaveMessage('')
-    setRequestError('')
+      }))
+      setSaveMessage('')
+      setRequestError('')
+      return
+    }
+    updateCapacityDraftNumber(`capacity_planning.availability.${key}`, value, parsed => {
+      setSettings(prev => ({
+        ...prev,
+        capacity_planning: {
+          ...prev.capacity_planning,
+          availability: { ...prev.capacity_planning.availability, [key]: parsed },
+        },
+      }))
+    })
   }
 
   const updateScheduleDefaults = (key: keyof DashboardSystemSettings['schedule_defaults'], value: string) => {
@@ -1049,6 +1258,8 @@ export default function SettingsPage({
         reservations: [...(prev.capacity_planning.reservations ?? []), { project_id: '', reserved_generators: 1 }],
       },
     }))
+    // Row indexes shift, so per-row draft keys would point at the wrong rows.
+    setCapacityFieldDrafts({})
     setSaveMessage('')
     setRequestError('')
   }
@@ -1062,6 +1273,8 @@ export default function SettingsPage({
       // Empty datetime inputs clear the window bound entirely.
       if (patch.starts_at === '') delete next.starts_at
       if (patch.ends_at === '') delete next.ends_at
+      // The "Global envelope" pool option clears the pool scope entirely.
+      if (patch.pool_id === '') delete next.pool_id
       reservations[index] = next
       return { ...prev, capacity_planning: { ...prev.capacity_planning, reservations } }
     })
@@ -1077,18 +1290,25 @@ export default function SettingsPage({
         reservations: (prev.capacity_planning.reservations ?? []).filter((_, i) => i !== index),
       },
     }))
+    setCapacityFieldDrafts({})
     setSaveMessage('')
     setRequestError('')
   }
 
   const updateArchiveRetention = (key: keyof DashboardSystemSettings['archive_retention'], value: boolean | string) => {
-    setSettings((prev) => ({
-      ...prev,
-      archive_retention: {
-        ...prev.archive_retention,
-        [key]: key === 'enabled' ? Boolean(value) : Math.max(1, Number(value) || 1),
-      },
-    }))
+    if (key === 'enabled') {
+      setSettings((prev) => ({
+        ...prev,
+        archive_retention: { ...prev.archive_retention, enabled: Boolean(value) },
+      }))
+    } else {
+      updateCapacityDraftNumber('archive_retention.default_retention_days', String(value), parsed => {
+        setSettings(prev => ({
+          ...prev,
+          archive_retention: { ...prev.archive_retention, default_retention_days: parsed },
+        }))
+      })
+    }
     setArchiveRetentionActionMessage('')
     setArchiveRetentionActionError('')
     setSaveMessage('')
@@ -1240,42 +1460,96 @@ export default function SettingsPage({
     }
   }, [api])
 
-  const saveSettings = useCallback(async () => {
-    if (!canSave) return
+  const saveSettings = useCallback(async (): Promise<boolean> => {
+    if (!canSave || settingsMutationBusyRef.current) return false
+    settingsMutationBusyRef.current = true
+    setSettingsMutationBusy(true)
     try {
       const response = normalizeDashboardSystemSettings(await api.updateSystemSettings(settings))
       setSettings(response)
       setSavedSettings(response)
+      setCapacityFieldDrafts({})
+      setSaveRecovery('')
       await refreshAuthDiagnostics()
       setSaveMessage('Settings saved.')
       setRequestError('')
+      return true
     } catch (error: unknown) {
-      setRequestError(getErrorMessage(error, 'Unable to save settings'))
+      const guidance = describeSettingsSaveError(
+        error instanceof ApiError ? error.status : undefined,
+        getErrorMessage(error, 'Unable to save settings'),
+      )
+      setRequestError(guidance.message)
+      setSaveRecovery(guidance.offerReload ? 'reload' : '')
+      if (guidance.focusSection) {
+        setActiveSection(guidance.focusSection)
+        if (guidance.focusCapacitySubsection) {
+          setActiveCapacitySubsection(guidance.focusCapacitySubsection)
+        }
+      }
       setSaveMessage('')
+      return false
+    } finally {
+      settingsMutationBusyRef.current = false
+      setSettingsMutationBusy(false)
     }
   }, [api, canSave, refreshAuthDiagnostics, settings])
 
   const resetSettings = useCallback(async () => {
+    if (!canManageSystem || settingsMutationBusyRef.current) return
+    settingsMutationBusyRef.current = true
+    setSettingsMutationBusy(true)
     try {
-      const response = normalizeDashboardSystemSettings(await api.updateSystemSettings(DEFAULT_SETTINGS))
+      const response = normalizeDashboardSystemSettings(await api.updateSystemSettings({
+        ...DEFAULT_SETTINGS,
+        revision: savedSettings.revision,
+      }))
       setSettings(response)
       setSavedSettings(response)
+      setCapacityFieldDrafts({})
+      setSaveRecovery('')
       await refreshAuthDiagnostics()
       setSaveMessage('Settings reset to defaults.')
       setRequestError('')
       setConfirmingResetAll(false)
     } catch (error: unknown) {
-      setRequestError(getErrorMessage(error, 'Unable to reset settings'))
+      const guidance = describeSettingsSaveError(
+        error instanceof ApiError ? error.status : undefined,
+        getErrorMessage(error, 'Unable to reset settings'),
+      )
+      setRequestError(guidance.message)
+      setSaveRecovery(guidance.offerReload ? 'reload' : '')
       setSaveMessage('')
       setConfirmingResetAll(false)
+    } finally {
+      settingsMutationBusyRef.current = false
+      setSettingsMutationBusy(false)
     }
-  }, [api, refreshAuthDiagnostics])
+  }, [api, canManageSystem, refreshAuthDiagnostics, savedSettings.revision])
 
   const discardChanges = useCallback(() => {
+    if (settingsMutationBusyRef.current) return
     setSettings(savedSettings)
+    setCapacityFieldDrafts({})
     setSaveMessage('')
     setRequestError('')
+    setSaveRecovery('')
   }, [savedSettings])
+
+  const hasUnsavedChangesRef = useRef(false)
+  hasUnsavedChangesRef.current = hasUnsavedChanges
+  const saveSettingsRef = useRef<() => Promise<boolean>>(async () => false)
+  saveSettingsRef.current = saveSettings
+  const discardChangesRef = useRef<() => void>(() => {})
+  discardChangesRef.current = discardChanges
+  const settingsNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'system-settings',
+    label: 'Settings',
+    isDirty: () => hasUnsavedChangesRef.current,
+    save: () => saveSettingsRef.current(),
+    discard: () => discardChangesRef.current(),
+  }), [])
+  useNavigationGuard(settingsNavigationGuard, hasUnsavedChanges)
 
   const applyGeneratorPreset = (preset: typeof GENERATOR_PRESETS[number]) => {
     setSettings(prev => ({
@@ -1290,6 +1564,7 @@ export default function SettingsPage({
         },
       },
     }))
+    setCapacityFieldDrafts({})
     setSaveMessage('')
     setRequestError('')
   }
@@ -1318,6 +1593,7 @@ export default function SettingsPage({
       const inventory = await api.getSystemInventory()
       const preset = deriveLiveGeneratorPreset(inventory)
       setSettings(prev => applyLiveGeneratorPresetToSettings(prev, preset))
+      setCapacityFieldDrafts({})
       setSaveMessage(`Estimated from ${preset.generatorCount} connected load generator pod${preset.generatorCount === 1 ? '' : 's'}: CPU set to ${(preset.cpuCores ?? settings.capacity_planning.generator.cpu_cores).toLocaleString()}, memory set to ${(preset.memoryMB ?? settings.capacity_planning.generator.memory_mb).toLocaleString()} MB, max VUsers set to ${preset.maxVUsers.toLocaleString()}, and configured available generators set to ${preset.configuredAvailableGenerators}. Network remains manual until live pod bandwidth limits are reported.`)
       setRequestError('')
     } catch (error: unknown) {
@@ -1328,8 +1604,7 @@ export default function SettingsPage({
 
   const orderedSectionIds = mergeSettingsOrder(sectionOrder)
   const getSectionOrder = (id: SettingsSectionId) => orderedSectionIds.indexOf(id)
-  const sectionClass = (id: SettingsSectionId) =>
-    `settings-card ${customizingSections ? 'editable' : ''} ${draggedSectionId === id ? 'dragging' : ''}`
+  const sectionClass = 'settings-card'
 
   const createApplication = async () => {
     const name = newApplicationName.trim()
@@ -1630,31 +1905,66 @@ export default function SettingsPage({
 
   const createDataPool = async () => {
     const name = dataPoolName.trim()
-    if (!name) return
+    if (!name || dataPoolCatalogMutationBusyRef.current) return
+    dataPoolCatalogMutationBusyRef.current = true
+    setDataPoolCatalogMutationBusy(true)
+    const projectId = activeProject?.id
+    setDataPoolActionNotice('')
     try {
-      const pool = await api.createDataPool({ name, description: dataPoolDescription.trim(), project_id: activeProject?.id })
+      const pool = await api.createDataPool({ name, description: dataPoolDescription.trim(), project_id: projectId })
+      const reloaded = await loadDataPools(pool.id)
+      if (activeDataPoolProjectIdRef.current !== projectId) return
       setDataPoolName('')
       setDataPoolDescription('')
-      await loadDataPools(pool.id)
       setDataPoolActionError('')
+      setDataPoolActionNotice(reloaded
+        ? `Created data pool "${pool.name}".`
+        : `Data pool "${pool.name}" was created, but the list could not be reloaded. The create succeeded—do not retry. Refresh the list to verify it.`)
     } catch (error: unknown) {
-      setDataPoolActionError(getErrorMessage(error, 'Unable to create data pool'))
+      if (activeDataPoolProjectIdRef.current === projectId) {
+        setDataPoolActionError(getErrorMessage(error, 'Unable to create data pool'))
+      }
+    } finally {
+      dataPoolCatalogMutationBusyRef.current = false
+      setDataPoolCatalogMutationBusy(false)
     }
   }
 
   const deleteDataPool = async (pool: SharedDataPool) => {
+    if (dataPoolCatalogMutationBusyRef.current) return
+    dataPoolCatalogMutationBusyRef.current = true
+    setDataPoolCatalogMutationBusy(true)
+    const projectId = activeProject?.id
     setConfirmDeletePool(null)
+    setDataPoolActionNotice('')
     try {
       await api.deleteDataPool(pool.id)
-      await loadDataPools('')
+      const reloaded = await loadDataPools('')
+      if (activeDataPoolProjectIdRef.current !== projectId) return
       setDataPoolActionError('')
+      setDataPoolActionNotice(reloaded
+        ? `Deleted data pool "${pool.name}".`
+        : `Data pool "${pool.name}" was deleted, but the list could not be reloaded. The delete succeeded—do not retry. Refresh the list to verify it.`)
     } catch (error: unknown) {
-      setDataPoolActionError(getErrorMessage(error, 'Unable to delete data pool'))
+      if (activeDataPoolProjectIdRef.current === projectId) {
+        setDataPoolActionError(getErrorMessage(error, 'Unable to delete data pool'))
+      }
+    } finally {
+      dataPoolCatalogMutationBusyRef.current = false
+      setDataPoolCatalogMutationBusy(false)
     }
   }
 
   const saveDataPoolRow = async () => {
-    if (!selectedDataPoolId) return
+    const poolId = selectedDataPoolId
+    const rowId = editingDataPoolRowId
+    const rowVersion = editingDataPoolRowVersion
+    const updating = Boolean(rowId)
+    if (!poolId) return
+    if (rowId && (!rowVersion || rowVersion <= 0)) {
+      setDataPoolActionError('This row is missing its edit version. Refresh the list and reopen the row before saving.')
+      return
+    }
     let parsed: Record<string, string>
     try {
       parsed = JSON.parse(dataPoolRowJson)
@@ -1665,25 +1975,239 @@ export default function SettingsPage({
       setDataPoolActionError(getErrorMessage(error, 'Invalid row JSON'))
       return
     }
+    setDataPoolRowSaveBusy(true)
+    setDataPoolActionNotice('')
     try {
-      if (editingDataPoolRowId) {
-        await api.updateDataPoolRow(selectedDataPoolId, editingDataPoolRowId, { data: parsed })
-      } else {
-        await api.createDataPoolRow(selectedDataPoolId, { data: parsed })
+      try {
+        if (rowId) {
+          await api.updateDataPoolRow(poolId, rowId, { data: parsed, version: rowVersion as number })
+        } else {
+          await api.createDataPoolRow(poolId, { data: parsed })
+        }
+      } catch (error: unknown) {
+        const conflict = error instanceof ApiError && error.status === 409
+        const deleted = error instanceof ApiError && error.status === 404 && Boolean(rowId)
+        if (conflict || deleted) {
+          try {
+            await refreshDataPoolRows(poolId)
+          } catch {
+            // Keep the mutation conflict as the primary outcome when its
+            // best-effort reconciliation read also fails.
+          }
+          // Close the editor: a blind retry against the refreshed list would
+          // otherwise pick up the new version and clobber the other writer
+          // (409), or keep 404ing against a row that no longer exists.
+          if (selectedDataPoolIdRef.current === poolId) {
+            setEditingDataPoolRowId(null)
+            setEditingDataPoolRowVersion(null)
+            setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
+            setDataPoolActionError(conflict
+              ? 'This row changed while you were editing. Reload the row list, then reopen the row to apply your change to the latest version.'
+              : 'This row was deleted while you were editing. Reload the row list before continuing.')
+          }
+          return
+        }
+        if (selectedDataPoolIdRef.current === poolId) {
+          setDataPoolActionError(getErrorMessage(error, 'Unable to save data row'))
+        }
+        return
       }
-      setEditingDataPoolRowId(null)
-      setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
-      const response = await api.getDataPool(selectedDataPoolId)
-      setDataPoolRows(response.rows || [])
-      setDataPoolActionError('')
-    } catch (error: unknown) {
-      setDataPoolActionError(getErrorMessage(error, 'Unable to save data row'))
+
+      // The mutation is authoritative at this point. A follow-up read is only
+      // reconciliation and must never turn a successful create/update into an
+      // error that invites a duplicate retry.
+      if (selectedDataPoolIdRef.current === poolId) {
+        setEditingDataPoolRowId(null)
+        setEditingDataPoolRowVersion(null)
+        setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
+      }
+      try {
+        const refreshed = await refreshDataPoolRows(poolId)
+        if (!refreshed) return
+      } catch {
+        if (selectedDataPoolIdRef.current === poolId) {
+          setDataPoolActionError('')
+          setDataPoolActionNotice(updating
+            ? 'Row updated, but the row list could not be reloaded. The save succeeded—do not retry the update. Refresh the list to verify it.'
+            : 'Row added, but the row list could not be reloaded. The save succeeded—do not add it again. Refresh the list to verify it.')
+        }
+        return
+      }
+      if (selectedDataPoolIdRef.current === poolId) {
+        setDataPoolActionError('')
+        setDataPoolActionNotice(updating ? 'Row updated.' : 'Row added.')
+      }
+    } finally {
+      setDataPoolRowSaveBusy(false)
     }
   }
 
   const editDataPoolRow = (row: SharedDataPoolRow) => {
     setEditingDataPoolRowId(row.id)
+    setEditingDataPoolRowVersion(row.version)
     setDataPoolRowJson(JSON.stringify(row.data || {}, null, 2))
+  }
+
+  const refreshDataPoolRows = async (poolId: string): Promise<boolean> => {
+    // A late mutation from a pool the user has left must not invalidate the
+    // active pool's generation or take ownership of its busy state.
+    if (selectedDataPoolIdRef.current !== poolId) return false
+    const generation = ++dataPoolRowsLoadGenerationRef.current
+    setDataPoolRowsLoadBusy(true)
+    try {
+      const details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor: '' })
+      if (selectedDataPoolIdRef.current !== poolId || generation !== dataPoolRowsLoadGenerationRef.current) return false
+      const rows = details.rows || []
+      setDataPoolRows(rows)
+      setDataPoolRowsTotal(details.total ?? rows.length)
+      setDataPoolRowsNextCursor(details.next_cursor || null)
+      setDataPoolRowsHasMore(Boolean(details.next_cursor) && (details.has_more ?? true))
+      return true
+    } finally {
+      if (selectedDataPoolIdRef.current === poolId && generation === dataPoolRowsLoadGenerationRef.current) {
+        setDataPoolRowsLoadBusy(false)
+      }
+    }
+  }
+
+  const loadMoreDataPoolRows = async () => {
+    const poolId = selectedDataPoolId
+    if (!poolId || dataPoolRowsLoadBusy || !dataPoolRowsHasMore || !dataPoolRowsNextCursor) return
+    const generation = dataPoolRowsLoadGenerationRef.current
+    const cursor = dataPoolRowsNextCursor
+    setDataPoolRowsLoadBusy(true)
+    try {
+      const details = await api.getDataPool(poolId, { limit: DATA_POOL_ROW_PAGE_SIZE, cursor })
+      if (selectedDataPoolIdRef.current !== poolId || generation !== dataPoolRowsLoadGenerationRef.current) return
+      const rows = details.rows || []
+      setDataPoolRows(current => {
+        const seen = new Set(current.map(row => row.id))
+        return [...current, ...rows.filter(row => !seen.has(row.id))]
+      })
+      setDataPoolRowsTotal(details.total ?? dataPoolRowsTotal)
+      setDataPoolRowsNextCursor(details.next_cursor || null)
+      setDataPoolRowsHasMore(Boolean(details.next_cursor) && (details.has_more ?? true))
+      setDataPoolActionError('')
+    } catch (error: unknown) {
+      if (selectedDataPoolIdRef.current === poolId && generation === dataPoolRowsLoadGenerationRef.current) {
+        if (error instanceof ApiError && error.status === 409) {
+          try {
+            await refreshDataPoolRows(poolId)
+            if (selectedDataPoolIdRef.current === poolId) {
+              setDataPoolActionError('')
+              setDataPoolActionNotice('Data pool rows changed while the next page was loading. The list was refreshed from the beginning.')
+            }
+          } catch {
+            if (selectedDataPoolIdRef.current === poolId) {
+              setDataPoolActionError('Data pool rows changed while the next page was loading, and the automatic refresh failed. Refresh the list before continuing.')
+            }
+          }
+          return
+        }
+        setDataPoolActionError(getErrorMessage(error, 'Unable to load more data pool rows'))
+      }
+    } finally {
+      if (selectedDataPoolIdRef.current === poolId && generation === dataPoolRowsLoadGenerationRef.current) {
+        setDataPoolRowsLoadBusy(false)
+      }
+    }
+  }
+
+  const beginDataPoolImport = async (file: File) => {
+    const poolId = selectedDataPoolId
+    if (!poolId) return
+    setDataPoolImportBusy(true)
+    setDataPoolActionNotice('')
+    try {
+      const preview = await api.importDataPoolRows(poolId, file, { dryRun: true })
+      if (selectedDataPoolIdRef.current !== poolId) return
+      setDataPoolImportDraft({ poolId, file, preview })
+      // append_warning means an append commit is known to be rejected. Start
+      // on the safe replacement path while keeping both choices visible.
+      setDataPoolImportMode(preview.mode === 'replace' || preview.append_warning ? 'replace' : 'append')
+      setDataPoolActionError('')
+    } catch (error: unknown) {
+      if (selectedDataPoolIdRef.current === poolId) {
+        setDataPoolImportDraft(null)
+        setDataPoolActionError(getErrorMessage(error, 'Unable to read the uploaded file'))
+      }
+    } finally {
+      setDataPoolImportBusy(false)
+    }
+  }
+
+  const cancelDataPoolImport = () => {
+    setDataPoolImportDraft(null)
+    setDataPoolImportMode('append')
+  }
+
+  const confirmDataPoolImport = async () => {
+    const draft = dataPoolImportDraft
+    if (!draft) return
+    const mode = dataPoolImportMode
+    const poolName = dataPools.find(candidate => candidate.id === draft.poolId)?.name || draft.poolId
+    setDataPoolImportBusy(true)
+    try {
+      let result: DataPoolImportResult
+      try {
+        result = await api.importDataPoolRows(draft.poolId, draft.file, { mode })
+      } catch (error: unknown) {
+        if (selectedDataPoolIdRef.current === draft.poolId) {
+          setDataPoolActionError(getErrorMessage(error, `Unable to import rows into "${poolName}"`))
+        }
+        return
+      }
+      if (selectedDataPoolIdRef.current === draft.poolId) {
+        setDataPoolImportDraft(null)
+        setDataPoolImportMode('append')
+        setEditingDataPoolRowId(null)
+        setEditingDataPoolRowVersion(null)
+        setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}')
+      }
+      try {
+        const refreshed = await refreshDataPoolRows(draft.poolId)
+        if (!refreshed) return
+      } catch {
+        if (selectedDataPoolIdRef.current === draft.poolId) {
+          setDataPoolActionError('')
+          setDataPoolActionNotice(`Imported ${result.imported ?? 0} row(s) in ${mode} mode, but the row list could not be reloaded. The import succeeded—do not import the file again. Refresh the list to verify it.`)
+        }
+        return
+      }
+      // Only speak for the pool the user is still looking at; the import
+      // itself is done either way.
+      if (selectedDataPoolIdRef.current === draft.poolId) {
+        setDataPoolActionError('')
+        setDataPoolActionNotice(`Imported ${result.imported ?? 0} row(s) in ${mode} mode; the pool now holds ${result.total ?? 0} row(s).`)
+      }
+    } finally {
+      setDataPoolImportBusy(false)
+    }
+  }
+
+  const exportDataPool = async () => {
+    const poolId = selectedDataPoolId
+    if (!poolId) return
+    const pool = dataPools.find(candidate => candidate.id === poolId)
+    setDataPoolExportBusy(true)
+    try {
+      const { blob, filename } = await api.exportDataPoolRows(poolId)
+      const safeName = (pool?.name || 'data-pool').trim().replace(/[^A-Za-z0-9_-]+/g, '-') || 'data-pool'
+      const downloadName = filename || `${safeName}.apexload.csv`
+      const outcome = await downloadBlob(blob, downloadName)
+      if (selectedDataPoolIdRef.current === poolId) {
+        setDataPoolActionError('')
+        if (outcome !== 'cancelled') {
+          setDataPoolActionNotice(`Exported ${downloadName}.`)
+        }
+      }
+    } catch (error: unknown) {
+      if (selectedDataPoolIdRef.current === poolId) {
+        setDataPoolActionError(getErrorMessage(error, `Unable to export data pool "${pool?.name || poolId}"`))
+      }
+    } finally {
+      setDataPoolExportBusy(false)
+    }
   }
 
   const addNotificationWebhook = () => {
@@ -1754,39 +2278,41 @@ export default function SettingsPage({
   }
 
   const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
-    if (!selectedDataPoolId) return
+    const poolId = row.pool_id
+    if (!poolId || dataPoolRowDeleteBusyRef.current) return
+    dataPoolRowDeleteBusyRef.current = true
+    setDataPoolRowDeleteBusy(true)
     setConfirmDeleteRow(null)
+    setDataPoolActionNotice('')
     try {
-      await api.deleteDataPoolRow(selectedDataPoolId, row.id)
-      const response = await api.getDataPool(selectedDataPoolId)
-      setDataPoolRows(response.rows || [])
-      setDataPoolActionError('')
-    } catch (error: unknown) {
-      setDataPoolActionError(getErrorMessage(error, 'Unable to delete data row'))
+      try {
+        await api.deleteDataPoolRow(poolId, row.id)
+      } catch (error: unknown) {
+        if (selectedDataPoolIdRef.current === poolId) {
+          setDataPoolActionError(getErrorMessage(error, 'Unable to delete data row'))
+        }
+        return
+      }
+      try {
+        const refreshed = await refreshDataPoolRows(poolId)
+        if (!refreshed) return
+      } catch {
+        if (selectedDataPoolIdRef.current === poolId) {
+          setDataPoolActionError('')
+          setDataPoolActionNotice('Row deleted, but the row list could not be reloaded. The delete succeeded—do not retry. Refresh the list to verify it.')
+        }
+        return
+      }
+      if (selectedDataPoolIdRef.current === poolId) {
+        setDataPoolActionError('')
+        setDataPoolActionNotice('Row deleted.')
+      }
+    } finally {
+      dataPoolRowDeleteBusyRef.current = false
+      setDataPoolRowDeleteBusy(false)
     }
   }
 
-  const handleSectionDragStart = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
-    if (!customizingSections) return
-    setDraggedSectionId(id)
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', id)
-  }
-
-  const handleSectionDragOver = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
-    if (!customizingSections || !draggedSectionId || draggedSectionId === id) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleSectionDrop = (event: DragEvent<HTMLDivElement>, id: SettingsSectionId) => {
-    if (!customizingSections) return
-    event.preventDefault()
-    const sourceId = (event.dataTransfer.getData('text/plain') || draggedSectionId) as SettingsSectionId | null
-    if (!sourceId) return
-    setSectionOrder(prev => moveSettingsSection(mergeSettingsOrder(prev), sourceId, id))
-    setDraggedSectionId(null)
-  }
 
   const renderSettingsSubnav = <SubsectionId extends string,>(
     ariaLabel: string,
@@ -1795,6 +2321,7 @@ export default function SettingsPage({
     activeSubsection: SubsectionId,
     setActiveSubsection: (id: SubsectionId) => void,
     summaries: Record<SubsectionId, string>,
+    badges?: Partial<Record<SubsectionId, number>>,
   ) => (
     <div className="settings-subnav" role="tablist" aria-label={ariaLabel}>
       {subsections.map(subsection => (
@@ -1809,6 +2336,11 @@ export default function SettingsPage({
           onClick={() => setActiveSubsection(subsection.id)}
         >
           <span className="settings-subnav-label">{subsection.title}</span>
+          {badges?.[subsection.id] ? (
+            <span className="repository-status-pill danger settings-subnav-badge" aria-label={`${badges[subsection.id]} validation issue${badges[subsection.id] === 1 ? '' : 's'}`}>
+              {badges[subsection.id]}
+            </span>
+          ) : null}
           <span className="settings-subnav-meta">{summaries[subsection.id]}</span>
         </button>
       ))}
@@ -1846,7 +2378,10 @@ export default function SettingsPage({
         value={activeSection}
         ariaLabel="Settings sections"
         className="settings-section-toggle settings-topbar-section-toggle new-test-view-toggle"
-        options={SETTINGS_SECTION_TOPBAR_OPTIONS}
+        options={SETTINGS_SECTION_TOPBAR_OPTIONS.map(option => ({
+          ...option,
+          badge: issuesBySection[option.value]?.length || undefined,
+        }))}
         onChange={setActiveSection}
       />
     ),
@@ -1867,12 +2402,13 @@ export default function SettingsPage({
         label: 'Discard Changes',
         compactLabel: 'Discard',
         onClick: discardChanges,
+        disabled: settingsMutationBusy,
         hidden: !hasUnsavedChanges,
         tone: 'secondary' as const,
       },
     ],
     priority: 20,
-  }), [activeSection, canSave, discardChanges, hasUnsavedChanges, saveSettings])
+  }), [activeSection, canSave, discardChanges, hasUnsavedChanges, issuesBySection, saveSettings, settingsMutationBusy])
 
   useTopbarContribution(settingsTopbarContribution)
 
@@ -1897,10 +2433,32 @@ export default function SettingsPage({
           {activeSectionMessages.errors.map(msg => (
             <p key={msg} className="settings-error-inline" role="alert">{msg}</p>
           ))}
-          {validationErrors.length > 0 && (
+          {loadFailed && !loading && (
+            <div className="settings-inline-actions">
+              <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy} onClick={() => { void loadSettings() }}>
+                Retry Loading Settings
+              </button>
+            </div>
+          )}
+          {saveRecovery === 'reload' && (
+            <div className="settings-inline-actions">
+              <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy} onClick={() => { void loadSettings() }}>
+                Reload Settings
+              </button>
+            </div>
+          )}
+          {validationIssues.length > 0 && (
             <div className="settings-errors" role="alert">
-              {validationErrors.map((error) => (
-                <p key={error}>{error}</p>
+              {(issuesBySection[activeSection] ?? []).map(issue => (
+                <p key={`${issue.field ?? ''}${issue.message}`}>{issue.message}</p>
+              ))}
+              {SETTINGS_SECTIONS.filter(section => section.id !== activeSection && (issuesBySection[section.id]?.length ?? 0) > 0).map(section => (
+                <p key={section.id} className="settings-inline-actions settings-errors-elsewhere">
+                  {issuesBySection[section.id]?.length} issue{issuesBySection[section.id]?.length === 1 ? '' : 's'} in {section.title}
+                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => setActiveSection(section.id)}>
+                    Review
+                  </button>
+                </p>
               ))}
             </div>
           )}
@@ -1908,15 +2466,11 @@ export default function SettingsPage({
           <div className="settings-grid">
         <div
           id="settings-section-general"
-          className={sectionClass('general')}
+          className={sectionClass}
           hidden={activeSection !== 'general'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'general')}
-          onDragOver={event => handleSectionDragOver(event, 'general')}
-          onDrop={event => handleSectionDrop(event, 'general')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('general') }}
         >
+          <fieldset className="settings-fieldset" disabled={formDisabled}>
           <div className="settings-subsection-layout">
             <div className="settings-subnav" role="tablist" aria-label="General settings categories">
               {GENERAL_SETTINGS_SUBSECTIONS.map(subsection => (
@@ -3012,20 +3566,17 @@ export default function SettingsPage({
               </div>
             </section>
           </div>
+          </fieldset>
         </div>
 
         <div
           id="settings-section-thresholds"
-          className={sectionClass('thresholds')}
+          className={sectionClass}
           hidden={activeSection !== 'thresholds'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'thresholds')}
-          onDragOver={event => handleSectionDragOver(event, 'thresholds')}
-          onDrop={event => handleSectionDrop(event, 'thresholds')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('thresholds') }}
         >
           <div className="settings-group">
+            <fieldset className="settings-fieldset" disabled={formDisabled}>
             <div className="settings-subgroup-header">
               <span className="settings-subgroup-title">Performance SLAs</span>
               <span className="settings-subgroup-desc">Alert and auto-stop thresholds for transaction-level quality gates</span>
@@ -3033,7 +3584,7 @@ export default function SettingsPage({
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Max Error Rate (%)</span>
-                <span className="setting-desc">Optional: alert/stop threshold for high error rate</span>
+                <span className="setting-desc">Optional: a breach auto-stops the run and raises a live alert plus configured notification webhooks</span>
               </div>
               <input
                 className="settings-input settings-input-number"
@@ -3046,10 +3597,11 @@ export default function SettingsPage({
                 placeholder="Not configured"
               />
             </div>
+            {renderFieldIssues('thresholds.max_error_rate_pct')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Max Response Time (P99 ms)</span>
-                <span className="setting-desc">Optional: alert threshold for P99 latency</span>
+                <span className="setting-desc">Optional: a breach raises a live alert and notification webhooks. Alert-only unless a stop sample count is set below.</span>
               </div>
               <input
                 className="settings-input settings-input-number"
@@ -3061,10 +3613,27 @@ export default function SettingsPage({
                 placeholder="Not configured"
               />
             </div>
+            {renderFieldIssues('thresholds.max_p99_latency_ms')}
+            <div className="setting-row">
+              <div className="setting-info">
+                <span className="setting-label">P99 Stop After Breached Samples</span>
+                <span className="setting-desc">Optional: auto-stop the run after this many consecutive metrics samples above Max Response Time (P99). Samples arrive once per metrics interval on local runs and about once per second on distributed runs. Blank keeps P99 alert-only.</span>
+              </div>
+              <input
+                className="settings-input settings-input-number"
+                type="number"
+                min={0}
+                step={1}
+                value={settings.thresholds.p99_latency_stop_consecutive_samples ?? ''}
+                onChange={(e) => updateThreshold('p99_latency_stop_consecutive_samples', e.target.value)}
+                placeholder="Alert only"
+              />
+            </div>
+            {renderFieldIssues('thresholds.p99_latency_stop_consecutive_samples')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Max Avg Server Processing (ms)</span>
-                <span className="setting-desc">Optional: alert threshold for the worst transaction server-processing average</span>
+                <span className="setting-desc">Optional: a breach raises a live alert for the worst transaction — it does not stop the run</span>
               </div>
               <input
                 className="settings-input settings-input-number"
@@ -3076,10 +3645,11 @@ export default function SettingsPage({
                 placeholder="Not configured"
               />
             </div>
+            {renderFieldIssues('thresholds.max_avg_server_processing_ms')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Max Avg Transfer Time (ms)</span>
-                <span className="setting-desc">Optional: alert threshold for the worst transaction transfer average</span>
+                <span className="setting-desc">Optional: a breach raises a live alert for the worst transaction — it does not stop the run</span>
               </div>
               <input
                 className="settings-input settings-input-number"
@@ -3091,9 +3661,10 @@ export default function SettingsPage({
                 placeholder="Not configured"
               />
             </div>
+            {renderFieldIssues('thresholds.max_avg_transfer_ms')}
             <div className="settings-subgroup-header">
               <span className="settings-subgroup-title">Fleet Alerts</span>
-              <span className="settings-subgroup-desc">Free-slot thresholds for generator capacity warnings and routed fleet alerts</span>
+              <span className="settings-subgroup-desc">Free-slot floors for routed fleet alerts and their webhooks. The per-generator capacity badge stays a relative heuristic (20% of that generator's own capacity), so these floors change alerts only.</span>
             </div>
             <div className="setting-row">
               <div className="setting-info">
@@ -3110,10 +3681,11 @@ export default function SettingsPage({
                 placeholder="Inventory default"
               />
             </div>
+            {renderFieldIssues('thresholds.fleet_constrained_available_slots')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Fleet Saturated Free Slots</span>
-                <span className="setting-desc">Optional: mark danger when a generator has this many or fewer free VUser slots</span>
+                <span className="setting-desc">Optional: mark danger when a generator has this many or fewer free VUser slots. Must be less than the constrained threshold.</span>
               </div>
               <input
                 className="settings-input settings-input-number"
@@ -3125,97 +3697,48 @@ export default function SettingsPage({
                 placeholder="0"
               />
             </div>
+            {renderFieldIssues('thresholds.fleet_saturated_available_slots')}
             <div className="settings-subgroup-header">
               <span className="settings-subgroup-title">Telemetry Pipeline</span>
-              <span className="settings-subgroup-desc">Time budgets for each stage of the live metrics pipeline: generator capture, transport, controller fan-out, and browser render</span>
+              <span className="settings-subgroup-desc">Time budgets for each stage of the live metrics pipeline: generator capture, transport, controller fan-out, and browser render. Breaches surface as telemetry diagnostics warnings.</span>
             </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Max Telemetry Sample Age (ms)</span>
-                <span className="setting-desc">End-to-end live telemetry budget from collection through controller publish</span>
+            {TELEMETRY_BUDGET_ROWS.map(row => (
+              <div key={row.key}>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label">{row.label}</span>
+                    <span className="setting-desc">{row.desc}</span>
+                  </div>
+                  <input
+                    className="settings-input settings-input-number"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={settings.thresholds[row.key] ?? ''}
+                    onChange={(e) => updateThreshold(row.key, e.target.value)}
+                    placeholder={String(TELEMETRY_BUDGET_DEFAULTS[row.key])}
+                  />
+                  {settings.thresholds[row.key] !== TELEMETRY_BUDGET_DEFAULTS[row.key] && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      onClick={() => updateThreshold(row.key, String(TELEMETRY_BUDGET_DEFAULTS[row.key]))}
+                    >
+                      Reset to default ({TELEMETRY_BUDGET_DEFAULTS[row.key]} ms)
+                    </button>
+                  )}
+                </div>
+                {renderFieldIssues(`thresholds.${row.key}`)}
               </div>
-              <input
-                className="settings-input settings-input-number"
-                type="number"
-                min={1}
-                step={1}
-                value={settings.thresholds.max_telemetry_sample_age_ms ?? ''}
-                onChange={(e) => updateThreshold('max_telemetry_sample_age_ms', e.target.value)}
-                placeholder="2000"
-              />
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Max Generator Lag (ms)</span>
-                <span className="setting-desc">Budget for generator-side capture, aggregation, and serialization</span>
-              </div>
-              <input
-                className="settings-input settings-input-number"
-                type="number"
-                min={1}
-                step={1}
-                value={settings.thresholds.max_telemetry_generator_lag_ms ?? ''}
-                onChange={(e) => updateThreshold('max_telemetry_generator_lag_ms', e.target.value)}
-                placeholder="500"
-              />
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Max Transport Lag (ms)</span>
-                <span className="setting-desc">Budget for generator-to-controller delivery</span>
-              </div>
-              <input
-                className="settings-input settings-input-number"
-                type="number"
-                min={1}
-                step={1}
-                value={settings.thresholds.max_telemetry_transport_lag_ms ?? ''}
-                onChange={(e) => updateThreshold('max_telemetry_transport_lag_ms', e.target.value)}
-                placeholder="500"
-              />
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Max Controller Fan-out (ms)</span>
-                <span className="setting-desc">Budget for controller receipt through websocket publish</span>
-              </div>
-              <input
-                className="settings-input settings-input-number"
-                type="number"
-                min={1}
-                step={1}
-                value={settings.thresholds.max_telemetry_controller_fanout_ms ?? ''}
-                onChange={(e) => updateThreshold('max_telemetry_controller_fanout_ms', e.target.value)}
-                placeholder="500"
-              />
-            </div>
-            <div className="setting-row">
-              <div className="setting-info">
-                <span className="setting-label">Max Browser Render Lag (ms)</span>
-                <span className="setting-desc">Budget reserved for dashboard client receive-to-render delay</span>
-              </div>
-              <input
-                className="settings-input settings-input-number"
-                type="number"
-                min={1}
-                step={1}
-                value={settings.thresholds.max_telemetry_browser_render_lag_ms ?? ''}
-                onChange={(e) => updateThreshold('max_telemetry_browser_render_lag_ms', e.target.value)}
-                placeholder="500"
-              />
-            </div>
+            ))}
+            </fieldset>
           </div>
         </div>
 
         <div
           id="settings-section-capacity"
-          className={sectionClass('capacity')}
+          className={sectionClass}
           hidden={activeSection !== 'capacity'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'capacity')}
-          onDragOver={event => handleSectionDragOver(event, 'capacity')}
-          onDrop={event => handleSectionDrop(event, 'capacity')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('capacity') }}
         >
           <div className="settings-subsection-layout">
@@ -3226,6 +3749,7 @@ export default function SettingsPage({
               activeCapacitySubsection,
               setActiveCapacitySubsection,
               capacitySubsectionSummaries,
+              capacityIssueBadges,
             )}
             <section
               id="settings-capacity-panel-availability"
@@ -3271,6 +3795,7 @@ export default function SettingsPage({
                 </div>
               )}
             </div>
+            <fieldset className="settings-fieldset" disabled={formDisabled}>
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Availability Source</span>
@@ -3295,10 +3820,12 @@ export default function SettingsPage({
                 type="number"
                 min={1}
                 step={1}
-                value={settings.capacity_planning.availability.configured_available_generators}
+                value={capacityFieldDrafts['capacity_planning.availability.configured_available_generators'] ?? String(settings.capacity_planning.availability.configured_available_generators)}
                 onChange={(e) => updateAvailability('configured_available_generators', e.target.value)}
               />
             </div>
+            {renderFieldIssues('capacity_planning.availability.configured_available_generators')}
+            </fieldset>
               </div>
             </section>
 
@@ -3310,6 +3837,7 @@ export default function SettingsPage({
               hidden={activeCapacitySubsection !== 'generator'}
             >
               <div className="settings-group">
+            <fieldset className="settings-fieldset" disabled={formDisabled}>
             <div className="settings-subsection">
               <div>
                 <span className="setting-label">Generator Presets</span>
@@ -3330,7 +3858,7 @@ export default function SettingsPage({
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Headroom (%)</span>
-                <span className="setting-desc">Reserve spare generator capacity when estimating pod requirements</span>
+                <span className="setting-desc">Reserve spare generator capacity when estimating pod requirements. 0 uses full generator capacity.</span>
               </div>
               <input
                 className="settings-input settings-input-number"
@@ -3338,10 +3866,11 @@ export default function SettingsPage({
                 min={0}
                 max={99}
                 step={1}
-                value={settings.capacity_planning.headroom_pct}
+                value={capacityFieldDrafts['capacity_planning.headroom_pct'] ?? String(settings.capacity_planning.headroom_pct)}
                 onChange={(e) => updateCapacityPlanning('headroom_pct', e.target.value)}
               />
             </div>
+            {renderFieldIssues('capacity_planning.headroom_pct')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Generator CPU (cores)</span>
@@ -3352,10 +3881,11 @@ export default function SettingsPage({
                 type="number"
                 min={0.1}
                 step={0.1}
-                value={settings.capacity_planning.generator.cpu_cores}
+                value={capacityFieldDrafts['capacity_planning.generator.cpu_cores'] ?? String(settings.capacity_planning.generator.cpu_cores)}
                 onChange={(e) => updateGenerator('cpu_cores', e.target.value)}
               />
             </div>
+            {renderFieldIssues('capacity_planning.generator.cpu_cores')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Generator Memory (MB)</span>
@@ -3366,10 +3896,11 @@ export default function SettingsPage({
                 type="number"
                 min={1}
                 step={256}
-                value={settings.capacity_planning.generator.memory_mb}
+                value={capacityFieldDrafts['capacity_planning.generator.memory_mb'] ?? String(settings.capacity_planning.generator.memory_mb)}
                 onChange={(e) => updateGenerator('memory_mb', e.target.value)}
               />
             </div>
+            {renderFieldIssues('capacity_planning.generator.memory_mb')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Generator Network (Mbps)</span>
@@ -3380,24 +3911,27 @@ export default function SettingsPage({
                 type="number"
                 min={1}
                 step={50}
-                value={settings.capacity_planning.generator.network_mbps}
+                value={capacityFieldDrafts['capacity_planning.generator.network_mbps'] ?? String(settings.capacity_planning.generator.network_mbps)}
                 onChange={(e) => updateGenerator('network_mbps', e.target.value)}
               />
             </div>
+            {renderFieldIssues('capacity_planning.generator.network_mbps')}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Generator Max VUsers</span>
-                <span className="setting-desc">Safety ceiling for VUsers that one generator should carry before headroom</span>
+                <span className="setting-desc">Planning ceiling for VUsers one generator should carry before headroom. Used for sizing and admission math; the hard runtime cap is each generator's own APEXLOAD_GENERATOR_MAX_VUSERS.</span>
               </div>
               <input
                 className="settings-input settings-input-number"
                 type="number"
                 min={1}
                 step={100}
-                value={settings.capacity_planning.generator.max_vusers}
+                value={capacityFieldDrafts['capacity_planning.generator.max_vusers'] ?? String(settings.capacity_planning.generator.max_vusers)}
                 onChange={(e) => updateGenerator('max_vusers', e.target.value)}
               />
             </div>
+            {renderFieldIssues('capacity_planning.generator.max_vusers')}
+            </fieldset>
               </div>
             </section>
 
@@ -3409,50 +3943,78 @@ export default function SettingsPage({
               hidden={activeCapacitySubsection !== 'reservations'}
             >
               <div className="settings-group">
+            <fieldset className="settings-fieldset" disabled={formDisabled}>
             <div className="settings-subsection" data-testid="capacity-reservations">
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Reserved Capacity Pools</span>
-                  <span className="setting-desc">Reserve generators for a project so other tenants are bounded to the shared pool. Add a time window to make it a timeslot; leave blank for an always-active reservation.</span>
+                  <span className="setting-desc">Reserve generators for a project so other tenants are bounded to the shared pool. Add a time window to make it a timeslot; leave blank for an always-active reservation. Scope a reservation to a fleet pool to draw from that pool's envelope instead of the global inventory.</span>
                 </div>
                 <strong>{(settings.capacity_planning.reservations ?? []).length}</strong>
               </div>
+              <p className={`settings-status-copy ${reservationUsage.overbooked ? 'text-danger' : ''}`} data-testid="reservation-usage-summary">
+                {reservationUsage.reserved} of {reservationUsage.configured} generator{reservationUsage.configured === 1 ? '' : 's'} reserved by always-active global reservations — {reservationUsage.overbooked ? `over by ${reservationUsage.reserved - reservationUsage.configured}` : `${reservationUsage.free} free`}.
+              </p>
               {(settings.capacity_planning.reservations ?? []).map((reservation, index) => (
-                <div key={`reservation-${index}`} className="capacity-reservation-row setting-row">
-                  <input
-                    className="settings-input"
-                    placeholder="Project ID"
-                    aria-label="Reservation project"
-                    value={reservation.project_id}
-                    onChange={event => updateReservation(index, { project_id: event.target.value })}
-                  />
-                  <input
-                    className="settings-input"
-                    inputMode="numeric"
-                    placeholder="Generators"
-                    aria-label="Reserved generators"
-                    value={String(reservation.reserved_generators)}
-                    onChange={event => updateReservation(index, { reserved_generators: Math.max(0, Number(event.target.value) || 0) })}
-                  />
-                  <input
-                    className="settings-input"
-                    type="datetime-local"
-                    aria-label="Reservation start"
-                    value={toDatetimeLocal(reservation.starts_at)}
-                    onChange={event => updateReservation(index, { starts_at: fromDatetimeLocal(event.target.value) })}
-                  />
-                  <input
-                    className="settings-input"
-                    type="datetime-local"
-                    aria-label="Reservation end"
-                    value={toDatetimeLocal(reservation.ends_at)}
-                    onChange={event => updateReservation(index, { ends_at: fromDatetimeLocal(event.target.value) })}
-                  />
-                  <button className="btn btn-ghost" type="button" onClick={() => removeReservation(index)}>Remove</button>
+                <div key={`reservation-${index}`}>
+                  <div className="capacity-reservation-row setting-row">
+                    <input
+                      className="settings-input"
+                      placeholder="Project ID"
+                      aria-label="Reservation project"
+                      value={reservation.project_id}
+                      onChange={event => updateReservation(index, { project_id: event.target.value })}
+                    />
+                    <input
+                      className="settings-input"
+                      inputMode="numeric"
+                      placeholder="Generators"
+                      aria-label="Reserved generators"
+                      value={capacityFieldDrafts[`capacity_planning.reservations.${index}.reserved_generators`] ?? String(reservation.reserved_generators)}
+                      onChange={event => updateCapacityDraftNumber(`capacity_planning.reservations.${index}.reserved_generators`, event.target.value, parsed => updateReservation(index, { reserved_generators: parsed }))}
+                    />
+                    <select
+                      className="settings-input"
+                      aria-label="Reservation pool"
+                      value={reservation.pool_id ?? ''}
+                      onChange={event => updateReservation(index, { pool_id: event.target.value })}
+                    >
+                      <option value="">Global envelope</option>
+                      {(fleetPools ?? []).map(pool => (
+                        <option key={pool.id} value={pool.id}>{pool.name}</option>
+                      ))}
+                      {reservation.pool_id && !(fleetPools ?? []).some(pool => pool.id === reservation.pool_id) && (
+                        <option value={reservation.pool_id}>
+                          {fleetPools === null ? `${reservation.pool_id} (pool list unavailable)` : `${reservation.pool_id} (unknown pool)`}
+                        </option>
+                      )}
+                    </select>
+                    <input
+                      className="settings-input"
+                      type="datetime-local"
+                      aria-label="Reservation start"
+                      value={toDatetimeLocal(reservation.starts_at)}
+                      onChange={event => updateReservation(index, { starts_at: fromDatetimeLocal(event.target.value) })}
+                    />
+                    <input
+                      className="settings-input"
+                      type="datetime-local"
+                      aria-label="Reservation end"
+                      value={toDatetimeLocal(reservation.ends_at)}
+                      onChange={event => updateReservation(index, { ends_at: fromDatetimeLocal(event.target.value) })}
+                    />
+                    <button className="btn btn-ghost" type="button" onClick={() => removeReservation(index)}>Remove</button>
+                  </div>
+                  {renderFieldIssues(`capacity_planning.reservations.${index}.project_id`)}
+                  {renderFieldIssues(`capacity_planning.reservations.${index}.reserved_generators`)}
+                  {renderFieldIssues(`capacity_planning.reservations.${index}.pool_id`)}
+                  {renderFieldIssues(`capacity_planning.reservations.${index}.window`)}
                 </div>
               ))}
+              {renderFieldIssues('capacity_planning.reservations')}
               <button className="btn btn-secondary" type="button" onClick={addReservation}>Add Reservation</button>
             </div>
+            </fieldset>
               </div>
             </section>
 
@@ -3464,6 +4026,7 @@ export default function SettingsPage({
               hidden={activeCapacitySubsection !== 'retention'}
             >
               <div className="settings-group">
+            <fieldset className="settings-fieldset" disabled={formDisabled}>
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
@@ -3496,10 +4059,11 @@ export default function SettingsPage({
                   type="number"
                   min={1}
                   step={1}
-                  value={settings.archive_retention.default_retention_days}
+                  value={capacityFieldDrafts['archive_retention.default_retention_days'] ?? String(settings.archive_retention.default_retention_days)}
                   onChange={event => updateArchiveRetention('default_retention_days', event.target.value)}
                 />
               </div>
+              {renderFieldIssues('archive_retention.default_retention_days')}
               <div className="settings-inline-actions">
                 <button className="btn btn-secondary" type="button" onClick={planArchiveRetention} disabled={!canManageSystem}>
                   Plan Retention
@@ -3530,6 +4094,7 @@ export default function SettingsPage({
                 </div>
               )}
             </div>
+            </fieldset>
               </div>
             </section>
           </div>
@@ -3537,13 +4102,8 @@ export default function SettingsPage({
 
         <div
           id="settings-section-domains"
-          className={sectionClass('domains')}
+          className={sectionClass}
           hidden={activeSection !== 'domains'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'domains')}
-          onDragOver={event => handleSectionDragOver(event, 'domains')}
-          onDrop={event => handleSectionDrop(event, 'domains')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('domains') }}
         >
           <div className="settings-group">
@@ -3692,13 +4252,8 @@ export default function SettingsPage({
 
         <div
           id="settings-section-applications"
-          className={sectionClass('applications')}
+          className={sectionClass}
           hidden={activeSection !== 'applications'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'applications')}
-          onDragOver={event => handleSectionDragOver(event, 'applications')}
-          onDrop={event => handleSectionDrop(event, 'applications')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('applications') }}
         >
           <div className="settings-group">
@@ -3836,13 +4391,8 @@ export default function SettingsPage({
 
         <div
           id="settings-section-projects"
-          className={sectionClass('projects')}
+          className={sectionClass}
           hidden={activeSection !== 'projects'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'projects')}
-          onDragOver={event => handleSectionDragOver(event, 'projects')}
-          onDrop={event => handleSectionDrop(event, 'projects')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('projects') }}
         >
           <div className="settings-subsection-layout">
@@ -4328,20 +4878,15 @@ export default function SettingsPage({
 
         <div
           id="settings-section-data-pools"
-          className={sectionClass('data-pools')}
+          className={sectionClass}
           hidden={activeSection !== 'data-pools'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'data-pools')}
-          onDragOver={event => handleSectionDragOver(event, 'data-pools')}
-          onDrop={event => handleSectionDrop(event, 'data-pools')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('data-pools') }}
         >
           <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
                 <div>
-                  <span className="setting-label">Reusable Data</span>
+                  <span className="setting-label">Create Data Pool</span>
                   <span className="setting-desc">Create CRUD data pools that scenarios can bind by alias and share across scripts.</span>
                 </div>
                 <strong>{dataPools.length}</strong>
@@ -4350,16 +4895,18 @@ export default function SettingsPage({
                 <input
                   className="settings-input"
                   value={dataPoolName}
+                  disabled={dataPoolCatalogMutationBusy}
                   onChange={event => setDataPoolName(event.target.value)}
                   placeholder="Pool name, e.g. Customer Accounts"
                 />
                 <input
                   className="settings-input"
                   value={dataPoolDescription}
+                  disabled={dataPoolCatalogMutationBusy}
                   onChange={event => setDataPoolDescription(event.target.value)}
                   placeholder="Optional description"
                 />
-                <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim()}>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy}>
                   Add Pool
                 </button>
               </div>
@@ -4371,18 +4918,32 @@ export default function SettingsPage({
                   <span className="setting-label">Data Pools</span>
                   <span className="setting-desc">Select a pool to inspect and edit its rows.</span>
                 </div>
-                <strong>{selectedDataPoolId ? `${dataPoolRows.length} rows` : 'No pool selected'}</strong>
+                <strong>
+                  {selectedDataPoolId
+                    ? (dataPoolRowsTotal > dataPoolRows.length
+                      ? `showing ${dataPoolRows.length} of ${dataPoolRowsTotal} rows`
+                      : `${dataPoolRowsTotal} rows`)
+                    : 'No pool selected'}
+                </strong>
               </div>
               {dataPools.length > 0 ? (
                 <div className="settings-release-list">
                   {dataPools.map(pool => (
                     <div key={pool.id} className={`settings-release-row ${selectedDataPoolId === pool.id ? 'active' : ''}`}>
-                      <button type="button" className="settings-release-main" onClick={() => setSelectedDataPoolId(pool.id)}>
+                      <button
+                        type="button"
+                        className="settings-release-main"
+                        onClick={() => {
+                          setDataPoolActionNotice('')
+                          selectedDataPoolIdRef.current = pool.id
+                          setSelectedDataPoolId(pool.id)
+                        }}
+                      >
                         <span>{pool.name}</span>
                         <small>{pool.description || `Updated ${new Date(pool.updated_at).toLocaleDateString()}`}</small>
                       </button>
                       <div className="settings-inline-actions">
-                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeletePool(pool)}>
+                        <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" disabled={dataPoolCatalogMutationBusy} onClick={() => setConfirmDeletePool(pool)}>
                           Delete
                         </button>
                       </div>
@@ -4390,9 +4951,11 @@ export default function SettingsPage({
                   ))}
                 </div>
               ) : (
-                <p className="new-test-inline-note">No shared data pools have been created yet.</p>
+                <p className="new-test-inline-note">No data pools have been created yet.</p>
               )}
             </div>
+
+            {dataPoolActionNotice && <p className="settings-notice" role="status" aria-live="polite">{dataPoolActionNotice}</p>}
 
             {selectedDataPoolId && (
               <div className="settings-subsection">
@@ -4410,15 +4973,99 @@ export default function SettingsPage({
                   onChange={event => setDataPoolRowJson(event.target.value)}
                 />
                 <div className="settings-inline-actions">
-                  <button className="btn btn-primary" type="button" onClick={saveDataPoolRow}>
-                    {editingDataPoolRowId ? 'Update Row' : 'Add Row'}
+                  <button className="btn btn-primary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={saveDataPoolRow}>
+                    {dataPoolRowSaveBusy ? 'Saving…' : editingDataPoolRowId ? 'Update Row' : 'Add Row'}
                   </button>
                   {editingDataPoolRowId && (
-                    <button className="btn btn-secondary" type="button" onClick={() => { setEditingDataPoolRowId(null); setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}') }}>
+                    <button className="btn btn-secondary" type="button" disabled={dataPoolRowDeleteBusy} onClick={() => { setEditingDataPoolRowId(null); setEditingDataPoolRowVersion(null); setDataPoolRowJson('{\n  "customer_id": "C-10001"\n}') }}>
                       Cancel Edit
                     </button>
                   )}
+                  <input
+                    ref={dataPoolImportInputRef}
+                    type="file"
+                    accept=".csv,.dat,.txt,.tsv"
+                    style={{ display: 'none' }}
+                    aria-label="Data pool CSV file"
+                    onChange={event => {
+                      const file = event.target.files?.[0]
+                      if (file) void beginDataPoolImport(file)
+                      event.target.value = ''
+                    }}
+                  />
+                  <button className="btn btn-secondary" type="button" disabled={dataPoolImportBusy} onClick={() => dataPoolImportInputRef.current?.click()}>
+                    {dataPoolImportBusy && !dataPoolImportDraft ? 'Reading…' : 'Import CSV…'}
+                  </button>
+                  <button className="btn btn-secondary" type="button" disabled={dataPoolExportBusy || dataPoolRowsTotal === 0} onClick={() => { void exportDataPool() }}>
+                    {dataPoolExportBusy ? 'Exporting…' : 'Export CSV'}
+                  </button>
                 </div>
+                {dataPoolImportDraft && dataPoolImportDraft.poolId === selectedDataPoolId && (
+                  <div className="settings-subsection" style={{ marginTop: 12 }}>
+                    <div className="settings-manager-summary">
+                      <div>
+                        <span className="setting-label">Import Preview</span>
+                        <span className="setting-desc" role="status">
+                          {dataPoolImportDraft.file.name} — {dataPoolImportDraft.preview.row_count ?? 0} row(s), columns: {(dataPoolImportDraft.preview.columns || []).join(', ') || 'none'}
+                        </span>
+                      </div>
+                      <strong>Dry run</strong>
+                    </div>
+                    {(dataPoolImportDraft.preview.warnings || []).map(warning => (
+                      <p key={warning} className="new-test-inline-note">{warning}</p>
+                    ))}
+                    {dataPoolImportMode === 'replace' && dataPoolRowsTotal > 0 && (
+                      <p className="new-test-inline-note" role="alert">
+                        Replace will first delete the {dataPoolRowsTotal} existing row(s) in this pool.
+                      </p>
+                    )}
+                    {dataPoolImportDraft.preview.append_warning && (
+                      <p className="new-test-inline-note" role="alert">{dataPoolImportDraft.preview.append_warning}</p>
+                    )}
+                    {(dataPoolImportDraft.preview.sample_rows || []).length > 0 && (
+                      <div className="script-parameter-table-wrap">
+                        <table className="script-parameter-table">
+                          <thead>
+                            <tr>
+                              {(dataPoolImportDraft.preview.columns || []).map(column => <th key={column}>{column}</th>)}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(dataPoolImportDraft.preview.sample_rows || []).map((sample, index) => (
+                              <tr key={index}>
+                                {(dataPoolImportDraft.preview.columns || []).map(column => (
+                                  <td key={column} className="cell-mono">{sample[column]}</td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div className="settings-inline-actions" style={{ marginTop: 8 }}>
+                      <select
+                        className="settings-input"
+                        value={dataPoolImportMode}
+                        disabled={dataPoolImportBusy}
+                        onChange={event => setDataPoolImportMode(event.target.value === 'replace' ? 'replace' : 'append')}
+                        aria-label="Import mode"
+                      >
+                        <option value="append">Append to existing rows</option>
+                        <option value="replace">Replace all rows</option>
+                      </select>
+                      <button className="btn btn-primary" type="button" disabled={dataPoolImportBusy} onClick={() => { void confirmDataPoolImport() }}>
+                        {dataPoolImportBusy
+                          ? 'Importing…'
+                          : dataPoolImportMode === 'replace'
+                            ? `Replace With ${dataPoolImportDraft.preview.row_count ?? 0} Row(s)`
+                            : `Append ${dataPoolImportDraft.preview.row_count ?? 0} Row(s)`}
+                      </button>
+                      <button className="btn btn-secondary" type="button" disabled={dataPoolImportBusy} onClick={cancelDataPoolImport}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {dataPoolRows.length > 0 ? (
                   <div className="script-parameter-table-wrap" style={{ marginTop: 16 }}>
@@ -4441,10 +5088,10 @@ export default function SettingsPage({
                             <td>{new Date(row.updated_at).toLocaleString()}</td>
                         <td aria-label="Data pool actions">
                               <div className="settings-inline-actions">
-                                <button className="btn btn-sm btn-secondary" type="button" onClick={() => editDataPoolRow(row)}>
+                                <button className="btn btn-sm btn-secondary" type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => editDataPoolRow(row)}>
                                   Edit
                                 </button>
-                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteRow(row)}>
+                                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} type="button" disabled={dataPoolRowSaveBusy || dataPoolRowDeleteBusy} onClick={() => setConfirmDeleteRow(row)}>
                                   Delete
                                 </button>
                               </div>
@@ -4453,6 +5100,20 @@ export default function SettingsPage({
                         ))}
                       </tbody>
                     </table>
+                    {dataPoolRowsHasMore && dataPoolRowsNextCursor && (
+                      <div className="settings-inline-actions" style={{ marginTop: 12 }}>
+                        <button
+                          className="btn btn-secondary"
+                          type="button"
+                          disabled={dataPoolRowsLoadBusy}
+                          onClick={() => { void loadMoreDataPoolRows() }}
+                        >
+                          {dataPoolRowsLoadBusy
+                            ? 'Loading rows…'
+                            : `Load more rows (${Math.max(dataPoolRowsTotal - dataPoolRows.length, 0)} remaining)`}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="new-test-inline-note">No rows in this data pool yet.</p>
@@ -4464,13 +5125,8 @@ export default function SettingsPage({
 
         <div
           id="settings-section-integrations"
-          className={sectionClass('integrations')}
+          className={sectionClass}
           hidden={activeSection !== 'integrations'}
-          draggable={customizingSections}
-          onDragStart={event => handleSectionDragStart(event, 'integrations')}
-          onDragOver={event => handleSectionDragOver(event, 'integrations')}
-          onDrop={event => handleSectionDrop(event, 'integrations')}
-          onDragEnd={() => setDraggedSectionId(null)}
           style={{ order: getSectionOrder('integrations') }}
         >
           <div className="settings-subsection-layout">
@@ -4784,7 +5440,7 @@ export default function SettingsPage({
           </div>
 
           <div className="settings-section-footer">
-            <button className="btn btn-danger-outline btn-sm" type="button" onClick={() => setConfirmingResetAll(true)} disabled={!canManageSystem}>
+            <button className="btn btn-danger-outline btn-sm" type="button" onClick={() => setConfirmingResetAll(true)} disabled={!canManageSystem || settingsMutationBusy}>
               Reset All Settings to Defaults
             </button>
           </div>
@@ -4843,6 +5499,7 @@ export default function SettingsPage({
         open={Boolean(confirmDeletePool)}
         title="Delete Data Pool"
         confirmLabel="Delete Data Pool"
+        confirmDisabled={dataPoolCatalogMutationBusy}
         onCancel={() => setConfirmDeletePool(null)}
         onConfirm={() => {
           if (confirmDeletePool) void deleteDataPool(confirmDeletePool)
@@ -4856,6 +5513,7 @@ export default function SettingsPage({
         open={Boolean(confirmDeleteRow)}
         title="Delete Data Row"
         confirmLabel="Delete Row"
+        confirmDisabled={dataPoolRowDeleteBusy}
         onCancel={() => setConfirmDeleteRow(null)}
         onConfirm={() => {
           if (confirmDeleteRow) void deleteDataPoolRow(confirmDeleteRow)
@@ -4868,6 +5526,7 @@ export default function SettingsPage({
         open={confirmingResetAll}
         title="Reset All Settings"
         confirmLabel="Reset All Settings"
+        confirmDisabled={settingsMutationBusy}
         onCancel={() => setConfirmingResetAll(false)}
         onConfirm={resetSettings}
       >

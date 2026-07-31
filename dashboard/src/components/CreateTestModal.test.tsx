@@ -87,47 +87,64 @@ describe('CreateTestModal', () => {
       await Promise.resolve()
     })
 
-    const pacingSelect = Array.from(container.querySelectorAll('select')).find(
-      select => select.parentElement?.textContent?.includes('Pacing'),
-    ) as HTMLSelectElement | undefined
-    const thinkTimeInput = Array.from(container.querySelectorAll('input')).find(
-      input => input.getAttribute('type') === 'number' && input.parentElement?.textContent?.includes('Think Time Override'),
-    ) as HTMLInputElement | undefined
+    // The test-level overrides mount the shared runtime editor: drive its tabs.
+    const clickRuntimeTab = async (label: string) => {
+      const tab = Array.from(container.querySelectorAll('button[role="tab"]')).find(
+        button => button.textContent?.trim() === label,
+      ) as HTMLButtonElement | undefined
+      expect(tab, `runtime tab ${label}`).toBeDefined()
+      await act(async () => {
+        tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
+    const controlByLabel = <T extends HTMLElement>(labelText: string, selector: string): T | undefined =>
+      Array.from(container.querySelectorAll('label'))
+        .find(label => label.textContent?.includes(labelText))
+        ?.querySelector(selector) as T | undefined
+
+    await clickRuntimeTab('Iteration Pacing')
+    const pacingSelect = controlByLabel<HTMLSelectElement>('Pacing', 'select')
+    expect(pacingSelect).toBeDefined()
+    if (!pacingSelect) return
+    await act(async () => {
+      pacingSelect.value = 'fixed_delay'
+      pacingSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const delayInput = controlByLabel<HTMLInputElement>('Pacing delay (seconds)', 'input')
+    expect(delayInput).toBeDefined()
+    if (!delayInput) return
+    await act(async () => {
+      setInputValue(delayInput, '1.2')
+    })
+
+    await clickRuntimeTab('Think Time')
+    const distributionSelect = controlByLabel<HTMLSelectElement>('Distribution', 'select')
+    expect(distributionSelect).toBeDefined()
+    if (!distributionSelect) return
+    await act(async () => {
+      distributionSelect.value = 'fixed'
+      distributionSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const thinkTimeInput = controlByLabel<HTMLInputElement>('Mean (ms)', 'input')
+    expect(thinkTimeInput).toBeDefined()
+    if (!thinkTimeInput) return
+    await act(async () => {
+      setInputValue(thinkTimeInput, '900')
+    })
+
+    await clickRuntimeTab('Error Handling')
     const continueOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Continue on error'),
     ) as HTMLInputElement | undefined
     const snapshotOnErrorCheckbox = Array.from(container.querySelectorAll('input')).find(
       input => input.getAttribute('type') === 'checkbox' && input.parentElement?.textContent?.includes('Snapshot on error'),
     ) as HTMLInputElement | undefined
-
-    expect(pacingSelect).toBeDefined()
-    expect(thinkTimeInput).toBeDefined()
     expect(continueOnErrorCheckbox).toBeDefined()
     expect(snapshotOnErrorCheckbox).toBeDefined()
-    if (!pacingSelect || !thinkTimeInput || !continueOnErrorCheckbox || !snapshotOnErrorCheckbox) {
-      return
-    }
+    if (!continueOnErrorCheckbox || !snapshotOnErrorCheckbox) return
     expect(continueOnErrorCheckbox.checked).toBe(false)
     expect(snapshotOnErrorCheckbox.checked).toBe(false)
-
     await act(async () => {
-      pacingSelect.value = 'fixed_delay'
-      pacingSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    const delayInput = Array.from(container.querySelectorAll('input')).find(
-      input => input.getAttribute('type') === 'number' && input.parentElement?.textContent?.includes('Pacing delay'),
-    ) as HTMLInputElement | undefined
-
-    expect(delayInput).toBeDefined()
-    if (!delayInput) {
-      return
-    }
-    expect(delayInput.parentElement?.textContent).toContain('Pacing delay (seconds)')
-
-    await act(async () => {
-      setInputValue(delayInput, '1.2')
-      setInputValue(thinkTimeInput, '900')
       continueOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       snapshotOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -149,11 +166,11 @@ describe('CreateTestModal', () => {
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
       duration: '1m',
       scenario_mode: 'vuser_driven',
-      runtime_settings: {
+      runtime_settings: expect.objectContaining({
         pacing: { type: 'fixed_delay', delay_ms: 1200 },
-        think_time: { type: 'fixed', mean_ms: 900, ignore: false },
-        error_handling: { continue_on_error: true, snapshot_on_error: true },
-      },
+        think_time: expect.objectContaining({ type: 'fixed', mean_ms: 900 }),
+        error_handling: expect.objectContaining({ continue_on_error: true, snapshot_on_error: true }),
+      }),
     }))
     expect(onCreated).toHaveBeenCalledWith({ id: 'test-1' })
   })

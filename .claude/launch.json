@@ -4,7 +4,10 @@
     {
       "name": "dashboard",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 4000,
       "autoPort": true,
       "cwd": "dashboard"
@@ -12,7 +15,10 @@
     {
       "name": "dashboard-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 4000,
       "autoPort": true,
       "cwd": "dashboard",
@@ -37,6 +43,54 @@
       "autoPort": false,
       "env": {
         "APEXLOAD_ADDR": ":8099"
+      }
+    },
+    {
+      "name": "controller-preview-2",
+      "runtimeExecutable": "./bin/controller",
+      "runtimeArgs": [],
+      "port": 8097,
+      "autoPort": false,
+      "env": {
+        "APEXLOAD_ADDR": ":8097"
+      }
+    },
+    {
+      "name": "dashboard-preview-2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 4000,
+      "autoPort": true,
+      "cwd": "dashboard",
+      "env": {
+        "APEXLOAD_API_PROXY": "http://localhost:8097"
+      }
+    },
+    {
+      "name": "controller-preview-3",
+      "runtimeExecutable": "./bin/controller",
+      "runtimeArgs": [],
+      "port": 8095,
+      "autoPort": false,
+      "env": {
+        "APEXLOAD_ADDR": ":8095"
+      }
+    },
+    {
+      "name": "dashboard-preview-3",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 4000,
+      "autoPort": true,
+      "cwd": "dashboard",
+      "env": {
+        "APEXLOAD_API_PROXY": "http://localhost:8095"
       }
     }
   ]

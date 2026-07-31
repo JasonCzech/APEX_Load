@@ -801,8 +801,32 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
 	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
 	cloned.ciSLADetails = append([]string(nil), test.ciSLADetails...)
+	cloned.thresholdAlertActive = cloneStringBoolMap(test.thresholdAlertActive)
+	cloned.thresholdAlertNotifiedAt = cloneStringTimeMap(test.thresholdAlertNotifiedAt)
 	cloned.remoteSecretSnapshots = nil
 	return &cloned
+}
+
+func cloneStringBoolMap(values map[string]bool) map[string]bool {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]bool, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneStringTimeMap(values map[string]time.Time) map[string]time.Time {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]time.Time, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {

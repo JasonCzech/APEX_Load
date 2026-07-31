@@ -27,6 +27,10 @@ const (
 )
 
 type SystemSettings struct {
+	// Revision is an internal opaque nonce persisted atomically with the settings
+	// document. Public handlers project it as "revision" and an ETag, never as
+	// "_revision".
+	Revision         string                   `json:"_revision,omitempty"`
 	General          GeneralSettings          `json:"general"`
 	Thresholds       ThresholdSettings        `json:"thresholds"`
 	CapacityPlanning CapacityPlanningSettings `json:"capacity_planning"`
@@ -240,14 +244,62 @@ func validSecretEnvVarName(name string) bool {
 
 // rawJSONHasKey reports whether the top-level JSON object in raw contains key.
 // Used to distinguish an omitted section (inherit default) from an explicitly
-// provided one (respect as given, including an explicit disable).
+// provided one (respect as given, including an explicit disable). Matching is
+// case-insensitive to mirror encoding/json field matching: a body sent as
+// {"Auth": ...} decodes into the Auth section, so it must count as present —
+// an exact-only probe would silently discard the caller's block with a 200.
 func rawJSONHasKey(raw string, key string) bool {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 		return false
 	}
-	_, ok := fields[key]
-	return ok
+	if _, ok := fields[key]; ok {
+		return true
+	}
+	for candidate := range fields {
+		if strings.EqualFold(candidate, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// rawJSONSectionHasKey reports whether the top-level object in raw contains
+// section and that section contains key. Used where a zero value is a legal
+// explicit choice (e.g. capacity_planning.headroom_pct: 0) that must be
+// distinguished from a legacy blob persisted before the field existed.
+// Case-insensitive like rawJSONHasKey, mirroring encoding/json matching.
+func rawJSONSectionHasKey(raw string, section string, key string) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return false
+	}
+	sectionRaw, ok := fields[section]
+	if !ok {
+		for candidate, value := range fields {
+			if strings.EqualFold(candidate, section) {
+				sectionRaw = value
+				ok = true
+				break
+			}
+		}
+	}
+	if !ok {
+		return false
+	}
+	var sectionFields map[string]json.RawMessage
+	if err := json.Unmarshal(sectionRaw, &sectionFields); err != nil {
+		return false
+	}
+	if _, ok := sectionFields[key]; ok {
+		return true
+	}
+	for candidate := range sectionFields {
+		if strings.EqualFold(candidate, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p PrometheusSettings) allowlistHosts() []string {
@@ -406,17 +458,40 @@ type GeneralSettings struct {
 }
 
 type ThresholdSettings struct {
-	MaxErrorRatePct                *float64 `json:"max_error_rate_pct,omitempty"`
-	MaxP99LatencyMs                *float64 `json:"max_p99_latency_ms,omitempty"`
-	MaxAvgServerProcessingMs       *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs               *float64 `json:"max_avg_transfer_ms,omitempty"`
+	// MaxErrorRatePct changes run state: a breach requests an automatic stop in
+	// addition to the live alert. MaxP99LatencyMs can also stop a run, but only
+	// when the opt-in P99LatencyStopConsecutiveSamples below is set; the
+	// remaining SLA thresholds raise live threshold_alert events (and
+	// notification webhooks) without ever stopping a run.
+	MaxErrorRatePct *float64 `json:"max_error_rate_pct,omitempty"`
+	MaxP99LatencyMs *float64 `json:"max_p99_latency_ms,omitempty"`
+	// P99LatencyStopConsecutiveSamples auto-stops a run after this many
+	// consecutive metrics evaluations with P99 above max_p99_latency_ms.
+	// Evaluation cadence is one per general.metrics_interval_seconds on local
+	// runs but a fixed ~1s on distributed runs (the distributed publish gate),
+	// so with a non-default interval the sustained window differs per backend.
+	// nil or 0 disables the auto-stop and keeps the P99 threshold alert-only.
+	// Paused/baseline windows report non-breaching samples and naturally reset
+	// the streak.
+	P99LatencyStopConsecutiveSamples *int     `json:"p99_latency_stop_consecutive_samples,omitempty"`
+	MaxAvgServerProcessingMs         *float64 `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs                 *float64 `json:"max_avg_transfer_ms,omitempty"`
+	// The five telemetry budgets are tri-state: omitted/nil means "default
+	// budget" (backfilled by normalizeThresholdSettings), an explicit 0 disables
+	// that budget's diagnostics, and a positive value is a custom budget.
 	MaxTelemetrySampleAgeMs        *float64 `json:"max_telemetry_sample_age_ms,omitempty"`
 	MaxTelemetryGeneratorLagMs     *float64 `json:"max_telemetry_generator_lag_ms,omitempty"`
 	MaxTelemetryTransportLagMs     *float64 `json:"max_telemetry_transport_lag_ms,omitempty"`
 	MaxTelemetryControllerFanoutMs *float64 `json:"max_telemetry_controller_fanout_ms,omitempty"`
 	MaxTelemetryBrowserRenderLagMs *float64 `json:"max_telemetry_browser_render_lag_ms,omitempty"`
-	FleetConstrainedAvailableSlots *int     `json:"fleet_constrained_available_slots,omitempty"`
-	FleetSaturatedAvailableSlots   *int     `json:"fleet_saturated_available_slots,omitempty"`
+	// The fleet slot floors affect fleet alerts (and their webhooks) only. The
+	// per-generator capacity_state badge is a relative heuristic (20% of that
+	// generator's own capacity, or the generator's self-reported state) so it
+	// stays meaningful across heterogeneous generator sizes; these absolute
+	// floors deliberately do not rewrite it. When both are set, saturated must
+	// be strictly below constrained or the constrained tier is unreachable.
+	FleetConstrainedAvailableSlots *int `json:"fleet_constrained_available_slots,omitempty"`
+	FleetSaturatedAvailableSlots   *int `json:"fleet_saturated_available_slots,omitempty"`
 }
 
 type CapacityPlanningSettings struct {
@@ -671,6 +746,10 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		v := *in.Thresholds.MaxP99LatencyMs
 		out.Thresholds.MaxP99LatencyMs = &v
 	}
+	if in.Thresholds.P99LatencyStopConsecutiveSamples != nil {
+		v := *in.Thresholds.P99LatencyStopConsecutiveSamples
+		out.Thresholds.P99LatencyStopConsecutiveSamples = &v
+	}
 	if in.Thresholds.MaxAvgServerProcessingMs != nil {
 		v := *in.Thresholds.MaxAvgServerProcessingMs
 		out.Thresholds.MaxAvgServerProcessingMs = &v
@@ -719,6 +798,9 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	if in.Auth.Scopes != nil {
 		out.Auth.Scopes = append([]string(nil), in.Auth.Scopes...)
 	}
+	if in.Auth.TrustedProxyCIDRs != nil {
+		out.Auth.TrustedProxyCIDRs = append([]string(nil), in.Auth.TrustedProxyCIDRs...)
+	}
 	out.GitHub = in.GitHub
 	if in.GitHub.Scopes != nil {
 		out.GitHub.Scopes = append([]string(nil), in.GitHub.Scopes...)
@@ -732,7 +814,11 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	return out
 }
 
-func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) SystemSettings {
+// normalizeLoadedSystemSettings backfills zero values left by blobs persisted
+// before a field existed. raw is the stored JSON the settings were decoded
+// from; pass "" when there is no raw form, which keeps the legacy
+// backfill-every-zero behavior.
+func normalizeLoadedSystemSettings(in SystemSettings, raw string, defaultMaxConcurrent int) SystemSettings {
 	defaults := defaultSystemSettings(defaultMaxConcurrent)
 	out := cloneSystemSettings(in)
 
@@ -745,7 +831,10 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	if out.General.MetricsIntervalSeconds == 0 {
 		out.General.MetricsIntervalSeconds = defaults.General.MetricsIntervalSeconds
 	}
-	if out.CapacityPlanning.HeadroomPct == 0 {
+	// 0 headroom is a legal explicit choice (validation accepts it and the
+	// advisory math handles it), so only backfill when the stored blob predates
+	// the field. Every current write always serializes the key (no omitempty).
+	if out.CapacityPlanning.HeadroomPct == 0 && !rawJSONSectionHasKey(raw, "capacity_planning", "headroom_pct") {
 		out.CapacityPlanning.HeadroomPct = defaults.CapacityPlanning.HeadroomPct
 	}
 	if out.CapacityPlanning.Generator.CPUCores == 0 {
@@ -815,6 +904,9 @@ func validateSystemSettings(settings SystemSettings) error {
 			return fmt.Errorf("thresholds.max_p99_latency_ms must be > 0")
 		}
 	}
+	if err := validateOptionalNonNegativeIntThreshold("thresholds.p99_latency_stop_consecutive_samples", settings.Thresholds.P99LatencyStopConsecutiveSamples); err != nil {
+		return err
+	}
 	if settings.Thresholds.MaxAvgServerProcessingMs != nil {
 		if *settings.Thresholds.MaxAvgServerProcessingMs <= 0 {
 			return fmt.Errorf("thresholds.max_avg_server_processing_ms must be > 0")
@@ -825,19 +917,19 @@ func validateSystemSettings(settings SystemSettings) error {
 			return fmt.Errorf("thresholds.max_avg_transfer_ms must be > 0")
 		}
 	}
-	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_sample_age_ms", settings.Thresholds.MaxTelemetrySampleAgeMs); err != nil {
+	if err := validateOptionalTelemetryBudget("thresholds.max_telemetry_sample_age_ms", settings.Thresholds.MaxTelemetrySampleAgeMs); err != nil {
 		return err
 	}
-	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_generator_lag_ms", settings.Thresholds.MaxTelemetryGeneratorLagMs); err != nil {
+	if err := validateOptionalTelemetryBudget("thresholds.max_telemetry_generator_lag_ms", settings.Thresholds.MaxTelemetryGeneratorLagMs); err != nil {
 		return err
 	}
-	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_transport_lag_ms", settings.Thresholds.MaxTelemetryTransportLagMs); err != nil {
+	if err := validateOptionalTelemetryBudget("thresholds.max_telemetry_transport_lag_ms", settings.Thresholds.MaxTelemetryTransportLagMs); err != nil {
 		return err
 	}
-	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_controller_fanout_ms", settings.Thresholds.MaxTelemetryControllerFanoutMs); err != nil {
+	if err := validateOptionalTelemetryBudget("thresholds.max_telemetry_controller_fanout_ms", settings.Thresholds.MaxTelemetryControllerFanoutMs); err != nil {
 		return err
 	}
-	if err := validateOptionalPositiveThreshold("thresholds.max_telemetry_browser_render_lag_ms", settings.Thresholds.MaxTelemetryBrowserRenderLagMs); err != nil {
+	if err := validateOptionalTelemetryBudget("thresholds.max_telemetry_browser_render_lag_ms", settings.Thresholds.MaxTelemetryBrowserRenderLagMs); err != nil {
 		return err
 	}
 	if err := validateOptionalNonNegativeIntThreshold("thresholds.fleet_constrained_available_slots", settings.Thresholds.FleetConstrainedAvailableSlots); err != nil {
@@ -936,6 +1028,35 @@ func validateSystemSettings(settings SystemSettings) error {
 	}
 	if err := validateClientAppSettings(settings.ClientApp); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateSystemSettingsUpdateRules enforces rules that are write-time only.
+// They must NOT live in validateSystemSettings: that function also gates the
+// load, HA-refresh, and capacity-fence paths, where a pre-existing blob that
+// fails validation is silently replaced with defaults (loadSystemSettings) or
+// bricks every subsequent fenced settings write (systemSettingsFromStoredValue).
+// Mirrors the validateReservationPools precedent.
+func validateSystemSettingsUpdateRules(settings SystemSettings) error {
+	// An inverted fleet pair makes the constrained alert tier unreachable: the
+	// saturated floor is evaluated first, so any generator at or below the
+	// constrained floor would already have matched saturated.
+	if t := settings.Thresholds; t.FleetSaturatedAvailableSlots != nil && t.FleetConstrainedAvailableSlots != nil &&
+		*t.FleetSaturatedAvailableSlots >= *t.FleetConstrainedAvailableSlots {
+		return fmt.Errorf("thresholds.fleet_saturated_available_slots must be less than thresholds.fleet_constrained_available_slots")
+	}
+	// The sustained-P99 stop counter is meaningless without a P99 level to
+	// breach; a hand-edited blob with only the counter must still load.
+	if t := settings.Thresholds; t.P99LatencyStopConsecutiveSamples != nil && *t.P99LatencyStopConsecutiveSamples > 0 && t.MaxP99LatencyMs == nil {
+		return fmt.Errorf("thresholds.p99_latency_stop_consecutive_samples requires thresholds.max_p99_latency_ms")
+	}
+	// An empty project would be stored inert (skipped from every capacity sum and
+	// dropped on the next load), silently reserving nothing.
+	for index, reservation := range settings.CapacityPlanning.Reservations {
+		if strings.TrimSpace(reservation.ProjectID) == "" {
+			return fmt.Errorf("capacity_planning.reservations[%d].project_id is required", index)
+		}
 	}
 	return nil
 }
@@ -1085,6 +1206,10 @@ func cloneThresholdSettings(in ThresholdSettings) ThresholdSettings {
 		v := *in.MaxP99LatencyMs
 		out.MaxP99LatencyMs = &v
 	}
+	if in.P99LatencyStopConsecutiveSamples != nil {
+		v := *in.P99LatencyStopConsecutiveSamples
+		out.P99LatencyStopConsecutiveSamples = &v
+	}
 	if in.MaxAvgServerProcessingMs != nil {
 		v := *in.MaxAvgServerProcessingMs
 		out.MaxAvgServerProcessingMs = &v
@@ -1132,6 +1257,15 @@ func float64Setting(value float64) *float64 {
 func validateOptionalPositiveThreshold(field string, value *float64) error {
 	if value != nil && *value <= 0 {
 		return fmt.Errorf("%s must be > 0", field)
+	}
+	return nil
+}
+
+// validateOptionalTelemetryBudget admits the budgets' tri-state contract:
+// nil (default budget), 0 (budget disabled), or a positive custom budget.
+func validateOptionalTelemetryBudget(field string, value *float64) error {
+	if value != nil && *value < 0 {
+		return fmt.Errorf("%s must be >= 0 (0 disables this telemetry budget)", field)
 	}
 	return nil
 }
@@ -1511,7 +1645,7 @@ func (tr *TestRunner) loadSystemSettings(defaultMaxConcurrent int) {
 	if !rawJSONHasKey(raw, "client_downloads") {
 		loaded.ClientDownloads = defaultClientDownloadsSettings()
 	}
-	loaded = normalizeLoadedSystemSettings(loaded, defaultMaxConcurrent)
+	loaded = normalizeLoadedSystemSettings(loaded, raw, defaultMaxConcurrent)
 	if err := validateSystemSettings(loaded); err != nil {
 		tr.maxTests = tr.settings.General.MaxConcurrentTests
 		return
@@ -1546,7 +1680,7 @@ func systemSettingsFromStoredValue(raw string, fallback SystemSettings) (SystemS
 	if !rawJSONHasKey(raw, "client_downloads") {
 		loaded.ClientDownloads = defaultClientDownloadsSettings()
 	}
-	loaded = normalizeLoadedSystemSettings(loaded, fallback.General.MaxConcurrentTests)
+	loaded = normalizeLoadedSystemSettings(loaded, raw, fallback.General.MaxConcurrentTests)
 	if err := validateSystemSettings(loaded); err != nil {
 		return SystemSettings{}, fmt.Errorf("validate durable system settings: %w", err)
 	}
@@ -1595,7 +1729,7 @@ func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 	tr.mu.RLock()
 	defaultMaxConcurrent := tr.settings.General.MaxConcurrentTests
 	tr.mu.RUnlock()
-	loaded = normalizeLoadedSystemSettings(loaded, defaultMaxConcurrent)
+	loaded = normalizeLoadedSystemSettings(loaded, raw, defaultMaxConcurrent)
 	if err := validateSystemSettings(loaded); err != nil {
 		return
 	}
@@ -1626,6 +1760,7 @@ func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
 	if err := json.Unmarshal(encoded, &response); err != nil {
 		return map[string]any{}
 	}
+	delete(response, "_revision")
 	notifications, _ := response["notifications"].(map[string]any)
 	webhooks, _ := notifications["webhooks"].([]any)
 	for _, item := range webhooks {
@@ -1644,28 +1779,51 @@ func redactedSystemSettingsResponse(settings SystemSettings) map[string]any {
 
 func preserveWriteOnlySystemSettingsSecrets(next SystemSettings, current SystemSettings) SystemSettings {
 	out := cloneSystemSettings(next)
-	currentTokens := make(map[string]string, len(current.Notifications.Webhooks))
+	type tokenCandidate struct {
+		count int
+		token string
+	}
+	currentTokens := make(map[string]tokenCandidate, len(current.Notifications.Webhooks))
 	for _, webhook := range current.Notifications.Webhooks {
-		if webhook.Format != notificationFormatDynatrace || strings.TrimSpace(webhook.APIToken) == "" {
+		if webhook.Format != notificationFormatDynatrace {
 			continue
 		}
-		currentTokens[notificationWebhookIdentity(webhook)] = webhook.APIToken
+		identity := notificationWebhookStableIdentity(webhook)
+		candidate := currentTokens[identity]
+		candidate.count++
+		if strings.TrimSpace(webhook.APIToken) != "" {
+			candidate.token = webhook.APIToken
+		}
+		currentTokens[identity] = candidate
+	}
+	nextCounts := make(map[string]int, len(out.Notifications.Webhooks))
+	for _, webhook := range out.Notifications.Webhooks {
+		if webhook.Format == notificationFormatDynatrace {
+			nextCounts[notificationWebhookStableIdentity(webhook)]++
+		}
 	}
 	for index := range out.Notifications.Webhooks {
 		webhook := &out.Notifications.Webhooks[index]
 		if webhook.Format != notificationFormatDynatrace || strings.TrimSpace(webhook.APIToken) != "" {
 			continue
 		}
-		webhook.APIToken = currentTokens[notificationWebhookIdentity(*webhook)]
+		identity := notificationWebhookStableIdentity(*webhook)
+		candidate := currentTokens[identity]
+		// A display-name edit must not discard a write-only token, but format+URL
+		// is safe as a stable identity only when it names exactly one webhook on
+		// each side. Duplicate endpoints fail closed instead of letting a reorder
+		// or rename move one integration's token onto another.
+		if candidate.count == 1 && nextCounts[identity] == 1 {
+			webhook.APIToken = candidate.token
+		}
 	}
 	return out
 }
 
-func notificationWebhookIdentity(webhook NotificationWebhookSettings) string {
+func notificationWebhookStableIdentity(webhook NotificationWebhookSettings) string {
 	return strings.Join([]string{
 		strings.ToLower(strings.TrimSpace(webhook.Format)),
 		strings.TrimSpace(webhook.URL),
-		strings.TrimSpace(webhook.Name),
 	}, "\x00")
 }
 
@@ -1710,14 +1868,28 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	if err := validateSystemSettings(normalized); err != nil {
 		return SystemSettings{}, err
 	}
+	if err := validateSystemSettingsUpdateRules(normalized); err != nil {
+		return SystemSettings{}, err
+	}
 	// Reject a pool-scoped reservation that points at a fleet pool which does not
 	// exist (write-time only — load-time validation must tolerate a pool deleted
 	// after the reservation was created).
 	if err := tr.validateReservationPools(normalized); err != nil {
 		return SystemSettings{}, err
 	}
+	// Canonicalize reservations before persisting so the on-disk shape matches
+	// what every load path produces (normalizeLoadedSystemSettings applies the
+	// same pass on restart). Runs after validation on purpose: rejection sees the
+	// caller's literal rows, and the overbooking fence normalizes both sides
+	// internally so this cannot change its admission math.
+	normalized.CapacityPlanning.Reservations = normalizeCapacityReservations(normalized.CapacityPlanning.Reservations)
 
 	normalized = cloneSystemSettings(normalized)
+	revision, err := newSystemSettingsRevision()
+	if err != nil {
+		return SystemSettings{}, fmt.Errorf("generate settings revision: %w", err)
+	}
+	normalized.Revision = revision
 	encoded, err := json.Marshal(normalized)
 	if err != nil {
 		return SystemSettings{}, fmt.Errorf("encode settings: %w", err)

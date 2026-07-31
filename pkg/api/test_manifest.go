@@ -473,7 +473,7 @@ func (tr *TestRunner) testManifestRuntimeChanges(testID string, refKey string, r
 	resourceIDs := []string{testID, refKey, requestedID}
 	seenResourceIDs := map[string]struct{}{}
 	seenEvents := map[string]struct{}{}
-	changes := []TestRunManifestRuntimeChange{}
+	auditEvents := []*storage.AuditEvent{}
 	warnings := []string{}
 	for _, resourceID := range resourceIDs {
 		resourceID = strings.TrimSpace(resourceID)
@@ -505,18 +505,46 @@ func (tr *TestRunner) testManifestRuntimeChanges(testID string, refKey string, r
 				continue
 			}
 			seenEvents[key] = struct{}{}
-			changes = append(changes, TestRunManifestRuntimeChange{
-				ID:               event.ID,
-				Action:           event.Action,
-				Label:            testManifestAuditLabel(event.Action),
-				Status:           event.Status,
-				ActorType:        event.ActorType,
-				ActorSubject:     event.ActorSubject,
-				ActorDisplayName: event.ActorDisplayName,
-				Details:          safeManifestAuditDetails(event.Details),
-				CreatedAt:        event.CreatedAt,
-			})
+			auditEvents = append(auditEvents, event)
 		}
+	}
+	terminalOperations := map[string]struct{}{}
+	for _, event := range auditEvents {
+		operationID, _ := event.Details["operation_id"].(string)
+		operationID = strings.TrimSpace(operationID)
+		if operationID != "" && event.Status != "pending" {
+			terminalOperations[operationID] = struct{}{}
+		}
+	}
+	changes := make([]TestRunManifestRuntimeChange, 0, len(auditEvents))
+	for _, event := range auditEvents {
+		operationID, _ := event.Details["operation_id"].(string)
+		operationID = strings.TrimSpace(operationID)
+		if event.Status == "pending" && operationID != "" {
+			if _, completed := terminalOperations[operationID]; completed {
+				continue
+			}
+		}
+		// Required-audit attempts that definitively failed or completed as a
+		// no-op are governance evidence, not runtime changes. An unmatched
+		// pending intent remains visible because its commit state is ambiguous.
+		if event.Action == "test.runtime_settings.update" || event.Action == "test.parameters.update" {
+			outcome, _ := event.Details["outcome"].(string)
+			if event.Status != "pending" && (event.Status != "success" || strings.TrimSpace(outcome) == "no_changes") {
+				continue
+			}
+		}
+		changes = append(changes, TestRunManifestRuntimeChange{
+			ID:               event.ID,
+			Action:           event.Action,
+			Label:            testManifestAuditLabel(event.Action),
+			Status:           event.Status,
+			ActorType:        event.ActorType,
+			ActorSubject:     event.ActorSubject,
+			ActorDisplayName: event.ActorDisplayName,
+			Details:          safeManifestAuditDetails(event.Details),
+			CreatedAt:        event.CreatedAt,
+		})
 	}
 	sort.SliceStable(changes, func(i, j int) bool {
 		return changes[i].CreatedAt.Before(changes[j].CreatedAt)
@@ -526,7 +554,8 @@ func (tr *TestRunner) testManifestRuntimeChanges(testID string, refKey string, r
 
 func testManifestAuditAction(action string) bool {
 	switch action {
-	case "test.create", "test.start", "test.pause", "test.resume", "test.stop", "test.abort", "test.vusers.scale", "test.duration.adjust":
+	case "test.create", "test.start", "test.pause", "test.resume", "test.stop", "test.abort", "test.vusers.scale", "test.duration.adjust",
+		"test.runtime_settings.update", "test.parameters.update":
 		return true
 	default:
 		return false
@@ -551,6 +580,10 @@ func testManifestAuditLabel(action string) string {
 		return "VUsers changed"
 	case "test.duration.adjust":
 		return "Duration changed"
+	case "test.runtime_settings.update":
+		return "Runtime settings changed"
+	case "test.parameters.update":
+		return "Parameters changed"
 	default:
 		return action
 	}
@@ -564,11 +597,14 @@ func safeManifestAuditDetails(details map[string]any) map[string]any {
 		"action":                 {},
 		"available_generators":   {},
 		"availability_source":    {},
+		"changes":                {},
 		"duration":               {},
+		"fields":                 {},
 		"group":                  {},
 		"name":                   {},
 		"new_duration":           {},
 		"override_requested":     {},
+		"parameters":             {},
 		"ramp_duration":          {},
 		"reason":                 {},
 		"recommended_generators": {},

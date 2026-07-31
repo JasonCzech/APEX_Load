@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Area,
   AreaChart,
@@ -15,7 +16,7 @@ import StatusBadge from './StatusBadge'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus } from '../utils/testStatusUtils'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
+import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
@@ -29,6 +30,10 @@ import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltip
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import TestNotesDialog from './TestNotesDialog'
+import GroupParametersDialog from './GroupParametersDialog'
+import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
+import ThresholdAlertStrip from './ThresholdAlertStrip'
+import type { ThresholdAlertEntry } from '../thresholdAlerts'
 import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
@@ -40,6 +45,7 @@ type VariantId = 'ops' | 'grafana'
 type CommandTableTab = 'scenario' | 'errors' | 'infrastructure'
 type SortDirection = 'asc' | 'desc'
 type TargetTransitionMode = 'immediate' | 'gradual'
+export type GroupSettingsDialogKind = 'runtime-settings' | 'parameters'
 
 export function historicalGroupSummaryQuery(groups: string[]) {
   return {
@@ -55,6 +61,10 @@ interface CommandCenterPrototypeProps {
   initialTest?: TestSummary
   applicationId?: string
   projectId?: string
+  // Live global SLA threshold breaches for this run (Settings → Thresholds),
+  // rendered as a compact strip above the cockpit views.
+  thresholdAlerts?: ThresholdAlertEntry[]
+  onAcknowledgeThresholdAlert?: (key: string) => void
   onOpenExecution?: (testId: string) => void
   onOpenArchive?: (testId: string) => void
   onOpenResults?: () => void
@@ -921,6 +931,8 @@ export default function CommandCenterPrototype({
   initialTest,
   applicationId,
   projectId,
+  thresholdAlerts = [],
+  onAcknowledgeThresholdAlert,
   onOpenExecution,
   onOpenArchive,
   onOpenResults,
@@ -960,6 +972,14 @@ export default function CommandCenterPrototype({
   const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const [showNotes, setShowNotes] = useState(false)
+  const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind } | null>(null)
+
+  // An open group dialog is bound to the run it was opened for; a run switch
+  // (explicit or via auto-discovery) must not silently repoint it, and a stale
+  // entry must not reopen against the next discovered run.
+  useEffect(() => {
+    setGroupSettingsDialog(null)
+  }, [testId])
   const syncedTargetsRef = useRef<Record<string, number>>({})
   const syncedTargetTestIdRef = useRef<string | null>(null)
   const [state, setState] = useState<CommandCenterState>(() => ({
@@ -1368,6 +1388,30 @@ export default function CommandCenterPrototype({
     setState(prev => ({ ...prev, runStatus, feedback }))
   }
 
+  const openGroupSettings = useCallback((group: string, kind: GroupSettingsDialogKind) => {
+    setGroupSettingsDialog({ group, kind })
+  }, [])
+
+  const handleGroupRuntimeSettingsSaved = useCallback((result: TestGroupRuntimeSettingsUpdateResult) => {
+    setGroupSettingsDialog(null)
+    setState(prev => ({
+      ...prev,
+      feedback: result.no_changes
+        ? `Runtime settings for ${result.group} are unchanged.`
+        : `Runtime settings saved to this run for ${result.group} (${result.fields.join(', ')}). The change is recorded in the run's change history.`,
+    }))
+  }, [])
+
+  const handleGroupParametersSaved = useCallback((result: TestGroupParametersUpdateResult) => {
+    setGroupSettingsDialog(null)
+    setState(prev => ({
+      ...prev,
+      feedback: result.no_changes
+        ? `Parameters for ${result.group} are unchanged.`
+        : `Parameters saved to this run for ${result.group} (${result.changed.join(', ')}). The change is recorded in the run's change history.`,
+    }))
+  }, [])
+
   const updateLiveStatus = useCallback((status: TestStatus, feedbackMessage: string) => {
     setLiveTest(prev => prev ? { ...prev, status } : prev)
     setState(prev => ({ ...prev, feedback: feedbackMessage }))
@@ -1604,6 +1648,22 @@ export default function CommandCenterPrototype({
           onClose={() => setShowNotes(false)}
         />
       )}
+      {groupSettingsDialog && testId && liveMode && groupSettingsDialog.kind === 'runtime-settings' && (
+        <GroupRuntimeSettingsDialog
+          testId={testId}
+          groupName={groupSettingsDialog.group}
+          onClose={() => setGroupSettingsDialog(null)}
+          onSaved={handleGroupRuntimeSettingsSaved}
+        />
+      )}
+      {groupSettingsDialog && testId && liveMode && groupSettingsDialog.kind === 'parameters' && (
+        <GroupParametersDialog
+          testId={testId}
+          groupName={groupSettingsDialog.group}
+          onClose={() => setGroupSettingsDialog(null)}
+          onSaved={handleGroupParametersSaved}
+        />
+      )}
       {historicalRun && (
         <CommandCenterHistoricalBanner
           status={runStatus}
@@ -1612,6 +1672,7 @@ export default function CommandCenterPrototype({
           onOpenResults={onOpenResults}
         />
       )}
+      <ThresholdAlertStrip alerts={thresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
 
       {variant === 'ops' && (
         <OpsCockpitView
@@ -1640,6 +1701,7 @@ export default function CommandCenterPrototype({
           onTargetChange={changeTarget}
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
+          onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
         />
       )}
       {variant === 'grafana' && (
@@ -1961,6 +2023,7 @@ interface OpsCockpitViewProps {
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
   onErrorSelect: (errorId: string) => void
+  onOpenGroupSettings?: (groupName: string, kind: GroupSettingsDialogKind) => void
 }
 
 interface GrafanaWallViewProps extends CommonViewProps {
@@ -2003,6 +2066,7 @@ function OpsCockpitView({
   onTargetChange,
   onApplyTarget,
   onErrorSelect,
+  onOpenGroupSettings,
 }: OpsCockpitViewProps) {
   return (
     <section className="command-layout command-layout-ops" aria-label="Ops cockpit mockup">
@@ -2020,6 +2084,7 @@ function OpsCockpitView({
             targetRampDuration={targetRampDuration}
             onTargetTransitionModeChange={onTargetTransitionModeChange}
             onTargetRampDurationChange={onTargetRampDurationChange}
+            onOpenGroupSettings={onOpenGroupSettings}
           />
           <LoadModelPanel
             groups={groups}
@@ -3591,6 +3656,7 @@ function GroupLoadTable({
   onTargetRampDurationChange,
   onTargetChange,
   onApplyTarget,
+  onOpenGroupSettings,
 }: {
   groups: CommandGroup[]
   compact: boolean
@@ -3602,7 +3668,82 @@ function GroupLoadTable({
   onTargetRampDurationChange: (value: string) => void
   onTargetChange: (groupName: string, value: number) => void
   onApplyTarget: (groupName: string, value: number) => void
+  onOpenGroupSettings?: (groupName: string, kind: GroupSettingsDialogKind) => void
 }) {
+  const [groupMenu, setGroupMenu] = useState<{ group: string; x: number; y: number } | null>(null)
+  const groupMenuRef = useRef<HTMLDivElement | null>(null)
+  const firstMenuItemRef = useRef<HTMLButtonElement | null>(null)
+  const groupMenuAnchorRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    if (!groupMenu) return undefined
+    firstMenuItemRef.current?.focus()
+    const dismissOnOutsidePress = (event: MouseEvent) => {
+      if (groupMenuRef.current && event.target instanceof Node && !groupMenuRef.current.contains(event.target)) {
+        setGroupMenu(null)
+      }
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setGroupMenu(null)
+        // Escape is a keyboard dismissal: return focus to the row that opened
+        // the menu (outside clicks intentionally keep the clicked target).
+        if (groupMenuAnchorRef.current?.isConnected) groupMenuAnchorRef.current.focus()
+      }
+    }
+    const dismissOnViewportChange = () => setGroupMenu(null)
+    window.addEventListener('mousedown', dismissOnOutsidePress)
+    window.addEventListener('keydown', dismissOnEscape)
+    window.addEventListener('resize', dismissOnViewportChange)
+    // Capture-phase so scrolls inside nested containers also dismiss the
+    // fixed-position menu before it drifts off its row.
+    window.addEventListener('scroll', dismissOnViewportChange, true)
+    return () => {
+      window.removeEventListener('mousedown', dismissOnOutsidePress)
+      window.removeEventListener('keydown', dismissOnEscape)
+      window.removeEventListener('resize', dismissOnViewportChange)
+      window.removeEventListener('scroll', dismissOnViewportChange, true)
+    }
+  }, [groupMenu])
+
+  const openGroupMenu = (groupName: string, x: number, y: number, anchor: HTMLElement | null) => {
+    if (!onOpenGroupSettings) return
+    groupMenuAnchorRef.current = anchor
+    const viewportPadding = 8
+    const maxX = Math.max(viewportPadding, window.innerWidth - 220)
+    const maxY = Math.max(viewportPadding, window.innerHeight - 120)
+    setGroupMenu({
+      group: groupName,
+      x: Math.min(Math.max(viewportPadding, x), maxX),
+      y: Math.min(Math.max(viewportPadding, y), maxY),
+    })
+  }
+
+  const selectGroupMenuItem = (kind: GroupSettingsDialogKind) => {
+    const groupName = groupMenu?.group
+    setGroupMenu(null)
+    if (groupName) onOpenGroupSettings?.(groupName, kind)
+  }
+
+  const handleGroupMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(groupMenuRef.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') ?? [])
+    if (items.length === 0) return
+    const currentIndex = items.findIndex(item => item === document.activeElement)
+    let nextIndex = -1
+    if (event.key === 'ArrowDown') nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length
+    else if (event.key === 'ArrowUp') nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = items.length - 1
+    else if (event.key === 'Tab') {
+      setGroupMenu(null)
+      return
+    }
+    if (nextIndex >= 0) {
+      event.preventDefault()
+      items[nextIndex].focus()
+    }
+  }
+
   const targetMode = groups[0]?.targetMode ?? 'vusers'
   const targetHeader = targetMode === 'tps' ? 'Target TPS' : 'Target'
   const showTransitionControls = !readOnly && targetMode === 'vusers' && groups.length > 0
@@ -3676,13 +3817,58 @@ function GroupLoadTable({
           const goalContext = [group.protocol, suggested, guardrail].filter(Boolean).join(' / ')
           const gapText = isGoalTarget && group.throughputGapPct !== undefined ? `gap ${formatPercent(group.throughputGapPct)}` : ''
           return (
-            <div key={group.key} className={`command-group-row ${isGoalTarget ? 'goal-target' : ''}`} role="row">
-              <span role="cell" className="command-group-name">
-                <i style={{ background: group.color }} />
-                <span>
-                  <strong>{group.name}</strong>
-                  <small>{goalContext || group.protocol}</small>
-                </span>
+            <div
+              key={group.key}
+              className={`command-group-row ${isGoalTarget ? 'goal-target' : ''}`}
+              role="row"
+              tabIndex={onOpenGroupSettings ? 0 : undefined}
+              onContextMenu={onOpenGroupSettings ? (event) => {
+                event.preventDefault()
+                openGroupMenu(group.name, event.clientX, event.clientY, event.currentTarget.querySelector<HTMLElement>('.command-group-name'))
+              } : undefined}
+              onKeyDown={onOpenGroupSettings ? (event) => {
+                if (event.target !== event.currentTarget) return
+                if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                  event.preventDefault()
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  openGroupMenu(group.name, rect.left + 16, rect.bottom + 4, event.currentTarget)
+                }
+              } : undefined}
+            >
+              <span role="cell" className="command-group-name-cell">
+                {onOpenGroupSettings ? (
+                  <button
+                    type="button"
+                    className="command-group-name"
+                    aria-label={`${group.name} group actions`}
+                    aria-haspopup="menu"
+                    onKeyDown={(event) => {
+                      if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+                        event.preventDefault()
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        openGroupMenu(group.name, rect.left + 16, rect.bottom + 4, event.currentTarget)
+                      }
+                    }}
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect()
+                      openGroupMenu(group.name, rect.left + 16, rect.bottom + 4, event.currentTarget)
+                    }}
+                  >
+                    <i style={{ background: group.color }} />
+                    <span>
+                      <strong>{group.name}</strong>
+                      <small>{goalContext || group.protocol}</small>
+                    </span>
+                  </button>
+                ) : (
+                  <span className="command-group-name">
+                    <i style={{ background: group.color }} />
+                    <span>
+                      <strong>{group.name}</strong>
+                      <small>{goalContext || group.protocol}</small>
+                    </span>
+                  </span>
+                )}
               </span>
               <span role="cell">{formatNumber(group.current)}</span>
               <span role="cell" className="command-target-cell">
@@ -3740,6 +3926,32 @@ function GroupLoadTable({
           )
         })}
       </div>
+      {groupMenu && onOpenGroupSettings && createPortal(
+        <div
+          ref={groupMenuRef}
+          className="action-parameter-menu command-group-context-menu"
+          role="menu"
+          tabIndex={-1}
+          aria-label={`${groupMenu.group} group actions`}
+          style={{ left: groupMenu.x, top: groupMenu.y }}
+          onKeyDown={handleGroupMenuKeyDown}
+        >
+          <header className="panel-title" aria-hidden="true">{groupMenu.group}</header>
+          <button
+            ref={firstMenuItemRef}
+            type="button"
+            className="btn btn-ghost"
+            role="menuitem"
+            onClick={() => selectGroupMenuItem('runtime-settings')}
+          >
+            Runtime Settings
+          </button>
+          <button type="button" className="btn btn-ghost" role="menuitem" onClick={() => selectGroupMenuItem('parameters')}>
+            Parameters
+          </button>
+        </div>,
+        document.body,
+      )}
     </section>
   )
 }

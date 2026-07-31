@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -297,10 +298,10 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 		},
 	}
 	masked := maskRuntimeSettings(o)
-	if masked.HTTP.Auth.Password != scrub.Redacted || masked.HTTP.Auth.Token != scrub.Redacted || masked.HTTP.Proxy.Username != scrub.Redacted || masked.HTTP.Proxy.Password != scrub.Redacted {
+	if masked.HTTP.Auth.Username != scrub.Redacted || masked.HTTP.Auth.Password != scrub.Redacted || masked.HTTP.Auth.Token != scrub.Redacted || masked.HTTP.Proxy.Username != scrub.Redacted || masked.HTTP.Proxy.Password != scrub.Redacted {
 		t.Fatalf("http secrets not redacted: %#v", masked.HTTP)
 	}
-	if masked.HTTP.Auth.Username != "u" || masked.HTTP.DefaultHeaders["Accept"] != "application/json" {
+	if masked.HTTP.DefaultHeaders["Accept"] != "application/json" {
 		t.Fatalf("non-secret http fields should survive: %#v", masked.HTTP)
 	}
 	for _, header := range []string{"Authorization", "X-API-Key"} {
@@ -321,7 +322,7 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 			t.Fatalf("%s userinfo was not safely redacted: %q", label, value)
 		}
 	}
-	if masked.BrowserConfig.HTTPCredentials.Password != scrub.Redacted || masked.BrowserConfig.Proxy.Username != scrub.Redacted || masked.BrowserConfig.Proxy.Password != scrub.Redacted || masked.BrowserConfig.ClientCertificates[0].Passphrase != scrub.Redacted {
+	if masked.BrowserConfig.HTTPCredentials.Username != scrub.Redacted || masked.BrowserConfig.HTTPCredentials.Password != scrub.Redacted || masked.BrowserConfig.Proxy.Username != scrub.Redacted || masked.BrowserConfig.Proxy.Password != scrub.Redacted || masked.BrowserConfig.ClientCertificates[0].Passphrase != scrub.Redacted {
 		t.Fatalf("browser secrets not redacted: %#v", masked.BrowserConfig)
 	}
 	if o.HTTP.Auth.Password != "pw" {
@@ -337,6 +338,92 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 	opaqueEnv := &RuntimeSettingsOverride{Env: map[string]string{"SERVICE_ENDPOINT": "user:password@example.test"}}
 	if got := maskRuntimeSettings(opaqueEnv).Env["SERVICE_ENDPOINT"]; got != scrub.Redacted {
 		t.Fatalf("opaque credential-like Env value = %q, want fail-closed redaction", got)
+	}
+}
+
+func TestRuntimeOverrideNeutralCredentialHeadersAreProtectedMaskedAndReconciledByPath(t *testing.T) {
+	const (
+		mapCredential  = "Bearer neutral-route-token-0123456789"
+		listCredential = "Basic bmV1dHJhbC11cHN0cmVhbTpzZWNyZXQ="
+	)
+	raw := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{
+		DefaultHeaders: map[string]string{"X-Route": mapCredential},
+		DefaultHeaderList: dsl.HeaderList{
+			{Name: "X-Upstream", Value: listCredential},
+		},
+	}}
+
+	protected, values, err := protectRuntimeOverrideSecrets("neutral-header-scope", 0, &dsl.Script{}, raw, false)
+	if err != nil {
+		t.Fatalf("protect neutral credential headers: %v", err)
+	}
+	if len(values) != 2 {
+		t.Fatalf("protected runtime values = %#v, want two memory-only credentials", values)
+	}
+	if got := protected.HTTP.DefaultHeaders["X-Route"]; !isReservedRuntimeOverrideSecretReference(got) {
+		t.Fatalf("protected map header = %q, want reserved secret reference", got)
+	}
+	if got := protected.HTTP.DefaultHeaderList[0].Value; !isReservedRuntimeOverrideSecretReference(got) {
+		t.Fatalf("protected ordered header = %q, want reserved secret reference", got)
+	}
+
+	for label, settings := range map[string]*RuntimeSettingsOverride{
+		"legacy plaintext": raw,
+		"protected":        protected,
+	} {
+		masked := maskRuntimeSettings(settings)
+		if got := masked.HTTP.DefaultHeaders["X-Route"]; got != scrub.Redacted {
+			t.Fatalf("%s map header = %q, want redacted", label, got)
+		}
+		if got := masked.HTTP.DefaultHeaderList[0].Value; got != scrub.Redacted {
+			t.Fatalf("%s ordered header = %q, want redacted", label, got)
+		}
+	}
+
+	auditChanges := runtimeSettingsFieldChanges(nil, raw, []string{"http"})
+	auditPayload, err := json.Marshal(auditChanges)
+	if err != nil {
+		t.Fatalf("marshal audit changes: %v", err)
+	}
+	if strings.Contains(string(auditPayload), mapCredential) ||
+		strings.Contains(string(auditPayload), listCredential) ||
+		!strings.Contains(string(auditPayload), scrub.Redacted) {
+		t.Fatalf("audit projection leaked neutral-name credential material: %s", auditPayload)
+	}
+
+	echo := maskRuntimeSettings(protected)
+	reconciled := reconcileGroupRuntimeSecrets(echo, protected)
+	if got, want := reconciled.HTTP.DefaultHeaders["X-Route"], protected.HTTP.DefaultHeaders["X-Route"]; got != want {
+		t.Fatalf("same-path map reconciliation = %q, want %q", got, want)
+	}
+	if got, want := reconciled.HTTP.DefaultHeaderList[0].Value, protected.HTTP.DefaultHeaderList[0].Value; got != want {
+		t.Fatalf("same-path ordered reconciliation = %q, want %q", got, want)
+	}
+
+	retargeted := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{
+		DefaultHeaders: map[string]string{"X-Other": scrub.Redacted},
+		DefaultHeaderList: dsl.HeaderList{
+			{Name: "X-Other-Ordered", Value: scrub.Redacted},
+		},
+	}}
+	reconciled = reconcileGroupRuntimeSecrets(retargeted, protected)
+	if len(reconciled.HTTP.DefaultHeaders) != 0 || len(reconciled.HTTP.DefaultHeaderList) != 0 {
+		t.Fatalf("retargeted sentinels adopted prior credentials: %#v", reconciled.HTTP)
+	}
+}
+
+func TestMaskRuntimeSettingsNeverExposesDormantProtectedAuthUsername(t *testing.T) {
+	prior := &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{
+		Type:     "basic",
+		Username: "{{secret.APEX_RUNTIME_OVERRIDE_DORMANT_USERNAME}}",
+		Password: "{{secret.APEX_RUNTIME_OVERRIDE_DORMANT_PASSWORD}}",
+	}}}
+	incoming := maskRuntimeSettings(prior)
+	incoming.HTTP.Auth.Type = ""
+	incoming.HTTP.Auth.Password = ""
+	reconciled := reconcileGroupRuntimeSecrets(incoming, prior)
+	if got := maskRuntimeSettings(reconciled).HTTP.Auth.Username; got != scrub.Redacted {
+		t.Fatalf("dormant protected auth username = %q, want redacted", got)
 	}
 }
 
@@ -402,7 +489,7 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 	prior := &RuntimeSettingsOverride{
 		BaseURL: "https://base-user:base-password@example.test",
 		HTTP: &dsl.HTTPConfig{
-			Auth:           dsl.AuthConfig{Password: "real", Token: "realtok"},
+			Auth:           dsl.AuthConfig{Type: "basic", Username: "realuser", Password: "real", Token: "realtok"},
 			Proxy:          dsl.ProxyConfig{URL: "http://proxy-user:proxy-password@proxy:8080", Username: "realpuser", Password: "realppw"},
 			DefaultHeaders: map[string]string{"Authorization": "Bearer real", "Cookie": "session=real", "Accept": "application/json"},
 			DefaultHeaderList: dsl.HeaderList{
@@ -411,7 +498,7 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 			},
 		},
 		BrowserConfig: &dsl.BrowserConfig{
-			HTTPCredentials: dsl.BrowserHTTPCredentials{Password: "browser-real"},
+			HTTPCredentials: dsl.BrowserHTTPCredentials{Username: "browser-real-user", Password: "browser-real"},
 			Proxy:           dsl.BrowserProxyConfig{Server: "http://user:password@browser-proxy:8080", Username: "browser-user", Password: "browser-password"},
 			ClientCertificates: []dsl.BrowserClientCertificate{{
 				Origin: "https://example.test", PfxPath: "client.pfx", Passphrase: "certificate-real",
@@ -427,6 +514,9 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 	result := reconcileGroupRuntimeSecrets(incoming, prior)
 	if result.HTTP.Auth.Password != "real" {
 		t.Fatalf("auth password should be restored from prior, got %q", result.HTTP.Auth.Password)
+	}
+	if result.HTTP.Auth.Username != "realuser" {
+		t.Fatalf("auth username should be restored from prior, got %q", result.HTTP.Auth.Username)
 	}
 	if result.HTTP.Auth.Token != "newtok" {
 		t.Fatalf("auth token should persist new value, got %q", result.HTTP.Auth.Token)
@@ -450,7 +540,7 @@ func TestReconcileGroupRuntimeSecretsHTTP(t *testing.T) {
 		result.HTTP.DefaultHeaderList[0].Value != "Bearer ordered-real" {
 		t.Fatalf("ordered default header reconciliation = %#v", result.HTTP.DefaultHeaderList)
 	}
-	if result.BrowserConfig.HTTPCredentials.Password != "browser-real" || result.BrowserConfig.Proxy.Username != "browser-user" || result.BrowserConfig.ClientCertificates[0].Passphrase != "certificate-real" {
+	if result.BrowserConfig.HTTPCredentials.Username != "browser-real-user" || result.BrowserConfig.HTTPCredentials.Password != "browser-real" || result.BrowserConfig.Proxy.Username != "browser-user" || result.BrowserConfig.ClientCertificates[0].Passphrase != "certificate-real" {
 		t.Fatalf("masked browser credentials were not restored: %#v", result.BrowserConfig)
 	}
 	if result.BrowserConfig.Proxy.Password != "" {

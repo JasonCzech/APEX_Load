@@ -4,11 +4,12 @@ import {
   writeStoredJSON,
   writeStoredString,
 } from '../utils/browserStorage'
+import { requestSettingsFocus } from './settingsSectionLayout'
 
 export const PROJECT_SECRETS_SETTINGS_PROJECT_KEY = 'apexload.settings.projectId'
 
 export function prepareProjectSecretsSettingsNavigation(projectId?: string) {
-  writeStoredString('apexload.settings.focusSection', 'projects')
+  requestSettingsFocus('projects')
   writeStoredJSON('apexload.settings.projectSubsection', 'secrets')
   if (projectId?.trim()) {
     writeStoredString(PROJECT_SECRETS_SETTINGS_PROJECT_KEY, projectId.trim())

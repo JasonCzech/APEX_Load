@@ -32,6 +32,7 @@ import { type AuthoringTemplate } from '../../types'
 import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type ScriptSecretStatus } from '../../types/secrets'
 import { type BrunoInspectResponse, type BrunoProjectionPreview, type BrunoSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
+import { downloadFilenameFromDisposition } from '../../utils/fileUtils'
 
 export interface ScriptRecordingStatus {
   exists: boolean
@@ -133,15 +134,49 @@ type DataPoolListResponse = {
 type DataPoolDetailsResponse = {
   data_pool: SharedDataPool
   rows: SharedDataPoolRow[]
+  count?: number
+  total?: number
+  limit?: number
+  offset?: number
+  revision?: string
+  has_more?: boolean
+  next_cursor?: string
+}
+
+export type DataPoolImportOptions = {
+  mode?: 'append' | 'replace'
+  delimiter?: 'auto' | 'comma' | 'tab'
+  header?: boolean
+  columns?: string[]
+  dryRun?: boolean
+}
+
+export type DataPoolImportResult = {
+  dry_run?: boolean
+  mode: string
+  columns: string[]
+  row_count?: number
+  sample_rows?: Record<string, string>[]
+  imported?: number
+  deleted?: number
+  total?: number
+  warnings?: string[]
+  // Set on dry runs when the same upload cannot be committed in append mode
+  // (for example, an engine-cap violation or a replace-only empty backup).
+  append_warning?: string
 }
 
 type DataPoolDeleteResponse = {
   deleted: string
 }
 
-type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at' | 'project_id'>>
+type DataPoolUpsertRequest = Pick<SharedDataPool, 'name'> & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'project_id'>>
+type DataPoolUpdateRequest =
+  Pick<SharedDataPool, 'name' | 'updated_at'>
+  & Partial<Pick<SharedDataPool, 'description' | 'schema' | 'archived_at'>>
 
 type DataPoolRowUpsertRequest = Pick<SharedDataPoolRow, 'data'> & Partial<Pick<SharedDataPoolRow, 'status' | 'version'>>
+type DataPoolRowUpdateRequest = Pick<SharedDataPoolRow, 'data' | 'version'> & Partial<Pick<SharedDataPoolRow, 'status'>>
 
 type ScenarioDataPoolResponse = {
   data_pools: ScenarioDataPoolBinding[]
@@ -1332,10 +1367,19 @@ export function useScriptApi() {
     [],
   )
 
-  const getDataPool = useCallback((id: string) => request<DataPoolDetailsResponse>(`/data-pools/${id}`), [])
+  const getDataPool = useCallback((id: string, page?: { limit?: number; offset?: number; cursor?: string }) => {
+    const query = new URLSearchParams()
+    if (page?.limit !== undefined) query.set('limit', String(page.limit))
+    if (page?.offset !== undefined) query.set('offset', String(page.offset))
+    // An explicitly empty cursor selects the first keyset page. Omitting the
+    // field preserves the legacy bounded details request for other consumers.
+    if (page?.cursor !== undefined) query.set('cursor', page.cursor)
+    const suffix = query.toString()
+    return request<DataPoolDetailsResponse>(`/data-pools/${id}${suffix ? `?${suffix}` : ''}`)
+  }, [])
 
   const updateDataPool = useCallback(
-    (id: string, data: DataPoolUpsertRequest) => request<SharedDataPool>(`/data-pools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: DataPoolUpdateRequest) => request<SharedDataPool>(`/data-pools/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     [],
   )
 
@@ -1347,11 +1391,42 @@ export function useScriptApi() {
   )
 
   const updateDataPoolRow = useCallback(
-    (poolId: string, rowId: string, data: DataPoolRowUpsertRequest) => request<SharedDataPoolRow>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (poolId: string, rowId: string, data: DataPoolRowUpdateRequest) => request<SharedDataPoolRow>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'PUT', body: JSON.stringify(data) }),
     [],
   )
 
   const deleteDataPoolRow = useCallback((poolId: string, rowId: string) => request<DataPoolDeleteResponse>(`/data-pools/${poolId}/rows/${rowId}`, { method: 'DELETE' }), [])
+
+  const importDataPoolRows = useCallback(
+    async (poolId: string, file: File, options?: DataPoolImportOptions): Promise<DataPoolImportResult> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options?.mode) formData.append('mode', options.mode)
+      if (options?.delimiter) formData.append('delimiter', options.delimiter)
+      if (options?.header === false) formData.append('header', 'false')
+      if (options?.columns?.length) formData.append('columns', options.columns.join(','))
+      if (options?.dryRun) formData.append('dry_run', 'true')
+      const res = await apiFetch(`/data-pools/${poolId}/rows/import`, { method: 'POST', body: formData })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<DataPoolImportResult>
+    },
+    [],
+  )
+
+  const exportDataPoolRows = useCallback(
+    async (poolId: string, status?: 'active' | 'all'): Promise<{ blob: Blob; filename: string | null }> => {
+      const query = status && status !== 'all' ? `?status=${status}` : ''
+      const res = await apiFetch(`/data-pools/${poolId}/rows/export${query}`)
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      const filename = downloadFilenameFromDisposition(res.headers.get('Content-Disposition'), '')
+      return { blob: await res.blob(), filename: filename || null }
+    },
+    [],
+  )
 
   const listScenarioDataPools = useCallback((scenarioId: string) => request<ScenarioDataPoolResponse>(`/scenarios/${scenarioId}/data-pools`), [])
 
@@ -1469,6 +1544,8 @@ export function useScriptApi() {
       createDataPoolRow,
       updateDataPoolRow,
       deleteDataPoolRow,
+      importDataPoolRows,
+      exportDataPoolRows,
       listScenarioDataPools,
       updateScenarioDataPools,
     }),
@@ -1580,6 +1657,8 @@ export function useScriptApi() {
       createDataPoolRow,
       updateDataPoolRow,
       deleteDataPoolRow,
+      importDataPoolRows,
+      exportDataPoolRows,
       listScenarioDataPools,
       updateScenarioDataPools,
     ],

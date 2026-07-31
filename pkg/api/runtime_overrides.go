@@ -16,9 +16,46 @@ import (
 
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
 var runtimeOverrideExactSecretPattern = regexp.MustCompile(`^\{\{\s*secret\.(` + engine.LogicalSecretNameInputPattern + `)\s*\}\}$`)
+var runtimeOverrideSecretReferencePattern = regexp.MustCompile(`\{\{\s*secret\.\s*(` + engine.LogicalSecretNameInputPattern + `)\s*\}\}`)
 var runtimeOverrideAnySecretPattern = regexp.MustCompile(`\{\{\s*secret\.`)
 
 const runtimeOverrideSecretPrefix = "APEX_RUNTIME_OVERRIDE_"
+
+// rejectReservedRuntimeOverrideSecretReferences keeps the controller-owned
+// runtime-secret namespace out of user-authored settings. Those deterministic
+// names may resolve governed credentials created for another protected field,
+// so accepting one in an arbitrary executable value would let an editor
+// retarget that credential. Command-center masked echoes use scrub.Redacted;
+// same-path reconciliation restores the prior internal reference afterward.
+func rejectReservedRuntimeOverrideSecretReferences(overrides *RuntimeSettingsOverride) error {
+	if overrides == nil {
+		return nil
+	}
+	payload, err := json.Marshal(overrides)
+	if err != nil {
+		return fmt.Errorf("inspect runtime secret references")
+	}
+	for _, match := range runtimeOverrideSecretReferencePattern.FindAllSubmatch(payload, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		name, normalizeErr := engine.NormalizeLogicalSecretName(string(match[1]))
+		if normalizeErr == nil && strings.HasPrefix(name, runtimeOverrideSecretPrefix) {
+			return fmt.Errorf("runtime settings cannot author reserved internal secret references; keep masked credentials as %s or use a configured project secret with a non-reserved name", scrub.Redacted)
+		}
+	}
+	return nil
+}
+
+func isReservedRuntimeOverrideSecretReference(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	match := runtimeOverrideSecretReferencePattern.FindStringSubmatch(trimmed)
+	if len(match) != 2 || match[0] != trimmed {
+		return false
+	}
+	name, err := engine.NormalizeLogicalSecretName(match[1])
+	return err == nil && strings.HasPrefix(name, runtimeOverrideSecretPrefix)
+}
 
 // protectRuntimeOverrideSecrets returns an execution-only override projection:
 // secret-bearing values become deterministic {{secret.*}} references while
@@ -125,7 +162,11 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 		}
 		policy := scrub.Policy{}
 		for name, value := range http.DefaultHeaders {
-			http.DefaultHeaders[name], err = protect("http.default_headers."+name, value, policy.SensitiveHeader(name))
+			http.DefaultHeaders[name], err = protect(
+				"http.default_headers."+name,
+				value,
+				policy.SensitiveHeader(name) || sensitiveEnvValue(value),
+			)
 			if err != nil {
 				return nil, nil, false, err
 			}
@@ -135,7 +176,7 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 			header.Value, err = protect(
 				fmt.Sprintf("http.default_header_list.%d.%s", index, header.Name),
 				header.Value,
-				policy.SensitiveHeader(header.Name),
+				policy.SensitiveHeader(header.Name) || sensitiveEnvValue(header.Value),
 			)
 			if err != nil {
 				return nil, nil, false, err

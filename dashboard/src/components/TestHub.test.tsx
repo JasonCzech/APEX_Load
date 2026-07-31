@@ -9,6 +9,7 @@ import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { type LoadModelTemplate, type StoredScenario } from '../types'
 import TestHub, { scenarioSeedFromTemplate } from './TestHub'
 import {
+  replaceScenarioRuntimeDefaults,
   reseedScenarioGroups,
   runtimeSettingsFromForm,
   scenarioFormStateFromStoredScenario,
@@ -336,6 +337,47 @@ describe('TestHub', () => {
       multiplier: 1.25,
       limit_ms: undefined,
       ignore: false,
+    })
+  })
+
+  it('preserves canonical pacing and think-time values after an unrelated scenario-default edit', () => {
+    const stored: StoredScenario = {
+      id: 'scenario-default-sync',
+      name: 'Scenario default sync',
+      duration: '5m',
+      scripts: [],
+      created_at: '',
+      updated_at: '',
+      script_count: 0,
+      runtime_settings: {
+        pacing: {
+          type: 'random_delay',
+          min_delay_ms: 100,
+          max_delay_ms: 900,
+        },
+        think_time: {
+          type: 'gaussian',
+          mean_ms: 250,
+          std_ms: 75,
+          min_ms: 25,
+          max_ms: 900,
+          multiplier: 1.5,
+          limit_ms: 1200,
+          ignore: true,
+        },
+      },
+    }
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    const nextDraft = {
+      ...runtimeSettingsFromForm(form, true),
+      base_url: 'https://orders.example.test',
+    }
+
+    const replaced = replaceScenarioRuntimeDefaults(form, nextDraft)
+    expect(runtimeSettingsFromForm(replaced, true)).toMatchObject({
+      pacing: stored.runtime_settings?.pacing,
+      think_time: stored.runtime_settings?.think_time,
+      base_url: 'https://orders.example.test',
     })
   })
 
@@ -2244,6 +2286,70 @@ describe('TestHub', () => {
     const clonedPayload = clonedCalls[clonedCalls.length - 1]?.[0]
     expect(clonedPayload.groups?.[0]).not.toHaveProperty('iterations')
     expect(clonedPayload.data_pools.every((binding: { id?: string }) => binding.id === undefined)).toBe(true)
+  })
+
+  it('clearing the wizard pool selection removes only the visible binding and preserves the rest', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [{ id: 'script-1', name: 'Orders Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' }],
+      count: 1,
+    })
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [
+        { id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-2', name: 'Orders', project_id: 'project-1', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    })
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-multi-pool',
+        name: 'Multi Pool',
+        duration: '5m',
+        assignment: { mode: 'auto' },
+        scripts: [{ order: 0, script_id: 'script-1', script_name: 'Orders Flow', name: 'Orders', vusers: 5, ramp_up: '1m', initialization: 'at_runtime' }],
+        data_pools: [
+          { id: 'binding-1', pool_id: 'pool-1', pool_name: 'Customers', alias: 'customers', access_mode: 'read_only' as const, selection_strategy: 'sequential' as const },
+          { id: 'binding-2', pool_id: 'pool-2', pool_name: 'Orders', alias: 'orders', access_mode: 'read_only' as const, selection_strategy: 'unique' as const },
+        ],
+        associated_releases: [],
+        result_count: 0,
+        created_at: '2026-05-12T00:00:00Z',
+        updated_at: '2026-05-12T00:00:00Z',
+        script_count: 1,
+      }],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editButton).toBeDefined()
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickWizardStep('Data')
+    const poolSelect = findControlByLabel<HTMLSelectElement>(container, 'Data Pool', 'select')
+    expect(poolSelect).toBeDefined()
+    expect(poolSelect?.value).toBe('pool-1')
+    if (!poolSelect) return
+    await act(async () => {
+      setSelectValue(poolSelect, '')
+    })
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    const payload = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-multi-pool')?.[1]
+    expect(payload).toBeDefined()
+    expect(payload?.data_pools).toEqual([
+      expect.objectContaining({ pool_id: 'pool-2', alias: 'orders', access_mode: 'read_only' }),
+    ])
   })
 
   it('creates a browser scenario with mobile runtime overrides', async () => {

@@ -125,13 +125,18 @@ chain=base64,gzip
 	for _, id := range []string{
 		"http_transport", "request_headers", "browser_device_emulation", "tls",
 		"authentication", "run_logic_iterations", "run_logic_auto_transactions",
-		"run_logic_block_scheduling", "run_logic_action_sequence", "logging",
-		"continue_on_error", "snapshot_on_error", "download_filters", "content_checks",
+		"logging", "continue_on_error", "snapshot_on_error", "download_filters", "content_checks",
 		"network_simulation", "streaming", "data_formatting_auto_detect", "data_formatting_chain",
 	} {
 		entry, ok := runtimeSecurityParityEntry(parity, id)
 		if !ok || entry.Status != RuntimeSettingStatusExecuted {
 			t.Fatalf("parity %q = %#v, want executed", id, entry)
+		}
+	}
+	for _, id := range []string{"run_logic_block_scheduling", "run_logic_action_sequence"} {
+		entry, ok := runtimeSecurityParityEntry(parity, id)
+		if !ok || entry.Status != RuntimeSettingStatusCompatibilityOnly {
+			t.Fatalf("parity %q = %#v, want compatibility_only because the engine does not consume the field", id, entry)
 		}
 	}
 }

@@ -2002,16 +2002,16 @@ func TestHandleImportEnterpriseArchiveGoldenFixtureRuntimeParity(t *testing.T) {
 	if !ok {
 		t.Fatalf("summary.runtime_settings_status_counts = %#v, want map", result.Summary["runtime_settings_status_counts"])
 	}
-	if statusCounts["executed"] != float64(26) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(1) {
-		t.Fatalf("runtime_settings_status_counts = %#v, want executed=26 compatibility_only=1", statusCounts)
+	if statusCounts["executed"] != float64(24) || statusCounts["partial"] != nil || statusCounts["compatibility_only"] != float64(3) {
+		t.Fatalf("runtime_settings_status_counts = %#v, want executed=24 compatibility_only=3", statusCounts)
 	}
 	runtimeParity, ok := result.Summary["runtime_settings_parity"].([]any)
 	if !ok || len(runtimeParity) != 27 {
 		t.Fatalf("summary.runtime_settings_parity = %#v, want 27 entries", result.Summary["runtime_settings_parity"])
 	}
 	readiness, ok := result.Summary["migration_readiness"].(map[string]any)
-	if !ok || readiness["score_pct"] != float64(97) || readiness["blocked"] != true {
-		t.Fatalf("summary.migration_readiness = %#v, want score=97 blocked=true", result.Summary["migration_readiness"])
+	if !ok || readiness["score_pct"] != float64(92) || readiness["blocked"] != true {
+		t.Fatalf("summary.migration_readiness = %#v, want score=92 blocked=true", result.Summary["migration_readiness"])
 	}
 }
 

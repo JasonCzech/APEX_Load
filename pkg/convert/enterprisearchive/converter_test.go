@@ -3350,8 +3350,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		"authentication":                      RuntimeSettingStatusExecuted,
 		"run_logic_iterations":                RuntimeSettingStatusExecuted,
 		"run_logic_auto_transactions":         RuntimeSettingStatusExecuted,
-		"run_logic_block_scheduling":          RuntimeSettingStatusExecuted,
-		"run_logic_action_sequence":           RuntimeSettingStatusExecuted,
+		"run_logic_block_scheduling":          RuntimeSettingStatusCompatibilityOnly,
+		"run_logic_action_sequence":           RuntimeSettingStatusCompatibilityOnly,
 		"pacing":                              RuntimeSettingStatusExecuted,
 		"think_time":                          RuntimeSettingStatusExecuted,
 		"logging":                             RuntimeSettingStatusExecuted,
@@ -3375,8 +3375,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 		assertRuntimeSettingParityEntry(t, parity, id, status)
 	}
 	counts := RuntimeSettingStatusCounts(parity)
-	if counts[string(RuntimeSettingStatusExecuted)] != 26 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 1 {
-		t.Fatalf("status counts = %#v, want executed=26 partial=0 compatibility_only=1", counts)
+	if counts[string(RuntimeSettingStatusExecuted)] != 24 || counts[string(RuntimeSettingStatusPartial)] != 0 || counts[string(RuntimeSettingStatusCompatibilityOnly)] != 3 {
+		t.Fatalf("status counts = %#v, want executed=24 partial=0 compatibility_only=3", counts)
 	}
 }
 

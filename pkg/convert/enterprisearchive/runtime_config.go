@@ -231,15 +231,20 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	// toggles; sourcing it here from browserSection alone would silently lose a
 	// custom UA that lives in [WEB] when an APEX-native [Browser Emulation]
 	// section is also present.
-	rc.AcceptLanguage = normalizeRuntimeAcceptLanguage(firstNonBlank(
-		runtimeSectionFirstNonBlank(browserSection, "AcceptLanguage", "BrowserAcceptLanguage", "NavigatorBrowserLanguage", "NavigatorUserLanguage"),
-		runtimeSectionFirstNonBlank(browserWebSection, "AcceptLanguage", "BrowserAcceptLanguage", "NavigatorBrowserLanguage", "NavigatorUserLanguage"),
-	))
+	acceptLanguageAliases := []string{"AcceptLanguage", "BrowserAcceptLanguage", "NavigatorBrowserLanguage", "NavigatorUserLanguage"}
+	acceptLanguageRaw := firstNonBlank(
+		runtimeSectionFirstNonBlank(browserSection, acceptLanguageAliases...),
+		runtimeSectionFirstNonBlank(browserWebSection, acceptLanguageAliases...),
+	)
+	rc.AcceptLanguage = normalizeRuntimeAcceptLanguage(acceptLanguageRaw)
+	noteRuntimeHeaderSpillRows(rc, []map[string]string{browserSection, browserWebSection}, acceptLanguageAliases, "Accept-Language", acceptLanguageRaw)
+	acceptEncodingAliases := []string{"AcceptEncoding", "BrowserAcceptEncoding"}
 	acceptEncoding := firstNonBlank(
-		runtimeSectionFirstNonBlank(browserSection, "AcceptEncoding", "BrowserAcceptEncoding"),
-		runtimeSectionFirstNonBlank(browserWebSection, "AcceptEncoding", "BrowserAcceptEncoding"),
+		runtimeSectionFirstNonBlank(browserSection, acceptEncodingAliases...),
+		runtimeSectionFirstNonBlank(browserWebSection, acceptEncodingAliases...),
 	)
 	rc.AcceptEncoding = normalizeRuntimeAcceptEncoding(acceptEncoding)
+	noteRuntimeHeaderSpillRows(rc, []map[string]string{browserSection, browserWebSection}, acceptEncodingAliases, "Accept-Encoding", acceptEncoding)
 	rc.UseGzip = strings.Contains(strings.ToLower(acceptEncoding), "gzip")
 	rc.CacheEnabled = parseBool(runtimeSectionValue(browserSection, "CacheEnabled"))
 	rc.CacheContentURLs = parseBool(runtimeSectionFirstNonBlank(browserSection, "CacheContentURLs", "CacheURLsRequiringContent"))
@@ -441,7 +446,23 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	} else {
 		rc.LogLevel = mapLogLevel(runtimeSectionFirstNonBlank(logSection, "Level", "LogLevel"))
 	}
-	rc.OnErrorOnly = parseBool(runtimeSectionFirstNonBlank(logSection, "OnErrorOnly", "LogOnErrorOnly"))
+	// AutoLog is the real VuGen key for "Send messages only when an error
+	// occurs" (JIT log-cache messaging). The APEX-native OnErrorOnly spelling
+	// wins when present; AutoLog is the LoadRunner-authored fallback.
+	onErrorOnlyRaw := runtimeSectionFirstNonBlank(logSection, "OnErrorOnly", "LogOnErrorOnly")
+	if strings.TrimSpace(onErrorOnlyRaw) == "" {
+		onErrorOnlyRaw = runtimeSectionValue(logSection, "AutoLog")
+	}
+	if strings.TrimSpace(onErrorOnlyRaw) != "" {
+		if parsed, valid := parseBoolExplicit(onErrorOnlyRaw); valid {
+			rc.OnErrorOnly = parsed
+		} else {
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+				ID: "logging", Area: "Logging",
+				Notes: fmt.Sprintf("The source error-only logging selector %q is invalid; leaving error-only logging disabled and requiring review.", boundedRuntimeReviewEvidence(onErrorOnlyRaw)),
+			})
+		}
+	}
 	rc.LogExtendedOptions = splitList(runtimeSectionFirstNonBlank(logSection, "ExtendedOptions", "ExtendedLogOptions"))
 	if parseBool(runtimeSectionValue(logSection, "ParameterSubstitution")) {
 		rc.LogExtendedOptions = appendIfMissing(rc.LogExtendedOptions, "parameter_substitution")
@@ -480,7 +501,10 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 
 	filtersSection := findMergedSection(sections, "Download Filters", "DownloadFilters")
 	rc.DownloadFilterMode = normalizeEnum(runtimeSectionFirstNonBlank(filtersSection, "Mode", "FilterMode"))
-	rc.DownloadFilterHosts = splitList(runtimeSectionFirstNonBlank(filtersSection, "Hosts", "IncludeHosts", "ExcludeHosts"))
+	// Hosts keep their hyphens: splitList's enum normalization would corrupt
+	// hyphenated hostnames into never-matching filter entries.
+	rc.DownloadFilterHosts = splitSourceFilterHosts(rc, runtimeSectionFirstNonBlank(filtersSection, "Hosts", "IncludeHosts", "ExcludeHosts"))
+	parseSourceDownloadFiltersSection(rc, sections)
 
 	contentCheckSection := findMergedSection(sections, "Content Check", "ContentCheck")
 	if text := strings.TrimSpace(runtimeSectionFirstNonBlank(contentCheckSection, "Text", "SearchText")); text != "" {
@@ -500,6 +524,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		runtimeSectionValue(networkSection, "Bandwidth"),
 	)
 	rc.NetworkLatencyMs = parseInt(runtimeSectionValue(networkSection, "LatencyMs"))
+	parseSourceModemSpeedSection(rc, sections)
 
 	streamingSection := findSection(sections, "Streaming")
 	rc.StreamingMode = normalizeEnum(runtimeSectionValue(streamingSection, "Mode"))
@@ -523,7 +548,9 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		rc.DataFormattingChain = append(rc.DataFormattingChain, transform)
 	}
 
-	javaVMSectionAliases := []string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}
+	// Bare [Java] is the section real VuGen writes for the external-JVM
+	// selection (UseExternalJVM / ExternalJREPath), including in Web scripts.
+	javaVMSectionAliases := []string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options", "Java"}
 	javaVMSection := findMergedSection(sections, javaVMSectionAliases...)
 	// Parse executable list values from the original CFG text. The general
 	// config parser decodes adjacent C string literals for source-code fields;
@@ -531,7 +558,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	// arguments and could silently change the imported command line.
 	rawJavaVMSection := findMergedSection(parseRawRuntimeConfigSections(content), javaVMSectionAliases...)
 	javaVMJDKSelectionExplicit := false
-	if selection, ok := sectionValueCaseInsensitive(javaVMSection, "use_jdk", "UseJdk", "jdk_selection", "UseSpecifiedJdk"); ok {
+	if selection, ok := sectionValueCaseInsensitive(javaVMSection, "use_jdk", "UseJdk", "jdk_selection", "UseSpecifiedJdk", "UseExternalJVM"); ok {
 		javaVMJDKSelectionExplicit = true
 		rc.JavaVMJDKSelectionRaw = selection
 		rc.JavaVMJDKSelection = normalizeJavaVMJDKSelection(selection)
@@ -539,7 +566,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			rc.JavaVMJDKSelectionParseError = "unsupported Java VM JDK selector"
 		}
 	}
-	if home, ok := sectionValueCaseInsensitive(rawJavaVMSection, "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome"); ok {
+	if home, ok := sectionValueCaseInsensitive(rawJavaVMSection, "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome", "ExternalJREPath"); ok {
 		rc.JavaVMJDKHome = cleanRawRuntimeScalar(home)
 	}
 	// A home without an explicit selector is actionable source evidence. An
@@ -704,7 +731,9 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			rc.JavaVMSkipParamEvalParseError = "invalid Java VM skip-parameter-evaluation boolean"
 		}
 	}
-	appendKnownUnsupportedRuntimeIssues(rc, sections)
+	// Unmapped-key accounting happens in the protocol-aware completeness pass
+	// (classifyRuntimeSelectedSections); every selected cfg/usp key receives an
+	// explicit disposition there instead of a hand-maintained allowlist here.
 	applyRuntimeCfgCaseFoldConflicts(rc, content)
 
 	return rc
@@ -1468,17 +1497,17 @@ func runtimeConfigCanonicalSection(section string) string {
 		return "logging"
 	case "browser emulation", "browser":
 		return "browser"
-	case "javavm:options", "javavm", "java vm", "java environment settings", "java:options":
+	case "javavm:options", "javavm", "java vm", "java environment settings", "java:options", "java":
 		return "javavm"
 	case "ssl", "security":
 		return "security"
 	case "misc", "miscellaneous":
 		return "misc"
-	case "download filters", "downloadfilters":
+	case "download filters", "downloadfilters", "filters":
 		return "downloadfilters"
 	case "content check", "contentcheck":
 		return "contentcheck"
-	case "network speed simulation", "networksimulation":
+	case "network speed simulation", "networksimulation", "modemspeed":
 		return "networksimulation"
 	case "data formatting", "dataformatting":
 		return "dataformatting"
@@ -1690,7 +1719,7 @@ func runtimeConfigCanonicalKey(section, key string) string {
 		switch compact {
 		case "level", "loglevel", "logoptions":
 			return "level"
-		case "onerroronly", "logonerroronly":
+		case "onerroronly", "logonerroronly", "autolog":
 			return "onerroronly"
 		case "extendedoptions", "extendedlogoptions":
 			return "extendedoptions"
@@ -1701,6 +1730,14 @@ func runtimeConfigCanonicalKey(section, key string) string {
 			return "mode"
 		case "bandwidthkbps", "bandwidth":
 			return "bandwidth"
+		case "enablemodemspeed":
+			return "enablemodemspeed"
+		case "enablecustommodemspeed":
+			return "enablecustommodemspeed"
+		case "modemspeed":
+			return "modemspeed"
+		case "custommodemspeed":
+			return "custommodemspeed"
 		}
 	case "security":
 		switch compact {
@@ -1720,6 +1757,12 @@ func runtimeConfigCanonicalKey(section, key string) string {
 			return "mode"
 		case "hosts", "includehosts", "excludehosts":
 			return "hosts"
+		case "filtertype":
+			return "filtertype"
+		case "includefiltersinlist":
+			return "includefiltersinlist"
+		case "excludefiltersinlist":
+			return "excludefiltersinlist"
 		}
 	case "contentcheck":
 		switch compact {
@@ -1742,9 +1785,9 @@ func runtimeConfigCanonicalKey(section, key string) string {
 		}
 	case "javavm":
 		switch compact {
-		case "usejdk", "jdkselection", "usespecifiedjdk":
+		case "usejdk", "jdkselection", "usespecifiedjdk", "useexternaljvm":
 			return "jdkselection"
-		case "jdkhome", "jdkpath", "javavmjdkpath", "userjdkpath":
+		case "jdkhome", "jdkpath", "javavmjdkpath", "userjdkpath", "externaljrepath":
 			return "jdkhome"
 		case "javavmparams", "javavmparameters", "additionalvmparams", "extravmparams", "vmparams":
 			return "javavmparameters"
@@ -2702,6 +2745,109 @@ func javaVMParameterExtraArgIndex(key string) (int, bool) {
 	return index, true
 }
 
+// runtimeExtraArgSpillRow reports the base alias and 1-based row number for a
+// numbered LoadRunner spill key (e.g. BrowserAcceptLanguage_extra_arg_2) whose
+// base matches one of the given aliases. LoadRunner uses the _extra_arg_N
+// convention for several settings, not only Java_VM_Params.
+func runtimeExtraArgSpillRow(key string, baseAliases []string) (string, int, bool) {
+	const marker = "_extra_arg_"
+	lowerKey := strings.ToLower(strings.TrimSpace(key))
+	markerAt := strings.LastIndex(lowerKey, marker)
+	if markerAt <= 0 {
+		return "", 0, false
+	}
+	base := lowerKey[:markerAt]
+	matchedAlias := ""
+	for _, alias := range baseAliases {
+		if strings.EqualFold(base, alias) {
+			matchedAlias = alias
+			break
+		}
+	}
+	if matchedAlias == "" {
+		return "", 0, false
+	}
+	index, err := strconv.Atoi(lowerKey[markerAt+len(marker):])
+	if err != nil || index <= 0 {
+		return "", 0, false
+	}
+	return matchedAlias, index, true
+}
+
+// noteRuntimeHeaderSpillRows surfaces _extra_arg_N spill rows next to a
+// resolved header setting. The spill convention's semantics for header keys is
+// not documented, so the base value stays authoritative; rows that carry a
+// different non-sentinel value are reported for review instead of silently
+// ignored or blindly concatenated.
+func noteRuntimeHeaderSpillRows(rc *RuntimeConfig, sectionsToScan []map[string]string, baseAliases []string, headerLabel, selectedRaw string) {
+	if rc == nil {
+		return
+	}
+	type spillRow struct {
+		key   string
+		index int
+		value string
+	}
+	rows := make([]spillRow, 0)
+	seen := make(map[string]struct{})
+	for _, section := range sectionsToScan {
+		for key, value := range section {
+			if _, _, ok := runtimeExtraArgSpillRow(key, baseAliases); !ok {
+				continue
+			}
+			identity := strings.ToLower(strings.TrimSpace(key))
+			if _, duplicate := seen[identity]; duplicate {
+				continue
+			}
+			seen[identity] = struct{}{}
+			_, index, _ := runtimeExtraArgSpillRow(key, baseAliases)
+			rows = append(rows, spillRow{key: strings.TrimSpace(key), index: index, value: strings.TrimSpace(value)})
+		}
+	}
+	if len(rows) == 0 {
+		return
+	}
+	sort.Slice(rows, func(left, right int) bool {
+		if rows[left].index != rows[right].index {
+			return rows[left].index < rows[right].index
+		}
+		return rows[left].key < rows[right].key
+	})
+	selectedComparable := normalizeEnum(selectedRaw)
+	const maxDivergentEvidence = 20
+	divergent := make([]string, 0, min(len(rows), maxDivergentEvidence)+1)
+	divergentCount := 0
+	for _, row := range rows {
+		rowComparable := normalizeEnum(row.value)
+		switch rowComparable {
+		case "", "none", selectedComparable:
+			continue
+		}
+		divergentCount++
+		if len(divergent) < maxDivergentEvidence {
+			divergent = append(divergent, fmt.Sprintf(
+				"%s=%q",
+				boundedRuntimeReviewEvidence(row.key),
+				boundedRuntimeReviewEvidence(row.value),
+			))
+		}
+	}
+	if divergentCount == 0 {
+		return
+	}
+	if omitted := divergentCount - len(divergent); omitted > 0 {
+		divergent = append(divergent, fmt.Sprintf("+%d more", omitted))
+	}
+	selectedEvidence := boundedRuntimeReviewEvidence(selectedRaw)
+	if selectedEvidence == "" {
+		selectedEvidence = "(unset)"
+	}
+	rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+		ID: "request_headers", Area: "Browser Emulation",
+		Notes: fmt.Sprintf("The source %s setting carries numbered spill rows (%s) that differ from the selected value %q; the selected value was applied and the spill rows require review.", headerLabel, strings.Join(divergent, ", "), selectedEvidence),
+	})
+}
+
 // runtimeConfigSourceSettingLine locates the source line used by the merged
 // Java VM section. Value matching prevents an overwritten duplicate in another
 // section alias from receiving the wrong provenance.
@@ -3200,6 +3346,209 @@ func parseLoadRunnerIterationsPacing(rc *RuntimeConfig, sections map[string]map[
 			Notes: fmt.Sprintf("The cfg [Iterations] IterationPace=%q is unsupported; using no pacing and requiring review.", strings.TrimSpace(rawMode)),
 		})
 	}
+}
+
+// parseSourceModemSpeedSection maps the real VuGen Speed Simulation section
+// ([ModemSpeed], values in bits per second) onto network_simulation. The
+// APEX-native [Network Speed Simulation] section wins when it configured
+// anything: that is the round-trip form APEX itself writes.
+func parseSourceModemSpeedSection(rc *RuntimeConfig, sections map[string]map[string]string) {
+	modemSection, present := runtimeConfigSection(sections, "ModemSpeed")
+	if !present || rc == nil {
+		return
+	}
+	if nativeNetworkSimulationSectionConfigured(sections) {
+		return
+	}
+	parseToggle := func(alias string) (bool, bool, string) {
+		raw, ok := sectionValueCaseInsensitive(modemSection, alias)
+		raw = strings.TrimSpace(raw)
+		if !ok || raw == "" {
+			return false, true, raw
+		}
+		value, valid := parseBoolExplicit(raw)
+		return value, valid, raw
+	}
+	presetEnabled, presetValid, presetRaw := parseToggle("EnableModemSpeed")
+	customEnabled, customValid, customRaw := parseToggle("EnableCustomModemSpeed")
+	if !presetValid || !customValid {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "network_simulation", Area: "Network Speed Simulation",
+			Notes: fmt.Sprintf("The source [ModemSpeed] toggles are invalid (EnableModemSpeed=%q, EnableCustomModemSpeed=%q); leaving network simulation unset and requiring review.", boundedRuntimeReviewEvidence(presetRaw), boundedRuntimeReviewEvidence(customRaw)),
+		})
+		return
+	}
+	if presetEnabled && customEnabled {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "network_simulation", Area: "Network Speed Simulation",
+			Notes: "The source [ModemSpeed] section enables both the preset and the custom bandwidth toggle; leaving network simulation unset and requiring review.",
+		})
+		return
+	}
+	if !presetEnabled && !customEnabled {
+		// LoadRunner's default Speed Simulation page: "Use maximum bandwidth".
+		rc.NetworkSimulationMode = "max"
+		return
+	}
+	speedKey, speedRaw := "ModemSpeed", runtimeSectionValue(modemSection, "ModemSpeed")
+	if customEnabled {
+		speedKey, speedRaw = "CustomModemSpeed", runtimeSectionValue(modemSection, "CustomModemSpeed")
+	}
+	bps, err := strconv.ParseFloat(strings.TrimSpace(speedRaw), 64)
+	if err != nil || math.IsNaN(bps) || math.IsInf(bps, 0) || bps <= 0 {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "network_simulation", Area: "Network Speed Simulation",
+			Notes: fmt.Sprintf("The source [ModemSpeed] %s=%q is not a positive bits-per-second value; leaving network simulation unset and requiring review.", speedKey, boundedRuntimeReviewEvidence(speedRaw)),
+		})
+		return
+	}
+	kbps := int(math.Round(bps / 1000))
+	if kbps < 1 || kbps > browserprotocol.MaxConfiguredNetworkKbps {
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "network_simulation", Area: "Network Speed Simulation",
+			Notes: fmt.Sprintf("The source [ModemSpeed] %s=%q maps outside the supported 1..%d Kbps range; leaving network simulation unset and requiring review.", speedKey, boundedRuntimeReviewEvidence(speedRaw), browserprotocol.MaxConfiguredNetworkKbps),
+		})
+		return
+	}
+	rc.NetworkSimulationMode = "custom"
+	rc.NetworkBandwidthKbps = kbps
+}
+
+// parseSourceDownloadFiltersSection maps the real VuGen Download Filters
+// section ([FILTERS]) onto download_filters when the APEX-native section did
+// not configure anything. The active mode is derived from which list carries
+// entries rather than from the undocumented FilterType discriminator; a cfg
+// carrying both lists is ambiguous and fails to review instead of guessing.
+func parseSourceDownloadFiltersSection(rc *RuntimeConfig, sections map[string]map[string]string) {
+	filtersSection, present := runtimeConfigSection(sections, "FILTERS")
+	if !present || rc == nil {
+		return
+	}
+	if nativeDownloadFiltersSectionConfigured(sections) {
+		return
+	}
+	includeRaw := runtimeSectionValue(filtersSection, "IncludeFiltersInList")
+	excludeRaw := runtimeSectionValue(filtersSection, "ExcludeFiltersInList")
+	include := splitSourceFilterHosts(rc, includeRaw)
+	exclude := splitSourceFilterHosts(rc, excludeRaw)
+	switch {
+	case strings.TrimSpace(includeRaw) != "" && strings.TrimSpace(excludeRaw) != "":
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "download_filters", Area: "Download Filters",
+			Notes: "The source [FILTERS] section populates both IncludeFiltersInList and ExcludeFiltersInList; the active list cannot be determined safely, so no download filter was applied and review is required.",
+		})
+	case len(include) > 0:
+		rc.DownloadFilterMode = "allow_list"
+		rc.DownloadFilterHosts = include
+	case len(exclude) > 0:
+		rc.DownloadFilterMode = "block_list"
+		rc.DownloadFilterHosts = exclude
+	}
+}
+
+// splitSourceFilterHosts splits a source filter list into host entries.
+// Hostnames keep their hyphens (unlike enum-style splitList values); URL
+// entries reduce to their host, and wildcard patterns are reported for review
+// because the runtime filter matches hosts, not URL patterns.
+func splitSourceFilterHosts(rc *RuntimeConfig, value string) []string {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r'
+	})
+	hosts := make([]string, 0, len(parts))
+	seenHosts := make(map[string]struct{}, len(parts))
+	const maxUnsupportedEvidence = 20
+	unsupportedCount := 0
+	unsupportedEvidence := make([]string, 0, maxUnsupportedEvidence+1)
+	noteUnsupported := func(entry, reason string) {
+		unsupportedCount++
+		if rc == nil || len(unsupportedEvidence) >= maxUnsupportedEvidence {
+			return
+		}
+		safeEntry := scrub.Value(entry, scrub.Policy{})
+		if strings.Contains(entry, "://") {
+			safeEntry = scrub.ValueURL(entry, scrub.Policy{})
+		}
+		unsupportedEvidence = append(unsupportedEvidence, fmt.Sprintf("%q %s", boundedRuntimeReviewEvidence(safeEntry), reason))
+	}
+	for _, part := range parts {
+		entry := strings.TrimSpace(strings.Trim(strings.TrimSpace(part), `"'`))
+		if entry == "" {
+			continue
+		}
+		if strings.ContainsAny(entry, "*?") {
+			noteUnsupported(entry, "is a wildcard pattern that APEX's exact-host filter cannot reproduce")
+			continue
+		}
+		if strings.HasPrefix(entry, ".") {
+			noteUnsupported(entry, "is a domain-suffix pattern that APEX's exact-host filter cannot reproduce")
+			continue
+		}
+		if strings.Contains(entry, "://") {
+			if parsed, err := url.Parse(entry); err == nil && parsed.Hostname() != "" {
+				if (parsed.EscapedPath() != "" && parsed.EscapedPath() != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+					noteUnsupported(entry, "contains path, query, or fragment matching that APEX's exact-host filter cannot reproduce")
+					continue
+				}
+				// Preserve an explicit port. Dropping it would broaden a source
+				// filter to every service on the host.
+				entry = parsed.Host
+			} else {
+				noteUnsupported(entry, "is not a valid absolute URL or host")
+				continue
+			}
+		} else {
+			entry = strings.TrimRight(entry, "/")
+			if entry == "" || strings.ContainsAny(entry, "/#") || strings.ContainsAny(entry, " \t") {
+				noteUnsupported(entry, "is not an exact host (optionally with a port)")
+				continue
+			}
+		}
+		entry = strings.ToLower(entry)
+		if _, duplicate := seenHosts[entry]; duplicate {
+			continue
+		}
+		seenHosts[entry] = struct{}{}
+		hosts = append(hosts, entry)
+	}
+	if rc != nil && unsupportedCount > 0 {
+		if omitted := unsupportedCount - len(unsupportedEvidence); omitted > 0 {
+			unsupportedEvidence = append(unsupportedEvidence, fmt.Sprintf("+%d more", omitted))
+		}
+		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+			ID: "download_filters", Area: "Download Filters",
+			Notes: fmt.Sprintf(
+				"%d source download-filter entries could not be reproduced and were not applied: %s. Review is required.",
+				unsupportedCount,
+				strings.Join(unsupportedEvidence, "; "),
+			),
+		})
+	}
+	return hosts
+}
+
+func nativeNetworkSimulationSectionConfigured(sections map[string]map[string]string) bool {
+	native := findMergedSection(sections, "Network Speed Simulation", "NetworkSimulation")
+	return runtimeSectionHasNonBlankValue(
+		native,
+		"Mode", "SimulationMode", "Preset", "BandwidthKbps", "Bandwidth", "LatencyMs",
+	)
+}
+
+func nativeDownloadFiltersSectionConfigured(sections map[string]map[string]string) bool {
+	native := findMergedSection(sections, "Download Filters", "DownloadFilters")
+	return runtimeSectionHasNonBlankValue(
+		native,
+		"Mode", "FilterMode", "Hosts", "IncludeHosts", "ExcludeHosts",
+	)
+}
+
+func runtimeSectionHasNonBlankValue(section map[string]string, aliases ...string) bool {
+	for _, alias := range aliases {
+		if value, ok := sectionValueCaseInsensitive(section, alias); ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func compactRuntimeEnum(value string) string {
@@ -3848,84 +4197,6 @@ func appendNativeLogClassOption(rc *RuntimeConfig, section map[string]string, so
 	if enabled {
 		rc.LogExtendedOptions = appendIfMissing(rc.LogExtendedOptions, option)
 	}
-}
-
-type knownUnsupportedRuntimeSetting struct {
-	section string
-	keys    []string
-	active  func(string) bool
-}
-
-// appendKnownUnsupportedRuntimeIssues reports bounded, behaviorally active
-// source settings for which APEX has no exact destination field. It deliberately
-// avoids treating every non-zero stock cfg row as a gap: recorder metadata,
-// inactive child settings, UI formatting, and disabled options remain available
-// in preserved runtime_files without blocking an otherwise exact import.
-func appendKnownUnsupportedRuntimeIssues(rc *RuntimeConfig, sections map[string]map[string]string) {
-	if rc == nil || len(sections) == 0 {
-		return
-	}
-	boolTrue := func(raw string) bool {
-		value, valid := parseBoolExplicit(raw)
-		return valid && value
-	}
-	positiveNumber := func(raw string) bool {
-		value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-		return err == nil && !math.IsNaN(value) && !math.IsInf(value, 0) && value > 0
-	}
-	nonSentinel := func(raw string) bool {
-		switch normalizeEnum(raw) {
-		case "", "none", "disabled", "off", "auto", "automatic", "default":
-			return false
-		default:
-			return true
-		}
-	}
-
-	specs := []knownUnsupportedRuntimeSetting{
-		{section: "General", keys: []string{"FailTransOnErrorMsg"}, active: boolTrue},
-		{section: "General", keys: []string{"AccessVTSPortByQueryString"}, active: boolTrue},
-		{section: "Log", keys: []string{"IncludeEnvInfo"}, active: boolTrue},
-		{section: "Log", keys: []string{"PrintTimeStamp"}, active: boolTrue},
-		{section: "WEB", keys: []string{"DeleteCacheUnreferencedIterations"}, active: positiveNumber},
-		{section: "WEB", keys: []string{"EnableSnapshotsInReplay"}, active: boolTrue},
-		{section: "WEB", keys: []string{"IgnoreContentCachingTypes"}, active: boolTrue},
-		{section: "WEB", keys: []string{"IPVersionPolicy"}, active: nonSentinel},
-		{section: "WEB", keys: []string{"KeepAliveTimeout"}, active: positiveNumber},
-		{section: "WEB", keys: []string{"KeepNonTextMimeType"}, active: nonSentinel},
-		{section: "WEB", keys: []string{"MaxErrorMatchesAsERRORS"}, active: positiveNumber},
-		{section: "WEB", keys: []string{"MaxSelfMetaRefreshCount"}, active: positiveNumber},
-		{section: "WEB", keys: []string{"NetBufSize"}, active: positiveNumber},
-		{section: "WEB", keys: []string{"PageDownloadTimeout"}, active: positiveNumber},
-		{section: "WEB", keys: []string{"ParseHtmlContentType"}, active: nonSentinel},
-		{section: "WEB", keys: []string{"ResetContext"}, active: boolTrue},
-		{section: "WEB", keys: []string{"SSLVersionKey"}, active: nonSentinel},
-		{section: "WEB", keys: []string{"ZlibHeadersInCompressedRequestBody"}, active: boolTrue},
-	}
-
-	evidence := make([]string, 0)
-	for _, spec := range specs {
-		section := findSection(sections, spec.section)
-		if len(section) == 0 {
-			continue
-		}
-		for _, alias := range spec.keys {
-			key, raw, ok := sectionEntryCaseInsensitive(section, alias)
-			if !ok || !spec.active(raw) {
-				continue
-			}
-			evidence = append(evidence, fmt.Sprintf("[%s] %s=%q", spec.section, key, runtimeSettingEvidenceValue(key, raw)))
-		}
-	}
-	if len(evidence) == 0 {
-		return
-	}
-	sort.Strings(evidence)
-	rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
-		ID: "runtime_unmapped", Area: "Runtime Settings",
-		Notes: "Active source runtime settings have no exact APEX equivalent and require review: " +
-			strings.Join(evidence, "; ") + ". Raw source sections remain preserved.",
-	})
 }
 
 func runtimeSettingEvidenceValue(key, value string) string {

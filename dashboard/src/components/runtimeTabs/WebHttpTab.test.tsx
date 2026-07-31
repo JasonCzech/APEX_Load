@@ -84,4 +84,53 @@ describe('WebHttpTab', () => {
     act(() => sourceInput.dispatchEvent(new Event('input', { bubbles: true })))
     expect(setWeb).toHaveBeenCalledWith(undefined)
   })
+
+  it('collapses nested objects whose final value is cleared', () => {
+    const setWeb = vi.fn()
+    render({ network_simulation: { mode: 'preset' } }, setWeb)
+    const networkMode = Array.from(container.querySelectorAll('label'))
+      .find(label => label.querySelector('span')?.textContent === 'Mode')
+      ?.querySelector('select') as HTMLSelectElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+    setter?.call(networkMode, '')
+    act(() => networkMode.dispatchEvent(new Event('change', { bubbles: true })))
+    expect(setWeb).toHaveBeenCalledWith(undefined)
+  })
+
+  it('retains source-IP validation in the shared runtime editor', () => {
+    render({ source_ips: ['999.10.10.10'] }, vi.fn())
+    const sourceInput = Array.from(container.querySelectorAll('input[type="text"]')).find(
+      input => (input as HTMLInputElement).placeholder.includes('10.0.0.1'),
+    ) as HTMLInputElement
+    expect(sourceInput.getAttribute('aria-invalid')).toBe('true')
+    expect(container.textContent).toContain('Enter valid IPv4 or IPv6 addresses.')
+  })
+})
+
+describe('WebHttpTab enum vocabulary', () => {
+  // These option values are wire values the Go validator enforces
+  // (pkg/dsl/validate.go validateWebRuntimeIssues). Emitting anything else made
+  // the whole override save fail server-side, so lock the vocabularies here.
+  const optionValues = (labelText: string): string[] => {
+    const select = Array.from(container.querySelectorAll('label'))
+      .find(label => (label.querySelector('span')?.textContent || '') === labelText)
+      ?.querySelector('select') as HTMLSelectElement | undefined
+    expect(select, `select ${labelText}`).toBeDefined()
+    return Array.from(select!.options).map(option => option.value).filter(Boolean)
+  }
+
+  it('emits only validator-accepted wire values', () => {
+    render({ content_checks: [{ text: 'ok' }] }, vi.fn())
+    expect(optionValues('Filter mode')).toEqual(['none', 'allow_list', 'block_list'])
+    // Two "Mode" selects render (network simulation, then streaming).
+    const modeSelects = Array.from(container.querySelectorAll('label'))
+      .filter(label => (label.querySelector('span')?.textContent || '') === 'Mode')
+      .map(label => label.querySelector('select') as HTMLSelectElement)
+    expect(modeSelects).toHaveLength(2)
+    expect(Array.from(modeSelects[0].options).map(option => option.value).filter(Boolean)).toEqual(['max', 'preset', 'custom'])
+    expect(Array.from(modeSelects[1].options).map(option => option.value).filter(Boolean)).toEqual(['adaptive', 'fixed'])
+    expect(optionValues('Preset')).toEqual(['56k', 'dsl', 't1', '10mbps'])
+    expect(optionValues('Bandwidth estimation')).toEqual(['rolling', 'instant'])
+    expect(optionValues('Scope')).toEqual(['any_response', 'main_document', 'resource'])
+  })
 })

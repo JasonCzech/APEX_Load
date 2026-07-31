@@ -114,6 +114,12 @@ func (tr *TestRunner) validateReservationPools(settings SystemSettings) error {
 		if poolID == "" {
 			continue
 		}
+		// Zero generators is the delete-row idiom (normalize-on-write drops the
+		// row before persisting), so deleting a reservation whose pool has since
+		// been removed must not be blocked by the stale pool reference.
+		if reservation.ReservedGenerators == 0 {
+			continue
+		}
 		if !tr.FleetPoolExists(poolID) {
 			return fmt.Errorf("capacity_planning.reservations references unknown fleet pool %q", poolID)
 		}

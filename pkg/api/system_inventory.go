@@ -302,6 +302,12 @@ func defaultSupportedProtocols() []string {
 	return protocols
 }
 
+// generatorCapacityState is the per-generator capacity badge: a deliberately
+// relative heuristic (<=20% of that generator's own capacity = constrained) so
+// it stays meaningful across heterogeneous generator sizes, and it may be
+// overridden by the generator's self-reported state upstream. The absolute
+// fleet slot floors in ThresholdSettings drive fleet ALERTS only and do not
+// rewrite this badge — see the field comments on ThresholdSettings.
 func generatorCapacityState(available int32, maxVUsers int32, reachable bool) string {
 	if !reachable {
 		return "unavailable"

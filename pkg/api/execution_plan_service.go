@@ -153,6 +153,9 @@ func validateExecutionPlanDataPoolProjects(store storage.Store, projectID string
 		if normalizeProjectID(pool.ProjectID) != expectedProjectID {
 			return fmt.Errorf("data pool %q does not belong to scenario project", binding.PoolID)
 		}
+		if err := errDataPoolArchived(pool); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMet
 import { APMIntegrationProfilesResponse, DashboardAuditEvent, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarCapacityDay, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
 import { readStoredStringArray, writeStoredJSON } from '../utils/browserStorage'
 import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from './monitoringTelemetryDiagnostics'
+import { formatThresholdAlertSummary, type ThresholdAlertEntry } from '../thresholdAlerts'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
 import FleetPoolsCard from './FleetPoolsCard'
@@ -21,6 +22,8 @@ import './CreateTestModal.css'
 interface Props {
   connectionState: WebSocketConnectionState
   telemetryDiagnostics?: TelemetryDiagnosticEntry[]
+  thresholdAlerts?: ThresholdAlertEntry[]
+  onAcknowledgeThresholdAlert?: (key: string) => void
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
   initialCategoryId?: MonitorCategoryId
@@ -34,7 +37,7 @@ const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
 const EMPTY_SERVICES: SystemServicesResponse['services'] = []
 
 const MONITOR_CATEGORIES = [
-  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'production-readiness'] },
+  { id: 'overview', label: 'Overview', cardIds: ['system-health', 'threshold-alerts', 'production-readiness'] },
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-pools', 'generator-metadata'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
@@ -295,7 +298,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], thresholdAlerts = [], onAcknowledgeThresholdAlert, onSelectTest, canManageSystem = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
@@ -440,6 +443,16 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const fleetAlertWarningCount = fleetAlerts.filter(alert => alert.severity === 'warning').length
   const fleetAlertHeaderSeverity: MonitorSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
   const fleetAlertHeaderLabel = fleetAlerts.length > 0 ? `${fleetAlerts.length} alert${fleetAlerts.length === 1 ? '' : 's'}` : generators.length > 0 ? 'clear' : 'no inventory'
+  const activeThresholdAlerts = thresholdAlerts.filter(alert => alert.active)
+  const unacknowledgedThresholdAlerts = activeThresholdAlerts.filter(alert => !alert.acknowledged)
+  const thresholdAlertHeaderSeverity: MonitorSeverity = unacknowledgedThresholdAlerts.some(alert => alert.action === 'stop_requested' || alert.metric === 'error_pct')
+    ? 'danger'
+    : unacknowledgedThresholdAlerts.length > 0 ? 'warning' : 'healthy'
+  const thresholdAlertHeaderLabel = activeThresholdAlerts.length === 0
+    ? 'clear'
+    : unacknowledgedThresholdAlerts.length > 0
+      ? `${unacknowledgedThresholdAlerts.length} alert${unacknowledgedThresholdAlerts.length === 1 ? '' : 's'}`
+      : 'all acknowledged'
   const fleetAuditHeaderSeverity: MonitorSeverity = !canManageSystem ? 'unknown' : fleetAuditEvents.length > 0 ? 'healthy' : 'unknown'
   const fleetAuditHeaderLabel = canManageSystem
     ? fleetAuditEvents.length > 0 ? `${fleetAuditEvents.length} event${fleetAuditEvents.length === 1 ? '' : 's'}` : 'quiet'
@@ -885,6 +898,58 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
               >
                 Restart Controller
               </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'threshold-alerts',
+      title: 'Recent SLA Threshold Alerts',
+      headerBadge: (
+        <span className={`monitor-header-badge ${thresholdAlertHeaderSeverity}`}>
+          {thresholdAlertHeaderLabel}
+        </span>
+      ),
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
+      ),
+      content: (
+        <div className="monitor-body">
+          {thresholdAlerts.length === 0 ? (
+            <p className="monitor-hint">No global SLA threshold breaches on running tests. Thresholds are configured in Settings → Thresholds.</p>
+          ) : (
+            <div className="monitor-scroll-area">
+              <div className="monitor-warning-list">
+                {thresholdAlerts.map(alert => (
+                  <div key={alert.key} className="monitor-warning-row">
+                    <div>
+                      <p className={alert.action === 'stop_requested' || alert.metric === 'error_pct' ? 'text-danger' : ''}>
+                        {formatThresholdAlertSummary(alert)}
+                        {alert.acknowledged ? <span className="monitor-alert-ack">acknowledged</span> : null}
+                        {!alert.active ? <span className="monitor-alert-ack">resolved</span> : null}
+                      </p>
+                      <div className="telemetry-diagnostic-summary">
+                        {alert.testName || alert.testId} · last seen {formatTelemetryDiagnosticTime(alert.lastSeenAt)}
+                      </div>
+                    </div>
+                    <div className="settings-inline-actions monitor-warning-actions">
+                      {onSelectTest ? (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onSelectTest(alert.testId)}>
+                          Open
+                        </button>
+                      ) : null}
+                      {onAcknowledgeThresholdAlert && alert.active && !alert.acknowledged ? (
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAcknowledgeThresholdAlert(alert.key)}>
+                          Ack
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1434,7 +1499,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <FleetGeneratorsCard canManage={canManageSystem} />,
     },
-  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onAcknowledgeThresholdAlert, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, thresholdAlerts, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1518,6 +1583,13 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       },
       { label: 'Telemetry', severity: telemetryHeaderSeverity, summary: telemetrySummary },
       {
+        label: 'SLA Thresholds',
+        severity: thresholdAlertHeaderSeverity,
+        summary: unacknowledgedThresholdAlerts.length > 0
+          ? `${unacknowledgedThresholdAlerts.length} unacknowledged SLA threshold alert${unacknowledgedThresholdAlerts.length === 1 ? '' : 's'}.`
+          : 'No unacknowledged SLA threshold alerts.',
+      },
+      {
         label: 'Fleet',
         severity: fleetAlertHeaderSeverity,
         summary: generators.length === 0 ? 'No generator inventory reported.' : `${fleetAlerts.length} active fleet alert${fleetAlerts.length === 1 ? '' : 's'}.`,
@@ -1528,7 +1600,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         summary: schedulePresentation.summary,
       },
     ]
-  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, fleetAlertHeaderSeverity, fleetAlerts, scheduleHeaderSeverity, schedulePresentation.summary])
+  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, thresholdAlertHeaderSeverity, unacknowledgedThresholdAlerts.length, fleetAlertHeaderSeverity, fleetAlerts, scheduleHeaderSeverity, schedulePresentation.summary])
 
   const overallSeverity = useMemo(() => {
     if (severityEntries.some(e => e.severity === 'danger')) return 'danger'

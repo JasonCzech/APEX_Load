@@ -64,6 +64,7 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"web_runtime":       true,
 	"browser_config":    true,
 	"browser_emulation": true,
+	"java_vuser":        true,
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +243,7 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 	if !reflect.ValueOf(config.WebRuntime).IsZero() {
 		projected.WebRuntime = cloneViaJSON(&config.WebRuntime)
 	}
+	projected.JavaVuser = runtimeJavaVuserOverrideFromConfig(config.JavaVuser)
 	if !reflect.ValueOf(config.Browser).IsZero() {
 		projected.BrowserConfig = cloneViaJSON(&config.Browser)
 	}
@@ -250,6 +252,25 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 		projected.BrowserEmulation = cloneViaJSON(config.BrowserEmulation)
 	}
 	if runtimeSettingsOverrideEmpty(projected) {
+		return nil
+	}
+	return projected
+}
+
+func runtimeJavaVuserOverrideFromConfig(java dsl.JavaVuserConfig) *RuntimeJavaVuserOverride {
+	projected := &RuntimeJavaVuserOverride{
+		JDKSelection:            java.JDKSelection,
+		JDKHome:                 java.JDKHome,
+		AdditionalVMParameters:  append([]string(nil), java.AdditionalVMParameters...),
+		Classpath:               append([]string(nil), java.Classpath...),
+		UseXBootClasspath:       cloneBoolPointer(java.UseXBootClasspath),
+		DedicatedClassLoader:    cloneBoolPointer(java.DedicatedClassLoader),
+		SkipParameterEvaluation: cloneBoolPointer(java.SkipParameterEvaluation),
+	}
+	if projected.JDKSelection == "" && projected.JDKHome == "" &&
+		len(projected.AdditionalVMParameters) == 0 && len(projected.Classpath) == 0 &&
+		projected.UseXBootClasspath == nil && projected.DedicatedClassLoader == nil &&
+		projected.SkipParameterEvaluation == nil {
 		return nil
 	}
 	return projected
@@ -372,6 +393,9 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["browser_emulation"] {
 		clone.BrowserEmulation = nil
 	}
+	if !requested["java_vuser"] {
+		clone.JavaVuser = nil
+	}
 	clone.Env = nil
 	clone.RedactionRules = nil
 	if clone.Iterations == nil && clone.Pacing == nil && clone.ThinkTime == nil &&
@@ -379,7 +403,7 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 		clone.AutoTransactions == "" && clone.BaseURL == "" &&
 		clone.Log == nil && clone.RunLogic == nil &&
 		clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil &&
-		clone.BrowserEmulation == nil {
+		clone.BrowserEmulation == nil && clone.JavaVuser == nil {
 		return nil
 	}
 	return clone
@@ -434,6 +458,8 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 			next.BrowserConfig = src.BrowserConfig
 		case "browser_emulation":
 			next.BrowserEmulation = src.BrowserEmulation
+		case "java_vuser":
+			next.JavaVuser = src.JavaVuser
 		}
 	}
 
@@ -548,6 +574,7 @@ func runtimeSettingsOverrideEmpty(settings *RuntimeSettingsOverride) bool {
 			settings.AutoTransactions == "" && settings.BaseURL == "" && settings.Log == nil &&
 			settings.RunLogic == nil && settings.HTTP == nil && settings.WebRuntime == nil &&
 			settings.BrowserConfig == nil && settings.BrowserEmulation == nil &&
+			settings.JavaVuser == nil &&
 			len(settings.Env) == 0 && len(settings.RedactionRules) == 0)
 }
 
@@ -571,6 +598,8 @@ func fieldApplicableForProtocol(field, protocol string) bool {
 		return isHTTPProtocol(protocol)
 	case "web_runtime":
 		return protocolFamilyIsBrowser(protocol) || isHTTPProtocol(protocol)
+	case "java_vuser":
+		return strings.EqualFold(strings.TrimSpace(protocol), "java_vuser")
 	default:
 		// iterations, pacing, think_time, error_handling, log, run_logic, log_level,
 		// auto_transactions, base_url are universal.

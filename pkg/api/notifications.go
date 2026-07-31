@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -45,6 +46,8 @@ var supportedNotificationEvents = map[string]struct{}{
 	"telemetry_degraded":  {},
 	"telemetry_breached":  {},
 	"telemetry_recovered": {},
+
+	"threshold_alert": {},
 
 	"fleet_alert":                {},
 	"fleet_alert_acknowledged":   {},
@@ -182,10 +185,13 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 	return nil
 }
 
-func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event NotificationEvent) {
+// Dispatch submits an event to every enabled matching webhook and reports
+// whether at least one delivery was admitted by the bounded executor.
+func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event NotificationEvent) bool {
 	if d == nil {
-		return
+		return false
 	}
+	admitted := false
 	for _, webhook := range settings.Webhooks {
 		if !webhook.Enabled || !notificationWebhookMatchesEvent(webhook, event.Type) {
 			continue
@@ -198,8 +204,11 @@ func (d *notificationDispatcher) Dispatch(settings NotificationsSettings, event 
 		if !d.tryDispatch(webhook, payload, notificationDedupeKey(webhook, event)) {
 			notificationDeliveryDroppedTotal.Add(1)
 			slog.Warn("notification delivery dropped by bounded dispatcher", "event", event.Type, "webhook", webhook.Name)
+			continue
 		}
+		admitted = true
 	}
+	return admitted
 }
 
 // tryDispatch is a zero-backlog bounded executor. It admits at most a fixed
@@ -383,9 +392,10 @@ func notificationTeamsFacts(event NotificationEvent) []map[string]any {
 
 func buildDynatraceNotificationPayload(webhook NotificationWebhookSettings, event NotificationEvent) map[string]any {
 	eventType := "CUSTOM_INFO"
-	if event.Type == "test_failed" || event.Type == "telemetry_breached" || (event.Type == "fleet_alert" && strings.EqualFold(event.Severity, "danger")) {
+	if event.Type == "test_failed" || event.Type == "telemetry_breached" ||
+		((event.Type == "fleet_alert" || event.Type == "threshold_alert") && strings.EqualFold(event.Severity, "danger")) {
 		eventType = "ERROR_EVENT"
-	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" {
+	} else if event.Type == "telemetry_degraded" || event.Type == "fleet_alert" || event.Type == "fleet_degraded" || event.Type == "threshold_alert" {
 		eventType = "CUSTOM_ALERT"
 	}
 	payload := map[string]any{
@@ -427,9 +437,19 @@ func notificationDedupeKey(webhook NotificationWebhookSettings, event Notificati
 		strings.TrimSpace(webhook.URL),
 		strings.TrimSpace(event.Type),
 		strings.TrimSpace(event.TestID),
+		// Status disambiguates events sharing Type+TestID+Timestamp: a single
+		// threshold_alert routing pass can emit several breaches (distinct
+		// metrics or transactions) stamped with the same instant, and each must
+		// keep its own idempotency key for receiver-side dedupe.
+		strings.TrimSpace(event.Status),
+		strings.TrimSpace(event.Summary),
 		event.Timestamp.UTC().Format(time.RFC3339Nano),
 	}
-	return strings.Join(parts, "|")
+	// The key is sent as an HTTP header and a Dynatrace property. Hash the
+	// canonical identity so user-influenced names/summaries cannot inject
+	// control bytes, exceed intermediary header limits, or disclose webhook
+	// configuration while still preserving event-level uniqueness.
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(parts, "\x00"))))
 }
 
 func humanizeNotificationEvent(eventType string) string {

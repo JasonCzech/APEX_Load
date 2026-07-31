@@ -28,6 +28,7 @@ import {
   formatKeyValueLines,
   formatLineList,
   formatMillisecondsAsSecondsLabel,
+  formatRuntimeDispositionLabel,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
@@ -36,8 +37,12 @@ import {
   parseDFEChain,
   parseKeyValueLines,
   parseLineList,
+  readImportedRuntimeFiles,
+  readImportedRuntimeSettingDispositions,
+  summarizeImportedRuntimeDispositions,
   syncSOAPEnvelopeNamespace,
   type HTTPTransportTabId,
+  type ImportedRuntimeSettingDisposition,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
 import { formatHTTPVersion, HTTP_VERSION_OPTIONS } from './runtimeSettingsModel'
@@ -88,6 +93,8 @@ interface ScriptRuntimeSettingsSidebarProps {
   paritySummary?: string
   readiness: ReactNode
   script: Pick<ScriptDefinition, 'config'>
+  /** Opens the Imported Source Runtime Settings section for the full per-key list. */
+  onOpenImportedSource?: () => void
 }
 
 export function ScriptRuntimeSettingsSidebar({
@@ -95,6 +102,7 @@ export function ScriptRuntimeSettingsSidebar({
   paritySummary,
   readiness,
   script,
+  onOpenImportedSource,
 }: ScriptRuntimeSettingsSidebarProps) {
   const { httpProxySummary, logLevelLabel, runLogicLabel, thinkTimeLabel } = buildScriptRuntimeSummary(script)
   const httpVersionSummary = formatHTTPVersion(script.config.http?.version)
@@ -126,6 +134,11 @@ export function ScriptRuntimeSettingsSidebar({
               </li>
             ))}
           </ul>
+          {onOpenImportedSource && (
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenImportedSource}>
+              {parityEntries.length > 6 ? `View all ${parityEntries.length} in imported source settings` : 'View imported source settings'}
+            </button>
+          )}
         </div>
       )}
     </>
@@ -306,6 +319,15 @@ function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectionId }) 
             <path d="M9 19h4" />
           </>
         )
+      case 'imported_source':
+        return (
+          <>
+            <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5z" />
+            <path d="M14 3v5h5" />
+            <path d="M9 13h6" />
+            <path d="M9 17h4" />
+          </>
+        )
     }
   })()
 
@@ -355,7 +377,6 @@ export function ScriptRuntimeSettingsView({
     browser: isBrowserScript,
     database: isDatabaseScript,
     grpc: isGrpcScript,
-    http: isHttpScript,
     httpTransport: isHttpTransportScript,
     javaHttp: isJavaHttpScript,
     javaVuser: isJavaVuserScript,
@@ -404,6 +425,19 @@ export function ScriptRuntimeSettingsView({
   // Browser-emulation catalog: seeded with the bundled fallback, refreshed from
   // the controller so dropdowns stay in lockstep with replay UA resolution.
   const browserEmulationCatalog = useBrowserEmulationCatalog(supportsBrowserEmulation)
+
+  // Imported source runtime settings: the preserved raw cfg/usp sections plus
+  // the per-key dispositions the importer recorded for the selected profile.
+  const importedRuntimeFiles = readImportedRuntimeFiles(script.metadata?.import)
+  const importedRuntimeDispositions = readImportedRuntimeSettingDispositions(script.metadata?.import)
+  const importedRuntimeFileNames = Object.keys(importedRuntimeFiles).sort((left, right) => {
+    const leftSelected = importedRuntimeDispositions[left] ? 0 : 1
+    const rightSelected = importedRuntimeDispositions[right] ? 0 : 1
+    if (leftSelected !== rightSelected) return leftSelected - rightSelected
+    return left.localeCompare(right)
+  })
+  const hasImportedRuntimeFiles = importedRuntimeFileNames.length > 0
+  const importedDispositionSummary = summarizeImportedRuntimeDispositions(importedRuntimeDispositions)
 
   const browserEmulation = script.config.browser_emulation
   const browserEmulationMode = browserEmulation?.mode === 'custom' ? 'custom' : browserEmulation?.mode === 'specific' ? 'specific' : ''
@@ -611,7 +645,7 @@ export function ScriptRuntimeSettingsView({
         <span className="section-summary">{script.config.java_vuser?.jdk_selection === 'specified' ? 'Specified JDK' : 'Internal JDK logic'}</span>
       </button>
     )}
-    {isHttpScript && (
+    {isHttpTransportScript && (
       <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('web_runtime') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('web_runtime')}>
         <RuntimeSectionIcon section="web_runtime" />
         <span className="section-label">Web HTTP/HTML Compatibility</span>
@@ -629,6 +663,17 @@ export function ScriptRuntimeSettingsView({
       <span className="section-label">Logging</span>
       <span className="section-summary">{script.config.log?.level || 'standard'}</span>
     </button>
+    {hasImportedRuntimeFiles && (
+      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('imported_source') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('imported_source')}>
+        <RuntimeSectionIcon section="imported_source" />
+        <span className="section-label">Imported Source Runtime Settings</span>
+        <span className="section-summary">
+          {importedDispositionSummary.total > 0
+            ? `${importedDispositionSummary.total} settings dispositioned`
+            : `${importedRuntimeFileNames.length} preserved file${importedRuntimeFileNames.length === 1 ? '' : 's'}`}
+        </span>
+      </button>
+    )}
   </nav>
   <div className="runtime-settings-detail" aria-live="polite">
   {/* Script Configuration */}
@@ -1457,6 +1502,15 @@ export function ScriptRuntimeSettingsView({
                 <option value="1.0">TLS 1.0</option><option value="1.1">TLS 1.1</option>
                 <option value="1.2">TLS 1.2</option><option value="1.3">TLS 1.3</option>
               </select></label>
+            <label><span>Client Certificate File</span>
+              <input type="text" value={script.config.http?.tls?.client_cert_file || ''} placeholder="/etc/apexload/certs/client.pem"
+                onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, client_cert_file: e.target.value || undefined } })} /></label>
+            <label><span>Client Key File</span>
+              <input type="text" value={script.config.http?.tls?.client_key_file || ''} placeholder="/etc/apexload/certs/client.key"
+                onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, client_key_file: e.target.value || undefined } })} /></label>
+            <label><span>CA Certificate File</span>
+              <input type="text" value={script.config.http?.tls?.ca_cert_file || ''} placeholder="/etc/apexload/certs/ca.pem"
+                onChange={e => updateField('config.http', { ...script.config.http, tls: { ...script.config.http?.tls, ca_cert_file: e.target.value || undefined } })} /></label>
             <div className="runtime-checkbox-list">
               <label className="checkbox-label">
                 <input type="checkbox" checked={script.config.http?.tls?.insecure_skip_verify || false}
@@ -1464,6 +1518,7 @@ export function ScriptRuntimeSettingsView({
                 <span>Skip certificate verification</span>
               </label>
             </div>
+            <p className="new-test-inline-note">Certificate paths resolve on the generator host running the VUsers, not in the browser.</p>
           </div>
         </div>}
         {effectiveHTTPTransportTab === 'proxy' && <div
@@ -1542,6 +1597,11 @@ export function ScriptRuntimeSettingsView({
         >
           <h5>Browser Emulation</h5>
           <div className="form-grid">
+            <label>
+              <span>User Agent</span>
+              <input type="text" value={script.config.browser?.user_agent || ''} placeholder="Engine default"
+                onChange={e => updateField('config.browser', { ...script.config.browser, user_agent: e.target.value || undefined })} />
+            </label>
             <label>
               <span>Browser Engine</span>
               <select value={script.config.browser?.engine || 'chromium'}
@@ -2073,7 +2133,7 @@ export function ScriptRuntimeSettingsView({
     )}
   </div>}
 
-  {isHttpScript && <div className={`settings-section ${runtimeSectionIsActive('web_runtime') ? 'open' : ''}`}>
+  {isHttpTransportScript && <div className={`settings-section ${runtimeSectionIsActive('web_runtime') ? 'open' : ''}`}>
     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('web_runtime')}>
       <RuntimeSectionIcon section="web_runtime" />
       <span className="section-label">Web HTTP/HTML Compatibility</span>
@@ -2482,6 +2542,97 @@ export function ScriptRuntimeSettingsView({
       </div>
     )}
   </div>
+  {/* Imported Source Runtime Settings (read-only) */}
+  {hasImportedRuntimeFiles && (
+  <div className={`settings-section ${runtimeSectionIsActive('imported_source') ? 'open' : ''}`}>
+    <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('imported_source')}>
+      <RuntimeSectionIcon section="imported_source" />
+      <span className="section-label">Imported Source Runtime Settings</span>
+      <span className="section-summary">
+        {importedDispositionSummary.total > 0
+          ? `${importedDispositionSummary.mapped} mapped · ${importedDispositionSummary.compatibility} compatibility-only · ${importedDispositionSummary.nonApplicable} not applicable${importedDispositionSummary.unclassified > 0 ? ` · ${importedDispositionSummary.unclassified} unclassified` : ''}`
+          : 'Preserved source files'}
+      </span>
+      <span className="chevron">{runtimeSectionIsActive('imported_source') ? '▾' : '▸'}</span>
+    </button>
+    {runtimeSectionIsActive('imported_source') && (
+      <div className="section-body">
+        <p className="new-test-inline-note">
+          Every runtime setting found in the imported LoadRunner archive, exactly as the source declared it, with the
+          disposition APEX Load applied. Mapped settings are editable in the sections on the left; compatibility-only and
+          not-applicable rows are preserved read-only so nothing from the source is silently dropped.
+        </p>
+        <div className="parameter-sidebar-list">
+          {importedRuntimeFileNames.map(fileName => {
+            const sections = importedRuntimeFiles[fileName] || {}
+            const fileDispositions = importedRuntimeDispositions[fileName]
+            const selectedProfile = Boolean(fileDispositions)
+            const sectionNames = Object.keys(sections).sort((left, right) => left.localeCompare(right))
+            return (
+              <details key={`imported-runtime-file-${fileName}`} className="settings-section imported-runtime-file" open={selectedProfile}>
+              <summary className="section-toggle">
+                <strong>{fileName}</strong>
+                <span className="repository-status-pill imported-runtime-file-tag">
+                  {selectedProfile ? 'Selected runtime profile' : 'Not selected at import — preserved only'}
+                </span>
+              </summary>
+              {sectionNames.map(sectionName => {
+                const keys = sections[sectionName] || {}
+                const keyNames = Object.keys(keys).sort((left, right) => left.localeCompare(right))
+                if (keyNames.length === 0) return null
+                return (
+                  <div key={`imported-runtime-${fileName}-${sectionName}`} className="section-body imported-runtime-section">
+                    <h5 className="panel-title cell-mono imported-runtime-section-title">[{sectionName}]</h5>
+                    <div className="script-parameter-table-wrap imported-runtime-table-wrap">
+                      <table className="script-parameter-table imported-runtime-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Setting</th>
+                            <th scope="col">Source value</th>
+                            <th scope="col">Disposition</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {keyNames.map(key => {
+                            const disposition: ImportedRuntimeSettingDisposition | undefined = fileDispositions?.[sectionName]?.[key]
+                            const dispositionTone = disposition?.status === 'mapped'
+                              ? 'healthy'
+                              : disposition?.status === 'compatibility_only'
+                                ? 'warning'
+                                : disposition?.status === 'unclassified' || !disposition
+                                  ? 'danger'
+                                  : ''
+                            const tooltip = [
+                              disposition?.note,
+                              disposition?.fields?.length ? `Destination: ${disposition.fields.join(', ')}` : '',
+                              disposition?.parity_id ? `Parity entry: ${disposition.parity_id}` : '',
+                            ].filter(Boolean).join('\n')
+                            return (
+                              <tr key={`imported-runtime-${fileName}-${sectionName}-${key}`}>
+                                <td className="cell-mono imported-runtime-key">{key}</td>
+                                <td className="cell-mono imported-runtime-value">{keys[key] === '' ? <em>(empty)</em> : keys[key]}</td>
+                                <td>
+                                  <span className={`repository-status-pill imported-runtime-disposition ${dispositionTone}`} title={tooltip || undefined}>
+                                    {selectedProfile ? formatRuntimeDispositionLabel(disposition) : 'Preserved (profile not selected)'}
+                                  </span>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+              </details>
+            )
+          })}
+        </div>
+      </div>
+    )}
+  </div>
+  )}
   </div>
 </div>
 </section>

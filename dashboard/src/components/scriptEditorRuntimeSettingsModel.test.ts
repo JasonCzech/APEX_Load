@@ -67,7 +67,11 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(getRuntimeProtocolCapabilities('java_vuser')).toMatchObject({ javaVuser: true, httpTransport: false, requiresBaseURL: false })
     expect(getRuntimeProtocolCapabilities('jms-solace')).toMatchObject({ jms: true, httpTransport: false })
     expect(runtimeSettingsSectionIsAvailable('http', 'soap')).toBe(true)
-    expect(runtimeSettingsSectionIsAvailable('web_runtime', 'https')).toBe(false)
+    // Web HTTP/HTML compatibility settings ride the shared HTTP transport, so
+    // every HTTP-transport protocol edits them (mirrors the backend matrix).
+    expect(runtimeSettingsSectionIsAvailable('web_runtime', 'https')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('web_runtime', 'soap')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('web_runtime', 'grpc')).toBe(false)
     expect(runtimeSettingsSectionIsAvailable('web_runtime', 'http')).toBe(true)
     expect(runtimeSettingsSectionIsAvailable('grpc', 'http')).toBe(false)
     expect(runtimeSettingsSectionIsAvailable('java_vuser', 'java_vuser')).toBe(true)
@@ -107,6 +111,7 @@ describe('scriptEditorRuntimeSettingsModel', () => {
 
   it('preserves explicit false and zero values instead of treating them as inheritance', () => {
     const override = runtimeOverrideFromScriptConfig(runtimeConfig())
+    if (!override) throw new Error('expected an override projection for a defined config')
     expect(override.iterations).toBe(0)
     expect(override.think_time).toMatchObject({ mean_ms: 0, ignore: false })
     expect(override.error_handling).toMatchObject({

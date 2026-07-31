@@ -1189,48 +1189,78 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// OpenAPI-Responses: 200
 func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
 	settings := s.systemSettingsDomainService().Get()
-	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(settings))
+	writeSystemSettingsResponse(w, http.StatusOK, settings)
 }
 
+// OpenAPI-Responses: 200, 409, 412, 428
 func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	var settings SystemSettings
-	if err := json.Unmarshal(body, &settings); err != nil {
+	decoded, err := decodeSystemSettingsUpdate(body)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	policyAuditOperationID := ""
-	result, err := s.systemSettingsDomainService().Update(settings, body, func(plan systemSettingsUpdatePlan) error {
-		if !plan.PolicyChanged {
+	ifMatchRevision, err := parseSystemSettingsIfMatch(r.Header.Get("If-Match"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	bodyRevision := strings.TrimSpace(decoded.ExpectedRevision)
+	if bodyRevision != "" && !validSystemSettingsRevision(bodyRevision) {
+		writeError(w, http.StatusBadRequest, "expected_revision must be the revision returned by GET /api/v1/system/settings")
+		return
+	}
+	if ifMatchRevision != "" && bodyRevision != "" && ifMatchRevision != bodyRevision {
+		writeError(w, http.StatusBadRequest, "If-Match and expected_revision must identify the same system-settings revision")
+		return
+	}
+	expectedRevision := ifMatchRevision
+	if expectedRevision == "" {
+		expectedRevision = bodyRevision
+	}
+	if expectedRevision == "" {
+		writeError(w, http.StatusPreconditionRequired, "system settings update requires If-Match or expected_revision from GET /api/v1/system/settings")
+		return
+	}
+	requiredAuditOperationID := ""
+	result, err := s.systemSettingsDomainService().Update(decoded.Settings, body, expectedRevision, func(plan systemSettingsUpdatePlan) error {
+		if !plan.PolicyChanged && !plan.NotificationCredentialsChanged {
 			return nil
 		}
 		operationID, auditErr := s.beginRequiredAuditOperation(r, "system.settings.update", "system_settings", "global", "", map[string]any{
 			"allow_source_secret_migration":          plan.Candidate.ScriptImports.AllowSourceSecretMigration,
-			"source_secret_migration_policy_changed": true,
+			"source_secret_migration_policy_changed": plan.PolicyChanged,
+			"notification_credentials_changed":       plan.NotificationCredentialsChanged,
+			"notification_credential_count_before":   plan.PreviousCredentialCount,
+			"notification_credential_count_after":    plan.CandidateCredentialCount,
 		})
 		if auditErr != nil {
 			return auditErr
 		}
-		policyAuditOperationID = operationID
+		requiredAuditOperationID = operationID
 		return nil
 	})
 	var preCommitErr *systemSettingsBeforeCommitError
 	if errors.As(err, &preCommitErr) {
-		writeError(w, http.StatusServiceUnavailable, "system settings audit is unavailable; the migration policy was not changed")
+		writeError(w, http.StatusServiceUnavailable, "system settings audit is unavailable; governed settings were not changed")
 		return
 	}
 	if err != nil {
-		if policyAuditOperationID != "" {
+		if requiredAuditOperationID != "" {
 			outcome := "update_failed"
 			auditDetails := map[string]any{
 				"allow_source_secret_migration":          result.Candidate.ScriptImports.AllowSourceSecretMigration,
-				"source_secret_migration_policy_changed": true,
+				"source_secret_migration_policy_changed": result.PolicyChanged,
+				"notification_credentials_changed":       result.NotificationCredentialsChanged,
+				"notification_credential_count_before":   result.PreviousCredentialCount,
+				"notification_credential_count_after":    result.CandidateCredentialCount,
 			}
 			if errors.Is(err, errSystemSettingsConflict) {
 				outcome = "conflict"
@@ -1238,13 +1268,17 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 				outcome = "persistence_error"
 				auditDetails["commit_state"] = "ambiguous"
 			}
-			if auditErr := s.completeRequiredAuditOperation(r, policyAuditOperationID, "system.settings.update", "failed", outcome, "system_settings", "global", "", auditDetails); auditErr != nil {
+			if auditErr := s.completeRequiredAuditOperation(r, requiredAuditOperationID, "system.settings.update", "failed", outcome, "system_settings", "global", "", auditDetails); auditErr != nil {
 				writeError(w, http.StatusServiceUnavailable, "system settings audit outcome could not be persisted")
 				return
 			}
 		}
 		if errors.Is(err, errSystemSettingsConflict) {
-			writeError(w, http.StatusConflict, err.Error())
+			status := http.StatusConflict
+			if ifMatchRevision != "" {
+				status = http.StatusPreconditionFailed
+			}
+			writeError(w, status, err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -1253,18 +1287,29 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 	auditDetails := map[string]any{
 		"auth_mode":                              result.Updated.Auth.Mode,
 		"allow_source_secret_migration":          result.Updated.ScriptImports.AllowSourceSecretMigration,
-		"source_secret_migration_policy_changed": result.Previous.ScriptImports.AllowSourceSecretMigration != result.Updated.ScriptImports.AllowSourceSecretMigration,
+		"source_secret_migration_policy_changed": result.PolicyChanged,
+		"notification_credentials_changed":       result.NotificationCredentialsChanged,
+		"notification_credential_count_before":   result.PreviousCredentialCount,
+		"notification_credential_count_after":    result.CandidateCredentialCount,
 	}
-	if policyAuditOperationID != "" {
-		if auditErr := s.completeRequiredAuditOperation(r, policyAuditOperationID, "system.settings.update", "success", "updated", "system_settings", "global", "", auditDetails); auditErr != nil {
-			writeError(w, http.StatusServiceUnavailable, "system settings were updated but the migration-policy audit outcome could not be persisted; reload settings before retrying")
+	if requiredAuditOperationID != "" {
+		if auditErr := s.completeRequiredAuditOperation(r, requiredAuditOperationID, "system.settings.update", "success", "updated", "system_settings", "global", "", auditDetails); auditErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "system settings were updated but the governed-change audit outcome could not be persisted; reload settings before retrying")
 			return
 		}
 	} else {
 		s.recordAuditEvent(r, "system.settings.update", "success", "system_settings", "global", "", auditDetails)
 	}
 
-	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(result.Updated))
+	writeSystemSettingsResponse(w, http.StatusOK, result.Updated)
+}
+
+func writeSystemSettingsResponse(w http.ResponseWriter, status int, settings SystemSettings) {
+	revision := systemSettingsRevision(settings)
+	w.Header().Set("ETag", systemSettingsETag(revision))
+	response := redactedSystemSettingsResponse(settings)
+	response["revision"] = revision
+	writeJSON(w, status, response)
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

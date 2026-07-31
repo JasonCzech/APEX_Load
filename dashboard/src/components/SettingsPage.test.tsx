@@ -9,6 +9,8 @@ import type { WailsDesktopBridge } from '../desktop/desktopBridge'
 import type { DashboardAuthEffectiveAccessResource, Domain, ProjectSettings } from '../types'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
+import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { ApiError } from '../hooks/apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -48,11 +50,14 @@ const apiMock = {
   createDataPoolRow: vi.fn(),
   updateDataPoolRow: vi.fn(),
   deleteDataPoolRow: vi.fn(),
+  importDataPoolRows: vi.fn(),
+  exportDataPoolRows: vi.fn(),
   listTests: vi.fn(),
   listProjectSecrets: vi.fn(),
   createProjectSecrets: vi.fn(),
   rotateProjectSecret: vi.fn(),
 }
+const apiProviderState = vi.hoisted(() => ({ current: undefined as unknown }))
 
 const applicationApiMock = {
   listReleases: vi.fn(),
@@ -98,8 +103,16 @@ const projectContextMock = {
   createAndSelectProject: vi.fn(),
 }
 
+const fleetApiMock = {
+  listFleetPools: vi.fn(),
+}
+
 vi.mock('../hooks/useApi', () => ({
-  useApi: () => apiMock,
+  useApi: () => apiProviderState.current,
+}))
+
+vi.mock('../hooks/api/useFleetApi', () => ({
+  useFleetApi: () => fleetApiMock,
 }))
 
 vi.mock('../hooks/api/useApplicationApi', () => ({
@@ -232,9 +245,14 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.projectId')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
     delete (window as BridgeWindow).go
+    projectContextMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
     projectContextMock.createAndSelectProject.mockReset()
+    apiProviderState.current = apiMock
+    fleetApiMock.listFleetPools.mockReset()
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [] })
 
     apiMock.getSystemSettings.mockResolvedValue({
+      revision: `ss-${'a'.repeat(64)}`,
       general: {
         api_endpoint: ':8080',
         max_concurrent_tests: 10,
@@ -1594,6 +1612,15 @@ describe('SettingsPage', () => {
     const capacitySection = container.querySelector('#settings-section-capacity')
     expect(capacitySection).toBeTruthy()
     if (!capacitySection) return
+
+    // Reserving 4 generators requires the configured inventory to cover them;
+    // the form now mirrors the backend overbooking rule before save.
+    await selectSettingsSubnav(capacitySection, 'Availability')
+    const configuredGeneratorsInput = findSettingInput(capacitySection, 'Configured Available Generators')
+    expect(configuredGeneratorsInput).toBeTruthy()
+    if (!configuredGeneratorsInput) return
+    await setFieldValue(configuredGeneratorsInput, '6')
+
     await selectSettingsSubnav(capacitySection, 'Reservations')
 
     const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
@@ -2844,6 +2871,65 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Settings saved.')
   })
 
+  it('keeps the write-only Dynatrace token marker when only the display name changes', async () => {
+    const baseline = await apiMock.getSystemSettings()
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      ...baseline,
+      notifications: {
+        webhooks: [{
+          name: 'Old Dynatrace name',
+          enabled: true,
+          url: 'https://example.live.dynatrace.com/api/v2/events/ingest',
+          format: 'dynatrace',
+          events: ['telemetry_breached'],
+          api_token: '',
+          has_api_token: true,
+          timeout_minutes: 15,
+        }],
+      },
+    })
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Integrations')
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+    await selectSettingsSubnav(integrationsSection, 'Notifications')
+
+    const webhookCard = integrationsSection.querySelector('.settings-notification-webhook-card')
+    const nameInput = webhookCard?.querySelector('input[placeholder="Perf Alerts"]') as HTMLInputElement | null
+    const tokenInput = webhookCard?.querySelector('input[placeholder="Configured; enter a new token to rotate"]') as HTMLInputElement | null
+    expect(nameInput).toBeTruthy()
+    expect(tokenInput).toBeTruthy()
+    if (!nameInput || !tokenInput) return
+    expect(tokenInput.value).toBe('')
+
+    await setFieldValue(nameInput, 'Renamed Dynatrace')
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      notifications: {
+        webhooks: [expect.objectContaining({
+          name: 'Renamed Dynatrace',
+          format: 'dynatrace',
+          url: 'https://example.live.dynatrace.com/api/v2/events/ingest',
+          api_token: '',
+          has_api_token: true,
+        })],
+      },
+    }))
+  })
+
   it('validates trusted-header auth when no roles headers are configured', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
@@ -2908,6 +2994,1724 @@ describe('SettingsPage', () => {
 
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(document.activeElement).toBe(resetButton)
+  })
+
+  it('shows a threshold validation error inline under its field and badges the Thresholds chip', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    expect(thresholdsSection).toBeTruthy()
+    if (!thresholdsSection) return
+
+    const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
+    expect(p99Input).toBeTruthy()
+    if (!p99Input) return
+    await setFieldValue(p99Input, '-5')
+
+    const fieldErrors = Array.from(thresholdsSection.querySelectorAll('.settings-field-error')).map(el => el.textContent)
+    expect(fieldErrors).toContain('Max P99 latency must be greater than 0 ms.')
+
+    const topbar = document.querySelector('[data-testid="settings-topbar"]')
+    // With a badge showing, the chip's aria-label folds in the issue count so
+    // assistive tech announces it.
+    const thresholdsChip = Array.from(topbar?.querySelectorAll('button') ?? []).find(button => button.getAttribute('aria-label')?.startsWith('Performance Thresholds'))
+    expect(thresholdsChip?.getAttribute('aria-label')).toBe('Performance Thresholds (1 issue)')
+    expect(thresholdsChip?.querySelector('.mode-chip-badge')?.textContent).toBe('1')
+  })
+
+  it('summarizes validation errors from other sections with a jump control', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
+    if (!p99Input) return
+    await setFieldValue(p99Input, '-5')
+
+    await selectTopLevelSettingsTab('General')
+    const errorsBlock = container.querySelector('.settings-errors')
+    expect(errorsBlock?.textContent).toContain('1 issue in Performance Thresholds')
+
+    const reviewButton = Array.from(errorsBlock?.querySelectorAll('button') ?? []).find(button => button.textContent === 'Review')
+    expect(reviewButton).toBeTruthy()
+    if (!reviewButton) return
+    await act(async () => {
+      reviewButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('#settings-section-thresholds')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('badges the capacity subnav tab that owns a validation error', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    expect(capacitySection).toBeTruthy()
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
+    if (!cpuInput) return
+    await setFieldValue(cpuInput, '0')
+
+    const generatorTab = findSettingsSubnavButton(capacitySection, 'Generator Profile')
+    expect(generatorTab?.querySelector('.settings-subnav-badge')?.textContent).toBe('1')
+    expect(capacitySection.textContent).toContain('Generator CPU cores must be greater than 0.')
+  })
+
+  it('clearing Configured Available Generators shows a required-field error instead of snapping to 0', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Availability')
+    const configuredInput = findSettingInput(capacitySection, 'Configured Available Generators')
+    expect(configuredInput).toBeTruthy()
+    if (!configuredInput) return
+
+    await setFieldValue(configuredInput, '')
+    expect(configuredInput.value).toBe('')
+    expect(capacitySection.textContent).toContain('Configured available generators is required.')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton?.disabled).toBe(true)
+    expect(findButton('Discard Changes')).toBeTruthy()
+    expect(findButton('Saved')).toBeFalsy()
+  })
+
+  it('registers a blank capacity draft as dirty until it is discarded', async () => {
+    const registered: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const registrar = (guard: NavigationGuard, dirty: boolean) => {
+      registered.push({ guard, dirty })
+      return () => {}
+    }
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={registrar}>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Availability')
+    const configuredInput = findSettingInput(capacitySection, 'Configured Available Generators')
+    if (!configuredInput) return
+    await setFieldValue(configuredInput, '')
+
+    const latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    expect(latest?.dirty).toBe(true)
+    expect(latest?.guard.isDirty()).toBe(true)
+    expect(findButton('Save Changes')?.disabled).toBe(true)
+    expect(findButton('Discard Changes')).toBeTruthy()
+
+    await act(async () => {
+      latest?.guard.discard()
+    })
+    expect(latest?.guard.isDirty()).toBe(false)
+    expect(configuredInput.value).toBe('2')
+  })
+
+  it('discarding changes clears capacity field drafts', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Availability')
+    const configuredInput = findSettingInput(capacitySection, 'Configured Available Generators')
+    if (!configuredInput) return
+
+    await setFieldValue(configuredInput, '4')
+    expect(configuredInput.value).toBe('4')
+
+    const discardButton = findButton('Discard Changes')
+    expect(discardButton).toBeTruthy()
+    if (!discardButton) return
+    await act(async () => {
+      discardButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    // The suite's inventory mock auto-applies live pod capacity on load, which
+    // resolves configured generators to 2 connected pods.
+    expect(configuredInput.value).toBe('2')
+  })
+
+  it('disables threshold and capacity inputs for sessions without manage_system but keeps subnav browsable', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: [{
+        id: 'system_configuration',
+        name: 'System Configuration',
+        description: '',
+        operations: [
+          { id: 'view_system', label: 'View settings', allowed: true, grant_source: 'global' },
+          { id: 'manage_system', label: 'Update system settings', allowed: false },
+        ],
+      }],
+    })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const errorRateInput = findSettingInput(thresholdsSection, 'Max Error Rate (%)')
+    // Fieldset-inherited disabling: the input's own attribute stays false, so
+    // assert on the wrapping fieldset.
+    expect(errorRateInput?.closest('fieldset')?.disabled).toBe(true)
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Generator Profile')
+    const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
+    expect(cpuInput?.closest('fieldset')?.disabled).toBe(true)
+  })
+
+  it('keeps the form disabled and offers Retry when settings fail to load', async () => {
+    apiMock.getSystemSettings.mockRejectedValueOnce(new Error('boom'))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const retryButton = findButton('Retry Loading Settings')
+    expect(retryButton).toBeTruthy()
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const errorRateInput = findSettingInput(thresholdsSection, 'Max Error Rate (%)')
+    expect(errorRateInput?.closest('fieldset')?.disabled).toBe(true)
+
+    if (!retryButton) return
+    await act(async () => {
+      retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(findButton('Retry Loading Settings')).toBeUndefined()
+    expect(errorRateInput?.closest('fieldset')?.disabled).toBe(false)
+  })
+
+  it('ignores an older settings load after the API client changes', async () => {
+    const baseline = await apiMock.getSystemSettings()
+    let resolveOlder: ((value: typeof baseline) => void) | undefined
+    apiMock.getSystemSettings.mockImplementationOnce(() => new Promise<typeof baseline>(resolve => {
+      resolveOlder = resolve
+    }))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    apiProviderState.current = {
+      ...apiMock,
+      getSystemSettings: vi.fn().mockResolvedValue({
+        ...baseline,
+        general: {
+          ...baseline.general,
+          api_endpoint: ':9090',
+          max_concurrent_tests: 22,
+          metrics_interval_seconds: 2,
+          usage_snapshot_interval_seconds: 120,
+        },
+      }),
+    }
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      resolveOlder?.({
+        ...baseline,
+        general: {
+          ...baseline.general,
+          api_endpoint: ':7070',
+          max_concurrent_tests: 7,
+          metrics_interval_seconds: 7,
+          usage_snapshot_interval_seconds: 700,
+        },
+      })
+    })
+    await flushPromises()
+
+    const maxConcurrent = findSettingInput(
+      container.querySelector('#settings-section-general') ?? container,
+      'Max Concurrent Tests',
+    )
+    expect(maxConcurrent?.value).toBe('22')
+  })
+
+  it('registers a dirty navigation guard for unsaved settings edits', async () => {
+    const registered: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const registrar = (guard: NavigationGuard, dirty: boolean) => {
+      registered.push({ guard, dirty })
+      return () => {}
+    }
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={registrar}>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flushPromises()
+
+    const settingsGuards = registered.filter(entry => entry.guard.id === 'system-settings')
+    expect(settingsGuards.length).toBeGreaterThan(0)
+    expect(settingsGuards[settingsGuards.length - 1].guard.isDirty()).toBe(false)
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const p99Input = findSettingInput(thresholdsSection, 'Max Response Time (P99 ms)')
+    if (!p99Input) return
+    await setFieldValue(p99Input, '1500')
+
+    const latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    expect(latest?.dirty).toBe(true)
+    expect(latest?.guard.isDirty()).toBe(true)
+
+    await act(async () => {
+      latest?.guard.discard()
+    })
+    expect(latest?.guard.isDirty()).toBe(false)
+  })
+
+  it('restores a telemetry budget via Reset to default and accepts explicit 0 as disabled', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const sampleAgeInput = findSettingInput(thresholdsSection, 'Max Telemetry Sample Age (ms)')
+    expect(sampleAgeInput).toBeTruthy()
+    if (!sampleAgeInput) return
+
+    await setFieldValue(sampleAgeInput, '900')
+    const resetButton = Array.from(thresholdsSection.querySelectorAll('button')).find(button => button.textContent?.includes('Reset to default (2000 ms)'))
+    expect(resetButton).toBeTruthy()
+    if (!resetButton) return
+    await act(async () => {
+      resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(sampleAgeInput.value).toBe('2000')
+
+    await setFieldValue(sampleAgeInput, '')
+    expect(thresholdsSection.textContent).toContain('Max telemetry sample age is always enforced.')
+    const saveButton = findButton('Save Changes') || findButton('Saved')
+    expect(saveButton?.disabled).toBe(true)
+
+    await setFieldValue(sampleAgeInput, '0')
+    expect(thresholdsSection.textContent).not.toContain('Max telemetry sample age is always enforced.')
+  })
+
+  it('allows 0 P99 stop samples as the documented alert-only setting', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const samplesInput = findSettingInput(thresholdsSection, 'P99 Stop After Breached Samples')
+    expect(samplesInput?.min).toBe('0')
+    if (!samplesInput) return
+
+    await setFieldValue(samplesInput, '0')
+    expect(thresholdsSection.textContent).not.toContain('P99 stop samples must be an integer')
+  })
+
+  it('shows the fleet ordering error under the saturated slots field', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    const thresholdsSection = container.querySelector('#settings-section-thresholds')
+    if (!thresholdsSection) return
+    const constrainedInput = findSettingInput(thresholdsSection, 'Fleet Constrained Free Slots')
+    const saturatedInput = findSettingInput(thresholdsSection, 'Fleet Saturated Free Slots')
+    if (!constrainedInput || !saturatedInput) return
+
+    await setFieldValue(constrainedInput, '5')
+    await setFieldValue(saturatedInput, '5')
+    expect(thresholdsSection.textContent).toContain('Fleet saturated free slots must be less than fleet constrained free slots.')
+
+    await setFieldValue(saturatedInput, '2')
+    expect(thresholdsSection.textContent).not.toContain('Fleet saturated free slots must be less than fleet constrained free slots.')
+  })
+
+  it('imports CSV rows through the dry-run preview and exports the pool', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool.mockResolvedValue({ data_pool: { id: 'pool-1', name: 'Customers' }, rows: [], total: 0 })
+    apiMock.importDataPoolRows
+      .mockResolvedValueOnce({
+        dry_run: true,
+        mode: 'append',
+        columns: ['customer_id', 'region'],
+        row_count: 2,
+        sample_rows: [{ customer_id: 'C-1', region: 'east' }, { customer_id: 'C-2', region: 'west' }],
+        warnings: [],
+      })
+      .mockResolvedValueOnce({ mode: 'append', columns: ['customer_id', 'region'], imported: 2, total: 2, warnings: [] })
+    const exportBlob = new Blob(['customer_id,region\nC-1,east\n'], { type: 'text/csv' })
+    apiMock.exportDataPoolRows.mockResolvedValue({ blob: exportBlob, filename: 'Customers.csv' })
+    downloadBlobMock.mockResolvedValue('browser_started')
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    expect(section).toBeTruthy()
+    if (!section) return
+    const fileInput = section.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).toBeTruthy()
+    if (!fileInput) return
+
+    const file = new File(['customer_id,region\nC-1,east\nC-2,west\n'], 'customers.csv', { type: 'text/csv' })
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importDataPoolRows).toHaveBeenCalledWith('pool-1', file, { dryRun: true })
+    expect(section.textContent).toContain('Import Preview')
+    expect(section.textContent).toContain('customers.csv')
+
+    apiMock.getDataPool.mockResolvedValue({
+      data_pool: { id: 'pool-1', name: 'Customers' },
+      rows: [
+        { id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-1', region: 'east' }, version: 1, created_at: '2026-05-18T12:00:00Z', updated_at: '2026-05-18T12:00:00Z' },
+        { id: 'row-2', pool_id: 'pool-1', data: { customer_id: 'C-2', region: 'west' }, version: 1, created_at: '2026-05-18T12:00:00Z', updated_at: '2026-05-18T12:00:00Z' },
+      ],
+      total: 2,
+    })
+
+    const confirmButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent?.includes('Append 2 Row(s)'))
+    expect(confirmButton).toBeTruthy()
+    if (!confirmButton) return
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importDataPoolRows).toHaveBeenCalledWith('pool-1', file, { mode: 'append' })
+    expect(section.textContent).toContain('Imported 2 row(s)')
+    expect(section.textContent).toContain('2 rows')
+
+    const exportButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Export CSV')
+    expect(exportButton).toBeTruthy()
+    if (!exportButton) return
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.exportDataPoolRows).toHaveBeenCalledWith('pool-1')
+    expect(downloadBlobMock).toHaveBeenCalledWith(exportBlob, 'Customers.csv')
+    expect(section.textContent).toContain('Exported Customers.csv.')
+  })
+
+  it('starts a replace-only empty APEX backup preview in replace mode', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool.mockReset()
+    apiMock.getDataPool.mockResolvedValue({
+      data_pool: { id: 'pool-1', name: 'Customers' },
+      rows: [{ id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-1' }, version: 1, created_at: '', updated_at: '' }],
+      total: 1,
+    })
+    apiMock.importDataPoolRows.mockReset()
+    apiMock.importDataPoolRows
+      .mockResolvedValueOnce({
+        dry_run: true,
+        mode: 'append',
+        columns: [],
+        row_count: 0,
+        sample_rows: [],
+        warnings: [],
+        append_warning: 'an empty APEX data pool export can only be imported with mode=replace',
+      })
+      .mockResolvedValueOnce({
+        mode: 'replace',
+        columns: [],
+        imported: 0,
+        deleted: 1,
+        total: 0,
+        warnings: [],
+      })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const fileInput = section?.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).toBeTruthy()
+    if (!fileInput) return
+    const file = new File(['# APEXLOAD-DATA-POOL-EMPTY\n'], 'empty.apexload.csv', { type: 'text/csv' })
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const modeSelect = section?.querySelector('select[aria-label="Import mode"]') as HTMLSelectElement | null
+    expect(modeSelect?.value).toBe('replace')
+    expect(section?.textContent).toContain('can only be imported with mode=replace')
+    const confirmButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent?.includes('Replace With 0 Row(s)'))
+    expect(confirmButton).toBeTruthy()
+    if (!confirmButton) return
+
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importDataPoolRows).toHaveBeenNthCalledWith(1, 'pool-1', file, { dryRun: true })
+    expect(apiMock.importDataPoolRows).toHaveBeenNthCalledWith(2, 'pool-1', file, { mode: 'replace' })
+  })
+
+  it('reports a created data pool as committed when only the list reconciliation fails', async () => {
+    apiMock.listDataPools.mockReset()
+    apiMock.listDataPools
+      .mockResolvedValueOnce({ data_pools: [], count: 0 })
+      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.createDataPool.mockReset()
+    apiMock.createDataPool.mockResolvedValue({
+      id: 'pool-1',
+      name: 'Customers',
+      description: '',
+      project_id: 'project-1',
+      created_at: '',
+      updated_at: '',
+    })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const nameInput = section?.querySelector('input[placeholder^="Pool name"]') as HTMLInputElement | null
+    expect(nameInput).toBeTruthy()
+    if (!nameInput) return
+    await setFieldValue(nameInput, 'Customers')
+    const addPool = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Add Pool')
+    expect(addPool).toBeTruthy()
+    if (!addPool) return
+    await act(async () => {
+      addPool.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      addPool.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.createDataPool).toHaveBeenCalledWith({
+      name: 'Customers',
+      description: '',
+      project_id: 'project-1',
+    })
+    expect(apiMock.createDataPool).toHaveBeenCalledTimes(1)
+    expect(section?.textContent).toContain('The create succeeded—do not retry.')
+    expect(section?.textContent).not.toContain('Unable to create data pool')
+  })
+
+  it('serializes a pool delete and reports it as committed when list reconciliation fails', async () => {
+    apiMock.listDataPools.mockReset()
+    apiMock.listDataPools
+      .mockResolvedValueOnce({
+        data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+        count: 1,
+      })
+      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.getDataPool.mockResolvedValue({
+      data_pool: { id: 'pool-1', name: 'Customers' },
+      rows: [],
+      total: 0,
+    })
+    apiMock.deleteDataPool.mockReset()
+    apiMock.deleteDataPool.mockResolvedValue({ deleted: 'pool-1' })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const deleteButton = Array.from(section?.querySelectorAll('.settings-release-row > .settings-inline-actions button') || [])
+      .find(button => button.textContent === 'Delete')
+    expect(deleteButton).toBeTruthy()
+    if (!deleteButton) return
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
+      .find(button => button.textContent === 'Delete Data Pool')
+    expect(confirm).toBeTruthy()
+    if (!confirm) return
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.deleteDataPool).toHaveBeenCalledWith('pool-1')
+    expect(apiMock.deleteDataPool).toHaveBeenCalledTimes(1)
+    expect(section?.textContent).toContain('The delete succeeded—do not retry.')
+    expect(section?.textContent).not.toContain('Unable to delete data pool')
+  })
+
+  it('does not let a slow data-pool response from the previous project overwrite the active project', async () => {
+    type DataPoolListResponse = { data_pools: Array<{ id: string; name: string; project_id: string; created_at: string; updated_at: string }>; count: number }
+    let resolveProjectOne: ((response: DataPoolListResponse) => void) | undefined
+    let resolveProjectTwo: ((response: DataPoolListResponse) => void) | undefined
+    apiMock.listDataPools.mockImplementation((projectId?: string) => new Promise<DataPoolListResponse>(resolve => {
+      if (projectId === 'project-1') resolveProjectOne = resolve
+      if (projectId === 'project-2') resolveProjectTwo = resolve
+    }))
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1')
+
+    projectContextMock.activeProject = { id: 'project-2', name: 'Payments', created_at: '', updated_at: '' }
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    expect(apiMock.listDataPools).toHaveBeenCalledWith('project-2')
+
+    await act(async () => {
+      resolveProjectTwo?.({
+        data_pools: [{ id: 'pool-2', name: 'Payment Accounts', project_id: 'project-2', created_at: '', updated_at: '' }],
+        count: 1,
+      })
+    })
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    expect(section?.textContent).toContain('Payment Accounts')
+    expect(section?.textContent).not.toContain('Checkout Customers')
+
+    await act(async () => {
+      resolveProjectOne?.({
+        data_pools: [{ id: 'pool-1', name: 'Checkout Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+        count: 1,
+      })
+    })
+    await flushPromises()
+
+    expect(section?.textContent).toContain('Payment Accounts')
+    expect(section?.textContent).not.toContain('Checkout Customers')
+  })
+
+  it('loads data-pool rows beyond the first bounded page', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `row-${index + 1}`,
+      pool_id: 'pool-1',
+      data: { customer_id: `C-${index + 1}` },
+      version: 1,
+      created_at: '2026-05-18T12:00:00Z',
+      updated_at: '2026-05-18T12:00:00Z',
+    }))
+    apiMock.getDataPool.mockImplementation((_poolId: string, page?: { limit?: number; cursor?: string }) => {
+      if (page?.cursor === 'cursor-after-row-100') {
+        return Promise.resolve({
+          data_pool: { id: 'pool-1', name: 'Customers' },
+          rows: [{
+            id: 'row-101',
+            pool_id: 'pool-1',
+            data: { customer_id: 'C-101' },
+            version: 1,
+            created_at: '2026-05-18T12:00:00Z',
+            updated_at: '2026-05-18T12:00:00Z',
+          }],
+          total: 101,
+          limit: 100,
+          offset: 100,
+          revision: 'revision-1',
+          has_more: false,
+          next_cursor: '',
+        })
+      }
+      return Promise.resolve({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: firstPage,
+        total: 101,
+        limit: 100,
+        offset: 0,
+        revision: 'revision-1',
+        has_more: true,
+        next_cursor: 'cursor-after-row-100',
+      })
+    })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    expect(section?.textContent).toContain('showing 100 of 101 rows')
+    const loadMore = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent?.includes('Load more rows (1 remaining)'))
+    expect(loadMore).toBeTruthy()
+    if (!loadMore) return
+
+    await act(async () => {
+      loadMore.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.getDataPool).toHaveBeenCalledWith('pool-1', { limit: 100, cursor: 'cursor-after-row-100' })
+    expect(section?.textContent).toContain('C-101')
+    expect(section?.textContent).toContain('101 rows')
+    expect(section?.textContent).not.toContain('Load more rows')
+  })
+
+  it('restarts data-pool pagination when the revision-bound cursor becomes stale', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool
+      .mockReset()
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [{
+          id: 'row-stale',
+          pool_id: 'pool-1',
+          data: { customer_id: 'C-stale' },
+          version: 1,
+          created_at: '2026-05-18T12:00:00Z',
+          updated_at: '2026-05-18T12:00:00Z',
+        }],
+        total: 2,
+        limit: 100,
+        offset: 0,
+        revision: 'revision-1',
+        has_more: true,
+        next_cursor: 'cursor-after-stale-row',
+      })
+      .mockRejectedValueOnce(new ApiError('data pool rows changed while pages were being loaded', 409))
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [{
+          id: 'row-fresh',
+          pool_id: 'pool-1',
+          data: { customer_id: 'C-fresh' },
+          version: 1,
+          created_at: '2026-05-18T12:01:00Z',
+          updated_at: '2026-05-18T12:01:00Z',
+        }],
+        total: 1,
+        limit: 100,
+        offset: 0,
+        revision: 'revision-2',
+        has_more: false,
+        next_cursor: '',
+      })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const loadMore = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent?.includes('Load more rows'))
+    expect(loadMore).toBeTruthy()
+    if (!loadMore) return
+
+    await act(async () => {
+      loadMore.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.getDataPool).toHaveBeenNthCalledWith(2, 'pool-1', { limit: 100, cursor: 'cursor-after-stale-row' })
+    expect(apiMock.getDataPool).toHaveBeenNthCalledWith(3, 'pool-1', { limit: 100, cursor: '' })
+    expect(section?.textContent).toContain('C-fresh')
+    expect(section?.textContent).not.toContain('C-stale')
+    expect(section?.textContent).toContain('refreshed from the beginning')
+  })
+
+  it('ignores a stale initial row-load failure after a newer mutation refresh succeeds', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    let rejectInitialLoad: ((reason?: unknown) => void) | undefined
+    apiMock.getDataPool.mockReset()
+    apiMock.getDataPool
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        rejectInitialLoad = reject
+      }))
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [{
+          id: 'row-1',
+          pool_id: 'pool-1',
+          data: { customer_id: 'C-10001' },
+          version: 1,
+          created_at: '',
+          updated_at: '',
+        }],
+        total: 1,
+        has_more: false,
+        next_cursor: '',
+      })
+    apiMock.createDataPoolRow.mockReset()
+    apiMock.createDataPoolRow.mockResolvedValue({
+      id: 'row-1',
+      pool_id: 'pool-1',
+      data: { customer_id: 'C-10001' },
+      version: 1,
+      created_at: '',
+      updated_at: '',
+    })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const addButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Add Row')
+    expect(addButton).toBeTruthy()
+    if (!addButton) return
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+    expect(section?.textContent).toContain('C-10001')
+
+    await act(async () => {
+      rejectInitialLoad?.(new Error('stale initial row read failed'))
+    })
+    await flushPromises()
+
+    expect(section?.textContent).toContain('C-10001')
+    expect(section?.textContent).not.toContain('stale initial row read failed')
+    expect(section?.textContent).not.toContain('Unable to load data pool rows')
+  })
+
+  it('reports a created data-pool row as saved when only the reconciliation read fails', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool
+      .mockReset()
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [],
+        total: 0,
+        has_more: false,
+        next_cursor: '',
+      })
+      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.createDataPoolRow.mockReset()
+    apiMock.createDataPoolRow.mockResolvedValue({
+      id: 'row-1',
+      pool_id: 'pool-1',
+      data: { customer_id: 'C-10001' },
+      version: 1,
+      created_at: '2026-05-18T12:00:00Z',
+      updated_at: '2026-05-18T12:00:00Z',
+    })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const addButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Add Row')
+    expect(addButton).toBeTruthy()
+    if (!addButton) return
+
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.createDataPoolRow).toHaveBeenCalledWith('pool-1', { data: { customer_id: 'C-10001' } })
+    expect(container.textContent).toContain('The save succeeded—do not add it again.')
+    expect(container.textContent).not.toContain('Unable to save data row')
+  })
+
+  it('reports an updated data-pool row as saved when only the reconciliation read fails', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    const row = {
+      id: 'row-1',
+      pool_id: 'pool-1',
+      data: { customer_id: 'C-1' },
+      version: 3,
+      created_at: '2026-05-18T12:00:00Z',
+      updated_at: '2026-05-18T12:00:00Z',
+    }
+    apiMock.getDataPool
+      .mockReset()
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [row],
+        total: 1,
+        has_more: false,
+        next_cursor: '',
+      })
+      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.updateDataPoolRow.mockReset()
+    apiMock.updateDataPoolRow.mockResolvedValue({ ...row, version: 4 })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const editButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Edit')
+    expect(editButton).toBeTruthy()
+    if (!editButton) return
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const updateButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Update Row')
+    expect(updateButton).toBeTruthy()
+    if (!updateButton) return
+
+    await act(async () => {
+      updateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.updateDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1', { data: { customer_id: 'C-1' }, version: 3 })
+    expect(container.textContent).toContain('The save succeeded—do not retry the update.')
+    expect(container.textContent).not.toContain('Unable to save data row')
+  })
+
+  it('reports a deleted data-pool row as committed when only the reconciliation read fails', async () => {
+    const row = {
+      id: 'row-1',
+      pool_id: 'pool-1',
+      data: { customer_id: 'C-1' },
+      version: 3,
+      created_at: '2026-05-18T12:00:00Z',
+      updated_at: '2026-05-18T12:00:00Z',
+    }
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool
+      .mockReset()
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [row],
+        total: 1,
+        has_more: false,
+        next_cursor: '',
+      })
+      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.deleteDataPoolRow.mockReset()
+    apiMock.deleteDataPoolRow.mockResolvedValue({ deleted: 'row-1' })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const deleteButton = Array.from(section?.querySelectorAll('td[aria-label="Data pool actions"] button') || [])
+      .find(button => button.textContent === 'Delete')
+    expect(deleteButton).toBeTruthy()
+    if (!deleteButton) return
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
+      .find(button => button.textContent === 'Delete Row')
+    expect(confirm).toBeTruthy()
+    if (!confirm) return
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.deleteDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1')
+    expect(apiMock.deleteDataPoolRow).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('The delete succeeded—do not retry.')
+    expect(container.textContent).not.toContain('Unable to delete data row')
+  })
+
+  it('reports an imported data-pool file as committed when only the reconciliation read fails', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool
+      .mockReset()
+      .mockResolvedValueOnce({
+        data_pool: { id: 'pool-1', name: 'Customers' },
+        rows: [],
+        total: 0,
+        has_more: false,
+        next_cursor: '',
+      })
+      .mockRejectedValueOnce(new Error('read replica unavailable'))
+    apiMock.importDataPoolRows
+      .mockReset()
+      .mockResolvedValueOnce({
+        dry_run: true,
+        mode: 'append',
+        columns: ['customer_id'],
+        row_count: 2,
+        sample_rows: [{ customer_id: 'C-1' }, { customer_id: 'C-2' }],
+        warnings: [],
+      })
+      .mockResolvedValueOnce({
+        mode: 'append',
+        columns: ['customer_id'],
+        imported: 2,
+        total: 2,
+        warnings: [],
+      })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const fileInput = section?.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).toBeTruthy()
+    if (!fileInput) return
+    const file = new File(['customer_id\nC-1\nC-2\n'], 'customers.csv', { type: 'text/csv' })
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const confirmButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent?.includes('Append 2 Row(s)'))
+    expect(confirmButton).toBeTruthy()
+    if (!confirmButton) return
+    await act(async () => {
+      confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.importDataPoolRows).toHaveBeenCalledWith('pool-1', file, { mode: 'append' })
+    expect(container.textContent).toContain('The import succeeded—do not import the file again.')
+    expect(container.textContent).not.toContain('Unable to import rows')
+  })
+
+  it('keeps a confirmed row delete bound to its row when another pool becomes selected', async () => {
+    const rowA = {
+      id: 'row-a',
+      pool_id: 'pool-a',
+      data: { customer_id: 'A-visible' },
+      version: 1,
+      created_at: '',
+      updated_at: '',
+    }
+    const rowB = {
+      id: 'row-b',
+      pool_id: 'pool-b',
+      data: { customer_id: 'B-visible' },
+      version: 1,
+      created_at: '',
+      updated_at: '',
+    }
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [
+        { id: 'pool-a', name: 'Primary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-b', name: 'Secondary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    })
+    apiMock.getDataPool.mockReset()
+    apiMock.getDataPool.mockImplementation((poolId: string) => Promise.resolve({
+      data_pool: { id: poolId, name: poolId === 'pool-a' ? 'Primary Customers' : 'Secondary Customers' },
+      rows: poolId === 'pool-a' ? [rowA] : [rowB],
+      total: 1,
+      has_more: false,
+      next_cursor: '',
+    }))
+    apiMock.deleteDataPoolRow.mockReset()
+    apiMock.deleteDataPoolRow.mockResolvedValue({ deleted: 'row-a' })
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const deleteButton = Array.from(section?.querySelectorAll('td[aria-label="Data pool actions"] button') || [])
+      .find(button => button.textContent === 'Delete')
+    expect(deleteButton).toBeTruthy()
+    if (!deleteButton) return
+    await act(async () => {
+      deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const poolBButton = Array.from(section?.querySelectorAll('button.settings-release-main') || [])
+      .find(button => button.textContent?.includes('Secondary Customers'))
+    expect(poolBButton).toBeTruthy()
+    if (!poolBButton) return
+    await act(async () => {
+      poolBButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
+      .find(button => button.textContent === 'Delete Row')
+    expect(confirm).toBeTruthy()
+    if (!confirm) return
+    await act(async () => {
+      confirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.deleteDataPoolRow).toHaveBeenCalledWith('pool-a', 'row-a')
+    expect(apiMock.getDataPool.mock.calls.filter(([poolId]) => poolId === 'pool-a')).toHaveLength(1)
+    expect(section?.textContent).toContain('B-visible')
+    expect(section?.textContent).not.toContain('Row deleted.')
+    expect(section?.textContent).not.toContain('Unable to delete data row')
+  })
+
+  it('does not let a late row mutation invalidate the newly selected pool or erase its draft', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [
+        { id: 'pool-a', name: 'Primary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-b', name: 'Secondary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    })
+    let resolvePoolB: ((value: {
+      data_pool: { id: string; name: string }
+      rows: Array<{
+        id: string
+        pool_id: string
+        data: { customer_id: string }
+        version: number
+        created_at: string
+        updated_at: string
+      }>
+      total: number
+      has_more: boolean
+      next_cursor: string
+    }) => void) | undefined
+    apiMock.getDataPool.mockReset()
+    apiMock.getDataPool.mockImplementation((poolId: string) => {
+      if (poolId === 'pool-b') {
+        return new Promise(resolve => {
+          resolvePoolB = resolve
+        })
+      }
+      return Promise.resolve({
+        data_pool: { id: 'pool-a', name: 'Primary Customers' },
+        rows: [],
+        total: 0,
+        has_more: false,
+        next_cursor: '',
+      })
+    })
+    let resolveCreate: ((value: {
+      id: string
+      pool_id: string
+      data: { customer_id: string }
+      version: number
+      created_at: string
+      updated_at: string
+    }) => void) | undefined
+    apiMock.createDataPoolRow.mockReset()
+    apiMock.createDataPoolRow.mockImplementation(() => new Promise(resolve => {
+      resolveCreate = resolve
+    }))
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const addButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Add Row')
+    expect(addButton).toBeTruthy()
+    if (!addButton) return
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const poolBButton = Array.from(section?.querySelectorAll('button.settings-release-main') || [])
+      .find(button => button.textContent?.includes('Secondary Customers'))
+    expect(poolBButton).toBeTruthy()
+    if (!poolBButton) return
+    await act(async () => {
+      poolBButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const rowEditor = section?.querySelector('textarea') as HTMLTextAreaElement | null
+    expect(rowEditor).toBeTruthy()
+    if (!rowEditor) return
+    const poolBDraft = '{\n  "customer_id": "B-draft"\n}'
+    await setFieldValue(rowEditor, poolBDraft)
+
+    await act(async () => {
+      resolveCreate?.({
+        id: 'row-a',
+        pool_id: 'pool-a',
+        data: { customer_id: 'C-10001' },
+        version: 1,
+        created_at: '2026-05-18T12:00:00Z',
+        updated_at: '2026-05-18T12:00:00Z',
+      })
+    })
+    await flushPromises()
+    expect(apiMock.getDataPool.mock.calls.filter(([poolId]) => poolId === 'pool-a')).toHaveLength(1)
+
+    await act(async () => {
+      resolvePoolB?.({
+        data_pool: { id: 'pool-b', name: 'Secondary Customers' },
+        rows: [{
+          id: 'row-b',
+          pool_id: 'pool-b',
+          data: { customer_id: 'B-visible' },
+          version: 1,
+          created_at: '2026-05-18T12:01:00Z',
+          updated_at: '2026-05-18T12:01:00Z',
+        }],
+        total: 1,
+        has_more: false,
+        next_cursor: '',
+      })
+    })
+    await flushPromises()
+
+    expect(section?.textContent).toContain('B-visible')
+    expect(rowEditor.value).toBe(poolBDraft)
+  })
+
+  it('discards a late import preview after the user selects another data pool', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [
+        { id: 'pool-a', name: 'Primary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-b', name: 'Secondary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    })
+    apiMock.getDataPool.mockReset()
+    apiMock.getDataPool.mockImplementation((poolId: string) => Promise.resolve({
+      data_pool: { id: poolId, name: poolId === 'pool-a' ? 'Primary Customers' : 'Secondary Customers' },
+      rows: [],
+      total: 0,
+      has_more: false,
+      next_cursor: '',
+    }))
+    let resolvePreview: ((value: {
+      dry_run: boolean
+      mode: string
+      columns: string[]
+      row_count: number
+      sample_rows: Array<{ customer_id: string }>
+      warnings: string[]
+    }) => void) | undefined
+    apiMock.importDataPoolRows.mockReset()
+    apiMock.importDataPoolRows.mockImplementation(() => new Promise(resolve => {
+      resolvePreview = resolve
+    }))
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const fileInput = section?.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).toBeTruthy()
+    if (!fileInput) return
+    const file = new File(['customer_id\nC-1\n'], 'primary.csv', { type: 'text/csv' })
+    Object.defineProperty(fileInput, 'files', { value: [file], configurable: true })
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const poolBButton = Array.from(section?.querySelectorAll('button.settings-release-main') || [])
+      .find(button => button.textContent?.includes('Secondary Customers'))
+    expect(poolBButton).toBeTruthy()
+    if (!poolBButton) return
+    await act(async () => {
+      poolBButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await act(async () => {
+      resolvePreview?.({
+        dry_run: true,
+        mode: 'append',
+        columns: ['customer_id'],
+        row_count: 1,
+        sample_rows: [{ customer_id: 'C-1' }],
+        warnings: [],
+      })
+    })
+    await flushPromises()
+
+    expect(apiMock.importDataPoolRows).toHaveBeenCalledTimes(1)
+    expect(apiMock.importDataPoolRows).toHaveBeenCalledWith('pool-a', file, { dryRun: true })
+    expect(section?.textContent).not.toContain('Import Preview')
+    expect(section?.textContent).not.toContain('Append 1 Row(s)')
+  })
+
+  it('does not surface a late export failure against a newly selected data pool', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [
+        { id: 'pool-a', name: 'Primary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-b', name: 'Secondary Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    })
+    apiMock.getDataPool.mockReset()
+    apiMock.getDataPool.mockImplementation((poolId: string) => Promise.resolve({
+      data_pool: { id: poolId, name: poolId === 'pool-a' ? 'Primary Customers' : 'Secondary Customers' },
+      rows: poolId === 'pool-a'
+        ? [{
+            id: 'row-a',
+            pool_id: 'pool-a',
+            data: { customer_id: 'C-1' },
+            version: 1,
+            created_at: '2026-05-18T12:00:00Z',
+            updated_at: '2026-05-18T12:00:00Z',
+          }]
+        : [],
+      total: poolId === 'pool-a' ? 1 : 0,
+      has_more: false,
+      next_cursor: '',
+    }))
+    let rejectExport: ((reason?: unknown) => void) | undefined
+    apiMock.exportDataPoolRows.mockReset()
+    apiMock.exportDataPoolRows.mockImplementation(() => new Promise((_resolve, reject) => {
+      rejectExport = reject
+    }))
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    const exportButton = Array.from(section?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Export CSV')
+    expect(exportButton).toBeTruthy()
+    if (!exportButton) return
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const poolBButton = Array.from(section?.querySelectorAll('button.settings-release-main') || [])
+      .find(button => button.textContent?.includes('Secondary Customers'))
+    expect(poolBButton).toBeTruthy()
+    if (!poolBButton) return
+    await act(async () => {
+      poolBButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await act(async () => {
+      rejectExport?.(new Error('export backend unavailable'))
+    })
+    await flushPromises()
+
+    expect(apiMock.exportDataPoolRows).toHaveBeenCalledWith('pool-a')
+    expect(container.textContent).not.toContain('Unable to export data pool')
+    expect(container.textContent).not.toContain('export backend unavailable')
+  })
+
+  it('sends the edit-time version token and closes the row editor on a 409 conflict', async () => {
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [{ id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' }],
+      count: 1,
+    })
+    apiMock.getDataPool.mockResolvedValue({
+      data_pool: { id: 'pool-1', name: 'Customers' },
+      rows: [{ id: 'row-1', pool_id: 'pool-1', data: { customer_id: 'C-1' }, version: 3, created_at: '2026-05-18T12:00:00Z', updated_at: '2026-05-18T12:00:00Z' }],
+      total: 1,
+    })
+    apiMock.updateDataPoolRow.mockRejectedValue(new ApiError('data pool row changed while the update was in flight; reload and retry', 409))
+    window.localStorage.setItem('apexload.settings.focusSection', 'data-pools')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const section = container.querySelector('#settings-section-data-pools')
+    expect(section).toBeTruthy()
+    if (!section) return
+    const editButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editButton).toBeTruthy()
+    if (!editButton) return
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(section.textContent).toContain('Edit Row')
+
+    const updateButton = Array.from(section.querySelectorAll('button')).find(button => button.textContent === 'Update Row')
+    expect(updateButton).toBeTruthy()
+    if (!updateButton) return
+    await act(async () => {
+      updateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.updateDataPoolRow).toHaveBeenCalledWith('pool-1', 'row-1', { data: { customer_id: 'C-1' }, version: 3 })
+    expect(section.textContent).not.toContain('Edit Row')
+    // The conflict message renders in the shared section-messages banner, which
+    // sits outside the section element itself.
+    expect(container.textContent).toContain('reopen the row to apply your change')
+  })
+
+  it('offers fleet pools for reservation scoping and excludes pool-scoped rows from the usage summary', async () => {
+    fleetApiMock.listFleetPools.mockResolvedValue({
+      fleet_pools: [{ id: 'pool-1', name: 'US East', cloud_provider: 'aws', status: 'active' }],
+    })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Reservations')
+
+    const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
+    if (!reservationSection) return
+    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Reservation')
+    if (!addButton) return
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const projectInput = reservationSection.querySelector('input[aria-label="Reservation project"]') as HTMLInputElement | null
+    if (!projectInput) return
+    await setFieldValue(projectInput, 'payments')
+
+    const summary = container.querySelector('[data-testid="reservation-usage-summary"]')
+    expect(summary?.textContent).toContain('1 of 2 generators reserved')
+
+    const poolSelect = reservationSection.querySelector('select[aria-label="Reservation pool"]') as HTMLSelectElement | null
+    expect(poolSelect).toBeTruthy()
+    if (!poolSelect) return
+    expect(Array.from(poolSelect.options).map(option => option.textContent)).toEqual(['Global envelope', 'US East'])
+
+    // Pool-scoped reservations draw from the pool envelope, not the global sum.
+    await setFieldValue(poolSelect, 'pool-1')
+    expect(summary?.textContent).toContain('0 of 2 generators reserved')
+  })
+
+  it('shows the overbooking validation error before save', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Capacity Planning')
+    const capacitySection = container.querySelector('#settings-section-capacity')
+    if (!capacitySection) return
+    await selectSettingsSubnav(capacitySection, 'Reservations')
+
+    const reservationSection = container.querySelector('[data-testid="capacity-reservations"]')
+    if (!reservationSection) return
+    const addButton = Array.from(reservationSection.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Add Reservation')
+    if (!addButton) return
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const projectInput = reservationSection.querySelector('input[aria-label="Reservation project"]') as HTMLInputElement | null
+    const generatorsInput = reservationSection.querySelector('input[aria-label="Reserved generators"]') as HTMLInputElement | null
+    if (!projectInput || !generatorsInput) return
+    await setFieldValue(projectInput, 'payments')
+    await setFieldValue(generatorsInput, '4')
+
+    expect(capacitySection.textContent).toContain('Always-active global reservations (4) exceed configured available generators (2).')
+    const saveButton = findButton('Save Changes') || findButton('Saved')
+    expect(saveButton?.disabled).toBe(true)
+  })
+
+  it('serializes save and reset mutations while freezing editable and recovery controls', async () => {
+    let resolveUpdate: (() => void) | undefined
+    apiMock.updateSystemSettings.mockReset()
+    apiMock.updateSystemSettings.mockImplementation((nextSettings) => new Promise(resolve => {
+      resolveUpdate = () => resolve({
+        ...nextSettings,
+        revision: `ss-${'b'.repeat(64)}`,
+      })
+    }))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    const maxConcurrentInput = generalSection
+      ? findSettingInput(generalSection, 'Max Concurrent Tests')
+      : null
+    expect(maxConcurrentInput).toBeTruthy()
+    if (!maxConcurrentInput) return
+    await setFieldValue(maxConcurrentInput, '12')
+
+    const resetButton = findButton('Reset All Settings to Defaults')
+    expect(resetButton).toBeTruthy()
+    if (!resetButton) return
+    await act(async () => {
+      resetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const dialog = container.querySelector('[role="dialog"]')
+    const resetConfirm = Array.from(dialog?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Reset All Settings')
+    const saveButton = findButton('Save Changes')
+    expect(resetConfirm).toBeTruthy()
+    expect(saveButton).toBeTruthy()
+    if (!resetConfirm || !saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      resetConfirm.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      general: expect.objectContaining({ max_concurrent_tests: 12 }),
+    }))
+    expect(maxConcurrentInput.matches(':disabled')).toBe(true)
+    expect(findButton('Discard Changes')?.disabled).toBe(true)
+    expect(findButton('Reset All Settings to Defaults')?.disabled).toBe(true)
+    expect(resetConfirm.disabled).toBe(true)
+
+    await act(async () => {
+      resolveUpdate?.()
+    })
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledTimes(1)
+    expect(maxConcurrentInput.matches(':disabled')).toBe(false)
+    expect(maxConcurrentInput.value).toBe('12')
+    expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('focuses the Reservations tab with guidance when the backend rejects a capacity save', async () => {
+    apiMock.updateSystemSettings.mockRejectedValue(new ApiError('capacity_planning update rejected: approved timeslot demand exceeds the configured envelope', 400))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    if (!generalSection) return
+    const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    if (!maxConcurrentInput) return
+    await setFieldValue(maxConcurrentInput, '12')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeTruthy()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.querySelector('#settings-section-capacity')?.hasAttribute('hidden')).toBe(false)
+    expect(container.querySelector('#settings-capacity-panel-reservations')?.hasAttribute('hidden')).toBe(false)
+    expect(container.textContent).toContain('Approved capacity timeslots reserve part of the envelope')
+  })
+
+  it('keeps the draft and offers reload recovery after a stale If-Match save', async () => {
+    apiMock.updateSystemSettings.mockRejectedValue(new ApiError('system settings changed concurrently; refresh and retry', 412))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    if (!generalSection) return
+    const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    if (!maxConcurrentInput) return
+    await setFieldValue(maxConcurrentInput, '12')
+
+    const saveButton = findButton('Save Changes')
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Settings changed in another session. Reload settings and re-apply your edits.')
+    expect(findButton('Reload Settings')).toBeTruthy()
+    expect((maxConcurrentInput as HTMLInputElement).value).toBe('12')
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      revision: `ss-${'a'.repeat(64)}`,
+      general: expect.objectContaining({ max_concurrent_tests: 12 }),
+    }))
+  })
+
+  it('keeps the draft and loaded revision when a reset loses its concurrency race', async () => {
+    apiMock.updateSystemSettings.mockRejectedValue(new ApiError('system settings changed concurrently; refresh and retry', 412))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    if (!generalSection) return
+    const maxConcurrentInput = findSettingInput(generalSection, 'Max Concurrent Tests')
+    if (!maxConcurrentInput) return
+    await setFieldValue(maxConcurrentInput, '12')
+
+    const resetButton = findButton('Reset All Settings to Defaults')
+    if (!resetButton) return
+    await act(async () => resetButton.click())
+    const dialog = container.querySelector('[role="dialog"]')
+    const confirm = Array.from(dialog?.querySelectorAll('button') || []).find(button => button.textContent === 'Reset All Settings')
+    expect(confirm).toBeTruthy()
+    await act(async () => confirm?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect((maxConcurrentInput as HTMLInputElement).value).toBe('12')
+    expect(container.textContent).toContain('Settings changed in another session. Reload settings and re-apply your edits.')
+    expect(findButton('Reload Settings')).toBeTruthy()
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      revision: `ss-${'a'.repeat(64)}`,
+      general: expect.objectContaining({ max_concurrent_tests: 10 }),
+    }))
+  })
+
+  it('focuses the requested capacity subsection from a stored deep link', async () => {
+    window.localStorage.setItem('apexload.settings.focusSection', 'capacity')
+    window.localStorage.setItem('apexload.settings.focusSubsection', 'reservations')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('#settings-section-capacity')?.hasAttribute('hidden')).toBe(false)
+    expect(container.querySelector('#settings-capacity-panel-reservations')?.hasAttribute('hidden')).toBe(false)
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
+    expect(window.localStorage.getItem('apexload.settings.focusSubsection')).toBeNull()
   })
 })
 

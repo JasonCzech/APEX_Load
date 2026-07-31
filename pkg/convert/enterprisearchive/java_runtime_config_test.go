@@ -610,8 +610,24 @@ Use_Xboot=1
 	}
 
 	httpPreserved := httpScript.Metadata.Import.Preserved
-	if parity, exists := httpPreserved["runtime_settings_parity"]; exists {
-		t.Fatalf("HTTP script received Java-only source parity: %#v", parity)
+	// The HTTP script must never advertise Java-only capability entries; the
+	// Java VM rows are still accounted for, but only as non-applicable rows.
+	if parity, exists := httpPreserved["runtime_settings_parity"].([]RuntimeSettingParityEntry); exists {
+		for _, entry := range parity {
+			if strings.HasPrefix(entry.ID, "java_vm_") {
+				t.Fatalf("HTTP script received Java-only source parity: %#v", parity)
+			}
+			if entry.ID != "runtime_non_applicable" {
+				t.Fatalf("HTTP script parity = %#v, want only the non-applicable accounting entry", parity)
+			}
+		}
+	}
+	httpDispositions, ok := httpPreserved["runtime_setting_dispositions"].(map[string]map[string]map[string]RuntimeSettingDisposition)
+	if !ok {
+		t.Fatalf("HTTP script dispositions = %#v", httpPreserved["runtime_setting_dispositions"])
+	}
+	if got := httpDispositions["default.cfg"]["JavaVM:Options"]["Use_Xboot"].Status; got != RuntimeSettingDispositionNonApplicable {
+		t.Fatalf("HTTP Use_Xboot disposition = %q, want non_applicable", got)
 	}
 	javaPreserved := javaScript.Metadata.Import.Preserved
 	parity, ok := javaPreserved["runtime_settings_parity"].([]RuntimeSettingParityEntry)

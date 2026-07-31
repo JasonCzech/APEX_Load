@@ -2552,7 +2552,7 @@ func TestInlineCSVFromDataPoolRows(t *testing.T) {
 	}, {
 		ID:     "row-2",
 		PoolID: "pool-1",
-		Data:   map[string]string{"zip": "10002", "customer_id": "C-101"},
+		Data:   map[string]string{"zip": "10002", " customer_id ": "C-101"},
 	}})
 	if err != nil {
 		t.Fatalf("inlineCSVFromDataPoolRows returned error: %v", err)

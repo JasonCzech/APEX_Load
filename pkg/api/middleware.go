@@ -604,7 +604,12 @@ const (
 	// A Grafana dashboard JSON is a single document with a bounded panel count
 	// (grafana.MaxPanels); it is nowhere near script-import scale.
 	grafanaDashboardImportMaxBodyBytes int64 = 8 << 20
-	defaultMaxRequestBodyBytes         int64 = 8 << 20
+	// dataPoolCSVImportMaxBodyBytes accommodates the engine-capped user-data
+	// CSV plus the bounded metadata/status/formula-guard envelope emitted by an
+	// APEX export and multipart framing. Ordinary CSV remains capped at the
+	// engine's fileasset.MaxBytes in the handler.
+	dataPoolCSVImportMaxBodyBytes int64 = dataPoolMaxMarkedCSVBytes + (4 << 20)
+	defaultMaxRequestBodyBytes    int64 = 8 << 20
 	// Library bundle JSON can carry many scripts/results in one transfer. Keep
 	// its historical envelope explicit rather than inheriting the CRUD default.
 	libraryBundleImportMaxBodyBytes int64 = 128 << 20

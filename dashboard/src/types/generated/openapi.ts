@@ -381,23 +381,23 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "allowed_sources"?: Array<string>;
-            "approval_gates"?: Array<string>;
-            "audit_events"?: Array<string>;
-            "determinism_contract"?: string;
-            "endpoints"?: Array<{
+            "allowed_sources": Array<string>;
+            "approval_gates": Array<string>;
+            "audit_events": Array<string>;
+            "determinism_contract": string;
+            "endpoints": Array<{
               "evidence"?: Array<string>;
-              "method"?: string;
-              "path"?: string;
-              "purpose"?: string;
+              "method": string;
+              "path": string;
+              "purpose": string;
             }>;
-            "generated_at"?: string;
-            "policy_endpoint"?: string;
-            "promotion_rule"?: string;
-            "required_evidence"?: Array<string>;
-            "review_queue_endpoint"?: string;
-            "schema_version"?: string;
-            "status"?: string;
+            "generated_at": string;
+            "policy_endpoint": string;
+            "promotion_rule": string;
+            "required_evidence": Array<string>;
+            "review_queue_endpoint": string;
+            "schema_version": string;
+            "status": string;
           };
         };
       };
@@ -438,141 +438,141 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "authoring_health"?: {
-              "inputs"?: Array<{
+            "authoring_health": {
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
             "citations"?: Array<{
-              "label"?: string;
-              "path"?: string;
+              "label": string;
+              "path": string;
             }>;
-            "determinism"?: {
-              "fixture_key"?: string;
-              "mode"?: string;
-              "stable_input"?: Array<string>;
+            "determinism": {
+              "fixture_key": string;
+              "mode": string;
+              "stable_input": Array<string>;
             };
-            "draft"?: Record<string, unknown>;
-            "generated_at"?: string;
+            "draft": Record<string, unknown>;
+            "generated_at": string;
             "guardrails"?: {
-              "items"?: Array<{
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+              "items": Array<{
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts": Record<string, number>;
             };
             "next_actions"?: Array<string>;
-            "policy"?: {
-              "artifact_retention"?: string;
-              "enabled"?: boolean;
-              "promotion_restricted"?: boolean;
-              "provider"?: string;
-              "redaction_posture"?: string;
-              "required_evidence"?: Array<string>;
+            "policy": {
+              "artifact_retention": string;
+              "enabled": boolean;
+              "promotion_restricted": boolean;
+              "provider": string;
+              "redaction_posture": string;
+              "required_evidence": Array<string>;
             };
             "project_id"?: string;
-            "provider"?: string;
+            "provider": string;
             "repair_hints"?: Array<{
-              "action"?: string;
-              "category"?: string;
+              "action": string;
+              "category": string;
               "evidence"?: Array<string>;
-              "id"?: string;
+              "id": string;
               "preview_path"?: string;
-              "severity"?: string;
-              "summary"?: string;
-              "title"?: string;
+              "severity": string;
+              "summary": string;
+              "title": string;
             }>;
             "review_queue_item"?: {
-              "approval_ready"?: boolean;
+              "approval_ready": boolean;
               "blocking_health_inputs"?: Array<string>;
-              "created_at"?: string;
+              "created_at": string;
               "guardrails"?: {
-                "items"?: Array<{
-                  "key"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                "items": Array<{
+                  "key": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts": Record<string, number>;
               };
-              "name"?: string;
+              "name": string;
               "next_actions"?: Array<string>;
               "project_id"?: string;
               "provider"?: string;
-              "session_id"?: string;
-              "source"?: string;
+              "session_id": string;
+              "source": string;
               "source_type"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "status": string;
+              "updated_at": string;
             };
-            "schema_version"?: string;
-            "source_type"?: string;
-            "validation"?: {
+            "schema_version": string;
+            "source_type": string;
+            "validation": {
               "ai_guardrails"?: {
-                "items"?: Array<{
-                  "key"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                "items": Array<{
+                  "key": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts": Record<string, number>;
               };
-              "authoring_health"?: {
-                "inputs"?: Array<{
+              "authoring_health": {
+                "inputs": Array<{
                   "count"?: number;
-                  "key"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "key": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "score"?: number;
-                "status"?: string;
+                "score": number;
+                "status": string;
               };
               "data_source_fit"?: {
-                "items"?: Array<{
+                "items": Array<{
                   "available_rows"?: number;
                   "column"?: string;
-                  "data_source"?: string;
+                  "data_source": string;
                   "parameter"?: string;
                   "required_rows"?: number;
-                  "status"?: string;
-                  "summary"?: string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts": Record<string, number>;
               };
-              "issues"?: Array<string>;
+              "issues": Array<string>;
               "migration_readiness"?: Record<string, unknown>;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "runtime_settings_parity"?: Array<Record<string, unknown>>;
-              "runtime_settings_status_counts"?: Record<string, unknown>;
-              "script_id"?: string;
-              "valid"?: boolean;
+              "runtime_settings_status_counts"?: Record<string, number>;
+              "script_id": string;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
           };
@@ -620,9 +620,52 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
-            "browser_by_device"?: Record<string, unknown>;
-            "browser_by_engine"?: Record<string, unknown>;
-            "browser_by_platform"?: Record<string, unknown>;
+            "browser_by_device"?: Record<string, {
+              "avg_blocking_resources"?: number;
+              "avg_browser_process_cpu_pct"?: number;
+              "avg_browser_process_mem_mb"?: number;
+              "avg_cls_score"?: number;
+              "avg_fcp_ms"?: number;
+              "avg_inp_ms"?: number;
+              "avg_js_heap_used_mb"?: number;
+              "avg_lcp_ms"?: number;
+              "avg_long_task_count"?: number;
+              "avg_ttfb_ms"?: number;
+              "browser_engine"?: string;
+              "device_platform"?: string;
+              "device_profile"?: string;
+              "device_tier"?: string;
+              "samples"?: number;
+            }>;
+            "browser_by_engine"?: Record<string, {
+              "avg_blocking_resources"?: number;
+              "avg_browser_process_cpu_pct"?: number;
+              "avg_browser_process_mem_mb"?: number;
+              "avg_cls_score"?: number;
+              "avg_fcp_ms"?: number;
+              "avg_inp_ms"?: number;
+              "avg_js_heap_used_mb"?: number;
+              "avg_lcp_ms"?: number;
+              "avg_long_task_count"?: number;
+              "avg_ttfb_ms"?: number;
+              "browser_engine"?: string;
+              "samples"?: number;
+            }>;
+            "browser_by_platform"?: Record<string, {
+              "avg_blocking_resources"?: number;
+              "avg_browser_process_cpu_pct"?: number;
+              "avg_browser_process_mem_mb"?: number;
+              "avg_cls_score"?: number;
+              "avg_fcp_ms"?: number;
+              "avg_inp_ms"?: number;
+              "avg_js_heap_used_mb"?: number;
+              "avg_lcp_ms"?: number;
+              "avg_long_task_count"?: number;
+              "avg_ttfb_ms"?: number;
+              "browser_engine"?: string;
+              "device_platform"?: string;
+              "samples"?: number;
+            }>;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
@@ -637,13 +680,73 @@ export interface operations {
               "timestamp"?: string;
               "url"?: string;
             }>;
-            "by_action"?: Record<string, unknown>;
-            "by_group"?: Record<string, unknown>;
-            "by_network_profile"?: Record<string, unknown>;
-            "by_region"?: Record<string, unknown>;
-            "by_soap_fault_category"?: Record<string, unknown>;
-            "by_soap_fault_code"?: Record<string, unknown>;
-            "by_soap_operation"?: Record<string, unknown>;
+            "by_action"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
+            "by_group"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
+            "by_network_profile"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
+            "by_region"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
+            "by_soap_fault_category"?: Record<string, number>;
+            "by_soap_fault_code"?: Record<string, number>;
+            "by_soap_operation"?: Record<string, {
+              "avg_response_ms"?: number;
+              "error_pct"?: number;
+              "errors"?: number;
+              "max_response_ms"?: number;
+              "min_response_ms"?: number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions"?: number;
+            }>;
             "change_attribution"?: {
               "data_revision"?: string;
               "environment"?: string;
@@ -747,7 +850,7 @@ export interface operations {
                 "assignment"?: Record<string, unknown>;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: string;
-                "controller_env"?: Record<string, unknown>;
+                "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
                 "duration"?: string;
@@ -792,8 +895,28 @@ export interface operations {
               "transactions_parquet_file"?: string;
             };
             "network_phases"?: {
-              "by_action"?: Record<string, unknown>;
-              "by_dependency"?: Record<string, unknown>;
+              "by_action"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "count"?: number;
+                "max_connect_ms"?: number;
+                "max_dns_ms"?: number;
+                "max_tls_ms"?: number;
+                "max_ttfb_ms"?: number;
+              }>;
+              "by_dependency"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "count"?: number;
+                "max_connect_ms"?: number;
+                "max_dns_ms"?: number;
+                "max_tls_ms"?: number;
+                "max_ttfb_ms"?: number;
+              }>;
               "overall"?: {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -815,7 +938,13 @@ export interface operations {
                 "strength"?: string;
                 "with"?: string;
               }>;
-              "metric_stats"?: Record<string, unknown>;
+              "metric_stats"?: Record<string, {
+                "average"?: number;
+                "first_seen"?: string;
+                "last_seen"?: string;
+                "peak"?: number;
+                "samples"?: number;
+              }>;
               "missing_metrics"?: Array<string>;
               "required_metrics"?: Array<string>;
               "samples"?: number;
@@ -870,7 +999,7 @@ export interface operations {
               "resource_samples"?: number;
               "telemetry"?: {
                 "breached_intervals"?: number;
-                "condition_counts"?: Record<string, unknown>;
+                "condition_counts"?: Record<string, number>;
                 "degraded_intervals"?: number;
                 "dropped_results"?: number;
                 "first_breach_at"?: string;
@@ -983,10 +1112,19 @@ export interface operations {
               "warned"?: number;
               "worst_kind"?: string;
             };
-            "sla_rows"?: Record<string, unknown>;
+            "sla_rows"?: Record<string, {
+              "error_pct"?: number;
+              "has_sla"?: boolean;
+              "name"?: string;
+              "p95_ms"?: number;
+              "result"?: string;
+              "result_kind"?: string;
+              "sla_ms"?: number;
+              "volume"?: number;
+            }>;
             "soap_fault_timeline"?: Array<{
-              "by_category"?: Record<string, unknown>;
-              "by_code"?: Record<string, unknown>;
+              "by_category"?: Record<string, number>;
+              "by_code"?: Record<string, number>;
               "timestamp"?: string;
               "total"?: number;
             }>;
@@ -1021,7 +1159,7 @@ export interface operations {
               "failed_steps"?: number;
               "imported_steps"?: number;
               "next_actions"?: Array<string>;
-              "replay_evidence"?: Record<string, unknown>;
+              "replay_evidence"?: Record<string, number>;
               "replayed_steps"?: number;
               "source_profiles"?: Array<string>;
               "status"?: string;
@@ -1039,7 +1177,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -1062,11 +1200,11 @@ export interface operations {
           };
           "scenario"?: {
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -1096,11 +1234,11 @@ export interface operations {
             };
             "groups"?: Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -1119,7 +1257,7 @@ export interface operations {
                 "browser"?: Record<string, unknown>;
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -1149,7 +1287,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -1185,30 +1323,30 @@ export interface operations {
         content: {
           "application/json": {
             "citations"?: Array<{
-              "label"?: string;
-              "path"?: string;
+              "label": string;
+              "path": string;
             }>;
-            "determinism"?: {
-              "fixture_key"?: string;
-              "mode"?: string;
-              "stable_input"?: Array<string>;
+            "determinism": {
+              "fixture_key": string;
+              "mode": string;
+              "stable_input": Array<string>;
             };
-            "generated_at"?: string;
+            "generated_at": string;
             "limitations"?: Array<string>;
             "next_actions"?: Array<string>;
             "project_id"?: string;
-            "provider"?: string;
-            "schema_version"?: string;
-            "sections"?: Array<{
+            "provider": string;
+            "schema_version": string;
+            "sections": Array<{
               "details"?: Array<string>;
               "evidence"?: Array<string>;
-              "status"?: string;
-              "summary"?: string;
-              "title"?: string;
+              "status": string;
+              "summary": string;
+              "title": string;
             }>;
-            "summary"?: string;
+            "summary": string;
             "target_id"?: string;
-            "target_type"?: string;
+            "target_type": string;
           };
         };
       };
@@ -1243,34 +1381,34 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "allowed_providers"?: Array<string>;
-            "artifact_retention_days"?: number;
-            "audit_events"?: Array<string>;
-            "controls"?: Array<{
-              "key"?: string;
-              "status"?: string;
-              "summary"?: string;
+            "allowed_providers": Array<string>;
+            "artifact_retention_days": number;
+            "audit_events": Array<string>;
+            "controls": Array<{
+              "key": string;
+              "status": string;
+              "summary": string;
             }>;
-            "default_provider"?: string;
+            "default_provider": string;
             "disabled_projects"?: Array<string>;
-            "enabled"?: boolean;
-            "export_endpoints"?: Array<string>;
-            "generated_at"?: string;
+            "enabled": boolean;
+            "export_endpoints": Array<string>;
+            "generated_at": string;
             "project_id"?: string;
             "project_override"?: {
-              "enabled"?: boolean;
-              "project_id"?: string;
+              "enabled": boolean;
+              "project_id": string;
               "reason"?: string;
             };
-            "provider_capabilities"?: Array<{
-              "capabilities"?: Array<string>;
+            "provider_capabilities": Array<{
+              "capabilities": Array<string>;
               "notes"?: Array<string>;
-              "provider"?: string;
-              "status"?: string;
+              "provider": string;
+              "status": string;
             }>;
-            "redaction_posture"?: string;
-            "schema_version"?: string;
-            "status"?: string;
+            "redaction_posture": string;
+            "schema_version": string;
+            "status": string;
           };
         };
       };
@@ -1308,103 +1446,103 @@ export interface operations {
         content: {
           "application/json": {
             "citations"?: Array<{
-              "label"?: string;
-              "path"?: string;
+              "label": string;
+              "path": string;
             }>;
-            "determinism"?: {
-              "fixture_key"?: string;
-              "mode"?: string;
-              "stable_input"?: Array<string>;
+            "determinism": {
+              "fixture_key": string;
+              "mode": string;
+              "stable_input": Array<string>;
             };
-            "generated_at"?: string;
+            "generated_at": string;
             "guardrails"?: {
-              "items"?: Array<{
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+              "items": Array<{
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts": Record<string, number>;
             };
             "next_actions"?: Array<string>;
             "preview_script"?: Record<string, unknown>;
             "project_id"?: string;
-            "provider"?: string;
-            "schema_version"?: string;
-            "suggestions"?: Array<{
-              "action"?: string;
-              "category"?: string;
+            "provider": string;
+            "schema_version": string;
+            "suggestions": Array<{
+              "action": string;
+              "category": string;
               "evidence"?: Array<string>;
-              "id"?: string;
+              "id": string;
               "preview_path"?: string;
-              "severity"?: string;
-              "summary"?: string;
-              "title"?: string;
+              "severity": string;
+              "summary": string;
+              "title": string;
             }>;
-            "target"?: {
+            "target": {
               "id"?: string;
               "name"?: string;
-              "type"?: string;
+              "type": string;
             };
-            "validation"?: {
+            "validation": {
               "ai_guardrails"?: {
-                "items"?: Array<{
-                  "key"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                "items": Array<{
+                  "key": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts": Record<string, number>;
               };
-              "authoring_health"?: {
-                "inputs"?: Array<{
+              "authoring_health": {
+                "inputs": Array<{
                   "count"?: number;
-                  "key"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "key": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "score"?: number;
-                "status"?: string;
+                "score": number;
+                "status": string;
               };
               "data_source_fit"?: {
-                "items"?: Array<{
+                "items": Array<{
                   "available_rows"?: number;
                   "column"?: string;
-                  "data_source"?: string;
+                  "data_source": string;
                   "parameter"?: string;
                   "required_rows"?: number;
-                  "status"?: string;
-                  "summary"?: string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts": Record<string, number>;
               };
-              "issues"?: Array<string>;
+              "issues": Array<string>;
               "migration_readiness"?: Record<string, unknown>;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "runtime_settings_parity"?: Array<Record<string, unknown>>;
-              "runtime_settings_status_counts"?: Record<string, unknown>;
-              "script_id"?: string;
-              "valid"?: boolean;
+              "runtime_settings_status_counts"?: Record<string, number>;
+              "script_id": string;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
           };
@@ -1443,33 +1581,33 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "generated_at"?: string;
-            "items"?: Array<{
-              "approval_ready"?: boolean;
+            "count": number;
+            "generated_at": string;
+            "items": Array<{
+              "approval_ready": boolean;
               "blocking_health_inputs"?: Array<string>;
-              "created_at"?: string;
+              "created_at": string;
               "guardrails"?: {
-                "items"?: Array<Record<string, unknown>>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "items": Array<Record<string, unknown>>;
+                "status": string;
+                "status_counts": Record<string, number>;
               };
-              "name"?: string;
+              "name": string;
               "next_actions"?: Array<string>;
               "project_id"?: string;
               "provider"?: string;
-              "session_id"?: string;
-              "source"?: string;
+              "session_id": string;
+              "source": string;
               "source_type"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "status": string;
+              "updated_at": string;
             }>;
-            "limit"?: number;
+            "limit": number;
             "next_actions"?: Array<string>;
-            "offset"?: number;
+            "offset": number;
             "project_id"?: string;
-            "schema_version"?: string;
-            "status_counts"?: Record<string, unknown>;
+            "schema_version": string;
+            "status_counts": Record<string, number>;
           };
         };
       };
@@ -1509,21 +1647,21 @@ export interface operations {
         content: {
           "application/json": {
             "check_url"?: string;
-            "duration_ms"?: number;
+            "duration_ms": number;
             "error"?: string;
-            "errors"?: number;
-            "outcome"?: string;
-            "report_url"?: string;
-            "results_present"?: boolean;
-            "schema_version"?: number;
-            "sla_breached"?: boolean;
+            "errors": number;
+            "outcome": string;
+            "report_url": string;
+            "results_present": boolean;
+            "schema_version": number;
+            "sla_breached": boolean;
             "sla_details"?: Array<string>;
-            "sla_evaluated"?: boolean;
-            "status"?: string;
-            "status_url"?: string;
-            "test_id"?: string;
-            "tps"?: number;
-            "transactions"?: number;
+            "sla_evaluated": boolean;
+            "status": string;
+            "status_url": string;
+            "test_id": string;
+            "tps": number;
+            "transactions": number;
           };
         };
       };
@@ -1603,12 +1741,12 @@ export interface operations {
             "acknowledged_by_display_name"?: string;
             "acknowledged_by_subject"?: string;
             "acknowledgement_note"?: string;
-            "id"?: string;
+            "id": string;
             "region"?: string;
-            "severity"?: string;
-            "summary"?: string;
-            "target"?: string;
-            "type"?: string;
+            "severity": string;
+            "summary": string;
+            "target": string;
+            "type": string;
           };
         };
       };
@@ -1661,7 +1799,7 @@ export interface operations {
             "active_tests"?: number;
             "error"?: string;
             "lease"?: Record<string, unknown>;
-            "status"?: string;
+            "status": string;
           };
         };
       };
@@ -1778,50 +1916,50 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "candidates"?: Array<{
-              "archive_path"?: string;
-              "artifact_type"?: string;
-              "completed_at"?: string;
+            "candidates": Array<{
+              "archive_path": string;
+              "artifact_type": string;
+              "completed_at": string;
               "compliance_class"?: string;
-              "expired_at"?: string;
+              "expired_at": string;
               "policy_name"?: string;
               "project_id"?: string;
               "reason"?: string;
               "release_id"?: string;
-              "retention_days"?: number;
+              "retention_days": number;
               "run_status"?: string;
-              "test_id"?: string;
+              "test_id": string;
             }>;
-            "dry_run"?: boolean;
-            "generated_at"?: string;
+            "dry_run": boolean;
+            "generated_at": string;
             "har_candidates"?: Array<{
-              "expired_at"?: string;
-              "modified_at"?: string;
-              "path"?: string;
-              "retention_days"?: number;
-              "sensitivity"?: string;
-              "size_bytes"?: number;
+              "expired_at": string;
+              "modified_at": string;
+              "path": string;
+              "retention_days": number;
+              "sensitivity": string;
+              "size_bytes": number;
             }>;
             "har_results"?: Array<{
               "error"?: string;
-              "path"?: string;
-              "status"?: string;
+              "path": string;
+              "status": string;
             }>;
             "results"?: Array<{
-              "archive_path"?: string;
+              "archive_path": string;
               "compliance_class"?: string;
               "error"?: string;
               "reason"?: string;
-              "status"?: string;
-              "test_id"?: string;
+              "status": string;
+              "test_id": string;
             }>;
-            "summary"?: {
-              "candidate_count"?: number;
-              "failed_count"?: number;
+            "summary": {
+              "candidate_count": number;
+              "failed_count": number;
               "har_candidate_count"?: number;
               "har_failed_count"?: number;
               "har_pruned_count"?: number;
-              "pruned_count"?: number;
+              "pruned_count": number;
             };
           };
         };
@@ -1860,15 +1998,15 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "applied"?: boolean;
-            "diffs"?: Array<{
-              "kind"?: string;
-              "path"?: string;
+            "applied": boolean;
+            "diffs": Array<{
+              "kind": string;
+              "path": string;
             }>;
-            "matched_rules"?: number;
-            "preview_token"?: string;
-            "ruleset_id"?: string;
-            "script_id"?: string;
+            "matched_rules": number;
+            "preview_token": string;
+            "ruleset_id": string;
+            "script_id": string;
           };
         };
       };
@@ -1984,26 +2122,26 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "applied"?: number;
-            "scenario"?: {
+            "applied": number;
+            "scenario": {
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               };
               "associated_releases"?: Array<{
-                "application_id"?: string;
-                "id"?: string;
-                "name"?: string;
+                "application_id": string;
+                "id": string;
+                "name": string;
               }>;
-              "created_at"?: string;
+              "created_at": string;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
+              "duration": string;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
                 "max_avg_transfer_ms"?: number;
@@ -2025,11 +2163,11 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "id"?: string;
+              "id": string;
               "last_run_at"?: string;
               "last_run_ended_at"?: string;
               "last_run_test_id"?: string;
-              "name"?: string;
+              "name": string;
               "project_id"?: string;
               "ref_key"?: string;
               "resource_baseline"?: boolean;
@@ -2045,7 +2183,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -2068,15 +2206,15 @@ export interface operations {
               };
               "scenario_mode"?: string;
               "schedules"?: Array<Record<string, unknown>>;
-              "script_count"?: number;
+              "script_count": number;
               "script_shakeout"?: boolean;
-              "scripts"?: Array<{
+              "scripts": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -2084,7 +2222,7 @@ export interface operations {
                 "initialization"?: string;
                 "iterations"?: number;
                 "name"?: string;
-                "order"?: number;
+                "order": number;
                 "protocol"?: string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
@@ -2095,7 +2233,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -2108,17 +2246,17 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
+                "script_id": string;
                 "script_name"?: string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "start_delay"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "skipped"?: Array<{
-              "fields"?: Array<string>;
-              "group"?: number;
+              "fields": Array<string>;
+              "group": number;
               "protocol"?: string;
             }>;
           };
@@ -2203,54 +2341,54 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "authoring_health"?: {
-              "inputs"?: Array<{
+            "authoring_health": {
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
-            "script"?: {
+            "script": {
               "associated_releases"?: Array<{
-                "application_id"?: string;
-                "id"?: string;
-                "name"?: string;
+                "application_id": string;
+                "id": string;
+                "name": string;
               }>;
               "associated_scenarios"?: Array<{
-                "id"?: string;
-                "name"?: string;
+                "id": string;
+                "name": string;
               }>;
               "authoring_health"?: {
-                "inputs"?: Array<{
+                "inputs": Array<{
                   "count"?: number;
-                  "key"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "key": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "score"?: number;
-                "status"?: string;
+                "score": number;
+                "status": string;
               };
-              "created_at"?: string;
+              "created_at": string;
               "folder_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_run_at"?: string;
-              "name"?: string;
+              "name": string;
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "ref_key"?: string;
               "scenario_count"?: number;
               "scenario_run_releases"?: Array<{
-                "application_id"?: string;
-                "id"?: string;
-                "name"?: string;
+                "application_id": string;
+                "id": string;
+                "name": string;
               }>;
-              "script"?: Record<string, unknown>;
-              "version"?: string;
+              "script": Record<string, unknown>;
+              "version": string;
             };
-            "session"?: Record<string, unknown>;
+            "session": Record<string, unknown>;
           };
         };
       };
@@ -2479,46 +2617,58 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "contract_version"?: string;
-            "draft_lifecycle"?: Array<string>;
-            "health_inputs"?: Array<string>;
-            "import_surfaces"?: Array<{
-              "badge"?: string;
-              "category"?: string;
-              "description"?: string;
-              "id"?: string;
-              "launcher"?: string;
+            "contract_version": string;
+            "draft_lifecycle": Array<string>;
+            "health_inputs": Array<string>;
+            "import_surfaces": Array<{
+              "badge": string;
+              "category": string;
+              "description": string;
+              "id": string;
+              "launcher": string;
               "modes"?: Array<{
-                "default"?: boolean;
-                "description"?: string;
-                "id"?: string;
-                "label"?: string;
+                "default": boolean;
+                "description": string;
+                "id": string;
+                "label": string;
               }>;
-              "order"?: number;
-              "title"?: string;
-              "visible"?: boolean;
+              "order": number;
+              "title": string;
+              "visible": boolean;
             }>;
-            "source_map"?: Record<string, unknown>;
-            "sources"?: Array<{
-              "acquisition"?: Array<string>;
-              "display_name"?: string;
-              "features"?: {
-                "approval_gate_candidate"?: boolean;
-                "browser_replay"?: boolean;
-                "draft_validation"?: boolean;
-                "import_review"?: boolean;
-                "multi_script"?: boolean;
-                "provenance"?: boolean;
-                "repair_suggestions"?: boolean;
-                "replay"?: boolean;
-                "save_handoff"?: boolean;
-                "scenario_draft"?: boolean;
-                "stored_validation"?: boolean;
+            "source_map": Record<string, {
+              "approval_gate_candidate": boolean;
+              "browser_replay": boolean;
+              "draft_validation": boolean;
+              "import_review": boolean;
+              "multi_script": boolean;
+              "provenance": boolean;
+              "repair_suggestions": boolean;
+              "replay": boolean;
+              "save_handoff": boolean;
+              "scenario_draft": boolean;
+              "stored_validation": boolean;
+            }>;
+            "sources": Array<{
+              "acquisition": Array<string>;
+              "display_name": string;
+              "features": {
+                "approval_gate_candidate": boolean;
+                "browser_replay": boolean;
+                "draft_validation": boolean;
+                "import_review": boolean;
+                "multi_script": boolean;
+                "provenance": boolean;
+                "repair_suggestions": boolean;
+                "replay": boolean;
+                "save_handoff": boolean;
+                "scenario_draft": boolean;
+                "stored_validation": boolean;
               };
-              "health_inputs"?: Array<string>;
+              "health_inputs": Array<string>;
               "notes"?: Array<string>;
-              "source"?: string;
-              "status"?: string;
+              "source": string;
+              "status": string;
             }>;
           };
         };
@@ -2677,9 +2827,9 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "browsers"?: Array<Record<string, unknown>>;
-            "languages"?: Array<Record<string, unknown>>;
-            "platforms"?: Array<Record<string, unknown>>;
+            "browsers": Array<Record<string, unknown>>;
+            "languages": Array<Record<string, unknown>>;
+            "platforms": Array<Record<string, unknown>>;
           };
         };
       };
@@ -2897,7 +3047,7 @@ export interface operations {
           "health"?: string;
           "packs"?: Array<{
             "pack"?: string;
-            "samples"?: Record<string, unknown>;
+            "samples"?: Record<string, number>;
             "timestamp"?: string;
           }>;
         };
@@ -2963,7 +3113,7 @@ export interface operations {
           "project_id"?: string;
           "replace_mode"?: string;
           "script"?: Record<string, unknown>;
-          "secret_bindings"?: Record<string, unknown>;
+          "secret_bindings"?: Record<string, string>;
           "target_script_id"?: string;
         };
       };
@@ -3125,7 +3275,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "bindings"?: Record<string, unknown>;
+          "bindings"?: Record<string, string>;
           "import_session_id"?: string;
           "name"?: string;
           "project_id"?: string;
@@ -3192,7 +3342,7 @@ export interface operations {
           "project_id"?: string;
           "replace_mode"?: string;
           "script"?: Record<string, unknown>;
-          "secret_bindings"?: Record<string, unknown>;
+          "secret_bindings"?: Record<string, string>;
           "target_script_id"?: string;
         };
       };
@@ -3255,7 +3405,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "config"?: Record<string, unknown>;
+            "config": Record<string, unknown>;
           };
         };
       };
@@ -3415,8 +3565,8 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "cordoned"?: boolean;
-            "drain_state"?: string;
+            "cordoned": boolean;
+            "drain_state": string;
             "generator_id"?: string;
             "target"?: string;
           };
@@ -3549,7 +3699,7 @@ export interface operations {
             "base_url"?: string;
             "duration"?: string;
             "ramp_up"?: string;
-            "variables"?: Record<string, unknown>;
+            "variables"?: Record<string, string>;
             "vusers"?: number;
           };
           "goals"?: {
@@ -3598,21 +3748,21 @@ export interface operations {
         content: {
           "application/json": {
             "check_url"?: string;
-            "duration_ms"?: number;
+            "duration_ms": number;
             "error"?: string;
-            "errors"?: number;
-            "outcome"?: string;
-            "report_url"?: string;
-            "results_present"?: boolean;
-            "schema_version"?: number;
-            "sla_breached"?: boolean;
+            "errors": number;
+            "outcome": string;
+            "report_url": string;
+            "results_present": boolean;
+            "schema_version": number;
+            "sla_breached": boolean;
             "sla_details"?: Array<string>;
-            "sla_evaluated"?: boolean;
-            "status"?: string;
-            "status_url"?: string;
-            "test_id"?: string;
-            "tps"?: number;
-            "transactions"?: number;
+            "sla_evaluated": boolean;
+            "status": string;
+            "status_url": string;
+            "test_id": string;
+            "tps": number;
+            "transactions": number;
           };
         };
       };
@@ -3705,21 +3855,21 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "created_at"?: string;
+            "created_at": string;
             "description"?: string;
-            "id"?: string;
-            "name"?: string;
+            "id": string;
+            "name": string;
             "project_id"?: string;
-            "rules"?: Array<{
+            "rules": Array<{
               "confidence"?: number;
-              "expression"?: string;
-              "extract_type"?: string;
-              "name"?: string;
+              "expression": string;
+              "extract_type": string;
+              "name": string;
               "rule_id"?: string;
-              "source"?: string;
+              "source": string;
             }>;
             "source"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -3752,13 +3902,27 @@ export interface operations {
     parameters?: never;
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "description"?: string;
+          "name": string;
+          "project_id"?: string;
+          "schema"?: Record<string, string>;
+        };
       };
     };
     responses: {
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "archived_at"?: (string) | null;
+            "created_at": string;
+            "description"?: string;
+            "id": string;
+            "name": string;
+            "project_id"?: string;
+            "schema"?: Record<string, string>;
+            "updated_at": string;
+          };
         };
       };
       "400": {
@@ -3794,13 +3958,25 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "data": Record<string, string>;
+          "status"?: string;
+          [key: string]: unknown;
+        };
       };
     };
     responses: {
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "created_at": string;
+            "data": Record<string, string>;
+            "id": string;
+            "pool_id": string;
+            "status"?: string;
+            "updated_at": string;
+            "version": number;
+          };
         };
       };
       "400": {
@@ -3814,6 +3990,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -3841,7 +4022,7 @@ export interface operations {
     responses: {
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -4529,11 +4710,11 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -4564,11 +4745,11 @@ export interface operations {
           };
           "groups"?: Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -4587,7 +4768,7 @@ export interface operations {
               "browser"?: Record<string, unknown>;
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -4624,7 +4805,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -4659,11 +4840,11 @@ export interface operations {
           "test"?: {
             "application_id"?: string;
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -4694,11 +4875,11 @@ export interface operations {
             };
             "groups"?: Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -4717,7 +4898,7 @@ export interface operations {
                 "browser"?: Record<string, unknown>;
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -4753,7 +4934,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -4793,57 +4974,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -4852,9 +5033,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -4864,26 +5045,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -4893,24 +5074,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -4919,19 +5100,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -4950,13 +5173,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -4979,14 +5202,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -4995,8 +5222,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -5010,7 +5237,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -5023,16 +5250,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -5047,34 +5274,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -5088,7 +5315,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -5099,17 +5326,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -5135,27 +5362,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -5170,48 +5397,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -5225,7 +5502,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -5236,17 +5513,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -5272,22 +5605,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -5307,7 +5661,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -5334,33 +5688,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -5371,21 +5725,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -5395,7 +5749,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -5404,16 +5758,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -5523,7 +5884,7 @@ export interface operations {
           "tags"?: Array<string>;
           "teardown"?: Array<Record<string, unknown>>;
           "usage_notes"?: Array<string>;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -5569,11 +5930,11 @@ export interface operations {
       content: {
         "application/json": {
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -5603,11 +5964,11 @@ export interface operations {
           };
           "groups": Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -5631,7 +5992,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -5669,7 +6030,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -5701,23 +6062,23 @@ export interface operations {
         content: {
           "application/json": {
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
             };
             "associated_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
-            "created_at"?: string;
+            "created_at": string;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
+            "duration": string;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
               "max_avg_transfer_ms"?: number;
@@ -5739,11 +6100,11 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "id"?: string;
+            "id": string;
             "last_run_at"?: string;
             "last_run_ended_at"?: string;
             "last_run_test_id"?: string;
-            "name"?: string;
+            "name": string;
             "project_id"?: string;
             "ref_key"?: string;
             "resource_baseline"?: boolean;
@@ -5759,7 +6120,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -5782,15 +6143,15 @@ export interface operations {
             };
             "scenario_mode"?: string;
             "schedules"?: Array<Record<string, unknown>>;
-            "script_count"?: number;
+            "script_count": number;
             "script_shakeout"?: boolean;
-            "scripts"?: Array<{
+            "scripts": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -5798,7 +6159,7 @@ export interface operations {
               "initialization"?: string;
               "iterations"?: number;
               "name"?: string;
-              "order"?: number;
+              "order": number;
               "protocol"?: string;
               "ramp_down"?: string;
               "ramp_up"?: string;
@@ -5814,7 +6175,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -5835,13 +6196,13 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
+              "script_id": string;
               "script_name"?: string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "start_delay"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -5935,40 +6296,40 @@ export interface operations {
         content: {
           "application/json": {
             "associated_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
             "associated_scenarios"?: Array<{
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
             }>;
             "authoring_health"?: {
-              "inputs"?: Array<{
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
-            "created_at"?: string;
+            "created_at": string;
             "folder_id"?: string;
-            "id"?: string;
+            "id": string;
             "last_run_at"?: string;
-            "name"?: string;
+            "name": string;
             "project_id"?: string;
-            "protocol"?: string;
+            "protocol": string;
             "ref_key"?: string;
             "scenario_count"?: number;
             "scenario_run_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
-            "script"?: Record<string, unknown>;
-            "version"?: string;
+            "script": Record<string, unknown>;
+            "version": string;
           };
         };
       };
@@ -6012,15 +6373,15 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "application_repository_roles"?: Record<string, unknown>;
+          "application_repository_roles"?: Record<string, Array<string>>;
           "contact_email"?: string;
           "description"?: string;
-          "domain_roles"?: Record<string, unknown>;
+          "domain_roles"?: Record<string, Array<string>>;
           "expires_at"?: string;
           "global_roles"?: Array<string>;
-          "name"?: string;
+          "name": string;
           "owner_id"?: string;
-          "project_roles"?: Record<string, unknown>;
+          "project_roles"?: Record<string, Array<string>>;
           "rotation_interval_days"?: number;
           "scopes"?: Array<string>;
         };
@@ -6030,8 +6391,8 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "api_key"?: string;
-            "service_account"?: Record<string, unknown>;
+            "api_key": string;
+            "service_account": Record<string, unknown>;
           };
         };
       };
@@ -6072,11 +6433,11 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -6107,11 +6468,11 @@ export interface operations {
           };
           "groups"?: Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -6135,7 +6496,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -6179,7 +6540,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -6218,11 +6579,11 @@ export interface operations {
             "application_id"?: string;
             "archive"?: Record<string, unknown>;
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -6231,9 +6592,9 @@ export interface operations {
             "baseline_pinned_at"?: string;
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -6243,26 +6604,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -6272,24 +6633,24 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
@@ -6298,19 +6659,147 @@ export interface operations {
             "capacity_window_start_at"?: string;
             "comparison_baseline"?: {
               "completed_at"?: string;
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "policy"?: string;
-              "source_test_id"?: string;
-              "source_test_name"?: string;
-              "transactions"?: Record<string, unknown>;
+              "source_test_id": string;
+              "source_test_name": string;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "created_at"?: string;
+            "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
             "cumulative_pause_ns"?: Record<string, unknown>;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
-            "duration_ns"?: Record<string, unknown>;
+            "duration": string;
+            "duration_ns": Record<string, unknown>;
             "ended_at"?: string;
             "error"?: string;
             "execution_plan_approval"?: {
@@ -6329,13 +6818,13 @@ export interface operations {
             };
             "folder_id"?: string;
             "generator_shards"?: Array<{
-              "group"?: string;
+              "group": string;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
-              "target"?: string;
+              "target": string;
               "vuser_id_offset"?: number;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
@@ -6358,14 +6847,18 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "goal_targets"?: Record<string, unknown>;
-            "groups"?: Array<{
+            "goal_targets"?: Record<string, {
+              "group": string;
+              "target_tps": number;
+              "updated_at"?: string;
+            }>;
+            "groups": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -6374,8 +6867,8 @@ export interface operations {
               "iteration_override"?: number;
               "iteration_override_known"?: boolean;
               "iterations"?: number;
-              "name"?: string;
-              "protocol"?: string;
+              "name": string;
+              "protocol": string;
               "ramp_down"?: string;
               "ramp_up"?: string;
               "role"?: string;
@@ -6394,7 +6887,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -6415,16 +6908,16 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
-              "script_name"?: string;
+              "script_id": string;
+              "script_name": string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "history"?: Array<{
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -6439,48 +6932,98 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, Record<string, unknown>>;
+                "by_region"?: Record<string, Record<string, unknown>>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<Record<string, unknown>>;
-                "nodes"?: Array<Record<string, unknown>>;
+                "edges": Array<Record<string, unknown>>;
+                "nodes": Array<Record<string, unknown>>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -6494,7 +7037,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -6505,17 +7048,73 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<Record<string, unknown>>;
+                "targets": Array<Record<string, unknown>>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -6541,27 +7140,48 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
             }>;
-            "id"?: string;
+            "id": string;
             "live_metrics"?: {
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -6576,66 +7196,167 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "by_region"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<{
+                "edges": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
                   "p95_ms"?: number;
-                  "source"?: string;
-                  "target"?: string;
+                  "source": string;
+                  "target": string;
                   "transactions"?: number;
                 }>;
-                "nodes"?: Array<{
+                "nodes": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
-                  "id"?: string;
-                  "kind"?: string;
-                  "label"?: string;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
                   "p95_ms"?: number;
                   "status"?: string;
                   "transactions"?: number;
                 }>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -6649,7 +7370,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -6660,37 +7381,179 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<{
+                "targets": Array<{
                   "connect_ms"?: number;
                   "dns_ms"?: number;
-                  "endpoint"?: string;
+                  "endpoint": string;
                   "error"?: string;
                   "hops"?: number;
                   "http_status"?: number;
                   "ip"?: string;
                   "jitter_ms"?: number;
-                  "last_success"?: boolean;
-                  "latency_ms"?: number;
-                  "name"?: string;
+                  "last_success": boolean;
+                  "latency_ms": number;
+                  "name": string;
                   "probe_method"?: string;
                   "probe_total_ms"?: number;
                   "route_status"?: string;
                   "sample_count"?: number;
                   "success_rate_pct"?: number;
-                  "timestamp"?: string;
+                  "timestamp": string;
                   "tls_ms"?: number;
                   "ttfb_ms"?: number;
                 }>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -6716,22 +7579,86 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "name"?: string;
+            "name": string;
             "paused_at"?: string;
             "pending_reason"?: string;
             "pending_since"?: string;
@@ -6751,7 +7678,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -6778,33 +7705,33 @@ export interface operations {
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
               "findings"?: Array<{
                 "area"?: string;
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts"?: Record<string, number>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
@@ -6815,21 +7742,21 @@ export interface operations {
             "script_name"?: string;
             "script_shakeout"?: boolean;
             "sparkline"?: Array<{
-              "timestamp"?: string;
-              "tps"?: number;
+              "timestamp": string;
+              "tps": number;
             }>;
             "start_authorization"?: {
               "capacity_shortfall"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
-                "available_generators"?: number;
-                "recommended_generators"?: number;
-                "shortfall_generators"?: number;
-                "total_vusers"?: number;
+                "available_generators": number;
+                "recommended_generators": number;
+                "shortfall_generators": number;
+                "total_vusers": number;
               };
               "script_shakeout"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
                 "review_evidence_sha256"?: string;
@@ -6839,7 +7766,7 @@ export interface operations {
             "started_at"?: string;
             "started_by_display_name"?: string;
             "started_by_subject"?: string;
-            "status"?: string;
+            "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_health"?: {
@@ -6848,16 +7775,23 @@ export interface operations {
               "breach_started_at"?: string;
               "conditions"?: Array<string>;
               "current_signature"?: string;
-              "last_observed_at"?: string;
+              "last_observed_at": string;
               "last_transition_at"?: string;
-              "severity"?: string;
-              "status"?: string;
+              "severity": string;
+              "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
             };
             "timeslot_id"?: string;
-            "total_vusers"?: number;
-            "vuser_ramps"?: Record<string, unknown>;
+            "total_vusers": number;
+            "vuser_ramps"?: Record<string, {
+              "group": string;
+              "ramp_duration": string;
+              "ramp_duration_seconds": number;
+              "start_vusers": number;
+              "started_at": string;
+              "target_vusers": number;
+            }>;
           };
         };
       };
@@ -6947,63 +7881,63 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "created_at"?: string;
-            "generated_at"?: string;
-            "id"?: string;
+            "created_at": string;
+            "generated_at": string;
+            "id": string;
             "project_id"?: string;
-            "usage"?: {
+            "usage": {
               "by_project"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
               "by_protocol"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
               "by_region"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
               "by_user"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
-              "generated_at"?: string;
+              "generated_at": string;
               "notes"?: Array<string>;
               "project_id"?: string;
-              "totals"?: {
+              "totals": {
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               };
             };
           };
@@ -7042,7 +7976,7 @@ export interface operations {
           "active"?: boolean;
           "display_name"?: string;
           "email"?: string;
-          "subject"?: string;
+          "subject": string;
         };
       };
     };
@@ -7148,7 +8082,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7186,7 +8120,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -7262,7 +8196,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7301,7 +8235,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "deleted"?: string;
+            "deleted": string;
           };
         };
       };
@@ -7360,7 +8294,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7399,7 +8333,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7442,7 +8376,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7480,7 +8414,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7567,7 +8501,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7615,7 +8549,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7653,7 +8587,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -7715,7 +8649,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -7763,7 +8697,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7869,7 +8803,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -7902,7 +8836,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7940,7 +8874,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -7978,7 +8912,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -8016,7 +8950,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -8055,7 +8989,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8105,7 +9039,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8148,7 +9082,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8191,7 +9125,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -8234,7 +9168,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8283,7 +9217,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8326,7 +9260,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8365,7 +9299,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "401": {
@@ -8434,12 +9368,12 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "api_address"?: string;
+            "api_address": string;
             "app_data_path"?: string;
-            "browser_url"?: string;
+            "browser_url": string;
             "build_time"?: string;
-            "cache"?: {
-              "backend"?: string;
+            "cache": {
+              "backend": string;
               "config_error"?: string;
               "endpoint"?: string;
               "fanout_channel"?: string;
@@ -8449,12 +9383,12 @@ export interface operations {
               "tls_enabled"?: boolean;
             };
             "commit"?: string;
-            "desktop_mode"?: boolean;
+            "desktop_mode": boolean;
             "log_path"?: string;
-            "os"?: string;
-            "recorder_proxy"?: Record<string, unknown>;
-            "remote_libraries"?: Record<string, unknown>;
-            "storage"?: Record<string, unknown>;
+            "os": string;
+            "recorder_proxy": Record<string, unknown>;
+            "remote_libraries": Record<string, unknown>;
+            "storage": Record<string, unknown>;
             "version"?: string;
           };
         };
@@ -8508,11 +9442,11 @@ export interface operations {
             "parent_action_name"?: string;
             "request_body"?: string;
             "request_body_transformed"?: boolean;
-            "request_headers"?: Record<string, unknown>;
+            "request_headers"?: Record<string, string>;
             "request_index"?: number;
             "request_url"?: string;
             "response_body"?: string;
-            "response_headers"?: Record<string, unknown>;
+            "response_headers"?: Record<string, string>;
             "response_status"?: number;
             "response_success"?: boolean;
             "step_path"?: Array<string>;
@@ -8522,11 +9456,11 @@ export interface operations {
             "parent_action_name"?: string;
             "request_body"?: string;
             "request_body_transformed"?: boolean;
-            "request_headers"?: Record<string, unknown>;
+            "request_headers"?: Record<string, string>;
             "request_index"?: number;
             "request_url"?: string;
             "response_body"?: string;
-            "response_headers"?: Record<string, unknown>;
+            "response_headers"?: Record<string, string>;
             "response_status"?: number;
             "response_success"?: boolean;
             "step_path"?: Array<string>;
@@ -8538,14 +9472,14 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "blocking"?: boolean;
-            "compared_recorded_steps"?: number;
-            "counts"?: {
-              "errors"?: number;
-              "warnings"?: number;
+            "blocking": boolean;
+            "compared_recorded_steps": number;
+            "counts": {
+              "errors": number;
+              "warnings": number;
             };
-            "suggestions"?: Array<Record<string, unknown>>;
-            "total_recorded_steps"?: number;
+            "suggestions": Array<Record<string, unknown>>;
+            "total_recorded_steps": number;
             "truncated"?: boolean;
           };
         };
@@ -8600,14 +9534,14 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "blocking"?: boolean;
-            "compared_recorded_steps"?: number;
-            "counts"?: {
-              "errors"?: number;
-              "warnings"?: number;
+            "blocking": boolean;
+            "compared_recorded_steps": number;
+            "counts": {
+              "errors": number;
+              "warnings": number;
             };
-            "suggestions"?: Array<Record<string, unknown>>;
-            "total_recorded_steps"?: number;
+            "suggestions": Array<Record<string, unknown>>;
+            "total_recorded_steps": number;
             "truncated"?: boolean;
           };
         };
@@ -8668,12 +9602,12 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "blocking"?: boolean;
-            "counts"?: {
-              "errors"?: number;
-              "warnings"?: number;
+            "blocking": boolean;
+            "counts": {
+              "errors": number;
+              "warnings": number;
             };
-            "suggestions"?: Array<Record<string, unknown>>;
+            "suggestions": Array<Record<string, unknown>>;
           };
         };
       };
@@ -8708,25 +9642,25 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "counts"?: {
-              "dynamic"?: number;
-              "static"?: number;
-              "unknown"?: number;
+            "counts": {
+              "dynamic": number;
+              "static": number;
+              "unknown": number;
             };
-            "results"?: Array<{
-              "class"?: "dynamic" | "static" | "unknown";
-              "confidence"?: number;
+            "results": Array<{
+              "class": "dynamic" | "static" | "unknown";
+              "confidence": number;
               "convert"?: string;
-              "diff_reason"?: string;
-              "expression"?: string;
-              "extract_type"?: string;
-              "found_in_id"?: number;
-              "name"?: string;
+              "diff_reason": string;
+              "expression": string;
+              "extract_type": string;
+              "found_in_id": number;
+              "name": string;
               "reasons"?: Array<string>;
               "rule_id"?: string;
               "save_length"?: number;
               "save_offset"?: number;
-              "source"?: string;
+              "source": string;
               "used_in_ids"?: Array<number>;
             }>;
           };
@@ -8839,21 +9773,21 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "created_at"?: string;
+            "created_at": string;
             "description"?: string;
-            "id"?: string;
-            "name"?: string;
+            "id": string;
+            "name": string;
             "project_id"?: string;
-            "rules"?: Array<{
+            "rules": Array<{
               "confidence"?: number;
-              "expression"?: string;
-              "extract_type"?: string;
-              "name"?: string;
+              "expression": string;
+              "extract_type": string;
+              "name": string;
               "rule_id"?: string;
-              "source"?: string;
+              "source": string;
             }>;
             "source"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -9136,8 +10070,8 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "cordoned"?: boolean;
-            "drain_state"?: string;
+            "cordoned": boolean;
+            "drain_state": string;
             "generator_id"?: string;
             "target"?: string;
           };
@@ -9210,28 +10144,28 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "correlation_manifest"?: {
+            "correlation_manifest": {
               "archive_report_path"?: string;
               "archive_root_cause_path"?: string;
               "dependency_targets"?: Array<string>;
-              "event_properties"?: Record<string, unknown>;
+              "event_properties"?: Record<string, string>;
               "event_type"?: string;
-              "generated_at"?: string;
+              "generated_at": string;
               "project_id"?: string;
               "release_id"?: string;
               "scenario_id"?: string;
-              "schema_version"?: string;
+              "schema_version": string;
               "span_ids"?: Array<string>;
               "status"?: string;
               "test_id"?: string;
               "test_name"?: string;
               "trace_ids"?: Array<string>;
             };
-            "delivery_disabled"?: boolean;
+            "delivery_disabled": boolean;
             "endpoint"?: string;
-            "generated_at"?: string;
+            "generated_at": string;
             "notes"?: Array<string>;
-            "payload"?: Record<string, unknown>;
+            "payload": Record<string, unknown>;
             "required_settings"?: Array<string>;
           };
         };
@@ -9343,11 +10277,11 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -9378,11 +10312,11 @@ export interface operations {
           };
           "groups"?: Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -9406,7 +10340,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -9450,7 +10384,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -9487,29 +10421,29 @@ export interface operations {
         content: {
           "application/json": {
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
             };
             "assignment_recommendation"?: {
-              "available_labels"?: Record<string, unknown>;
+              "available_labels"?: Record<string, Array<string>>;
               "available_regions"?: Array<string>;
               "available_targets"?: Array<string>;
-              "mode"?: string;
+              "mode": string;
               "recommended_targets"?: Array<string>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -9519,26 +10453,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -9548,44 +10482,44 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
             };
-            "duration"?: string;
+            "duration": string;
             "footprint"?: {
-              "complexity_score"?: number;
-              "duration"?: string;
-              "estimated_cpu_cores"?: number;
-              "estimated_memory_mb"?: number;
-              "estimated_network_mbps"?: number;
-              "total_vusers"?: number;
+              "complexity_score": number;
+              "duration": string;
+              "estimated_cpu_cores": number;
+              "estimated_memory_mb": number;
+              "estimated_network_mbps": number;
+              "total_vusers": number;
             };
-            "groups"?: Array<{
+            "groups": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -9594,8 +10528,8 @@ export interface operations {
               "iteration_override"?: number;
               "iteration_override_known"?: boolean;
               "iterations"?: number;
-              "name"?: string;
-              "protocol"?: string;
+              "name": string;
+              "protocol": string;
               "ramp_down"?: string;
               "ramp_up"?: string;
               "role"?: string;
@@ -9614,7 +10548,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -9635,10 +10569,10 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
-              "script_name"?: string;
+              "script_id": string;
+              "script_name": string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "resource_baseline"?: boolean;
             "runtime_settings_review"?: {
@@ -9647,38 +10581,38 @@ export interface operations {
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
               "findings"?: Array<{
                 "area"?: string;
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts"?: Record<string, number>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
             "scenario_mode"?: string;
-            "total_vusers"?: number;
+            "total_vusers": number;
           };
         };
       };
@@ -9720,31 +10654,31 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "applied"?: boolean;
-            "dry_run"?: boolean;
+            "applied": boolean;
+            "dry_run": boolean;
             "error"?: string;
             "generator_id"?: string;
-            "impacted_tests"?: number;
-            "impacts"?: Array<{
-              "from_target"?: string;
-              "group"?: string;
+            "impacted_tests": number;
+            "impacts": Array<{
+              "from_target": string;
+              "group": string;
               "protocol"?: string;
               "refusal_reason"?: string;
               "refused"?: boolean;
-              "test_id"?: string;
+              "test_id": string;
               "test_name"?: string;
               "to_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
-            "target"?: string;
+            "target": string;
           };
         };
       };
@@ -9956,6 +10890,72 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleExportDataPoolRows": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "status"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        headers: {
+          "Cache-Control"?: string;
+          "Content-Disposition"?: string;
+          "X-APEXLoad-Sensitivity"?: string;
+        };
+        content: {
+          "text/csv": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -10346,30 +11346,30 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "expiring_within_days"?: number;
-            "generated_at"?: string;
-            "recent_denial_window_hours"?: number;
-            "recent_denials"?: number;
-            "service_accounts"?: Array<{
-              "active"?: boolean;
+            "expiring_within_days": number;
+            "generated_at": string;
+            "recent_denial_window_hours": number;
+            "recent_denials": number;
+            "service_accounts": Array<{
+              "active": boolean;
               "expires_at"?: string;
-              "flags"?: Array<string>;
-              "id"?: string;
+              "flags": Array<string>;
+              "id": string;
               "last_used_at"?: string;
-              "name"?: string;
+              "name": string;
               "rotation_due_at"?: string;
               "scopes"?: Array<string>;
             }>;
-            "stale_after_days"?: number;
-            "summary"?: Record<string, unknown>;
-            "users"?: Array<{
-              "active"?: boolean;
+            "stale_after_days": number;
+            "summary": Record<string, number>;
+            "users": Array<{
+              "active": boolean;
               "display_name"?: string;
-              "flags"?: Array<string>;
+              "flags": Array<string>;
               "global_roles"?: Array<string>;
-              "id"?: string;
+              "id": string;
               "last_seen_at"?: string;
-              "subject"?: string;
+              "subject": string;
             }>;
           };
         };
@@ -10452,43 +11452,43 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "application_id"?: string;
-            "load_levels"?: Array<{
-              "exact"?: boolean;
-              "id"?: string;
-              "label"?: string;
-              "max_vusers"?: number;
-              "min_vusers"?: number;
-              "sample_count"?: number;
+            "application_id": string;
+            "load_levels": Array<{
+              "exact": boolean;
+              "id": string;
+              "label": string;
+              "max_vusers": number;
+              "min_vusers": number;
+              "sample_count": number;
             }>;
-            "options"?: Array<{
-              "key"?: string;
-              "label"?: string;
-              "release_count"?: number;
-              "run_count"?: number;
-              "sample_count"?: number;
-              "scope"?: string;
-              "source_kind"?: string;
-              "transaction_count"?: number;
+            "options": Array<{
+              "key": string;
+              "label": string;
+              "release_count": number;
+              "run_count": number;
+              "sample_count": number;
+              "scope": string;
+              "source_kind": string;
+              "transaction_count": number;
             }>;
-            "releases"?: Array<{
-              "points"?: Array<{
-                "avg_response_ms"?: number;
-                "error_pct"?: number;
-                "errors"?: number;
-                "load_label"?: string;
-                "load_level_id"?: string;
-                "run_count"?: number;
-                "sample_count"?: number;
-                "tps"?: number;
-                "transactions"?: number;
+            "releases": Array<{
+              "points": Array<{
+                "avg_response_ms": number;
+                "error_pct": number;
+                "errors": number;
+                "load_label": string;
+                "load_level_id": string;
+                "run_count": number;
+                "sample_count": number;
+                "tps": number;
+                "transactions": number;
               }>;
-              "release_id"?: string;
-              "release_name"?: string;
-              "run_count"?: number;
-              "transaction_count"?: number;
+              "release_id": string;
+              "release_name": string;
+              "run_count": number;
+              "transaction_count": number;
             }>;
-            "scope"?: string;
+            "scope": string;
             "selected_key"?: string;
           };
         };
@@ -10563,20 +11563,20 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "resources"?: Array<{
-              "description"?: string;
-              "id"?: string;
-              "name"?: string;
-              "operations"?: Array<{
+            "resources": Array<{
+              "description": string;
+              "id": string;
+              "name": string;
+              "operations": Array<{
                 "application_repository_roles"?: Array<string>;
                 "domain_roles"?: Array<string>;
                 "global_roles"?: Array<string>;
-                "id"?: string;
-                "label"?: string;
+                "id": string;
+                "label": string;
                 "project_roles"?: Array<string>;
               }>;
             }>;
-            "version"?: string;
+            "version": string;
           };
         };
       };
@@ -10592,19 +11592,19 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "checks"?: Array<{
+            "checks": Array<{
               "detail"?: string;
-              "id"?: string;
-              "label"?: string;
-              "status"?: string;
-              "summary"?: string;
+              "id": string;
+              "label": string;
+              "status": string;
+              "summary": string;
             }>;
-            "enabled"?: boolean;
-            "mode"?: string;
-            "provider_model"?: string;
+            "enabled": boolean;
+            "mode": string;
+            "provider_model": string;
             "provider_name"?: string;
-            "ready"?: boolean;
-            "summary"?: string;
+            "ready": boolean;
+            "summary": string;
           };
         };
       };
@@ -10637,23 +11637,23 @@ export interface operations {
         content: {
           "application/json": {
             "application_repository_id"?: string;
-            "authenticated"?: boolean;
+            "authenticated": boolean;
             "dev_view_mode"?: string;
             "domain_id"?: string;
-            "enabled"?: boolean;
+            "enabled": boolean;
             "principal_id"?: string;
             "principal_name"?: string;
             "principal_type"?: string;
             "project_id"?: string;
-            "resources"?: Array<{
-              "description"?: string;
-              "id"?: string;
-              "name"?: string;
-              "operations"?: Array<{
-                "allowed"?: boolean;
+            "resources": Array<{
+              "description": string;
+              "id": string;
+              "name": string;
+              "operations": Array<{
+                "allowed": boolean;
                 "grant_source"?: string;
-                "id"?: string;
-                "label"?: string;
+                "id": string;
+                "label": string;
               }>;
             }>;
             "scopes_narrow_api_access"?: boolean;
@@ -10682,23 +11682,23 @@ export interface operations {
         content: {
           "application/json": {
             "application_repository_id"?: string;
-            "authenticated"?: boolean;
+            "authenticated": boolean;
             "dev_view_mode"?: string;
             "domain_id"?: string;
-            "enabled"?: boolean;
+            "enabled": boolean;
             "principal_id"?: string;
             "principal_name"?: string;
             "principal_type"?: string;
             "project_id"?: string;
-            "resources"?: Array<{
-              "description"?: string;
-              "id"?: string;
-              "name"?: string;
-              "operations"?: Array<{
-                "allowed"?: boolean;
+            "resources": Array<{
+              "description": string;
+              "id": string;
+              "name": string;
+              "operations": Array<{
+                "allowed": boolean;
                 "grant_source"?: string;
-                "id"?: string;
-                "label"?: string;
+                "id": string;
+                "label": string;
               }>;
             }>;
             "scopes_narrow_api_access"?: boolean;
@@ -10743,28 +11743,28 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "provider_model"?: string;
-            "resources"?: Array<{
-              "description"?: string;
-              "id"?: string;
-              "name"?: string;
-              "operations"?: Array<{
+            "provider_model": string;
+            "resources": Array<{
+              "description": string;
+              "id": string;
+              "name": string;
+              "operations": Array<{
                 "application_repository_roles"?: Array<string>;
                 "domain_roles"?: Array<string>;
                 "global_roles"?: Array<string>;
-                "id"?: string;
-                "label"?: string;
+                "id": string;
+                "label": string;
                 "project_roles"?: Array<string>;
               }>;
             }>;
-            "roles"?: Array<{
+            "roles": Array<{
               "capabilities"?: Array<string>;
-              "description"?: string;
-              "id"?: string;
-              "name"?: string;
-              "scope"?: string;
+              "description": string;
+              "id": string;
+              "name": string;
+              "scope": string;
             }>;
-            "version"?: string;
+            "version": string;
           };
         };
       };
@@ -10780,13 +11780,13 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "provider_model"?: string;
-            "roles"?: Array<{
+            "provider_model": string;
+            "roles": Array<{
               "capabilities"?: Array<string>;
-              "description"?: string;
-              "id"?: string;
-              "name"?: string;
-              "scope"?: string;
+              "description": string;
+              "id": string;
+              "name": string;
+              "scope": string;
             }>;
           };
         };
@@ -10803,27 +11803,27 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "authenticated"?: boolean;
+            "authenticated": boolean;
             "dev_view_mode"?: string;
-            "enabled"?: boolean;
+            "enabled": boolean;
             "login_url"?: string;
             "logout_csrf_token"?: string;
             "logout_url"?: string;
-            "mode"?: string;
+            "mode": string;
             "provider_name"?: string;
             "session_expires_at"?: string;
             "session_status"?: string;
             "session_ttl_seconds"?: number;
             "simulated"?: boolean;
             "user"?: {
-              "application_repository_roles"?: Record<string, unknown>;
+              "application_repository_roles"?: Record<string, Array<string>>;
               "display_name"?: string;
-              "domain_roles"?: Record<string, unknown>;
+              "domain_roles"?: Record<string, Array<string>>;
               "email"?: string;
               "global_roles"?: Array<string>;
               "id"?: string;
-              "project_roles"?: Record<string, unknown>;
-              "subject"?: string;
+              "project_roles"?: Record<string, Array<string>>;
+              "subject": string;
             };
           };
         };
@@ -10868,55 +11868,55 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "claim_policy"?: string;
-            "commands"?: Array<string>;
-            "environment_matrix"?: Array<{
-              "browser_engine"?: string;
-              "ci_expectation"?: string;
-              "device_profiles"?: Array<string>;
-              "evidence"?: Array<string>;
-              "id"?: string;
-              "validation_command"?: string;
+            "claim_policy": string;
+            "commands": Array<string>;
+            "environment_matrix": Array<{
+              "browser_engine": string;
+              "ci_expectation": string;
+              "device_profiles": Array<string>;
+              "evidence": Array<string>;
+              "id": string;
+              "validation_command": string;
             }>;
-            "evidence"?: Array<string>;
-            "generated_at"?: string;
-            "hardware_profile"?: {
-              "cpu_cores"?: number;
-              "description"?: string;
-              "id"?: string;
-              "memory_gb"?: number;
-              "name"?: string;
-              "runtime"?: string;
+            "evidence": Array<string>;
+            "generated_at": string;
+            "hardware_profile": {
+              "cpu_cores": number;
+              "description": string;
+              "id": string;
+              "memory_gb": number;
+              "name": string;
+              "runtime": string;
             };
-            "profiles"?: Array<{
-              "acceptance"?: {
-                "action_overhead_target_ms"?: number;
-                "launch_p50_target_ms"?: number;
-                "required_benchmark_command"?: string;
-                "required_raw_run_count"?: number;
-                "rss_attribution"?: string;
+            "profiles": Array<{
+              "acceptance": {
+                "action_overhead_target_ms": number;
+                "launch_p50_target_ms": number;
+                "required_benchmark_command": string;
+                "required_raw_run_count": number;
+                "rss_attribution": string;
                 "rss_per_vuser_target_mb"?: number;
               };
-              "artifact_path"?: string;
-              "benchmark_commands"?: Array<string>;
-              "browser_engine"?: string;
-              "density_envelope"?: {
-                "claim_rule"?: string;
-                "maximum_claimed_vusers_per_generator"?: number;
-                "pairing_model"?: string;
-                "recommended_canary_vusers_per_generator"?: number;
+              "artifact_path": string;
+              "benchmark_commands": Array<string>;
+              "browser_engine": string;
+              "density_envelope": {
+                "claim_rule": string;
+                "maximum_claimed_vusers_per_generator": number;
+                "pairing_model": string;
+                "recommended_canary_vusers_per_generator": number;
               };
-              "device_class"?: string;
-              "device_profile"?: string;
-              "evidence"?: Array<string>;
-              "evidence_level"?: string;
-              "high_density_claim_allowed"?: boolean;
-              "id"?: string;
-              "name"?: string;
+              "device_class": string;
+              "device_profile": string;
+              "evidence": Array<string>;
+              "evidence_level": string;
+              "high_density_claim_allowed": boolean;
+              "id": string;
+              "name": string;
               "notes"?: Array<string>;
-              "platform"?: string;
-              "release_gate"?: boolean;
-              "status"?: string;
+              "platform": string;
+              "release_gate": boolean;
+              "status": string;
             }>;
           };
         };
@@ -11004,42 +12004,42 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
+            "session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -11178,21 +12178,21 @@ export interface operations {
         content: {
           "application/json": {
             "check_url"?: string;
-            "duration_ms"?: number;
+            "duration_ms": number;
             "error"?: string;
-            "errors"?: number;
-            "outcome"?: string;
-            "report_url"?: string;
-            "results_present"?: boolean;
-            "schema_version"?: number;
-            "sla_breached"?: boolean;
+            "errors": number;
+            "outcome": string;
+            "report_url": string;
+            "results_present": boolean;
+            "schema_version": number;
+            "sla_breached": boolean;
             "sla_details"?: Array<string>;
-            "sla_evaluated"?: boolean;
-            "status"?: string;
-            "status_url"?: string;
-            "test_id"?: string;
-            "tps"?: number;
-            "transactions"?: number;
+            "sla_evaluated": boolean;
+            "status": string;
+            "status_url": string;
+            "test_id": string;
+            "tps": number;
+            "transactions": number;
           };
         };
       };
@@ -11293,21 +12293,21 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "created_at"?: string;
+            "created_at": string;
             "description"?: string;
-            "id"?: string;
-            "name"?: string;
+            "id": string;
+            "name": string;
             "project_id"?: string;
-            "rules"?: Array<{
+            "rules": Array<{
               "confidence"?: number;
-              "expression"?: string;
-              "extract_type"?: string;
-              "name"?: string;
+              "expression": string;
+              "extract_type": string;
+              "name": string;
               "rule_id"?: string;
-              "source"?: string;
+              "source": string;
             }>;
             "source"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -11332,6 +12332,7 @@ export interface operations {
         "id": string;
       };
       "query"?: {
+        "cursor"?: string;
         "limit"?: number;
         "offset"?: number;
       };
@@ -11340,7 +12341,39 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "count": number;
+            "data_pool": {
+              "archived_at"?: (string) | null;
+              "created_at": string;
+              "description"?: string;
+              "id": string;
+              "name": string;
+              "project_id"?: string;
+              "schema"?: Record<string, string>;
+              "updated_at": string;
+            };
+            "has_more": boolean;
+            "limit": number;
+            "next_cursor": string;
+            "offset": number;
+            "revision": string;
+            "rows": Array<{
+              "created_at": string;
+              "data": Record<string, string>;
+              "id": string;
+              "pool_id": string;
+              "status"?: string;
+              "updated_at": string;
+              "version": number;
+            }>;
+            "total": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -11353,7 +12386,17 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -11378,7 +12421,7 @@ export interface operations {
             "active_tests"?: number;
             "error"?: string;
             "lease"?: Record<string, unknown>;
-            "status"?: string;
+            "status": string;
           };
         };
       };
@@ -11567,21 +12610,21 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "alerts"?: Array<{
+            "alerts": Array<{
               "acknowledged"?: boolean;
               "acknowledged_at"?: string;
               "acknowledged_by_display_name"?: string;
               "acknowledged_by_subject"?: string;
               "acknowledgement_note"?: string;
-              "id"?: string;
+              "id": string;
               "region"?: string;
-              "severity"?: string;
-              "summary"?: string;
-              "target"?: string;
-              "type"?: string;
+              "severity": string;
+              "summary": string;
+              "target": string;
+              "type": string;
             }>;
-            "count"?: number;
-            "unacknowledged_count"?: number;
+            "count": number;
+            "unacknowledged_count": number;
           };
         };
       };
@@ -11613,30 +12656,30 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "active_slots"?: number;
-            "available_slots"?: number;
+            "active_slots": number;
+            "available_slots": number;
             "compatible_features"?: Array<string>;
-            "eligible_generators"?: number;
-            "max_slots"?: number;
+            "eligible_generators": number;
+            "max_slots": number;
             "project_active_slots"?: number;
             "project_id"?: string;
             "project_pending_slots"?: number;
             "project_slots"?: Array<{
-              "active_slots"?: number;
-              "fair_share_tier"?: string;
-              "pending_slots"?: number;
-              "pending_tests"?: number;
-              "project_id"?: string;
+              "active_slots": number;
+              "fair_share_tier": string;
+              "pending_slots": number;
+              "pending_tests": number;
+              "project_id": string;
               "reserved_generators"?: number;
               "reserved_slots"?: number;
-              "running_tests"?: number;
+              "running_tests": number;
             }>;
             "protocol"?: string;
             "region"?: string;
             "rejection_reasons"?: Array<string>;
             "reserved_generators"?: number;
             "reserved_slots"?: number;
-            "total_generators"?: number;
+            "total_generators": number;
           };
         };
       };
@@ -11666,29 +12709,29 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "load_zones"?: Array<{
-              "active_slots"?: number;
+            "count": number;
+            "load_zones": Array<{
+              "active_slots": number;
               "active_vusers"?: number;
-              "available_slots"?: number;
+              "available_slots": number;
               "benchmark_evidence"?: Array<string>;
               "benchmark_evidence_id"?: string;
-              "capacity_state"?: string;
+              "capacity_state": string;
               "cost_label"?: string;
-              "eligible_generators"?: number;
+              "eligible_generators": number;
               "error_pct"?: number;
-              "id"?: string;
-              "max_slots"?: number;
-              "name"?: string;
+              "id": string;
+              "max_slots": number;
+              "name": string;
               "p95_ms"?: number;
               "p99_ms"?: number;
               "queued_vusers"?: number;
-              "region"?: string;
+              "region": string;
               "rejected_vusers"?: number;
               "rejection_reasons"?: Array<string>;
               "supported_protocols"?: Array<string>;
               "tags"?: Array<string>;
-              "total_generators"?: number;
+              "total_generators": number;
             }>;
           };
         };
@@ -11988,66 +13031,66 @@ export interface operations {
             "api_parity_program"?: Array<{
               "blocking_gate"?: boolean;
               "evidence"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
-              "release_gate"?: boolean;
+              "id": string;
+              "name": string;
+              "release_gate": boolean;
               "remaining"?: Array<string>;
-              "status"?: string;
-              "summary"?: string;
+              "status": string;
+              "summary": string;
             }>;
-            "areas"?: Array<{
+            "areas": Array<{
               "blocking_gate"?: boolean;
               "evidence"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
-              "release_gate"?: boolean;
+              "id": string;
+              "name": string;
+              "release_gate": boolean;
               "remaining"?: Array<string>;
-              "status"?: string;
-              "summary"?: string;
+              "status": string;
+              "summary": string;
             }>;
             "browser_benchmarks"?: Array<{
-              "acceptance"?: {
-                "action_overhead_target_ms"?: number;
-                "launch_p50_target_ms"?: number;
-                "required_benchmark_command"?: string;
-                "required_raw_run_count"?: number;
-                "rss_attribution"?: string;
+              "acceptance": {
+                "action_overhead_target_ms": number;
+                "launch_p50_target_ms": number;
+                "required_benchmark_command": string;
+                "required_raw_run_count": number;
+                "rss_attribution": string;
                 "rss_per_vuser_target_mb"?: number;
               };
-              "artifact_path"?: string;
-              "benchmark_commands"?: Array<string>;
-              "browser_engine"?: string;
-              "density_envelope"?: {
-                "claim_rule"?: string;
-                "maximum_claimed_vusers_per_generator"?: number;
-                "pairing_model"?: string;
-                "recommended_canary_vusers_per_generator"?: number;
+              "artifact_path": string;
+              "benchmark_commands": Array<string>;
+              "browser_engine": string;
+              "density_envelope": {
+                "claim_rule": string;
+                "maximum_claimed_vusers_per_generator": number;
+                "pairing_model": string;
+                "recommended_canary_vusers_per_generator": number;
               };
-              "device_class"?: string;
-              "device_profile"?: string;
-              "evidence"?: Array<string>;
-              "evidence_level"?: string;
-              "high_density_claim_allowed"?: boolean;
-              "id"?: string;
-              "name"?: string;
+              "device_class": string;
+              "device_profile": string;
+              "evidence": Array<string>;
+              "evidence_level": string;
+              "high_density_claim_allowed": boolean;
+              "id": string;
+              "name": string;
               "notes"?: Array<string>;
-              "platform"?: string;
-              "release_gate"?: boolean;
-              "status"?: string;
+              "platform": string;
+              "release_gate": boolean;
+              "status": string;
             }>;
             "competitive_parity"?: Array<{
               "competitors"?: Array<string>;
               "decision"?: string;
               "evidence"?: Array<string>;
               "evidence_level"?: string;
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
               "remaining"?: Array<string>;
-              "status"?: string;
-              "summary"?: string;
+              "status": string;
+              "summary": string;
             }>;
-            "generated_at"?: string;
-            "overall"?: string;
+            "generated_at": string;
+            "overall": string;
           };
         };
       };
@@ -12338,31 +13381,31 @@ export interface operations {
             "breach_history"?: Array<{
               "completed_at"?: string;
               "completeness"?: string;
-              "sla_breached"?: boolean;
+              "sla_breached": boolean;
               "sla_details"?: Array<string>;
-              "status"?: string;
+              "status": string;
               "telemetry_status"?: string;
-              "test_id"?: string;
+              "test_id": string;
               "test_name"?: string;
             }>;
-            "generated_at"?: string;
+            "generated_at": string;
             "next_actions"?: Array<string>;
-            "owner"?: {
-              "display_name"?: string;
+            "owner": {
+              "display_name": string;
               "id"?: string;
-              "type"?: string;
+              "type": string;
             };
             "project_id"?: string;
-            "release_id"?: string;
+            "release_id": string;
             "release_name"?: string;
-            "status"?: string;
-            "summary"?: {
-              "archived_runs"?: number;
-              "failed_runs"?: number;
-              "passed_runs"?: number;
-              "total_runs"?: number;
-              "unwaived_breaches"?: number;
-              "waived_breaches"?: number;
+            "status": string;
+            "summary": {
+              "archived_runs": number;
+              "failed_runs": number;
+              "passed_runs": number;
+              "total_runs": number;
+              "unwaived_breaches": number;
+              "waived_breaches": number;
             };
             "waivers"?: Array<Record<string, unknown>>;
           };
@@ -12404,34 +13447,34 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "points"?: Array<{
-              "avg_response_ms"?: number;
-              "completed_at"?: string;
-              "completeness_pct"?: number;
+            "points": Array<{
+              "avg_response_ms": number;
+              "completed_at": string;
+              "completeness_pct": number;
               "deltas"?: {
-                "avg_response_ms_delta"?: number;
-                "avg_response_pct_delta"?: number;
-                "completeness_delta"?: number;
-                "error_pct_delta"?: number;
-                "peak_tps_delta"?: number;
+                "avg_response_ms_delta": number;
+                "avg_response_pct_delta": number;
+                "completeness_delta": number;
+                "error_pct_delta": number;
+                "peak_tps_delta": number;
               };
-              "error_pct"?: number;
-              "peak_active_vusers"?: number;
-              "peak_tps"?: number;
+              "error_pct": number;
+              "peak_active_vusers": number;
+              "peak_tps": number;
               "regressions"?: Array<string>;
-              "run_id"?: string;
-              "run_name"?: string;
-              "sla_breached"?: boolean;
-              "status"?: string;
+              "run_id": string;
+              "run_name": string;
+              "sla_breached": boolean;
+              "status": string;
               "telemetry_status"?: string;
-              "transactions"?: number;
+              "transactions": number;
             }>;
-            "release_id"?: string;
-            "run_count"?: number;
-            "summary"?: {
-              "avg_response_trend_pct"?: number;
-              "error_pct_trend"?: number;
-              "latest_regressed"?: boolean;
+            "release_id": string;
+            "run_count": number;
+            "summary": {
+              "avg_response_trend_pct": number;
+              "error_pct_trend": number;
+              "latest_regressed": boolean;
               "latest_regressions"?: Array<string>;
             };
           };
@@ -12504,57 +13547,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -12563,9 +13606,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -12575,26 +13618,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -12604,24 +13647,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -12630,19 +13673,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -12661,13 +13746,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -12690,14 +13775,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -12706,8 +13795,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -12721,7 +13810,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -12734,16 +13823,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -12758,34 +13847,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -12799,7 +13888,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -12810,17 +13899,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -12846,27 +13935,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -12881,48 +13970,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -12936,7 +14075,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -12947,17 +14086,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -12983,22 +14178,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -13018,7 +14234,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -13045,33 +14261,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -13082,21 +14298,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -13106,7 +14322,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -13115,16 +14331,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -13168,30 +14391,30 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "annotations"?: {
-              "executive_narrative"?: string;
+            "annotations": {
+              "executive_narrative": string;
               "findings"?: Array<{
                 "evidence"?: string;
-                "id"?: string;
+                "id": string;
                 "impact"?: string;
                 "observed"?: string;
                 "root_cause"?: string;
-                "severity"?: string;
-                "title"?: string;
+                "severity": string;
+                "title": string;
               }>;
-              "prepared_by"?: string;
-              "profile"?: string;
-              "section_comments"?: Record<string, unknown>;
-              "test_id"?: string;
-              "title"?: string;
-              "updated_at"?: string;
-              "updated_by"?: string;
+              "prepared_by": string;
+              "profile": string;
+              "section_comments": Record<string, string>;
+              "test_id": string;
+              "title": string;
+              "updated_at": string;
+              "updated_by": string;
               "verdict_explanation"?: string;
               "verdict_override"?: string;
             };
-            "sections"?: Array<{
-              "id"?: string;
-              "label"?: string;
+            "sections": Array<{
+              "id": string;
+              "label": string;
             }>;
           };
         };
@@ -13236,49 +14459,49 @@ export interface operations {
         content: {
           "application/json": {
             "citations"?: Array<{
-              "label"?: string;
-              "path"?: string;
+              "label": string;
+              "path": string;
             }>;
-            "determinism"?: {
-              "fixture_key"?: string;
-              "mode"?: string;
-              "stable_input"?: Array<string>;
+            "determinism": {
+              "fixture_key": string;
+              "mode": string;
+              "stable_input": Array<string>;
             };
-            "evidence_bound"?: boolean;
-            "generated_at"?: string;
+            "evidence_bound": boolean;
+            "generated_at": string;
             "limitations"?: Array<string>;
             "next_actions"?: Array<string>;
-            "provider"?: string;
-            "root_cause"?: {
-              "confidence"?: string;
+            "provider": string;
+            "root_cause": {
+              "confidence": string;
               "evidence"?: Array<string>;
-              "generated_at"?: string;
+              "generated_at": string;
               "next_actions"?: Array<string>;
               "report"?: Record<string, unknown>;
-              "schema_version"?: string;
+              "schema_version": string;
               "signals"?: Array<{
-                "name"?: string;
+                "name": string;
                 "score"?: number;
                 "severity"?: string;
-                "status"?: string;
+                "status": string;
                 "value"?: string;
               }>;
-              "status"?: string;
-              "summary"?: string;
-              "test_id"?: string;
+              "status": string;
+              "summary": string;
+              "test_id": string;
               "top_findings"?: Array<{
-                "category"?: string;
-                "detail"?: string;
+                "category": string;
+                "detail": string;
                 "evidence"?: Array<string>;
-                "score"?: number;
-                "severity"?: string;
-                "title"?: string;
+                "score": number;
+                "severity": string;
+                "title": string;
               }>;
             };
-            "schema_version"?: string;
-            "status"?: string;
-            "summary"?: string;
-            "test_id"?: string;
+            "schema_version": string;
+            "status": string;
+            "summary": string;
+            "test_id": string;
           };
         };
       };
@@ -13337,46 +14560,46 @@ export interface operations {
         content: {
           "application/json": {
             "baseline_id"?: string;
-            "count"?: number;
+            "count": number;
             "filters"?: Record<string, unknown>;
-            "graph"?: {
-              "edges"?: Array<{
-                "from"?: string;
-                "id"?: string;
-                "kind"?: string;
-                "runs"?: Array<Record<string, unknown>>;
-                "to"?: string;
+            "graph": {
+              "edges": Array<{
+                "from": string;
+                "id": string;
+                "kind": string;
+                "runs": Array<Record<string, unknown>>;
+                "to": string;
               }>;
-              "nodes"?: Array<{
-                "id"?: string;
-                "kind"?: string;
-                "label"?: string;
-                "runs"?: Array<Record<string, unknown>>;
+              "nodes": Array<{
+                "id": string;
+                "kind": string;
+                "label": string;
+                "runs": Array<Record<string, unknown>>;
               }>;
             };
-            "limit"?: number;
-            "offset"?: number;
-            "schema_version"?: string;
-            "test_id"?: string;
-            "total"?: number;
-            "transactions"?: Array<{
+            "limit": number;
+            "offset": number;
+            "schema_version": string;
+            "test_id": string;
+            "total": number;
+            "transactions": Array<{
               "action_name"?: string;
               "bytes_received"?: number;
               "correlation_id"?: string;
               "dependency_target"?: string;
               "dependency_type"?: string;
-              "duration_ms"?: number;
+              "duration_ms": number;
               "error_message"?: string;
               "group"?: string;
-              "index"?: number;
+              "index": number;
               "path"?: Array<string>;
               "region"?: string;
-              "run_id"?: string;
+              "run_id": string;
               "source_action"?: string;
               "source_transaction"?: string;
               "status_code"?: number;
-              "success"?: boolean;
-              "timestamp"?: string;
+              "success": boolean;
+              "timestamp": string;
               "trace_id"?: string;
             }>;
           };
@@ -13478,49 +14701,49 @@ export interface operations {
               "count"?: number;
               "format"?: string;
               "kind"?: string;
-              "name"?: string;
+              "name": string;
               "record_type"?: string;
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
             "completed_at"?: string;
-            "created_at"?: string;
+            "created_at": string;
             "error"?: string;
-            "interval_summaries_file"?: string;
+            "interval_summaries_file": string;
             "interval_summaries_parquet_file"?: string;
-            "interval_summary_count"?: number;
+            "interval_summary_count": number;
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               };
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: string;
-              "controller_env"?: Record<string, unknown>;
+              "controller_env"?: Record<string, string>;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "duration"?: string;
-              "execution_settings"?: {
-                "capacity_planning"?: {
-                  "availability"?: Record<string, unknown>;
-                  "generator"?: Record<string, unknown>;
-                  "headroom_pct"?: number;
+              "execution_settings": {
+                "capacity_planning": {
+                  "availability": Record<string, unknown>;
+                  "generator": Record<string, unknown>;
+                  "headroom_pct": number;
                   "reservations"?: Array<Record<string, unknown>>;
                 };
-                "general"?: {
-                  "api_endpoint"?: string;
-                  "max_concurrent_tests"?: number;
-                  "metrics_interval_seconds"?: number;
+                "general": {
+                  "api_endpoint": string;
+                  "max_concurrent_tests": number;
+                  "metrics_interval_seconds": number;
                   "usage_snapshot_interval_seconds"?: number;
                 };
-                "thresholds"?: {
+                "thresholds": {
                   "fleet_constrained_available_slots"?: number;
                   "fleet_saturated_available_slots"?: number;
                   "max_avg_server_processing_ms"?: number;
@@ -13532,12 +14755,13 @@ export interface operations {
                   "max_telemetry_generator_lag_ms"?: number;
                   "max_telemetry_sample_age_ms"?: number;
                   "max_telemetry_transport_lag_ms"?: number;
+                  "p99_latency_stop_consecutive_samples"?: number;
                 };
               };
               "generator_inventory"?: Array<{
-                "active_vusers"?: number;
-                "available_capacity"?: number;
-                "capacity_state"?: string;
+                "active_vusers": number;
+                "available_capacity": number;
+                "capacity_state": string;
                 "compatibility_issues"?: Array<string>;
                 "compatibility_state"?: string;
                 "compatible_features"?: Array<string>;
@@ -13550,25 +14774,25 @@ export interface operations {
                 "container_oom_kill_count_delta"?: number;
                 "cordoned"?: boolean;
                 "cpu_iowait_pct"?: number;
-                "cpu_limit_cores"?: number;
-                "cpu_percent"?: number;
+                "cpu_limit_cores": number;
+                "cpu_percent": number;
                 "cpu_steal_pct"?: number;
                 "cpu_system_pct"?: number;
                 "cpu_user_pct"?: number;
                 "disk_io_time_pct"?: number;
-                "drain_state"?: string;
+                "drain_state": string;
                 "fleet_pool_id"?: string;
                 "gc_count_delta"?: number;
                 "gc_pause_ms"?: number;
-                "generator_id"?: string;
-                "goroutine_count"?: number;
-                "health_score"?: number;
+                "generator_id": string;
+                "goroutine_count": number;
+                "health_score": number;
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
-                "labels"?: Record<string, unknown>;
-                "max_vusers"?: number;
-                "memory_bytes"?: number;
-                "memory_limit_bytes"?: number;
+                "labels"?: Record<string, string>;
+                "max_vusers": number;
+                "memory_bytes": number;
+                "memory_limit_bytes": number;
                 "net_drop_in_per_sec"?: number;
                 "net_drop_out_per_sec"?: number;
                 "net_error_in_per_sec"?: number;
@@ -13587,9 +14811,9 @@ export interface operations {
                   "occupancy_mode"?: "idle" | "persistent" | "legacy";
                   "protocol": string;
                 }>;
-                "status"?: string;
+                "status": string;
                 "supported_protocols"?: Array<string>;
-                "target"?: string;
+                "target": string;
                 "tcp_established"?: number;
                 "tcp_retransmits_per_sec"?: number;
                 "tcp_time_wait"?: number;
@@ -13597,13 +14821,13 @@ export interface operations {
                 "version"?: string;
               }>;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -13652,19 +14876,19 @@ export interface operations {
                 "runtime_settings_review"?: {
                   "blocking_findings"?: Array<Record<string, unknown>>;
                   "findings"?: Array<Record<string, unknown>>;
-                  "status"?: string;
-                  "status_counts"?: Record<string, unknown>;
+                  "status": string;
+                  "status_counts"?: Record<string, number>;
                   "summary"?: string;
                   "warnings"?: Array<string>;
                 };
               };
               "groups"?: Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -13673,8 +14897,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -13688,7 +14912,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -13701,10 +14925,10 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "project_id"?: string;
               "release_id"?: string;
@@ -13721,7 +14945,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -13748,33 +14972,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -13790,20 +15014,20 @@ export interface operations {
               "stopped_by_subject"?: string;
               "total_vusers"?: number;
             };
-            "resource_sample_count"?: number;
-            "resource_samples_file"?: string;
+            "resource_sample_count": number;
+            "resource_samples_file": string;
             "resource_samples_parquet_file"?: string;
-            "schema_version"?: string;
-            "sla_breached"?: boolean;
+            "schema_version": string;
+            "sla_breached": boolean;
             "sla_details"?: Array<string>;
             "sla_evaluated"?: boolean;
             "status"?: string;
-            "test_id"?: string;
+            "test_id": string;
             "test_manifest_file"?: string;
-            "test_name"?: string;
+            "test_name": string;
             "test_notes_file"?: string;
-            "transaction_count"?: number;
-            "transactions_file"?: string;
+            "transaction_count": number;
+            "transactions_file": string;
             "transactions_parquet_file"?: string;
           };
         };
@@ -13853,14 +15077,57 @@ export interface operations {
               "count"?: number;
               "format"?: string;
               "kind"?: string;
-              "name"?: string;
+              "name": string;
               "record_type"?: string;
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
-            "browser_by_device"?: Record<string, unknown>;
-            "browser_by_engine"?: Record<string, unknown>;
-            "browser_by_platform"?: Record<string, unknown>;
+            "browser_by_device"?: Record<string, {
+              "avg_blocking_resources"?: number;
+              "avg_browser_process_cpu_pct"?: number;
+              "avg_browser_process_mem_mb"?: number;
+              "avg_cls_score"?: number;
+              "avg_fcp_ms"?: number;
+              "avg_inp_ms"?: number;
+              "avg_js_heap_used_mb"?: number;
+              "avg_lcp_ms"?: number;
+              "avg_long_task_count"?: number;
+              "avg_ttfb_ms"?: number;
+              "browser_engine"?: string;
+              "device_platform"?: string;
+              "device_profile"?: string;
+              "device_tier"?: string;
+              "samples": number;
+            }>;
+            "browser_by_engine"?: Record<string, {
+              "avg_blocking_resources"?: number;
+              "avg_browser_process_cpu_pct"?: number;
+              "avg_browser_process_mem_mb"?: number;
+              "avg_cls_score"?: number;
+              "avg_fcp_ms"?: number;
+              "avg_inp_ms"?: number;
+              "avg_js_heap_used_mb"?: number;
+              "avg_lcp_ms"?: number;
+              "avg_long_task_count"?: number;
+              "avg_ttfb_ms"?: number;
+              "browser_engine"?: string;
+              "samples": number;
+            }>;
+            "browser_by_platform"?: Record<string, {
+              "avg_blocking_resources"?: number;
+              "avg_browser_process_cpu_pct"?: number;
+              "avg_browser_process_mem_mb"?: number;
+              "avg_cls_score"?: number;
+              "avg_fcp_ms"?: number;
+              "avg_inp_ms"?: number;
+              "avg_js_heap_used_mb"?: number;
+              "avg_lcp_ms"?: number;
+              "avg_long_task_count"?: number;
+              "avg_ttfb_ms"?: number;
+              "browser_engine"?: string;
+              "device_platform"?: string;
+              "samples": number;
+            }>;
             "browser_resources"?: Array<{
               "action_name"?: string;
               "browser_engine"?: string;
@@ -13872,141 +15139,201 @@ export interface operations {
               "page_url"?: string;
               "resource_type"?: string;
               "status_code"?: number;
-              "timestamp"?: string;
+              "timestamp": string;
               "url"?: string;
             }>;
-            "by_action"?: Record<string, unknown>;
-            "by_group"?: Record<string, unknown>;
-            "by_network_profile"?: Record<string, unknown>;
-            "by_region"?: Record<string, unknown>;
-            "by_soap_fault_category"?: Record<string, unknown>;
-            "by_soap_fault_code"?: Record<string, unknown>;
-            "by_soap_operation"?: Record<string, unknown>;
-            "change_attribution"?: {
+            "by_action": Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
+            "by_group"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
+            "by_network_profile"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
+            "by_region"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
+            "by_soap_fault_category"?: Record<string, number>;
+            "by_soap_fault_code"?: Record<string, number>;
+            "by_soap_operation"?: Record<string, {
+              "avg_response_ms": number;
+              "error_pct": number;
+              "errors": number;
+              "max_response_ms": number;
+              "min_response_ms": number;
+              "p50_ms"?: number;
+              "p90_ms"?: number;
+              "p95_ms"?: number;
+              "p99_ms"?: number;
+              "peak_tps"?: number;
+              "transactions": number;
+            }>;
+            "change_attribution": {
               "data_revision"?: string;
               "environment"?: string;
               "generator_versions"?: Array<string>;
               "runtime_override_fields"?: Array<string>;
-              "runtime_overrides"?: boolean;
+              "runtime_overrides": boolean;
               "scenario_revision"?: string;
               "script_revisions"?: Array<string>;
             };
-            "compatibility"?: {
+            "compatibility": {
               "issues"?: Array<{
-                "code"?: string;
-                "message"?: string;
-                "severity"?: string;
+                "code": string;
+                "message": string;
+                "severity": string;
               }>;
               "manifest_schema_version"?: string;
-              "outputs"?: Array<{
+              "outputs": Array<{
                 "artifact"?: string;
-                "format"?: string;
+                "format": string;
                 "reason"?: string;
                 "schema_version"?: string;
-                "status"?: string;
+                "status": string;
               }>;
-              "report_schema_version"?: string;
-              "status"?: string;
-              "supported_manifest_schemas"?: Array<string>;
+              "report_schema_version": string;
+              "status": string;
+              "supported_manifest_schemas": Array<string>;
             };
-            "completeness"?: {
+            "completeness": {
               "findings"?: Array<{
-                "dimension"?: string;
-                "message"?: string;
-                "penalty"?: number;
-                "severity"?: string;
+                "dimension": string;
+                "message": string;
+                "penalty": number;
+                "severity": string;
               }>;
-              "score_pct"?: number;
-              "status"?: string;
+              "score_pct": number;
+              "status": string;
             };
             "dashboard_panels"?: {
               "captured_at"?: string;
-              "dashboards"?: Array<{
-                "panels"?: Array<Record<string, unknown>>;
-                "title"?: string;
+              "dashboards": Array<{
+                "panels": Array<Record<string, unknown>>;
+                "title": string;
               }>;
             };
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
-              "count"?: number;
-              "first_seen"?: string;
-              "latest_seen"?: string;
-              "sample"?: string;
-              "signature"?: string;
+              "count": number;
+              "first_seen": string;
+              "latest_seen": string;
+              "sample": string;
+              "signature": string;
               "snapshot"?: Record<string, unknown>;
             }>;
             "evidence_tiers"?: Array<{
               "count"?: number;
               "description"?: string;
-              "label"?: string;
+              "label": string;
               "reason"?: string;
-              "status"?: string;
-              "tier"?: string;
+              "status": string;
+              "tier": string;
             }>;
             "integrity"?: {
               "artifacts"?: Array<{
                 "actual_sha256"?: string;
                 "detail"?: string;
                 "expected_sha256"?: string;
-                "name"?: string;
+                "name": string;
                 "size_bytes"?: number;
-                "status"?: string;
+                "status": string;
               }>;
-              "matched"?: number;
-              "mismatched"?: number;
-              "missing"?: number;
-              "schema_version"?: string;
-              "status"?: string;
-              "summary"?: string;
-              "test_id"?: string;
-              "total"?: number;
-              "unverifiable"?: number;
-              "verified"?: boolean;
-              "verified_at"?: string;
+              "matched": number;
+              "mismatched": number;
+              "missing": number;
+              "schema_version": string;
+              "status": string;
+              "summary": string;
+              "test_id": string;
+              "total": number;
+              "unverifiable": number;
+              "verified": boolean;
+              "verified_at": string;
             };
-            "manifest"?: {
+            "manifest": {
               "artifacts"?: Array<{
                 "count"?: number;
                 "format"?: string;
                 "kind"?: string;
-                "name"?: string;
+                "name": string;
                 "record_type"?: string;
                 "sha256"?: string;
                 "size_bytes"?: number;
               }>;
               "completed_at"?: string;
-              "created_at"?: string;
+              "created_at": string;
               "error"?: string;
-              "interval_summaries_file"?: string;
+              "interval_summaries_file": string;
               "interval_summaries_parquet_file"?: string;
-              "interval_summary_count"?: number;
+              "interval_summary_count": number;
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 };
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: string;
-                "controller_env"?: Record<string, unknown>;
+                "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
                 "duration"?: string;
-                "execution_settings"?: {
-                  "capacity_planning"?: Record<string, unknown>;
-                  "general"?: Record<string, unknown>;
-                  "thresholds"?: Record<string, unknown>;
+                "execution_settings": {
+                  "capacity_planning": Record<string, unknown>;
+                  "general": Record<string, unknown>;
+                  "thresholds": Record<string, unknown>;
                 };
                 "generator_inventory"?: Array<{
-                  "active_vusers"?: number;
-                  "available_capacity"?: number;
-                  "capacity_state"?: string;
+                  "active_vusers": number;
+                  "available_capacity": number;
+                  "capacity_state": string;
                   "compatibility_issues"?: Array<string>;
                   "compatibility_state"?: string;
                   "compatible_features"?: Array<string>;
@@ -14019,25 +15346,25 @@ export interface operations {
                   "container_oom_kill_count_delta"?: number;
                   "cordoned"?: boolean;
                   "cpu_iowait_pct"?: number;
-                  "cpu_limit_cores"?: number;
-                  "cpu_percent"?: number;
+                  "cpu_limit_cores": number;
+                  "cpu_percent": number;
                   "cpu_steal_pct"?: number;
                   "cpu_system_pct"?: number;
                   "cpu_user_pct"?: number;
                   "disk_io_time_pct"?: number;
-                  "drain_state"?: string;
+                  "drain_state": string;
                   "fleet_pool_id"?: string;
                   "gc_count_delta"?: number;
                   "gc_pause_ms"?: number;
-                  "generator_id"?: string;
-                  "goroutine_count"?: number;
-                  "health_score"?: number;
+                  "generator_id": string;
+                  "goroutine_count": number;
+                  "health_score": number;
                   "heap_alloc_mb"?: number;
                   "heap_in_use_mb"?: number;
-                  "labels"?: Record<string, unknown>;
-                  "max_vusers"?: number;
-                  "memory_bytes"?: number;
-                  "memory_limit_bytes"?: number;
+                  "labels"?: Record<string, string>;
+                  "max_vusers": number;
+                  "memory_bytes": number;
+                  "memory_limit_bytes": number;
                   "net_drop_in_per_sec"?: number;
                   "net_drop_out_per_sec"?: number;
                   "net_error_in_per_sec"?: number;
@@ -14056,9 +15383,9 @@ export interface operations {
                     "occupancy_mode"?: "idle" | "persistent" | "legacy";
                     "protocol": string;
                   }>;
-                  "status"?: string;
+                  "status": string;
                   "supported_protocols"?: Array<string>;
-                  "target"?: string;
+                  "target": string;
                   "tcp_established"?: number;
                   "tcp_retransmits_per_sec"?: number;
                   "tcp_time_wait"?: number;
@@ -14066,13 +15393,13 @@ export interface operations {
                   "version"?: string;
                 }>;
                 "generator_shards"?: Array<{
-                  "group"?: string;
+                  "group": string;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
-                  "target"?: string;
+                  "target": string;
                   "vuser_id_offset"?: number;
-                  "vusers"?: number;
+                  "vusers": number;
                 }>;
                 "goal_config"?: {
                   "max_avg_server_processing_ms"?: number;
@@ -14108,17 +15435,17 @@ export interface operations {
                   "iteration_override"?: number;
                   "iteration_override_known"?: boolean;
                   "iterations"?: number;
-                  "name"?: string;
-                  "protocol"?: string;
+                  "name": string;
+                  "protocol": string;
                   "ramp_down"?: string;
                   "ramp_up"?: string;
                   "role"?: string;
                   "run_logic_goals"?: Record<string, unknown>;
                   "runtime_settings"?: Record<string, unknown>;
-                  "script_id"?: string;
-                  "script_name"?: string;
+                  "script_id": string;
+                  "script_name": string;
                   "stages"?: Array<Record<string, unknown>>;
-                  "vusers"?: number;
+                  "vusers": number;
                 }>;
                 "project_id"?: string;
                 "release_id"?: string;
@@ -14130,7 +15457,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -14146,8 +15473,8 @@ export interface operations {
                 "runtime_settings_review"?: {
                   "blocking_findings"?: Array<Record<string, unknown>>;
                   "findings"?: Array<Record<string, unknown>>;
-                  "status"?: string;
-                  "status_counts"?: Record<string, unknown>;
+                  "status": string;
+                  "status_counts"?: Record<string, number>;
                   "summary"?: string;
                   "warnings"?: Array<string>;
                 };
@@ -14163,25 +15490,45 @@ export interface operations {
                 "stopped_by_subject"?: string;
                 "total_vusers"?: number;
               };
-              "resource_sample_count"?: number;
-              "resource_samples_file"?: string;
+              "resource_sample_count": number;
+              "resource_samples_file": string;
               "resource_samples_parquet_file"?: string;
-              "schema_version"?: string;
-              "sla_breached"?: boolean;
+              "schema_version": string;
+              "sla_breached": boolean;
               "sla_details"?: Array<string>;
               "sla_evaluated"?: boolean;
               "status"?: string;
-              "test_id"?: string;
+              "test_id": string;
               "test_manifest_file"?: string;
-              "test_name"?: string;
+              "test_name": string;
               "test_notes_file"?: string;
-              "transaction_count"?: number;
-              "transactions_file"?: string;
+              "transaction_count": number;
+              "transactions_file": string;
               "transactions_parquet_file"?: string;
             };
             "network_phases"?: {
-              "by_action"?: Record<string, unknown>;
-              "by_dependency"?: Record<string, unknown>;
+              "by_action"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "count"?: number;
+                "max_connect_ms"?: number;
+                "max_dns_ms"?: number;
+                "max_tls_ms"?: number;
+                "max_ttfb_ms"?: number;
+              }>;
+              "by_dependency"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "count"?: number;
+                "max_connect_ms"?: number;
+                "max_dns_ms"?: number;
+                "max_tls_ms"?: number;
+                "max_ttfb_ms"?: number;
+              }>;
               "overall"?: {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -14197,21 +15544,27 @@ export interface operations {
             };
             "oracle_db"?: {
               "correlations"?: Array<{
-                "coefficient"?: number;
-                "metric"?: string;
-                "samples"?: number;
-                "strength"?: string;
-                "with"?: string;
+                "coefficient": number;
+                "metric": string;
+                "samples": number;
+                "strength": string;
+                "with": string;
               }>;
-              "metric_stats"?: Record<string, unknown>;
+              "metric_stats"?: Record<string, {
+                "average": number;
+                "first_seen"?: string;
+                "last_seen"?: string;
+                "peak": number;
+                "samples": number;
+              }>;
               "missing_metrics"?: Array<string>;
               "required_metrics"?: Array<string>;
-              "samples"?: number;
-              "status"?: string;
+              "samples": number;
+              "status": string;
               "suggested_dashboards"?: Array<string>;
             };
-            "overview"?: {
-              "avg_response_ms"?: number;
+            "overview": {
+              "avg_response_ms": number;
               "browser"?: {
                 "avg_blocking_resources"?: number;
                 "avg_browser_process_cpu_pct"?: number;
@@ -14223,12 +15576,12 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "error_pct"?: number;
-              "errors"?: number;
+              "error_pct": number;
+              "errors": number;
               "goal_completion"?: {
-                "achieved_transactions"?: number;
+                "achieved_transactions": number;
                 "configured_global_iterations"?: number;
                 "configured_max_transactions"?: number;
                 "iteration_evidence"?: string;
@@ -14236,7 +15589,7 @@ export interface operations {
                 "throughput_target_tps"?: number;
                 "transaction_completion_pct"?: number;
               };
-              "interval_summaries"?: number;
+              "interval_summaries": number;
               "load_model_goals"?: {
                 "configured_global_iterations"?: number;
                 "configured_max_transactions"?: number;
@@ -14245,20 +15598,20 @@ export interface operations {
                 "staged_groups"?: number;
                 "target_tps"?: number;
               };
-              "max_response_ms"?: number;
+              "max_response_ms": number;
               "max_throughput_gap_pct"?: number;
-              "min_response_ms"?: number;
+              "min_response_ms": number;
               "p50_ms"?: number;
               "p90_ms"?: number;
               "p95_ms"?: number;
               "p99_ms"?: number;
-              "peak_active_vusers"?: number;
+              "peak_active_vusers": number;
               "peak_target_tps"?: number;
-              "peak_tps"?: number;
-              "resource_samples"?: number;
+              "peak_tps": number;
+              "resource_samples": number;
               "telemetry"?: {
                 "breached_intervals"?: number;
-                "condition_counts"?: Record<string, unknown>;
+                "condition_counts"?: Record<string, number>;
                 "degraded_intervals"?: number;
                 "dropped_results"?: number;
                 "first_breach_at"?: string;
@@ -14269,162 +15622,171 @@ export interface operations {
                 "max_generator_processing_lag_ms"?: number;
                 "max_sample_age_ms"?: number;
                 "max_transport_lag_ms"?: number;
-                "samples"?: number;
-                "status"?: string;
+                "samples": number;
+                "status": string;
                 "sustained_breach_intervals"?: number;
                 "websocket_dropped_events"?: number;
                 "websocket_dropped_messages"?: number;
               };
               "throughput_missed_intervals"?: number;
-              "transactions"?: number;
+              "transactions": number;
             };
             "release_trend"?: {
               "baseline"?: {
-                "avg_response_ms"?: number;
-                "completed_at"?: string;
-                "completeness_pct"?: number;
+                "avg_response_ms": number;
+                "completed_at": string;
+                "completeness_pct": number;
                 "deltas"?: {
-                  "avg_response_ms_delta"?: number;
-                  "avg_response_pct_delta"?: number;
-                  "completeness_delta"?: number;
-                  "error_pct_delta"?: number;
-                  "peak_tps_delta"?: number;
+                  "avg_response_ms_delta": number;
+                  "avg_response_pct_delta": number;
+                  "completeness_delta": number;
+                  "error_pct_delta": number;
+                  "peak_tps_delta": number;
                 };
-                "error_pct"?: number;
-                "peak_active_vusers"?: number;
-                "peak_tps"?: number;
+                "error_pct": number;
+                "peak_active_vusers": number;
+                "peak_tps": number;
                 "regressions"?: Array<string>;
-                "run_id"?: string;
-                "run_name"?: string;
-                "sla_breached"?: boolean;
-                "status"?: string;
+                "run_id": string;
+                "run_name": string;
+                "sla_breached": boolean;
+                "status": string;
                 "telemetry_status"?: string;
-                "transactions"?: number;
+                "transactions": number;
               };
-              "current"?: {
-                "avg_response_ms"?: number;
-                "completed_at"?: string;
-                "completeness_pct"?: number;
+              "current": {
+                "avg_response_ms": number;
+                "completed_at": string;
+                "completeness_pct": number;
                 "deltas"?: {
-                  "avg_response_ms_delta"?: number;
-                  "avg_response_pct_delta"?: number;
-                  "completeness_delta"?: number;
-                  "error_pct_delta"?: number;
-                  "peak_tps_delta"?: number;
+                  "avg_response_ms_delta": number;
+                  "avg_response_pct_delta": number;
+                  "completeness_delta": number;
+                  "error_pct_delta": number;
+                  "peak_tps_delta": number;
                 };
-                "error_pct"?: number;
-                "peak_active_vusers"?: number;
-                "peak_tps"?: number;
+                "error_pct": number;
+                "peak_active_vusers": number;
+                "peak_tps": number;
                 "regressions"?: Array<string>;
-                "run_id"?: string;
-                "run_name"?: string;
-                "sla_breached"?: boolean;
-                "status"?: string;
+                "run_id": string;
+                "run_name": string;
+                "sla_breached": boolean;
+                "status": string;
                 "telemetry_status"?: string;
-                "transactions"?: number;
+                "transactions": number;
               };
               "deltas"?: {
-                "avg_response_ms_delta"?: number;
-                "avg_response_pct_delta"?: number;
-                "completeness_delta"?: number;
-                "error_pct_delta"?: number;
-                "peak_tps_delta"?: number;
+                "avg_response_ms_delta": number;
+                "avg_response_pct_delta": number;
+                "completeness_delta": number;
+                "error_pct_delta": number;
+                "peak_tps_delta": number;
               };
-              "has_baseline"?: boolean;
+              "has_baseline": boolean;
               "note"?: string;
-              "regressed"?: boolean;
+              "regressed": boolean;
               "regressions"?: Array<string>;
-              "release_id"?: string;
-              "run_count"?: number;
-              "trajectory"?: {
-                "avg_response_trend_pct"?: number;
-                "error_pct_trend"?: number;
-                "latest_regressed"?: boolean;
+              "release_id": string;
+              "run_count": number;
+              "trajectory": {
+                "avg_response_trend_pct": number;
+                "error_pct_trend": number;
+                "latest_regressed": boolean;
                 "latest_regressions"?: Array<string>;
               };
             };
             "report_profiles"?: Array<{
               "audience"?: string;
               "best_for"?: string;
-              "description"?: string;
-              "export_formats"?: Array<string>;
-              "id"?: string;
-              "included_sections"?: Array<string>;
-              "label"?: string;
+              "description": string;
+              "export_formats": Array<string>;
+              "id": string;
+              "included_sections": Array<string>;
+              "label": string;
               "section_order"?: Array<string>;
             }>;
-            "resource_peaks"?: {
+            "resource_peaks": {
               "container_cpu_throttled_seconds_rate"?: number;
               "container_cpu_usage_pct"?: number;
               "container_memory_usage_pct"?: number;
               "container_oom_kill_count_delta"?: number;
               "cpu_iowait_pct"?: number;
-              "cpu_process_pct"?: number;
+              "cpu_process_pct": number;
               "cpu_steal_pct"?: number;
               "disk_io_time_pct"?: number;
-              "disk_read_kbps"?: number;
-              "disk_write_kbps"?: number;
+              "disk_read_kbps": number;
+              "disk_write_kbps": number;
               "gc_pause_ms"?: number;
-              "mem_process_mb"?: number;
+              "mem_process_mb": number;
               "net_drop_in_per_sec"?: number;
               "net_drop_out_per_sec"?: number;
               "net_error_in_per_sec"?: number;
               "net_error_out_per_sec"?: number;
-              "net_recv_kbps"?: number;
-              "net_sent_kbps"?: number;
+              "net_recv_kbps": number;
+              "net_sent_kbps": number;
               "tcp_retransmits_per_sec"?: number;
             };
-            "schema_version"?: string;
+            "schema_version": string;
             "sla_rollup"?: {
-              "evaluated"?: number;
-              "failed"?: number;
-              "na"?: number;
-              "passed"?: number;
-              "warned"?: number;
-              "worst_kind"?: string;
+              "evaluated": number;
+              "failed": number;
+              "na": number;
+              "passed": number;
+              "warned": number;
+              "worst_kind": string;
             };
-            "sla_rows"?: Record<string, unknown>;
+            "sla_rows"?: Record<string, {
+              "error_pct": number;
+              "has_sla": boolean;
+              "name": string;
+              "p95_ms": number;
+              "result": string;
+              "result_kind": string;
+              "sla_ms"?: number;
+              "volume": number;
+            }>;
             "soap_fault_timeline"?: Array<{
-              "by_category"?: Record<string, unknown>;
-              "by_code"?: Record<string, unknown>;
-              "timestamp"?: string;
-              "total"?: number;
+              "by_category"?: Record<string, number>;
+              "by_code"?: Record<string, number>;
+              "timestamp": string;
+              "total": number;
             }>;
             "soap_payload_timeline"?: Array<{
               "avg_envelope_overhead_kb"?: number;
               "avg_request_payload_kb"?: number;
               "avg_response_payload_kb"?: number;
               "max_envelope_overhead_kb"?: number;
-              "samples"?: number;
-              "timestamp"?: string;
+              "samples": number;
+              "timestamp": string;
             }>;
             "summary_timeline"?: Array<{
-              "active_vusers"?: number;
-              "error_pct"?: number;
-              "p95_ms"?: number;
+              "active_vusers": number;
+              "error_pct": number;
+              "p95_ms": number;
               "target_tps"?: number;
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
             }>;
             "verdict"?: {
-              "conditional"?: boolean;
-              "explanation"?: string;
-              "failed"?: boolean;
-              "status"?: string;
+              "conditional": boolean;
+              "explanation": string;
+              "failed": boolean;
+              "status": string;
             };
             "web2_migration"?: {
-              "conversion_to_http_ready"?: boolean;
-              "failed_steps"?: number;
-              "imported_steps"?: number;
+              "conversion_to_http_ready": boolean;
+              "failed_steps": number;
+              "imported_steps": number;
               "next_actions"?: Array<string>;
-              "replay_evidence"?: Record<string, unknown>;
-              "replayed_steps"?: number;
+              "replay_evidence": Record<string, number>;
+              "replayed_steps": number;
               "source_profiles"?: Array<string>;
-              "status"?: string;
+              "status": string;
               "transaction_groups"?: Array<string>;
             };
           };
@@ -14552,29 +15914,29 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "confidence"?: string;
+            "confidence": string;
             "evidence"?: Array<string>;
-            "generated_at"?: string;
+            "generated_at": string;
             "next_actions"?: Array<string>;
             "report"?: Record<string, unknown>;
-            "schema_version"?: string;
+            "schema_version": string;
             "signals"?: Array<{
-              "name"?: string;
+              "name": string;
               "score"?: number;
               "severity"?: string;
-              "status"?: string;
+              "status": string;
               "value"?: string;
             }>;
-            "status"?: string;
-            "summary"?: string;
-            "test_id"?: string;
+            "status": string;
+            "summary": string;
+            "test_id": string;
             "top_findings"?: Array<{
-              "category"?: string;
-              "detail"?: string;
+              "category": string;
+              "detail": string;
               "evidence"?: Array<string>;
-              "score"?: number;
-              "severity"?: string;
-              "title"?: string;
+              "score": number;
+              "severity": string;
+              "title": string;
             }>;
           };
         };
@@ -14724,57 +16086,57 @@ export interface operations {
         content: {
           "application/json": {
             "capacity"?: {
-              "days"?: Array<{
-                "available_generators"?: number;
-                "configured_generators"?: number;
-                "date"?: string;
-                "peak_reserved_generators"?: number;
-                "pressure"?: string;
-                "pressure_pct"?: number;
-                "reservation_count"?: number;
+              "days": Array<{
+                "available_generators": number;
+                "configured_generators": number;
+                "date": string;
+                "peak_reserved_generators": number;
+                "pressure": string;
+                "pressure_pct": number;
+                "reservation_count": number;
               }>;
               "project_id"?: string;
             };
-            "count"?: number;
-            "events"?: Array<{
+            "count": number;
+            "events": Array<{
               "application_id"?: string;
               "conflict_summary"?: string;
               "cron_expr"?: string;
               "end_at"?: string;
-              "id"?: string;
+              "id": string;
               "occurrence_status"?: string;
               "plan_id"?: string;
               "project_id"?: string;
               "projected"?: boolean;
               "reason_code"?: string;
               "release_id"?: string;
-              "run_type"?: string;
+              "run_type": string;
               "scenario_id"?: string;
               "scenario_name"?: string;
               "schedule_id"?: string;
               "schedule_name"?: string;
-              "source"?: string;
-              "start_at"?: string;
-              "status"?: string;
+              "source": string;
+              "start_at": string;
+              "status": string;
               "test_id"?: string;
               "test_ref_key"?: string;
               "timezone"?: string;
-              "title"?: string;
-              "topology"?: {
+              "title": string;
+              "topology": {
                 "controller"?: {
-                  "address"?: string;
-                  "execution_mode"?: string;
-                  "id"?: string;
-                  "status"?: string;
-                  "version"?: string;
+                  "address": string;
+                  "execution_mode": string;
+                  "id": string;
+                  "status": string;
+                  "version": string;
                 };
-                "controller_env"?: Record<string, unknown>;
+                "controller_env"?: Record<string, string>;
                 "generator_inventory"?: Array<Record<string, unknown>>;
                 "generator_shards"?: Array<Record<string, unknown>>;
                 "source"?: string;
                 "summary"?: string;
               };
-              "user"?: {
+              "user": {
                 "attribution"?: string;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
@@ -14785,26 +16147,26 @@ export interface operations {
                 "started_by_subject"?: string;
                 "subject"?: string;
               };
-              "workload"?: {
+              "workload": {
                 "duration"?: string;
                 "groups"?: Array<Record<string, unknown>>;
                 "total_vusers"?: number;
               };
             }>;
-            "generated_at"?: string;
-            "range"?: {
-              "from"?: string;
-              "future_ceiling"?: string;
+            "generated_at": string;
+            "range": {
+              "from": string;
+              "future_ceiling": string;
               "future_clamped"?: boolean;
               "history_clamped"?: boolean;
               "history_floor"?: string;
-              "requested_from"?: string;
-              "requested_to"?: string;
+              "requested_from": string;
+              "requested_to": string;
               "retention_enforced"?: boolean;
-              "to"?: string;
+              "to": string;
             };
-            "source_counts"?: Record<string, unknown>;
-            "status_counts"?: Record<string, unknown>;
+            "source_counts"?: Record<string, number>;
+            "status_counts"?: Record<string, number>;
             "truncated"?: boolean;
           };
         };
@@ -14841,23 +16203,23 @@ export interface operations {
         content: {
           "application/json": {
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
             };
             "associated_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
-            "created_at"?: string;
+            "created_at": string;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
+            "duration": string;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
               "max_avg_transfer_ms"?: number;
@@ -14879,11 +16241,11 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "id"?: string;
+            "id": string;
             "last_run_at"?: string;
             "last_run_ended_at"?: string;
             "last_run_test_id"?: string;
-            "name"?: string;
+            "name": string;
             "project_id"?: string;
             "ref_key"?: string;
             "resource_baseline"?: boolean;
@@ -14899,7 +16261,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -14922,15 +16284,15 @@ export interface operations {
             };
             "scenario_mode"?: string;
             "schedules"?: Array<Record<string, unknown>>;
-            "script_count"?: number;
+            "script_count": number;
             "script_shakeout"?: boolean;
-            "scripts"?: Array<{
+            "scripts": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -14938,7 +16300,7 @@ export interface operations {
               "initialization"?: string;
               "iterations"?: number;
               "name"?: string;
-              "order"?: number;
+              "order": number;
               "protocol"?: string;
               "ramp_down"?: string;
               "ramp_up"?: string;
@@ -14954,7 +16316,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -14975,13 +16337,13 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
+              "script_id": string;
               "script_name"?: string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "start_delay"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -15064,40 +16426,40 @@ export interface operations {
         content: {
           "application/json": {
             "associated_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
             "associated_scenarios"?: Array<{
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
             }>;
             "authoring_health"?: {
-              "inputs"?: Array<{
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
-            "created_at"?: string;
+            "created_at": string;
             "folder_id"?: string;
-            "id"?: string;
+            "id": string;
             "last_run_at"?: string;
-            "name"?: string;
+            "name": string;
             "project_id"?: string;
-            "protocol"?: string;
+            "protocol": string;
             "ref_key"?: string;
             "scenario_count"?: number;
             "scenario_run_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
-            "script"?: Record<string, unknown>;
-            "version"?: string;
+            "script": Record<string, unknown>;
+            "version": string;
           };
         };
       };
@@ -15132,64 +16494,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -15225,64 +16587,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -15399,27 +16761,27 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "controller"?: {
-              "address"?: string;
-              "execution_mode"?: string;
-              "id"?: string;
-              "status"?: string;
-              "version"?: string;
+            "controller": {
+              "address": string;
+              "execution_mode": string;
+              "id": string;
+              "status": string;
+              "version": string;
             };
             "data_platform"?: {
-              "archive_backend"?: string;
+              "archive_backend": string;
               "archive_uri_prefix"?: string;
-              "cache_backend"?: string;
+              "cache_backend": string;
               "cache_fanout"?: string;
               "cache_key_prefix"?: string;
-              "metadata_store"?: string;
-              "metrics_retention"?: string;
+              "metadata_store": string;
+              "metrics_retention": string;
             };
-            "execution_mode"?: string;
-            "generators"?: Array<{
-              "active_vusers"?: number;
-              "available_capacity"?: number;
-              "capacity_state"?: string;
+            "execution_mode": string;
+            "generators": Array<{
+              "active_vusers": number;
+              "available_capacity": number;
+              "capacity_state": string;
               "compatibility_issues"?: Array<string>;
               "compatibility_state"?: string;
               "compatible_features"?: Array<string>;
@@ -15432,25 +16794,25 @@ export interface operations {
               "container_oom_kill_count_delta"?: number;
               "cordoned"?: boolean;
               "cpu_iowait_pct"?: number;
-              "cpu_limit_cores"?: number;
-              "cpu_percent"?: number;
+              "cpu_limit_cores": number;
+              "cpu_percent": number;
               "cpu_steal_pct"?: number;
               "cpu_system_pct"?: number;
               "cpu_user_pct"?: number;
               "disk_io_time_pct"?: number;
-              "drain_state"?: string;
+              "drain_state": string;
               "fleet_pool_id"?: string;
               "gc_count_delta"?: number;
               "gc_pause_ms"?: number;
-              "generator_id"?: string;
-              "goroutine_count"?: number;
-              "health_score"?: number;
+              "generator_id": string;
+              "goroutine_count": number;
+              "health_score": number;
               "heap_alloc_mb"?: number;
               "heap_in_use_mb"?: number;
-              "labels"?: Record<string, unknown>;
-              "max_vusers"?: number;
-              "memory_bytes"?: number;
-              "memory_limit_bytes"?: number;
+              "labels"?: Record<string, string>;
+              "max_vusers": number;
+              "memory_bytes": number;
+              "memory_limit_bytes": number;
               "net_drop_in_per_sec"?: number;
               "net_drop_out_per_sec"?: number;
               "net_error_in_per_sec"?: number;
@@ -15469,9 +16831,9 @@ export interface operations {
                 "occupancy_mode"?: "idle" | "persistent" | "legacy";
                 "protocol": string;
               }>;
-              "status"?: string;
+              "status": string;
               "supported_protocols"?: Array<string>;
-              "target"?: string;
+              "target": string;
               "tcp_established"?: number;
               "tcp_retransmits_per_sec"?: number;
               "tcp_time_wait"?: number;
@@ -15503,17 +16865,17 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "allow_force"?: boolean;
+            "allow_force": boolean;
             "controller_deployment"?: string;
             "disabled_reason"?: string;
-            "enabled"?: boolean;
-            "execution_mode"?: string;
+            "enabled": boolean;
+            "execution_mode": string;
             "generator_stateful_set"?: string;
             "namespace"?: string;
-            "supports"?: {
-              "controller_workload"?: boolean;
-              "generator_pod"?: boolean;
-              "generator_workload"?: boolean;
+            "supports": {
+              "controller_workload": boolean;
+              "generator_pod": boolean;
+              "generator_workload": boolean;
             };
           };
         };
@@ -15540,15 +16902,15 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "generated_at"?: string;
-            "services"?: Array<{
+            "generated_at": string;
+            "services": Array<{
               "address"?: string;
-              "id"?: string;
-              "kind"?: string;
+              "id": string;
+              "kind": string;
               "metadata"?: Record<string, unknown>;
-              "name"?: string;
-              "source"?: string;
-              "status"?: string;
+              "name": string;
+              "source": string;
+              "status": string;
               "url"?: string;
               "version"?: string;
             }>;
@@ -15575,8 +16937,172 @@ export interface operations {
     requestBody?: never;
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "archive_retention": {
+              "default_retention_days": number;
+              "enabled": boolean;
+              "har_artifact_dir"?: string;
+              "har_retention_days"?: number;
+              "policies"?: Array<{
+                "artifact_type"?: string;
+                "compliance_class"?: string;
+                "name"?: string;
+                "project_id"?: string;
+                "reason"?: string;
+                "release_id"?: string;
+                "retention_days": number;
+                "run_status"?: string;
+                "run_type"?: string;
+              }>;
+            };
+            "auth": {
+              "application_repository_roles_claim"?: string;
+              "application_repository_roles_header"?: string;
+              "client_id"?: string;
+              "client_secret_env_var"?: string;
+              "domain_roles_claim"?: string;
+              "domain_roles_header"?: string;
+              "email_header"?: string;
+              "issuer_url"?: string;
+              "login_url"?: string;
+              "logout_url"?: string;
+              "mode": string;
+              "name_header"?: string;
+              "project_roles_claim"?: string;
+              "project_roles_header"?: string;
+              "provider_name"?: string;
+              "redirect_url"?: string;
+              "roles_claim"?: string;
+              "roles_header"?: string;
+              "scopes"?: Array<string>;
+              "session_secret_env_var"?: string;
+              "trusted_proxy_cidrs"?: Array<string>;
+              "trusted_proxy_secret_env_var"?: string;
+              "user_header"?: string;
+            };
+            "capacity_planning": {
+              "availability": {
+                "configured_available_generators": number;
+                "source": string;
+              };
+              "generator": {
+                "cpu_cores": number;
+                "max_vusers": number;
+                "memory_mb": number;
+                "network_mbps": number;
+              };
+              "headroom_pct": number;
+              "reservations"?: Array<{
+                "ends_at"?: string;
+                "pool_id"?: string;
+                "project_id": string;
+                "reserved_generators": number;
+                "starts_at"?: string;
+              }>;
+            };
+            "client_app": {
+              "availability": string;
+            };
+            "client_downloads": {
+              "enabled": boolean;
+            };
+            "general": {
+              "api_endpoint": string;
+              "max_concurrent_tests": number;
+              "metrics_interval_seconds": number;
+              "usage_snapshot_interval_seconds"?: number;
+            };
+            "github": {
+              "api_base_url"?: string;
+              "app_id"?: number;
+              "app_private_key_env_var"?: string;
+              "app_private_key_file"?: string;
+              "app_slug"?: string;
+              "automation_mode"?: string;
+              "ca_cert_file"?: string;
+              "checks_enabled"?: boolean;
+              "client_id"?: string;
+              "client_secret_env_var"?: string;
+              "default_branch"?: string;
+              "default_repo"?: string;
+              "enabled": boolean;
+              "pat_env_var"?: string;
+              "path_template"?: string;
+              "scopes"?: Array<string>;
+              "tls_insecure_skip_verify"?: boolean;
+              "web_base_url"?: string;
+              "webhook_secret_env_var"?: string;
+            };
+            "grafana": {
+              "base_url"?: string;
+              "enabled": boolean;
+              "service_account_token_env_var"?: string;
+              "timeout_seconds"?: number;
+            };
+            "notifications": {
+              "webhooks"?: Array<{
+                "api_token"?: string;
+                "enabled": boolean;
+                "entity_selector"?: string;
+                "events"?: Array<string>;
+                "format": string;
+                "has_api_token"?: boolean;
+                "name"?: string;
+                "timeout_minutes"?: number;
+                "url": string;
+              }>;
+            };
+            "powerbi": {
+              "api_base_url"?: string;
+              "auth_base_url"?: string;
+              "client_id"?: string;
+              "client_secret_env_var"?: string;
+              "dashboard_base_url"?: string;
+              "dataset_name"?: string;
+              "enabled": boolean;
+              "scope"?: string;
+              "tenant_id"?: string;
+              "timeout_seconds"?: number;
+              "workspace_id"?: string;
+            };
+            "prometheus": {
+              "allow_label_values": boolean;
+              "base_url"?: string;
+              "bearer_token_env_var"?: string;
+              "enabled": boolean;
+              "timeout_seconds"?: number;
+            };
+            "revision": string;
+            "schedule_defaults": {
+              "approval_policy"?: string;
+              "availability_end_time"?: string;
+              "availability_start_time"?: string;
+              "blackout_end_time"?: string;
+              "blackout_start_time"?: string;
+              "missed_run_policy"?: string;
+            };
+            "script_imports": {
+              "allow_source_secret_migration": boolean;
+            };
+            "thresholds": {
+              "fleet_constrained_available_slots"?: number;
+              "fleet_saturated_available_slots"?: number;
+              "max_avg_server_processing_ms"?: number;
+              "max_avg_transfer_ms"?: number;
+              "max_error_rate_pct"?: number;
+              "max_p99_latency_ms"?: number;
+              "max_telemetry_browser_render_lag_ms"?: number;
+              "max_telemetry_controller_fanout_ms"?: number;
+              "max_telemetry_generator_lag_ms"?: number;
+              "max_telemetry_sample_age_ms"?: number;
+              "max_telemetry_transport_lag_ms"?: number;
+              "p99_latency_stop_consecutive_samples"?: number;
+            };
+          };
         };
       };
       "401": {
@@ -15608,11 +17134,11 @@ export interface operations {
             "application_id"?: string;
             "archive"?: Record<string, unknown>;
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -15621,9 +17147,9 @@ export interface operations {
             "baseline_pinned_at"?: string;
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -15633,26 +17159,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -15662,24 +17188,24 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
@@ -15688,19 +17214,147 @@ export interface operations {
             "capacity_window_start_at"?: string;
             "comparison_baseline"?: {
               "completed_at"?: string;
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "policy"?: string;
-              "source_test_id"?: string;
-              "source_test_name"?: string;
-              "transactions"?: Record<string, unknown>;
+              "source_test_id": string;
+              "source_test_name": string;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "created_at"?: string;
+            "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
             "cumulative_pause_ns"?: Record<string, unknown>;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
-            "duration_ns"?: Record<string, unknown>;
+            "duration": string;
+            "duration_ns": Record<string, unknown>;
             "ended_at"?: string;
             "error"?: string;
             "execution_plan_approval"?: {
@@ -15719,13 +17373,13 @@ export interface operations {
             };
             "folder_id"?: string;
             "generator_shards"?: Array<{
-              "group"?: string;
+              "group": string;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
-              "target"?: string;
+              "target": string;
               "vuser_id_offset"?: number;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
@@ -15748,14 +17402,18 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "goal_targets"?: Record<string, unknown>;
-            "groups"?: Array<{
+            "goal_targets"?: Record<string, {
+              "group": string;
+              "target_tps": number;
+              "updated_at"?: string;
+            }>;
+            "groups": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -15764,8 +17422,8 @@ export interface operations {
               "iteration_override"?: number;
               "iteration_override_known"?: boolean;
               "iterations"?: number;
-              "name"?: string;
-              "protocol"?: string;
+              "name": string;
+              "protocol": string;
               "ramp_down"?: string;
               "ramp_up"?: string;
               "role"?: string;
@@ -15784,7 +17442,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -15805,16 +17463,16 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
-              "script_name"?: string;
+              "script_id": string;
+              "script_name": string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "history"?: Array<{
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -15829,48 +17487,98 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, Record<string, unknown>>;
+                "by_region"?: Record<string, Record<string, unknown>>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<Record<string, unknown>>;
-                "nodes"?: Array<Record<string, unknown>>;
+                "edges": Array<Record<string, unknown>>;
+                "nodes": Array<Record<string, unknown>>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -15884,7 +17592,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -15895,17 +17603,73 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<Record<string, unknown>>;
+                "targets": Array<Record<string, unknown>>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -15931,27 +17695,48 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
             }>;
-            "id"?: string;
+            "id": string;
             "live_metrics"?: {
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -15966,66 +17751,167 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "by_region"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<{
+                "edges": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
                   "p95_ms"?: number;
-                  "source"?: string;
-                  "target"?: string;
+                  "source": string;
+                  "target": string;
                   "transactions"?: number;
                 }>;
-                "nodes"?: Array<{
+                "nodes": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
-                  "id"?: string;
-                  "kind"?: string;
-                  "label"?: string;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
                   "p95_ms"?: number;
                   "status"?: string;
                   "transactions"?: number;
                 }>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -16039,7 +17925,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -16050,37 +17936,179 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<{
+                "targets": Array<{
                   "connect_ms"?: number;
                   "dns_ms"?: number;
-                  "endpoint"?: string;
+                  "endpoint": string;
                   "error"?: string;
                   "hops"?: number;
                   "http_status"?: number;
                   "ip"?: string;
                   "jitter_ms"?: number;
-                  "last_success"?: boolean;
-                  "latency_ms"?: number;
-                  "name"?: string;
+                  "last_success": boolean;
+                  "latency_ms": number;
+                  "name": string;
                   "probe_method"?: string;
                   "probe_total_ms"?: number;
                   "route_status"?: string;
                   "sample_count"?: number;
                   "success_rate_pct"?: number;
-                  "timestamp"?: string;
+                  "timestamp": string;
                   "tls_ms"?: number;
                   "ttfb_ms"?: number;
                 }>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -16106,22 +18134,86 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "name"?: string;
+            "name": string;
             "paused_at"?: string;
             "pending_reason"?: string;
             "pending_since"?: string;
@@ -16141,7 +18233,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -16168,33 +18260,33 @@ export interface operations {
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
               "findings"?: Array<{
                 "area"?: string;
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts"?: Record<string, number>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
@@ -16205,21 +18297,21 @@ export interface operations {
             "script_name"?: string;
             "script_shakeout"?: boolean;
             "sparkline"?: Array<{
-              "timestamp"?: string;
-              "tps"?: number;
+              "timestamp": string;
+              "tps": number;
             }>;
             "start_authorization"?: {
               "capacity_shortfall"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
-                "available_generators"?: number;
-                "recommended_generators"?: number;
-                "shortfall_generators"?: number;
-                "total_vusers"?: number;
+                "available_generators": number;
+                "recommended_generators": number;
+                "shortfall_generators": number;
+                "total_vusers": number;
               };
               "script_shakeout"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
                 "review_evidence_sha256"?: string;
@@ -16229,7 +18321,7 @@ export interface operations {
             "started_at"?: string;
             "started_by_display_name"?: string;
             "started_by_subject"?: string;
-            "status"?: string;
+            "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_health"?: {
@@ -16238,16 +18330,23 @@ export interface operations {
               "breach_started_at"?: string;
               "conditions"?: Array<string>;
               "current_signature"?: string;
-              "last_observed_at"?: string;
+              "last_observed_at": string;
               "last_transition_at"?: string;
-              "severity"?: string;
-              "status"?: string;
+              "severity": string;
+              "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
             };
             "timeslot_id"?: string;
-            "total_vusers"?: number;
-            "vuser_ramps"?: Record<string, unknown>;
+            "total_vusers": number;
+            "vuser_ramps"?: Record<string, {
+              "group": string;
+              "ramp_duration": string;
+              "ramp_duration_seconds": number;
+              "start_vusers": number;
+              "started_at": string;
+              "target_vusers": number;
+            }>;
           };
         };
       };
@@ -16262,6 +18361,254 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetTestGroupParameters": {
+    parameters: {
+      "path": {
+        "group": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "data_sources"?: Array<{
+              "columns"?: Array<string>;
+              "name": string;
+              "row_count"?: number;
+              "type"?: string;
+            }>;
+            "editable": boolean;
+            "editable_reason"?: string;
+            "group": string;
+            "group_index": number;
+            "parameters": Array<Record<string, unknown>>;
+            "protocol"?: string;
+            "ref_key"?: string;
+            "revision": string;
+            "script_id"?: string;
+            "script_name"?: string;
+            "status": string;
+            "test_id": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetTestGroupRuntimeSettings": {
+    parameters: {
+      "path": {
+        "group": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "editable": boolean;
+            "editable_fields": Array<string>;
+            "editable_reason"?: string;
+            "effective_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: {
+                "device_profile"?: string;
+                "headless"?: boolean;
+                "orientation"?: string;
+                "touch_mode"?: boolean;
+              };
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+            "group": string;
+            "group_index": number;
+            "imported_runtime_source"?: {
+              "dispositions"?: Record<string, Record<string, Record<string, {
+                "fields"?: Array<string>;
+                "note"?: string;
+                "parity_id"?: string;
+                "status"?: string;
+              }>>>;
+              "files"?: Record<string, Record<string, Record<string, string>>>;
+              "truncated"?: boolean;
+            };
+            "protocol"?: string;
+            "ref_key"?: string;
+            "revision": string;
+            "runtime_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: {
+                "device_profile"?: string;
+                "headless"?: boolean;
+                "orientation"?: string;
+                "touch_mode"?: boolean;
+              };
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+            "script_id"?: string;
+            "script_name"?: string;
+            "script_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: {
+                "device_profile"?: string;
+                "headless"?: boolean;
+                "orientation"?: string;
+                "touch_mode"?: boolean;
+              };
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+            "status": string;
+            "test_id": string;
+            "test_runtime_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: {
+                "device_profile"?: string;
+                "headless"?: boolean;
+                "orientation"?: string;
+                "touch_mode"?: boolean;
+              };
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -16342,14 +18689,14 @@ export interface operations {
               "test_notes_file"?: string;
               "transaction_count"?: number;
             };
-            "current_configuration"?: {
+            "current_configuration": {
               "active_vusers"?: number;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -16359,13 +18706,13 @@ export interface operations {
               "duration"?: string;
               "ended_at"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -16390,11 +18737,11 @@ export interface operations {
               };
               "groups"?: Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -16403,8 +18750,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -16418,7 +18765,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -16431,10 +18778,10 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "resource_baseline"?: boolean;
               "runtime_settings"?: {
@@ -16448,7 +18795,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -16475,33 +18822,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -16511,10 +18858,17 @@ export interface operations {
               "started_at"?: string;
               "status"?: string;
               "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
-            "generated_at"?: string;
-            "identity"?: {
+            "generated_at": string;
+            "identity": {
               "application_id"?: string;
               "created_at"?: string;
               "created_by_display_name"?: string;
@@ -16531,14 +18885,14 @@ export interface operations {
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
             };
-            "initial_configuration"?: {
+            "initial_configuration": {
               "active_vusers"?: number;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -16548,13 +18902,13 @@ export interface operations {
               "duration"?: string;
               "ended_at"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -16579,11 +18933,11 @@ export interface operations {
               };
               "groups"?: Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -16592,8 +18946,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -16607,7 +18961,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -16620,10 +18974,10 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "resource_baseline"?: boolean;
               "runtime_settings"?: {
@@ -16637,7 +18991,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -16664,33 +19018,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -16700,34 +19054,41 @@ export interface operations {
               "started_at"?: string;
               "status"?: string;
               "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
-            "load_generators"?: {
+            "load_generators": {
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               };
-              "controller_env"?: Record<string, unknown>;
-              "execution_settings"?: {
-                "capacity_planning"?: {
-                  "availability"?: Record<string, unknown>;
-                  "generator"?: Record<string, unknown>;
-                  "headroom_pct"?: number;
+              "controller_env"?: Record<string, string>;
+              "execution_settings": {
+                "capacity_planning": {
+                  "availability": Record<string, unknown>;
+                  "generator": Record<string, unknown>;
+                  "headroom_pct": number;
                   "reservations"?: Array<Record<string, unknown>>;
                 };
-                "general"?: {
-                  "api_endpoint"?: string;
-                  "max_concurrent_tests"?: number;
-                  "metrics_interval_seconds"?: number;
+                "general": {
+                  "api_endpoint": string;
+                  "max_concurrent_tests": number;
+                  "metrics_interval_seconds": number;
                   "usage_snapshot_interval_seconds"?: number;
                 };
-                "thresholds"?: {
+                "thresholds": {
                   "fleet_constrained_available_slots"?: number;
                   "fleet_saturated_available_slots"?: number;
                   "max_avg_server_processing_ms"?: number;
@@ -16739,12 +19100,13 @@ export interface operations {
                   "max_telemetry_generator_lag_ms"?: number;
                   "max_telemetry_sample_age_ms"?: number;
                   "max_telemetry_transport_lag_ms"?: number;
+                  "p99_latency_stop_consecutive_samples"?: number;
                 };
               };
               "generator_inventory"?: Array<{
-                "active_vusers"?: number;
-                "available_capacity"?: number;
-                "capacity_state"?: string;
+                "active_vusers": number;
+                "available_capacity": number;
+                "capacity_state": string;
                 "compatibility_issues"?: Array<string>;
                 "compatibility_state"?: string;
                 "compatible_features"?: Array<string>;
@@ -16757,25 +19119,25 @@ export interface operations {
                 "container_oom_kill_count_delta"?: number;
                 "cordoned"?: boolean;
                 "cpu_iowait_pct"?: number;
-                "cpu_limit_cores"?: number;
-                "cpu_percent"?: number;
+                "cpu_limit_cores": number;
+                "cpu_percent": number;
                 "cpu_steal_pct"?: number;
                 "cpu_system_pct"?: number;
                 "cpu_user_pct"?: number;
                 "disk_io_time_pct"?: number;
-                "drain_state"?: string;
+                "drain_state": string;
                 "fleet_pool_id"?: string;
                 "gc_count_delta"?: number;
                 "gc_pause_ms"?: number;
-                "generator_id"?: string;
-                "goroutine_count"?: number;
-                "health_score"?: number;
+                "generator_id": string;
+                "goroutine_count": number;
+                "health_score": number;
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
-                "labels"?: Record<string, unknown>;
-                "max_vusers"?: number;
-                "memory_bytes"?: number;
-                "memory_limit_bytes"?: number;
+                "labels"?: Record<string, string>;
+                "max_vusers": number;
+                "memory_bytes": number;
+                "memory_limit_bytes": number;
                 "net_drop_in_per_sec"?: number;
                 "net_drop_out_per_sec"?: number;
                 "net_error_in_per_sec"?: number;
@@ -16794,9 +19156,9 @@ export interface operations {
                   "occupancy_mode"?: "idle" | "persistent" | "legacy";
                   "protocol": string;
                 }>;
-                "status"?: string;
+                "status": string;
                 "supported_protocols"?: Array<string>;
-                "target"?: string;
+                "target": string;
                 "tcp_established"?: number;
                 "tcp_retransmits_per_sec"?: number;
                 "tcp_time_wait"?: number;
@@ -16804,40 +19166,40 @@ export interface operations {
                 "version"?: string;
               }>;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
             };
             "ref_key"?: string;
             "runtime_changes"?: Array<{
-              "action"?: string;
+              "action": string;
               "actor_display_name"?: string;
               "actor_subject"?: string;
               "actor_type"?: string;
-              "created_at"?: string;
+              "created_at": string;
               "details"?: Record<string, unknown>;
-              "id"?: string;
-              "label"?: string;
+              "id": string;
+              "label": string;
               "status"?: string;
             }>;
-            "schema_version"?: string;
+            "schema_version": string;
             "scripts"?: Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               };
-              "group_name"?: string;
+              "group_name": string;
               "initialization"?: string;
               "iterations"?: number;
               "protocol"?: string;
@@ -16858,7 +19220,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -16884,10 +19246,10 @@ export interface operations {
               "stages"?: Array<Record<string, unknown>>;
               "vusers"?: number;
             }>;
-            "source"?: string;
-            "status"?: string;
-            "test_id"?: string;
-            "test_name"?: string;
+            "source": string;
+            "status": string;
+            "test_id": string;
+            "test_name": string;
             "warnings"?: Array<string>;
           };
         };
@@ -16929,9 +19291,9 @@ export interface operations {
         content: {
           "application/json": {
             "details"?: Array<string>;
-            "sla_breached"?: boolean;
-            "status"?: string;
-            "test_id"?: string;
+            "sla_breached": boolean;
+            "status": string;
+            "test_id": string;
           };
         };
       };
@@ -16973,56 +19335,56 @@ export interface operations {
           "application/json": {
             "by_project"?: Array<{
               "archive_bytes"?: number;
-              "duration_seconds"?: number;
+              "duration_seconds": number;
               "group_count"?: number;
               "key"?: string;
-              "run_count"?: number;
-              "status_counts"?: Record<string, unknown>;
-              "total_vusers"?: number;
-              "vuser_seconds"?: number;
+              "run_count": number;
+              "status_counts"?: Record<string, number>;
+              "total_vusers": number;
+              "vuser_seconds": number;
             }>;
             "by_protocol"?: Array<{
               "archive_bytes"?: number;
-              "duration_seconds"?: number;
+              "duration_seconds": number;
               "group_count"?: number;
               "key"?: string;
-              "run_count"?: number;
-              "status_counts"?: Record<string, unknown>;
-              "total_vusers"?: number;
-              "vuser_seconds"?: number;
+              "run_count": number;
+              "status_counts"?: Record<string, number>;
+              "total_vusers": number;
+              "vuser_seconds": number;
             }>;
             "by_region"?: Array<{
               "archive_bytes"?: number;
-              "duration_seconds"?: number;
+              "duration_seconds": number;
               "group_count"?: number;
               "key"?: string;
-              "run_count"?: number;
-              "status_counts"?: Record<string, unknown>;
-              "total_vusers"?: number;
-              "vuser_seconds"?: number;
+              "run_count": number;
+              "status_counts"?: Record<string, number>;
+              "total_vusers": number;
+              "vuser_seconds": number;
             }>;
             "by_user"?: Array<{
               "archive_bytes"?: number;
-              "duration_seconds"?: number;
+              "duration_seconds": number;
               "group_count"?: number;
               "key"?: string;
-              "run_count"?: number;
-              "status_counts"?: Record<string, unknown>;
-              "total_vusers"?: number;
-              "vuser_seconds"?: number;
+              "run_count": number;
+              "status_counts"?: Record<string, number>;
+              "total_vusers": number;
+              "vuser_seconds": number;
             }>;
-            "generated_at"?: string;
+            "generated_at": string;
             "notes"?: Array<string>;
             "project_id"?: string;
-            "totals"?: {
+            "totals": {
               "archive_bytes"?: number;
-              "duration_seconds"?: number;
+              "duration_seconds": number;
               "group_count"?: number;
               "key"?: string;
-              "run_count"?: number;
-              "status_counts"?: Record<string, unknown>;
-              "total_vusers"?: number;
-              "vuser_seconds"?: number;
+              "run_count": number;
+              "status_counts"?: Record<string, number>;
+              "total_vusers": number;
+              "vuser_seconds": number;
             };
           };
         };
@@ -17092,63 +19454,63 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "events"?: Array<Record<string, unknown>>;
-            "limit"?: number;
-            "offset"?: number;
-            "usage"?: {
+            "count": number;
+            "events": Array<Record<string, unknown>>;
+            "limit": number;
+            "offset": number;
+            "usage": {
               "by_project"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
               "by_protocol"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
               "by_region"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
               "by_user"?: Array<{
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               }>;
-              "generated_at"?: string;
+              "generated_at": string;
               "notes"?: Array<string>;
               "project_id"?: string;
-              "totals"?: {
+              "totals": {
                 "archive_bytes"?: number;
-                "duration_seconds"?: number;
+                "duration_seconds": number;
                 "group_count"?: number;
                 "key"?: string;
-                "run_count"?: number;
-                "status_counts"?: Record<string, unknown>;
-                "total_vusers"?: number;
-                "vuser_seconds"?: number;
+                "run_count": number;
+                "status_counts"?: Record<string, number>;
+                "total_vusers": number;
+                "vuser_seconds": number;
               };
             };
           };
@@ -17229,10 +19591,10 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "access_token"?: string;
-            "expires_at"?: string;
-            "expires_in"?: number;
-            "token_type"?: string;
+            "access_token": string;
+            "expires_at": string;
+            "expires_in": number;
+            "token_type": string;
           };
         };
       };
@@ -17272,7 +19634,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -17326,7 +19688,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -17559,7 +19921,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -17689,7 +20051,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "bindings"?: Record<string, unknown>;
+          "bindings"?: Record<string, string>;
           "import_session_id"?: string;
           "project_id"?: string;
           "test_id"?: string;
@@ -17843,6 +20205,76 @@ export interface operations {
         };
       };
       "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleImportDataPoolRows": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": {
+          "columns"?: string;
+          "delimiter"?: string;
+          "dry_run"?: string;
+          "file": string;
+          "header"?: string;
+          "mode"?: string;
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -18105,13 +20537,13 @@ export interface operations {
           "application/json": {
             "assumptions"?: Array<string>;
             "bindings"?: Array<Record<string, unknown>>;
-            "dashboard"?: Record<string, unknown>;
-            "expires_at"?: string;
-            "has_blockers"?: boolean;
-            "import_session_id"?: string;
+            "dashboard": Record<string, unknown>;
+            "expires_at": string;
+            "has_blockers": boolean;
+            "import_session_id": string;
             "required_bindings"?: Array<string>;
             "review_sections"?: Array<Record<string, unknown>>;
-            "stats"?: Record<string, unknown>;
+            "stats": Record<string, unknown>;
             "warnings"?: Array<string>;
           };
         };
@@ -18168,13 +20600,13 @@ export interface operations {
           "application/json": {
             "assumptions"?: Array<string>;
             "bindings"?: Array<Record<string, unknown>>;
-            "dashboard"?: Record<string, unknown>;
-            "expires_at"?: string;
-            "has_blockers"?: boolean;
-            "import_session_id"?: string;
+            "dashboard": Record<string, unknown>;
+            "expires_at": string;
+            "has_blockers": boolean;
+            "import_session_id": string;
             "required_bindings"?: Array<string>;
             "review_sections"?: Array<Record<string, unknown>>;
-            "stats"?: Record<string, unknown>;
+            "stats": Record<string, unknown>;
             "warnings"?: Array<string>;
           };
         };
@@ -18724,31 +21156,31 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "configured"?: boolean;
-            "dashboards"?: Array<{
-              "dashboard_id"?: string;
+            "configured": boolean;
+            "dashboards": Array<{
+              "dashboard_id": string;
               "dashboard_title"?: string;
               "datasource_id"?: string;
-              "panels"?: Array<{
+              "panels": Array<{
                 "error"?: string;
-                "grid_pos"?: Record<string, unknown>;
-                "kind"?: string;
-                "panel_id"?: number;
+                "grid_pos": Record<string, unknown>;
+                "kind": string;
+                "panel_id": number;
                 "row_title"?: string;
                 "series"?: Array<Record<string, unknown>>;
                 "threshold_breached"?: boolean;
                 "threshold_detail"?: string;
                 "threshold_evaluated"?: boolean;
                 "thresholds"?: Array<Record<string, unknown>>;
-                "title"?: string;
+                "title": string;
                 "unit"?: string;
                 "value"?: number;
               }>;
             }>;
             "datasource_id"?: string;
-            "enabled"?: boolean;
+            "enabled": boolean;
             "end"?: string;
-            "generated_at"?: string;
+            "generated_at": string;
             "start"?: string;
             "step_seconds"?: number;
           };
@@ -18923,11 +21355,11 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "generated_at"?: string;
-            "instance_id"?: string;
-            "item_kinds"?: Array<string>;
-            "operations"?: Array<string>;
-            "schema_version"?: string;
+            "generated_at": string;
+            "instance_id": string;
+            "item_kinds": Array<string>;
+            "operations": Array<string>;
+            "schema_version": string;
           };
         };
       };
@@ -18960,41 +21392,41 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "generated_at"?: string;
-            "has_more"?: boolean;
-            "instance_id"?: string;
-            "items"?: Array<{
-              "content_hash"?: string;
+            "count": number;
+            "generated_at": string;
+            "has_more": boolean;
+            "instance_id": string;
+            "items": Array<{
+              "content_hash": string;
               "dependencies"?: Array<{
                 "content_hash"?: string;
-                "id"?: string;
-                "kind"?: string;
+                "id": string;
+                "kind": string;
                 "name"?: string;
                 "project_id"?: string;
               }>;
               "execution_run_date"?: string;
               "has_archive"?: boolean;
-              "id"?: string;
-              "kind"?: string;
+              "id": string;
+              "kind": string;
               "local_item_id"?: string;
-              "name"?: string;
+              "name": string;
               "project_id"?: string;
               "protocol"?: string;
               "release_id"?: string;
               "release_name"?: string;
               "remote_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "source_instance_id": string;
+              "source_item_id": string;
               "status"?: string;
               "sync_status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
               "version"?: string;
             }>;
-            "limit"?: number;
-            "offset"?: number;
-            "schema_version"?: string;
-            "total"?: number;
+            "limit": number;
+            "offset": number;
+            "schema_version": string;
+            "total": number;
           };
         };
       };
@@ -19029,7 +21461,7 @@ export interface operations {
           "credential_ref"?: string;
           "default_project_id"?: string;
           "name"?: string;
-          "project_mappings"?: Record<string, unknown>;
+          "project_mappings"?: Record<string, string>;
         };
       };
     };
@@ -19037,26 +21469,26 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "auth_method"?: string;
-            "base_url"?: string;
+            "auth_method": string;
+            "base_url": string;
             "capabilities"?: {
-              "generated_at"?: string;
-              "instance_id"?: string;
-              "item_kinds"?: Array<string>;
-              "operations"?: Array<string>;
-              "schema_version"?: string;
+              "generated_at": string;
+              "instance_id": string;
+              "item_kinds": Array<string>;
+              "operations": Array<string>;
+              "schema_version": string;
             };
-            "created_at"?: string;
-            "credential_configured"?: boolean;
+            "created_at": string;
+            "credential_configured": boolean;
             "credential_ref"?: string;
             "default_project_id"?: string;
-            "id"?: string;
+            "id": string;
             "last_error"?: string;
             "last_health_check"?: string;
-            "name"?: string;
-            "project_mappings"?: Record<string, unknown>;
+            "name": string;
+            "project_mappings"?: Record<string, string>;
             "status"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -19150,21 +21582,21 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "bundle_id"?: string;
-            "created_at"?: string;
-            "items"?: Array<{
-              "content_hash"?: string;
+            "bundle_id": string;
+            "created_at": string;
+            "items": Array<{
+              "content_hash": string;
               "content_hash_version"?: string;
               "created_at"?: string;
               "dependencies"?: Array<{
                 "content_hash"?: string;
-                "id"?: string;
-                "kind"?: string;
+                "id": string;
+                "kind": string;
                 "name"?: string;
                 "project_id"?: string;
               }>;
-              "kind"?: string;
-              "name"?: string;
+              "kind": string;
+              "name": string;
               "project_id"?: string;
               "result"?: {
                 "archive"?: Record<string, unknown>;
@@ -19183,25 +21615,25 @@ export interface operations {
                   "capacity_window_end_at"?: string;
                   "capacity_window_start_at"?: string;
                   "comparison_baseline"?: Record<string, unknown>;
-                  "created_at"?: string;
+                  "created_at": string;
                   "created_by_display_name"?: string;
                   "created_by_subject"?: string;
                   "cumulative_pause_ns"?: Record<string, unknown>;
                   "data_pools"?: Array<Record<string, unknown>>;
-                  "duration"?: string;
-                  "duration_ns"?: Record<string, unknown>;
+                  "duration": string;
+                  "duration_ns": Record<string, unknown>;
                   "ended_at"?: string;
                   "error"?: string;
                   "execution_plan_approval"?: Record<string, unknown>;
                   "folder_id"?: string;
                   "generator_shards"?: Array<Record<string, unknown>>;
                   "goal_config"?: Record<string, unknown>;
-                  "goal_targets"?: Record<string, unknown>;
-                  "groups"?: Array<Record<string, unknown>>;
+                  "goal_targets"?: Record<string, Record<string, unknown>>;
+                  "groups": Array<Record<string, unknown>>;
                   "history"?: Array<Record<string, unknown>>;
-                  "id"?: string;
+                  "id": string;
                   "live_metrics"?: Record<string, unknown>;
-                  "name"?: string;
+                  "name": string;
                   "paused_at"?: string;
                   "pending_reason"?: string;
                   "pending_since"?: string;
@@ -19224,24 +21656,24 @@ export interface operations {
                   "started_at"?: string;
                   "started_by_display_name"?: string;
                   "started_by_subject"?: string;
-                  "status"?: string;
+                  "status": string;
                   "stopped_by_display_name"?: string;
                   "stopped_by_subject"?: string;
                   "telemetry_health"?: Record<string, unknown>;
                   "timeslot_id"?: string;
-                  "total_vusers"?: number;
-                  "vuser_ramps"?: Record<string, unknown>;
+                  "total_vusers": number;
+                  "vuser_ramps"?: Record<string, Record<string, unknown>>;
                 };
               };
               "scenario"?: {
-                "id"?: string;
-                "request"?: {
+                "id": string;
+                "request": {
                   "assignment"?: Record<string, unknown>;
                   "data_pools"?: Array<Record<string, unknown>>;
-                  "duration"?: string;
+                  "duration": string;
                   "goal_config"?: Record<string, unknown>;
-                  "groups"?: Array<Record<string, unknown>>;
-                  "name"?: string;
+                  "groups": Array<Record<string, unknown>>;
+                  "name": string;
                   "resource_baseline"?: boolean;
                   "runtime_settings"?: Record<string, unknown>;
                   "scenario_mode"?: string;
@@ -19250,14 +21682,14 @@ export interface operations {
                 };
               };
               "script"?: Record<string, unknown>;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "source_instance_id": string;
+              "source_item_id": string;
               "updated_at"?: string;
             }>;
             "provenance"?: Record<string, unknown>;
-            "schema_version"?: string;
-            "source"?: {
-              "instance_id"?: string;
+            "schema_version": string;
+            "source": {
+              "instance_id": string;
               "project_id"?: string;
             };
           };
@@ -19399,28 +21831,28 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "remotes"?: Array<{
-              "auth_method"?: string;
-              "base_url"?: string;
+            "count": number;
+            "remotes": Array<{
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             }>;
           };
         };
@@ -19495,58 +21927,58 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "catalog"?: {
-              "count"?: number;
-              "generated_at"?: string;
-              "has_more"?: boolean;
-              "instance_id"?: string;
-              "items"?: Array<{
-                "content_hash"?: string;
+            "catalog": {
+              "count": number;
+              "generated_at": string;
+              "has_more": boolean;
+              "instance_id": string;
+              "items": Array<{
+                "content_hash": string;
                 "dependencies"?: Array<Record<string, unknown>>;
                 "execution_run_date"?: string;
                 "has_archive"?: boolean;
-                "id"?: string;
-                "kind"?: string;
+                "id": string;
+                "kind": string;
                 "local_item_id"?: string;
-                "name"?: string;
+                "name": string;
                 "project_id"?: string;
                 "protocol"?: string;
                 "release_id"?: string;
                 "release_name"?: string;
                 "remote_item_id"?: string;
-                "source_instance_id"?: string;
-                "source_item_id"?: string;
+                "source_instance_id": string;
+                "source_item_id": string;
                 "status"?: string;
                 "sync_status"?: string;
-                "updated_at"?: string;
+                "updated_at": string;
                 "version"?: string;
               }>;
-              "limit"?: number;
-              "offset"?: number;
-              "schema_version"?: string;
-              "total"?: number;
+              "limit": number;
+              "offset": number;
+              "schema_version": string;
+              "total": number;
             };
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
           };
         };
@@ -19800,7 +22232,7 @@ export interface operations {
           "credential_ref"?: string;
           "default_project_id"?: string;
           "name"?: string;
-          "project_mappings"?: Record<string, unknown>;
+          "project_mappings"?: Record<string, string>;
         };
       };
     };
@@ -19808,26 +22240,26 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "auth_method"?: string;
-            "base_url"?: string;
+            "auth_method": string;
+            "base_url": string;
             "capabilities"?: {
-              "generated_at"?: string;
-              "instance_id"?: string;
-              "item_kinds"?: Array<string>;
-              "operations"?: Array<string>;
-              "schema_version"?: string;
+              "generated_at": string;
+              "instance_id": string;
+              "item_kinds": Array<string>;
+              "operations": Array<string>;
+              "schema_version": string;
             };
-            "created_at"?: string;
-            "credential_configured"?: boolean;
+            "created_at": string;
+            "credential_configured": boolean;
             "credential_ref"?: string;
             "default_project_id"?: string;
-            "id"?: string;
+            "id": string;
             "last_error"?: string;
             "last_health_check"?: string;
-            "name"?: string;
-            "project_mappings"?: Record<string, unknown>;
+            "name": string;
+            "project_mappings"?: Record<string, string>;
             "status"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -19878,25 +22310,25 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "configured_count"?: number;
-            "generated_at"?: string;
-            "generic_correlation"?: {
-              "correlation_fields"?: Array<string>;
+            "configured_count": number;
+            "generated_at": string;
+            "generic_correlation": {
+              "correlation_fields": Array<string>;
               "evidence"?: Array<string>;
-              "propagation"?: string;
-              "status"?: string;
+              "propagation": string;
+              "status": string;
             };
-            "profiles"?: Array<{
-              "capabilities"?: Array<string>;
-              "correlation_fields"?: Array<string>;
+            "profiles": Array<{
+              "capabilities": Array<string>;
+              "correlation_fields": Array<string>;
               "dry_run_endpoint"?: string;
               "evidence"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
               "required_settings"?: Array<string>;
               "setup_actions"?: Array<string>;
-              "status"?: string;
-              "supported_signals"?: Array<string>;
+              "status": string;
+              "supported_signals": Array<string>;
             }>;
           };
         };
@@ -19971,10 +22403,10 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "events"?: Array<Record<string, unknown>>;
-            "limit"?: number;
-            "offset"?: number;
+            "count": number;
+            "events": Array<Record<string, unknown>>;
+            "limit": number;
+            "offset": number;
           };
         };
       };
@@ -20253,26 +22685,26 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "correlation_rulesets"?: Array<{
-              "created_at"?: string;
+            "correlation_rulesets": Array<{
+              "created_at": string;
               "description"?: string;
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
               "project_id"?: string;
-              "rules"?: Array<{
+              "rules": Array<{
                 "confidence"?: number;
-                "expression"?: string;
-                "extract_type"?: string;
-                "name"?: string;
+                "expression": string;
+                "extract_type": string;
+                "name": string;
                 "rule_id"?: string;
-                "source"?: string;
+                "source": string;
               }>;
               "source"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             }>;
-            "count"?: number;
-            "limit"?: number;
-            "offset"?: number;
+            "count": number;
+            "limit": number;
+            "offset": number;
           };
         };
       };
@@ -20307,10 +22739,10 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "actions"?: Array<Record<string, unknown>>;
-            "common_fields"?: Array<Record<string, unknown>>;
+            "actions": Array<Record<string, unknown>>;
+            "common_fields": Array<Record<string, unknown>>;
             "protocol"?: string;
-            "protocols"?: Array<string>;
+            "protocols": Array<string>;
           };
         };
       };
@@ -20335,6 +22767,7 @@ export interface operations {
         "id": string;
       };
       "query"?: {
+        "cursor"?: string;
         "limit"?: number;
         "offset"?: number;
       };
@@ -20343,7 +22776,29 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "count": number;
+            "has_more": boolean;
+            "limit": number;
+            "next_cursor": string;
+            "offset": number;
+            "revision": string;
+            "rows": Array<{
+              "created_at": string;
+              "data": Record<string, string>;
+              "id": string;
+              "pool_id": string;
+              "status"?: string;
+              "updated_at": string;
+              "version": number;
+            }>;
+            "total": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -20356,7 +22811,17 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -20914,31 +23379,31 @@ export interface operations {
         content: {
           "application/json": {
             "evidence"?: Array<string>;
-            "generated_at"?: string;
-            "packs"?: Array<{
+            "generated_at": string;
+            "packs": Array<{
               "evidence"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
               "profiles"?: Array<{
                 "example_external_metrics"?: Array<Record<string, unknown>>;
                 "expected_labels"?: Array<string>;
-                "id"?: string;
+                "id": string;
                 "metric_contract"?: Array<Record<string, unknown>>;
                 "missing_metrics"?: Array<string>;
-                "name"?: string;
+                "name": string;
                 "naming_conventions"?: Array<string>;
                 "provider"?: string;
                 "required_metrics"?: Array<string>;
-                "resource_type"?: string;
-                "status"?: string;
+                "resource_type": string;
+                "status": string;
                 "suggested_dashboards"?: Array<string>;
                 "summary"?: string;
               }>;
-              "resource_type"?: string;
+              "resource_type": string;
               "setup_actions"?: Array<string>;
-              "signals"?: Array<string>;
-              "source"?: string;
-              "status"?: string;
+              "signals": Array<string>;
+              "source": string;
+              "status": string;
             }>;
           };
         };
@@ -21239,17 +23704,17 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "default_profile"?: string;
-            "download_formats"?: Array<string>;
-            "generated_at"?: string;
-            "profiles"?: Array<{
+            "default_profile": string;
+            "download_formats": Array<string>;
+            "generated_at": string;
+            "profiles": Array<{
               "audience"?: string;
               "best_for"?: string;
-              "description"?: string;
-              "export_formats"?: Array<string>;
-              "id"?: string;
-              "included_sections"?: Array<string>;
-              "label"?: string;
+              "description": string;
+              "export_formats": Array<string>;
+              "id": string;
+              "included_sections": Array<string>;
+              "label": string;
               "section_order"?: Array<string>;
             }>;
           };
@@ -21519,8 +23984,8 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "service_accounts"?: Array<Record<string, unknown>>;
+            "count": number;
+            "service_accounts": Array<Record<string, unknown>>;
           };
         };
       };
@@ -21564,10 +24029,10 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "limit"?: number;
-            "notes"?: Array<Record<string, unknown>>;
-            "offset"?: number;
-            "test_id"?: string;
+            "limit": number;
+            "notes": Array<Record<string, unknown>>;
+            "offset": number;
+            "test_id": string;
           };
         };
       };
@@ -21653,31 +24118,31 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "limit"?: number;
-            "offset"?: number;
-            "snapshots"?: Array<{
-              "created_at"?: string;
-              "generated_at"?: string;
-              "id"?: string;
+            "count": number;
+            "limit": number;
+            "offset": number;
+            "snapshots": Array<{
+              "created_at": string;
+              "generated_at": string;
+              "id": string;
               "project_id"?: string;
-              "usage"?: {
+              "usage": {
                 "by_project"?: Array<Record<string, unknown>>;
                 "by_protocol"?: Array<Record<string, unknown>>;
                 "by_region"?: Array<Record<string, unknown>>;
                 "by_user"?: Array<Record<string, unknown>>;
-                "generated_at"?: string;
+                "generated_at": string;
                 "notes"?: Array<string>;
                 "project_id"?: string;
-                "totals"?: {
+                "totals": {
                   "archive_bytes"?: number;
-                  "duration_seconds"?: number;
+                  "duration_seconds": number;
                   "group_count"?: number;
                   "key"?: string;
-                  "run_count"?: number;
-                  "status_counts"?: Record<string, unknown>;
-                  "total_vusers"?: number;
-                  "vuser_seconds"?: number;
+                  "run_count": number;
+                  "status_counts"?: Record<string, number>;
+                  "total_vusers": number;
+                  "vuser_seconds": number;
                 };
               };
             }>;
@@ -21724,12 +24189,12 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "count"?: number;
-            "has_more"?: boolean;
-            "limit"?: number;
-            "offset"?: number;
-            "total"?: number;
-            "users"?: Array<Record<string, unknown>>;
+            "count": number;
+            "has_more": boolean;
+            "limit": number;
+            "offset": number;
+            "total": number;
+            "users": Array<Record<string, unknown>>;
           };
         };
       };
@@ -21902,7 +24367,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "folder_id"?: string;
+          "folder_id"?: (string) | null;
         };
       };
     };
@@ -21956,7 +24421,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "folder_id"?: string;
+          "folder_id"?: (string) | null;
         };
       };
     };
@@ -22003,25 +24468,25 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "execution_postures"?: Array<string>;
-            "generated_at"?: string;
+            "execution_postures": Array<string>;
+            "generated_at": string;
             "notes"?: Array<string>;
-            "schema_version"?: string;
-            "status_counts"?: Record<string, unknown>;
-            "support_matrix"?: Array<{
+            "schema_version": string;
+            "status_counts": Record<string, number>;
+            "support_matrix": Array<{
               "action_editor"?: Array<string>;
-              "authoring_surface"?: string;
-              "display_name"?: string;
+              "authoring_surface": string;
+              "display_name": string;
               "evidence"?: Array<string>;
-              "execution_posture"?: string;
+              "execution_posture": string;
               "import_sources"?: Array<string>;
-              "protocol"?: string;
+              "protocol": string;
               "recommended_workflow"?: string;
               "remaining_gaps"?: Array<string>;
               "replay_evidence"?: Array<string>;
               "report_export"?: Array<string>;
               "runtime_config"?: Array<string>;
-              "status"?: string;
+              "status": string;
               "validation"?: Array<string>;
             }>;
           };
@@ -22092,7 +24557,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -22141,7 +24606,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -22189,7 +24654,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "404": {
@@ -22219,7 +24684,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "redirect_url"?: string;
+            "redirect_url": string;
           };
         };
       };
@@ -22440,47 +24905,47 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "correlation_packs"?: Array<{
-              "actions"?: Array<string>;
-              "display_name"?: string;
-              "package"?: string;
-              "status"?: string;
-              "tokens"?: Array<string>;
+            "correlation_packs": Array<{
+              "actions": Array<string>;
+              "display_name": string;
+              "package": string;
+              "status": string;
+              "tokens": Array<string>;
             }>;
-            "nca_boundary"?: {
-              "blocks_execution"?: boolean;
-              "can_execute_natively"?: boolean;
-              "posture"?: string;
+            "nca_boundary": {
+              "blocks_execution": boolean;
+              "can_execute_natively": boolean;
+              "posture": string;
               "reasons"?: Array<string>;
-              "runner_requirement"?: string;
+              "runner_requirement": string;
             };
-            "notes"?: Array<string>;
-            "scenario_templates"?: Array<{
-              "description"?: string;
+            "notes": Array<string>;
+            "scenario_templates": Array<{
+              "description": string;
               "evidence"?: Array<string>;
-              "flow"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
-              "package"?: string;
+              "flow": Array<string>;
+              "id": string;
+              "name": string;
+              "package": string;
               "parameters"?: Array<string>;
             }>;
-            "support_matrix"?: Array<{
-              "bundle"?: string;
+            "support_matrix": Array<{
+              "bundle": string;
               "density_envelope"?: string;
-              "display_name"?: string;
-              "entitlement_required"?: string;
+              "display_name": string;
+              "entitlement_required": string;
               "evidence"?: Array<string>;
-              "execution_posture"?: string;
-              "id"?: string;
+              "execution_posture": string;
+              "id": string;
               "import_coverage"?: Array<string>;
-              "importance"?: string;
-              "protocol"?: string;
+              "importance": string;
+              "protocol": string;
               "recommended_workflow"?: string;
               "remaining_gaps"?: Array<string>;
-              "runner_requirement"?: string;
+              "runner_requirement": string;
               "runtime_coverage"?: Array<string>;
-              "source"?: string;
-              "status"?: string;
+              "source": string;
+              "status": string;
               "supported_inputs"?: Array<string>;
             }>;
           };
@@ -22515,7 +24980,7 @@ export interface operations {
           "provider_id"?: string;
           "provider_status"?: string;
           "region"?: string;
-          "tags"?: Record<string, unknown>;
+          "tags"?: Record<string, string>;
           "target"?: string;
         };
       };
@@ -22575,7 +25040,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "bindings"?: Record<string, unknown>;
+          "bindings"?: Record<string, string>;
           "description"?: string;
           "enabled"?: boolean;
           "name"?: string;
@@ -22715,42 +25180,42 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
+            "session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -22824,64 +25289,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -22922,64 +25387,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -23019,7 +25484,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -23056,11 +25521,11 @@ export interface operations {
             "application_id"?: string;
             "archive"?: Record<string, unknown>;
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -23069,9 +25534,9 @@ export interface operations {
             "baseline_pinned_at"?: string;
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -23081,26 +25546,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -23110,24 +25575,24 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
@@ -23136,19 +25601,147 @@ export interface operations {
             "capacity_window_start_at"?: string;
             "comparison_baseline"?: {
               "completed_at"?: string;
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "policy"?: string;
-              "source_test_id"?: string;
-              "source_test_name"?: string;
-              "transactions"?: Record<string, unknown>;
+              "source_test_id": string;
+              "source_test_name": string;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "created_at"?: string;
+            "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
             "cumulative_pause_ns"?: Record<string, unknown>;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
-            "duration_ns"?: Record<string, unknown>;
+            "duration": string;
+            "duration_ns": Record<string, unknown>;
             "ended_at"?: string;
             "error"?: string;
             "execution_plan_approval"?: {
@@ -23167,13 +25760,13 @@ export interface operations {
             };
             "folder_id"?: string;
             "generator_shards"?: Array<{
-              "group"?: string;
+              "group": string;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
-              "target"?: string;
+              "target": string;
               "vuser_id_offset"?: number;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
@@ -23196,14 +25789,18 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "goal_targets"?: Record<string, unknown>;
-            "groups"?: Array<{
+            "goal_targets"?: Record<string, {
+              "group": string;
+              "target_tps": number;
+              "updated_at"?: string;
+            }>;
+            "groups": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -23212,8 +25809,8 @@ export interface operations {
               "iteration_override"?: number;
               "iteration_override_known"?: boolean;
               "iterations"?: number;
-              "name"?: string;
-              "protocol"?: string;
+              "name": string;
+              "protocol": string;
               "ramp_down"?: string;
               "ramp_up"?: string;
               "role"?: string;
@@ -23232,7 +25829,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -23253,16 +25850,16 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
-              "script_name"?: string;
+              "script_id": string;
+              "script_name": string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "history"?: Array<{
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -23277,48 +25874,98 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, Record<string, unknown>>;
+                "by_region"?: Record<string, Record<string, unknown>>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<Record<string, unknown>>;
-                "nodes"?: Array<Record<string, unknown>>;
+                "edges": Array<Record<string, unknown>>;
+                "nodes": Array<Record<string, unknown>>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -23332,7 +25979,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -23343,17 +25990,73 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<Record<string, unknown>>;
+                "targets": Array<Record<string, unknown>>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -23379,27 +26082,48 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
             }>;
-            "id"?: string;
+            "id": string;
             "live_metrics"?: {
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -23414,66 +26138,167 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "by_region"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<{
+                "edges": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
                   "p95_ms"?: number;
-                  "source"?: string;
-                  "target"?: string;
+                  "source": string;
+                  "target": string;
                   "transactions"?: number;
                 }>;
-                "nodes"?: Array<{
+                "nodes": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
-                  "id"?: string;
-                  "kind"?: string;
-                  "label"?: string;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
                   "p95_ms"?: number;
                   "status"?: string;
                   "transactions"?: number;
                 }>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -23487,7 +26312,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -23498,37 +26323,179 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<{
+                "targets": Array<{
                   "connect_ms"?: number;
                   "dns_ms"?: number;
-                  "endpoint"?: string;
+                  "endpoint": string;
                   "error"?: string;
                   "hops"?: number;
                   "http_status"?: number;
                   "ip"?: string;
                   "jitter_ms"?: number;
-                  "last_success"?: boolean;
-                  "latency_ms"?: number;
-                  "name"?: string;
+                  "last_success": boolean;
+                  "latency_ms": number;
+                  "name": string;
                   "probe_method"?: string;
                   "probe_total_ms"?: number;
                   "route_status"?: string;
                   "sample_count"?: number;
                   "success_rate_pct"?: number;
-                  "timestamp"?: string;
+                  "timestamp": string;
                   "tls_ms"?: number;
                   "ttfb_ms"?: number;
                 }>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -23554,22 +26521,86 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "name"?: string;
+            "name": string;
             "paused_at"?: string;
             "pending_reason"?: string;
             "pending_since"?: string;
@@ -23589,7 +26620,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -23616,33 +26647,33 @@ export interface operations {
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
               "findings"?: Array<{
                 "area"?: string;
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts"?: Record<string, number>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
@@ -23653,21 +26684,21 @@ export interface operations {
             "script_name"?: string;
             "script_shakeout"?: boolean;
             "sparkline"?: Array<{
-              "timestamp"?: string;
-              "tps"?: number;
+              "timestamp": string;
+              "tps": number;
             }>;
             "start_authorization"?: {
               "capacity_shortfall"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
-                "available_generators"?: number;
-                "recommended_generators"?: number;
-                "shortfall_generators"?: number;
-                "total_vusers"?: number;
+                "available_generators": number;
+                "recommended_generators": number;
+                "shortfall_generators": number;
+                "total_vusers": number;
               };
               "script_shakeout"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
                 "review_evidence_sha256"?: string;
@@ -23677,7 +26708,7 @@ export interface operations {
             "started_at"?: string;
             "started_by_display_name"?: string;
             "started_by_subject"?: string;
-            "status"?: string;
+            "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_health"?: {
@@ -23686,16 +26717,23 @@ export interface operations {
               "breach_started_at"?: string;
               "conditions"?: Array<string>;
               "current_signature"?: string;
-              "last_observed_at"?: string;
+              "last_observed_at": string;
               "last_transition_at"?: string;
-              "severity"?: string;
-              "status"?: string;
+              "severity": string;
+              "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
             };
             "timeslot_id"?: string;
-            "total_vusers"?: number;
-            "vuser_ramps"?: Record<string, unknown>;
+            "total_vusers": number;
+            "vuser_ramps"?: Record<string, {
+              "group": string;
+              "ramp_duration": string;
+              "ramp_duration_seconds": number;
+              "start_vusers": number;
+              "started_at": string;
+              "target_vusers": number;
+            }>;
           };
         };
       };
@@ -23731,50 +26769,50 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "candidates"?: Array<{
-              "archive_path"?: string;
-              "artifact_type"?: string;
-              "completed_at"?: string;
+            "candidates": Array<{
+              "archive_path": string;
+              "artifact_type": string;
+              "completed_at": string;
               "compliance_class"?: string;
-              "expired_at"?: string;
+              "expired_at": string;
               "policy_name"?: string;
               "project_id"?: string;
               "reason"?: string;
               "release_id"?: string;
-              "retention_days"?: number;
+              "retention_days": number;
               "run_status"?: string;
-              "test_id"?: string;
+              "test_id": string;
             }>;
-            "dry_run"?: boolean;
-            "generated_at"?: string;
+            "dry_run": boolean;
+            "generated_at": string;
             "har_candidates"?: Array<{
-              "expired_at"?: string;
-              "modified_at"?: string;
-              "path"?: string;
-              "retention_days"?: number;
-              "sensitivity"?: string;
-              "size_bytes"?: number;
+              "expired_at": string;
+              "modified_at": string;
+              "path": string;
+              "retention_days": number;
+              "sensitivity": string;
+              "size_bytes": number;
             }>;
             "har_results"?: Array<{
               "error"?: string;
-              "path"?: string;
-              "status"?: string;
+              "path": string;
+              "status": string;
             }>;
             "results"?: Array<{
-              "archive_path"?: string;
+              "archive_path": string;
               "compliance_class"?: string;
               "error"?: string;
               "reason"?: string;
-              "status"?: string;
-              "test_id"?: string;
+              "status": string;
+              "test_id": string;
             }>;
-            "summary"?: {
-              "candidate_count"?: number;
-              "failed_count"?: number;
+            "summary": {
+              "candidate_count": number;
+              "failed_count": number;
               "har_candidate_count"?: number;
               "har_failed_count"?: number;
               "har_pruned_count"?: number;
-              "pruned_count"?: number;
+              "pruned_count": number;
             };
           };
         };
@@ -23825,11 +26863,11 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -23860,11 +26898,11 @@ export interface operations {
           };
           "groups"?: Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -23883,7 +26921,7 @@ export interface operations {
               "browser"?: Record<string, unknown>;
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -23920,7 +26958,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -23958,25 +26996,25 @@ export interface operations {
           "application/json": {
             "blocking_conflicts"?: Array<{
               "available_generators"?: number;
-              "code"?: string;
+              "code": string;
               "ends_at"?: string;
-              "message"?: string;
+              "message": string;
               "required_generators"?: number;
               "resource_id"?: string;
-              "severity"?: string;
+              "severity": string;
               "source"?: string;
               "starts_at"?: string;
             }>;
-            "candidate_window"?: {
-              "duration_seconds"?: number;
-              "end_at"?: string;
-              "start_at"?: string;
+            "candidate_window": {
+              "duration_seconds": number;
+              "end_at": string;
+              "start_at": string;
             };
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -23986,26 +27024,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -24015,51 +27053,51 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
             };
-            "decision"?: string;
+            "decision": string;
             "intent"?: string;
-            "queue_allowed"?: boolean;
+            "queue_allowed": boolean;
             "queue_reason"?: string;
             "recommended_assignment"?: {
-              "available_labels"?: Record<string, unknown>;
+              "available_labels"?: Record<string, Array<string>>;
               "available_regions"?: Array<string>;
               "available_targets"?: Array<string>;
-              "mode"?: string;
+              "mode": string;
               "recommended_targets"?: Array<string>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
-            "schedule_allowed"?: boolean;
-            "start_now_allowed"?: boolean;
+            "schedule_allowed": boolean;
+            "start_now_allowed": boolean;
             "warnings"?: Array<{
               "available_generators"?: number;
-              "code"?: string;
+              "code": string;
               "ends_at"?: string;
-              "message"?: string;
+              "message": string;
               "required_generators"?: number;
               "resource_id"?: string;
-              "severity"?: string;
+              "severity": string;
               "source"?: string;
               "starts_at"?: string;
             }>;
@@ -24116,44 +27154,44 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "applied"?: boolean;
+            "applied": boolean;
             "applied_count"?: number;
-            "authoring_health"?: {
-              "inputs"?: Array<{
+            "authoring_health": {
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
             "blocked"?: boolean;
-            "changes"?: Array<{
+            "changes": Array<{
               "after"?: string;
               "before"?: string;
-              "kind"?: string;
-              "path"?: string;
+              "kind": string;
+              "path": string;
             }>;
-            "draft"?: Record<string, unknown>;
-            "extractor"?: Record<string, unknown>;
+            "draft": Record<string, unknown>;
+            "extractor": Record<string, unknown>;
             "items"?: Array<{
-              "applied"?: boolean;
+              "applied": boolean;
               "changes"?: Array<{
                 "after"?: string;
                 "before"?: string;
-                "kind"?: string;
-                "path"?: string;
+                "kind": string;
+                "path": string;
               }>;
               "confidence"?: number;
               "error"?: string;
-              "extractor"?: Record<string, unknown>;
-              "name"?: string;
-              "review_status"?: string;
+              "extractor": Record<string, unknown>;
+              "name": string;
+              "review_status": string;
               "severity"?: string;
             }>;
             "review_required"?: Array<string>;
-            "session_id"?: string;
+            "session_id": string;
           };
         };
       };
@@ -24257,10 +27295,10 @@ export interface operations {
           "correlation_observations"?: Array<{
             "id"?: number;
             "request_body"?: string;
-            "request_headers"?: Record<string, unknown>;
+            "request_headers"?: Record<string, string>;
             "request_url"?: string;
             "response_body"?: string;
-            "response_headers"?: Record<string, unknown>;
+            "response_headers"?: Record<string, string>;
           }>;
           "include_static_assets"?: boolean;
           "name"?: string;
@@ -24275,107 +27313,107 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "diff"?: {
-              "captured_requests"?: number;
-              "endpoint_coverage_pct"?: number;
-              "generated_http_actions"?: number;
+            "diff": {
+              "captured_requests": number;
+              "endpoint_coverage_pct": number;
+              "generated_http_actions": number;
               "generated_protocol"?: string;
               "hosts"?: Array<string>;
               "methods"?: Array<string>;
               "notes"?: Array<string>;
-              "source_browser_actions"?: number;
+              "source_browser_actions": number;
               "source_protocol"?: string;
             };
-            "generated_at"?: string;
+            "generated_at": string;
             "generated_script"?: Record<string, unknown>;
-            "governance"?: {
-              "approval_required"?: boolean;
-              "approval_status"?: string;
+            "governance": {
+              "approval_required": boolean;
+              "approval_status": string;
               "approved_at"?: string;
               "approved_by"?: string;
               "blockers"?: Array<{
                 "action"?: string;
                 "evidence"?: string;
-                "severity"?: string;
-                "summary"?: string;
+                "severity": string;
+                "summary": string;
               }>;
               "next_actions"?: Array<string>;
               "required_evidence"?: Array<string>;
-              "status"?: string;
+              "status": string;
             };
             "replay_session_id"?: string;
-            "review"?: {
+            "review": {
               "auth_findings"?: Array<{
                 "action"?: string;
                 "evidence"?: string;
-                "severity"?: string;
-                "summary"?: string;
+                "severity": string;
+                "summary": string;
               }>;
               "blocking_findings"?: Array<{
                 "action"?: string;
                 "evidence"?: string;
-                "severity"?: string;
-                "summary"?: string;
+                "severity": string;
+                "summary": string;
               }>;
-              "captured_requests"?: number;
+              "captured_requests": number;
               "cookie_findings"?: Array<{
                 "action"?: string;
                 "evidence"?: string;
-                "severity"?: string;
-                "summary"?: string;
+                "severity": string;
+                "summary": string;
               }>;
               "correlation_candidates"?: Array<{
                 "action"?: string;
                 "evidence"?: string;
-                "name"?: string;
-                "source"?: string;
+                "name": string;
+                "source": string;
               }>;
               "correlation_engine"?: string;
               "data_source_candidates"?: Array<{
                 "action"?: string;
                 "evidence"?: string;
-                "name"?: string;
-                "source"?: string;
+                "name": string;
+                "source": string;
                 "value"?: string;
               }>;
-              "evidence"?: {
-                "correlation_durable"?: boolean;
+              "evidence": {
+                "correlation_durable": boolean;
                 "correlation_observations"?: number;
-                "durable"?: boolean;
-                "network_durable"?: boolean;
-                "network_entries"?: number;
+                "durable": boolean;
+                "network_durable": boolean;
+                "network_entries": number;
                 "replay_network_entries"?: number;
                 "replay_session_id"?: string;
-                "replay_session_resolved"?: boolean;
+                "replay_session_resolved": boolean;
                 "replay_session_status"?: string;
-                "replay_session_successful"?: boolean;
+                "replay_session_successful": boolean;
                 "required_artifacts"?: Array<string>;
                 "source_browser_script_id"?: string;
                 "source_browser_script_name"?: string;
-                "verification_status"?: string;
+                "verification_status": string;
               };
               "findings"?: Array<string>;
-              "generated_http_actions"?: number;
+              "generated_http_actions": number;
               "next_actions"?: Array<string>;
-              "promotion_status"?: string;
-              "skipped_static_assets"?: number;
-              "source_browser_actions"?: number;
-              "status"?: string;
+              "promotion_status": string;
+              "skipped_static_assets": number;
+              "source_browser_actions": number;
+              "status": string;
             };
-            "scenario_template"?: {
-              "duration"?: string;
-              "groups"?: Array<{
+            "scenario_template": {
+              "duration": string;
+              "groups": Array<{
                 "claim_policy"?: string;
-                "name"?: string;
-                "protocol"?: string;
-                "purpose"?: string;
-                "script_id"?: string;
-                "vusers"?: number;
+                "name": string;
+                "protocol": string;
+                "purpose": string;
+                "script_id": string;
+                "vusers": number;
               }>;
-              "name"?: string;
+              "name": string;
               "notes"?: Array<string>;
             };
-            "schema_version"?: string;
+            "schema_version": string;
             "source_browser_script"?: Record<string, unknown>;
             "warnings"?: Array<string>;
           };
@@ -24454,7 +27492,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
-          "bindings"?: Record<string, unknown>;
+          "bindings"?: Record<string, string>;
           "end"?: string;
           "import_session_id"?: string;
           "project_id"?: string;
@@ -24468,31 +27506,31 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "configured"?: boolean;
-            "dashboards"?: Array<{
-              "dashboard_id"?: string;
+            "configured": boolean;
+            "dashboards": Array<{
+              "dashboard_id": string;
               "dashboard_title"?: string;
               "datasource_id"?: string;
-              "panels"?: Array<{
+              "panels": Array<{
                 "error"?: string;
-                "grid_pos"?: Record<string, unknown>;
-                "kind"?: string;
-                "panel_id"?: number;
+                "grid_pos": Record<string, unknown>;
+                "kind": string;
+                "panel_id": number;
                 "row_title"?: string;
                 "series"?: Array<Record<string, unknown>>;
                 "threshold_breached"?: boolean;
                 "threshold_detail"?: string;
                 "threshold_evaluated"?: boolean;
                 "thresholds"?: Array<Record<string, unknown>>;
-                "title"?: string;
+                "title": string;
                 "unit"?: string;
                 "value"?: number;
               }>;
             }>;
             "datasource_id"?: string;
-            "enabled"?: boolean;
+            "enabled": boolean;
             "end"?: string;
-            "generated_at"?: string;
+            "generated_at": string;
             "start"?: string;
             "step_seconds"?: number;
           };
@@ -24640,19 +27678,19 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "configured"?: boolean;
-            "enabled"?: boolean;
+            "configured": boolean;
+            "enabled": boolean;
             "end"?: string;
-            "generated_at"?: string;
-            "graphs"?: Array<{
-              "id"?: string;
-              "series"?: Array<{
-                "key"?: string;
-                "label"?: string;
-                "labels"?: Record<string, unknown>;
-                "values"?: Array<Record<string, unknown>>;
+            "generated_at": string;
+            "graphs": Array<{
+              "id": string;
+              "series": Array<{
+                "key": string;
+                "label": string;
+                "labels"?: Record<string, string>;
+                "values": Array<Record<string, unknown>>;
               }>;
-              "title"?: string;
+              "title": string;
               "unit"?: string;
             }>;
             "start"?: string;
@@ -24712,57 +27750,57 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "bundle_counts"?: Record<string, unknown>;
-            "entitlements"?: Array<{
-              "bundles"?: Array<string>;
-              "default"?: string;
-              "display_name"?: string;
-              "governance"?: string;
-              "id"?: string;
-              "protocols"?: Array<string>;
+            "bundle_counts": Record<string, Record<string, number>>;
+            "entitlements": Array<{
+              "bundles": Array<string>;
+              "default": string;
+              "display_name": string;
+              "governance": string;
+              "id": string;
+              "protocols": Array<string>;
             }>;
-            "notes"?: Array<string>;
-            "runner_classes"?: Array<{
-              "capacity_signal"?: string;
-              "display_name"?: string;
-              "id"?: string;
+            "notes": Array<string>;
+            "runner_classes": Array<{
+              "capacity_signal": string;
+              "display_name": string;
+              "id": string;
               "notes"?: string;
-              "os"?: string;
+              "os": string;
               "placement_labels"?: Array<string>;
-              "protocols"?: Array<string>;
+              "protocols": Array<string>;
             }>;
-            "sources"?: Array<{
-              "id"?: string;
-              "title"?: string;
-              "url"?: string;
-              "validated_on"?: string;
+            "sources": Array<{
+              "id": string;
+              "title": string;
+              "url": string;
+              "validated_on": string;
             }>;
-            "status_counts"?: Record<string, unknown>;
-            "support_matrix"?: Array<{
-              "bundle"?: string;
+            "status_counts": Record<string, number>;
+            "support_matrix": Array<{
+              "bundle": string;
               "density_envelope"?: string;
-              "display_name"?: string;
-              "entitlement_required"?: string;
+              "display_name": string;
+              "entitlement_required": string;
               "evidence"?: Array<string>;
-              "execution_posture"?: string;
-              "id"?: string;
+              "execution_posture": string;
+              "id": string;
               "import_coverage"?: Array<string>;
-              "importance"?: string;
-              "protocol"?: string;
+              "importance": string;
+              "protocol": string;
               "recommended_workflow"?: string;
               "remaining_gaps"?: Array<string>;
-              "runner_requirement"?: string;
+              "runner_requirement": string;
               "runtime_coverage"?: Array<string>;
-              "source"?: string;
-              "status"?: string;
+              "source": string;
+              "status": string;
               "supported_inputs"?: Array<string>;
             }>;
-            "workstreams"?: Array<{
+            "workstreams": Array<{
               "complete"?: Array<string>;
               "deferred"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
-              "status"?: string;
+              "id": string;
+              "name": string;
+              "status": string;
             }>;
           };
         };
@@ -24955,31 +27993,31 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "configured"?: boolean;
-            "dashboards"?: Array<{
-              "dashboard_id"?: string;
+            "configured": boolean;
+            "dashboards": Array<{
+              "dashboard_id": string;
               "dashboard_title"?: string;
               "datasource_id"?: string;
-              "panels"?: Array<{
+              "panels": Array<{
                 "error"?: string;
-                "grid_pos"?: Record<string, unknown>;
-                "kind"?: string;
-                "panel_id"?: number;
+                "grid_pos": Record<string, unknown>;
+                "kind": string;
+                "panel_id": number;
                 "row_title"?: string;
                 "series"?: Array<Record<string, unknown>>;
                 "threshold_breached"?: boolean;
                 "threshold_detail"?: string;
                 "threshold_evaluated"?: boolean;
                 "thresholds"?: Array<Record<string, unknown>>;
-                "title"?: string;
+                "title": string;
                 "unit"?: string;
                 "value"?: number;
               }>;
             }>;
             "datasource_id"?: string;
-            "enabled"?: boolean;
+            "enabled": boolean;
             "end"?: string;
-            "generated_at"?: string;
+            "generated_at": string;
             "start"?: string;
             "step_seconds"?: number;
           };
@@ -25235,7 +28273,7 @@ export interface operations {
             "active_tests"?: number;
             "error"?: string;
             "lease"?: Record<string, unknown>;
-            "status"?: string;
+            "status": string;
           };
         };
       };
@@ -25284,57 +28322,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -25343,9 +28381,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -25355,26 +28393,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -25384,24 +28422,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -25410,19 +28448,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -25441,13 +28521,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -25470,14 +28550,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -25486,8 +28570,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -25501,7 +28585,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -25514,16 +28598,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -25538,34 +28622,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -25579,7 +28663,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -25590,17 +28674,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -25626,27 +28710,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -25661,48 +28745,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -25716,7 +28850,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -25727,17 +28861,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -25763,22 +28953,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -25798,7 +29009,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -25825,33 +29036,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -25862,21 +29073,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -25886,7 +29097,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -25895,16 +29106,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -25959,57 +29177,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -26018,9 +29236,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -26030,26 +29248,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -26059,24 +29277,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -26085,19 +29303,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -26116,13 +29376,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -26145,14 +29405,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -26161,8 +29425,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -26176,7 +29440,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -26189,16 +29453,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -26213,34 +29477,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -26254,7 +29518,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -26265,17 +29529,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -26301,27 +29565,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -26336,48 +29600,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -26391,7 +29705,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -26402,17 +29716,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -26438,22 +29808,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -26473,7 +29864,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -26500,33 +29891,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -26537,21 +29928,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -26561,7 +29952,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -26570,16 +29961,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -26634,57 +30032,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -26693,9 +30091,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -26705,26 +30103,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -26734,24 +30132,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -26760,19 +30158,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -26791,13 +30231,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -26820,14 +30260,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -26836,8 +30280,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -26851,7 +30295,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -26864,16 +30308,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -26888,34 +30332,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -26929,7 +30373,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -26940,17 +30384,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -26976,27 +30420,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -27011,48 +30455,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -27066,7 +30560,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -27077,17 +30571,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -27113,22 +30663,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -27148,7 +30719,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -27175,33 +30746,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -27212,21 +30783,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -27236,7 +30807,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -27245,16 +30816,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -27309,57 +30887,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -27368,9 +30946,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -27380,26 +30958,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -27409,24 +30987,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -27435,19 +31013,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -27466,13 +31086,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -27495,14 +31115,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -27511,8 +31135,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -27526,7 +31150,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -27539,16 +31163,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -27563,34 +31187,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -27604,7 +31228,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -27615,17 +31239,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -27651,27 +31275,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -27686,48 +31310,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -27741,7 +31415,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -27752,17 +31426,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -27788,22 +31518,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -27823,7 +31574,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -27850,33 +31601,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -27887,21 +31638,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -27911,7 +31662,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -27920,16 +31671,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -27984,57 +31742,57 @@ export interface operations {
         content: {
           "application/json": {
             "action"?: Record<string, unknown>;
-            "link"?: {
-              "created_at"?: string;
+            "link": {
+              "created_at": string;
               "local_project_id"?: string;
-              "local_run_id"?: string;
+              "local_run_id": string;
               "local_scenario_id"?: string;
-              "remote_id"?: string;
+              "remote_id": string;
               "remote_project_id"?: string;
-              "remote_test_id"?: string;
-              "remote_url"?: string;
-              "status"?: string;
-              "updated_at"?: string;
+              "remote_test_id": string;
+              "remote_url": string;
+              "status": string;
+              "updated_at": string;
             };
             "pushed"?: Array<{
-              "action"?: string;
-              "content_hash"?: string;
-              "kind"?: string;
-              "local_item_id"?: string;
-              "source_instance_id"?: string;
-              "source_item_id"?: string;
+              "action": string;
+              "content_hash": string;
+              "kind": string;
+              "local_item_id": string;
+              "source_instance_id": string;
+              "source_item_id": string;
             }>;
-            "remote"?: {
-              "auth_method"?: string;
-              "base_url"?: string;
+            "remote": {
+              "auth_method": string;
+              "base_url": string;
               "capabilities"?: {
-                "generated_at"?: string;
-                "instance_id"?: string;
-                "item_kinds"?: Array<string>;
-                "operations"?: Array<string>;
-                "schema_version"?: string;
+                "generated_at": string;
+                "instance_id": string;
+                "item_kinds": Array<string>;
+                "operations": Array<string>;
+                "schema_version": string;
               };
-              "created_at"?: string;
-              "credential_configured"?: boolean;
+              "created_at": string;
+              "credential_configured": boolean;
               "credential_ref"?: string;
               "default_project_id"?: string;
-              "id"?: string;
+              "id": string;
               "last_error"?: string;
               "last_health_check"?: string;
-              "name"?: string;
-              "project_mappings"?: Record<string, unknown>;
+              "name": string;
+              "project_mappings"?: Record<string, string>;
               "status"?: string;
-              "updated_at"?: string;
+              "updated_at": string;
             };
             "test"?: {
               "application_id"?: string;
               "archive"?: Record<string, unknown>;
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -28043,9 +31801,9 @@ export interface operations {
               "baseline_pinned_at"?: string;
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -28055,26 +31813,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -28084,24 +31842,24 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
@@ -28110,19 +31868,61 @@ export interface operations {
               "capacity_window_start_at"?: string;
               "comparison_baseline"?: {
                 "completed_at"?: string;
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "policy"?: string;
-                "source_test_id"?: string;
-                "source_test_name"?: string;
-                "transactions"?: Record<string, unknown>;
+                "source_test_id": string;
+                "source_test_name": string;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "created_at"?: string;
+              "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "cumulative_pause_ns"?: Record<string, unknown>;
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
-              "duration_ns"?: Record<string, unknown>;
+              "duration": string;
+              "duration_ns": Record<string, unknown>;
               "ended_at"?: string;
               "error"?: string;
               "execution_plan_approval"?: {
@@ -28141,13 +31941,13 @@ export interface operations {
               };
               "folder_id"?: string;
               "generator_shards"?: Array<{
-                "group"?: string;
+                "group": string;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
-                "target"?: string;
+                "target": string;
                 "vuser_id_offset"?: number;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
@@ -28170,14 +31970,18 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "goal_targets"?: Record<string, unknown>;
-              "groups"?: Array<{
+              "goal_targets"?: Record<string, {
+                "group": string;
+                "target_tps": number;
+                "updated_at"?: string;
+              }>;
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
@@ -28186,8 +31990,8 @@ export interface operations {
                 "iteration_override"?: number;
                 "iteration_override_known"?: boolean;
                 "iterations"?: number;
-                "name"?: string;
-                "protocol"?: string;
+                "name": string;
+                "protocol": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "role"?: string;
@@ -28201,7 +32005,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -28214,16 +32018,16 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
-                "script_name"?: string;
+                "script_id": string;
+                "script_name": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
               "history"?: Array<{
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -28238,34 +32042,34 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, Record<string, unknown>>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, Record<string, unknown>>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, Record<string, unknown>>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -28279,7 +32083,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -28290,17 +32094,17 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, Record<string, unknown>>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, Record<string, unknown>>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, Record<string, unknown>>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -28326,27 +32130,27 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, Record<string, unknown>>;
               }>;
-              "id"?: string;
+              "id": string;
               "live_metrics"?: {
-                "active_vusers"?: number;
+                "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
-                "avg_response_ms"?: number;
+                "avg_response_ms": number;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -28361,48 +32165,98 @@ export interface operations {
                   "avg_lcp_ms"?: number;
                   "avg_long_task_count"?: number;
                   "avg_ttfb_ms"?: number;
-                  "samples"?: number;
+                  "samples": number;
                 };
-                "browser_by_device"?: Record<string, unknown>;
+                "browser_by_device"?: Record<string, {
+                  "avg_blocking_resources"?: number;
+                  "avg_browser_process_cpu_pct"?: number;
+                  "avg_browser_process_mem_mb"?: number;
+                  "avg_cls_score"?: number;
+                  "avg_fcp_ms"?: number;
+                  "avg_inp_ms"?: number;
+                  "avg_js_heap_used_mb"?: number;
+                  "avg_lcp_ms"?: number;
+                  "avg_long_task_count"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "browser_engine"?: string;
+                  "device_platform"?: string;
+                  "device_profile"?: string;
+                  "device_tier"?: string;
+                  "samples": number;
+                }>;
                 "capacity_status"?: {
-                  "allocated_vusers"?: number;
-                  "available_generators"?: number;
-                  "by_protocol"?: Record<string, unknown>;
-                  "by_region"?: Record<string, unknown>;
-                  "queued_vusers"?: number;
-                  "recommended_generators"?: number;
-                  "rejected_vusers"?: number;
-                  "saturated"?: boolean;
+                  "allocated_vusers": number;
+                  "available_generators": number;
+                  "by_protocol"?: Record<string, Record<string, unknown>>;
+                  "by_region"?: Record<string, Record<string, unknown>>;
+                  "queued_vusers": number;
+                  "recommended_generators": number;
+                  "rejected_vusers": number;
+                  "saturated": boolean;
                 };
-                "dependency_health"?: Record<string, unknown>;
+                "dependency_health"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "dependency_map"?: {
-                  "edges"?: Array<Record<string, unknown>>;
-                  "nodes"?: Array<Record<string, unknown>>;
+                  "edges": Array<Record<string, unknown>>;
+                  "nodes": Array<Record<string, unknown>>;
                 };
-                "error_breakdown"?: Record<string, unknown>;
+                "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
                   "actions"?: Array<string>;
                   "affected_groups"?: Array<string>;
-                  "count"?: number;
+                  "count": number;
                   "error_pct"?: number;
                   "evidence_count"?: number;
                   "evidence_url"?: string;
-                  "first_seen"?: string;
+                  "first_seen": string;
                   "latest_evidence_id"?: string;
-                  "latest_seen"?: string;
-                  "sample"?: string;
-                  "signature"?: string;
+                  "latest_seen": string;
+                  "sample": string;
+                  "signature": string;
                   "snapshot_url"?: string;
                   "status_code"?: number;
                 }>;
-                "error_pct"?: number;
-                "generator_resources"?: Record<string, unknown>;
+                "error_pct": number;
+                "generator_resources"?: Record<string, {
+                  "active_vusers": number;
+                  "error_pct"?: number;
+                  "generator_id": string;
+                  "impact_reasons"?: Array<string>;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "region"?: string;
+                  "resources"?: Record<string, unknown>;
+                  "saturation_state"?: string;
+                  "target": string;
+                  "timestamp": string;
+                  "tps"?: number;
+                }>;
                 "goal_status"?: {
                   "breach_active"?: boolean;
                   "breach_duration_sec"?: number;
                   "cls_breached"?: boolean;
-                  "current_total_vusers"?: number;
-                  "current_tps"?: number;
+                  "current_total_vusers": number;
+                  "current_tps": number;
                   "dead_letter_rate_breached"?: boolean;
                   "end_to_end_latency_breached"?: boolean;
                   "error_breached"?: boolean;
@@ -28416,7 +32270,7 @@ export interface operations {
                   "max_error_count"?: number;
                   "max_vusers"?: number;
                   "min_vusers"?: number;
-                  "mode"?: string;
+                  "mode": string;
                   "partition_skew_breached"?: boolean;
                   "redelivery_rate_breached"?: boolean;
                   "server_processing_breached"?: boolean;
@@ -28427,17 +32281,73 @@ export interface operations {
                   "throttled_requests_breached"?: boolean;
                   "transfer_breached"?: boolean;
                 };
-                "groups"?: Record<string, unknown>;
+                "groups"?: Record<string, {
+                  "avg_response_ms": number;
+                  "errors": number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "target_tps"?: number;
+                  "throughput_gap_pct"?: number;
+                  "throughput_target_missed"?: boolean;
+                  "tps": number;
+                  "transactions": number;
+                  "vusers": number;
+                }>;
                 "latency"?: {
-                  "targets"?: Array<Record<string, unknown>>;
+                  "targets": Array<Record<string, unknown>>;
                 };
-                "network_profiles"?: Record<string, unknown>;
-                "p50_ms"?: number;
-                "p90_ms"?: number;
-                "p95_ms"?: number;
-                "p99_ms"?: number;
+                "network_profiles"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms": number;
+                "p99_ms": number;
                 "resources"?: Record<string, unknown>;
-                "soap_operations"?: Record<string, unknown>;
+                "soap_operations"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
                 "target_tps"?: number;
                 "telemetry"?: {
                   "browser_render_lag_ms"?: number;
@@ -28463,22 +32373,43 @@ export interface operations {
                   "breach_started_at"?: string;
                   "conditions"?: Array<string>;
                   "current_signature"?: string;
-                  "last_observed_at"?: string;
+                  "last_observed_at": string;
                   "last_transition_at"?: string;
-                  "severity"?: string;
-                  "status"?: string;
+                  "severity": string;
+                  "status": string;
                   "summary"?: string;
                   "sustained_breach"?: boolean;
                 };
                 "throughput_gap_pct"?: number;
                 "throughput_target_missed"?: boolean;
-                "timestamp"?: string;
-                "total_errors"?: number;
-                "total_transactions"?: number;
-                "tps"?: number;
-                "transactions"?: Record<string, unknown>;
+                "timestamp": string;
+                "total_errors": number;
+                "total_transactions": number;
+                "tps": number;
+                "transactions"?: Record<string, {
+                  "avg_connect_ms"?: number;
+                  "avg_dns_ms"?: number;
+                  "avg_ms": number;
+                  "avg_tls_ms"?: number;
+                  "avg_ttfb_ms"?: number;
+                  "correlation_count"?: number;
+                  "correlation_ids"?: Array<string>;
+                  "count": number;
+                  "dependency_target"?: string;
+                  "dependency_type"?: string;
+                  "errors": number;
+                  "last_error_at"?: string;
+                  "last_error_message"?: string;
+                  "last_status_code"?: number;
+                  "name": string;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms"?: number;
+                  "p99_ms": number;
+                  "server_telemetry"?: Record<string, unknown>;
+                }>;
               };
-              "name"?: string;
+              "name": string;
               "paused_at"?: string;
               "pending_reason"?: string;
               "pending_since"?: string;
@@ -28498,7 +32429,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -28525,33 +32456,33 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
@@ -28562,21 +32493,21 @@ export interface operations {
               "script_name"?: string;
               "script_shakeout"?: boolean;
               "sparkline"?: Array<{
-                "timestamp"?: string;
-                "tps"?: number;
+                "timestamp": string;
+                "tps": number;
               }>;
               "start_authorization"?: {
                 "capacity_shortfall"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
-                  "available_generators"?: number;
-                  "recommended_generators"?: number;
-                  "shortfall_generators"?: number;
-                  "total_vusers"?: number;
+                  "available_generators": number;
+                  "recommended_generators": number;
+                  "shortfall_generators": number;
+                  "total_vusers": number;
                 };
                 "script_shakeout"?: {
-                  "approved_at"?: string;
+                  "approved_at": string;
                   "approved_by_display_name"?: string;
                   "approved_by_subject"?: string;
                   "review_evidence_sha256"?: string;
@@ -28586,7 +32517,7 @@ export interface operations {
               "started_at"?: string;
               "started_by_display_name"?: string;
               "started_by_subject"?: string;
-              "status"?: string;
+              "status": string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
               "telemetry_health"?: {
@@ -28595,16 +32526,23 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "timeslot_id"?: string;
-              "total_vusers"?: number;
-              "vuser_ramps"?: Record<string, unknown>;
+              "total_vusers": number;
+              "vuser_ramps"?: Record<string, {
+                "group": string;
+                "ramp_duration": string;
+                "ramp_duration_seconds": number;
+                "start_vusers": number;
+                "started_at": string;
+                "target_vusers": number;
+              }>;
             };
           };
         };
@@ -28653,7 +32591,7 @@ export interface operations {
             "active_tests"?: number;
             "error"?: string;
             "lease"?: Record<string, unknown>;
-            "status"?: string;
+            "status": string;
           };
         };
       };
@@ -28693,7 +32631,7 @@ export interface operations {
           "redaction_rules"?: Array<Record<string, unknown>>;
           "replay_session_id"?: string;
           "script"?: Record<string, unknown>;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -28788,7 +32726,7 @@ export interface operations {
           "redaction_rules"?: Array<Record<string, unknown>>;
           "replay_session_id"?: string;
           "script"?: Record<string, unknown>;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -28949,42 +32887,42 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
+            "session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -29058,64 +32996,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -29156,64 +33094,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -29253,7 +33191,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -29353,100 +33291,100 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "correlation_candidates"?: Array<{
-              "blocking"?: boolean;
-              "count"?: number;
-              "evidence"?: Array<string>;
-              "extractor_type"?: string;
-              "id"?: string;
-              "name"?: string;
-              "package"?: string;
-              "recommended_action"?: string;
-              "source"?: string;
-              "token"?: string;
+            "correlation_candidates": Array<{
+              "blocking": boolean;
+              "count": number;
+              "evidence": Array<string>;
+              "extractor_type": string;
+              "id": string;
+              "name": string;
+              "package": string;
+              "recommended_action": string;
+              "source": string;
+              "token": string;
             }>;
-            "data_source_findings"?: Array<{
-              "count"?: number;
-              "evidence"?: Array<string>;
-              "field"?: string;
-              "id"?: string;
-              "recommended_action"?: string;
-              "status"?: string;
+            "data_source_findings": Array<{
+              "count": number;
+              "evidence": Array<string>;
+              "field": string;
+              "id": string;
+              "recommended_action": string;
+              "status": string;
             }>;
-            "detected_package_signals"?: Record<string, unknown>;
-            "execution_posture"?: {
-              "blocks_execution"?: boolean;
-              "can_execute_natively"?: boolean;
-              "posture"?: string;
+            "detected_package_signals": Record<string, number>;
+            "execution_posture": {
+              "blocks_execution": boolean;
+              "can_execute_natively": boolean;
+              "posture": string;
               "reasons"?: Array<string>;
-              "runner_requirement"?: string;
+              "runner_requirement": string;
             };
-            "findings"?: Array<{
-              "category"?: string;
+            "findings": Array<{
+              "category": string;
               "detail"?: string;
               "evidence"?: Array<string>;
-              "id"?: string;
-              "severity"?: string;
-              "summary"?: string;
+              "id": string;
+              "severity": string;
+              "summary": string;
             }>;
             "metadata"?: Record<string, unknown>;
             "name"?: string;
-            "next_actions"?: Array<string>;
-            "package"?: string;
+            "next_actions": Array<string>;
+            "package": string;
             "project_id"?: string;
-            "repair_suggestions"?: Array<{
-              "action"?: string;
-              "category"?: string;
-              "description"?: string;
-              "id"?: string;
+            "repair_suggestions": Array<{
+              "action": string;
+              "category": string;
+              "description": string;
+              "id": string;
               "selector_signals"?: Array<string>;
               "selector_stability_score"?: number;
-              "severity"?: string;
+              "severity": string;
               "target_action"?: string;
-              "title"?: string;
+              "title": string;
             }>;
-            "required_evidence"?: Array<string>;
-            "review_sections"?: Array<{
-              "items"?: Array<string>;
-              "key"?: string;
-              "severity"?: string;
-              "summary"?: string;
-              "title"?: string;
+            "required_evidence": Array<string>;
+            "review_sections": Array<{
+              "items": Array<string>;
+              "key": string;
+              "severity": string;
+              "summary": string;
+              "title": string;
             }>;
-            "scenario_templates"?: Array<{
-              "description"?: string;
+            "scenario_templates": Array<{
+              "description": string;
               "evidence"?: Array<string>;
-              "flow"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
-              "package"?: string;
+              "flow": Array<string>;
+              "id": string;
+              "name": string;
+              "package": string;
               "parameters"?: Array<string>;
             }>;
-            "source_summary"?: {
+            "source_summary": {
               "actions"?: number;
-              "bytes"?: number;
+              "bytes": number;
               "detected_hosts"?: Array<string>;
-              "files"?: number;
+              "files": number;
               "source_profiles"?: Array<string>;
             };
-            "status"?: string;
-            "support_matrix"?: Array<{
-              "bundle"?: string;
+            "status": string;
+            "support_matrix": Array<{
+              "bundle": string;
               "density_envelope"?: string;
-              "display_name"?: string;
-              "entitlement_required"?: string;
+              "display_name": string;
+              "entitlement_required": string;
               "evidence"?: Array<string>;
-              "execution_posture"?: string;
-              "id"?: string;
+              "execution_posture": string;
+              "id": string;
               "import_coverage"?: Array<string>;
-              "importance"?: string;
-              "protocol"?: string;
+              "importance": string;
+              "protocol": string;
               "recommended_workflow"?: string;
               "remaining_gaps"?: Array<string>;
-              "runner_requirement"?: string;
+              "runner_requirement": string;
               "runtime_coverage"?: Array<string>;
-              "source"?: string;
-              "status"?: string;
+              "source": string;
+              "status": string;
               "supported_inputs"?: Array<string>;
             }>;
           };
@@ -29739,8 +33677,8 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "api_key"?: string;
-            "service_account"?: Record<string, unknown>;
+            "api_key": string;
+            "service_account": Record<string, unknown>;
           };
         };
       };
@@ -29796,20 +33734,20 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "decisions"?: Array<{
-              "decision"?: string;
+            "decisions": Array<{
+              "decision": string;
               "evidence"?: Array<string>;
-              "id"?: string;
-              "rationale"?: string;
-              "status"?: string;
+              "id": string;
+              "rationale": string;
+              "status": string;
             }>;
-            "generated_at"?: string;
+            "generated_at": string;
             "notes"?: Array<string>;
-            "presets"?: Array<{
+            "presets": Array<{
               "evidence"?: Array<string>;
-              "id"?: string;
-              "name"?: string;
-              "recommended_protocols"?: Array<string>;
+              "id": string;
+              "name": string;
+              "recommended_protocols": Array<string>;
               "runtime_settings"?: {
                 "auto_transactions"?: string;
                 "base_url"?: string;
@@ -29821,7 +33759,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -29844,36 +33782,36 @@ export interface operations {
               };
               "scenario_hints"?: Record<string, unknown>;
               "script_config_hints"?: Record<string, unknown>;
-              "summary"?: string;
+              "summary": string;
             }>;
-            "protocols"?: Array<string>;
-            "report_exports"?: Array<{
-              "available"?: boolean;
-              "endpoint"?: string;
+            "protocols": Array<string>;
+            "report_exports": Array<{
+              "available": boolean;
+              "endpoint": string;
               "evidence"?: Array<string>;
-              "formats"?: Array<string>;
-              "scope"?: string;
+              "formats": Array<string>;
+              "scope": string;
               "use_cases"?: Array<string>;
             }>;
-            "schema_version"?: string;
-            "status_counts"?: Record<string, unknown>;
-            "status_vocabulary"?: Array<{
-              "meaning"?: string;
-              "status"?: string;
+            "schema_version": string;
+            "status_counts": Record<string, number>;
+            "status_vocabulary": Array<{
+              "meaning": string;
+              "status": string;
             }>;
-            "support_matrix"?: Array<{
-              "area"?: string;
-              "concept"?: string;
+            "support_matrix": Array<{
+              "area": string;
+              "concept": string;
               "evidence"?: Array<string>;
               "execution_scope"?: string;
               "fields"?: Array<string>;
-              "id"?: string;
+              "id": string;
               "import_sources"?: Array<string>;
               "notes"?: string;
-              "protocols"?: Array<string>;
+              "protocols": Array<string>;
               "recommended_workflow"?: string;
               "source"?: string;
-              "status"?: string;
+              "status": string;
             }>;
           };
         };
@@ -29957,7 +33895,7 @@ export interface operations {
           "project_id"?: string;
           "replace_mode"?: string;
           "script"?: Record<string, unknown>;
-          "secret_bindings"?: Record<string, unknown>;
+          "secret_bindings"?: Record<string, string>;
           "target_script_id"?: string;
         };
       };
@@ -30036,7 +33974,7 @@ export interface operations {
             "title"?: string;
           }>;
           "prepared_by"?: string;
-          "section_comments"?: Record<string, unknown>;
+          "section_comments"?: Record<string, string>;
           "title"?: string;
           "verdict_explanation"?: string;
           "verdict_override"?: string;
@@ -30047,30 +33985,30 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "annotations"?: {
-              "executive_narrative"?: string;
+            "annotations": {
+              "executive_narrative": string;
               "findings"?: Array<{
                 "evidence"?: string;
-                "id"?: string;
+                "id": string;
                 "impact"?: string;
                 "observed"?: string;
                 "root_cause"?: string;
-                "severity"?: string;
-                "title"?: string;
+                "severity": string;
+                "title": string;
               }>;
-              "prepared_by"?: string;
-              "profile"?: string;
-              "section_comments"?: Record<string, unknown>;
-              "test_id"?: string;
-              "title"?: string;
-              "updated_at"?: string;
-              "updated_by"?: string;
+              "prepared_by": string;
+              "profile": string;
+              "section_comments": Record<string, string>;
+              "test_id": string;
+              "title": string;
+              "updated_at": string;
+              "updated_by": string;
               "verdict_explanation"?: string;
               "verdict_override"?: string;
             };
-            "sections"?: Array<{
-              "id"?: string;
-              "label"?: string;
+            "sections": Array<{
+              "id": string;
+              "label": string;
             }>;
           };
         };
@@ -30198,26 +34136,30 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "blocked"?: number;
-            "completed"?: number;
-            "due"?: number;
-            "enabled"?: number;
-            "execution_plan_blocked"?: number;
-            "execution_plan_due"?: number;
-            "execution_plan_enabled"?: number;
-            "execution_plan_total"?: number;
-            "failed"?: number;
-            "is_leader"?: boolean;
-            "materialized"?: number;
-            "one_time_due"?: number;
-            "one_time_scheduled"?: number;
-            "pending_approval"?: number;
-            "queued"?: number;
-            "skipped"?: number;
-            "status_counts"?: Record<string, unknown>;
+            "blocked": number;
+            "completed": number;
+            "due": number;
+            "enabled": number;
+            "execution_plan_blocked": number;
+            "execution_plan_due": number;
+            "execution_plan_enabled": number;
+            "execution_plan_total": number;
+            "failed": number;
+            "is_leader": boolean;
+            "materialized": number;
+            "one_time_due": number;
+            "one_time_scheduled": number;
+            "pending_approval": number;
+            "queued": number;
+            "skipped": number;
+            "status_counts": Record<string, number>;
             "storage_error"?: string;
-            "sweeps"?: Record<string, unknown>;
-            "total"?: number;
+            "sweeps"?: Record<string, {
+              "last_error"?: string;
+              "last_successful_at"?: string;
+              "last_sweep_at"?: string;
+            }>;
+            "total": number;
           };
         };
       };
@@ -30271,10 +34213,10 @@ export interface operations {
         content: {
           "application/json": {
             "conflict_summary"?: string;
-            "count"?: number;
-            "cron_expr"?: string;
-            "occurrences"?: Array<string>;
-            "timezone"?: string;
+            "count": number;
+            "cron_expr": string;
+            "occurrences": Array<string>;
+            "timezone": string;
           };
         };
       };
@@ -30471,7 +34413,7 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": Record<string, string>;
         };
       };
       "400": {
@@ -30523,30 +34465,30 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "baseline_test_id"?: string;
-            "groups"?: Array<{
-              "baseline_art_ms"?: number;
-              "basis"?: string;
-              "computed_vusers"?: number;
-              "group"?: string;
+            "baseline_test_id": string;
+            "groups": Array<{
+              "baseline_art_ms": number;
+              "basis": string;
+              "computed_vusers": number;
+              "group": string;
               "script_id"?: string;
-              "target_tps"?: number;
+              "target_tps": number;
             }>;
             "load_model_validation"?: {
               "assignment_recommendation"?: {
-                "available_labels"?: Record<string, unknown>;
+                "available_labels"?: Record<string, Array<string>>;
                 "available_regions"?: Array<string>;
                 "available_targets"?: Array<string>;
-                "mode"?: string;
+                "mode": string;
                 "recommended_targets"?: Array<string>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
               "capacity_advisory"?: {
                 "availability_source"?: string;
-                "available_generators"?: number;
-                "baseline_window_enabled"?: boolean;
-                "bottleneck"?: string;
+                "available_generators": number;
+                "baseline_window_enabled": boolean;
+                "bottleneck": string;
                 "browser_benchmark_evidence"?: string;
                 "browser_benchmark_evidence_attached"?: boolean;
                 "browser_benchmark_evidence_required"?: boolean;
@@ -30556,26 +34498,26 @@ export interface operations {
                 "browser_density_release_gate"?: string;
                 "browser_density_tier"?: string;
                 "browser_vusers"?: number;
-                "complexity_score"?: number;
+                "complexity_score": number;
                 "configured_available_generators"?: number;
-                "dimension_recommendations"?: {
-                  "cpu"?: number;
-                  "memory"?: number;
-                  "network"?: number;
-                  "vusers"?: number;
+                "dimension_recommendations": {
+                  "cpu": number;
+                  "memory": number;
+                  "network": number;
+                  "vusers": number;
                 };
-                "duration_seconds"?: number;
-                "estimated_per_vuser"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "duration_seconds": number;
+                "estimated_per_vuser": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "estimated_total"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "estimated_total": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
-                "headroom_pct"?: number;
+                "headroom_pct": number;
                 "live_available_generators"?: number;
                 "max_browser_canary_vusers_per_generator"?: number;
                 "max_browser_vusers_per_generator"?: number;
@@ -30585,35 +34527,35 @@ export interface operations {
                   "calibrated_at"?: string;
                   "calibration_source"?: string;
                   "compatibility_confidence"?: string;
-                  "cpu_cores_per_vuser"?: number;
-                  "max_vusers_per_generator"?: number;
-                  "memory_mb_per_vuser"?: number;
-                  "network_mbps_per_vuser"?: number;
-                  "protocol"?: string;
-                  "vusers"?: number;
+                  "cpu_cores_per_vuser": number;
+                  "max_vusers_per_generator": number;
+                  "memory_mb_per_vuser": number;
+                  "network_mbps_per_vuser": number;
+                  "protocol": string;
+                  "vusers": number;
                 }>;
-                "recommended_generators"?: number;
+                "recommended_generators": number;
                 "requires_override"?: boolean;
                 "reservation_project_id"?: string;
                 "reserved_generators"?: number;
                 "shared_available_generators"?: number;
                 "shortfall_generators"?: number;
-                "total_vusers"?: number;
-                "usable_per_generator"?: {
-                  "cpu_cores"?: number;
-                  "memory_mb"?: number;
-                  "network_mbps"?: number;
+                "total_vusers": number;
+                "usable_per_generator": {
+                  "cpu_cores": number;
+                  "memory_mb": number;
+                  "network_mbps": number;
                 };
                 "warnings"?: Array<string>;
                 "workload_class"?: string;
               };
-              "items"?: Array<{
+              "items": Array<{
                 "available_rows"?: number;
-                "dimension"?: string;
+                "dimension": string;
                 "group"?: string;
                 "required_rows"?: number;
-                "status"?: string;
-                "summary"?: string;
+                "status": string;
+                "summary": string;
                 "target_tps"?: number;
                 "target_vusers"?: number;
               }>;
@@ -30624,53 +34566,53 @@ export interface operations {
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
                 "findings"?: Array<{
                   "area"?: string;
                   "concept"?: string;
                   "evidence"?: Array<string>;
                   "group"?: string;
-                  "id"?: string;
+                  "id": string;
                   "protocol"?: string;
                   "recommended_action"?: string;
-                  "scope"?: string;
+                  "scope": string;
                   "script_id"?: string;
                   "script_name"?: string;
-                  "severity"?: string;
-                  "status"?: string;
-                  "summary"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
                 }>;
-                "status"?: string;
-                "status_counts"?: Record<string, unknown>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
                 "summary"?: string;
                 "warnings"?: Array<string>;
               };
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
-              "total_vusers"?: number;
+              "status": string;
+              "status_counts": Record<string, number>;
+              "total_vusers": number;
             };
-            "scenario_draft"?: {
+            "scenario_draft": {
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
               };
               "data_pools"?: Array<Record<string, unknown>>;
-              "duration"?: string;
+              "duration": string;
               "goal_config"?: {
                 "max_avg_server_processing_ms"?: number;
                 "max_avg_transfer_ms"?: number;
@@ -30692,20 +34634,20 @@ export interface operations {
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: number;
               };
-              "groups"?: Array<{
+              "groups": Array<{
                 "assignment"?: {
-                  "load_zone_weights"?: Record<string, unknown>;
+                  "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
-                  "region_weights"?: Record<string, unknown>;
-                  "required_labels"?: Record<string, unknown>;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "tolerate_generator_loss"?: boolean;
                 };
                 "initialization"?: string;
                 "iterations"?: number;
-                "name"?: string;
+                "name": string;
                 "ramp_down"?: string;
                 "ramp_up"?: string;
                 "revision_new_group"?: boolean;
@@ -30717,7 +34659,7 @@ export interface operations {
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
                   "browser_emulation"?: Record<string, unknown>;
-                  "env"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
@@ -30730,11 +34672,11 @@ export interface operations {
                   "think_time"?: Record<string, unknown>;
                   "web_runtime"?: Record<string, unknown>;
                 };
-                "script_id"?: string;
+                "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
-                "vusers"?: number;
+                "vusers": number;
               }>;
-              "name"?: string;
+              "name": string;
               "resource_baseline"?: boolean;
               "runtime_settings"?: {
                 "auto_transactions"?: string;
@@ -30747,7 +34689,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -30772,8 +34714,8 @@ export interface operations {
               "script_shakeout"?: boolean;
               "start_delay"?: string;
             };
-            "total_target_tps"?: number;
-            "total_vusers"?: number;
+            "total_target_tps": number;
+            "total_vusers": number;
           };
         };
       };
@@ -30924,7 +34866,7 @@ export interface operations {
           "replay_session_id"?: string;
           "script": Record<string, unknown>;
           "start_paused"?: boolean;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -30933,63 +34875,63 @@ export interface operations {
         content: {
           "application/json": {
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
-            "replay_session_id"?: string;
-            "script_id"?: string;
-            "session"?: {
+            "replay_session_id": string;
+            "script_id": string;
+            "session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
             "warnings"?: Array<string>;
           };
@@ -31048,7 +34990,7 @@ export interface operations {
           "replay_session_id"?: string;
           "script"?: Record<string, unknown>;
           "start_paused"?: boolean;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -31057,63 +34999,63 @@ export interface operations {
         content: {
           "application/json": {
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
-            "replay_session_id"?: string;
-            "script_id"?: string;
-            "session"?: {
+            "replay_session_id": string;
+            "script_id": string;
+            "session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
             "warnings"?: Array<string>;
           };
@@ -31229,7 +35171,7 @@ export interface operations {
           "runtime_profile"?: Record<string, unknown>;
           "script"?: Record<string, unknown>;
           "start_paused"?: boolean;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -31237,87 +35179,87 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "debug_session_id"?: string;
+            "debug_session_id": string;
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
-            "replay_session_id"?: string;
-            "script_id"?: string;
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "replay_session_id": string;
+            "script_id": string;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
             "warnings"?: Array<string>;
           };
@@ -31385,7 +35327,7 @@ export interface operations {
           "runtime_profile"?: Record<string, unknown>;
           "script"?: Record<string, unknown>;
           "start_paused"?: boolean;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -31393,87 +35335,87 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "debug_session_id"?: string;
+            "debug_session_id": string;
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
-            "replay_session_id"?: string;
-            "script_id"?: string;
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "replay_session_id": string;
+            "script_id": string;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
             "warnings"?: Array<string>;
           };
@@ -31542,7 +35484,7 @@ export interface operations {
           "runtime_profile"?: Record<string, unknown>;
           "script"?: Record<string, unknown>;
           "start_paused"?: boolean;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -31550,87 +35492,87 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "debug_session_id"?: string;
+            "debug_session_id": string;
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
-            "replay_session_id"?: string;
-            "script_id"?: string;
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "replay_session_id": string;
+            "script_id": string;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
             "warnings"?: Array<string>;
           };
@@ -31698,7 +35640,7 @@ export interface operations {
           "runtime_profile"?: Record<string, unknown>;
           "script"?: Record<string, unknown>;
           "start_paused"?: boolean;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -31706,87 +35648,87 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "debug_session_id"?: string;
+            "debug_session_id": string;
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
-            "replay_session_id"?: string;
-            "script_id"?: string;
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "replay_session_id": string;
+            "script_id": string;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
             "warnings"?: Array<string>;
           };
@@ -31907,64 +35849,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -32014,64 +35956,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -32150,42 +36092,42 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
+            "session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -32254,64 +36196,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -32347,64 +36289,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -32566,14 +36508,14 @@ export interface operations {
             "active_vusers"?: number;
             "disabled_reason"?: string;
             "forced"?: boolean;
-            "message"?: string;
+            "message": string;
             "namespace"?: string;
             "pod_name"?: string;
             "reachable"?: boolean;
-            "scope"?: string;
-            "status"?: string;
-            "target"?: string;
-            "target_type"?: string;
+            "scope": string;
+            "status": string;
+            "target": string;
+            "target_type": string;
             "warnings"?: Array<string>;
             "workload"?: string;
           };
@@ -32621,13 +36563,13 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "deployment"?: {
-              "auth_enforced"?: boolean;
-              "bind_scope"?: string;
-              "client_downloads_enabled"?: boolean;
-              "desktop_available"?: boolean;
-              "kind"?: string;
-              "label"?: string;
+            "deployment": {
+              "auth_enforced": boolean;
+              "bind_scope": string;
+              "client_downloads_enabled": boolean;
+              "desktop_available": boolean;
+              "kind": string;
+              "label": string;
             };
           };
         };
@@ -32703,8 +36645,8 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "cordoned"?: boolean;
-            "drain_state"?: string;
+            "cordoned": boolean;
+            "drain_state": string;
             "generator_id"?: string;
             "target"?: string;
           };
@@ -32749,11 +36691,11 @@ export interface operations {
             "application_id"?: string;
             "archive"?: Record<string, unknown>;
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -32762,9 +36704,9 @@ export interface operations {
             "baseline_pinned_at"?: string;
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -32774,26 +36716,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -32803,24 +36745,24 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
@@ -32829,19 +36771,147 @@ export interface operations {
             "capacity_window_start_at"?: string;
             "comparison_baseline"?: {
               "completed_at"?: string;
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "policy"?: string;
-              "source_test_id"?: string;
-              "source_test_name"?: string;
-              "transactions"?: Record<string, unknown>;
+              "source_test_id": string;
+              "source_test_name": string;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "created_at"?: string;
+            "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
             "cumulative_pause_ns"?: Record<string, unknown>;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
-            "duration_ns"?: Record<string, unknown>;
+            "duration": string;
+            "duration_ns": Record<string, unknown>;
             "ended_at"?: string;
             "error"?: string;
             "execution_plan_approval"?: {
@@ -32860,13 +36930,13 @@ export interface operations {
             };
             "folder_id"?: string;
             "generator_shards"?: Array<{
-              "group"?: string;
+              "group": string;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
-              "target"?: string;
+              "target": string;
               "vuser_id_offset"?: number;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
@@ -32889,14 +36959,18 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "goal_targets"?: Record<string, unknown>;
-            "groups"?: Array<{
+            "goal_targets"?: Record<string, {
+              "group": string;
+              "target_tps": number;
+              "updated_at"?: string;
+            }>;
+            "groups": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -32905,8 +36979,8 @@ export interface operations {
               "iteration_override"?: number;
               "iteration_override_known"?: boolean;
               "iterations"?: number;
-              "name"?: string;
-              "protocol"?: string;
+              "name": string;
+              "protocol": string;
               "ramp_down"?: string;
               "ramp_up"?: string;
               "role"?: string;
@@ -32925,7 +36999,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -32946,16 +37020,16 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
-              "script_name"?: string;
+              "script_id": string;
+              "script_name": string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "history"?: Array<{
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -32970,48 +37044,98 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, Record<string, unknown>>;
+                "by_region"?: Record<string, Record<string, unknown>>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<Record<string, unknown>>;
-                "nodes"?: Array<Record<string, unknown>>;
+                "edges": Array<Record<string, unknown>>;
+                "nodes": Array<Record<string, unknown>>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -33025,7 +37149,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -33036,17 +37160,73 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<Record<string, unknown>>;
+                "targets": Array<Record<string, unknown>>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -33072,27 +37252,48 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: Record<string, unknown>;
+              }>;
             }>;
-            "id"?: string;
+            "id": string;
             "live_metrics"?: {
-              "active_vusers"?: number;
+              "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
-              "avg_response_ms"?: number;
+              "avg_response_ms": number;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -33107,66 +37308,167 @@ export interface operations {
                 "avg_lcp_ms"?: number;
                 "avg_long_task_count"?: number;
                 "avg_ttfb_ms"?: number;
-                "samples"?: number;
+                "samples": number;
               };
-              "browser_by_device"?: Record<string, unknown>;
+              "browser_by_device"?: Record<string, {
+                "avg_blocking_resources"?: number;
+                "avg_browser_process_cpu_pct"?: number;
+                "avg_browser_process_mem_mb"?: number;
+                "avg_cls_score"?: number;
+                "avg_fcp_ms"?: number;
+                "avg_inp_ms"?: number;
+                "avg_js_heap_used_mb"?: number;
+                "avg_lcp_ms"?: number;
+                "avg_long_task_count"?: number;
+                "avg_ttfb_ms"?: number;
+                "browser_engine"?: string;
+                "device_platform"?: string;
+                "device_profile"?: string;
+                "device_tier"?: string;
+                "samples": number;
+              }>;
               "capacity_status"?: {
-                "allocated_vusers"?: number;
-                "available_generators"?: number;
-                "by_protocol"?: Record<string, unknown>;
-                "by_region"?: Record<string, unknown>;
-                "queued_vusers"?: number;
-                "recommended_generators"?: number;
-                "rejected_vusers"?: number;
-                "saturated"?: boolean;
+                "allocated_vusers": number;
+                "available_generators": number;
+                "by_protocol"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "by_region"?: Record<string, {
+                  "allocated_vusers"?: number;
+                  "queued_vusers"?: number;
+                  "rejected_vusers"?: number;
+                }>;
+                "queued_vusers": number;
+                "recommended_generators": number;
+                "rejected_vusers": number;
+                "saturated": boolean;
               };
-              "dependency_health"?: Record<string, unknown>;
+              "dependency_health"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "dependency_map"?: {
-                "edges"?: Array<{
+                "edges": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
                   "p95_ms"?: number;
-                  "source"?: string;
-                  "target"?: string;
+                  "source": string;
+                  "target": string;
                   "transactions"?: number;
                 }>;
-                "nodes"?: Array<{
+                "nodes": Array<{
                   "dependency_type"?: string;
                   "error_pct"?: number;
                   "errors"?: number;
-                  "id"?: string;
-                  "kind"?: string;
-                  "label"?: string;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
                   "p95_ms"?: number;
                   "status"?: string;
                   "transactions"?: number;
                 }>;
               };
-              "error_breakdown"?: Record<string, unknown>;
+              "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
                 "actions"?: Array<string>;
                 "affected_groups"?: Array<string>;
-                "count"?: number;
+                "count": number;
                 "error_pct"?: number;
                 "evidence_count"?: number;
                 "evidence_url"?: string;
-                "first_seen"?: string;
+                "first_seen": string;
                 "latest_evidence_id"?: string;
-                "latest_seen"?: string;
-                "sample"?: string;
-                "signature"?: string;
+                "latest_seen": string;
+                "sample": string;
+                "signature": string;
                 "snapshot_url"?: string;
                 "status_code"?: number;
               }>;
-              "error_pct"?: number;
-              "generator_resources"?: Record<string, unknown>;
+              "error_pct": number;
+              "generator_resources"?: Record<string, {
+                "active_vusers": number;
+                "error_pct"?: number;
+                "generator_id": string;
+                "impact_reasons"?: Array<string>;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "region"?: string;
+                "resources"?: Record<string, unknown>;
+                "saturation_state"?: string;
+                "target": string;
+                "timestamp": string;
+                "tps"?: number;
+              }>;
               "goal_status"?: {
                 "breach_active"?: boolean;
                 "breach_duration_sec"?: number;
                 "cls_breached"?: boolean;
-                "current_total_vusers"?: number;
-                "current_tps"?: number;
+                "current_total_vusers": number;
+                "current_tps": number;
                 "dead_letter_rate_breached"?: boolean;
                 "end_to_end_latency_breached"?: boolean;
                 "error_breached"?: boolean;
@@ -33180,7 +37482,7 @@ export interface operations {
                 "max_error_count"?: number;
                 "max_vusers"?: number;
                 "min_vusers"?: number;
-                "mode"?: string;
+                "mode": string;
                 "partition_skew_breached"?: boolean;
                 "redelivery_rate_breached"?: boolean;
                 "server_processing_breached"?: boolean;
@@ -33191,37 +37493,179 @@ export interface operations {
                 "throttled_requests_breached"?: boolean;
                 "transfer_breached"?: boolean;
               };
-              "groups"?: Record<string, unknown>;
+              "groups"?: Record<string, {
+                "avg_response_ms": number;
+                "errors": number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "target_tps"?: number;
+                "throughput_gap_pct"?: number;
+                "throughput_target_missed"?: boolean;
+                "tps": number;
+                "transactions": number;
+                "vusers": number;
+              }>;
               "latency"?: {
-                "targets"?: Array<{
+                "targets": Array<{
                   "connect_ms"?: number;
                   "dns_ms"?: number;
-                  "endpoint"?: string;
+                  "endpoint": string;
                   "error"?: string;
                   "hops"?: number;
                   "http_status"?: number;
                   "ip"?: string;
                   "jitter_ms"?: number;
-                  "last_success"?: boolean;
-                  "latency_ms"?: number;
-                  "name"?: string;
+                  "last_success": boolean;
+                  "latency_ms": number;
+                  "name": string;
                   "probe_method"?: string;
                   "probe_total_ms"?: number;
                   "route_status"?: string;
                   "sample_count"?: number;
                   "success_rate_pct"?: number;
-                  "timestamp"?: string;
+                  "timestamp": string;
                   "tls_ms"?: number;
                   "ttfb_ms"?: number;
                 }>;
               };
-              "network_profiles"?: Record<string, unknown>;
-              "p50_ms"?: number;
-              "p90_ms"?: number;
-              "p95_ms"?: number;
-              "p99_ms"?: number;
+              "network_profiles"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
+              "p50_ms": number;
+              "p90_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
               "resources"?: Record<string, unknown>;
-              "soap_operations"?: Record<string, unknown>;
+              "soap_operations"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
               "target_tps"?: number;
               "telemetry"?: {
                 "browser_render_lag_ms"?: number;
@@ -33247,22 +37691,86 @@ export interface operations {
                 "breach_started_at"?: string;
                 "conditions"?: Array<string>;
                 "current_signature"?: string;
-                "last_observed_at"?: string;
+                "last_observed_at": string;
                 "last_transition_at"?: string;
-                "severity"?: string;
-                "status"?: string;
+                "severity": string;
+                "status": string;
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               };
               "throughput_gap_pct"?: number;
               "throughput_target_missed"?: boolean;
-              "timestamp"?: string;
-              "total_errors"?: number;
-              "total_transactions"?: number;
-              "tps"?: number;
-              "transactions"?: Record<string, unknown>;
+              "timestamp": string;
+              "total_errors": number;
+              "total_transactions": number;
+              "tps": number;
+              "transactions"?: Record<string, {
+                "avg_connect_ms"?: number;
+                "avg_dns_ms"?: number;
+                "avg_ms": number;
+                "avg_tls_ms"?: number;
+                "avg_ttfb_ms"?: number;
+                "correlation_count"?: number;
+                "correlation_ids"?: Array<string>;
+                "count": number;
+                "dependency_target"?: string;
+                "dependency_type"?: string;
+                "errors": number;
+                "last_error_at"?: string;
+                "last_error_message"?: string;
+                "last_status_code"?: number;
+                "name": string;
+                "p50_ms": number;
+                "p90_ms": number;
+                "p95_ms"?: number;
+                "p99_ms": number;
+                "server_telemetry"?: {
+                  "abort_count"?: number;
+                  "avg_consumer_lag_ms"?: number;
+                  "avg_consumer_offset_lag"?: number;
+                  "avg_end_to_end_latency_ms"?: number;
+                  "avg_first_event_ms"?: number;
+                  "avg_message_latency_ms"?: number;
+                  "avg_messages_received_per_sec"?: number;
+                  "avg_messages_sent_per_sec"?: number;
+                  "avg_request_payload_kb"?: number;
+                  "avg_response_payload_kb"?: number;
+                  "avg_server_processing_ms"?: number;
+                  "avg_transfer_ms"?: number;
+                  "commit_count"?: number;
+                  "connection_reused_count"?: number;
+                  "connection_reused_pct"?: number;
+                  "dead_letter_rate_pct"?: number;
+                  "dead_lettered_count"?: number;
+                  "duplicate_count"?: number;
+                  "duplicate_rate_pct"?: number;
+                  "event_count"?: number;
+                  "max_consumer_lag_ms"?: number;
+                  "max_consumer_offset_lag"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_first_event_ms"?: number;
+                  "max_message_latency_ms"?: number;
+                  "messages_received"?: number;
+                  "messages_sent"?: number;
+                  "out_of_order_count"?: number;
+                  "partition_events"?: Record<string, number>;
+                  "partition_skew_pct"?: number;
+                  "redelivery_count"?: number;
+                  "redelivery_rate_pct"?: number;
+                  "request_payload_histogram"?: Record<string, number>;
+                  "request_size_classes"?: Record<string, number>;
+                  "response_payload_histogram"?: Record<string, number>;
+                  "response_size_classes"?: Record<string, number>;
+                  "samples": number;
+                  "send_failure_count"?: number;
+                  "total_event_too_large_count"?: number;
+                  "total_quota_exceeded_count"?: number;
+                  "total_server_busy_count"?: number;
+                  "total_throttled_requests"?: number;
+                };
+              }>;
             };
-            "name"?: string;
+            "name": string;
             "paused_at"?: string;
             "pending_reason"?: string;
             "pending_since"?: string;
@@ -33282,7 +37790,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -33309,33 +37817,33 @@ export interface operations {
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
               "findings"?: Array<{
                 "area"?: string;
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts"?: Record<string, number>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
@@ -33346,21 +37854,21 @@ export interface operations {
             "script_name"?: string;
             "script_shakeout"?: boolean;
             "sparkline"?: Array<{
-              "timestamp"?: string;
-              "tps"?: number;
+              "timestamp": string;
+              "tps": number;
             }>;
             "start_authorization"?: {
               "capacity_shortfall"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
-                "available_generators"?: number;
-                "recommended_generators"?: number;
-                "shortfall_generators"?: number;
-                "total_vusers"?: number;
+                "available_generators": number;
+                "recommended_generators": number;
+                "shortfall_generators": number;
+                "total_vusers": number;
               };
               "script_shakeout"?: {
-                "approved_at"?: string;
+                "approved_at": string;
                 "approved_by_display_name"?: string;
                 "approved_by_subject"?: string;
                 "review_evidence_sha256"?: string;
@@ -33370,7 +37878,7 @@ export interface operations {
             "started_at"?: string;
             "started_by_display_name"?: string;
             "started_by_subject"?: string;
-            "status"?: string;
+            "status": string;
             "stopped_by_display_name"?: string;
             "stopped_by_subject"?: string;
             "telemetry_health"?: {
@@ -33379,16 +37887,23 @@ export interface operations {
               "breach_started_at"?: string;
               "conditions"?: Array<string>;
               "current_signature"?: string;
-              "last_observed_at"?: string;
+              "last_observed_at": string;
               "last_transition_at"?: string;
-              "severity"?: string;
-              "status"?: string;
+              "severity": string;
+              "status": string;
               "summary"?: string;
               "sustained_breach"?: boolean;
             };
             "timeslot_id"?: string;
-            "total_vusers"?: number;
-            "vuser_ramps"?: Record<string, unknown>;
+            "total_vusers": number;
+            "vuser_ramps"?: Record<string, {
+              "group": string;
+              "ramp_duration": string;
+              "ramp_duration_seconds": number;
+              "start_vusers": number;
+              "started_at": string;
+              "target_vusers": number;
+            }>;
           };
         };
       };
@@ -33700,21 +38215,21 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "created_at"?: string;
+            "created_at": string;
             "description"?: string;
-            "id"?: string;
-            "name"?: string;
+            "id": string;
+            "name": string;
             "project_id"?: string;
-            "rules"?: Array<{
+            "rules": Array<{
               "confidence"?: number;
-              "expression"?: string;
-              "extract_type"?: string;
-              "name"?: string;
+              "expression": string;
+              "extract_type": string;
+              "name": string;
               "rule_id"?: string;
-              "source"?: string;
+              "source": string;
             }>;
             "source"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -33756,13 +38271,28 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "archived_at"?: (string) | null;
+          "description"?: string;
+          "name": string;
+          "schema"?: Record<string, string>;
+          "updated_at": string;
+        };
       };
     };
     responses: {
       "200": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "archived_at"?: (string) | null;
+            "created_at": string;
+            "description"?: string;
+            "id": string;
+            "name": string;
+            "project_id"?: string;
+            "schema"?: Record<string, string>;
+            "updated_at": string;
+          };
         };
       };
       "400": {
@@ -33814,13 +38344,25 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "data": Record<string, string>;
+          "status"?: string;
+          "version": number;
+        };
       };
     };
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "created_at": string;
+            "data": Record<string, string>;
+            "id": string;
+            "pool_id": string;
+            "status"?: string;
+            "updated_at": string;
+            "version": number;
+          };
         };
       };
       "400": {
@@ -34161,12 +38703,16 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "goal_targets"?: Record<string, unknown>;
-            "group"?: string;
-            "status"?: string;
-            "target_average_tps"?: number;
-            "target_tps"?: number;
-            "test_id"?: string;
+            "goal_targets": Record<string, {
+              "group": string;
+              "target_tps": number;
+              "updated_at"?: string;
+            }>;
+            "group": string;
+            "status": string;
+            "target_average_tps": number;
+            "target_tps": number;
+            "test_id": string;
           };
         };
       };
@@ -34529,11 +39075,11 @@ export interface operations {
       content: {
         "application/json": {
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -34563,11 +39109,11 @@ export interface operations {
           };
           "groups": Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -34591,7 +39137,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -34629,7 +39175,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -34661,23 +39207,23 @@ export interface operations {
         content: {
           "application/json": {
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
             };
             "associated_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
-            "created_at"?: string;
+            "created_at": string;
             "data_pools"?: Array<Record<string, unknown>>;
-            "duration"?: string;
+            "duration": string;
             "goal_config"?: {
               "max_avg_server_processing_ms"?: number;
               "max_avg_transfer_ms"?: number;
@@ -34699,11 +39245,11 @@ export interface operations {
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: number;
             };
-            "id"?: string;
+            "id": string;
             "last_run_at"?: string;
             "last_run_ended_at"?: string;
             "last_run_test_id"?: string;
-            "name"?: string;
+            "name": string;
             "project_id"?: string;
             "ref_key"?: string;
             "resource_baseline"?: boolean;
@@ -34719,7 +39265,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -34742,15 +39288,15 @@ export interface operations {
             };
             "scenario_mode"?: string;
             "schedules"?: Array<Record<string, unknown>>;
-            "script_count"?: number;
+            "script_count": number;
             "script_shakeout"?: boolean;
-            "scripts"?: Array<{
+            "scripts": Array<{
               "assignment"?: {
-                "load_zone_weights"?: Record<string, unknown>;
+                "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
-                "region_weights"?: Record<string, unknown>;
-                "required_labels"?: Record<string, unknown>;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "tolerate_generator_loss"?: boolean;
@@ -34758,7 +39304,7 @@ export interface operations {
               "initialization"?: string;
               "iterations"?: number;
               "name"?: string;
-              "order"?: number;
+              "order": number;
               "protocol"?: string;
               "ramp_down"?: string;
               "ramp_up"?: string;
@@ -34774,7 +39320,7 @@ export interface operations {
                 };
                 "browser_config"?: Record<string, unknown>;
                 "browser_emulation"?: Record<string, unknown>;
-                "env"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
@@ -34795,13 +39341,13 @@ export interface operations {
                 "think_time"?: Record<string, unknown>;
                 "web_runtime"?: Record<string, unknown>;
               };
-              "script_id"?: string;
+              "script_id": string;
               "script_name"?: string;
               "stages"?: Array<Record<string, unknown>>;
-              "vusers"?: number;
+              "vusers": number;
             }>;
             "start_delay"?: string;
-            "updated_at"?: string;
+            "updated_at": string;
           };
         };
       };
@@ -34979,40 +39525,40 @@ export interface operations {
         content: {
           "application/json": {
             "associated_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
             "associated_scenarios"?: Array<{
-              "id"?: string;
-              "name"?: string;
+              "id": string;
+              "name": string;
             }>;
             "authoring_health"?: {
-              "inputs"?: Array<{
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
-            "created_at"?: string;
+            "created_at": string;
             "folder_id"?: string;
-            "id"?: string;
+            "id": string;
             "last_run_at"?: string;
-            "name"?: string;
+            "name": string;
             "project_id"?: string;
-            "protocol"?: string;
+            "protocol": string;
             "ref_key"?: string;
             "scenario_count"?: number;
             "scenario_run_releases"?: Array<{
-              "application_id"?: string;
-              "id"?: string;
-              "name"?: string;
+              "application_id": string;
+              "id": string;
+              "name": string;
             }>;
-            "script"?: Record<string, unknown>;
-            "version"?: string;
+            "script": Record<string, unknown>;
+            "version": string;
           };
         };
       };
@@ -35066,64 +39612,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -35168,64 +39714,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -35270,64 +39816,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -35372,64 +39918,64 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
-            "session"?: {
-              "break_on_failure"?: boolean;
+            "session": {
+              "break_on_failure": boolean;
               "breakpoints"?: Array<{
-                "action_index"?: number;
-                "phase"?: string;
+                "action_index": number;
+                "phase": string;
                 "request_index"?: number;
                 "step_path"?: Array<string>;
               }>;
               "completed_at"?: string;
-              "condition_evidence"?: Record<string, unknown>;
+              "condition_evidence"?: Record<string, Record<string, unknown>>;
               "current_action"?: Record<string, unknown>;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
-              "log_level"?: string;
+              "group": string;
+              "id": string;
+              "log_level": string;
               "logs"?: Array<{
                 "action_index"?: number;
                 "action_name"?: string;
-                "category"?: string;
-                "id"?: string;
-                "level"?: string;
-                "message"?: string;
+                "category": string;
+                "id": string;
+                "level": string;
+                "message": string;
                 "phase"?: string;
                 "raw"?: string;
-                "timestamp"?: string;
+                "timestamp": string;
               }>;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "raw_output"?: Array<string>;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
           };
         };
@@ -35469,15 +40015,15 @@ export interface operations {
       content: {
         "application/json": {
           "active"?: boolean;
-          "application_repository_roles"?: Record<string, unknown>;
+          "application_repository_roles"?: Record<string, Array<string>>;
           "contact_email"?: string;
           "description"?: string;
-          "domain_roles"?: Record<string, unknown>;
+          "domain_roles"?: Record<string, Array<string>>;
           "expires_at"?: string;
           "global_roles"?: Array<string>;
           "name"?: string;
           "owner_id"?: string;
-          "project_roles"?: Record<string, unknown>;
+          "project_roles"?: Record<string, Array<string>>;
           "rotation_interval_days"?: number;
           "scopes"?: Array<string>;
         };
@@ -35530,16 +40076,346 @@ export interface operations {
     };
   };
   "handleUpdateSystemSettings": {
-    parameters?: never;
+    parameters: {
+      "header"?: {
+        "If-Match"?: string;
+      };
+    };
     requestBody: {
       content: {
-        "application/octet-stream": string;
+        "application/json": {
+          "archive_retention"?: {
+            "default_retention_days"?: number;
+            "enabled"?: boolean;
+            "har_artifact_dir"?: string;
+            "har_retention_days"?: number;
+            "policies"?: Array<{
+              "artifact_type"?: string;
+              "compliance_class"?: string;
+              "name"?: string;
+              "project_id"?: string;
+              "reason"?: string;
+              "release_id"?: string;
+              "retention_days"?: number;
+              "run_status"?: string;
+              "run_type"?: string;
+            }>;
+          };
+          "auth"?: {
+            "application_repository_roles_claim"?: string;
+            "application_repository_roles_header"?: string;
+            "client_id"?: string;
+            "client_secret_env_var"?: string;
+            "domain_roles_claim"?: string;
+            "domain_roles_header"?: string;
+            "email_header"?: string;
+            "issuer_url"?: string;
+            "login_url"?: string;
+            "logout_url"?: string;
+            "mode"?: string;
+            "name_header"?: string;
+            "project_roles_claim"?: string;
+            "project_roles_header"?: string;
+            "provider_name"?: string;
+            "redirect_url"?: string;
+            "roles_claim"?: string;
+            "roles_header"?: string;
+            "scopes"?: Array<string>;
+            "session_secret_env_var"?: string;
+            "trusted_proxy_cidrs"?: Array<string>;
+            "trusted_proxy_secret_env_var"?: string;
+            "user_header"?: string;
+          };
+          "capacity_planning"?: {
+            "availability"?: {
+              "configured_available_generators"?: number;
+              "source"?: string;
+            };
+            "generator"?: {
+              "cpu_cores"?: number;
+              "max_vusers"?: number;
+              "memory_mb"?: number;
+              "network_mbps"?: number;
+            };
+            "headroom_pct"?: number;
+            "reservations"?: Array<{
+              "ends_at"?: string;
+              "pool_id"?: string;
+              "project_id"?: string;
+              "reserved_generators"?: number;
+              "starts_at"?: string;
+            }>;
+          };
+          "client_app"?: {
+            "availability"?: string;
+          };
+          "client_downloads"?: {
+            "enabled"?: boolean;
+          };
+          "expected_revision"?: string;
+          "general"?: {
+            "api_endpoint"?: string;
+            "max_concurrent_tests"?: number;
+            "metrics_interval_seconds"?: number;
+            "usage_snapshot_interval_seconds"?: number;
+          };
+          "github"?: {
+            "api_base_url"?: string;
+            "app_id"?: number;
+            "app_private_key_env_var"?: string;
+            "app_private_key_file"?: string;
+            "app_slug"?: string;
+            "automation_mode"?: string;
+            "ca_cert_file"?: string;
+            "checks_enabled"?: boolean;
+            "client_id"?: string;
+            "client_secret_env_var"?: string;
+            "default_branch"?: string;
+            "default_repo"?: string;
+            "enabled"?: boolean;
+            "pat_env_var"?: string;
+            "path_template"?: string;
+            "scopes"?: Array<string>;
+            "tls_insecure_skip_verify"?: boolean;
+            "web_base_url"?: string;
+            "webhook_secret_env_var"?: string;
+          };
+          "grafana"?: {
+            "base_url"?: string;
+            "enabled"?: boolean;
+            "service_account_token_env_var"?: string;
+            "timeout_seconds"?: number;
+          };
+          "notifications"?: {
+            "webhooks"?: Array<{
+              "api_token"?: string;
+              "enabled"?: boolean;
+              "entity_selector"?: string;
+              "events"?: Array<string>;
+              "format"?: string;
+              "has_api_token"?: boolean;
+              "name"?: string;
+              "timeout_minutes"?: number;
+              "url"?: string;
+            }>;
+          };
+          "powerbi"?: {
+            "api_base_url"?: string;
+            "auth_base_url"?: string;
+            "client_id"?: string;
+            "client_secret_env_var"?: string;
+            "dashboard_base_url"?: string;
+            "dataset_name"?: string;
+            "enabled"?: boolean;
+            "scope"?: string;
+            "tenant_id"?: string;
+            "timeout_seconds"?: number;
+            "workspace_id"?: string;
+          };
+          "prometheus"?: {
+            "allow_label_values"?: boolean;
+            "base_url"?: string;
+            "bearer_token_env_var"?: string;
+            "enabled"?: boolean;
+            "timeout_seconds"?: number;
+          };
+          "revision"?: string;
+          "schedule_defaults"?: {
+            "approval_policy"?: string;
+            "availability_end_time"?: string;
+            "availability_start_time"?: string;
+            "blackout_end_time"?: string;
+            "blackout_start_time"?: string;
+            "missed_run_policy"?: string;
+          };
+          "script_imports"?: {
+            "allow_source_secret_migration"?: boolean;
+          };
+          "thresholds"?: {
+            "fleet_constrained_available_slots"?: number;
+            "fleet_saturated_available_slots"?: number;
+            "max_avg_server_processing_ms"?: number;
+            "max_avg_transfer_ms"?: number;
+            "max_error_rate_pct"?: number;
+            "max_p99_latency_ms"?: number;
+            "max_telemetry_browser_render_lag_ms"?: number;
+            "max_telemetry_controller_fanout_ms"?: number;
+            "max_telemetry_generator_lag_ms"?: number;
+            "max_telemetry_sample_age_ms"?: number;
+            "max_telemetry_transport_lag_ms"?: number;
+            "p99_latency_stop_consecutive_samples"?: number;
+          };
+        };
       };
     };
     responses: {
       "200": {
+        headers: {
+          "ETag"?: string;
+        };
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "archive_retention": {
+              "default_retention_days": number;
+              "enabled": boolean;
+              "har_artifact_dir"?: string;
+              "har_retention_days"?: number;
+              "policies"?: Array<{
+                "artifact_type"?: string;
+                "compliance_class"?: string;
+                "name"?: string;
+                "project_id"?: string;
+                "reason"?: string;
+                "release_id"?: string;
+                "retention_days": number;
+                "run_status"?: string;
+                "run_type"?: string;
+              }>;
+            };
+            "auth": {
+              "application_repository_roles_claim"?: string;
+              "application_repository_roles_header"?: string;
+              "client_id"?: string;
+              "client_secret_env_var"?: string;
+              "domain_roles_claim"?: string;
+              "domain_roles_header"?: string;
+              "email_header"?: string;
+              "issuer_url"?: string;
+              "login_url"?: string;
+              "logout_url"?: string;
+              "mode": string;
+              "name_header"?: string;
+              "project_roles_claim"?: string;
+              "project_roles_header"?: string;
+              "provider_name"?: string;
+              "redirect_url"?: string;
+              "roles_claim"?: string;
+              "roles_header"?: string;
+              "scopes"?: Array<string>;
+              "session_secret_env_var"?: string;
+              "trusted_proxy_cidrs"?: Array<string>;
+              "trusted_proxy_secret_env_var"?: string;
+              "user_header"?: string;
+            };
+            "capacity_planning": {
+              "availability": {
+                "configured_available_generators": number;
+                "source": string;
+              };
+              "generator": {
+                "cpu_cores": number;
+                "max_vusers": number;
+                "memory_mb": number;
+                "network_mbps": number;
+              };
+              "headroom_pct": number;
+              "reservations"?: Array<{
+                "ends_at"?: string;
+                "pool_id"?: string;
+                "project_id": string;
+                "reserved_generators": number;
+                "starts_at"?: string;
+              }>;
+            };
+            "client_app": {
+              "availability": string;
+            };
+            "client_downloads": {
+              "enabled": boolean;
+            };
+            "general": {
+              "api_endpoint": string;
+              "max_concurrent_tests": number;
+              "metrics_interval_seconds": number;
+              "usage_snapshot_interval_seconds"?: number;
+            };
+            "github": {
+              "api_base_url"?: string;
+              "app_id"?: number;
+              "app_private_key_env_var"?: string;
+              "app_private_key_file"?: string;
+              "app_slug"?: string;
+              "automation_mode"?: string;
+              "ca_cert_file"?: string;
+              "checks_enabled"?: boolean;
+              "client_id"?: string;
+              "client_secret_env_var"?: string;
+              "default_branch"?: string;
+              "default_repo"?: string;
+              "enabled": boolean;
+              "pat_env_var"?: string;
+              "path_template"?: string;
+              "scopes"?: Array<string>;
+              "tls_insecure_skip_verify"?: boolean;
+              "web_base_url"?: string;
+              "webhook_secret_env_var"?: string;
+            };
+            "grafana": {
+              "base_url"?: string;
+              "enabled": boolean;
+              "service_account_token_env_var"?: string;
+              "timeout_seconds"?: number;
+            };
+            "notifications": {
+              "webhooks"?: Array<{
+                "api_token"?: string;
+                "enabled": boolean;
+                "entity_selector"?: string;
+                "events"?: Array<string>;
+                "format": string;
+                "has_api_token"?: boolean;
+                "name"?: string;
+                "timeout_minutes"?: number;
+                "url": string;
+              }>;
+            };
+            "powerbi": {
+              "api_base_url"?: string;
+              "auth_base_url"?: string;
+              "client_id"?: string;
+              "client_secret_env_var"?: string;
+              "dashboard_base_url"?: string;
+              "dataset_name"?: string;
+              "enabled": boolean;
+              "scope"?: string;
+              "tenant_id"?: string;
+              "timeout_seconds"?: number;
+              "workspace_id"?: string;
+            };
+            "prometheus": {
+              "allow_label_values": boolean;
+              "base_url"?: string;
+              "bearer_token_env_var"?: string;
+              "enabled": boolean;
+              "timeout_seconds"?: number;
+            };
+            "revision": string;
+            "schedule_defaults": {
+              "approval_policy"?: string;
+              "availability_end_time"?: string;
+              "availability_start_time"?: string;
+              "blackout_end_time"?: string;
+              "blackout_start_time"?: string;
+              "missed_run_policy"?: string;
+            };
+            "script_imports": {
+              "allow_source_secret_migration": boolean;
+            };
+            "thresholds": {
+              "fleet_constrained_available_slots"?: number;
+              "fleet_saturated_available_slots"?: number;
+              "max_avg_server_processing_ms"?: number;
+              "max_avg_transfer_ms"?: number;
+              "max_error_rate_pct"?: number;
+              "max_p99_latency_ms"?: number;
+              "max_telemetry_browser_render_lag_ms"?: number;
+              "max_telemetry_controller_fanout_ms"?: number;
+              "max_telemetry_generator_lag_ms"?: number;
+              "max_telemetry_sample_age_ms"?: number;
+              "max_telemetry_transport_lag_ms"?: number;
+              "p99_latency_stop_consecutive_samples"?: number;
+            };
+          };
         };
       };
       "400": {
@@ -35558,6 +40434,216 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "412": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "428": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateTestGroupParameters": {
+    parameters: {
+      "path": {
+        "group": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision": string;
+          "parameters": Array<Record<string, unknown>>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "changed": Array<string>;
+            "changes"?: Record<string, unknown>;
+            "group": string;
+            "no_changes"?: boolean;
+            "parameters": Array<Record<string, unknown>>;
+            "revision": string;
+            "test_id": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateTestGroupRuntimeSettings": {
+    parameters: {
+      "path": {
+        "group": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_revision": string;
+          "fields": Array<string>;
+          "runtime_settings"?: {
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: {
+              "device_profile"?: string;
+              "headless"?: boolean;
+              "orientation"?: string;
+              "touch_mode"?: boolean;
+            };
+            "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
+            "error_handling"?: Record<string, unknown>;
+            "http"?: Record<string, unknown>;
+            "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
+            "log"?: Record<string, unknown>;
+            "log_level"?: string;
+            "pacing"?: Record<string, unknown>;
+            "run_logic"?: Record<string, unknown>;
+            "think_time"?: Record<string, unknown>;
+            "web_runtime"?: Record<string, unknown>;
+          };
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "changes"?: Record<string, unknown>;
+            "fields": Array<string>;
+            "group": string;
+            "no_changes"?: boolean;
+            "review_status"?: string;
+            "revision": string;
+            "runtime_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: {
+                "device_profile"?: string;
+                "headless"?: boolean;
+                "orientation"?: string;
+                "touch_mode"?: boolean;
+              };
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+            "test_id": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -35716,14 +40802,14 @@ export interface operations {
         content: {
           "application/json": {
             "content_type"?: string;
-            "data_source"?: Record<string, unknown>;
-            "file_name"?: string;
-            "import_id"?: string;
-            "name"?: string;
-            "sha256"?: string;
-            "size_bytes"?: number;
-            "storage_ref"?: string;
-            "uploaded_at"?: string;
+            "data_source": Record<string, unknown>;
+            "file_name": string;
+            "import_id": string;
+            "name": string;
+            "sha256": string;
+            "size_bytes": number;
+            "storage_ref": string;
+            "uploaded_at": string;
           };
         };
       };
@@ -35777,12 +40863,12 @@ export interface operations {
           "application/json": {
             "content_type"?: string;
             "entry"?: string;
-            "file_name"?: string;
-            "import_id"?: string;
-            "sha256"?: string;
-            "size_bytes"?: number;
-            "storage_ref"?: string;
-            "uploaded_at"?: string;
+            "file_name": string;
+            "import_id": string;
+            "sha256": string;
+            "size_bytes": number;
+            "storage_ref": string;
+            "uploaded_at": string;
           };
         };
       };
@@ -35829,7 +40915,7 @@ export interface operations {
           "folder_id"?: string;
           "project_id"?: string;
           "script"?: Record<string, unknown>;
-          "variables"?: Record<string, unknown>;
+          "variables"?: Record<string, string>;
         };
       };
     };
@@ -35838,63 +40924,63 @@ export interface operations {
         content: {
           "application/json": {
             "ai_guardrails"?: {
-              "items"?: Array<{
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+              "items": Array<{
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts": Record<string, number>;
             };
-            "authoring_health"?: {
-              "inputs"?: Array<{
+            "authoring_health": {
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
             "data_source_fit"?: {
-              "items"?: Array<{
+              "items": Array<{
                 "available_rows"?: number;
                 "column"?: string;
-                "data_source"?: string;
+                "data_source": string;
                 "parameter"?: string;
                 "required_rows"?: number;
-                "status"?: string;
-                "summary"?: string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts": Record<string, number>;
             };
-            "issues"?: Array<string>;
+            "issues": Array<string>;
             "migration_readiness"?: Record<string, unknown>;
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
             "runtime_settings_parity"?: Array<Record<string, unknown>>;
-            "runtime_settings_status_counts"?: Record<string, unknown>;
-            "script_id"?: string;
-            "valid"?: boolean;
+            "runtime_settings_status_counts"?: Record<string, number>;
+            "script_id": string;
+            "valid": boolean;
             "warnings"?: Array<string>;
           };
         };
@@ -36125,11 +41211,11 @@ export interface operations {
       content: {
         "application/json": {
           "assignment"?: {
-            "load_zone_weights"?: Record<string, unknown>;
+            "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
-            "region_weights"?: Record<string, unknown>;
-            "required_labels"?: Record<string, unknown>;
+            "region_weights"?: Record<string, number>;
+            "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "tolerate_generator_loss"?: boolean;
@@ -36159,11 +41245,11 @@ export interface operations {
           };
           "groups"?: Array<{
             "assignment"?: {
-              "load_zone_weights"?: Record<string, unknown>;
+              "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
-              "region_weights"?: Record<string, unknown>;
-              "required_labels"?: Record<string, unknown>;
+              "region_weights"?: Record<string, number>;
+              "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "tolerate_generator_loss"?: boolean;
@@ -36187,7 +41273,7 @@ export interface operations {
               };
               "browser_config"?: Record<string, unknown>;
               "browser_emulation"?: Record<string, unknown>;
-              "env"?: Record<string, unknown>;
+              "env"?: Record<string, string>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
@@ -36225,7 +41311,7 @@ export interface operations {
             };
             "browser_config"?: Record<string, unknown>;
             "browser_emulation"?: Record<string, unknown>;
-            "env"?: Record<string, unknown>;
+            "env"?: Record<string, string>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
@@ -36257,19 +41343,19 @@ export interface operations {
         content: {
           "application/json": {
             "assignment_recommendation"?: {
-              "available_labels"?: Record<string, unknown>;
+              "available_labels"?: Record<string, Array<string>>;
               "available_regions"?: Array<string>;
               "available_targets"?: Array<string>;
-              "mode"?: string;
+              "mode": string;
               "recommended_targets"?: Array<string>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
             "capacity_advisory"?: {
               "availability_source"?: string;
-              "available_generators"?: number;
-              "baseline_window_enabled"?: boolean;
-              "bottleneck"?: string;
+              "available_generators": number;
+              "baseline_window_enabled": boolean;
+              "bottleneck": string;
               "browser_benchmark_evidence"?: string;
               "browser_benchmark_evidence_attached"?: boolean;
               "browser_benchmark_evidence_required"?: boolean;
@@ -36279,26 +41365,26 @@ export interface operations {
               "browser_density_release_gate"?: string;
               "browser_density_tier"?: string;
               "browser_vusers"?: number;
-              "complexity_score"?: number;
+              "complexity_score": number;
               "configured_available_generators"?: number;
-              "dimension_recommendations"?: {
-                "cpu"?: number;
-                "memory"?: number;
-                "network"?: number;
-                "vusers"?: number;
+              "dimension_recommendations": {
+                "cpu": number;
+                "memory": number;
+                "network": number;
+                "vusers": number;
               };
-              "duration_seconds"?: number;
-              "estimated_per_vuser"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "duration_seconds": number;
+              "estimated_per_vuser": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "estimated_total"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "estimated_total": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
-              "headroom_pct"?: number;
+              "headroom_pct": number;
               "live_available_generators"?: number;
               "max_browser_canary_vusers_per_generator"?: number;
               "max_browser_vusers_per_generator"?: number;
@@ -36308,35 +41394,35 @@ export interface operations {
                 "calibrated_at"?: string;
                 "calibration_source"?: string;
                 "compatibility_confidence"?: string;
-                "cpu_cores_per_vuser"?: number;
-                "max_vusers_per_generator"?: number;
-                "memory_mb_per_vuser"?: number;
-                "network_mbps_per_vuser"?: number;
-                "protocol"?: string;
-                "vusers"?: number;
+                "cpu_cores_per_vuser": number;
+                "max_vusers_per_generator": number;
+                "memory_mb_per_vuser": number;
+                "network_mbps_per_vuser": number;
+                "protocol": string;
+                "vusers": number;
               }>;
-              "recommended_generators"?: number;
+              "recommended_generators": number;
               "requires_override"?: boolean;
               "reservation_project_id"?: string;
               "reserved_generators"?: number;
               "shared_available_generators"?: number;
               "shortfall_generators"?: number;
-              "total_vusers"?: number;
-              "usable_per_generator"?: {
-                "cpu_cores"?: number;
-                "memory_mb"?: number;
-                "network_mbps"?: number;
+              "total_vusers": number;
+              "usable_per_generator": {
+                "cpu_cores": number;
+                "memory_mb": number;
+                "network_mbps": number;
               };
               "warnings"?: Array<string>;
               "workload_class"?: string;
             };
-            "items"?: Array<{
+            "items": Array<{
               "available_rows"?: number;
-              "dimension"?: string;
+              "dimension": string;
               "group"?: string;
               "required_rows"?: number;
-              "status"?: string;
-              "summary"?: string;
+              "status": string;
+              "summary": string;
               "target_tps"?: number;
               "target_vusers"?: number;
             }>;
@@ -36347,39 +41433,39 @@ export interface operations {
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
               "findings"?: Array<{
                 "area"?: string;
                 "concept"?: string;
                 "evidence"?: Array<string>;
                 "group"?: string;
-                "id"?: string;
+                "id": string;
                 "protocol"?: string;
                 "recommended_action"?: string;
-                "scope"?: string;
+                "scope": string;
                 "script_id"?: string;
                 "script_name"?: string;
-                "severity"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "severity": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts"?: Record<string, number>;
               "summary"?: string;
               "warnings"?: Array<string>;
             };
-            "status"?: string;
-            "status_counts"?: Record<string, unknown>;
-            "total_vusers"?: number;
+            "status": string;
+            "status_counts": Record<string, number>;
+            "total_vusers": number;
           };
         };
       };
@@ -36415,63 +41501,63 @@ export interface operations {
         content: {
           "application/json": {
             "ai_guardrails"?: {
-              "items"?: Array<{
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+              "items": Array<{
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts": Record<string, number>;
             };
-            "authoring_health"?: {
-              "inputs"?: Array<{
+            "authoring_health": {
+              "inputs": Array<{
                 "count"?: number;
-                "key"?: string;
-                "status"?: string;
-                "summary"?: string;
+                "key": string;
+                "status": string;
+                "summary": string;
               }>;
-              "score"?: number;
-              "status"?: string;
+              "score": number;
+              "status": string;
             };
             "data_source_fit"?: {
-              "items"?: Array<{
+              "items": Array<{
                 "available_rows"?: number;
                 "column"?: string;
-                "data_source"?: string;
+                "data_source": string;
                 "parameter"?: string;
                 "required_rows"?: number;
-                "status"?: string;
-                "summary"?: string;
+                "status": string;
+                "summary": string;
               }>;
-              "status"?: string;
-              "status_counts"?: Record<string, unknown>;
+              "status": string;
+              "status_counts": Record<string, number>;
             };
-            "issues"?: Array<string>;
+            "issues": Array<string>;
             "migration_readiness"?: Record<string, unknown>;
             "preflight"?: {
-              "action_count"?: number;
-              "browser_required"?: boolean;
+              "action_count": number;
+              "browser_required": boolean;
               "checks"?: Array<{
                 "detail"?: string;
-                "id"?: string;
-                "label"?: string;
-                "status"?: string;
+                "id": string;
+                "label": string;
+                "status": string;
               }>;
-              "data_source_count"?: number;
-              "expected_action_count"?: number;
+              "data_source_count": number;
+              "expected_action_count": number;
               "issues"?: Array<string>;
               "missing_secrets"?: Array<string>;
               "missing_variables"?: Array<string>;
-              "parameter_count"?: number;
+              "parameter_count": number;
               "required_secrets"?: Array<string>;
               "runtime_prerequisites"?: Array<string>;
-              "valid"?: boolean;
+              "valid": boolean;
               "warnings"?: Array<string>;
             };
             "runtime_settings_parity"?: Array<Record<string, unknown>>;
-            "runtime_settings_status_counts"?: Record<string, unknown>;
-            "script_id"?: string;
-            "valid"?: boolean;
+            "runtime_settings_status_counts"?: Record<string, number>;
+            "script_id": string;
+            "valid": boolean;
             "warnings"?: Array<string>;
           };
         };
@@ -36513,44 +41599,44 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
-            "replay_session"?: {
+            "replay_session": {
               "completed_at"?: string;
               "current_event"?: Record<string, unknown>;
-              "current_event_index"?: number;
+              "current_event_index": number;
               "error"?: string;
               "events"?: Array<Record<string, unknown>>;
-              "group"?: string;
-              "id"?: string;
+              "group": string;
+              "id": string;
               "mode"?: string;
               "preflight"?: {
-                "action_count"?: number;
-                "browser_required"?: boolean;
+                "action_count": number;
+                "browser_required": boolean;
                 "checks"?: Array<{
                   "detail"?: string;
-                  "id"?: string;
-                  "label"?: string;
-                  "status"?: string;
+                  "id": string;
+                  "label": string;
+                  "status": string;
                 }>;
-                "data_source_count"?: number;
-                "expected_action_count"?: number;
+                "data_source_count": number;
+                "expected_action_count": number;
                 "issues"?: Array<string>;
                 "missing_secrets"?: Array<string>;
                 "missing_variables"?: Array<string>;
-                "parameter_count"?: number;
+                "parameter_count": number;
                 "required_secrets"?: Array<string>;
                 "runtime_prerequisites"?: Array<string>;
-                "valid"?: boolean;
+                "valid": boolean;
                 "warnings"?: Array<string>;
               };
               "project_id"?: string;
-              "protocol"?: string;
+              "protocol": string;
               "report"?: Record<string, unknown>;
               "runtime_profile"?: Record<string, unknown>;
               "script_id"?: string;
               "started_at"?: string;
-              "status"?: string;
+              "status": string;
             };
-            "replay_session_id"?: string;
+            "replay_session_id": string;
             "warnings"?: Array<string>;
           };
         };
@@ -36615,21 +41701,21 @@ export interface operations {
               "actual_sha256"?: string;
               "detail"?: string;
               "expected_sha256"?: string;
-              "name"?: string;
+              "name": string;
               "size_bytes"?: number;
-              "status"?: string;
+              "status": string;
             }>;
-            "matched"?: number;
-            "mismatched"?: number;
-            "missing"?: number;
-            "schema_version"?: string;
-            "status"?: string;
-            "summary"?: string;
-            "test_id"?: string;
-            "total"?: number;
-            "unverifiable"?: number;
-            "verified"?: boolean;
-            "verified_at"?: string;
+            "matched": number;
+            "mismatched": number;
+            "missing": number;
+            "schema_version": string;
+            "status": string;
+            "summary": string;
+            "test_id": string;
+            "total": number;
+            "unverifiable": number;
+            "verified": boolean;
+            "verified_at": string;
           };
         };
       };
@@ -36995,6 +42081,12 @@ export interface paths {
   "/api/v1/data-pools/{id}/rows": {
     "get": operations["handleListDataPoolRows"];
     "post": operations["handleCreateDataPoolRow"];
+  };
+  "/api/v1/data-pools/{id}/rows/export": {
+    "get": operations["handleExportDataPoolRows"];
+  };
+  "/api/v1/data-pools/{id}/rows/import": {
+    "post": operations["handleImportDataPoolRows"];
   };
   "/api/v1/data-pools/{id}/rows/{row_id}": {
     "put": operations["handleUpdateDataPoolRow"];
@@ -37977,6 +43069,14 @@ export interface paths {
   };
   "/api/v1/tests/{id}/goal-targets": {
     "patch": operations["handleUpdateGoalTarget"];
+  };
+  "/api/v1/tests/{id}/groups/{group}/parameters": {
+    "get": operations["handleGetTestGroupParameters"];
+    "put": operations["handleUpdateTestGroupParameters"];
+  };
+  "/api/v1/tests/{id}/groups/{group}/runtime-settings": {
+    "get": operations["handleGetTestGroupRuntimeSettings"];
+    "patch": operations["handleUpdateTestGroupRuntimeSettings"];
   };
   "/api/v1/tests/{id}/manifest": {
     "get": operations["handleGetTestManifest"];

@@ -6,7 +6,7 @@ import type {
 } from '../types'
 import type { ScenarioFormGroup, ScenarioFormState } from './TestHub'
 import type { ScenarioSeed } from './scenarioWizardUtils'
-import { runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
 import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
 
 export function cloneAssignment(
@@ -189,6 +189,49 @@ export function runtimeSettingsFromForm(
   }
 }
 
+/**
+ * Replaces the scenario-default runtime profile while keeping the legacy flat
+ * form mirrors synchronized. runtimeSettingsFromForm still reads those mirrors
+ * when producing the save payload, so leaving them blank would otherwise
+ * overwrite canonical pacing/think-time values during an unrelated edit.
+ */
+export function replaceScenarioRuntimeDefaults(
+  form: ScenarioFormState,
+  next?: ScenarioRuntimeSettingsDraft,
+): ScenarioFormState {
+  const pacing = next?.pacing
+  const thinkTime = next?.think_time
+  return {
+    ...form,
+    runtime_settings: overrideFromRuntimeDraft(next),
+    runtime_pacing_type: (pacing?.type || '') as ScenarioFormState['runtime_pacing_type'],
+    runtime_pacing_delay_ms: pacing?.delay_ms,
+    runtime_pacing_min_delay_ms: pacing?.min_delay_ms,
+    runtime_pacing_max_delay_ms: pacing?.max_delay_ms,
+    runtime_pacing_interval_ms: pacing?.interval_ms,
+    runtime_pacing_min_interval_ms: pacing?.min_interval_ms,
+    runtime_pacing_max_interval_ms: pacing?.max_interval_ms,
+    runtime_pacing_tps: pacing?.tps,
+    runtime_think_time_type: canonicalThinkTimeType(thinkTime?.type) as ScenarioFormState['runtime_think_time_type'],
+    runtime_think_time_ms: thinkTime?.mean_ms,
+    runtime_think_time_std_ms: thinkTime?.std_ms,
+    runtime_think_time_min_ms: thinkTime?.min_ms,
+    runtime_think_time_max_ms: thinkTime?.max_ms,
+    runtime_think_time_multiplier: thinkTime?.multiplier,
+    runtime_think_time_limit_ms: thinkTime?.limit_ms,
+    runtime_ignore_think_time: thinkTime?.ignore ?? false,
+    runtime_iterations: next?.run_logic?.iterations ?? next?.iterations,
+    runtime_log_level: next?.log?.level ?? next?.log_level ?? '',
+    runtime_auto_transactions: next?.run_logic?.auto_transactions ?? next?.auto_transactions ?? '',
+    continue_on_error: next?.continue_on_error,
+    snapshot_on_error: next?.snapshot_on_error,
+    browser_device_profile: next?.browser_config?.device_profile ?? next?.browser?.device_profile ?? '',
+    browser_orientation: next?.browser_config?.orientation ?? next?.browser?.orientation ?? '',
+    browser_touch_mode: booleanSelectValue(next?.browser_config?.touch_mode ?? next?.browser?.touch_mode),
+    browser_headless: booleanSelectValue(next?.browser_config?.headless ?? next?.browser?.headless),
+  }
+}
+
 export function assignmentFromForm(form: ScenarioFormState): GeneratorAssignmentSettings {
   const preserved = cloneAssignment(form.assignment)
   const common = {
@@ -242,7 +285,7 @@ function scenarioFormGroupFromStored(
   }
 }
 
-function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
+export function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
   if (value === undefined) return ''
   return value ? 'true' : 'false'
 }

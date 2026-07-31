@@ -188,7 +188,15 @@ func TestHandleDataPoolAndRowWritesAuditEvents(t *testing.T) {
 		t.Fatalf("json.Unmarshal pool returned error: %v", err)
 	}
 
-	updatePoolReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewBufferString(`{"name":"Customers Updated","project_id":"project-pool"}`))
+	updatePoolBody, err := json.Marshal(map[string]any{
+		"name":       "Customers Updated",
+		"project_id": "project-pool",
+		"updated_at": pool.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal pool update returned error: %v", err)
+	}
+	updatePoolReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewReader(updatePoolBody))
 	updatePoolReq.Header.Set("Content-Type", "application/json")
 	updatePoolResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updatePoolResp, updatePoolReq)
@@ -209,7 +217,9 @@ func TestHandleDataPoolAndRowWritesAuditEvents(t *testing.T) {
 		t.Fatalf("json.Unmarshal row returned error: %v", err)
 	}
 
-	updateRowReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID+"/rows/"+row.ID, bytes.NewBufferString(`{"data":{"customer_id":"2"},"status":"used","version":2}`))
+	// version echoes the value read from the create response: it is the editor's
+	// optimistic-concurrency token, not the desired next version.
+	updateRowReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID+"/rows/"+row.ID, bytes.NewBufferString(`{"data":{"customer_id":"2"},"status":"used","version":1}`))
 	updateRowReq.Header.Set("Content-Type", "application/json")
 	updateRowResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateRowResp, updateRowReq)

@@ -164,12 +164,21 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 	if pacing.Status != enterprisearchive.RuntimeSettingStatusExecuted || !acmeContainsFold(pacing.RuntimeFiles, "default.usp") {
 		t.Fatalf("pacing parity = %#v, want executed with default.usp provenance", pacing)
 	}
-	unmapped := acmeRuntimeParityEntryByID(t, parity, "runtime_unmapped")
-	if unmapped.Status != enterprisearchive.RuntimeSettingStatusPartial ||
-		!strings.Contains(unmapped.Notes, `EnableSnapshotsInReplay="1"`) ||
-		len(unmapped.RuntimeFiles) != 1 ||
-		!strings.EqualFold(unmapped.RuntimeFiles[0], "default.cfg") {
-		t.Fatalf("unmapped runtime parity = %#v, want review-required default.cfg source evidence", unmapped)
+	// EnableSnapshotsInReplay is a VuGen authoring aid: the completeness pass
+	// accounts for it as non-applicable with per-key disposition evidence
+	// instead of a review-required behavior gap.
+	nonApplicable := acmeRuntimeParityEntryByID(t, parity, "runtime_non_applicable")
+	if nonApplicable.Status != enterprisearchive.RuntimeSettingStatusNonApplicable ||
+		len(nonApplicable.RuntimeFiles) != 1 ||
+		!strings.EqualFold(nonApplicable.RuntimeFiles[0], "default.cfg") {
+		t.Fatalf("non-applicable runtime parity = %#v, want default.cfg accounting entry", nonApplicable)
+	}
+	dispositions, ok := preserved["runtime_setting_dispositions"].(map[string]map[string]map[string]enterprisearchive.RuntimeSettingDisposition)
+	if !ok {
+		t.Fatalf("runtime_setting_dispositions = %#v, want typed disposition map", preserved["runtime_setting_dispositions"])
+	}
+	if got := dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"].Status; got != enterprisearchive.RuntimeSettingDispositionNonApplicable {
+		t.Fatalf("EnableSnapshotsInReplay disposition = %q, want non_applicable", got)
 	}
 	for _, warning := range result.Warnings {
 		if strings.Contains(strings.ToLower(warning), "default.usp") {

@@ -672,11 +672,32 @@
   text-transform: uppercase;
 }
 
+.command-group-name-cell,
 .command-group-name {
   min-width: 0;
+}
+
+.command-group-name {
   display: flex;
   align-items: center;
   gap: 9px;
+}
+
+button.command-group-name {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: context-menu;
+}
+
+button.command-group-name:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .command-group-name i {

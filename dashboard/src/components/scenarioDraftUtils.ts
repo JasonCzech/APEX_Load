@@ -18,6 +18,7 @@ export type ScenarioDraftAction =
   | { type: 'setField'; field: ScenarioDraftField; value: ScenarioDraftState[ScenarioDraftField] }
   | { type: 'setGoalConfigField'; field: ScenarioGoalConfigField; value: ScenarioDraftState['goalConfig'][ScenarioGoalConfigField] }
   | { type: 'setRuntimeSettingField'; field: ScenarioRuntimeSettingField; value: ScenarioRuntimeSettings[ScenarioRuntimeSettingField] }
+  | { type: 'replaceRuntimeSettings'; value: ScenarioRuntimeSettings }
   | { type: 'updateGroup'; index: number; patch: Partial<ScenarioDraftGroup> }
   | { type: 'addGroup'; group: ScenarioDraftGroup }
   | { type: 'removeGroup'; index: number }
@@ -77,7 +78,7 @@ function cloneRuntimeSettingsDraft(settings?: ScenarioRuntimeSettingsDraft): Sce
   })
 }
 
-function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): ScenarioRuntimeSettingsDraft {
+export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): ScenarioRuntimeSettingsDraft {
   const errorHandling = settings?.error_handling
   return hydrateCanonicalRuntimeControls({
     iterations: settings?.iterations,
@@ -333,6 +334,11 @@ export function scenarioDraftReducer(state: ScenarioDraftState, action: Scenario
       return {
         ...state,
         runtimeSettings: updateRuntimeSetting(state.runtimeSettings, action.field, action.value),
+      }
+    case 'replaceRuntimeSettings':
+      return {
+        ...state,
+        runtimeSettings: cloneRuntimeSettingsDraft(action.value),
       }
     case 'updateGroup':
       return {

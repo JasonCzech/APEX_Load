@@ -112,7 +112,11 @@ LogOptions=LogBrief
 	}
 	cfgName, rc := resolveRuntimeConfig(files, nil)
 	sections := selectedRuntimeSections(collectRuntimeSections(files), cfgName, rc)
-	parity := applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(sections, "http"), rc)
+	dispositions := classifyRuntimeSelectedSections(sections, "http")
+	parity := appendRuntimeDispositionParityEntries(
+		applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(sections, "http"), rc),
+		dispositions,
+	)
 
 	httpEntry := runtimeParityEntryByID(t, parity, "http_transport")
 	if httpEntry.Status != RuntimeSettingStatusExecuted {
@@ -123,16 +127,25 @@ LogOptions=LogBrief
 		t.Fatalf("logging = %#v, want executed", logEntry)
 	}
 	unmapped := runtimeParityEntryByID(t, parity, "runtime_unmapped")
-	if unmapped.Status != RuntimeSettingStatusPartial {
-		t.Fatalf("runtime_unmapped = %#v, want partial", unmapped)
+	if unmapped.Status != RuntimeSettingStatusCompatibilityOnly {
+		t.Fatalf("runtime_unmapped = %#v, want compatibility_only", unmapped)
 	}
 	if len(unmapped.RuntimeFiles) != 1 || unmapped.RuntimeFiles[0] != "default.cfg" {
 		t.Fatalf("runtime_unmapped files = %#v, want exact default.cfg provenance", unmapped.RuntimeFiles)
 	}
-	for _, evidence := range []string{`[WEB] EnableSnapshotsInReplay="1"`, `[WEB] KeepAliveTimeout="6000"`} {
+	for _, evidence := range []string{`[WEB] KeepAliveTimeout`} {
 		if !strings.Contains(unmapped.Notes, evidence) {
 			t.Fatalf("runtime_unmapped notes = %q, want %s", unmapped.Notes, evidence)
 		}
+	}
+	// EnableSnapshotsInReplay is a VuGen authoring aid: it is accounted for as
+	// non-applicable rather than surfaced as a behavior gap.
+	nonApplicable := runtimeParityEntryByID(t, parity, "runtime_non_applicable")
+	if nonApplicable.Status != RuntimeSettingStatusNonApplicable {
+		t.Fatalf("runtime_non_applicable = %#v, want non_applicable", nonApplicable)
+	}
+	if dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"].Status != RuntimeSettingDispositionNonApplicable {
+		t.Fatalf("EnableSnapshotsInReplay disposition = %#v, want non_applicable", dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"])
 	}
 }
 

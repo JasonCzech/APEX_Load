@@ -3,19 +3,23 @@
 // Extracted from SettingsPage.tsx; no React or component-state dependencies.
 
 import type {
+  CapacityReservation,
   DashboardSystemSettings,
   GitHubProjectPolicy,
   PoolProjectQuota,
   RedactionRule,
   SystemInventoryResponse,
 } from '../types'
+import type { FleetPool } from '../types/fleet'
 import {
   normalizeDashboardAuthMode,
   normalizeProjectRedactionRules,
+  parseOptionalNumber,
   parseOptionalWholeNumber,
   validateAuthURL,
   type DraftRedactionRule,
 } from './settingsPageFormatters'
+import type { CapacitySettingsSubsectionId, SettingsSectionId } from './settingsSectionLayout'
 
 export const DEFAULT_SETTINGS: DashboardSystemSettings = {
   general: {
@@ -27,6 +31,7 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
   thresholds: {
     max_error_rate_pct: undefined,
     max_p99_latency_ms: undefined,
+    p99_latency_stop_consecutive_samples: undefined,
     max_avg_server_processing_ms: undefined,
     max_avg_transfer_ms: undefined,
     max_telemetry_sample_age_ms: 2000,
@@ -313,100 +318,286 @@ export function validateScheduleWindowPair(label: string, start?: string, end?: 
   return ''
 }
 
+export interface SettingsValidationIssue {
+  section: SettingsSectionId
+  subsection?: string
+  field?: string
+  message: string
+}
+
+export type TelemetryBudgetKey =
+  | 'max_telemetry_sample_age_ms'
+  | 'max_telemetry_generator_lag_ms'
+  | 'max_telemetry_transport_lag_ms'
+  | 'max_telemetry_controller_fanout_ms'
+  | 'max_telemetry_browser_render_lag_ms'
+
+export const TELEMETRY_BUDGET_LABELS: Record<TelemetryBudgetKey, string> = {
+  max_telemetry_sample_age_ms: 'Max telemetry sample age',
+  max_telemetry_generator_lag_ms: 'Max generator lag',
+  max_telemetry_transport_lag_ms: 'Max transport lag',
+  max_telemetry_controller_fanout_ms: 'Max controller fan-out',
+  max_telemetry_browser_render_lag_ms: 'Max browser render lag',
+}
+
+// Derived from DEFAULT_SETTINGS so reset affordances cannot drift from the
+// backend defaults mirrored there.
+export const TELEMETRY_BUDGET_DEFAULTS: Record<TelemetryBudgetKey, number> = {
+  max_telemetry_sample_age_ms: DEFAULT_SETTINGS.thresholds.max_telemetry_sample_age_ms ?? 2000,
+  max_telemetry_generator_lag_ms: DEFAULT_SETTINGS.thresholds.max_telemetry_generator_lag_ms ?? 500,
+  max_telemetry_transport_lag_ms: DEFAULT_SETTINGS.thresholds.max_telemetry_transport_lag_ms ?? 500,
+  max_telemetry_controller_fanout_ms: DEFAULT_SETTINGS.thresholds.max_telemetry_controller_fanout_ms ?? 500,
+  max_telemetry_browser_render_lag_ms: DEFAULT_SETTINGS.thresholds.max_telemetry_browser_render_lag_ms ?? 500,
+}
+
 export function validateSettings(settings: DashboardSystemSettings): string[] {
-  const errors: string[] = []
+  return validateSettingsDetailed(settings).map(issue => issue.message)
+}
+
+export function settingsIssuesBySection(issues: SettingsValidationIssue[]): Partial<Record<SettingsSectionId, SettingsValidationIssue[]>> {
+  const bySection: Partial<Record<SettingsSectionId, SettingsValidationIssue[]>> = {}
+  issues.forEach(issue => {
+    const list = bySection[issue.section] ?? []
+    list.push(issue)
+    bySection[issue.section] = list
+  })
+  return bySection
+}
+
+export function settingsIssuesForField(issues: SettingsValidationIssue[], field: string): string[] {
+  return issues.filter(issue => issue.field === field).map(issue => issue.message)
+}
+
+export interface ReservationUsageSummary {
+  reserved: number
+  configured: number
+  free: number
+  overbooked: boolean
+}
+
+// Counts only always-active global reservations, mirroring the backend rule:
+// pool-scoped rows are bounded by their pool envelope, and time-windowed rows
+// may legitimately oversubscribe across non-overlapping windows.
+export function reservationUsageSummary(settings: DashboardSystemSettings): ReservationUsageSummary {
+  const configured = settings.capacity_planning.availability.configured_available_generators
+  const reserved = (settings.capacity_planning.reservations ?? []).reduce((total, reservation) => {
+    if ((reservation.pool_id ?? '').trim()) return total
+    if (!reservation.project_id.trim() || reservation.reserved_generators <= 0) return total
+    if (reservation.starts_at || reservation.ends_at) return total
+    return total + reservation.reserved_generators
+  }, 0)
+  return { reserved, configured, free: Math.max(0, configured - reserved), overbooked: reserved > configured }
+}
+
+// Pool existence can only be checked against a loaded fleet-pool list; pass
+// null when the fleet API is unavailable to skip the check entirely.
+export function reservationPoolIssues(reservations: CapacityReservation[] | undefined, pools: FleetPool[] | null): SettingsValidationIssue[] {
+  if (!pools) return []
+  const known = new Set(pools.map(pool => pool.id))
+  const issues: SettingsValidationIssue[] = []
+  ;(reservations ?? []).forEach((reservation, index) => {
+    const poolID = (reservation.pool_id ?? '').trim()
+    if (!poolID || known.has(poolID)) return
+    issues.push({
+      section: 'capacity',
+      subsection: 'reservations',
+      field: `capacity_planning.reservations.${index}.pool_id`,
+      message: `Reservation ${index + 1} references an unknown fleet pool.`,
+    })
+  })
+  return issues
+}
+
+const CAPACITY_DRAFT_FIELDS: Record<string, { label: string; subsection: CapacitySettingsSubsectionId }> = {
+  'capacity_planning.headroom_pct': { label: 'Headroom (%)', subsection: 'generator' },
+  'capacity_planning.generator.cpu_cores': { label: 'Generator CPU (cores)', subsection: 'generator' },
+  'capacity_planning.generator.memory_mb': { label: 'Generator memory (MB)', subsection: 'generator' },
+  'capacity_planning.generator.network_mbps': { label: 'Generator network (Mbps)', subsection: 'generator' },
+  'capacity_planning.generator.max_vusers': { label: 'Generator max VUsers', subsection: 'generator' },
+  'capacity_planning.availability.configured_available_generators': { label: 'Configured available generators', subsection: 'availability' },
+  'archive_retention.default_retention_days': { label: 'Default retention days', subsection: 'retention' },
+}
+
+// Blank or non-numeric drafts for capacity number inputs block saving instead
+// of silently snapping the stored value to 0 while the admin is mid-edit.
+export function capacityDraftIssues(drafts: Record<string, string>): SettingsValidationIssue[] {
+  const issues: SettingsValidationIssue[] = []
+  Object.entries(drafts).forEach(([field, draft]) => {
+    if (parseOptionalNumber(draft) !== undefined) return
+    // Blank means the admin cleared the field; anything else is visible text
+    // that failed to parse, which deserves the more accurate message.
+    const problem = draft.trim() === '' ? 'is required.' : 'must be a number.'
+    const known = CAPACITY_DRAFT_FIELDS[field]
+    const reservationMatch = field.match(/^capacity_planning\.reservations\.(\d+)\.reserved_generators$/)
+    if (known) {
+      issues.push({ section: 'capacity', subsection: known.subsection, field, message: `${known.label} ${problem}` })
+    } else if (reservationMatch) {
+      issues.push({ section: 'capacity', subsection: 'reservations', field, message: `Reservation ${Number(reservationMatch[1]) + 1} reserved generators ${problem}` })
+    } else {
+      issues.push({ section: 'capacity', field, message: `A capacity value ${problem}` })
+    }
+  })
+  return issues
+}
+
+export interface SettingsSaveErrorGuidance {
+  message: string
+  focusSection?: SettingsSectionId
+  focusCapacitySubsection?: CapacitySettingsSubsectionId
+  offerReload?: boolean
+}
+
+// Maps backend save rejections to actionable guidance and, where the rejection
+// belongs to one tab, which section/subsection to focus.
+export function describeSettingsSaveError(status: number | undefined, message: string): SettingsSaveErrorGuidance {
+  if (status === 409 || status === 412 || status === 428) {
+    return {
+      message: 'Settings changed in another session. Reload settings and re-apply your edits.',
+      offerReload: true,
+    }
+  }
+  if (message.includes('reservations cannot exceed configured available generators')) {
+    return {
+      message: 'Save rejected: always-active reservations exceed the configured available generators. Lower a reservation or raise Configured Available Generators.',
+      focusSection: 'capacity',
+      focusCapacitySubsection: 'reservations',
+    }
+  }
+  if (message.includes('references unknown fleet pool')) {
+    return {
+      message: `Save rejected: ${message}. Pick an existing fleet pool for the reservation or clear its pool to reserve from the global envelope.`,
+      focusSection: 'capacity',
+      focusCapacitySubsection: 'reservations',
+    }
+  }
+  if (message.includes('capacity_planning update rejected')) {
+    return {
+      message: `Save rejected: ${message}. Approved capacity timeslots reserve part of the envelope, so adjust reservations or the configured generator count.`,
+      focusSection: 'capacity',
+      focusCapacitySubsection: 'reservations',
+    }
+  }
+  return { message }
+}
+
+export function validateSettingsDetailed(settings: DashboardSystemSettings): SettingsValidationIssue[] {
+  const issues: SettingsValidationIssue[] = []
+  const push = (section: SettingsSectionId, subsection: string | undefined, field: string | undefined, message: string) => {
+    issues.push({ section, subsection, field, message })
+  }
   if (!settings.general.api_endpoint.trim()) {
-    errors.push('API endpoint is required.')
+    push('general', 'platform', 'general.api_endpoint', 'API endpoint is required.')
   }
   if (!Number.isInteger(settings.general.max_concurrent_tests) || settings.general.max_concurrent_tests < 1) {
-    errors.push('Max concurrent tests must be an integer >= 1.')
+    push('general', 'platform', 'general.max_concurrent_tests', 'Max concurrent tests must be an integer >= 1.')
   }
   if (!Number.isInteger(settings.general.metrics_interval_seconds) || settings.general.metrics_interval_seconds < 1) {
-    errors.push('Metrics interval must be an integer >= 1 second.')
+    push('general', 'platform', 'general.metrics_interval_seconds', 'Metrics interval must be an integer >= 1 second.')
   }
   if (settings.general.usage_snapshot_interval_seconds !== undefined && (!Number.isInteger(settings.general.usage_snapshot_interval_seconds) || settings.general.usage_snapshot_interval_seconds < 0)) {
-    errors.push('Usage snapshot interval must be an integer >= 0 seconds.')
+    push('general', 'usage', 'general.usage_snapshot_interval_seconds', 'Usage snapshot interval must be an integer >= 0 seconds.')
   }
   if (settings.thresholds.max_error_rate_pct !== undefined) {
     if (settings.thresholds.max_error_rate_pct < 0 || settings.thresholds.max_error_rate_pct > 100) {
-      errors.push('Max error rate must be between 0 and 100%.')
+      push('thresholds', undefined, 'thresholds.max_error_rate_pct', 'Max error rate must be between 0 and 100%.')
     }
   }
   if (settings.thresholds.max_p99_latency_ms !== undefined && settings.thresholds.max_p99_latency_ms <= 0) {
-    errors.push('Max P99 latency must be greater than 0 ms.')
+    push('thresholds', undefined, 'thresholds.max_p99_latency_ms', 'Max P99 latency must be greater than 0 ms.')
+  }
+  if (settings.thresholds.p99_latency_stop_consecutive_samples !== undefined) {
+    if (!Number.isInteger(settings.thresholds.p99_latency_stop_consecutive_samples) || settings.thresholds.p99_latency_stop_consecutive_samples < 0) {
+      push('thresholds', undefined, 'thresholds.p99_latency_stop_consecutive_samples', 'P99 stop samples must be an integer >= 0.')
+    } else if (settings.thresholds.p99_latency_stop_consecutive_samples > 0 && settings.thresholds.max_p99_latency_ms === undefined) {
+      // Mirrors the backend write rule: the stop counter needs a P99 level.
+      push('thresholds', undefined, 'thresholds.p99_latency_stop_consecutive_samples', 'P99 stop samples requires Max Response Time (P99) to be set.')
+    }
   }
   if (settings.thresholds.max_avg_server_processing_ms !== undefined && settings.thresholds.max_avg_server_processing_ms <= 0) {
-    errors.push('Max average server processing must be greater than 0 ms.')
+    push('thresholds', undefined, 'thresholds.max_avg_server_processing_ms', 'Max average server processing must be greater than 0 ms.')
   }
   if (settings.thresholds.max_avg_transfer_ms !== undefined && settings.thresholds.max_avg_transfer_ms <= 0) {
-    errors.push('Max average transfer time must be greater than 0 ms.')
+    push('thresholds', undefined, 'thresholds.max_avg_transfer_ms', 'Max average transfer time must be greater than 0 ms.')
   }
-  if (settings.thresholds.max_telemetry_sample_age_ms !== undefined && settings.thresholds.max_telemetry_sample_age_ms <= 0) {
-    errors.push('Max telemetry sample age must be greater than 0 ms.')
-  }
-  if (settings.thresholds.max_telemetry_generator_lag_ms !== undefined && settings.thresholds.max_telemetry_generator_lag_ms <= 0) {
-    errors.push('Max telemetry generator lag must be greater than 0 ms.')
-  }
-  if (settings.thresholds.max_telemetry_transport_lag_ms !== undefined && settings.thresholds.max_telemetry_transport_lag_ms <= 0) {
-    errors.push('Max telemetry transport lag must be greater than 0 ms.')
-  }
-  if (settings.thresholds.max_telemetry_controller_fanout_ms !== undefined && settings.thresholds.max_telemetry_controller_fanout_ms <= 0) {
-    errors.push('Max telemetry controller fan-out must be greater than 0 ms.')
-  }
-  if (settings.thresholds.max_telemetry_browser_render_lag_ms !== undefined && settings.thresholds.max_telemetry_browser_render_lag_ms <= 0) {
-    errors.push('Max telemetry browser render lag must be greater than 0 ms.')
-  }
+  // Telemetry budgets are always enforced server-side: a cleared input would
+  // silently come back refilled with the default on save, so require an
+  // explicit value. 0 is the documented explicit-disable.
+  ;(Object.keys(TELEMETRY_BUDGET_DEFAULTS) as TelemetryBudgetKey[]).forEach(key => {
+    const value = settings.thresholds[key]
+    if (value === undefined) {
+      push('thresholds', undefined, `thresholds.${key}`, `${TELEMETRY_BUDGET_LABELS[key]} is always enforced. Enter a value, 0 to disable, or reset to the default (${TELEMETRY_BUDGET_DEFAULTS[key]} ms).`)
+      return
+    }
+    if (value < 0) {
+      push('thresholds', undefined, `thresholds.${key}`, `${TELEMETRY_BUDGET_LABELS[key]} must be >= 0 ms (0 disables this budget).`)
+    }
+  })
   if (settings.thresholds.fleet_constrained_available_slots !== undefined && (!Number.isInteger(settings.thresholds.fleet_constrained_available_slots) || settings.thresholds.fleet_constrained_available_slots < 0)) {
-    errors.push('Fleet constrained free slots must be an integer >= 0.')
+    push('thresholds', undefined, 'thresholds.fleet_constrained_available_slots', 'Fleet constrained free slots must be an integer >= 0.')
   }
   if (settings.thresholds.fleet_saturated_available_slots !== undefined && (!Number.isInteger(settings.thresholds.fleet_saturated_available_slots) || settings.thresholds.fleet_saturated_available_slots < 0)) {
-    errors.push('Fleet saturated free slots must be an integer >= 0.')
+    push('thresholds', undefined, 'thresholds.fleet_saturated_available_slots', 'Fleet saturated free slots must be an integer >= 0.')
+  }
+  if (
+    settings.thresholds.fleet_constrained_available_slots !== undefined
+    && settings.thresholds.fleet_saturated_available_slots !== undefined
+    && settings.thresholds.fleet_saturated_available_slots >= settings.thresholds.fleet_constrained_available_slots
+  ) {
+    // Mirrors the backend write rule: the saturated floor is evaluated first,
+    // so an inverted pair makes the constrained tier unreachable.
+    push('thresholds', undefined, 'thresholds.fleet_saturated_available_slots', 'Fleet saturated free slots must be less than fleet constrained free slots.')
   }
   if (settings.capacity_planning.headroom_pct < 0 || settings.capacity_planning.headroom_pct >= 100) {
-    errors.push('Capacity planning headroom must be between 0 and 100%.')
+    push('capacity', 'generator', 'capacity_planning.headroom_pct', 'Capacity planning headroom must be between 0 and 100%.')
   }
   if (settings.capacity_planning.generator.cpu_cores <= 0) {
-    errors.push('Generator CPU cores must be greater than 0.')
+    push('capacity', 'generator', 'capacity_planning.generator.cpu_cores', 'Generator CPU cores must be greater than 0.')
   }
   if (!Number.isInteger(settings.capacity_planning.generator.memory_mb) || settings.capacity_planning.generator.memory_mb < 1) {
-    errors.push('Generator memory must be an integer >= 1 MB.')
+    push('capacity', 'generator', 'capacity_planning.generator.memory_mb', 'Generator memory must be an integer >= 1 MB.')
   }
   if (settings.capacity_planning.generator.network_mbps <= 0) {
-    errors.push('Generator network throughput must be greater than 0 Mbps.')
+    push('capacity', 'generator', 'capacity_planning.generator.network_mbps', 'Generator network throughput must be greater than 0 Mbps.')
   }
   if (!Number.isInteger(settings.capacity_planning.generator.max_vusers) || settings.capacity_planning.generator.max_vusers < 1) {
-    errors.push('Generator max VUsers must be an integer >= 1.')
+    push('capacity', 'generator', 'capacity_planning.generator.max_vusers', 'Generator max VUsers must be an integer >= 1.')
   }
   if (!Number.isInteger(settings.capacity_planning.availability.configured_available_generators) || settings.capacity_planning.availability.configured_available_generators < 1) {
-    errors.push('Configured available generators must be an integer >= 1.')
+    push('capacity', 'availability', 'capacity_planning.availability.configured_available_generators', 'Configured available generators must be an integer >= 1.')
   }
-  for (const reservation of settings.capacity_planning.reservations ?? []) {
+  ;(settings.capacity_planning.reservations ?? []).forEach((reservation, index) => {
     if (!reservation.project_id.trim()) {
-      errors.push('Each capacity reservation requires a project.')
+      push('capacity', 'reservations', `capacity_planning.reservations.${index}.project_id`, 'Each capacity reservation requires a project.')
     }
     if (!Number.isInteger(reservation.reserved_generators) || reservation.reserved_generators < 0) {
-      errors.push('Reserved generators must be an integer >= 0.')
+      push('capacity', 'reservations', `capacity_planning.reservations.${index}.reserved_generators`, 'Reserved generators must be an integer >= 0.')
     }
     if (reservation.starts_at && reservation.ends_at && new Date(reservation.ends_at) < new Date(reservation.starts_at)) {
-      errors.push('Reservation end must not be before its start.')
+      push('capacity', 'reservations', `capacity_planning.reservations.${index}.window`, 'Reservation end must not be before its start.')
     }
+  })
+  const reservationUsage = reservationUsageSummary(settings)
+  if (reservationUsage.overbooked) {
+    // Mirrors the backend global-envelope rule so overbooking surfaces before
+    // the save round-trips into a 400.
+    push('capacity', 'reservations', 'capacity_planning.reservations', `Always-active global reservations (${reservationUsage.reserved}) exceed configured available generators (${reservationUsage.configured}).`)
   }
   if (!Number.isInteger(settings.archive_retention.default_retention_days) || settings.archive_retention.default_retention_days < 1) {
-    errors.push('Archive retention default days must be an integer >= 1.')
+    push('capacity', 'retention', 'archive_retention.default_retention_days', 'Archive retention default days must be an integer >= 1.')
   }
   const blackoutWindowError = validateScheduleWindowPair('Blackout', settings.schedule_defaults.blackout_start_time, settings.schedule_defaults.blackout_end_time)
-  if (blackoutWindowError) errors.push(blackoutWindowError)
+  if (blackoutWindowError) push('general', 'governance', 'schedule_defaults.blackout', blackoutWindowError)
   const availabilityWindowError = validateScheduleWindowPair('Availability', settings.schedule_defaults.availability_start_time, settings.schedule_defaults.availability_end_time)
-  if (availabilityWindowError) errors.push(availabilityWindowError)
+  if (availabilityWindowError) push('general', 'governance', 'schedule_defaults.availability', availabilityWindowError)
   if (settings.auth.mode !== 'dev' && settings.auth.mode !== 'disabled' && settings.auth.mode !== 'trusted_headers' && settings.auth.mode !== 'oidc') {
-    errors.push('Access control mode must be Dev Bypass, Trusted Headers, or Native OIDC.')
+    push('general', 'authentication', 'auth.mode', 'Access control mode must be Dev Bypass, Trusted Headers, or Native OIDC.')
   }
   if (settings.auth.mode === 'trusted_headers') {
     if (!settings.auth.user_header.trim()) {
-      errors.push('Trusted header auth requires a user header.')
+      push('general', 'authentication', 'auth.user_header', 'Trusted header auth requires a user header.')
     }
     if (!settings.auth.roles_header.trim() && !settings.auth.project_roles_header.trim()) {
-      errors.push('Trusted header auth requires a roles header or project roles header.')
+      push('general', 'authentication', 'auth.roles_header', 'Trusted header auth requires a roles header or project roles header.')
     }
     const authURLFields: Array<[string, string | undefined]> = [
       ['Login URL', settings.auth.login_url],
@@ -415,28 +606,28 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
     authURLFields.forEach(([label, value]) => {
       const error = validateAuthURL(label, value, true)
       if (error) {
-        errors.push(error)
+        push('general', 'authentication', undefined, error)
       }
     })
   }
   if (settings.auth.mode === 'oidc') {
     if (!settings.auth.issuer_url?.trim()) {
-      errors.push('OIDC auth requires an issuer URL.')
+      push('general', 'authentication', 'auth.issuer_url', 'OIDC auth requires an issuer URL.')
     }
     if (!settings.auth.client_id?.trim()) {
-      errors.push('OIDC auth requires a client ID.')
+      push('general', 'authentication', 'auth.client_id', 'OIDC auth requires a client ID.')
     }
     if (!settings.auth.client_secret_env_var?.trim()) {
-      errors.push('OIDC auth requires a client secret environment variable name.')
+      push('general', 'authentication', 'auth.client_secret_env_var', 'OIDC auth requires a client secret environment variable name.')
     }
     if (!settings.auth.redirect_url?.trim()) {
-      errors.push('OIDC auth requires a redirect URL.')
+      push('general', 'authentication', 'auth.redirect_url', 'OIDC auth requires a redirect URL.')
     }
     if (!settings.auth.session_secret_env_var?.trim()) {
-      errors.push('OIDC auth requires a session secret environment variable name.')
+      push('general', 'authentication', 'auth.session_secret_env_var', 'OIDC auth requires a session secret environment variable name.')
     }
     if (!settings.auth.scopes || settings.auth.scopes.length === 0) {
-      errors.push('OIDC auth requires at least one scope.')
+      push('general', 'authentication', 'auth.scopes', 'OIDC auth requires at least one scope.')
     }
     const oidcURLFields: Array<[string, string | undefined, boolean]> = [
       ['Issuer URL', settings.auth.issuer_url, false],
@@ -446,82 +637,83 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
     oidcURLFields.forEach(([label, value, allowAbsolutePath]) => {
       const error = validateAuthURL(label, value, allowAbsolutePath)
       if (error) {
-        errors.push(error)
+        push('general', 'authentication', undefined, error)
       }
     })
   }
   if (settings.prometheus.enabled && !settings.prometheus.base_url.trim()) {
-    errors.push('Prometheus server URL is required when Prometheus graphs are enabled.')
+    push('integrations', 'prometheus', 'prometheus.base_url', 'Prometheus server URL is required when Prometheus graphs are enabled.')
   }
   if (settings.prometheus.base_url.trim()) {
     try {
       const parsed = new URL(settings.prometheus.base_url)
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        errors.push('Prometheus server URL must use http or https.')
+        push('integrations', 'prometheus', 'prometheus.base_url', 'Prometheus server URL must use http or https.')
       }
     } catch {
-      errors.push('Prometheus server URL must be a valid absolute URL.')
+      push('integrations', 'prometheus', 'prometheus.base_url', 'Prometheus server URL must be a valid absolute URL.')
     }
   }
   if (!Number.isInteger(settings.prometheus.timeout_seconds) || settings.prometheus.timeout_seconds < 1 || settings.prometheus.timeout_seconds > 60) {
-    errors.push('Prometheus timeout must be an integer between 1 and 60 seconds.')
+    push('integrations', 'prometheus', 'prometheus.timeout_seconds', 'Prometheus timeout must be an integer between 1 and 60 seconds.')
   }
   if (settings.grafana?.enabled && (!settings.grafana.base_url.trim() || !settings.grafana.service_account_token_env_var.trim())) {
-    errors.push('Grafana proxy requires a server URL and service-account token environment variable.')
+    push('integrations', 'dashboards', 'grafana.base_url', 'Grafana proxy requires a server URL and service-account token environment variable.')
   }
   if (settings.grafana && (!Number.isInteger(settings.grafana.timeout_seconds) || settings.grafana.timeout_seconds < 1 || settings.grafana.timeout_seconds > 60)) {
-    errors.push('Grafana timeout must be an integer between 1 and 60 seconds.')
+    push('integrations', 'dashboards', 'grafana.timeout_seconds', 'Grafana timeout must be an integer between 1 and 60 seconds.')
   }
   if (settings.powerbi?.enabled) {
     if (!settings.powerbi.tenant_id?.trim() || !settings.powerbi.client_id?.trim() || !settings.powerbi.client_secret_env_var?.trim() || !settings.powerbi.workspace_id?.trim()) {
-      errors.push('Power BI publishing requires a tenant ID, client ID, client secret environment variable, and workspace ID.')
+      push('integrations', 'powerbi', 'powerbi.credentials', 'Power BI publishing requires a tenant ID, client ID, client secret environment variable, and workspace ID.')
     }
     const workspaceId = settings.powerbi.workspace_id?.trim() || ''
     if (workspaceId && !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(workspaceId)) {
-      errors.push('Power BI workspace ID must be a GUID.')
+      push('integrations', 'powerbi', 'powerbi.workspace_id', 'Power BI workspace ID must be a GUID.')
     }
   }
   if (settings.powerbi) {
     const timeout = settings.powerbi.timeout_seconds ?? 30
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60) {
-      errors.push('Power BI timeout must be an integer between 1 and 60 seconds.')
+      push('integrations', 'powerbi', 'powerbi.timeout_seconds', 'Power BI timeout must be an integer between 1 and 60 seconds.')
     }
   }
   const clientAppAvailability = settings.client_app?.availability || 'disabled'
   if (clientAppAvailability !== 'enabled' && clientAppAvailability !== 'disabled') {
-    errors.push('Desktop client availability must be enabled or disabled.')
+    push('general', 'platform', 'client_app.availability', 'Desktop client availability must be enabled or disabled.')
   }
   settings.notifications.webhooks.forEach((webhook, index) => {
     const label = `Notification webhook ${index + 1}`
     if (!webhook.url.trim()) {
-      errors.push(`${label} requires a destination URL.`)
+      push('integrations', 'notifications', `notifications.webhooks.${index}.url`, `${label} requires a destination URL.`)
     } else {
       try {
         const parsed = new URL(webhook.url)
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          errors.push(`${label} URL must use http or https.`)
+          push('integrations', 'notifications', `notifications.webhooks.${index}.url`, `${label} URL must use http or https.`)
         }
       } catch {
-        errors.push(`${label} URL must be a valid absolute URL.`)
+        push('integrations', 'notifications', `notifications.webhooks.${index}.url`, `${label} URL must be a valid absolute URL.`)
       }
     }
     if (webhook.format !== 'slack' && webhook.format !== 'teams' && webhook.format !== 'dynatrace') {
-      errors.push(`${label} format must be Slack, Microsoft Teams, or Dynatrace.`)
+      push('integrations', 'notifications', `notifications.webhooks.${index}.format`, `${label} format must be Slack, Microsoft Teams, or Dynatrace.`)
     }
-	    if (webhook.format === 'dynatrace') {
-	      if (!webhook.api_token?.trim() && !webhook.has_api_token) {
-	        errors.push(`${label} requires a Dynatrace API token.`)
-	      }
+    if (webhook.format === 'dynatrace') {
+      if (!webhook.api_token?.trim() && !webhook.has_api_token) {
+        push('integrations', 'notifications', `notifications.webhooks.${index}.api_token`, `${label} requires a Dynatrace API token.`)
+      }
       if (webhook.timeout_minutes !== undefined && (!Number.isFinite(webhook.timeout_minutes) || webhook.timeout_minutes < 0 || webhook.timeout_minutes > 360)) {
-        errors.push(`${label} Dynatrace timeout must be between 0 and 360 minutes.`)
+        push('integrations', 'notifications', `notifications.webhooks.${index}.timeout_minutes`, `${label} Dynatrace timeout must be between 0 and 360 minutes.`)
       }
     }
   })
-  return errors
+  return issues
 }
 
 export function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): DashboardSystemSettings {
   return {
+    revision: typeof settings.revision === 'string' ? settings.revision : '',
     general: {
       ...DEFAULT_SETTINGS.general,
       ...settings.general,

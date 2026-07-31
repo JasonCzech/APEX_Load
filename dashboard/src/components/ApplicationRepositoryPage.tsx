@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   Application,
@@ -230,6 +230,9 @@ export default function ApplicationRepositoryPage({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const catalogLoadGenerationRef = useRef(0)
+  const activeDomainIdRef = useRef(activeDomain?.id)
+  activeDomainIdRef.current = activeDomain?.id
 
   const scopedProjects = useMemo(() => {
     const domainId = activeDomain?.id || 'default'
@@ -324,32 +327,61 @@ export default function ApplicationRepositoryPage({
   }, [])
 
   const refreshCatalogAssets = useCallback(async () => {
+    const domainId = activeDomain?.id
+    // A bulk action can finish after the user has already changed domains.
+    // Its render-time callback must never take ownership of the new catalog.
+    if (domainId !== activeDomainIdRef.current) return false
+    const generation = ++catalogLoadGenerationRef.current
     setCatalogLoading(true)
     try {
       const snapshot = await loadCatalogAssets()
+      if (generation !== catalogLoadGenerationRef.current || domainId !== activeDomainIdRef.current) return false
       applyCatalogSnapshot(snapshot)
+      return true
     } finally {
-      setCatalogLoading(false)
+      if (generation === catalogLoadGenerationRef.current && domainId === activeDomainIdRef.current) {
+        setCatalogLoading(false)
+      }
     }
-  }, [applyCatalogSnapshot, loadCatalogAssets])
+  }, [activeDomain?.id, applyCatalogSnapshot, loadCatalogAssets])
 
   useEffect(() => {
     let cancelled = false
+    const domainId = activeDomain?.id
+    const generation = ++catalogLoadGenerationRef.current
     setCatalogLoading(true)
     loadCatalogAssets()
       .then(snapshot => {
-        if (!cancelled) applyCatalogSnapshot(snapshot)
+        if (
+          !cancelled
+          && generation === catalogLoadGenerationRef.current
+          && domainId === activeDomainIdRef.current
+        ) {
+          applyCatalogSnapshot(snapshot)
+        }
       })
       .catch(err => {
-        if (!cancelled) setCatalogWarnings({ catalog: getErrorMessage(err, 'Unable to load repository catalog.') })
+        if (
+          !cancelled
+          && generation === catalogLoadGenerationRef.current
+          && domainId === activeDomainIdRef.current
+        ) {
+          setCatalogWarnings({ catalog: getErrorMessage(err, 'Unable to load repository catalog.') })
+        }
       })
       .finally(() => {
-        if (!cancelled) setCatalogLoading(false)
+        if (
+          !cancelled
+          && generation === catalogLoadGenerationRef.current
+          && domainId === activeDomainIdRef.current
+        ) {
+          setCatalogLoading(false)
+        }
       })
     return () => {
       cancelled = true
     }
-  }, [applyCatalogSnapshot, loadCatalogAssets])
+  }, [activeDomain?.id, applyCatalogSnapshot, loadCatalogAssets])
 
   const catalogRows = useMemo(() => buildRepositoryCatalogRows({
     activeDomain,
@@ -581,8 +613,8 @@ export default function ApplicationRepositoryPage({
         name: pool.name || row.name,
         description: pool.description,
         schema: pool.schema,
-        project_id: pool.project_id || row.projectId,
         archived_at: new Date().toISOString(),
+        updated_at: pool.updated_at,
       })
     }
   }, [repositoryApi, scriptApi])
@@ -697,14 +729,54 @@ export default function ApplicationRepositoryPage({
     setError('')
     setStatus('')
     try {
-      await Promise.all(archiveableSelectedRows.map(archiveRepositoryRow))
-      const archivedKeys = new Set(archiveableSelectedRows.map(repositoryRowKey))
-      setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !archivedKeys.has(key))))
-      await refreshAfterBulkChange(archiveableSelectedRows)
-      const unchanged = selectedRows.length - archiveableSelectedRows.length
-      setStatus(`Archived ${plural(count, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}`)
-    } catch (err) {
-      setError(getErrorMessage(err, 'Unable to archive selected repository items.'))
+      const results = await Promise.allSettled(archiveableSelectedRows.map(async row => {
+        await archiveRepositoryRow(row)
+        return row
+      }))
+      const archivedRows: RepositoryAssetRow[] = []
+      const failures: Array<{ row: RepositoryAssetRow; error: unknown }> = []
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          archivedRows.push(result.value)
+        } else {
+          failures.push({ row: archiveableSelectedRows[index], error: result.reason })
+        }
+      })
+
+      if (archivedRows.length > 0) {
+        const archivedKeys = new Set(archivedRows.map(repositoryRowKey))
+        setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !archivedKeys.has(key))))
+        const unchanged = selectedRows.length - archivedRows.length
+        setStatus(`Archived ${plural(archivedRows.length, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}`)
+      }
+
+      let refreshError: unknown
+      try {
+        // Refresh once, after every mutation has settled. Even an API failure
+        // can represent an ambiguous server-side outcome, so refresh when no
+        // archive was confirmed as well.
+        await refreshAfterBulkChange(archiveableSelectedRows)
+      } catch (err) {
+        refreshError = err
+      }
+
+      const errorMessages: string[] = []
+      if (failures.length > 0) {
+        const details = failures
+          .slice(0, 2)
+          .map(failure => `${failure.row.name}: ${getErrorMessage(failure.error, 'archive failed')}`)
+          .join('; ')
+        const additional = failures.length > 2 ? `; ${plural(failures.length - 2, 'additional failure')}` : ''
+        errorMessages.push(
+          `Unable to archive ${plural(failures.length, 'selected item')}; ${plural(failures.length, 'failed item')} ${failures.length === 1 ? 'remains' : 'remain'} selected: ${details}${additional}.`,
+        )
+      }
+      if (refreshError) {
+        errorMessages.push(`The repository refresh failed after the archive attempts: ${getErrorMessage(refreshError, 'refresh failed')}.`)
+      }
+      if (errorMessages.length > 0) {
+        setError(errorMessages.join(' '))
+      }
     } finally {
       setBulkBusy(false)
     }

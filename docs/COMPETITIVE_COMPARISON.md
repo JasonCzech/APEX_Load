@@ -413,8 +413,8 @@ Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Publ
 | --- | --- | --- | --- |
 | Run Logic | Iterations | `config.run_logic.iterations` | Executed |
 | Run Logic | Auto-transactions | `config.run_logic.auto_transactions` | Executed |
-| Run Logic | Block scheduling | `config.run_logic.block_scheduling` | Executed |
-| Run Logic | Action sequence | `config.run_logic.action_sequence` | Executed |
+| Run Logic | Block scheduling | `config.run_logic.block_scheduling` | Compatibility-only |
+| Run Logic | Action sequence | `config.run_logic.action_sequence` | Compatibility-only |
 | Pacing | Delay mode and bounds | `config.pacing.*` | Executed |
 | Think Time | Ignore, multiplier, limit | `config.think_time.*` | Executed |
 | Logging | Log level, error-only, extended options | `config.log.*` | Executed |

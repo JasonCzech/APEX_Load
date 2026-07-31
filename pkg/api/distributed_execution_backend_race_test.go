@@ -75,7 +75,7 @@ func TestDistributedControlMethodsRaceTeardown(t *testing.T) {
 	readers := []func(){
 		func() { _ = b.StopTest(tr, test) },
 		func() { _ = b.AdjustDuration(tr, test, time.Second) },
-		func() { _ = b.stopRemainingRemoteTargets(tr, test) },
+		func() { _ = b.stopRemainingRemoteTargets(tr, test, true) },
 	}
 	for _, fn := range readers {
 		fn := fn

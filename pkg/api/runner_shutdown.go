@@ -168,9 +168,12 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		test.remoteGroupShards = nil
 		test.remoteMetricsBatchesByTarget = nil
 		test.remoteTargetStates = nil
+		test.remoteGoalAcceptedErrorWindows = nil
+		test.remoteGoalPublishedErrorWindows = nil
 		test.remoteFinalizing = false
 		test.remoteMetricsFlushScheduled = false
 		test.remoteGoalUpdateRunning = false
+		test.remoteGoalUpdateRevision = 0
 		test.remoteActivated = false
 		test.remoteActivationPending = false
 		clearDistributedRunSecretSnapshotsLocked(test)

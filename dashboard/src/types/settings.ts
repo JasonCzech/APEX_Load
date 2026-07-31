@@ -7,6 +7,9 @@ import type { CapacityReservation } from './capacity'
 export interface DashboardThresholdSettings {
   max_error_rate_pct?: number
   max_p99_latency_ms?: number
+  // Auto-stop after this many consecutive breached P99 samples; unset/0 keeps
+  // the P99 threshold alert-only.
+  p99_latency_stop_consecutive_samples?: number
   max_avg_server_processing_ms?: number
   max_avg_transfer_ms?: number
   max_telemetry_sample_age_ms?: number
@@ -194,6 +197,8 @@ export interface DashboardScriptImportSettings {
 }
 
 export interface DashboardSystemSettings {
+  /** Opaque optimistic-concurrency token returned with the settings ETag. */
+  revision?: string
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
   capacity_planning: DashboardCapacityPlanningSettings

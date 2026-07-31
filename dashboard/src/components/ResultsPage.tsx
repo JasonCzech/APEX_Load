@@ -41,6 +41,7 @@ import { useLibraryFederation, type LibraryAssetSourceKind } from './useLibraryF
 import { useSharedTestList } from '../hooks/useSharedTestList'
 import type { NavPage } from './Sidebar'
 import type { LibraryCatalogItem } from '../types/library'
+import { requestSettingsFocus } from './settingsSectionLayout'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -389,7 +390,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
   const [releaseFilter, setReleaseFilter] = useState('all')
   const error = operationError || listError
   const openRemoteSettings = useCallback(() => {
-    try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
+    requestSettingsFocus('integrations')
     onNavigate?.('settings')
   }, [onNavigate])
 

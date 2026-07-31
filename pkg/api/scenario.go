@@ -357,6 +357,9 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err := tr.validateDataPoolProjectsLocked(projectID, dataPools); err != nil {
 		return nil, err
 	}
+	if err := tr.validateDataPoolsNotArchivedLocked(dataPools); err != nil {
+		return nil, err
+	}
 	actor := req.creationActor
 	if strings.TrimSpace(actor.Type) == "" && strings.TrimSpace(actor.Subject) == "" {
 		actor = systemTestCreationActor("controller:scenario-store")

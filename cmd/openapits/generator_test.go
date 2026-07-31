@@ -33,6 +33,10 @@ components:
     Widget:
       type: object
       properties:
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
         id:
           type: string
         metadata: {}
@@ -94,6 +98,7 @@ paths:
 		`"Dynamic": unknown;`,
 		`"Labels": Record<string, string>;`,
 		`"State": "ready" | "complete";`,
+		`"archived_at"?: (string) | null;`,
 		`"id": string;`,
 		`"metadata"?: unknown;`,
 		`"get": operations["getWidget"];`,

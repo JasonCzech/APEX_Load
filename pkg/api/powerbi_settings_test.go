@@ -121,7 +121,7 @@ func TestMergeOmittedSystemSettingsSectionsPreservesIntegrations(t *testing.T) {
 func TestPowerBISettingsSurviveSystemSettingsNormalize(t *testing.T) {
 	in := defaultSystemSettings(5)
 	in.PowerBI = validEnabledPowerBISettings()
-	out := normalizeLoadedSystemSettings(in, 5)
+	out := normalizeLoadedSystemSettings(in, "", 5)
 	if !out.PowerBI.Enabled || out.PowerBI.TenantID != "tenant-1" {
 		t.Fatalf("powerbi settings lost in normalize: %+v", out.PowerBI)
 	}

@@ -129,9 +129,324 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		if route.Handler != "" {
 			inspectHandlerContract(route.Handler, functions, functionResults, typeDefinitions, explicitResponseStatuses, analysis, map[string]bool{}, 0)
 		}
-		contracts[route.Method+" "+route.Path] = inferredContractForAnalysis(route, analysis)
+		applyExplicitRouteContractTypes(route, analysis, typeDefinitions)
+		applyRouteRequestSchemaProjection(route, analysis)
+		contract := inferredContractForAnalysis(route, analysis)
+		applySystemSettingsConcurrencyContract(route, &contract)
+		applyDataPoolImportExportContract(route, &contract)
+		contracts[route.Method+" "+route.Path] = contract
 	}
 	return contracts, nil
+}
+
+// explicitRouteContractTypes types operations whose handlers hide their JSON
+// contract from AST inference. The system-settings handlers read the raw
+// request body (io.ReadAll feeds the omitted-section merge probing, which the
+// walker classifies as a binary rawRequest) and write a redacted
+// map[string]any response. Data-pool updates write values returned from a
+// storage-interface method, whose cross-package result type is likewise not
+// visible to the local function-result walker.
+var explicitRouteContractTypes = map[string]struct {
+	requestType         string
+	responseTypes       map[int]string
+	responseDescription string
+}{
+	"GET /api/v1/system/settings": {
+		responseTypes:       map[int]string{http.StatusOK: "SystemSettings"},
+		responseDescription: "System settings document. notifications.webhooks[].api_token is always redacted to an empty string; a has_api_token boolean reports whether a token is stored.",
+	},
+	"PUT /api/v1/system/settings": {
+		requestType:         "SystemSettings",
+		responseTypes:       map[int]string{http.StatusOK: "SystemSettings"},
+		responseDescription: "Updated system settings document. Top-level sections omitted from the request body are preserved from the stored settings; send a section explicitly (e.g. \"thresholds\": {}) to reset it. notifications.webhooks[].api_token is always redacted in the response.",
+	},
+	"PUT /api/v1/data-pools/{id}": {
+		responseTypes: map[int]string{http.StatusOK: "storage.SharedDataPool"},
+	},
+	"PUT /api/v1/data-pools/{id}/rows/{row_id}": {
+		responseTypes: map[int]string{http.StatusOK: "storage.SharedDataPoolRow"},
+	},
+}
+
+func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerContractAnalysis, typeDefinitions map[string]ast.Expr) {
+	override, ok := explicitRouteContractTypes[route.Method+" "+route.Path]
+	if !ok {
+		return
+	}
+	if override.requestType != "" {
+		schema := openAPISchemaForASTType(explicitOpenAPITypeExpression(override.requestType), typeDefinitions, map[string]bool{}, 0)
+		if route.Method == http.MethodPut && route.Path == "/api/v1/system/settings" {
+			removeSystemSettingsInternalRevision(&schema)
+			addSystemSettingsUpdateCompatibilityFields(&schema)
+			closeStructuredOpenAPISchema(&schema)
+			// PUT replaces only the top-level sections the caller supplies.
+			// No individual root section is mandatory; inferred request
+			// requirements are cleared recursively later because an explicitly
+			// empty section is the supported reset form.
+			schema.Required = nil
+		}
+		// jsonRequest takes precedence over rawRequest in inferredRequestBody,
+		// so the octet-stream fallback disappears.
+		analysis.jsonRequest = true
+		analysis.rawRequest = false
+		analysis.requestSchema = &schema
+	}
+	for status, typeName := range override.responseTypes {
+		schema := openAPISchemaForASTType(explicitOpenAPITypeExpression(typeName), typeDefinitions, map[string]bool{}, 0)
+		if typeName == "SystemSettings" {
+			removeSystemSettingsInternalRevision(&schema)
+			addSystemSettingsResponseProjectionFields(&schema)
+		}
+		schema.Description = override.responseDescription
+		analysis.jsonResponse = true
+		analysis.responseSchemas[status] = schema
+	}
+}
+
+func explicitOpenAPITypeExpression(typeName string) ast.Expr {
+	packageName, selectedType, qualified := strings.Cut(typeName, ".")
+	if qualified {
+		return &ast.SelectorExpr{
+			X:   &ast.Ident{Name: packageName},
+			Sel: &ast.Ident{Name: selectedType},
+		}
+	}
+	return &ast.Ident{Name: typeName}
+}
+
+func removeSystemSettingsInternalRevision(schema *oasSchema) {
+	if schema == nil {
+		return
+	}
+	delete(schema.Properties, "_revision")
+	required := schema.Required[:0]
+	for _, field := range schema.Required {
+		if field != "_revision" {
+			required = append(required, field)
+		}
+	}
+	schema.Required = required
+}
+
+// applyRouteRequestSchemaProjection removes response-only or policy-rejected
+// fields from inferred request documents and strengthens types that cannot be
+// represented faithfully by the handler's decoding helper types.
+func applyRouteRequestSchemaProjection(route discoveredRoute, analysis *handlerContractAnalysis) {
+	if analysis == nil || analysis.requestSchema == nil {
+		return
+	}
+
+	switch {
+	case route.Method == http.MethodPost && route.Path == "/api/v1/data-pools":
+		// Identity and timestamps are assigned after decoding; keep only the
+		// caller-owned creation fields from the shared storage/response model.
+		for _, field := range []string{"id", "created_at", "updated_at", "archived_at"} {
+			delete(analysis.requestSchema.Properties, field)
+		}
+	case route.Method == http.MethodPut && route.Path == "/api/v1/data-pools/{id}":
+		// json.RawMessage lets the handler distinguish omission from explicit
+		// null, but its inferred `{}` schema would advertise arbitrary JSON.
+		// The accepted wire values are exactly a timestamp or null.
+		analysis.requestSchema.Properties["archived_at"] = oasSchema{
+			Type:        "string",
+			Format:      "date-time",
+			Nullable:    true,
+			Description: "Archive timestamp, or null to restore the data pool. Omit to preserve the current archive state.",
+		}
+		delete(analysis.requestSchema.Properties, "project_id")
+	case route.Method == http.MethodPost && route.Path == "/api/v1/data-pools/{id}/rows":
+		// The create handler owns row identity, parent scope, optimistic
+		// version, and timestamps. Reusing the storage/response type for JSON
+		// decoding must not expose those server-owned fields as create inputs.
+		stringValue := oasSchema{Type: "string"}
+		additional := true
+		analysis.requestSchema = &oasSchema{
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"data":   {Type: "object", AdditionalProperties: &stringValue},
+				"status": {Type: "string"},
+			},
+			AdditionalProperties: &additional,
+		}
+	case route.Method == http.MethodPatch &&
+		(route.Path == "/api/v1/scripts/{id}/move" || route.Path == "/api/v1/tests/{id}/move"):
+		// A null folder_id moves the resource to the root. Pointer inference
+		// preserves the scalar type but needs an explicit wire-level null
+		// projection.
+		folderID, ok := analysis.requestSchema.Properties["folder_id"]
+		if !ok {
+			return
+		}
+		folderID.Nullable = true
+		analysis.requestSchema.Properties["folder_id"] = folderID
+	case route.Method == http.MethodPatch && route.Path == "/api/v1/tests/{id}/groups/{group}/runtime-settings":
+		// The handler accepts the shared RuntimeSettingsOverride Go type for
+		// decoding, but deliberately rejects environment and redaction-rule
+		// edits at this scope.
+		runtimeSettings, ok := analysis.requestSchema.Properties["runtime_settings"]
+		if !ok {
+			return
+		}
+		delete(runtimeSettings.Properties, "env")
+		delete(runtimeSettings.Properties, "redaction_rules")
+		analysis.requestSchema.Properties["runtime_settings"] = runtimeSettings
+	}
+}
+
+func applyDataPoolImportExportContract(route discoveredRoute, contract *inferredRouteContract) {
+	if contract == nil {
+		return
+	}
+	switch {
+	case route.Method == http.MethodPost && route.Path == "/api/v1/data-pools/{id}/rows/import":
+		if contract.RequestBody == nil {
+			return
+		}
+		mediaType, ok := contract.RequestBody.Content["multipart/form-data"]
+		if !ok {
+			return
+		}
+		mediaType.Schema.Required = mergeOpenAPIRequiredFields(mediaType.Schema.Required, []string{"file"})
+		contract.RequestBody.Content["multipart/form-data"] = mediaType
+	case route.Method == http.MethodGet && route.Path == "/api/v1/data-pools/{id}/rows/export":
+		if contract.Responses == nil {
+			contract.Responses = make(map[string]oasResponse)
+		}
+		delete(contract.Responses, "2XX")
+		contract.Responses[strconv.Itoa(http.StatusOK)] = oasResponse{
+			Description: "Data pool rows in the APEX CSV round-trip format.",
+			Content: map[string]oasMediaType{
+				"text/csv": {Schema: oasSchema{Type: "string"}},
+			},
+			Headers: map[string]oasHeader{
+				"Cache-Control": {
+					Description: "Prevents caching of exported raw data.",
+					Schema:      oasParamSchema{Type: "string"},
+				},
+				"Content-Disposition": {
+					Description: "Attachment filename ending in .apexload.csv.",
+					Schema:      oasParamSchema{Type: "string"},
+				},
+				"X-APEXLoad-Sensitivity": {
+					Description: "Sensitivity classification for the raw export.",
+					Schema:      oasParamSchema{Type: "string"},
+				},
+			},
+		}
+	}
+}
+
+// redactedSystemSettingsResponse adds has_api_token dynamically after encoding
+// SystemSettings. Keep that response projection in the generated schema.
+func addSystemSettingsResponseProjectionFields(schema *oasSchema) {
+	addSystemSettingsWebhookTokenProjectionField(
+		schema,
+		"True when a write-only Dynatrace API token is stored for this webhook.",
+	)
+	if schema.Properties == nil {
+		schema.Properties = map[string]oasSchema{}
+	}
+	schema.Properties["revision"] = oasSchema{
+		Type:        "string",
+		Description: "Opaque disclosure-safe revision corresponding to the ETag response header.",
+	}
+	schema.Required = mergeOpenAPIRequiredFields(schema.Required, []string{"revision"})
+}
+
+// addSystemSettingsUpdateCompatibilityFields documents the one response
+// projection accepted by the strict PUT decoder. The value is ignored; it is
+// admitted only so clients can safely echo a GET response.
+func addSystemSettingsUpdateCompatibilityFields(schema *oasSchema) {
+	addSystemSettingsWebhookTokenProjectionField(
+		schema,
+		"Response projection accepted and ignored when echoing system settings.",
+	)
+	if schema.Properties == nil {
+		schema.Properties = map[string]oasSchema{}
+	}
+	schema.Properties["revision"] = oasSchema{
+		Type:        "string",
+		Description: "Response projection accepted and ignored when echoing system settings.",
+	}
+	schema.Properties["expected_revision"] = oasSchema{
+		Type:        "string",
+		Description: "Body-form optimistic concurrency precondition. Required only when If-Match is omitted.",
+	}
+}
+
+func applySystemSettingsConcurrencyContract(route discoveredRoute, contract *inferredRouteContract) {
+	if contract == nil || route.Path != "/api/v1/system/settings" {
+		return
+	}
+	if response, ok := contract.Responses[strconv.Itoa(http.StatusOK)]; ok {
+		if response.Headers == nil {
+			response.Headers = map[string]oasHeader{}
+		}
+		response.Headers["ETag"] = oasHeader{
+			Description: "Strong validator for this redacted system-settings representation. Send it in If-Match when updating.",
+			Schema:      oasParamSchema{Type: "string"},
+		}
+		contract.Responses[strconv.Itoa(http.StatusOK)] = response
+	}
+	if route.Method != http.MethodPut {
+		return
+	}
+	found := false
+	for i := range contract.HeaderParameters {
+		if strings.EqualFold(contract.HeaderParameters[i].Name, "If-Match") {
+			contract.HeaderParameters[i].Description = "ETag returned by GET /api/v1/system/settings. Required unless expected_revision is supplied in the request body."
+			found = true
+			break
+		}
+	}
+	if !found {
+		contract.HeaderParameters = append(contract.HeaderParameters, oasParameter{
+			Name:        "If-Match",
+			In:          "header",
+			Description: "ETag returned by GET /api/v1/system/settings. Required unless expected_revision is supplied in the request body.",
+			Required:    false,
+			Schema:      oasParamSchema{Type: "string"},
+		})
+	}
+}
+
+func addSystemSettingsWebhookTokenProjectionField(schema *oasSchema, description string) {
+	if schema == nil {
+		return
+	}
+	notifications, ok := schema.Properties["notifications"]
+	if !ok {
+		return
+	}
+	webhooks, ok := notifications.Properties["webhooks"]
+	if !ok || webhooks.Items == nil {
+		return
+	}
+	if webhooks.Items.Properties == nil {
+		webhooks.Items.Properties = map[string]oasSchema{}
+	}
+	webhooks.Items.Properties[redactedSecretConfiguredField] = oasSchema{
+		Type:        "boolean",
+		Description: description,
+	}
+}
+
+// closeStructuredOpenAPISchema mirrors json.Decoder.DisallowUnknownFields for
+// an explicitly inferred request schema. Struct-shaped objects are closed
+// recursively, while map-shaped objects retain their declared additional-value
+// schema.
+func closeStructuredOpenAPISchema(schema *oasSchema) {
+	if schema == nil {
+		return
+	}
+	if schema.Type == "object" && schema.Properties != nil {
+		schema.AdditionalProperties = boolPointer(false)
+		for name, property := range schema.Properties {
+			closeStructuredOpenAPISchema(&property)
+			schema.Properties[name] = property
+		}
+	}
+	closeStructuredOpenAPISchema(schema.Items)
 }
 
 func receiverTypeName(fn *ast.FuncDecl) string {
@@ -498,10 +813,15 @@ func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysi
 		if analysis.requestSchema != nil {
 			schema = *analysis.requestSchema
 		}
-		schema.Required = mergeOpenAPIRequiredFields(
-			schema.Required,
-			explicitRequestRequiredFields(route.Method, route.Path, schema.Properties),
-		)
+		// `omitempty` is an encoding rule, not a decode-time validation rule.
+		// Structural inference still marks response fields accurately, but an
+		// inferred request starts with no required fields at any depth. Route
+		// semantics below then opt top-level fields back in. This also keeps
+		// explicit empty-object reset forms such as {"general": {}} valid.
+		clearOpenAPISchemaRequired(&schema)
+		if required, declared := explicitRequestRequiredFields(route.Method, route.Path, schema.Properties); declared {
+			schema.Required = required
+		}
 		if isScheduleUpdateRoute(route.Method, route.Path) {
 			if expectedRevision, ok := schema.Properties["expected_revision"]; ok {
 				expectedRevision.Description = "Required unless the If-Match header is supplied. Must be the positive current schedule revision."
@@ -526,6 +846,28 @@ func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysi
 	return nil
 }
 
+func clearOpenAPISchemaRequired(schema *oasSchema) {
+	if schema == nil {
+		return
+	}
+	schema.Required = nil
+	for name, property := range schema.Properties {
+		clearOpenAPISchemaRequired(&property)
+		schema.Properties[name] = property
+	}
+	clearOpenAPISchemaRequired(schema.Items)
+	for index := range schema.OneOf {
+		clearOpenAPISchemaRequired(&schema.OneOf[index])
+	}
+	switch additional := schema.AdditionalProperties.(type) {
+	case oasSchema:
+		clearOpenAPISchemaRequired(&additional)
+		schema.AdditionalProperties = additional
+	case *oasSchema:
+		clearOpenAPISchemaRequired(additional)
+	}
+}
+
 func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, bool) {
 	if route.Method != http.MethodPost ||
 		(name != "allow_java_vuser_runner") {
@@ -540,7 +882,7 @@ func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, b
 	}
 }
 
-func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) []string {
+func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) ([]string, bool) {
 	declared := map[string][]string{
 		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
 		"PUT /api/v1/scenarios/{id}":                                                                    {"name", "duration", "groups"},
@@ -553,14 +895,22 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"POST /api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve": {"action"},
 		"POST /api/v1/execution-plans":                                                                  {"name"},
 		"PUT /api/v1/execution-plans/{id}":                                                              {"name", "revision"},
+		"POST /api/v1/auth/users":                                                                       {"subject"},
+		"POST /api/v1/auth/service-accounts":                                                            {"name"},
+		"POST /api/v1/data-pools":                                                                       {"name"},
+		"PUT /api/v1/data-pools/{id}":                                                                   {"name", "updated_at"},
+		"POST /api/v1/data-pools/{id}/rows":                                                             {"data"},
+		"PUT /api/v1/data-pools/{id}/rows/{row_id}":                                                     {"data", "version"},
+		"PATCH /api/v1/tests/{id}/groups/{group}/runtime-settings":                                      {"expected_revision", "fields"},
+		"PUT /api/v1/tests/{id}/groups/{group}/parameters":                                              {"expected_revision", "parameters"},
 		"PUT /api/v1/correlation-rulesets/{id}":                                                         {"expected_updated_at", "name"},
 		"POST /api/v1/correlation-rulesets/discover-from-script":                                        {"script_id"},
 		"POST /api/v1/correlation-rulesets/{id}/apply-to-script":                                        {"script_id"},
 		"POST /api/v1/scripts/browser-replay/sessions":                                                  {"script"},
 	}
-	fields := declared[method+" "+path]
-	if len(fields) == 0 {
-		return nil
+	fields, ok := declared[method+" "+path]
+	if !ok {
+		return nil, false
 	}
 	required := make([]string, 0, len(fields))
 	for _, field := range fields {
@@ -569,7 +919,7 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		}
 	}
 	sort.Strings(required)
-	return required
+	return required, true
 }
 
 func mergeOpenAPIRequiredFields(existing, explicit []string) []string {
@@ -743,7 +1093,7 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 		item := openAPISchemaForASTType(value.Elt, typeDefinitions, visiting, depth+1)
 		return oasSchema{Type: "array", Items: &item}
 	case *ast.MapType:
-		additional := true
+		additional := openAPISchemaForASTType(value.Value, typeDefinitions, visiting, depth+1)
 		return oasSchema{Type: "object", AdditionalProperties: &additional}
 	case *ast.InterfaceType:
 		return oasSchema{}
@@ -754,6 +1104,14 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			}
 			if pkg.Name == "json" && value.Sel.Name == "RawMessage" {
 				return oasSchema{}
+			}
+			if pkg.Name == "storage" {
+				switch value.Sel.Name {
+				case "SharedDataPool":
+					return sharedDataPoolOpenAPISchema()
+				case "SharedDataPoolRow":
+					return sharedDataPoolRowOpenAPISchema()
+				}
 			}
 			// Cross-package named scalars cannot be resolved from this
 			// package's AST alone; known string enums are mapped explicitly so
@@ -775,7 +1133,7 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 		properties := map[string]oasSchema{}
 		var required []string
 		for _, field := range value.Fields.List {
-			name, include, _ := jsonFieldName(field)
+			name, include, omitEmpty := jsonFieldName(field)
 			if len(field.Names) == 0 && (!include || name == "") && anonymousJSONFieldPromotesMembers(field) {
 				embedded := openAPISchemaForASTType(field.Type, typeDefinitions, visiting, depth+1)
 				for embeddedName, embeddedProperty := range embedded.Properties {
@@ -794,11 +1152,50 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 				continue
 			}
 			properties[name] = openAPISchemaForASTType(field.Type, typeDefinitions, visiting, depth+1)
+			if !omitEmpty {
+				required = append(required, name)
+			}
 		}
+		sort.Strings(required)
 		return oasSchema{Type: "object", Properties: properties, Required: required}
 	}
 	additional := true
 	return oasSchema{Type: "object", AdditionalProperties: &additional}
+}
+
+func sharedDataPoolOpenAPISchema() oasSchema {
+	stringValue := oasSchema{Type: "string"}
+	return oasSchema{
+		Type: "object",
+		Properties: map[string]oasSchema{
+			"id":          {Type: "string"},
+			"name":        {Type: "string"},
+			"description": {Type: "string"},
+			"schema":      {Type: "object", AdditionalProperties: &stringValue},
+			"project_id":  {Type: "string"},
+			"created_at":  {Type: "string", Format: "date-time"},
+			"updated_at":  {Type: "string", Format: "date-time"},
+			"archived_at": {Type: "string", Format: "date-time", Nullable: true},
+		},
+		Required: []string{"created_at", "id", "name", "updated_at"},
+	}
+}
+
+func sharedDataPoolRowOpenAPISchema() oasSchema {
+	stringValue := oasSchema{Type: "string"}
+	return oasSchema{
+		Type: "object",
+		Properties: map[string]oasSchema{
+			"id":         {Type: "string"},
+			"pool_id":    {Type: "string"},
+			"data":       {Type: "object", AdditionalProperties: &stringValue},
+			"status":     {Type: "string"},
+			"version":    {Type: "integer", Format: "int64"},
+			"created_at": {Type: "string", Format: "date-time"},
+			"updated_at": {Type: "string", Format: "date-time"},
+		},
+		Required: []string{"created_at", "data", "id", "pool_id", "updated_at", "version"},
+	}
 }
 
 func anonymousJSONFieldPromotesMembers(field *ast.Field) bool {

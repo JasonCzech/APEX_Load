@@ -76,7 +76,14 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 	test.remoteStopFinalizerRunning = false
 	test.remoteMetricsLastPublishedAt = time.Time{}
 	test.remoteMetricsFlushScheduled = false
+	test.remoteMetricsAcceptedRevision = 0
+	test.remoteMetricsPublishedRevision = 0
+	test.remoteMetricsPublishGate = make(chan struct{}, 1)
+	test.remoteMetricsPublishGate <- struct{}{}
+	test.remoteGoalAcceptedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
+	test.remoteGoalPublishedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
 	test.remoteGoalUpdateRunning = false
+	test.remoteGoalUpdateRevision = 0
 	test.remoteActivated = false
 	test.remoteActivationPending = true
 	test.remoteControlGeneration++
@@ -126,7 +133,13 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 		test.remoteStopFinalizerRunning = false
 		test.remoteMetricsLastPublishedAt = time.Time{}
 		test.remoteMetricsFlushScheduled = false
+		test.remoteMetricsAcceptedRevision = 0
+		test.remoteMetricsPublishedRevision = 0
+		test.remoteMetricsPublishGate = nil
+		test.remoteGoalAcceptedErrorWindows = nil
+		test.remoteGoalPublishedErrorWindows = nil
 		test.remoteGoalUpdateRunning = false
+		test.remoteGoalUpdateRevision = 0
 		test.remoteActivated = previousRemoteActivated
 		test.remoteActivationPending = previousRemoteActivationPending
 		test.goalControl = previousGoalControl
@@ -410,6 +423,10 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	test.remoteGroupShards = nil
 	test.remoteMetricsBatchesByTarget = nil
 	test.remoteTargetStates = nil
+	test.remoteGoalAcceptedErrorWindows = nil
+	test.remoteGoalPublishedErrorWindows = nil
+	test.remoteGoalUpdateRunning = false
+	test.remoteGoalUpdateRevision = 0
 	test.remoteLifecycleCtx = nil
 	test.remoteLifecycleCancel = nil
 	test.remoteStopFinalizerRunning = false
@@ -576,6 +593,13 @@ func (b *distributedExecutionBackend) forceStopDistributedTargets(parent context
 }
 
 func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	tr.mu.RLock()
+	executionGeneration := test.executionGeneration
+	tr.mu.RUnlock()
+receiveLoop:
 	for {
 		batch, err := stream.Receive()
 		if err != nil {
@@ -595,11 +619,13 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.TestID != test.ID {
 			continue
 		}
-		tr.mu.RLock()
-		expectedGeneration := test.executionGeneration
-		tr.mu.RUnlock()
-		if batch.ExecutionGeneration != expectedGeneration {
-			b.failDistributedTestOnStreamError(tr, test, target, fmt.Errorf("metrics generation %d does not match test generation %d", batch.ExecutionGeneration, expectedGeneration))
+		terminal := isTerminalRemoteLifecycle(batch.LifecycleState)
+		fence, current := captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, terminal)
+		if !current {
+			return
+		}
+		if batch.ExecutionGeneration != executionGeneration {
+			b.failDistributedTestOnStreamError(tr, test, target, fmt.Errorf("metrics generation %d does not match test generation %d", batch.ExecutionGeneration, executionGeneration))
 			return
 		}
 		if batch.Telemetry == nil {
@@ -610,29 +636,115 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 		if batch.Telemetry.PublishedAtUnixMs > 0 {
 			batch.Telemetry.TransportLagMs = float64(receivedAtUnixMs - batch.Telemetry.PublishedAtUnixMs)
 		}
-		if !isTerminalRemoteLifecycle(batch.LifecycleState) {
-			publish, flushDelay := b.shouldPublishDistributedMetricsBatch(tr, test, time.Now())
-			if !publish {
-				b.storeRemoteMetricsBatchOnly(tr, test, target, batch)
-				if flushDelay >= 0 {
-					go b.flushStoredDistributedMetricsAfterDelay(ctx, tr, test, target, batch, flushDelay)
+		var (
+			live        *LiveMetrics
+			finalStatus string
+			finalError  string
+			fresh       bool
+			publication distributedMetricsPublication
+		)
+		if !terminal {
+			// Reject duplicate/stale windows before they reserve a delayed flush
+			// or enter the per-sample alert/stop pipeline.
+			for !b.storeRemoteMetricsBatchOnly(tr, test, target, batch, fence) {
+				if distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
+					continue receiveLoop
 				}
-				continue
+				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
+					return
+				}
+				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, false)
+				if !current {
+					return
+				}
 			}
-		}
-		live, finalStatus, finalError := b.applyRemoteMetricsBatch(tr, test, target, batch)
-		if live != nil {
-			tr.publishLiveMetrics(test, live, nil)
-		}
-		switch finalStatus {
-		case "COMPLETE":
-			b.completeDistributedTestRun(tr, test, "COMPLETE", "")
+			var (
+				publish    bool
+				flushDelay time.Duration
+				flushFrom  time.Time
+			)
+			for {
+				publish, flushDelay, flushFrom = b.shouldPublishDistributedMetricsBatch(tr, test, time.Now(), fence)
+				if publish || flushDelay >= 0 || distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
+					break
+				}
+				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
+					return
+				}
+				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, false)
+				if !current {
+					return
+				}
+			}
+			if !publish {
+				if flushDelay >= 0 {
+					go b.flushStoredDistributedMetricsAfterDelay(ctx, tr, test, target, flushDelay, flushFrom, fence)
+				}
+				continue receiveLoop
+			}
+			for {
+				live, finalStatus, finalError, fresh, publication = b.applyStoredRemoteMetricsBatch(tr, test, target, fence)
+				if fresh {
+					break
+				}
+				if distributedMetricsConsumerFenceCurrent(tr, test, target, fence, false) {
+					continue receiveLoop
+				}
+				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
+					return
+				}
+				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, false)
+				if !current {
+					return
+				}
+			}
+		} else {
+			savedFinalStatus := ""
+			savedFinalError := ""
+			for {
+				live, finalStatus, finalError, fresh, publication = b.applyRemoteMetricsBatchWithFreshness(tr, test, target, batch, false, fence)
+				if finalStatus != "" {
+					savedFinalStatus = finalStatus
+					savedFinalError = finalError
+				}
+				if !fresh {
+					if distributedMetricsConsumerFenceCurrent(tr, test, target, fence, true) ||
+						!distributedMetricsConsumerStillOwned(tr, test, target, fence, true) {
+						return
+					}
+					fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, true)
+					if !current {
+						return
+					}
+					continue
+				}
+				publicationResult := b.publishDistributedMetricsRevision(ctx, tr, test, live, publication)
+				if publicationResult.lifecycleCurrent {
+					finalStatus = savedFinalStatus
+					finalError = savedFinalError
+					break
+				}
+				if !distributedMetricsConsumerStillOwned(tr, test, target, fence, true) {
+					return
+				}
+				fence, current = captureDistributedMetricsConsumerFence(tr, test, target, stream, ctx, executionGeneration, true)
+				if !current {
+					return
+				}
+			}
+			switch finalStatus {
+			case "COMPLETE":
+				b.completeDistributedTestRun(tr, test, "COMPLETE", "")
+			case "ABORTED":
+				b.completeDistributedTestRun(tr, test, "ABORTED", finalError)
+			case "FAILED":
+				b.completeDistributedTestRun(tr, test, "FAILED", finalError)
+			}
 			return
-		case "ABORTED":
-			b.completeDistributedTestRun(tr, test, "ABORTED", "")
-			return
-		case "FAILED":
-			b.completeDistributedTestRun(tr, test, "FAILED", finalError)
+		}
+
+		publicationResult := b.publishDistributedMetricsRevision(ctx, tr, test, live, publication)
+		if !publicationResult.lifecycleCurrent && !distributedMetricsConsumerStillOwned(tr, test, target, fence, false) {
 			return
 		}
 	}
@@ -640,7 +752,7 @@ func (b *distributedExecutionBackend) consumeMetrics(ctx context.Context, tr *Te
 
 func isTerminalRemoteLifecycle(state string) bool {
 	switch strings.ToUpper(strings.TrimSpace(state)) {
-	case "COMPLETE", "FAILED":
+	case "COMPLETE", "FAILED", "ABORTED":
 		return true
 	default:
 		return false
@@ -673,22 +785,128 @@ func remoteMetricsBatchSupersedes(prior, next generatorrpc.MetricsBatch) bool {
 		!strings.EqualFold(strings.TrimSpace(next.LifecycleState), "STAGED")
 }
 
-func (b *distributedExecutionBackend) shouldPublishDistributedMetricsBatch(tr *TestRunner, test *ManagedTest, now time.Time) (bool, time.Duration) {
+type distributedGoalErrorAccumulator struct {
+	timestamp        time.Time
+	cumulativeErrors int64
+}
+
+// distributedMetricsPublication binds a computed aggregate to the execution
+// and topology snapshots from which it was built. errorWindows carries the
+// latest non-terminal window for every target in that aggregate; the goal
+// controller's existing source/timestamp dedupe makes replay bounded and safe.
+type distributedMetricsPublication struct {
+	revision            uint64
+	executionGeneration uint64
+	topologyGeneration  uint64
+	terminal            bool
+	target              string
+	stream              *generatorrpc.MetricsStream
+	streamBound         bool
+	errorWindows        map[string]distributedGoalErrorAccumulator
+}
+
+type distributedMetricsPublicationResult struct {
+	published        bool
+	lifecycleCurrent bool
+}
+
+var errStaleDistributedGoalScale = errors.New("distributed goal scale became stale before admission")
+
+type distributedMetricsConsumerFence struct {
+	ctx                 context.Context
+	executionGeneration uint64
+	topologyGeneration  uint64
+	target              string
+	stream              *generatorrpc.MetricsStream
+	enforced            bool
+}
+
+func remoteMetricsStreamOwnedLocked(test *ManagedTest, target string, stream *generatorrpc.MetricsStream) bool {
+	if test == nil || stream == nil {
+		return false
+	}
+	// Once the per-target map exists it is authoritative. Falling through to
+	// the legacy single-target fields when the map omits/replaces a target would
+	// let an evacuated primary stream retain ownership and repopulate state.
+	if test.remoteMetricsStreamsByTarget != nil {
+		return test.remoteMetricsStreamsByTarget[target] == stream
+	}
+	return test.remoteTarget == target && test.remoteMetricsStream == stream
+}
+
+func distributedMetricsConsumerStillOwnedLocked(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence, terminal bool) bool {
+	if !fence.enforced {
+		return true
+	}
+	if fence.ctx == nil || fence.ctx.Err() != nil ||
+		tr.tests[test.ID] != test ||
+		!tr.isExecutionLeader() ||
+		test.executionGeneration != fence.executionGeneration ||
+		!remoteMetricsStreamOwnedLocked(test, target, fence.stream) ||
+		isTerminalTestStatus(test.Status) {
+		return false
+	}
+	if terminal {
+		switch test.Status {
+		case "RUNNING", "PAUSED", "STOPPING":
+			return true
+		default:
+			return false
+		}
+	}
+	return (test.Status == "RUNNING" || test.Status == "PAUSED") && !test.remoteFinalizing
+}
+
+func distributedMetricsConsumerFenceCurrentLocked(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence, terminal bool) bool {
+	return distributedMetricsConsumerStillOwnedLocked(tr, test, target, fence, terminal) &&
+		(!fence.enforced || test.remoteControlGeneration == fence.topologyGeneration)
+}
+
+func distributedMetricsConsumerFenceCurrent(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence, terminal bool) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fence, terminal)
+}
+
+func distributedMetricsConsumerStillOwned(tr *TestRunner, test *ManagedTest, target string, fence distributedMetricsConsumerFence, terminal bool) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return distributedMetricsConsumerStillOwnedLocked(tr, test, target, fence, terminal)
+}
+
+func captureDistributedMetricsConsumerFence(tr *TestRunner, test *ManagedTest, target string, stream *generatorrpc.MetricsStream, ctx context.Context, executionGeneration uint64, terminal bool) (distributedMetricsConsumerFence, bool) {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	fence := distributedMetricsConsumerFence{
+		ctx:                 ctx,
+		executionGeneration: executionGeneration,
+		topologyGeneration:  test.remoteControlGeneration,
+		target:              target,
+		stream:              stream,
+		enforced:            true,
+	}
+	return fence, distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fence, terminal)
+}
+
+func (b *distributedExecutionBackend) shouldPublishDistributedMetricsBatch(tr *TestRunner, test *ManagedTest, now time.Time, fences ...distributedMetricsConsumerFence) (bool, time.Duration, time.Time) {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, fences[0].target, fences[0], false) {
+		return false, -1, time.Time{}
+	}
 	if test.remoteMetricsLastPublishedAt.IsZero() || now.Sub(test.remoteMetricsLastPublishedAt) >= time.Second {
 		test.remoteMetricsLastPublishedAt = now
 		test.remoteMetricsFlushScheduled = false
-		return true, 0
+		return true, 0, time.Time{}
 	}
 	if !test.remoteMetricsFlushScheduled {
 		test.remoteMetricsFlushScheduled = true
-		return false, time.Second - now.Sub(test.remoteMetricsLastPublishedAt)
+		return false, time.Second - now.Sub(test.remoteMetricsLastPublishedAt), test.remoteMetricsLastPublishedAt
 	}
-	return false, -1
+	return false, -1, time.Time{}
 }
 
-func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, delay time.Duration) {
+func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ctx context.Context, tr *TestRunner, test *ManagedTest, target string, delay time.Duration, flushFrom time.Time, fences ...distributedMetricsConsumerFence) {
 	if delay > 0 {
 		timer := time.NewTimer(delay)
 		select {
@@ -706,8 +924,20 @@ func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ct
 	}
 
 	tr.mu.Lock()
-	if ctx.Err() != nil || test.Status == "COMPLETE" || test.Status == "FAILED" || test.remoteMetricsBatchesByTarget == nil {
-		test.remoteMetricsFlushScheduled = false
+	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], false) {
+		tr.mu.Unlock()
+		return
+	}
+	if ctx.Err() != nil || isTerminalTestStatus(test.Status) || test.remoteMetricsBatchesByTarget == nil {
+		if test.remoteMetricsFlushScheduled && test.remoteMetricsLastPublishedAt.Equal(flushFrom) {
+			test.remoteMetricsFlushScheduled = false
+		}
+		tr.mu.Unlock()
+		return
+	}
+	// A newer immediate publication invalidates this timer. The equality token
+	// also prevents an old timer from consuming a newer scheduled flush.
+	if !test.remoteMetricsFlushScheduled || !test.remoteMetricsLastPublishedAt.Equal(flushFrom) {
 		tr.mu.Unlock()
 		return
 	}
@@ -715,15 +945,217 @@ func (b *distributedExecutionBackend) flushStoredDistributedMetricsAfterDelay(ct
 	test.remoteMetricsFlushScheduled = false
 	tr.mu.Unlock()
 
-	live, _, _ := b.applyRemoteMetricsBatch(tr, test, target, batch)
-	if live != nil {
-		tr.publishLiveMetrics(test, live, nil)
+	live, _, _, fresh, publication := b.applyStoredRemoteMetricsBatch(tr, test, target, fences...)
+	if live != nil && fresh {
+		b.publishDistributedMetricsRevision(ctx, tr, test, live, publication)
 	}
 }
 
-func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) {
+// distributedMetricsPublicationLifecycleValidLocked is evaluated inside
+// publishLiveMetrics' installation critical section. Non-terminal samples may
+// flow while running, paused, or draining after a graceful stop, but never once
+// remote finalization has started. A terminal batch is allowed to install its
+// final snapshot while remoteFinalizing is true, before completeTestRun commits
+// the terminal test status.
+func distributedMetricsPublicationLifecycleValidLocked(test *ManagedTest, publication distributedMetricsPublication) bool {
+	if test == nil || isTerminalTestStatus(test.Status) {
+		return false
+	}
+	if publication.terminal {
+		switch test.Status {
+		case "RUNNING", "PAUSED", "STOPPING":
+			return true
+		default:
+			return false
+		}
+	}
+	return (test.Status == "RUNNING" || test.Status == "PAUSED") && !test.remoteFinalizing
+}
+
+// publishDistributedMetricsRevision serializes the final publication step and
+// rejects a computed aggregate when a newer revision has already won. The
+// ownership/generation/lifecycle guard runs under the exact tr.mu acquisition
+// that installs LiveMetrics and History, closing replacement/finalization races.
+// Goal-controller mutation and scale reservation also occur in that admitted
+// critical section, so a losing revision is observationally inert.
+func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx context.Context, tr *TestRunner, test *ManagedTest, live *LiveMetrics, publication distributedMetricsPublication) distributedMetricsPublicationResult {
+	result := distributedMetricsPublicationResult{}
+	if tr == nil || test == nil || live == nil || publication.revision == 0 {
+		return result
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	tr.mu.Lock()
+	gate := test.remoteMetricsPublishGate
+	if gate == nil {
+		gate = make(chan struct{}, 1)
+		gate <- struct{}{}
+		test.remoteMetricsPublishGate = gate
+	}
+	tr.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return result
+	case <-gate:
+	}
+	defer func() { gate <- struct{}{} }()
+	if ctx.Err() != nil {
+		return result
+	}
+
+	var (
+		runGoalUpdate   bool
+		goalGroupVUsers map[string]int
+		goalUpdate      goalControllerUpdate
+	)
+	installed := tr.publishLiveMetrics(test, live, nil, func() bool {
+		if ctx.Err() != nil ||
+			tr.tests[test.ID] != test ||
+			!tr.isExecutionLeader() ||
+			test.executionGeneration != publication.executionGeneration ||
+			test.remoteControlGeneration != publication.topologyGeneration ||
+			(publication.streamBound && !remoteMetricsStreamOwnedLocked(test, publication.target, publication.stream)) ||
+			!distributedMetricsPublicationLifecycleValidLocked(test, publication) {
+			return false
+		}
+		result.lifecycleCurrent = true
+		if publication.revision <= test.remoteMetricsPublishedRevision {
+			return false
+		}
+
+		applyRuntimeGoalTargetsToLiveMetrics(test, live)
+		if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && tr.testLoadReadyLocked(test, time.Now().UTC()) {
+			if test.goalControl == nil {
+				test.goalControl = &goalControllerState{}
+			}
+			if test.remoteGoalPublishedErrorWindows == nil {
+				test.remoteGoalPublishedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
+			}
+			for source, acceptedWindow := range publication.errorWindows {
+				publishedWindow := test.remoteGoalPublishedErrorWindows[source]
+				if !acceptedWindow.timestamp.After(publishedWindow.timestamp) ||
+					acceptedWindow.cumulativeErrors < publishedWindow.cumulativeErrors {
+					continue
+				}
+				recordGoalErrorWindow(
+					test.goalControl,
+					source,
+					acceptedWindow.timestamp,
+					acceptedWindow.cumulativeErrors-publishedWindow.cumulativeErrors,
+				)
+				test.remoteGoalPublishedErrorWindows[source] = acceptedWindow
+			}
+			goalGroupVUsers = liveGroupVUsers(test, live)
+			currentTotalVUsers := totalGroupVUsers(goalGroupVUsers)
+			goalUpdate = evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
+			live.GoalStatus = goalUpdate.Status
+			if !publication.terminal && goalUpdate.ShouldScale && !test.remoteGoalUpdateRunning {
+				test.remoteGoalUpdateRunning = true
+				test.remoteGoalUpdateRevision = publication.revision
+				runGoalUpdate = true
+			}
+		}
+		test.remoteMetricsPublishedRevision = publication.revision
+		return true
+	})
+	if !installed {
+		return result
+	}
+	result.published = true
+
+	// Keep thresholds inside the per-test publication gate so an older
+	// aggregate cannot evaluate after a newer revision.
+	tr.evaluateThresholdAlertsAndStops(test, live, !publication.terminal)
+	if runGoalUpdate {
+		goalLive := *live
+		if live.GoalStatus != nil {
+			statusCopy := *live.GoalStatus
+			goalLive.GoalStatus = &statusCopy
+		}
+		go func() {
+			defer func() {
+				tr.mu.Lock()
+				if test.remoteGoalUpdateRevision == publication.revision {
+					test.remoteGoalUpdateRunning = false
+					test.remoteGoalUpdateRevision = 0
+				}
+				tr.mu.Unlock()
+			}()
+			tr.mu.RLock()
+			updateCurrent := tr.tests[test.ID] == test &&
+				tr.isExecutionLeader() &&
+				test.executionGeneration == publication.executionGeneration &&
+				test.remoteControlGeneration == publication.topologyGeneration &&
+				test.remoteMetricsPublishedRevision == publication.revision &&
+				test.remoteGoalUpdateRevision == publication.revision &&
+				test.Status == "RUNNING" &&
+				!test.remoteFinalizing
+			tr.mu.RUnlock()
+			if !updateCurrent {
+				return
+			}
+			applyGoalControllerUpdateWithManagedScaler(tr, test, &goalLive, goalGroupVUsers, goalUpdate, func(groupName string, target int) error {
+				return tr.scaleDistributedGoalVUsersNow(test, groupName, target, publication)
+			})
+		}()
+	}
+	return result
+}
+
+// scaleDistributedGoalVUsersNow carries publication ownership through the
+// group/topology control gate into the exact tr.mu critical section that
+// reserves the scale. A pre-check in the publisher goroutine is insufficient:
+// a newer metrics revision, topology, or same-ID run can win while that
+// goroutine waits to enter scaleVUsersNow.
+func (tr *TestRunner) scaleDistributedGoalVUsersNow(test *ManagedTest, groupName string, target int, publication distributedMetricsPublication) error {
+	if tr == nil || test == nil {
+		return fmt.Errorf("%w: managed test is unavailable", errStaleDistributedGoalScale)
+	}
+	return tr.scaleVUsersNowWithAdmissionGuard(test.ID, groupName, target, false, func(current *ManagedTest) error {
+		if current != test ||
+			!tr.isExecutionLeader() ||
+			test.executionGeneration != publication.executionGeneration ||
+			test.remoteControlGeneration != publication.topologyGeneration ||
+			test.remoteMetricsPublishedRevision != publication.revision ||
+			test.remoteGoalUpdateRevision != publication.revision ||
+			test.Status != "RUNNING" ||
+			test.remoteFinalizing {
+			return fmt.Errorf("%w: publication revision %d no longer owns run %s", errStaleDistributedGoalScale, publication.revision, test.ID)
+		}
+		return nil
+	})
+}
+
+func stageDistributedGoalErrorWindowLocked(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) {
+	if tr == nil || test == nil ||
+		test.ScenarioMode != "goal_oriented" ||
+		test.GoalConfig == nil ||
+		isTerminalRemoteLifecycle(batch.LifecycleState) ||
+		batch.TimestampUnixMs <= 0 ||
+		!tr.testLoadReadyLocked(test, time.Now().UTC()) {
+		return
+	}
+	timestamp := time.UnixMilli(batch.TimestampUnixMs)
+	if test.remoteGoalAcceptedErrorWindows == nil {
+		test.remoteGoalAcceptedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
+	}
+	window := test.remoteGoalAcceptedErrorWindows[target]
+	if !timestamp.After(window.timestamp) {
+		return
+	}
+	window.timestamp = timestamp
+	window.cumulativeErrors += distributedBatchErrorCount(batch)
+	test.remoteGoalAcceptedErrorWindows[target] = window
+}
+
+func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, fences ...distributedMetricsConsumerFence) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
+	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
+		return false
+	}
 	if test.remoteMetricsBatchesByTarget == nil {
 		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
 	}
@@ -760,13 +1192,13 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	}
 	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
 		if !remoteMetricsBatchSupersedes(prior, batch) {
-			return
+			return false
 		}
 	}
 	test.remoteMetricsBatchesByTarget[target] = batch
-	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && tr.testLoadReadyLocked(test, time.Now().UTC()) && !isTerminalRemoteLifecycle(batch.LifecycleState) && batch.TimestampUnixMs > 0 {
-		recordGoalErrorWindow(test.goalControl, target, time.UnixMilli(batch.TimestampUnixMs), distributedBatchErrorCount(batch))
-	}
+	test.remoteMetricsAcceptedRevision++
+	stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
+	return true
 }
 
 func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestRunner, test *ManagedTest, target string, err error) {
@@ -782,7 +1214,7 @@ func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestR
 	finalError := fmt.Sprintf("remote target %s metrics stream stopped: %v", target, err)
 
 	tr.mu.Lock()
-	if test.remoteFinalizing || test.Status == "COMPLETE" || test.Status == "FAILED" {
+	if test.remoteFinalizing || isTerminalTestStatus(test.Status) {
 		tr.mu.Unlock()
 		return
 	}
@@ -823,7 +1255,7 @@ func remoteTargetStateIntentionallyRemoved(state string) bool {
 
 func remoteTargetStateDone(state string) bool {
 	switch strings.ToLower(strings.TrimSpace(state)) {
-	case "complete", "failed":
+	case "complete", "failed", "aborted":
 		return true
 	default:
 		return remoteTargetStateIntentionallyRemoved(state)
@@ -831,58 +1263,132 @@ func remoteTargetStateDone(state string) bool {
 }
 
 func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch) (*LiveMetrics, string, string) {
+	live, finalStatus, finalError, _, _ := b.applyRemoteMetricsBatchWithFreshness(tr, test, target, batch, false)
+	return live, finalStatus, finalError
+}
+
+// applyStoredRemoteMetricsBatch publishes the newest snapshot already accepted
+// for target. Callers are responsible for ensuring one accepted window maps to
+// at most one call (the immediate path or the token-fenced delayed flush).
+func (b *distributedExecutionBackend) applyStoredRemoteMetricsBatch(tr *TestRunner, test *ManagedTest, target string, fences ...distributedMetricsConsumerFence) (*LiveMetrics, string, string, bool, distributedMetricsPublication) {
+	return b.applyRemoteMetricsBatchWithFreshness(tr, test, target, generatorrpc.MetricsBatch{}, true, fences...)
+}
+
+// applyRemoteMetricsBatchWithFreshness reports whether the supplied metrics
+// state was accepted for publication. A rejected duplicate/stale batch still
+// returns the current aggregate for compatibility with direct callers, but
+// fresh=false keeps it out of threshold alert and stop evaluation.
+func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, alreadyStored bool, fences ...distributedMetricsConsumerFence) (*LiveMetrics, string, string, bool, distributedMetricsPublication) {
 	tr.mu.Lock()
-	acceptedErrorWindow := false
-	if test.remoteMetricsBatchesByTarget == nil {
-		test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
-	}
-	// A terminal lifecycle batch (COMPLETE/FAILED) is a state signal that the
-	// generator emits with no transaction window (metricsBatchForState). Don't let
-	// it erase the transactions/groups already reported for this target: otherwise
-	// live metrics reset to zero at completion. Under load the controller can drain
-	// the last metrics batch and this terminal batch from the stream in a single
-	// burst, so a poller (and the dashboard) could otherwise never observe the
-	// run's transactions before they are wiped. Carry the prior snapshot forward.
-	if batch.LifecycleState == "COMPLETE" || batch.LifecycleState == "FAILED" {
-		if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
-			if len(batch.Transactions) == 0 {
-				batch.Transactions = prior.Transactions
-			}
-			if batch.FleetMetrics == nil {
-				batch.FleetMetrics = prior.FleetMetrics
-			}
-			if len(batch.TransactionMetrics) == 0 {
-				batch.TransactionMetrics = prior.TransactionMetrics
-			}
-			if len(batch.DependencyMetrics) == 0 {
-				batch.DependencyMetrics = prior.DependencyMetrics
-			}
-			if len(batch.SOAPMetrics) == 0 {
-				batch.SOAPMetrics = prior.SOAPMetrics
-			}
-			if len(batch.NetworkProfileMetrics) == 0 {
-				batch.NetworkProfileMetrics = prior.NetworkProfileMetrics
-			}
-			if batch.Browser == nil {
-				batch.Browser = prior.Browser
-			}
-			if len(batch.BrowserByDevice) == 0 {
-				batch.BrowserByDevice = prior.BrowserByDevice
-			}
-			if len(batch.Groups) == 0 {
-				batch.Groups = prior.Groups
+	accepted := false
+	revision := uint64(0)
+	if alreadyStored {
+		if test.remoteMetricsBatchesByTarget == nil {
+			tr.mu.Unlock()
+			return nil, "", "", false, distributedMetricsPublication{}
+		}
+		stored, ok := test.remoteMetricsBatchesByTarget[target]
+		if !ok || isTerminalRemoteLifecycle(stored.LifecycleState) {
+			tr.mu.Unlock()
+			return nil, "", "", false, distributedMetricsPublication{}
+		}
+		if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], false) {
+			tr.mu.Unlock()
+			return nil, "", "", false, distributedMetricsPublication{}
+		}
+		batch = stored
+		accepted = true
+		revision = test.remoteMetricsAcceptedRevision
+	} else {
+		if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
+			tr.mu.Unlock()
+			return nil, "", "", false, distributedMetricsPublication{}
+		}
+		if test.remoteMetricsBatchesByTarget == nil {
+			test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
+		}
+		// A terminal lifecycle batch (COMPLETE/FAILED/ABORTED) is a state signal
+		// that the generator emits with no transaction window
+		// (metricsBatchForState). Don't let it erase the metrics already reported
+		// for this target.
+		if isTerminalRemoteLifecycle(batch.LifecycleState) {
+			if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
+				if len(batch.Transactions) == 0 {
+					batch.Transactions = prior.Transactions
+				}
+				if batch.FleetMetrics == nil {
+					batch.FleetMetrics = prior.FleetMetrics
+				}
+				if len(batch.TransactionMetrics) == 0 {
+					batch.TransactionMetrics = prior.TransactionMetrics
+				}
+				if len(batch.DependencyMetrics) == 0 {
+					batch.DependencyMetrics = prior.DependencyMetrics
+				}
+				if len(batch.SOAPMetrics) == 0 {
+					batch.SOAPMetrics = prior.SOAPMetrics
+				}
+				if len(batch.NetworkProfileMetrics) == 0 {
+					batch.NetworkProfileMetrics = prior.NetworkProfileMetrics
+				}
+				if batch.Browser == nil {
+					batch.Browser = prior.Browser
+				}
+				if len(batch.BrowserByDevice) == 0 {
+					batch.BrowserByDevice = prior.BrowserByDevice
+				}
+				if len(batch.Groups) == 0 {
+					batch.Groups = prior.Groups
+				}
 			}
 		}
-	}
-	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok && !remoteMetricsBatchSupersedes(prior, batch) {
-		batch = prior
-	} else {
-		test.remoteMetricsBatchesByTarget[target] = batch
-		acceptedErrorWindow = batch.LifecycleState != "COMPLETE" && batch.LifecycleState != "FAILED" && batch.TimestampUnixMs > 0
+		if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok && !remoteMetricsBatchSupersedes(prior, batch) {
+			// A terminal batch can win storage/target-lifecycle handling before an
+			// unrelated topology generation changes, then lose guarded live
+			// publication. Its consumer must be able to recompute and republish
+			// that same terminal snapshot under a rebased, still-owned fence.
+			// Production terminal retries are always stream-bound; ordinary
+			// duplicate/direct callers remain stale.
+			terminalRepublication := isTerminalRemoteLifecycle(batch.LifecycleState) &&
+				len(fences) > 0 &&
+				fences[0].enforced &&
+				strings.EqualFold(strings.TrimSpace(test.remoteTargetStates[target]), strings.TrimSpace(batch.LifecycleState))
+			if terminalRepublication {
+				accepted = true
+				test.remoteMetricsAcceptedRevision++
+				revision = test.remoteMetricsAcceptedRevision
+			} else {
+				batch = prior
+			}
+		} else {
+			test.remoteMetricsBatchesByTarget[target] = batch
+			accepted = true
+			test.remoteMetricsAcceptedRevision++
+			revision = test.remoteMetricsAcceptedRevision
+			stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
+		}
 	}
 	batches := make(map[string]generatorrpc.MetricsBatch, len(test.remoteMetricsBatchesByTarget))
 	for key, value := range test.remoteMetricsBatchesByTarget {
 		batches[key] = value
+	}
+	publication := distributedMetricsPublication{}
+	if accepted {
+		publication = distributedMetricsPublication{
+			revision:            revision,
+			executionGeneration: test.executionGeneration,
+			topologyGeneration:  test.remoteControlGeneration,
+			terminal:            isTerminalRemoteLifecycle(batch.LifecycleState),
+			target:              target,
+			errorWindows:        make(map[string]distributedGoalErrorAccumulator, len(test.remoteGoalAcceptedErrorWindows)),
+		}
+		if len(fences) > 0 && fences[0].enforced {
+			publication.stream = fences[0].stream
+			publication.streamBound = true
+		}
+		for source, window := range test.remoteGoalAcceptedErrorWindows {
+			publication.errorWindows[source] = window
+		}
 	}
 	if test.remoteTargetStates == nil {
 		test.remoteTargetStates = make(map[string]string)
@@ -892,6 +1398,11 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	finalError := ""
 	if !test.remoteFinalizing && !ignoreTargetTerminal {
 		switch batch.LifecycleState {
+		case "ABORTED":
+			test.remoteTargetStates[target] = "ABORTED"
+			finalStatus = "ABORTED"
+			finalError = batch.LifecycleError
+			test.remoteFinalizing = true
 		case "FAILED":
 			test.remoteTargetStates[target] = "FAILED"
 			finalStatus = "FAILED"
@@ -924,61 +1435,16 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatch(tr *TestRunner, te
 	}
 	tr.mu.Unlock()
 
-	// aggregateDistributedMetricsBatches only reads test.ID + the batches snapshot,
-	// so it is safe to run without the lock. Everything below reads mutable
-	// ManagedTest state (Groups, GoalConfig/GoalTargets/ScenarioMode) and the
-	// goalControl state machine (breachStartedAt), which is concurrently written
-	// under tr.mu by UpdateGoalTargetTPS/applyGoalControllerUpdate and by sibling
-	// per-target consumeMetrics goroutines — so it must hold tr.mu. The lock is
-	// released BEFORE applyGoalControllerUpdate, which re-locks internally and
-	// issues blocking gRPC scale calls.
+	// aggregateDistributedMetricsBatches only reads test.ID + the batches
+	// snapshot, so it is safe to run without the lock. Goal-controller mutation
+	// is deliberately deferred until this publication wins guarded admission.
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
-	var (
-		runGoalUpdate   bool
-		goalGroupVUsers map[string]int
-		goalUpdate      goalControllerUpdate
-	)
-	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && tr.testLoadReadyLocked(test, time.Now().UTC()) {
-		if acceptedErrorWindow {
-			recordGoalErrorWindow(test.goalControl, target, time.UnixMilli(batch.TimestampUnixMs), distributedBatchErrorCount(batch))
-		}
-		goalGroupVUsers = liveGroupVUsers(test, live)
-		currentTotalVUsers := totalGroupVUsers(goalGroupVUsers)
-		goalUpdate = evaluateGoalController(live.Timestamp, currentTotalVUsers, live, test.GoalConfig, test.goalControl)
-		live.GoalStatus = goalUpdate.Status
-		if goalUpdate.ShouldScale {
-			if test.remoteGoalUpdateRunning {
-				runGoalUpdate = false
-			} else {
-				test.remoteGoalUpdateRunning = true
-				runGoalUpdate = true
-			}
-		}
-	}
 	tr.mu.Unlock()
-
-	if runGoalUpdate {
-		goalLive := *live
-		if live.GoalStatus != nil {
-			statusCopy := *live.GoalStatus
-			goalLive.GoalStatus = &statusCopy
-		}
-		go func() {
-			defer func() {
-				tr.mu.Lock()
-				test.remoteGoalUpdateRunning = false
-				tr.mu.Unlock()
-			}()
-			applyGoalControllerUpdate(tr, test, &goalLive, goalGroupVUsers, goalUpdate, func(groupName string, target int) error {
-				return tr.scaleVUsersNow(test.ID, groupName, target, false)
-			})
-		}()
-	}
 	live.GeneratorResources = b.buildGeneratorResourceSnapshots(test, batches)
-	return live, finalStatus, finalError
+	return live, finalStatus, finalError, accepted, publication
 }
 
 func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {
@@ -996,19 +1462,23 @@ func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {
 
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
 	completedAt := time.Now()
-	if finalStatus == "FAILED" {
-		// Generator-loss cleanup and archive transfer are best effort and may be
-		// slow when a target is unreachable. Publish the already-derived FAILED
-		// outcome durably before attempting any remote cleanup so the run cannot
-		// remain visibly RUNNING behind transport or archive timeouts.
+	if finalStatus == "FAILED" || finalStatus == "ABORTED" {
+		// Failure/abort cleanup and archive transfer are best effort and may be
+		// slow when a target is unreachable. Publish the already-derived terminal
+		// outcome durably before attempting remote cleanup so the run cannot
+		// remain visibly active behind transport or archive timeouts.
 		if test.cancel != nil {
 			test.cancel()
 		}
 		if err := tr.completeTestRun(test, finalStatus, completedAt, finalError, nil); err != nil {
 			slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
 		}
-		if err := b.stopRemainingRemoteTargets(tr, test); err != nil {
-			slog.Warn("failed to stop remaining remote targets after distributed run failure", "test_id", test.ID, "error", err)
+		// An ABORTED outcome represents forced/abrupt teardown. Once a graceful
+		// stop has been upgraded to abort, cleanup retries must never downgrade
+		// the generator intent back to graceful.
+		gracefulCleanup := finalStatus != "ABORTED"
+		if err := b.stopRemainingRemoteTargets(tr, test, gracefulCleanup); err != nil {
+			slog.Warn("failed to stop remaining remote targets after distributed terminal outcome", "test_id", test.ID, "status", finalStatus, "error", err)
 		}
 		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 		tr.mu.RLock()
@@ -1022,7 +1492,7 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		b.closeRemoteResources(tr, test)
 		if archiveErr != nil {
 			unlockArchiveCommit()
-			slog.Error("failed to collect best-effort archive after distributed run failure", "test_id", test.ID, "error", archiveErr)
+			slog.Error("failed to collect best-effort archive after distributed terminal outcome", "test_id", test.ID, "status", finalStatus, "error", archiveErr)
 			return
 		}
 		if archiveRecord != nil {
@@ -1120,7 +1590,7 @@ func (tr *TestRunner) persistAndAttachRunArchiveUnderFence(test *ManagedTest, ar
 
 const distributedFailureCleanupTimeout = time.Second
 
-func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner, test *ManagedTest) error {
+func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner, test *ManagedTest, graceful bool) error {
 	cleanupTimeout := min(b.timeout, distributedFailureCleanupTimeout)
 	if cleanupTimeout <= 0 {
 		cleanupTimeout = distributedFailureCleanupTimeout
@@ -1145,24 +1615,43 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner,
 	if err != nil {
 		return err
 	}
-	var stopErr error
-	for _, target := range orderedGeneratorTargets(clients, b.configuredTargets()) {
-		if state := states[target]; state == "COMPLETE" || state == "FAILED" {
+	targets := orderedGeneratorTargets(clients, b.configuredTargets())
+	type stopResult struct {
+		target string
+		err    error
+	}
+	results := make(chan stopResult, len(targets))
+	pending := 0
+	for _, target := range targets {
+		if isTerminalRemoteLifecycle(states[target]) {
 			continue
 		}
-		if err := cleanupCtx.Err(); err != nil {
-			return errors.Join(stopErr, fmt.Errorf("remote stop cleanup deadline: %w", err))
-		}
-		_, err := stopGeneratorTest(cleanupCtx, clients[target], test.ID, true, executionGeneration)
-		if err != nil {
-			code := grpcStatus.Code(err)
+		pending++
+		target := target
+		go func() {
+			_, stopErr := stopGeneratorTest(cleanupCtx, clients[target], test.ID, graceful, executionGeneration)
+			results <- stopResult{target: target, err: stopErr}
+		}()
+	}
+
+	stopErrs := make([]error, 0)
+	for pending > 0 {
+		select {
+		case <-cleanupCtx.Done():
+			return errors.Join(errors.Join(stopErrs...), fmt.Errorf("remote stop cleanup deadline: %w", cleanupCtx.Err()))
+		case result := <-results:
+			pending--
+			if result.err == nil {
+				continue
+			}
+			code := grpcStatus.Code(result.err)
 			if code == grpcCodes.Canceled || code == grpcCodes.Unavailable || code == grpcCodes.NotFound {
 				continue
 			}
-			stopErr = fmt.Errorf("stop remote target %s: %w", target, err)
+			stopErrs = append(stopErrs, fmt.Errorf("stop remote target %s: %w", result.target, result.err))
 		}
 	}
-	return stopErr
+	return errors.Join(stopErrs...)
 }
 
 func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, target string, client generatorClient) generatorLoadSnapshot {

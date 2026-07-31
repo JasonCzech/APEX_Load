@@ -62,6 +62,10 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
 	routeAuth(http.MethodPut, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/groups/{group}/runtime-settings", viewerProjectAccess(resolveTestProjectID)),
+	routeAuth(http.MethodPatch, "/api/v1/tests/{id}/groups/{group}/runtime-settings", editorProjectAccessWithBodyLimit(resolveTestProjectID, 1<<20)),
+	routeAuth(http.MethodGet, "/api/v1/tests/{id}/groups/{group}/parameters", viewerProjectAccess(resolveTestProjectID)),
+	routeAuth(http.MethodPut, "/api/v1/tests/{id}/groups/{group}/parameters", editorProjectAccessWithBodyLimit(resolveTestProjectID, 2<<20)),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/notes", viewerProjectAccess(resolveTestProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/notes", editorImportAccess(resolveTestProjectID, 262144)),
 	routeAuth(http.MethodPatch, "/api/v1/tests/{id}/notes/{note_id}", editorImportAccess(resolveTestProjectID, 262144)),
@@ -125,6 +129,10 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/correlations/diagnose", accessRequirement{AuthenticatedOnly: true, MaxBodyBytes: maxCorrelationRequestBodyBytes}),
 	routeAuth(http.MethodPost, "/api/v1/correlations/diff", accessRequirement{AuthenticatedOnly: true, MaxBodyBytes: maxCorrelationRequestBodyBytes}),
 	routeAuth(http.MethodPost, "/api/v1/selectors/diagnose", accessRequirement{AuthenticatedOnly: true}),
+	// Data pool CSV import is the only data-pool route with a raised body
+	// limit; the other data-pool routes deliberately ride the prefix catch-all
+	// in access_policy.go at the CRUD default.
+	routeAuth(http.MethodPost, "/api/v1/data-pools/{id}/rows/import", editorImportAccess(resolveDataPoolProjectID, dataPoolCSVImportMaxBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/eventhubs-capture", editorImportAccess(resolveImportProjectIDFromForm, webAPIImportMaxBodyBytes)),

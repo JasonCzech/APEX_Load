@@ -21,6 +21,7 @@ import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthor
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
+import { requestSettingsFocus } from './settingsSectionLayout'
 import {
   formatSourceSecretSessionFailure,
   sourceSecretSessionIsExpired,
@@ -155,7 +156,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   }, [])
 
   const openRemoteSettings = useCallback(() => {
-    try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
+    requestSettingsFocus('integrations')
     onNavigate?.('settings')
   }, [onNavigate])
 

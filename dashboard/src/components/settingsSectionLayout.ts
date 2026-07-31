@@ -5,7 +5,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'domains', title: 'Domains' },
   { id: 'applications', title: 'Applications & Releases' },
   { id: 'projects', title: 'Projects & Compliance' },
-  { id: 'data-pools', title: 'Shared Data Pools' },
+  { id: 'data-pools', title: 'Data Pools' },
   { id: 'integrations', title: 'Integrations' },
 ] as const
 
@@ -156,4 +156,19 @@ export function moveSettingsSection(ids: SettingsSectionId[], draggedId: Setting
   if (targetIndex === -1) return ids
   next.splice(targetIndex, 0, draggedId)
   return next
+}
+
+// Stages a Settings deep link for the next SettingsPage mount: the page
+// consumes (and clears) these keys, activating the section and, for capacity,
+// the subsection. Call just before navigating to the settings page.
+export function requestSettingsFocus(section: SettingsSectionId, subsection?: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem('apexload.settings.focusSection', section)
+    if (subsection) {
+      window.localStorage.setItem('apexload.settings.focusSubsection', subsection)
+    } else {
+      window.localStorage.removeItem('apexload.settings.focusSubsection')
+    }
+  } catch { /* storage unavailable */ }
 }

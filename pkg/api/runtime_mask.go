@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -122,7 +123,19 @@ func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 	clone.BaseURL = maskURLSecrets(clone.BaseURL)
 	maskHTTPSecrets(clone.HTTP)
 	maskBrowserSecrets(clone.BrowserConfig)
+	maskJavaVuserRuntimeSecrets(clone.JavaVuser)
 	return clone
+}
+
+func maskJavaVuserRuntimeSecrets(java *RuntimeJavaVuserOverride) {
+	if java == nil {
+		return
+	}
+	for index, parameter := range java.AdditionalVMParameters {
+		if javarunner.ContainsSensitiveVMParameterValue(parameter) {
+			java.AdditionalVMParameters[index] = scrub.Redacted
+		}
+	}
 }
 
 // maskHTTPSecrets redacts the secret-bearing fields and header values of an HTTP
@@ -130,6 +143,13 @@ func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	if http == nil {
 		return
+	}
+	authActive := http.Auth.Type != "" || http.Auth.Password != "" || http.Auth.Token != ""
+	if http.Auth.Username != "" &&
+		(authActive ||
+			isReservedRuntimeOverrideSecretReference(http.Auth.Username) ||
+			sensitiveEnvValue(http.Auth.Username)) {
+		http.Auth.Username = scrub.Redacted
 	}
 	if http.Auth.Password != "" {
 		http.Auth.Password = scrub.Redacted
@@ -144,9 +164,8 @@ func maskHTTPSecrets(http *dsl.HTTPConfig) {
 		http.Proxy.Password = scrub.Redacted
 	}
 	http.Proxy.URL = maskURLSecrets(http.Proxy.URL)
-	policy := scrub.Policy{}
 	for name, value := range http.DefaultHeaders {
-		if value != "" && policy.SensitiveHeader(name) {
+		if value != "" && runtimeHTTPHeaderSecretBearing(name, value) {
 			if strings.EqualFold(strings.TrimSpace(name), "Cookie") {
 				if masked, ok := maskCookieHeaderValue(value); ok {
 					http.DefaultHeaders[name] = masked
@@ -158,7 +177,7 @@ func maskHTTPSecrets(http *dsl.HTTPConfig) {
 	}
 	for index := range http.DefaultHeaderList {
 		header := &http.DefaultHeaderList[index]
-		if header.Value != "" && policy.SensitiveHeader(header.Name) {
+		if header.Value != "" && runtimeHTTPHeaderSecretBearing(header.Name, header.Value) {
 			if strings.EqualFold(strings.TrimSpace(header.Name), "Cookie") {
 				if masked, ok := maskCookieHeaderValue(header.Value); ok {
 					header.Value = masked
@@ -168,6 +187,16 @@ func maskHTTPSecrets(http *dsl.HTTPConfig) {
 			header.Value = scrub.Redacted
 		}
 	}
+}
+
+// runtimeHTTPHeaderSecretBearing covers both semantic header names and
+// credential-shaped values. The reserved-reference case is the protected form
+// of a credential-shaped plaintext value: it must remain masked after the
+// plaintext has moved into governed secret storage.
+func runtimeHTTPHeaderSecretBearing(name, value string) bool {
+	return scrub.Policy{}.SensitiveHeader(name) ||
+		sensitiveEnvValue(value) ||
+		isReservedRuntimeOverrideSecretReference(value)
 }
 
 type cookieHeaderPair struct {
@@ -221,6 +250,9 @@ func maskCookieHeaderValue(value string) (string, bool) {
 func maskBrowserSecrets(browser *dsl.BrowserConfig) {
 	if browser == nil {
 		return
+	}
+	if browser.HTTPCredentials.Username != "" {
+		browser.HTTPCredentials.Username = scrub.Redacted
 	}
 	if browser.HTTPCredentials.Password != "" {
 		browser.HTTPCredentials.Password = scrub.Redacted
@@ -593,6 +625,13 @@ func reconcileGroupRuntimeSecrets(incoming, prior *RuntimeSettingsOverride) *Run
 		}
 		reconcileBrowserSecrets(result.BrowserConfig, priorBrowser)
 	}
+	if result.JavaVuser != nil {
+		var priorJava *RuntimeJavaVuserOverride
+		if prior != nil {
+			priorJava = prior.JavaVuser
+		}
+		reconcileJavaVuserRuntimeSecrets(result.JavaVuser, priorJava)
+	}
 	priorBaseURL := ""
 	if prior != nil {
 		priorBaseURL = prior.BaseURL
@@ -622,18 +661,46 @@ func reconcileGroupRuntimeSecrets(incoming, prior *RuntimeSettingsOverride) *Run
 	return result
 }
 
+// reconcileJavaVuserRuntimeSecrets restores a masked JVM argument only at the
+// same list position. Positional matching is intentionally strict: restoring
+// by a neighboring value after a reorder could copy a credential into a
+// different system property. Cardinality changes are ambiguous even when the
+// remaining sentinel occupies a formerly sensitive position (for example,
+// deleting one of two adjacent masked arguments), so every sentinel is left
+// unresolved in that case. The Java argument validator then rejects the write.
+func reconcileJavaVuserRuntimeSecrets(incoming, prior *RuntimeJavaVuserOverride) {
+	if incoming == nil || prior == nil ||
+		len(incoming.AdditionalVMParameters) != len(prior.AdditionalVMParameters) {
+		return
+	}
+	for index, parameter := range incoming.AdditionalVMParameters {
+		if parameter != scrub.Redacted {
+			continue
+		}
+		priorParameter := prior.AdditionalVMParameters[index]
+		if !javarunner.ContainsSensitiveVMParameterValue(priorParameter) {
+			continue
+		}
+		incoming.AdditionalVMParameters[index] = priorParameter
+	}
+}
+
 // reconcileHTTPSecrets restores HTTP secret fields the client echoed back as the
 // redaction sentinel from the prior stored section; "" clears, any other value persists.
 func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 	if incoming == nil {
 		return
 	}
-	priorAuthPassword, priorAuthToken, priorProxyUsername, priorProxyPassword := "", "", "", ""
+	priorAuthUsername, priorAuthPassword, priorAuthToken, priorProxyUsername, priorProxyPassword := "", "", "", "", ""
 	if prior != nil {
+		priorAuthUsername = prior.Auth.Username
 		priorAuthPassword = prior.Auth.Password
 		priorAuthToken = prior.Auth.Token
 		priorProxyUsername = prior.Proxy.Username
 		priorProxyPassword = prior.Proxy.Password
+	}
+	if incoming.Auth.Username == scrub.Redacted {
+		incoming.Auth.Username = priorAuthUsername
 	}
 	if incoming.Auth.Password == scrub.Redacted {
 		incoming.Auth.Password = priorAuthPassword
@@ -652,13 +719,9 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 		priorProxyURL = prior.Proxy.URL
 	}
 	incoming.Proxy.URL = reconcileMaskedURL(incoming.Proxy.URL, priorProxyURL)
-	policy := scrub.Policy{}
 	for name, value := range incoming.DefaultHeaders {
-		if !policy.SensitiveHeader(name) {
-			continue
-		}
+		priorValue, hasPrior := caseInsensitiveMapValue(priorDefaultHeaders(prior), name)
 		if strings.EqualFold(strings.TrimSpace(name), "Cookie") && value != scrub.Redacted && value != "" {
-			priorValue, _ := caseInsensitiveMapValue(priorDefaultHeaders(prior), name)
 			if reconciled, keep := reconcileMaskedCookieHeader(value, []string{priorValue}); keep {
 				incoming.DefaultHeaders[name] = reconciled
 			} else {
@@ -668,25 +731,31 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 		}
 		switch value {
 		case scrub.Redacted:
-			if priorValue, ok := caseInsensitiveMapValue(priorDefaultHeaders(prior), name); ok {
+			// A sentinel is a preservation request, never a literal header
+			// value. Restore only a unique secret-bearing value at the same
+			// case-insensitive header path; otherwise discard it fail-closed.
+			if hasPrior && runtimeHTTPHeaderSecretBearing(name, priorValue) {
 				incoming.DefaultHeaders[name] = priorValue
 			} else {
 				delete(incoming.DefaultHeaders, name)
 			}
 		case "":
-			delete(incoming.DefaultHeaders, name)
+			if runtimeHTTPHeaderSecretBearing(name, value) ||
+				(hasPrior && runtimeHTTPHeaderSecretBearing(name, priorValue)) {
+				delete(incoming.DefaultHeaders, name)
+			}
+		default:
+			// Plaintext credential-shaped values remain in the candidate long
+			// enough for protectRuntimeOverrideSecrets to project them. The
+			// command center then rejects their execution-only overlay because
+			// it cannot durably provision new secret material.
 		}
 	}
 	if len(incoming.DefaultHeaders) == 0 {
 		incoming.DefaultHeaders = nil
 	}
 	priorOccurrences := orderedHeaderOccurrenceCounts(prior)
-	incomingOccurrences := make(map[string]int)
-	for _, header := range incoming.DefaultHeaderList {
-		if policy.SensitiveHeader(header.Name) {
-			incomingOccurrences[strings.ToLower(strings.TrimSpace(header.Name))]++
-		}
-	}
+	incomingOccurrences := orderedHeaderOccurrenceCounts(incoming)
 	priorCookieValues := priorOrderedCookieHeaderValues(prior)
 	occurrences := make(map[string]int)
 	filtered := incoming.DefaultHeaderList[:0]
@@ -694,7 +763,25 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 		canonical := strings.ToLower(strings.TrimSpace(header.Name))
 		ordinal := occurrences[canonical]
 		occurrences[canonical]++
-		if !policy.SensitiveHeader(header.Name) {
+		priorValue, hasPrior := priorDefaultHeaderListValue(prior, header.Name, ordinal)
+		priorSecretBearing := hasPrior && runtimeHTTPHeaderSecretBearing(header.Name, priorValue)
+		if header.Value == scrub.Redacted {
+			// Header names plus ordinals are only stable while the number of
+			// same-name rows is unchanged. This prevents a remaining sentinel
+			// from adopting a deleted sibling's credential.
+			countStable := priorOccurrences[canonical] == 1 ||
+				priorOccurrences[canonical] == incomingOccurrences[canonical]
+			if priorSecretBearing && countStable {
+				header.Value = priorValue
+				filtered = append(filtered, header)
+			}
+			continue
+		}
+		secretBearing := runtimeHTTPHeaderSecretBearing(header.Name, header.Value)
+		if !secretBearing {
+			if header.Value == "" && priorSecretBearing {
+				continue
+			}
 			filtered = append(filtered, header)
 			continue
 		}
@@ -706,17 +793,6 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 			continue
 		}
 		switch header.Value {
-		case scrub.Redacted:
-			// With duplicate sensitive names, an ordinal is trustworthy only
-			// while the occurrence count is unchanged. If a client deleted one
-			// of several masked rows, fail closed instead of restoring a
-			// different stored secret into the surviving row.
-			countStable := priorOccurrences[canonical] == 1 ||
-				priorOccurrences[canonical] == incomingOccurrences[canonical]
-			if priorValue, ok := priorDefaultHeaderListValue(prior, header.Name, ordinal); ok && countStable {
-				header.Value = priorValue
-				filtered = append(filtered, header)
-			}
 		case "":
 			// Empty sensitive values explicitly remove the occurrence.
 		default:
@@ -805,11 +881,8 @@ func orderedHeaderOccurrenceCounts(prior *dsl.HTTPConfig) map[string]int {
 	if prior == nil {
 		return counts
 	}
-	policy := scrub.Policy{}
 	for _, header := range prior.DefaultHeaderList {
-		if policy.SensitiveHeader(header.Name) {
-			counts[strings.ToLower(strings.TrimSpace(header.Name))]++
-		}
+		counts[strings.ToLower(strings.TrimSpace(header.Name))]++
 	}
 	return counts
 }
@@ -828,17 +901,29 @@ func priorOrderedCookieHeaderValues(prior *dsl.HTTPConfig) []string {
 }
 
 func caseInsensitiveMapValue(values map[string]string, key string) (string, bool) {
+	var matched string
+	found := false
 	for candidate, value := range values {
 		if strings.EqualFold(candidate, key) {
-			return value, true
+			if found {
+				return "", false
+			}
+			matched = value
+			found = true
 		}
 	}
-	return "", false
+	return matched, found
 }
 
 func reconcileBrowserSecrets(incoming, prior *dsl.BrowserConfig) {
 	if incoming == nil {
 		return
+	}
+	if incoming.HTTPCredentials.Username == scrub.Redacted {
+		incoming.HTTPCredentials.Username = ""
+		if prior != nil {
+			incoming.HTTPCredentials.Username = prior.HTTPCredentials.Username
+		}
 	}
 	if incoming.HTTPCredentials.Password == scrub.Redacted {
 		incoming.HTTPCredentials.Password = ""

@@ -526,6 +526,7 @@ func TestTrustedHeaderAuthSystemSettingsRequireSystemAdmin(t *testing.T) {
 	}
 
 	req2 := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(req2, server)
 	req2.Header.Set("X-Auth-Request-User", "root")
 	req2.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
 	resp2 := httptest.NewRecorder()
@@ -562,6 +563,7 @@ func TestDevUserPreviewEnforcesSystemSettingsRBAC(t *testing.T) {
 	}
 
 	adminReq := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+	withCurrentSystemSettingsIfMatch(adminReq, server)
 	adminReq.Header.Set(devViewHeader, devViewModeAdmin)
 	adminResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(adminResp, adminReq)
@@ -2028,7 +2030,15 @@ func TestTrustedHeaderAuthProjectRoleGuardsDataPoolEndpoints(t *testing.T) {
 		t.Fatalf("data pool viewer row create status = %d, want %d body=%s", viewerRowCreateResp.Code, http.StatusForbidden, viewerRowCreateResp.Body.String())
 	}
 
-	editorUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewReader([]byte(`{"name":"Customers Updated"}`)))
+	currentPool, err := store.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetDataPool returned error: %v", err)
+	}
+	editorUpdateBody, err := json.Marshal(map[string]any{"name": "Customers Updated", "updated_at": currentPool.UpdatedAt})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	editorUpdateReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewReader(editorUpdateBody))
 	editorUpdateReq.Header.Set("Content-Type", "application/json")
 	editorUpdateReq.Header.Set("X-Auth-Request-User", "editor-user")
 	editorUpdateReq.Header.Set("X-APEXLoad-Project-Roles", project.ID+"="+RoleEditor)

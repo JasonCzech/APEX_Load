@@ -202,6 +202,301 @@ func TestGeneratedSwaggerIsValid(t *testing.T) {
 	}
 }
 
+func TestDataPoolCursorPaginationIsDocumented(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("decode generated OpenAPI: %v", err)
+	}
+	for _, path := range []string{"/api/v1/data-pools/{id}", "/api/v1/data-pools/{id}/rows"} {
+		operation, ok := spec.Paths[path]["get"]
+		if !ok {
+			t.Fatalf("generated OpenAPI is missing GET %s", path)
+		}
+		foundCursor := false
+		for _, parameter := range operation.Parameters {
+			if parameter.Name == "cursor" && parameter.In == "query" {
+				foundCursor = true
+				break
+			}
+		}
+		if !foundCursor {
+			t.Errorf("GET %s does not document the cursor query parameter", path)
+		}
+		for _, status := range []string{"400", "409", "501"} {
+			if _, ok := operation.Responses[status]; !ok {
+				t.Errorf("GET %s does not document response %s", path, status)
+			}
+		}
+		responseSchema := operation.Responses["200"].Content["application/json"].Schema
+		for _, field := range []string{"rows", "count", "total", "limit", "offset", "revision", "has_more", "next_cursor"} {
+			if _, ok := responseSchema.Properties[field]; !ok {
+				t.Errorf("GET %s response does not type cursor field %q: %#v", path, field, responseSchema)
+			}
+		}
+		rowItems := responseSchema.Properties["rows"].Items
+		if rowItems == nil {
+			t.Errorf("GET %s rows has no item schema", path)
+		} else {
+			for _, field := range []string{"id", "pool_id", "data", "status", "version", "created_at", "updated_at"} {
+				if _, ok := rowItems.Properties[field]; !ok {
+					t.Errorf("GET %s row item is missing %q: %#v", path, field, rowItems)
+				}
+			}
+			if !openAPIStringSliceContains(rowItems.Required, "id") ||
+				!openAPIStringSliceContains(rowItems.Required, "data") ||
+				openAPIStringSliceContains(rowItems.Required, "status") {
+				t.Errorf("GET %s row item required fields = %v, want id/data required and status optional", path, rowItems.Required)
+			}
+			additional, ok := rowItems.Properties["data"].AdditionalProperties.(map[string]any)
+			if !ok || additional["type"] != "string" {
+				t.Errorf("GET %s row data additionalProperties = %#v, want string values", path, rowItems.Properties["data"].AdditionalProperties)
+			}
+		}
+		if path == "/api/v1/data-pools/{id}" {
+			dataPool, ok := responseSchema.Properties["data_pool"]
+			if !ok {
+				t.Errorf("GET %s response does not type data_pool: %#v", path, responseSchema)
+			} else {
+				for _, field := range []string{"id", "name", "description", "schema", "project_id", "created_at", "updated_at", "archived_at"} {
+					if _, ok := dataPool.Properties[field]; !ok {
+						t.Errorf("GET %s data_pool is missing %q: %#v", path, field, dataPool)
+					}
+				}
+				archivedAt := dataPool.Properties["archived_at"]
+				if archivedAt.Type != "string" || archivedAt.Format != "date-time" || !archivedAt.Nullable ||
+					openAPIStringSliceContains(dataPool.Required, "archived_at") {
+					t.Errorf("GET %s data_pool archived_at = %#v required=%v, want optional nullable date-time", path, archivedAt, dataPool.Required)
+				}
+			}
+		}
+	}
+}
+
+func TestDataPoolImportExportOpenAPIContractIsExact(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("decode generated OpenAPI: %v", err)
+	}
+
+	importOperation := spec.Paths["/api/v1/data-pools/{id}/rows/import"]["post"]
+	if importOperation.RequestBody == nil || !importOperation.RequestBody.Required {
+		t.Fatal("data-pool import must require a multipart request body")
+	}
+	importSchema := importOperation.RequestBody.Content["multipart/form-data"].Schema
+	if !openAPIStringSliceContains(importSchema.Required, "file") {
+		t.Errorf("data-pool import required fields = %v, want file", importSchema.Required)
+	}
+	if _, ok := importOperation.Responses["404"]; !ok {
+		t.Error("data-pool import does not document its 404 response")
+	}
+
+	exportOperation := spec.Paths["/api/v1/data-pools/{id}/rows/export"]["get"]
+	if _, ok := exportOperation.Responses["2XX"]; ok {
+		t.Error("data-pool export still advertises a generic 2XX response")
+	}
+	success, ok := exportOperation.Responses["200"]
+	if !ok {
+		t.Fatal("data-pool export does not document exact 200 response")
+	}
+	if len(success.Content) != 1 || success.Content["text/csv"].Schema.Type != "string" {
+		t.Errorf("data-pool export 200 content = %#v, want text/csv only", success.Content)
+	}
+	for _, header := range []string{"Cache-Control", "Content-Disposition", "X-APEXLoad-Sensitivity"} {
+		if _, ok := success.Headers[header]; !ok {
+			t.Errorf("data-pool export 200 response is missing %s", header)
+		}
+	}
+	if _, ok := exportOperation.Responses["404"]; !ok {
+		t.Error("data-pool export does not document its 404 response")
+	}
+}
+
+func TestInferredJSONRequestRequiredFieldsFollowRouteSemantics(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("decode generated OpenAPI: %v", err)
+	}
+
+	applicationUpdate := spec.Paths["/api/v1/applications/{id}"]["put"].
+		RequestBody.Content["application/json"].Schema
+	if len(applicationUpdate.Required) != 0 {
+		t.Errorf("application update required fields = %v, want none because {} is a valid no-op update", applicationUpdate.Required)
+	}
+
+	for _, route := range []struct {
+		path   string
+		method string
+	}{
+		{path: "/api/v1/scripts/{id}/move", method: "patch"},
+		{path: "/api/v1/tests/{id}/move", method: "patch"},
+	} {
+		schema := spec.Paths[route.path][route.method].RequestBody.Content["application/json"].Schema
+		if openAPIStringSliceContains(schema.Required, "folder_id") {
+			t.Errorf("%s %s requires folder_id even though omission is accepted", route.method, route.path)
+		}
+		folderID, ok := schema.Properties["folder_id"]
+		if !ok {
+			t.Errorf("%s %s is missing folder_id", route.method, route.path)
+		} else if folderID.Type != "string" || !folderID.Nullable {
+			t.Errorf("%s %s folder_id = %#v, want nullable string", route.method, route.path, folderID)
+		}
+	}
+
+	poolCreate := spec.Paths["/api/v1/data-pools"]["post"].
+		RequestBody.Content["application/json"].Schema
+	if !reflect.DeepEqual(poolCreate.Required, []string{"name"}) {
+		t.Errorf("data-pool create required fields = %v, want [name]", poolCreate.Required)
+	}
+	for _, serverOwned := range []string{"id", "created_at", "updated_at", "archived_at"} {
+		if _, ok := poolCreate.Properties[serverOwned]; ok {
+			t.Errorf("data-pool create exposes server-owned field %q", serverOwned)
+		}
+	}
+	for _, accepted := range []string{"name", "description", "schema", "project_id"} {
+		if _, ok := poolCreate.Properties[accepted]; !ok {
+			t.Errorf("data-pool create is missing accepted field %q: %#v", accepted, poolCreate)
+		}
+	}
+	for _, operation := range []struct {
+		name   string
+		schema oasSchema
+	}{
+		{
+			name: "create",
+			schema: spec.Paths["/api/v1/data-pools"]["post"].
+				Responses["201"].Content["application/json"].Schema,
+		},
+		{
+			name: "update",
+			schema: spec.Paths["/api/v1/data-pools/{id}"]["put"].
+				Responses["200"].Content["application/json"].Schema,
+		},
+	} {
+		for _, field := range []string{"id", "name", "description", "schema", "project_id", "created_at", "updated_at", "archived_at"} {
+			if _, ok := operation.schema.Properties[field]; !ok {
+				t.Errorf("data-pool %s response is missing typed field %q: %#v", operation.name, field, operation.schema)
+			}
+		}
+		archivedAt := operation.schema.Properties["archived_at"]
+		if archivedAt.Type != "string" || archivedAt.Format != "date-time" || !archivedAt.Nullable {
+			t.Errorf("data-pool %s response archived_at = %#v, want nullable date-time", operation.name, archivedAt)
+		}
+	}
+
+	rowCreate := spec.Paths["/api/v1/data-pools/{id}/rows"]["post"].
+		RequestBody.Content["application/json"].Schema
+	if !reflect.DeepEqual(rowCreate.Required, []string{"data"}) {
+		t.Errorf("data-pool row create required fields = %v, want [data]", rowCreate.Required)
+	}
+	for _, serverOwned := range []string{"id", "pool_id", "version", "created_at", "updated_at"} {
+		if _, ok := rowCreate.Properties[serverOwned]; ok {
+			t.Errorf("data-pool row create exposes server-owned field %q", serverOwned)
+		}
+	}
+	for _, operation := range []struct {
+		name   string
+		schema oasSchema
+	}{
+		{
+			name: "create",
+			schema: spec.Paths["/api/v1/data-pools/{id}/rows"]["post"].
+				Responses["201"].Content["application/json"].Schema,
+		},
+		{
+			name: "update",
+			schema: spec.Paths["/api/v1/data-pools/{id}/rows/{row_id}"]["put"].
+				Responses["200"].Content["application/json"].Schema,
+		},
+	} {
+		for _, field := range []string{"id", "pool_id", "data", "status", "version", "created_at", "updated_at"} {
+			if _, ok := operation.schema.Properties[field]; !ok {
+				t.Errorf("data-pool row %s response is missing typed field %q: %#v", operation.name, field, operation.schema)
+			}
+		}
+	}
+
+	for _, contract := range []struct {
+		path     string
+		required []string
+	}{
+		{path: "/api/v1/auth/users", required: []string{"subject"}},
+		{path: "/api/v1/auth/service-accounts", required: []string{"name"}},
+	} {
+		schema := spec.Paths[contract.path]["post"].RequestBody.Content["application/json"].Schema
+		if !reflect.DeepEqual(schema.Required, contract.required) {
+			t.Errorf("POST %s required fields = %v, want %v", contract.path, schema.Required, contract.required)
+		}
+	}
+}
+
+func TestClearOpenAPISchemaRequiredRecursesThroughRequestShapes(t *testing.T) {
+	additional := &oasSchema{
+		Type:     "object",
+		Required: []string{"map_value"},
+		Properties: map[string]oasSchema{
+			"map_value": {Type: "string"},
+		},
+	}
+	schema := oasSchema{
+		Type:     "object",
+		Required: []string{"root"},
+		Properties: map[string]oasSchema{
+			"root": {
+				Type:     "object",
+				Required: []string{"nested"},
+				Properties: map[string]oasSchema{
+					"nested": {Type: "string"},
+				},
+			},
+			"list": {
+				Type: "array",
+				Items: &oasSchema{
+					Type:     "object",
+					Required: []string{"item"},
+					Properties: map[string]oasSchema{
+						"item": {Type: "string"},
+					},
+				},
+			},
+		},
+		AdditionalProperties: additional,
+		OneOf: []oasSchema{{
+			Type:     "object",
+			Required: []string{"variant"},
+			Properties: map[string]oasSchema{
+				"variant": {Type: "string"},
+			},
+		}},
+	}
+
+	clearOpenAPISchemaRequired(&schema)
+	if len(schema.Required) != 0 ||
+		len(schema.Properties["root"].Required) != 0 ||
+		len(schema.Properties["list"].Items.Required) != 0 ||
+		len(schema.OneOf[0].Required) != 0 ||
+		len(additional.Required) != 0 {
+		t.Fatalf("required fields remain after recursive request projection: %#v", schema)
+	}
+}
+
 func TestGeneratedSwaggerDocumentsSupportedAuthenticationAlternatives(t *testing.T) {
 	data, err := GenerateOpenAPIYAML("server.go")
 	if err != nil {
@@ -365,6 +660,58 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	}
 	if _, ok := jmeterSave.Responses["409"]; !ok {
 		t.Error("JMeter import save is missing its handler-declared 409 response")
+	}
+	for _, contract := range []struct {
+		path     string
+		required []string
+	}{
+		{path: "/api/v1/data-pools/{id}", required: []string{"name", "updated_at"}},
+		{path: "/api/v1/data-pools/{id}/rows/{row_id}", required: []string{"data", "version"}},
+	} {
+		operation := spec.Paths[contract.path]["put"]
+		if operation.RequestBody == nil {
+			t.Errorf("data-pool update %s is missing its request body", contract.path)
+			continue
+		}
+		schema := operation.RequestBody.Content["application/json"].Schema
+		for _, required := range contract.required {
+			if !openAPIStringSliceContains(schema.Required, required) {
+				t.Errorf("data-pool update %s required fields = %v, want %q", contract.path, schema.Required, required)
+			}
+		}
+	}
+	poolUpdate := spec.Paths["/api/v1/data-pools/{id}"]["put"]
+	poolUpdateSchema := poolUpdate.RequestBody.Content["application/json"].Schema
+	if _, ok := poolUpdateSchema.Properties["project_id"]; ok {
+		t.Error("data-pool update schema exposes immutable project_id")
+	}
+	archivedAt := poolUpdateSchema.Properties["archived_at"]
+	if archivedAt.Type != "string" || archivedAt.Format != "date-time" || !archivedAt.Nullable {
+		t.Errorf("data-pool archived_at schema = %#v, want nullable date-time string", archivedAt)
+	}
+	rowUpdate := spec.Paths["/api/v1/data-pools/{id}/rows/{row_id}"]["put"]
+	rowData := rowUpdate.RequestBody.Content["application/json"].Schema.Properties["data"]
+	additional, ok := rowData.AdditionalProperties.(map[string]any)
+	if !ok || additional["type"] != "string" {
+		t.Errorf("data-pool row data additionalProperties = %#v, want string values", rowData.AdditionalProperties)
+	}
+
+	for _, contract := range []struct {
+		path     string
+		required string
+	}{
+		{path: "/api/v1/auth/users", required: "subject"},
+		{path: "/api/v1/auth/service-accounts", required: "name"},
+	} {
+		operation := spec.Paths[contract.path]["post"]
+		if operation.RequestBody == nil {
+			t.Errorf("auth create %s is missing its request body", contract.path)
+			continue
+		}
+		schema := operation.RequestBody.Content["application/json"].Schema
+		if !openAPIStringSliceContains(schema.Required, contract.required) {
+			t.Errorf("auth create %s required fields = %v, want %q", contract.path, schema.Required, contract.required)
+		}
 	}
 
 	authoringCreate := spec.Paths["/api/v1/scripts/authoring/sessions"]["post"]
@@ -1081,6 +1428,216 @@ func TestGeneratedEndpointCatalogIsValid(t *testing.T) {
 	} {
 		if !seen[required] {
 			t.Errorf("catalog missing required route %s", required)
+		}
+	}
+}
+
+func TestSystemSettingsOpenAPIContractIsTyped(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	get := spec.Paths["/api/v1/system/settings"]["get"]
+	getContent := get.Responses["200"].Content
+	getSchema, ok := getContent["application/json"]
+	if !ok {
+		t.Fatalf("settings GET 200 content = %#v, want application/json", getContent)
+	}
+	for _, name := range []string{"general", "thresholds", "capacity_planning", "archive_retention", "notifications", "auth"} {
+		if _, ok := getSchema.Schema.Properties[name]; !ok {
+			t.Errorf("settings GET response schema is missing %q", name)
+		}
+	}
+	general := getSchema.Schema.Properties["general"]
+	if !openAPIStringSliceContains(general.Required, "max_concurrent_tests") {
+		t.Errorf("settings GET general required fields = %v, want max_concurrent_tests", general.Required)
+	}
+	if _, ok := getSchema.Schema.Properties["thresholds"].Properties["fleet_saturated_available_slots"]; !ok {
+		t.Error("settings GET thresholds schema is missing fleet_saturated_available_slots")
+	}
+	notifications := getSchema.Schema.Properties["notifications"]
+	webhooks := notifications.Properties["webhooks"]
+	if webhooks.Items == nil {
+		t.Fatal("settings GET notifications.webhooks schema has no item type")
+	}
+	if hasToken, ok := webhooks.Items.Properties[redactedSecretConfiguredField]; !ok || hasToken.Type != "boolean" {
+		t.Errorf("settings GET webhook schema has_api_token = %#v, want response-only boolean", hasToken)
+	}
+	if !strings.Contains(getSchema.Schema.Description, "redacted") {
+		t.Errorf("settings GET schema description does not document redaction: %q", getSchema.Schema.Description)
+	}
+	if revision, ok := getSchema.Schema.Properties["revision"]; !ok || revision.Type != "string" {
+		t.Errorf("settings GET revision projection = %#v, want string", revision)
+	}
+	if _, ok := get.Responses["200"].Headers["ETag"]; !ok {
+		t.Error("settings GET 200 response does not document its ETag header")
+	}
+
+	put := spec.Paths["/api/v1/system/settings"]["put"]
+	if put.RequestBody == nil || !put.RequestBody.Required {
+		t.Fatalf("settings PUT request body = %#v", put.RequestBody)
+	}
+	if _, ok := put.RequestBody.Content["application/octet-stream"]; ok {
+		t.Error("settings PUT still documents the octet-stream fallback")
+	}
+	putSchema, ok := put.RequestBody.Content["application/json"]
+	if !ok {
+		t.Fatalf("settings PUT content = %#v, want application/json", put.RequestBody.Content)
+	}
+	if closed, ok := putSchema.Schema.AdditionalProperties.(bool); !ok || closed {
+		t.Errorf("settings PUT root additionalProperties = %#v, want false so top-level typos are rejected", putSchema.Schema.AdditionalProperties)
+	}
+	if len(putSchema.Schema.Required) != 0 {
+		t.Errorf("settings PUT root required fields = %v, want none because top-level sections are partial", putSchema.Schema.Required)
+	}
+	putGeneral, ok := putSchema.Schema.Properties["general"]
+	if !ok {
+		t.Fatal("settings PUT request schema is missing general")
+	}
+	if len(putGeneral.Required) != 0 {
+		t.Errorf("settings PUT general required fields = %v, want none because {\"general\": {}} resets the section", putGeneral.Required)
+	}
+	if expectedRevision, ok := putSchema.Schema.Properties["expected_revision"]; !ok || expectedRevision.Type != "string" {
+		t.Errorf("settings PUT expected_revision = %#v, want optional string body precondition", expectedRevision)
+	}
+	foundIfMatch := false
+	for _, parameter := range put.Parameters {
+		if parameter.In == "header" && strings.EqualFold(parameter.Name, "If-Match") {
+			foundIfMatch = true
+			if !strings.Contains(parameter.Description, "expected_revision") {
+				t.Errorf("settings PUT If-Match description omits body alternative: %q", parameter.Description)
+			}
+		}
+	}
+	if !foundIfMatch {
+		t.Error("settings PUT does not document If-Match")
+	}
+	if _, ok := put.Responses["200"].Headers["ETag"]; !ok {
+		t.Error("settings PUT 200 response does not document its replacement ETag")
+	}
+	for _, status := range []string{"412", "428"} {
+		if _, ok := put.Responses[status]; !ok {
+			t.Errorf("settings PUT does not document %s precondition response", status)
+		}
+	}
+	thresholds, ok := putSchema.Schema.Properties["thresholds"]
+	if !ok {
+		t.Fatal("settings PUT request schema is missing thresholds")
+	}
+	if closed, ok := thresholds.AdditionalProperties.(bool); !ok || closed {
+		t.Errorf("settings PUT thresholds additionalProperties = %#v, want false so nested typos are rejected", thresholds.AdditionalProperties)
+	}
+	if _, ok := thresholds.Properties["p99_latency_stop_consecutive_samples"]; !ok {
+		t.Error("settings PUT thresholds schema is missing p99_latency_stop_consecutive_samples")
+	}
+	putNotifications := putSchema.Schema.Properties["notifications"]
+	putWebhooks := putNotifications.Properties["webhooks"]
+	if putWebhooks.Items == nil {
+		t.Fatal("settings PUT notifications.webhooks schema has no item type")
+	}
+	if closed, ok := putWebhooks.Items.AdditionalProperties.(bool); !ok || closed {
+		t.Errorf("settings PUT webhook additionalProperties = %#v, want false", putWebhooks.Items.AdditionalProperties)
+	}
+	hasToken, ok := putWebhooks.Items.Properties[redactedSecretConfiguredField]
+	if !ok || hasToken.Type != "boolean" || !strings.Contains(hasToken.Description, "ignored") {
+		t.Errorf("settings PUT webhook has_api_token = %#v, want tolerated-and-ignored boolean echo field", hasToken)
+	}
+	capacity, ok := putSchema.Schema.Properties["capacity_planning"]
+	if !ok {
+		t.Fatal("settings PUT request schema is missing capacity_planning")
+	}
+	if _, ok := capacity.Properties["reservations"]; !ok {
+		t.Error("settings PUT capacity_planning schema is missing reservations")
+	}
+}
+
+func TestGroupRuntimeSettingsOpenAPIRequestOmitsRejectedFields(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	operation := spec.Paths["/api/v1/tests/{id}/groups/{group}/runtime-settings"]["patch"]
+	if operation.RequestBody == nil {
+		t.Fatal("group runtime-settings PATCH has no request body")
+	}
+	mediaType, ok := operation.RequestBody.Content["application/json"]
+	if !ok {
+		t.Fatalf("group runtime-settings PATCH content = %#v, want application/json", operation.RequestBody.Content)
+	}
+	runtimeSettings, ok := mediaType.Schema.Properties["runtime_settings"]
+	if !ok {
+		t.Fatal("group runtime-settings PATCH request is missing runtime_settings")
+	}
+	for _, rejected := range []string{"env", "redaction_rules"} {
+		if _, ok := runtimeSettings.Properties[rejected]; ok {
+			t.Errorf("group runtime-settings PATCH advertises rejected field %q", rejected)
+		}
+	}
+	for _, editable := range []string{"http", "java_vuser", "think_time"} {
+		if _, ok := runtimeSettings.Properties[editable]; !ok {
+			t.Errorf("group runtime-settings PATCH is missing editable field %q", editable)
+		}
+	}
+	for _, required := range []string{"expected_revision", "fields"} {
+		if !openAPIStringSliceContains(mediaType.Schema.Required, required) {
+			t.Errorf("group runtime-settings PATCH required fields = %v, want %q", mediaType.Schema.Required, required)
+		}
+	}
+	getOperation := spec.Paths["/api/v1/tests/{id}/groups/{group}/runtime-settings"]["get"]
+	getSchema := getOperation.Responses["200"].Content["application/json"].Schema
+	if revision, ok := getSchema.Properties["revision"]; !ok || revision.Type != "string" {
+		t.Errorf("group runtime-settings GET revision = %#v, want string", revision)
+	}
+	patchResponse := operation.Responses["200"].Content["application/json"].Schema
+	if revision, ok := patchResponse.Properties["revision"]; !ok || revision.Type != "string" {
+		t.Errorf("group runtime-settings PATCH response revision = %#v, want string", revision)
+	}
+	if _, ok := operation.Responses["409"]; !ok {
+		t.Error("group runtime-settings PATCH is missing its optimistic-concurrency 409 response")
+	}
+
+	parametersPath := spec.Paths["/api/v1/tests/{id}/groups/{group}/parameters"]
+	parametersPut := parametersPath["put"]
+	if parametersPut.RequestBody == nil {
+		t.Fatal("group parameters PUT has no request body")
+	}
+	parametersRequest := parametersPut.RequestBody.Content["application/json"].Schema
+	for _, required := range []string{"expected_revision", "parameters"} {
+		if !openAPIStringSliceContains(parametersRequest.Required, required) {
+			t.Errorf("group parameters PUT required fields = %v, want %q", parametersRequest.Required, required)
+		}
+	}
+	parametersGetSchema := parametersPath["get"].Responses["200"].Content["application/json"].Schema
+	if revision, ok := parametersGetSchema.Properties["revision"]; !ok || revision.Type != "string" {
+		t.Errorf("group parameters GET revision = %#v, want string", revision)
+	}
+	parametersPutSchema := parametersPut.Responses["200"].Content["application/json"].Schema
+	if revision, ok := parametersPutSchema.Properties["revision"]; !ok || revision.Type != "string" {
+		t.Errorf("group parameters PUT response revision = %#v, want string", revision)
+	}
+	if _, ok := parametersPut.Responses["409"]; !ok {
+		t.Error("group parameters PUT is missing its optimistic-concurrency 409 response")
+	}
+	for _, route := range []string{"runtime-settings", "parameters"} {
+		getOperation := spec.Paths["/api/v1/tests/{id}/groups/{group}/"+route]["get"]
+		for _, status := range []string{"404", "500"} {
+			if _, ok := getOperation.Responses[status]; !ok {
+				t.Errorf("group %s GET does not document %s", route, status)
+			}
 		}
 	}
 }

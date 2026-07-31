@@ -87,8 +87,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setGoalConfigField', field, value })
   }
 
-  const updateRuntimeSetting = <K extends keyof ScenarioDraftState['runtimeSettings']>(field: K, value: ScenarioDraftState['runtimeSettings'][K]) => {
-    dispatchScenarioDraft({ type: 'setRuntimeSettingField', field, value })
+  const replaceRuntimeSettings = (value: ScenarioDraftState['runtimeSettings']) => {
+    dispatchScenarioDraft({ type: 'replaceRuntimeSettings', value })
   }
 
   const removeGroup = (idx: number) => {
@@ -483,7 +483,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
           <CreateTestRuntimeOverrides
             draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}
             runtimeSettings={runtimeSettings}
-            onRuntimeSettingChange={updateRuntimeSetting}
+            groupProtocols={groups.map(group => scripts.find(script => script.id === group.scriptId)?.protocol)}
+            onReplaceRuntimeSettings={replaceRuntimeSettings}
           />
 
           {error && <p className="form-error" role="alert">{error}</p>}

@@ -32,6 +32,23 @@ type ConvertResult struct {
 	// flowWarned deduplicates control-flow translation warnings per distinct
 	// condition/loop source text during one conversion.
 	flowWarned map[string]bool
+
+	// sourceTransactionNames collects transaction names started or published
+	// anywhere in the converted source so archive declarations can be checked.
+	sourceTransactionNames map[string]struct{}
+}
+
+// recordSourceTransactionName remembers a source transaction name for the
+// project-level declared-transaction conservation check.
+func recordSourceTransactionName(result *ConvertResult, name string) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if result == nil || name == "" {
+		return
+	}
+	if result.sourceTransactionNames == nil {
+		result.sourceTransactionNames = make(map[string]struct{})
+	}
+	result.sourceTransactionNames[name] = struct{}{}
 }
 
 func (result *ConvertResult) effectiveScripts() []*dsl.Script {
@@ -124,7 +141,8 @@ func disclosureSafeSourceProjectionFunctions(functions []ParsedFunction) []Parse
 // Convert transforms parsed enterprise C/VUser action files into an APEX Load DSL script.
 func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, error) {
 	result := &ConvertResult{
-		Warnings: make([]string, 0),
+		Warnings:               make([]string, 0),
+		sourceTransactionNames: make(map[string]struct{}),
 		Script: &dsl.Script{
 			Version:       "1.0.0",
 			Protocol:      "http",
@@ -404,6 +422,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				action = labelSourceTransactionMarker(action, fn, "Start")
 				appendTrackedSourceAction(fn, action, mode, "Started an executable source transaction at the original source position.")
 			}
+			recordSourceTransactionName(result, convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName))
 			currentTransaction = fn.StepName
 			currentSubTransaction = ""
 			result.Stats.Transactions++
@@ -447,6 +466,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 			result.Stats.TransactionMarkers++
 			if fn.Name == "lr_set_transaction" {
+				recordSourceTransactionName(result, convertutil.FirstNonEmpty(sourceControlArgAt(fn, 0), fn.StepName))
 				result.Stats.Transactions++
 			}
 

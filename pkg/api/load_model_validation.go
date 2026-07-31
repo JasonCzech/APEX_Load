@@ -256,7 +256,7 @@ func (tr *TestRunner) validateGroupPlacementLocked(test *ManagedTest) []LoadMode
 
 func (tr *TestRunner) validateLoadModelDataSourcesLocked(bindings []storage.ScenarioDataPoolBinding, groups []TestGroup) ([]LoadModelValidationItem, float64) {
 	items := make([]LoadModelValidationItem, 0)
-	sharedSources, poolItems := tr.validateLoadModelDataPoolBindingsLocked(bindings)
+	sharedSources, poolItems, poolRowCounts := tr.validateLoadModelDataPoolBindingsLocked(bindings)
 	items = append(items, poolItems...)
 
 	peakTPS := 0.0
@@ -272,8 +272,16 @@ func (tr *TestRunner) validateLoadModelDataSourcesLocked(bindings []storage.Scen
 		scriptCopy := *group.script
 		if len(sharedSources) > 0 {
 			scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedSources...)
+			items = append(items, dataPoolStrategyItems(
+				group.Name,
+				dataPoolStrategyVUsers(group),
+				scriptCopy.Config.RunLogic.Iterations,
+				scriptCopy.Config.RunLogic.GlobalIterations,
+				sharedSources,
+				poolRowCounts,
+			)...)
 		}
-		maxVUsers := group.VUsers
+		maxVUsers := dataPoolStrategyVUsers(group)
 		scriptCopy.GoalConfig = cloneDSLGoalConfig(scriptCopy.GoalConfig)
 		if scriptCopy.GoalConfig == nil {
 			scriptCopy.GoalConfig = &dsl.GoalConfig{}
@@ -302,19 +310,39 @@ func (tr *TestRunner) validateLoadModelDataSourcesLocked(bindings []storage.Scen
 	return items, roundCapacityValue(peakTPS)
 }
 
-func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, []LoadModelValidationItem) {
+func dataPoolStrategyVUsers(group TestGroup) int {
+	vusers := group.VUsers
+	for _, stage := range group.Stages {
+		if stage.TargetVUsers > vusers {
+			vusers = stage.TargetVUsers
+		}
+	}
+	return vusers
+}
+
+func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, []LoadModelValidationItem, map[string]int) {
 	if len(bindings) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	sources := make([]dsl.DataSource, 0, len(bindings))
 	items := make([]LoadModelValidationItem, 0, len(bindings))
+	rowCounts := make(map[string]int, len(bindings))
 	if tr.dataPoolStore == nil {
-		return nil, []LoadModelValidationItem{{Dimension: "data_pool_rows", Status: "blocked", Summary: "Data pool storage is not configured for this controller."}}
+		return nil, []LoadModelValidationItem{{Dimension: "data_pool_rows", Status: "blocked", Summary: "Data pool storage is not configured for this controller."}}, nil
 	}
 	for _, binding := range bindings {
 		alias := strings.TrimSpace(binding.Alias)
 		if alias == "" {
 			alias = strings.TrimSpace(binding.PoolID)
+		}
+		pool, err := tr.dataPoolStore.GetDataPool(binding.PoolID)
+		if err != nil {
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not load data pool: %v", err)})
+			continue
+		}
+		if archivedErr := errDataPoolArchived(pool); archivedErr != nil {
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: "Data pool is archived; restore it before running this scenario."})
+			continue
 		}
 		rows, err := tr.dataPoolStore.ListDataPoolRows(binding.PoolID)
 		if err != nil {
@@ -325,9 +353,14 @@ func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage
 			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: "Data pool has no rows available for scenario execution."})
 			continue
 		}
-		inlineData, columns, err := inlineCSVFromDataPoolRows(rows)
+		activeRows := activeDataPoolRows(rows)
+		if len(activeRows) == 0 {
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: "Data pool has no active rows available for scenario execution; inactive rows are excluded from runs."})
+			continue
+		}
+		inlineData, columns, err := inlineCSVFromDataPoolRows(activeRows)
 		if err != nil {
-			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not prepare data pool rows: %v", err), AvailableRows: len(rows)})
+			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not prepare data pool rows: %v", err), AvailableRows: len(activeRows)})
 			continue
 		}
 		strategy := binding.SelectionStrategy
@@ -335,9 +368,120 @@ func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage
 			strategy = "sequential"
 		}
 		sources = append(sources, dsl.DataSource{Name: alias, Type: "csv", InlineData: inlineData, Strategy: strategy, FirstRowHeader: true, Columns: columns})
-		items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "ready", Summary: fmt.Sprintf("Data pool exposes %d row%s for load-model validation.", len(rows), pluralSuffix(len(rows))), AvailableRows: len(rows)})
+		rowCounts[alias] = len(activeRows)
+		items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "ready", Summary: fmt.Sprintf("Data pool exposes %d active row%s for load-model validation.", len(activeRows), pluralSuffix(len(activeRows))), AvailableRows: len(activeRows)})
 	}
-	return sources, items
+	return sources, items, rowCounts
+}
+
+// dataPoolStrategyItems surfaces selection-strategy shortfalls the engine
+// degrades silently today: unique assigns duplicate rows once VUsers exceed the
+// pool, and pop stops yielding rows entirely after exhaustion.
+func dataPoolStrategyItems(groupName string, vusers, iterations, globalIterations int, sources []dsl.DataSource, rowCounts map[string]int) []LoadModelValidationItem {
+	if len(sources) == 0 || len(rowCounts) == 0 {
+		return nil
+	}
+	items := make([]LoadModelValidationItem, 0)
+	for _, source := range sources {
+		available, known := rowCounts[source.Name]
+		if !known {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(source.Strategy)) {
+		case "unique":
+			if vusers > available {
+				items = append(items, LoadModelValidationItem{
+					Dimension:     "data_pool_rows",
+					Group:         groupName,
+					Status:        "blocked",
+					Summary:       fmt.Sprintf("Data pool %q uses unique row selection but provides %d active row%s for %d VUsers; VUsers beyond the row count receive duplicate rows.", source.Name, available, pluralSuffix(available), vusers),
+					RequiredRows:  vusers,
+					AvailableRows: available,
+				})
+			}
+		case "pop":
+			if demand, bounded := boundedDataPoolPopDemand(vusers, iterations, globalIterations); bounded {
+				if demand > available {
+					items = append(items, LoadModelValidationItem{
+						Dimension:     "data_pool_rows",
+						Group:         groupName,
+						Status:        "needs_review",
+						Summary:       fmt.Sprintf("Data pool %q consumes rows once (pop) and the load model draws %d rows against %d active row%s; VUsers stop receiving rows after exhaustion.", source.Name, demand, available, pluralSuffix(available)),
+						RequiredRows:  demand,
+						AvailableRows: available,
+					})
+				}
+			} else {
+				items = append(items, LoadModelValidationItem{
+					Dimension:     "data_pool_rows",
+					Group:         groupName,
+					Status:        "needs_review",
+					Summary:       fmt.Sprintf("Data pool %q consumes rows once (pop) under a duration-based load model; the pool exhausts after %d active row%s and VUsers stop receiving rows.", source.Name, available, pluralSuffix(available)),
+					AvailableRows: available,
+				})
+			}
+		}
+	}
+	return items
+}
+
+// boundedDataPoolPopDemand returns the conservative maximum number of rows the
+// engine can consume when either the per-VUser iteration count or shared global
+// iteration goal makes the run finite. Every VUser eagerly loads its first row
+// before acquiring a global-iteration reservation; later rows load before
+// iterations 2..N. Consequently a global cap is not simply min(VUsers×per-user,
+// global): global=1 can still pop one initial row per started VUser.
+// Saturation keeps diagnostics correct for hostile/legacy inputs that bypass
+// normal DSL limits.
+func boundedDataPoolPopDemand(vusers, iterations, globalIterations int) (int, bool) {
+	if iterations <= 0 && globalIterations <= 0 {
+		return 0, false
+	}
+	if vusers <= 0 {
+		return 0, true
+	}
+	if globalIterations <= 0 {
+		return saturatingDataPoolDemandProduct(vusers, iterations), true
+	}
+	if iterations <= 0 {
+		return saturatingDataPoolDemandAdd(vusers, globalIterations-1), true
+	}
+
+	totalIterations := saturatingDataPoolDemandProduct(vusers, iterations)
+	if globalIterations < totalIterations {
+		totalIterations = globalIterations
+	}
+	// Concentrating the globally bounded iterations onto as few VUsers as the
+	// per-user cap permits maximizes later-iteration row loads.
+	activeVUsers := totalIterations / iterations
+	if totalIterations%iterations != 0 {
+		activeVUsers++
+	}
+	extraRows := totalIterations - activeVUsers
+	return saturatingDataPoolDemandAdd(vusers, extraRows), true
+}
+
+func saturatingDataPoolDemandProduct(left, right int) int {
+	if left <= 0 || right <= 0 {
+		return 0
+	}
+	if left > math.MaxInt/right {
+		return math.MaxInt
+	}
+	return left * right
+}
+
+func saturatingDataPoolDemandAdd(left, right int) int {
+	if left <= 0 {
+		return max(0, right)
+	}
+	if right <= 0 {
+		return left
+	}
+	if left > math.MaxInt-right {
+		return math.MaxInt
+	}
+	return left + right
 }
 
 func cloneDSLGoalConfig(in *dsl.GoalConfig) *dsl.GoalConfig {

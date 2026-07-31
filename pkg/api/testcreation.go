@@ -1834,12 +1834,23 @@ func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDa
 		if alias == "" {
 			return nil, fmt.Errorf("data pool binding alias is required")
 		}
+		pool, err := tr.dataPoolStore.GetDataPool(binding.PoolID)
+		if err != nil {
+			return nil, fmt.Errorf("load data pool %q: %w", alias, err)
+		}
+		if err := errDataPoolArchived(pool); err != nil {
+			return nil, err
+		}
 		rows, err := tr.dataPoolStore.ListDataPoolRows(binding.PoolID)
 		if err != nil {
 			return nil, fmt.Errorf("load data pool %q: %w", alias, err)
 		}
 		if len(rows) == 0 {
 			return nil, fmt.Errorf("data pool %q has no rows", alias)
+		}
+		rows = activeDataPoolRows(rows)
+		if len(rows) == 0 {
+			return nil, fmt.Errorf("data pool %q has no active rows", alias)
 		}
 		inlineData, columns, err := inlineCSVFromDataPoolRows(rows)
 		if err != nil {
@@ -1892,6 +1903,30 @@ func (tr *TestRunner) validateDataPoolProjectsLocked(projectID string, bindings 
 	return nil
 }
 
+// validateDataPoolsNotArchivedLocked hard-rejects archived pools on authoring
+// and run-creation paths. It is deliberately separate from the project check:
+// ValidateScenarioLoadModel needs project isolation but must report archived
+// pools as a blocked item in the report, not fail the whole validation call.
+func (tr *TestRunner) validateDataPoolsNotArchivedLocked(bindings []storage.ScenarioDataPoolBinding) error {
+	if len(bindings) == 0 {
+		return nil
+	}
+	if tr.dataPoolStore == nil {
+		return fmt.Errorf("data pool storage is not configured")
+	}
+	for _, binding := range bindings {
+		pool, err := tr.dataPoolStore.GetDataPool(strings.TrimSpace(binding.PoolID))
+		if err != nil || pool == nil {
+			// Existence and ownership are the project validator's concern.
+			continue
+		}
+		if err := errDataPoolArchived(pool); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func inlineCSVFromDataPoolRows(rows []*storage.SharedDataPoolRow) (string, []string, error) {
 	columnSet := map[string]struct{}{}
 	for _, row := range rows {
@@ -1919,7 +1954,7 @@ func inlineCSVFromDataPoolRows(rows []*storage.SharedDataPoolRow) (string, []str
 	for _, row := range rows {
 		values := make([]string, len(columns))
 		for i, column := range columns {
-			values[i] = row.Data[column]
+			values[i] = canonicalDataPoolRowValue(row.Data, column)
 		}
 		if err := writer.Write(values); err != nil {
 			return "", nil, err

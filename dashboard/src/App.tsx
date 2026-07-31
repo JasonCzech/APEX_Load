@@ -127,6 +127,16 @@ import {
   projectForActiveDomain,
   telemetryDiagnosticsForProject,
 } from "./appProjectScope";
+import {
+  acknowledgeProjectThresholdAlert,
+  appendProjectThresholdAlert,
+  isThresholdAlertTerminalStatus,
+  resolveProjectThresholdAlertsBefore,
+  resolveProjectThresholdAlertsForTest,
+  thresholdAlertFromMessage,
+  thresholdAlertsForProject,
+  type ThresholdAlertEntry,
+} from "./thresholdAlerts";
 import type { ScriptsAuthoringSubView } from "./components/useScriptsAuthoringState";
 import type { MonitorCategoryId } from "./components/MonitoringPage";
 import {
@@ -367,6 +377,12 @@ function AppShell({
   const protectedMetricsTestIDsRef = useRef<ReadonlySet<string>>(new Set());
   const [telemetryDiagnosticsByProject, setTelemetryDiagnosticsByProject] =
     useState<Record<string, TelemetryDiagnosticEntry[]>>({});
+  const [thresholdAlertsByProject, setThresholdAlertsByProject] = useState<
+    Record<string, ThresholdAlertEntry[]>
+  >({});
+  const thresholdAlertSampleTimestampByTestRef = useRef<Record<string, string>>(
+    {},
+  );
   const { theme, setTheme } = useDashboardTheme();
   const { mode: devViewMode } = useDevView();
   const { getAuthEffectiveAccess } = useSystemApi();
@@ -469,6 +485,16 @@ function AppShell({
         return;
       }
 
+      if (msg.type === "threshold_alert" && projectScopeID) {
+        const entry = thresholdAlertFromMessage(msg);
+        if (entry) {
+          setThresholdAlertsByProject((prev) =>
+            appendProjectThresholdAlert(prev, projectScopeID, entry),
+          );
+        }
+        return;
+      }
+
       if (
         msg.type === "metrics_update" &&
         msg.data &&
@@ -476,6 +502,23 @@ function AppShell({
         msg.timestamp
       ) {
         const testId = msg.test_id;
+        const previousSampleTimestamp =
+          thresholdAlertSampleTimestampByTestRef.current[testId];
+        thresholdAlertSampleTimestampByTestRef.current[testId] = msg.timestamp;
+        if (projectScopeID && previousSampleTimestamp) {
+          // Threshold alerts follow metrics_update on the same websocket. Use
+          // the prior sample as the cutoff so a still-active alert has one
+          // message cycle to refresh without flickering, while a recovered
+          // breach resolves after one omitted sample.
+          setThresholdAlertsByProject((prev) =>
+            resolveProjectThresholdAlertsBefore(
+              prev,
+              projectScopeID,
+              testId,
+              previousSampleTimestamp,
+            ),
+          );
+        }
         const point = mapExecutionMetricToHistoryPoint({
           ...msg.data,
           timestamp: String(msg.timestamp),
@@ -520,6 +563,19 @@ function AppShell({
 
       if (msg.status && msg.test_id) {
         const testId = msg.test_id;
+        if (
+          projectScopeID &&
+          isThresholdAlertTerminalStatus(msg.status)
+        ) {
+          delete thresholdAlertSampleTimestampByTestRef.current[testId];
+          setThresholdAlertsByProject((prev) =>
+            resolveProjectThresholdAlertsForTest(
+              prev,
+              projectScopeID,
+              testId,
+            ),
+          );
+        }
         setTestStatuses((prev) => ({ ...prev, [testId]: msg.status! }));
         setActiveTopbarRuns((prev) =>
           updateTopbarActiveRuns(prev, {
@@ -574,6 +630,20 @@ function AppShell({
   const telemetryDiagnostics = telemetryDiagnosticsForProject(
     telemetryDiagnosticsByProject,
     activeProject?.id,
+  );
+  const thresholdAlerts = thresholdAlertsForProject(
+    thresholdAlertsByProject,
+    activeProject?.id,
+  );
+  const activeProjectIdForAlerts = activeProject?.id;
+  const acknowledgeThresholdAlertByKey = useCallback(
+    (key: string) => {
+      if (!activeProjectIdForAlerts) return;
+      setThresholdAlertsByProject((prev) =>
+        acknowledgeProjectThresholdAlert(prev, activeProjectIdForAlerts, key),
+      );
+    },
+    [activeProjectIdForAlerts],
   );
   const handleProjectWSMessage = useCallback(
     (message: WSMessage) => handleWSMessage(message, activeProject?.id),
@@ -1940,6 +2010,14 @@ function AppShell({
                   }
                   applicationId={activeApplication?.id}
                   projectId={activeProject?.id}
+                  thresholdAlerts={
+                    view.testId
+                      ? thresholdAlerts.filter(
+                          (alert) => alert.testId === view.testId,
+                        )
+                      : []
+                  }
+                  onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
                   onOpenExecution={navigateToTest}
                   onOpenArchive={openCompletedRun}
                   onOpenResults={() => handleNavigate("results")}
@@ -2037,6 +2115,8 @@ function AppShell({
                 <MonitoringPage
                   connectionState={connectionState}
                   telemetryDiagnostics={telemetryDiagnostics}
+                  thresholdAlerts={thresholdAlerts}
+                  onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
                   onSelectTest={navigateToTest}
                   canManageSystem={canManageSystem}
                   onScheduleForDate={navigateToScheduleForDate}

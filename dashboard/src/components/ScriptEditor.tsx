@@ -305,7 +305,9 @@ const AUTHORING_COMPONENT_GROUPS = [
   { kind: 'request_group', label: 'Request Groups' },
   { kind: 'auth_flow', label: 'Auth Flows' },
   { kind: 'login_transaction', label: 'Login Transactions' },
-  { kind: 'data_pool', label: 'Data Pools' },
+  // Label only: 'data_pool' is persisted API surface for saved script blocks and
+  // must not collide with the shared Data Pools feature in the UI.
+  { kind: 'data_pool', label: 'Data Blocks' },
   { kind: 'teardown', label: 'Teardown Blocks' },
 ] as const
 
@@ -5262,6 +5264,14 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             paritySummary={runtimeSettingParitySummary}
             readiness={renderReadyToRunCard()}
             script={script}
+            // Only imported scripts have the read-only source panel; an authored
+            // script's parity entries are config-derived with no source rows to show.
+            onOpenImportedSource={script.metadata?.import?.preserved?.runtime_files
+              ? () => {
+                  openCenterTab('runtime-settings')
+                  selectRuntimeSettingsSection('imported_source')
+                }
+              : undefined}
           />
         )
       default:
