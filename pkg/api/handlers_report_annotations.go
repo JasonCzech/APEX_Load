@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -64,12 +65,17 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 	}
 	profile := normalizeReportProfileID(r.URL.Query().Get("profile"))
 
+	r.Body = http.MaxBytesReader(w, r.Body, reportAnnotationsMaxRequestBytes)
 	var req reportAnnotationsRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
 	if req.SectionComments == nil {
 		req.SectionComments = map[string]string{}
+	}
+	if err := validateReportAnnotationsRequest(profile, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	_, actorSubject, actorDisplay := s.resolveAuditActor(r)
@@ -86,8 +92,20 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 		UpdatedAt:          time.Now().UTC(),
 		UpdatedBy:          firstNonEmpty(actorDisplay, actorSubject),
 	}
+	if _, err := marshalReportAnnotations(ann); err != nil {
+		if errors.Is(err, errReportAnnotationsTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to encode report commentary: "+err.Error())
+		return
+	}
 	updated, err := saveReportAnnotationsIfUnchanged(s.store, ann, req.ExpectedUpdatedAt)
 	if err != nil {
+		if errors.Is(err, errReportAnnotationsTooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to save report commentary: "+err.Error())
 		return
 	}

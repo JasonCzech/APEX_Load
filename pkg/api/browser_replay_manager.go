@@ -44,6 +44,7 @@ type BrowserReplaySession struct {
 	CurrentEventIndex int                         `json:"current_event_index"`
 	CurrentEvent      *engine.ReplayActionEvent   `json:"current_event,omitempty"`
 	Events            []engine.ReplayActionEvent  `json:"events,omitempty"`
+	DroppedEventCount int                         `json:"dropped_event_count,omitempty"`
 	FinalReport       *engine.ReplayReport        `json:"report,omitempty"`
 	Error             string                      `json:"error,omitempty"`
 
@@ -67,6 +68,8 @@ type BrowserReplaySession struct {
 	// A terminal-looking status without this proof must be cleared/retired when
 	// cancellation reconciliation observes a lost fence.
 	terminalFenceEstablished bool
+	retainedEventJSONBytes   int
+	eventJSONBytes           []int
 }
 
 // replayCompletionHook is invoked once a replay session reaches a terminal
@@ -395,6 +398,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		terminalFenceEstablished := leaseErr == nil && fenceErr == nil
 		eventIndex := -1
 		abandoned := false
+		var terminalReport *engine.ReplayReport
 		current := m.withCurrentSession(session, func() {
 			session.mu.Lock()
 			if session.workerAbandoned {
@@ -409,6 +413,14 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			session.terminalFenceEstablished = terminalFenceEstablished
 			if report != nil && terminalFenceEstablished {
 				session.FinalReport = report
+				session.Events = nil
+				session.CurrentEvent = nil
+				session.retainedEventJSONBytes = 0
+				session.eventJSONBytes = nil
+				if report.DroppedEventCount > session.DroppedEventCount {
+					session.DroppedEventCount = report.DroppedEventCount
+				}
+				terminalReport = session.FinalReport
 				session.Error = report.Error
 			} else if !terminalFenceEstablished {
 				session.FinalReport = nil
@@ -450,7 +462,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 		// writes, and holding m.mu across them stalls every other session's
 		// handlers and progress callbacks. Currency is re-checked at publish time.
 		if terminalFenceEstablished {
-			if m.broadcastTerminal(messageType, session, eventIndex, nil, report) && m.onComplete != nil && report != nil {
+			if m.broadcastTerminal(messageType, session, eventIndex, nil, terminalReport) && m.onComplete != nil && report != nil {
 				if messageType != "browser_replay_stopped" {
 					m.onComplete(executionCtx, session.ProjectID, script, report)
 				}
@@ -1047,22 +1059,22 @@ func (m *BrowserReplayManager) handleReplayProgress(ctx context.Context, session
 		return
 	}
 	if !m.withCurrentWorkerSession(session, func() {
+		var retainedEvent *engine.ReplayActionEvent
 		session.mu.Lock()
 		session.CurrentEventIndex = event.EventIndex
 		if event.Event != nil {
-			cloned := cloneBrowserReplayEvent(*event.Event)
+			cloned := retainReplaySessionEvent(
+				&session.Events,
+				&session.eventJSONBytes,
+				&session.retainedEventJSONBytes,
+				&session.DroppedEventCount,
+				*event.Event,
+			)
 			session.CurrentEvent = &cloned
-			if event.EventIndex >= 0 {
-				for len(session.Events) <= event.EventIndex {
-					session.Events = append(session.Events, engine.ReplayActionEvent{})
-				}
-				session.Events[event.EventIndex] = cloned
-			} else {
-				session.Events = append(session.Events, cloned)
-			}
+			retainedEvent = &cloned
 		}
 		session.mu.Unlock()
-		m.broadcast("browser_replay_event", session, event.EventIndex, event.Event, nil)
+		m.broadcast("browser_replay_event", session, event.EventIndex, retainedEvent, nil)
 	}) {
 		return
 	}
@@ -1109,14 +1121,22 @@ func (m *BrowserReplayManager) broadcast(messageType string, session *BrowserRep
 	if m.hub == nil || session == nil {
 		return
 	}
-	sessionPayload := session.snapshot()
+	session.mu.RLock()
+	sessionID, scriptID, projectID := session.ID, session.ScriptID, session.ProjectID
+	session.mu.RUnlock()
 	message := map[string]any{
 		"type":              messageType,
-		"replay_session_id": sessionPayload.ID,
-		"script_id":         sessionPayload.ScriptID,
-		"project_id":        sessionPayload.ProjectID,
+		"replay_session_id": sessionID,
+		"script_id":         scriptID,
+		"project_id":        projectID,
 		"timestamp":         time.Now(),
-		"session":           sessionPayload,
+	}
+	if messageType != "browser_replay_event" {
+		if report != nil {
+			message["session"] = session.terminalSnapshot()
+		} else {
+			message["session"] = session.snapshot()
+		}
 	}
 	if eventIndex >= 0 {
 		message["event_index"] = eventIndex
@@ -1137,8 +1157,30 @@ func (s *BrowserReplaySession) snapshot() *BrowserReplaySession {
 	return s.snapshotLocked()
 }
 
+func (s *BrowserReplaySession) terminalSnapshot() *BrowserReplaySession {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.snapshotBaseLocked()
+}
+
 func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
-	clone := &BrowserReplaySession{
+	clone := s.snapshotBaseLocked()
+	clone.FinalReport = cloneBrowserReplayReport(s.FinalReport)
+	if s.CurrentEvent != nil {
+		current := cloneBrowserReplayEvent(*s.CurrentEvent)
+		clone.CurrentEvent = &current
+	}
+	if len(s.Events) > 0 {
+		clone.Events = make([]engine.ReplayActionEvent, len(s.Events))
+		for i, event := range s.Events {
+			clone.Events[i] = cloneBrowserReplayEvent(event)
+		}
+	}
+	return clone
+}
+
+func (s *BrowserReplaySession) snapshotBaseLocked() *BrowserReplaySession {
+	return &BrowserReplaySession{
 		ID:                s.ID,
 		Mode:              s.Mode,
 		ScriptID:          s.ScriptID,
@@ -1151,20 +1193,9 @@ func (s *BrowserReplaySession) snapshotLocked() *BrowserReplaySession {
 		StartedAt:         cloneReplaySessionTime(s.StartedAt),
 		CompletedAt:       cloneReplaySessionTime(s.CompletedAt),
 		CurrentEventIndex: s.CurrentEventIndex,
-		FinalReport:       cloneBrowserReplayReport(s.FinalReport),
+		DroppedEventCount: s.DroppedEventCount,
 		Error:             s.Error,
 	}
-	if s.CurrentEvent != nil {
-		current := cloneBrowserReplayEvent(*s.CurrentEvent)
-		clone.CurrentEvent = &current
-	}
-	if len(s.Events) > 0 {
-		clone.Events = make([]engine.ReplayActionEvent, len(s.Events))
-		for i, event := range s.Events {
-			clone.Events[i] = cloneBrowserReplayEvent(event)
-		}
-	}
-	return clone
 }
 
 func (s *BrowserReplaySession) stateChangedChanLocked() <-chan struct{} {
@@ -1194,19 +1225,65 @@ func cloneBrowserReplayReport(report *engine.ReplayReport) *engine.ReplayReport 
 	cloned.ArtifactManifest = cloneBrowserReplayArtifactManifest(report.ArtifactManifest)
 	cloned.DiagnosisSummary = cloneBrowserReplayDiagnosisSummary(report.DiagnosisSummary)
 	cloned.RepairSuggestions = cloneBrowserReplayRepairSuggestions(report.RepairSuggestions)
+	snapshotClones := make(map[*protocol.ErrorSnapshot]*protocol.ErrorSnapshot, len(report.Snapshots))
+	if len(report.Snapshots) > 0 {
+		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))
+		for i, snapshot := range report.Snapshots {
+			bounded := cloneBrowserErrorSnapshot(snapshot)
+			cloned.Snapshots[i] = bounded
+			if snapshot != nil {
+				snapshotClones[snapshot] = bounded
+			}
+		}
+	}
 	if len(report.Events) > 0 {
 		cloned.Events = make([]engine.ReplayActionEvent, len(report.Events))
 		for i, event := range report.Events {
 			cloned.Events[i] = cloneBrowserReplayEvent(event)
-		}
-	}
-	if len(report.Snapshots) > 0 {
-		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))
-		for i, snapshot := range report.Snapshots {
-			cloned.Snapshots[i] = cloneBrowserErrorSnapshot(snapshot)
+			if shared := snapshotClones[event.Snapshot]; shared != nil {
+				cloned.Events[i].Snapshot = shared
+			}
 		}
 	}
 	return &cloned
+}
+
+// retainReplaySessionEvent mirrors the engine report's bounded recent-event
+// window for live session polling. EventIndex remains the global execution
+// index; the slice is an ordered window and is never expanded to that index.
+func retainReplaySessionEvent(
+	events *[]engine.ReplayActionEvent,
+	eventBytes *[]int,
+	retainedBytes *int,
+	droppedEvents *int,
+	event engine.ReplayActionEvent,
+) engine.ReplayActionEvent {
+	retained := engine.BoundReplayActionEventForRetention(event, true)
+	bytes := engine.ReplayActionEventRetentionBytes(retained)
+	if bytes > engine.MaxRetainedReplayEventBytes {
+		retained = engine.BoundReplayActionEventForRetention(event, false)
+		bytes = engine.ReplayActionEventRetentionBytes(retained)
+	}
+	*events = append(*events, retained)
+	*eventBytes = append(*eventBytes, bytes)
+	*retainedBytes += bytes
+	for len(*events) > engine.MaxRetainedReplayEvents || *retainedBytes > engine.MaxRetainedReplayEventBytes {
+		if len(*events) == 0 {
+			break
+		}
+		if len(*eventBytes) > 0 {
+			*retainedBytes -= (*eventBytes)[0]
+			if *retainedBytes < 0 {
+				*retainedBytes = 0
+			}
+			(*eventBytes)[0] = 0
+			*eventBytes = (*eventBytes)[1:]
+		}
+		(*events)[0] = engine.ReplayActionEvent{}
+		*events = (*events)[1:]
+		*droppedEvents++
+	}
+	return retained
 }
 
 func cloneBrowserErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.ErrorSnapshot {

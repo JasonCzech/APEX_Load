@@ -1,12 +1,15 @@
 package storage
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func requireGitHubAnchors(t *testing.T, store *SQLiteStore, projectID string, scriptIDs, testIDs []string) {
@@ -23,6 +26,10 @@ func requireGitHubAnchors(t *testing.T, store *SQLiteStore, projectID string, sc
 			t.Fatalf("seed test %s: %v", testID, err)
 		}
 	}
+}
+
+func githubSyncTestTargets(branch, path string) []GitHubScriptSyncTarget {
+	return []GitHubScriptSyncTarget{{Owner: "octo", Repo: "scripts", Branch: branch, Path: path}}
 }
 
 func TestGitHubScriptLinkCRUD(t *testing.T) {
@@ -49,6 +56,8 @@ func TestGitHubScriptLinkCRUD(t *testing.T) {
 		LastCommitSHA:   "blob1",
 		RemoteBlobSHA:   "blob1",
 		RemoteCommitSHA: "commit1",
+		BaseBranch:      "main",
+		BaseMissing:     true,
 		ContentHash:     "hash1",
 	}
 	if err := store.SaveGitHubScriptLink(link); err != nil {
@@ -62,7 +71,8 @@ func TestGitHubScriptLinkCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGitHubScriptLink: %v", err)
 	}
-	if got == nil || got.Owner != "octocat" || got.LastCommitSHA != "blob1" || got.RemoteBlobSHA != "blob1" || got.RemoteCommitSHA != "commit1" || got.ContentHash != "hash1" {
+	if got == nil || got.Owner != "octocat" || got.LastCommitSHA != "blob1" || got.RemoteBlobSHA != "blob1" || got.RemoteCommitSHA != "commit1" ||
+		got.BaseBranch != "main" || got.BaseBlobSHA != "" || !got.BaseMissing || got.ContentHash != "hash1" {
 		t.Fatalf("unexpected link: %#v", got)
 	}
 
@@ -70,13 +80,18 @@ func TestGitHubScriptLinkCRUD(t *testing.T) {
 	link.LastCommitSHA = "blob2"
 	link.RemoteBlobSHA = "blob2"
 	link.RemoteCommitSHA = "commit2"
+	link.BaseBranch = "release"
+	link.BaseBlobSHA = "base-blob2"
+	link.BaseMissing = false
 	link.ContentHash = "hash2"
 	link.Branch = "dev"
 	if err := store.SaveGitHubScriptLink(link); err != nil {
 		t.Fatalf("re-SaveGitHubScriptLink: %v", err)
 	}
 	got, _ = store.GetGitHubScriptLink("script-1")
-	if got.LastCommitSHA != "blob2" || got.RemoteBlobSHA != "blob2" || got.RemoteCommitSHA != "commit2" || got.ContentHash != "hash2" || got.Branch != "dev" {
+	if got.LastCommitSHA != "blob2" || got.RemoteBlobSHA != "blob2" || got.RemoteCommitSHA != "commit2" ||
+		got.BaseBranch != "release" || got.BaseBlobSHA != "base-blob2" || got.BaseMissing ||
+		got.ContentHash != "hash2" || got.Branch != "dev" {
 		t.Fatalf("upsert did not update: %#v", got)
 	}
 
@@ -86,6 +101,751 @@ func TestGitHubScriptLinkCRUD(t *testing.T) {
 	got, _ = store.GetGitHubScriptLink("script-1")
 	if got != nil {
 		t.Fatalf("expected nil after delete, got %#v", got)
+	}
+}
+
+func TestGitHubScriptLinkBaseWitnessColumnsMigrate(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "apexload.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	requireGitHubAnchors(t, store, "github-project", []string{"script-legacy"}, nil)
+	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{
+		ScriptID: "script-legacy",
+		Owner:    "octocat",
+		Repo:     "scripts",
+		Branch:   "feature",
+		Path:     "script.json",
+	}); err != nil {
+		t.Fatalf("seed legacy link: %v", err)
+	}
+	for _, column := range []string{"base_branch", "base_blob_sha", "base_missing"} {
+		if _, err := store.db.Exec(`ALTER TABLE github_script_links DROP COLUMN ` + column); err != nil {
+			_ = store.Close()
+			t.Fatalf("drop %s to simulate legacy schema: %v", column, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close legacy store: %v", err)
+	}
+
+	reopened, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("reopen migrated store: %v", err)
+	}
+	defer reopened.Close()
+	got, err := reopened.GetGitHubScriptLink("script-legacy")
+	if err != nil {
+		t.Fatalf("GetGitHubScriptLink after migration: %v", err)
+	}
+	if got == nil || got.BaseBranch != "" || got.BaseBlobSHA != "" || got.BaseMissing {
+		t.Fatalf("migrated base witness defaults = %#v", got)
+	}
+}
+
+func TestGitHubScriptSyncClaimLifecycleAndClaimedFinalize(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-sync-claim.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-claim"}, nil)
+
+	initialExpiry := time.Now().UTC().Add(5 * time.Minute)
+	targets := githubSyncTestTargets("main", "script.json")
+	claimed, err := store.AcquireGitHubScriptSyncClaim("script-claim", "claim-a", targets, initialExpiry)
+	if err != nil || !claimed {
+		t.Fatalf("initial claim = %t, %v", claimed, err)
+	}
+	var persisted GitHubScriptSyncClaim
+	if err := store.db.QueryRow(`SELECT script_id, project_id, claim_id, expires_at, created_at, updated_at
+		FROM github_script_sync_claims WHERE script_id = ?`, "script-claim").Scan(
+		&persisted.ScriptID, &persisted.ProjectID, &persisted.ClaimID, &persisted.ExpiresAt, &persisted.CreatedAt, &persisted.UpdatedAt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ProjectID != "github-project" || persisted.ClaimID != "claim-a" || persisted.CreatedAt.IsZero() || persisted.UpdatedAt.IsZero() {
+		t.Fatalf("persisted claim = %#v", persisted)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-claim", "claim-a", targets, initialExpiry.Add(time.Minute)); err != nil || claimed {
+		t.Fatalf("active claim was reacquired by its token: claimed=%t err=%v", claimed, err)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-claim", "claim-b", targets, initialExpiry.Add(time.Minute)); err != nil || claimed {
+		t.Fatalf("active claim was stolen: claimed=%t err=%v", claimed, err)
+	}
+	if renewed, err := store.RenewGitHubScriptSyncClaim("script-claim", "claim-b", initialExpiry.Add(10*time.Minute)); err != nil || renewed {
+		t.Fatalf("foreign renewal = %t, %v", renewed, err)
+	}
+	renewedExpiry := initialExpiry.Add(10 * time.Minute)
+	if renewed, err := store.RenewGitHubScriptSyncClaim("script-claim", "claim-a", renewedExpiry); err != nil || !renewed {
+		t.Fatalf("owner renewal = %t, %v", renewed, err)
+	}
+	var gotExpiry time.Time
+	if err := store.db.QueryRow(`SELECT expires_at FROM github_script_sync_claims WHERE script_id = ?`, "script-claim").Scan(&gotExpiry); err != nil {
+		t.Fatal(err)
+	}
+	if gotExpiry.Before(renewedExpiry.Add(-time.Millisecond)) {
+		t.Fatalf("renewed expiry = %s, want at least %s", gotExpiry, renewedExpiry)
+	}
+
+	link := &GitHubScriptLink{
+		ScriptID: "script-claim", RefKey: "S-claim", Owner: "octo", Repo: "scripts",
+		Branch: "main", Path: "script.json", RemoteBlobSHA: "blob-a", RemoteCommitSHA: "commit-a", ContentHash: "hash-a",
+	}
+	bypassLink := *link
+	if err := store.SaveGitHubScriptLink(&bypassLink); err == nil {
+		t.Fatal("unclaimed link save bypassed an active sync claim")
+	}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(link, "claim-b"); err != nil || finalized {
+		t.Fatalf("foreign finalization = %t, %v", finalized, err)
+	}
+	if got, err := store.GetGitHubScriptLink("script-claim"); err != nil || got != nil {
+		t.Fatalf("foreign finalization persisted link = %#v, %v", got, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-claim", "claim-b"); err != nil || released {
+		t.Fatalf("foreign release = %t, %v", released, err)
+	}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(link, "claim-a"); err != nil || !finalized {
+		t.Fatalf("owner finalization = %t, %v", finalized, err)
+	}
+	got, err := store.GetGitHubScriptLink("script-claim")
+	if err != nil || got == nil || got.Path != "script.json" || got.RemoteBlobSHA != "blob-a" || got.ContentHash != "hash-a" {
+		t.Fatalf("finalized link = %#v, %v", got, err)
+	}
+	var remaining int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM github_script_sync_claims WHERE script_id = ?`, "script-claim").Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Fatalf("successful finalization left %d claims", remaining)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-claim", "claim-b", targets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("claim after finalization = %t, %v", claimed, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-claim", "claim-a"); err != nil || released {
+		t.Fatalf("stale release removed replacement claim: released=%t err=%v", released, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-claim", "claim-b"); err != nil || !released {
+		t.Fatalf("owner release = %t, %v", released, err)
+	}
+}
+
+func TestGitHubScriptSyncClaimExpiryFencesStaleWorker(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-sync-expiry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-expiry"}, nil)
+
+	oldTargets := githubSyncTestTargets("old", "old.json")
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-expiry", "claim-old", oldTargets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("initial claim = %t, %v", claimed, err)
+	}
+	if _, err := store.db.Exec(`UPDATE github_script_sync_claims SET expires_at = ? WHERE script_id = ?`, time.Unix(0, 0).UTC(), "script-expiry"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`UPDATE github_script_sync_target_claims SET expires_at = ? WHERE script_id = ?`, time.Unix(0, 0).UTC(), "script-expiry"); err != nil {
+		t.Fatal(err)
+	}
+	if renewed, err := store.RenewGitHubScriptSyncClaim("script-expiry", "claim-old", time.Now().UTC().Add(time.Minute)); err != nil || renewed {
+		t.Fatalf("expired claim renewal = %t, %v", renewed, err)
+	}
+	newTargets := githubSyncTestTargets("new", "new.json")
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-expiry", "claim-new", newTargets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("expired-claim takeover = %t, %v", claimed, err)
+	}
+	staleLink := &GitHubScriptLink{ScriptID: "script-expiry", Owner: "octo", Repo: "scripts", Branch: "old", Path: "old.json", RemoteBlobSHA: "old"}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(staleLink, "claim-old"); err != nil || finalized {
+		t.Fatalf("stale finalization = %t, %v", finalized, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-expiry", "claim-old"); err != nil || released {
+		t.Fatalf("stale release = %t, %v", released, err)
+	}
+	winningLink := &GitHubScriptLink{ScriptID: "script-expiry", Owner: "octo", Repo: "scripts", Branch: "new", Path: "new.json", RemoteBlobSHA: "new"}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(winningLink, "claim-new"); err != nil || !finalized {
+		t.Fatalf("replacement finalization = %t, %v", finalized, err)
+	}
+	got, err := store.GetGitHubScriptLink("script-expiry")
+	if err != nil || got == nil || got.Branch != "new" || got.Path != "new.json" || got.RemoteBlobSHA != "new" {
+		t.Fatalf("winning link = %#v, %v", got, err)
+	}
+}
+
+func TestGitHubScriptSyncClaimConcurrentAcquireHasOneWinner(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-sync-concurrent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-concurrent"}, nil)
+
+	type result struct {
+		claimID string
+		claimed bool
+		err     error
+	}
+	const contenders = 8
+	results := make(chan result, contenders)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < contenders; i++ {
+		claimID := uuid.NewString()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			claimed, err := store.AcquireGitHubScriptSyncClaim("script-concurrent", claimID, githubSyncTestTargets("main", "concurrent.json"), time.Now().UTC().Add(time.Minute))
+			results <- result{claimID: claimID, claimed: claimed, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	winners := make([]string, 0, 1)
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("claim %s: %v", result.claimID, result.err)
+		}
+		if result.claimed {
+			winners = append(winners, result.claimID)
+		}
+	}
+	if len(winners) != 1 {
+		t.Fatalf("claim winners = %v, want exactly one", winners)
+	}
+	var persistedClaimID string
+	if err := store.db.QueryRow(`SELECT claim_id FROM github_script_sync_claims WHERE script_id = ?`, "script-concurrent").Scan(&persistedClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if persistedClaimID != winners[0] {
+		t.Fatalf("persisted winner = %q, returned winner = %q", persistedClaimID, winners[0])
+	}
+}
+
+func TestGitHubScriptSyncTargetConcurrentCrossScriptAcquireHasOneWinner(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-target-concurrent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-target-a", "script-target-b"}, nil)
+
+	type result struct {
+		scriptID string
+		claimID  string
+		claimed  bool
+		err      error
+	}
+	results := make(chan result, 2)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for _, scriptID := range []string{"script-target-a", "script-target-b"} {
+		scriptID := scriptID
+		claimID := "claim-" + scriptID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			claimed, err := store.AcquireGitHubScriptSyncClaim(scriptID, claimID,
+				[]GitHubScriptSyncTarget{{Owner: " OCTO ", Repo: " Scripts ", Branch: "main", Path: "shared.json"}},
+				time.Now().UTC().Add(time.Minute))
+			results <- result{scriptID: scriptID, claimID: claimID, claimed: claimed, err: err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	winners := make([]result, 0, 1)
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("cross-script claim for %s: %v", result.scriptID, result.err)
+		}
+		if result.claimed {
+			winners = append(winners, result)
+		}
+	}
+	if len(winners) != 1 {
+		t.Fatalf("cross-script target winners = %#v, want exactly one", winners)
+	}
+	var ownerNorm, repoNorm string
+	if err := store.db.QueryRow(`SELECT owner_norm, repo_norm FROM github_script_sync_target_claims`).Scan(&ownerNorm, &repoNorm); err != nil {
+		t.Fatal(err)
+	}
+	if ownerNorm != "octo" || repoNorm != "scripts" {
+		t.Fatalf("normalized target = %s/%s, want octo/scripts", ownerNorm, repoNorm)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim(winners[0].scriptID, winners[0].claimID); err != nil || !released {
+		t.Fatalf("release target winner = %t, %v", released, err)
+	}
+}
+
+func TestGitHubScriptSyncTargetOwnershipSurvivesFinalizeUntilUnlink(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-target-ownership.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-owner-a", "script-owner-b"}, nil)
+	targets := []GitHubScriptSyncTarget{{Owner: " Octo ", Repo: " SCRIPTS ", Branch: "main", Path: "shared.json"}}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-owner-a", "claim-owner-a", targets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("owner claim = %t, %v", claimed, err)
+	}
+	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{
+		ScriptID: "script-owner-b", Owner: "octo", Repo: "scripts", Branch: "main", Path: "shared.json",
+	}); !IsGitHubScriptSyncBusy(err) {
+		t.Fatalf("legacy save against active target error = %v, want busy", err)
+	}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(&GitHubScriptLink{
+		ScriptID: "script-owner-a", Owner: "OCTO", Repo: "Scripts", Branch: "main", Path: "shared.json",
+	}, "claim-owner-a"); err != nil || !finalized {
+		t.Fatalf("owner finalization = %t, %v", finalized, err)
+	}
+	var ownerScriptID, ownerNorm, repoNorm string
+	if err := store.db.QueryRow(`SELECT script_id, owner_norm, repo_norm FROM github_script_sync_target_owners`).Scan(&ownerScriptID, &ownerNorm, &repoNorm); err != nil {
+		t.Fatal(err)
+	}
+	if ownerScriptID != "script-owner-a" || ownerNorm != "octo" || repoNorm != "scripts" {
+		t.Fatalf("persistent target owner = %s %s/%s", ownerScriptID, ownerNorm, repoNorm)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-owner-a", "claim-owner-a-unlink", targets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("owner unlink-fence claim = %t, %v", claimed, err)
+	}
+	if err := store.DeleteGitHubScriptLink("script-owner-a"); !IsGitHubScriptSyncBusy(err) {
+		t.Fatalf("unlink during active sync error = %v, want busy", err)
+	}
+	if linked, err := store.GetGitHubScriptLink("script-owner-a"); err != nil || linked == nil {
+		t.Fatalf("busy unlink changed persisted link = %#v, %v", linked, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-owner-a", "claim-owner-a-unlink"); err != nil || !released {
+		t.Fatalf("release owner unlink-fence claim = %t, %v", released, err)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-owner-b", "claim-owner-b", targets, time.Now().UTC().Add(time.Minute)); err != nil || claimed {
+		t.Fatalf("claim of persistently owned target = %t, %v", claimed, err)
+	}
+	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{
+		ScriptID: "script-owner-b", Owner: "octo", Repo: "scripts", Branch: "main", Path: "shared.json",
+	}); err == nil {
+		t.Fatal("legacy save replaced another script's persistent target ownership")
+	}
+	if err := store.DeleteGitHubScriptLink("script-owner-a"); err != nil {
+		t.Fatalf("unlink target owner: %v", err)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-owner-b", "claim-owner-b", targets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("claim after owner unlink = %t, %v", claimed, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-owner-b", "claim-owner-b"); err != nil || !released {
+		t.Fatalf("release post-unlink claim = %t, %v", released, err)
+	}
+}
+
+func TestGitHubScriptSyncPRClaimOwnsBaseAndHeadTargets(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-target-pr.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-pr-a", "script-pr-b", "script-pr-mismatch"}, nil)
+	prTargets := []GitHubScriptSyncTarget{
+		{Owner: "octo", Repo: "scripts", Branch: "main", Path: "pr.json"},
+		{Owner: "octo", Repo: "scripts", Branch: "apexload/pr-1", Path: "pr.json"},
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-pr-a", "claim-pr-a", prTargets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("PR claim = %t, %v", claimed, err)
+	}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(&GitHubScriptLink{
+		ScriptID: "script-pr-a", Owner: "octo", Repo: "scripts", Branch: "apexload/pr-1", BaseBranch: "main", Path: "pr.json",
+	}, "claim-pr-a"); err != nil || !finalized {
+		t.Fatalf("PR finalization = %t, %v", finalized, err)
+	}
+	var ownerCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM github_script_sync_target_owners WHERE script_id = ?`, "script-pr-a").Scan(&ownerCount); err != nil {
+		t.Fatal(err)
+	}
+	if ownerCount != 2 {
+		t.Fatalf("PR target owners = %d, want base and head", ownerCount)
+	}
+	for index, target := range prTargets {
+		if claimed, err := store.AcquireGitHubScriptSyncClaim("script-pr-b", fmt.Sprintf("claim-pr-b-%d", index),
+			[]GitHubScriptSyncTarget{target}, time.Now().UTC().Add(time.Minute)); err != nil || claimed {
+			t.Fatalf("claim of PR target %d = %t, %v; want ownership conflict", index, claimed, err)
+		}
+	}
+	mismatchTargets := []GitHubScriptSyncTarget{{Owner: "octo", Repo: "scripts", Branch: "head-only", Path: "mismatch.json"}}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-pr-mismatch", "claim-pr-mismatch", mismatchTargets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("mismatch setup claim = %t, %v", claimed, err)
+	}
+	if finalized, err := store.FinalizeGitHubScriptSyncClaim(&GitHubScriptLink{
+		ScriptID: "script-pr-mismatch", Owner: "octo", Repo: "scripts", Branch: "head-only", BaseBranch: "main", Path: "mismatch.json",
+	}, "claim-pr-mismatch"); err != nil || finalized {
+		t.Fatalf("finalization with unreserved base = %t, %v", finalized, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-pr-mismatch", "claim-pr-mismatch"); err != nil || !released {
+		t.Fatalf("release mismatched PR claim = %t, %v", released, err)
+	}
+}
+
+func TestGitHubScriptSyncClaimBlocksConditionalScriptDeletionWithoutSideEffects(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-conditional-delete.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "github-project", []string{"script-conditional-delete"}, nil)
+	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{
+		ScriptID: "script-conditional-delete", Owner: "octo", Repo: "scripts", Branch: "main", Path: "delete.json",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var expectedUpdatedAt time.Time
+	if err := store.db.QueryRow(`SELECT updated_at FROM scripts WHERE id = ?`, "script-conditional-delete").Scan(&expectedUpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-conditional-delete", "claim-conditional-delete",
+		githubSyncTestTargets("main", "delete.json"), time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("conditional-delete claim = %t, %v", claimed, err)
+	}
+	if deleted, err := store.DeleteScriptIfUnchanged("script-conditional-delete", expectedUpdatedAt); !IsGitHubScriptSyncBusy(err) || deleted {
+		t.Fatalf("conditional delete with active claim = %t, %v; want busy", deleted, err)
+	}
+	var scripts, links, claims, targetClaims, owners int
+	for _, probe := range []struct {
+		query string
+		dst   *int
+	}{
+		{`SELECT COUNT(*) FROM scripts WHERE id = ?`, &scripts},
+		{`SELECT COUNT(*) FROM github_script_links WHERE script_id = ?`, &links},
+		{`SELECT COUNT(*) FROM github_script_sync_claims WHERE script_id = ?`, &claims},
+		{`SELECT COUNT(*) FROM github_script_sync_target_claims WHERE script_id = ?`, &targetClaims},
+		{`SELECT COUNT(*) FROM github_script_sync_target_owners WHERE script_id = ?`, &owners},
+	} {
+		if err := store.db.QueryRow(probe.query, "script-conditional-delete").Scan(probe.dst); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if scripts != 1 || links != 1 || claims != 1 || targetClaims != 1 || owners != 1 {
+		t.Fatalf("busy conditional deletion changed rows: scripts=%d links=%d claims=%d target_claims=%d owners=%d",
+			scripts, links, claims, targetClaims, owners)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-conditional-delete", "claim-conditional-delete"); err != nil || !released {
+		t.Fatalf("release conditional-delete claim = %t, %v", released, err)
+	}
+	if deleted, err := store.DeleteScriptIfUnchanged("script-conditional-delete", expectedUpdatedAt); err != nil || !deleted {
+		t.Fatalf("conditional delete after release = %t, %v", deleted, err)
+	}
+	for _, table := range []string{"github_script_links", "github_script_sync_claims", "github_script_sync_target_claims", "github_script_sync_target_owners"} {
+		var remaining int
+		if err := store.db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE script_id = ?`, "script-conditional-delete").Scan(&remaining); err != nil {
+			t.Fatal(err)
+		}
+		if remaining != 0 {
+			t.Fatalf("conditional script deletion left %d rows in %s", remaining, table)
+		}
+	}
+}
+
+func TestCommitGitHubScriptImportIsAtomicFencedAndIdempotent(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-script-import-atomic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireProjectFixtures(t, store, "github-project")
+	if err := store.SaveFolder(&Folder{ID: "local-folder", ProjectID: "github-project", Name: "Local", Category: "general"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	folderID := "local-folder"
+	created := &dsl.Script{
+		ID: "script-imported", RefKey: "S-LOCAL", Name: "Imported", Protocol: "http", Version: "1",
+		ProjectID: "github-project", FolderID: &folderID, CreatedAt: now, UpdatedAt: now,
+	}
+	link := &GitHubScriptLink{
+		ScriptID: "script-imported", Owner: "Octo", Repo: "Scripts", Branch: "main", Path: "imported.json",
+		LastCommitSHA: "blob-1", RemoteBlobSHA: "blob-1", RemoteCommitSHA: "commit-1", ContentHash: "hash-1",
+	}
+	if outcome, err := store.CommitGitHubScriptImport(created, link, time.Time{}); err != nil || outcome != GitHubScriptImportCreated {
+		t.Fatalf("atomic github import create = %q, %v", outcome, err)
+	}
+	persisted, err := store.GetScript("script-imported")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstUpdatedAt := persisted.UpdatedAt
+	retry := *persisted
+	retryLink := &GitHubScriptLink{
+		ScriptID: retry.ID, Owner: "octo", Repo: "scripts", Branch: "main", Path: "imported.json",
+		LastCommitSHA: "blob-1", RemoteBlobSHA: "blob-1", RemoteCommitSHA: "commit-1", ContentHash: "hash-1",
+	}
+	if outcome, err := store.CommitGitHubScriptImport(&retry, retryLink, firstUpdatedAt); err != nil || outcome != GitHubScriptImportUnchanged {
+		t.Fatalf("idempotent github import retry = %q, %v", outcome, err)
+	}
+	if !retry.UpdatedAt.Equal(firstUpdatedAt) {
+		t.Fatalf("idempotent retry changed script timestamp from %s to %s", firstUpdatedAt, retry.UpdatedAt)
+	}
+
+	maliciousFolder := "remote-folder"
+	updated := *persisted
+	updated.Name = "Imported v2"
+	updated.RefKey = "REMOTE-KEY"
+	updated.FolderID = &maliciousFolder
+	updated.UpdatedAt = firstUpdatedAt.Add(time.Second)
+	updatedLink := &GitHubScriptLink{
+		ScriptID: updated.ID, Owner: "octo", Repo: "scripts", Branch: "main", Path: "imported.json",
+		LastCommitSHA: "blob-2", RemoteBlobSHA: "blob-2", RemoteCommitSHA: "commit-2", ContentHash: "hash-2",
+	}
+	if outcome, err := store.CommitGitHubScriptImport(&updated, updatedLink, firstUpdatedAt); err != nil || outcome != GitHubScriptImportUpdated {
+		t.Fatalf("atomic github import update = %q, %v", outcome, err)
+	}
+	persisted, err = store.GetScript("script-imported")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Name != "Imported v2" || persisted.RefKey != "S-LOCAL" || persisted.FolderID == nil || *persisted.FolderID != "local-folder" {
+		t.Fatalf("updated import did not preserve local placement: %#v", persisted)
+	}
+
+	unlinked := &dsl.Script{ID: "script-unlinked", RefKey: "S-UNLINKED", Name: "Local only", Protocol: "http", Version: "1", ProjectID: "github-project"}
+	if err := store.SaveScript(unlinked); err != nil {
+		t.Fatal(err)
+	}
+	unlinkedUpdatedAt := unlinked.UpdatedAt
+	forged := *unlinked
+	forged.Name = "Remote overwrite"
+	forged.UpdatedAt = unlinkedUpdatedAt.Add(time.Second)
+	if outcome, err := store.CommitGitHubScriptImport(&forged, &GitHubScriptLink{
+		ScriptID: forged.ID, Owner: "octo", Repo: "scripts", Branch: "main", Path: "unlinked.json", ContentHash: "remote",
+	}, unlinkedUpdatedAt); err != nil || outcome != GitHubScriptImportConflict {
+		t.Fatalf("unlinked supplied-id import = %q, %v; want conflict", outcome, err)
+	}
+	unchangedUnlinked, err := store.GetScript("script-unlinked")
+	if err != nil || unchangedUnlinked.Name != "Local only" || !unchangedUnlinked.UpdatedAt.Equal(unlinkedUpdatedAt) {
+		t.Fatalf("unlinked supplied-id conflict changed script = %#v, %v", unchangedUnlinked, err)
+	}
+	if got, err := store.GetGitHubScriptLink("script-unlinked"); err != nil || got != nil {
+		t.Fatalf("unlinked supplied-id conflict created link = %#v, %v", got, err)
+	}
+
+	var beforeCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&beforeCount); err != nil {
+		t.Fatal(err)
+	}
+	colliding := &dsl.Script{ID: "script-target-collision", RefKey: "S-COLLIDE", Name: "Collision", Protocol: "http", Version: "1", ProjectID: "github-project", CreatedAt: now, UpdatedAt: now}
+	if outcome, err := store.CommitGitHubScriptImport(colliding, &GitHubScriptLink{
+		ScriptID: colliding.ID, Owner: "OCTO", Repo: "SCRIPTS", Branch: "main", Path: "imported.json", ContentHash: "collision",
+	}, time.Time{}); err != nil || outcome != GitHubScriptImportConflict {
+		t.Fatalf("target-colliding github import = %q, %v; want conflict", outcome, err)
+	}
+	var afterCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM scripts`).Scan(&afterCount); err != nil {
+		t.Fatal(err)
+	}
+	if afterCount != beforeCount {
+		t.Fatalf("target collision changed script count from %d to %d", beforeCount, afterCount)
+	}
+}
+
+func TestGitHubScriptSyncTargetTablesMigrateBackfillAndDeclareForeignKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "github-script-sync-migration.db")
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireGitHubAnchors(t, store, "github-project", []string{"script-legacy-link"}, nil)
+	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{
+		ScriptID: "script-legacy-link", Owner: " Octo ", Repo: " Scripts ",
+		Branch: "feature", BaseBranch: "main", Path: "legacy.json",
+	}); err != nil {
+		t.Fatalf("seed pre-migration github link: %v", err)
+	}
+	for _, table := range []string{
+		"github_script_sync_target_claims",
+		"github_script_sync_target_owners",
+		"github_script_sync_targets",
+		"github_script_sync_claims",
+	} {
+		if _, err := store.db.Exec(`DROP TABLE ` + table); err != nil {
+			t.Fatalf("drop %s: %v", table, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("reopen legacy schema: %v", err)
+	}
+	defer reopened.Close()
+	var ownerCount int
+	if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM github_script_sync_target_owners
+		WHERE script_id = ? AND owner_norm = ? AND repo_norm = ?`, "script-legacy-link", "octo", "scripts").Scan(&ownerCount); err != nil {
+		t.Fatal(err)
+	}
+	if ownerCount != 2 {
+		t.Fatalf("backfilled target owners = %d, want primary and base", ownerCount)
+	}
+	requireGitHubAnchors(t, reopened, "github-project", []string{"script-migrated-claim"}, nil)
+	if claimed, err := reopened.AcquireGitHubScriptSyncClaim("script-migrated-claim", "claim-owned-target",
+		githubSyncTestTargets("main", "legacy.json"), time.Now().UTC().Add(time.Minute)); err != nil || claimed {
+		t.Fatalf("claim of backfilled base target = %t, %v; want ownership conflict", claimed, err)
+	}
+	if claimed, err := reopened.AcquireGitHubScriptSyncClaim("script-migrated-claim", "claim-migrated", githubSyncTestTargets("main", "migrated.json"), time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("claim after table migration = %t, %v", claimed, err)
+	}
+	const deletionLeaseOwner = "github-target-migration/1"
+	if acquired, err := reopened.TryAcquireSchedulerLease(testExecutionLeaseName, deletionLeaseOwner, time.Now().UTC(), time.Minute); err != nil || !acquired {
+		t.Fatalf("acquire project-deletion lease = %t, %v", acquired, err)
+	}
+	if result, err := reopened.DeleteProjectIfLeaseHeld("github-project", testExecutionLeaseName, deletionLeaseOwner); result != LeaseFencedDeleteFenced || !IsGitHubScriptSyncBusy(err) {
+		t.Fatalf("lease-fenced project delete with active sync claim = %q, %v; want fenced busy", result, err)
+	}
+	if project, err := reopened.GetProject("github-project"); err != nil || project == nil {
+		t.Fatalf("busy lease-fenced deletion removed project = %#v, %v", project, err)
+	}
+	var preservedClaimCount int
+	if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM github_script_sync_target_claims WHERE script_id = ?`, "script-migrated-claim").Scan(&preservedClaimCount); err != nil {
+		t.Fatal(err)
+	}
+	if preservedClaimCount != 1 {
+		t.Fatalf("busy lease-fenced deletion left %d target claims, want 1", preservedClaimCount)
+	}
+	if err := reopened.DeleteProject("github-project"); !IsGitHubScriptSyncBusy(err) {
+		t.Fatalf("delete project with active sync claim error = %v, want busy", err)
+	}
+	if released, err := reopened.ReleaseGitHubScriptSyncClaim("script-migrated-claim", "claim-migrated"); err != nil || !released {
+		t.Fatalf("release migrated claim = %t, %v", released, err)
+	}
+	if err := reopened.DeleteProject("github-project"); err != nil {
+		t.Fatalf("delete project after releasing sync claim: %v", err)
+	}
+	for _, table := range []string{"github_script_sync_claims", "github_script_sync_target_claims", "github_script_sync_target_owners"} {
+		var remaining int
+		if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE project_id = ?`, "github-project").Scan(&remaining); err != nil {
+			t.Fatal(err)
+		}
+		if remaining != 0 {
+			t.Fatalf("project deletion left %d rows in %s", remaining, table)
+		}
+	}
+
+	specs, err := postgresForeignKeySpecs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"github_script_sync_claims.script_id":         "scripts",
+		"github_script_sync_claims.project_id":        "projects",
+		"github_script_sync_target_owners.target_key": "github_script_sync_targets",
+		"github_script_sync_target_owners.script_id":  "scripts",
+		"github_script_sync_target_owners.project_id": "projects",
+		"github_script_sync_target_claims.target_key": "github_script_sync_targets",
+		"github_script_sync_target_claims.script_id":  "scripts",
+		"github_script_sync_target_claims.project_id": "projects",
+	}
+	for _, spec := range specs {
+		key := spec.table + "." + spec.column
+		referenced, ok := want[key]
+		if !ok || spec.references != referenced || spec.onDelete != "CASCADE" {
+			continue
+		}
+		if (spec.column == "target_key" && spec.refColumn == "target_key") || (spec.column != "target_key" && spec.refColumn == "id") {
+			delete(want, key)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing PostgreSQL GitHub sync target foreign keys: %v", want)
+	}
+	foundTables := make(map[string]bool)
+	for _, statement := range schemaCreateTableStatements() {
+		for _, table := range []string{"github_script_sync_claims", "github_script_sync_targets", "github_script_sync_target_owners", "github_script_sync_target_claims"} {
+			if !strings.Contains(statement, "CREATE TABLE IF NOT EXISTS "+table+" ") {
+				continue
+			}
+			rewritten := rewriteSQL(statement, storeDialectPostgres)
+			if strings.Contains(rewritten, "DATETIME") || !strings.Contains(rewritten, "TIMESTAMPTZ") {
+				t.Fatalf("PostgreSQL %s rewrite = %s", table, rewritten)
+			}
+			foundTables[table] = true
+		}
+	}
+	if len(foundTables) != 4 {
+		t.Fatalf("github script sync schema tables = %v, want all four", foundTables)
+	}
+}
+
+func TestGitHubScriptSyncTargetBackfillRepairsLegacyDuplicateLinksDeterministically(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "github-script-sync-duplicate-migration.db")
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireGitHubAnchors(t, store, "github-project", []string{"script-b-old", "script-z-old", "script-a-new"}, nil)
+	oldest := time.Now().UTC().Add(-time.Hour)
+	newer := oldest.Add(time.Minute)
+	for _, legacy := range []struct {
+		scriptID string
+		owner    string
+		repo     string
+		syncedAt time.Time
+	}{
+		{scriptID: "script-z-old", owner: "Octo", repo: "Scripts", syncedAt: oldest},
+		{scriptID: "script-b-old", owner: " OCTO ", repo: " scripts ", syncedAt: oldest},
+		{scriptID: "script-a-new", owner: "octo", repo: "SCRIPTS", syncedAt: newer},
+	} {
+		if _, err := store.db.Exec(`INSERT INTO github_script_links
+			(script_id, ref_key, owner, repo, branch, path, last_commit_sha, content_hash, synced_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, legacy.scriptID, "", legacy.owner, legacy.repo, "main", "duplicate.json", "", "", legacy.syncedAt, legacy.syncedAt); err != nil {
+			t.Fatalf("seed duplicate legacy link %s: %v", legacy.scriptID, err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("reopen database with duplicate legacy links: %v", err)
+	}
+	defer reopened.Close()
+	winner, err := reopened.GetGitHubScriptLink("script-b-old")
+	if err != nil || winner == nil {
+		t.Fatalf("deterministic oldest/lowest winner = %#v, %v", winner, err)
+	}
+	for _, loserID := range []string{"script-z-old", "script-a-new"} {
+		if loser, err := reopened.GetGitHubScriptLink(loserID); err != nil || loser != nil {
+			t.Fatalf("legacy duplicate loser %s link = %#v, %v; want removed", loserID, loser, err)
+		}
+	}
+	var ownerScriptID string
+	if err := reopened.db.QueryRow(`SELECT script_id FROM github_script_sync_target_owners
+		WHERE owner_norm = ? AND repo_norm = ? AND branch = ? AND path = ?`, "octo", "scripts", "main", "duplicate.json").Scan(&ownerScriptID); err != nil {
+		t.Fatal(err)
+	}
+	if ownerScriptID != "script-b-old" {
+		t.Fatalf("duplicate target owner = %q, want oldest/lowest script-b-old", ownerScriptID)
+	}
+	var repairs int
+	if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM audit_events
+		WHERE action = ? AND status = ? AND resource_id IN (?, ?)`,
+		"github.script_link.target_conflict_repaired", "repaired", "script-z-old", "script-a-new").Scan(&repairs); err != nil {
+		t.Fatal(err)
+	}
+	if repairs != 2 {
+		t.Fatalf("duplicate-link repair audit events = %d, want 2", repairs)
+	}
+	targets := githubSyncTestTargets("main", "duplicate.json")
+	for _, loserID := range []string{"script-z-old", "script-a-new"} {
+		if claimed, err := reopened.AcquireGitHubScriptSyncClaim(loserID, "claim-"+loserID, targets, time.Now().UTC().Add(time.Minute)); err != nil || claimed {
+			t.Fatalf("repaired loser %s target claim = %t, %v; want ownership conflict", loserID, claimed, err)
+		}
+	}
+	if claimed, err := reopened.AcquireGitHubScriptSyncClaim("script-b-old", "claim-winner", targets, time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("deterministic winner target claim = %t, %v", claimed, err)
+	}
+	if released, err := reopened.ReleaseGitHubScriptSyncClaim("script-b-old", "claim-winner"); err != nil || !released {
+		t.Fatalf("release deterministic winner claim = %t, %v", released, err)
 	}
 }
 
@@ -100,7 +860,7 @@ func TestGitHubWebhookCommitUpdateDoesNotClobberConcurrentLinkChanges(t *testing
 	link := &GitHubScriptLink{
 		ScriptID: "script-race", RefKey: "S-1", Owner: "Octo", Repo: "Scripts", Branch: "main",
 		Path: "old.json", LastCommitSHA: "blob-old", RemoteBlobSHA: "blob-old",
-		RemoteCommitSHA: "commit-old", ContentHash: "hash-old",
+		RemoteCommitSHA: "commit-old", BaseBranch: "trunk", BaseBlobSHA: "base-old", ContentHash: "hash-old",
 	}
 	if err := store.SaveGitHubScriptLink(link); err != nil {
 		t.Fatal(err)
@@ -113,6 +873,9 @@ func TestGitHubWebhookCommitUpdateDoesNotClobberConcurrentLinkChanges(t *testing
 	link.LastCommitSHA = "blob-new"
 	link.RemoteBlobSHA = "blob-new"
 	link.RemoteCommitSHA = "commit-push"
+	link.BaseBranch = "release"
+	link.BaseBlobSHA = "base-new"
+	link.BaseMissing = true
 	link.ContentHash = "hash-new"
 	if err := store.SaveGitHubScriptLink(link); err != nil {
 		t.Fatal(err)
@@ -126,7 +889,8 @@ func TestGitHubWebhookCommitUpdateDoesNotClobberConcurrentLinkChanges(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Path != "new.json" || got.LastCommitSHA != "blob-new" || got.RemoteBlobSHA != "blob-new" || got.ContentHash != "hash-new" {
+	if got.Path != "new.json" || got.LastCommitSHA != "blob-new" || got.RemoteBlobSHA != "blob-new" ||
+		got.BaseBranch != "release" || got.BaseBlobSHA != "base-new" || !got.BaseMissing || got.ContentHash != "hash-new" {
 		t.Fatalf("targeted webhook update clobbered concurrent link metadata: %#v", got)
 	}
 	if got.RemoteCommitSHA != "commit-webhook" {
@@ -588,11 +1352,23 @@ func TestGitHubOwnedRowsRejectMissingOrRelocatedAnchors(t *testing.T) {
 	if err != nil || storedCheck != nil {
 		t.Fatalf("test deletion left github check link %#v, err=%v", storedCheck, err)
 	}
-	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{ScriptID: "script-a", Owner: "octo", Repo: "scripts"}); err != nil {
+	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{ScriptID: "script-a", Owner: "octo", Repo: "scripts", Branch: "main", Path: "script-a.json"}); err != nil {
 		t.Fatal(err)
 	}
+	if claimed, err := store.AcquireGitHubScriptSyncClaim("script-a", "delete-claim", githubSyncTestTargets("main", "script-a.json"), time.Now().UTC().Add(time.Minute)); err != nil || !claimed {
+		t.Fatalf("claim before script deletion = %t, %v", claimed, err)
+	}
+	if err := store.DeleteScript("script-a"); !IsGitHubScriptSyncBusy(err) {
+		t.Fatalf("delete script with active sync claim error = %v, want busy", err)
+	}
+	if storedScriptLink, err := store.GetGitHubScriptLink("script-a"); err != nil || storedScriptLink == nil {
+		t.Fatalf("busy script deletion changed github link %#v, err=%v", storedScriptLink, err)
+	}
+	if released, err := store.ReleaseGitHubScriptSyncClaim("script-a", "delete-claim"); err != nil || !released {
+		t.Fatalf("release claim before script deletion = %t, %v", released, err)
+	}
 	if err := store.DeleteScript("script-a"); err != nil {
-		t.Fatal(err)
+		t.Fatalf("delete script after claim release: %v", err)
 	}
 	if err := store.SaveGitHubScriptLink(&GitHubScriptLink{ScriptID: "script-a", Owner: "octo", Repo: "scripts"}); err == nil {
 		t.Fatal("SaveGitHubScriptLink recreated a link after script deletion")
@@ -600,5 +1376,66 @@ func TestGitHubOwnedRowsRejectMissingOrRelocatedAnchors(t *testing.T) {
 	storedScriptLink, err := store.GetGitHubScriptLink("script-a")
 	if err != nil || storedScriptLink != nil {
 		t.Fatalf("script deletion left/recreated github link %#v, err=%v", storedScriptLink, err)
+	}
+	var remainingClaims int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM github_script_sync_claims WHERE script_id = ?`, "script-a").Scan(&remainingClaims); err != nil {
+		t.Fatal(err)
+	}
+	if remainingClaims != 0 {
+		t.Fatalf("script deletion left %d github sync claims", remainingClaims)
+	}
+}
+
+func TestScriptDeletionPreservesTestAnchoredGitHubCheckLinks(t *testing.T) {
+	for _, conditional := range []bool{false, true} {
+		name := "direct"
+		if conditional {
+			name = "conditional"
+		}
+		t.Run(name, func(t *testing.T) {
+			store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			requireGitHubAnchors(t, store, "project-a", []string{"script-a"}, []string{"test-a"})
+
+			if err := store.SaveGitHubCheckLink(&GitHubCheckLink{
+				ID: "test-and-script", Kind: "manual", TestID: "test-a", ScriptID: "script-a",
+				Owner: "octo", Repo: "scripts", Status: "completed", Conclusion: "success",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.SaveGitHubCheckLink(&GitHubCheckLink{
+				ID: "script-only", Kind: "manual", ScriptID: "script-a", Owner: "octo", Repo: "scripts",
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			if conditional {
+				var updatedAt time.Time
+				if err := store.db.QueryRow(`SELECT updated_at FROM scripts WHERE id = ?`, "script-a").Scan(&updatedAt); err != nil {
+					t.Fatal(err)
+				}
+				deleted, err := store.DeleteScriptIfUnchanged("script-a", updatedAt)
+				if err != nil || !deleted {
+					t.Fatalf("DeleteScriptIfUnchanged = %t, %v", deleted, err)
+				}
+			} else if err := store.DeleteScript("script-a"); err != nil {
+				t.Fatalf("DeleteScript: %v", err)
+			}
+
+			preserved, err := store.GetGitHubCheckLink("test-and-script")
+			if err != nil || preserved == nil {
+				t.Fatalf("test-anchored check after script deletion = %#v, %v", preserved, err)
+			}
+			if preserved.TestID != "test-a" || preserved.ScriptID != "" || preserved.Status != "completed" || preserved.Conclusion != "success" {
+				t.Fatalf("test-anchored check changed beyond detaching script: %#v", preserved)
+			}
+			removed, err := store.GetGitHubCheckLink("script-only")
+			if err != nil || removed != nil {
+				t.Fatalf("script-only check after script deletion = %#v, %v; want nil", removed, err)
+			}
+		})
 	}
 }

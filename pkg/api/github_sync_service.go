@@ -2,7 +2,10 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,10 +15,13 @@ import (
 )
 
 type githubSyncService struct {
-	runner    *TestRunner
-	store     storage.GitHubEnterpriseStore
-	linkStore storage.GitHubScriptLinkStore
+	runner     *TestRunner
+	store      storage.GitHubEnterpriseStore
+	linkStore  storage.GitHubScriptLinkStore
+	claimStore storage.GitHubScriptSyncClaimStore
 }
+
+const githubScriptSyncClaimTTL = 10 * time.Minute
 
 type githubSyncJobInput struct {
 	ProjectID string
@@ -30,10 +36,12 @@ type githubSyncJobInput struct {
 }
 
 func newGitHubSyncService(runner *TestRunner, store storage.GitHubEnterpriseStore, linkStore storage.GitHubScriptLinkStore) *githubSyncService {
+	claimStore, _ := linkStore.(storage.GitHubScriptSyncClaimStore)
 	return &githubSyncService{
-		runner:    runner,
-		store:     store,
-		linkStore: linkStore,
+		runner:     runner,
+		store:      store,
+		linkStore:  linkStore,
+		claimStore: claimStore,
 	}
 }
 
@@ -42,6 +50,32 @@ func (svc *githubSyncService) Run(ctx context.Context, resolved *githubResolvedC
 	case "import", "push":
 	default:
 		return nil, fmt.Errorf("kind must be import or push")
+	}
+	if input.Kind == "push" {
+		input.Strategy = strings.ToLower(strings.TrimSpace(input.Strategy))
+		if input.Strategy == "" {
+			input.Strategy = "pr"
+		}
+		if input.Strategy != "pr" && input.Strategy != "commit" {
+			return nil, fmt.Errorf("strategy must be 'commit' or 'pr'")
+		}
+	}
+	if resolved == nil || resolved.Client == nil {
+		return nil, fmt.Errorf("github client is not configured")
+	}
+	if svc.store == nil {
+		return nil, fmt.Errorf("github enterprise job storage is unavailable")
+	}
+	if input.Kind == "import" {
+		if svc.runner == nil {
+			return nil, fmt.Errorf("test runner is not configured")
+		}
+		if svc.linkStore == nil {
+			return nil, fmt.Errorf("github link storage is unavailable")
+		}
+		if _, ok := svc.linkStore.(storage.GitHubScriptImportStore); !ok {
+			return nil, fmt.Errorf("atomic github import storage is unavailable")
+		}
 	}
 
 	job := &storage.GitHubSyncJob{
@@ -55,10 +89,8 @@ func (svc *githubSyncService) Run(ctx context.Context, resolved *githubResolvedC
 		Path:      input.Path,
 		StartedBy: input.StartedBy,
 	}
-	if svc.store != nil {
-		if err := svc.store.SaveGitHubSyncJob(job); err != nil {
-			return nil, fmt.Errorf("persist GitHub sync job before execution: %w", err)
-		}
+	if err := svc.store.SaveGitHubSyncJob(job); err != nil {
+		return nil, fmt.Errorf("persist GitHub sync job before execution: %w", err)
 	}
 
 	switch input.Kind {
@@ -74,10 +106,8 @@ func (svc *githubSyncService) Run(ctx context.Context, resolved *githubResolvedC
 	if job.Errors > 0 || job.Conflicts > 0 {
 		job.Status = "partial"
 	}
-	if svc.store != nil {
-		if err := svc.store.SaveGitHubSyncJob(job); err != nil {
-			return job, fmt.Errorf("persist completed GitHub sync job: %w", err)
-		}
+	if err := svc.store.SaveGitHubSyncJob(job); err != nil {
+		return job, fmt.Errorf("persist completed GitHub sync job: %w", err)
 	}
 	return job, nil
 }
@@ -88,23 +118,57 @@ func (svc *githubSyncService) runImport(ctx context.Context, client *githubClien
 		job.SummaryJSON = `{"error":"test runner is not configured"}`
 		return
 	}
-	contents, err := client.GetContents(ctx, job.Owner, job.Repo, job.Path, job.Branch)
+	if svc.linkStore == nil {
+		job.Errors++
+		job.SummaryJSON = `{"error":"github link storage is unavailable"}`
+		return
+	}
+	if _, ok := svc.linkStore.(storage.GitHubScriptImportStore); !ok {
+		job.Errors++
+		job.SummaryJSON = `{"error":"atomic github import storage is unavailable"}`
+		return
+	}
+	remoteCommitSHA, err := client.GetBranchHeadSHA(ctx, job.Owner, job.Repo, job.Branch)
+	if err != nil {
+		job.Errors++
+		job.SummaryJSON = fmt.Sprintf(`{"error":%q}`, "resolve github import branch head: "+err.Error())
+		return
+	}
+	remoteCommitSHA = strings.TrimSpace(remoteCommitSHA)
+	if remoteCommitSHA == "" {
+		job.Errors++
+		job.SummaryJSON = fmt.Sprintf(`{"error":%q}`, "resolve github import branch head: branch does not exist")
+		return
+	}
+	// Resolve the mutable branch exactly once, then fetch the directory and every
+	// file from that immutable commit. The requested branch remains the durable
+	// synchronization target, while RemoteCommitSHA records the snapshot read.
+	contents, err := client.GetContents(ctx, job.Owner, job.Repo, job.Path, remoteCommitSHA)
 	if err != nil {
 		job.Errors++
 		job.SummaryJSON = fmt.Sprintf(`{"error":%q}`, err.Error())
 		return
 	}
-	remoteCommitSHA, _ := client.GetBranchHeadSHA(ctx, job.Owner, job.Repo, job.Branch)
 	entries := contents.Entries
 	if !contents.IsDir && contents.File != nil {
 		entries = []githubContent{*contents.File}
 	}
 	job.Total = len(entries)
+	type importCandidate struct {
+		script    *dsl.Script
+		path      string
+		blobSHA   string
+		target    storage.GitHubScriptSyncTarget
+		commitSHA string
+	}
+	candidates := make([]importCandidate, 0, len(entries))
+	targets := make(map[string]string)
+	scriptIDs := make(map[string]string)
 	for _, entry := range entries {
 		if entry.Type != "file" || !strings.HasSuffix(strings.ToLower(entry.Path), ".json") {
 			continue
 		}
-		fileContents, err := client.GetContents(ctx, job.Owner, job.Repo, entry.Path, job.Branch)
+		fileContents, err := client.GetContents(ctx, job.Owner, job.Repo, entry.Path, remoteCommitSHA)
 		if err != nil || fileContents.File == nil {
 			job.Errors++
 			continue
@@ -120,31 +184,100 @@ func (svc *githubSyncService) runImport(ctx context.Context, client *githubClien
 			continue
 		}
 		script.ProjectID = job.ProjectID
-		stored, err := svc.runner.StoreScriptDurable(script)
-		if err != nil {
-			job.Errors++
+		script.ID = strings.TrimSpace(script.ID)
+		if script.ID == "" {
+			script.ID = deterministicGitHubImportScriptID(job.ProjectID, job.Owner, job.Repo, job.Branch, entry.Path)
+		}
+		target := storage.GitHubScriptSyncTarget{Owner: job.Owner, Repo: job.Repo, Branch: job.Branch, Path: entry.Path}
+		targetKey := normalizedGitHubImportTargetKey(target)
+		if previousPath, exists := targets[targetKey]; exists {
+			job.Conflicts++
+			job.SummaryJSON = fmt.Sprintf(`{"error":"duplicate normalized github import target","paths":[%q,%q]}`, previousPath, entry.Path)
 			continue
 		}
-		job.Created++
-		job.Processed++
-		if svc.linkStore != nil {
-			_, contentHash, _ := githubScriptEnvelope(stored.Script)
-			if err := svc.linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
-				ScriptID:        stored.ID,
-				RefKey:          stored.RefKey,
-				Owner:           job.Owner,
-				Repo:            job.Repo,
-				Branch:          job.Branch,
-				Path:            entry.Path,
-				LastCommitSHA:   fileContents.File.SHA,
-				RemoteBlobSHA:   fileContents.File.SHA,
-				RemoteCommitSHA: remoteCommitSHA,
-				ContentHash:     contentHash,
-			}); err != nil {
+		targets[targetKey] = entry.Path
+		if previousPath, exists := scriptIDs[script.ID]; exists {
+			job.Conflicts++
+			job.SummaryJSON = fmt.Sprintf(`{"error":"duplicate github import script id","script_id":%q,"paths":[%q,%q]}`, script.ID, previousPath, entry.Path)
+			continue
+		}
+		scriptIDs[script.ID] = entry.Path
+		candidates = append(candidates, importCandidate{
+			script: script, path: entry.Path, blobSHA: fileContents.File.SHA, target: target, commitSHA: remoteCommitSHA,
+		})
+	}
+	// Remote parse/read failures and intra-batch identity collisions are a batch
+	// preflight failure: no local script, link, ref-key, or target owner has been
+	// mutated yet, so abort rather than committing a partial directory import.
+	if job.Errors != 0 || job.Conflicts != 0 {
+		return
+	}
+	for _, candidate := range candidates {
+		if err := svc.runner.PreflightGitHubScriptImport(candidate.script, candidate.target); err != nil {
+			if errors.Is(err, errScriptConcurrentChange) || storage.IsGitHubScriptSyncBusy(err) {
+				job.Conflicts++
+			} else {
 				job.Errors++
 			}
+			job.SummaryJSON = fmt.Sprintf(`{"error":%q,"path":%q}`, err.Error(), candidate.path)
 		}
 	}
+	if job.Errors != 0 || job.Conflicts != 0 {
+		return
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].path < candidates[j].path })
+	for _, candidate := range candidates {
+		stored, outcome, err := svc.runner.StoreGitHubScriptImportDurable(candidate.script, &storage.GitHubScriptLink{
+			ScriptID:        candidate.script.ID,
+			Owner:           candidate.target.Owner,
+			Repo:            candidate.target.Repo,
+			Branch:          candidate.target.Branch,
+			Path:            candidate.target.Path,
+			LastCommitSHA:   candidate.blobSHA,
+			RemoteBlobSHA:   candidate.blobSHA,
+			RemoteCommitSHA: candidate.commitSHA,
+		})
+		if err != nil {
+			if errors.Is(err, errScriptConcurrentChange) || storage.IsGitHubScriptSyncBusy(err) {
+				job.Conflicts++
+			} else {
+				job.Errors++
+			}
+			continue
+		}
+		if outcome == storage.GitHubScriptImportConflict || stored == nil {
+			job.Conflicts++
+			continue
+		}
+		switch outcome {
+		case storage.GitHubScriptImportCreated:
+			job.Created++
+		case storage.GitHubScriptImportUpdated:
+			job.Updated++
+		}
+		job.Processed++
+	}
+}
+
+func normalizedGitHubImportTargetKey(target storage.GitHubScriptSyncTarget) string {
+	return strings.Join([]string{
+		strings.ToLower(strings.TrimSpace(target.Owner)),
+		strings.ToLower(strings.TrimSpace(target.Repo)),
+		strings.TrimSpace(target.Branch),
+		strings.TrimSpace(target.Path),
+	}, "\x00")
+}
+
+func deterministicGitHubImportScriptID(projectID, owner, repo, branch, path string) string {
+	identity := strings.Join([]string{
+		"apexload:github-import-script:v1",
+		normalizeProjectID(projectID),
+		strings.ToLower(strings.TrimSpace(owner)),
+		strings.ToLower(strings.TrimSpace(repo)),
+		strings.TrimSpace(branch),
+		strings.TrimSpace(path),
+	}, "\x00")
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(identity)).String()
 }
 
 func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResolvedClient, job *storage.GitHubSyncJob, scriptIDs []string, strategy string) {
@@ -153,15 +286,49 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 		job.SummaryJSON = `{"error":"test runner is not configured"}`
 		return
 	}
+	if svc.linkStore == nil {
+		job.Errors++
+		job.SummaryJSON = `{"error":"github link storage is unavailable"}`
+		return
+	}
+	if svc.claimStore == nil {
+		job.Errors++
+		job.SummaryJSON = `{"error":"github sync claim storage is unavailable"}`
+		return
+	}
+	if resolved == nil || resolved.Client == nil {
+		job.Errors++
+		job.SummaryJSON = `{"error":"github client is not configured"}`
+		return
+	}
+	strategy = strings.ToLower(strings.TrimSpace(strategy))
 	if strategy == "" {
 		strategy = "pr"
+	}
+	writeBranch := job.Branch
+	if strategy == "pr" {
+		if strings.TrimSpace(job.ID) == "" {
+			job.ID = uuid.NewString()
+		}
+		writeBranch = "apexload/bulk-" + job.ID
 	}
 	selected := map[string]struct{}{}
 	for _, id := range scriptIDs {
 		selected[id] = struct{}{}
 	}
 	scripts := svc.runner.ListScriptsFiltered(job.ProjectID, nil)
-	job.Total = len(scripts)
+	type pushCandidate struct {
+		stored      *StoredScript
+		targetPath  string
+		content     []byte
+		contentHash string
+		remoteSHA   string
+		claimID     string
+		targets     []storage.GitHubScriptSyncTarget
+	}
+	candidates := make([]pushCandidate, 0, len(scripts))
+	paths := make(map[string]string)
+	pathCollision := false
 	for _, stored := range scripts {
 		if stored == nil || stored.Script == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(job.ProjectID) || normalizeProjectID(stored.Script.ProjectID) != normalizeProjectID(job.ProjectID) {
 			job.Conflicts++
@@ -172,7 +339,8 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 				continue
 			}
 		}
-		targetPath := renderGitHubPathTemplate(firstNonEmpty(resolved.Policy.PathTemplate, resolved.Settings.PathTemplate), stored)
+		job.Total++
+		targetPath := strings.TrimSpace(renderGitHubPathTemplate(firstNonEmpty(resolved.Policy.PathTemplate, resolved.Settings.PathTemplate), stored))
 		if err := enforceGitHubProjectPolicy(resolved.Policy, "push", job.Owner, job.Repo, job.Branch, targetPath, strategy); err != nil {
 			job.Conflicts++
 			continue
@@ -182,33 +350,266 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 			job.Errors++
 			continue
 		}
-		existing, _ := resolved.Client.GetContents(ctx, job.Owner, job.Repo, targetPath, job.Branch)
-		remoteSHA := ""
-		if existing != nil && existing.File != nil {
-			remoteSHA = existing.File.SHA
+		if priorID, collision := paths[targetPath]; collision {
+			job.Conflicts++
+			pathCollision = true
+			job.SummaryJSON = fmt.Sprintf(`{"error":"rendered path collision","path":%q,"script_ids":[%q,%q]}`, targetPath, priorID, stored.ID)
+			continue
 		}
-		result, err := resolved.Client.PutFile(ctx, job.Owner, job.Repo, targetPath, job.Branch, "Sync "+stored.Name+" via APEX Load", content, remoteSHA)
+		paths[targetPath] = stored.ID
+		targets := []storage.GitHubScriptSyncTarget{{Owner: job.Owner, Repo: job.Repo, Branch: job.Branch, Path: targetPath}}
+		if strategy == "pr" {
+			targets = append(targets, storage.GitHubScriptSyncTarget{Owner: job.Owner, Repo: job.Repo, Branch: writeBranch, Path: targetPath})
+		}
+		candidates = append(candidates, pushCandidate{
+			stored: stored, targetPath: targetPath, content: content, contentHash: contentHash, targets: targets,
+		})
+	}
+	if pathCollision {
+		return
+	}
+
+	// Claim every script in stable order before the first remote read. Claims
+	// are durable and HA-safe, so a concurrent single or bulk sync cannot make a
+	// second stale preflight decision for the same script on another controller.
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].stored.ID < candidates[j].stored.ID })
+	claimed := make([]pushCandidate, 0, len(candidates))
+	retainClaim := make(map[string]bool, len(candidates))
+	defer func() {
+		for _, candidate := range claimed {
+			if retainClaim[candidate.stored.ID] {
+				continue
+			}
+			_, _ = svc.claimStore.ReleaseGitHubScriptSyncClaim(candidate.stored.ID, candidate.claimID)
+		}
+	}()
+	for index := range candidates {
+		candidates[index].claimID = uuid.NewString()
+		acquired, err := svc.claimStore.AcquireGitHubScriptSyncClaim(
+			candidates[index].stored.ID, candidates[index].claimID, candidates[index].targets,
+			time.Now().UTC().Add(githubScriptSyncClaimTTL),
+		)
+		if err != nil {
+			job.Errors++
+			job.SummaryJSON = `{"error":"failed to acquire github sync claim"}`
+			return
+		}
+		if !acquired {
+			job.Conflicts++
+			job.SummaryJSON = `{"error":"another github sync is already running for a selected script"}`
+			return
+		}
+		claimed = append(claimed, candidates[index])
+	}
+	renewClaim := func(candidate pushCandidate) bool {
+		renewed, err := svc.claimStore.RenewGitHubScriptSyncClaim(
+			candidate.stored.ID, candidate.claimID, time.Now().UTC().Add(githubScriptSyncClaimTTL),
+		)
+		if err != nil {
+			job.Errors++
+			return false
+		}
+		if !renewed {
+			job.Conflicts++
+			return false
+		}
+		return true
+	}
+
+	// Resolve every remote and durable drift witness before the first mutation.
+	// A failed read aborts the whole bulk write so an error on a later script
+	// cannot leave earlier direct commits or a partial pull-request branch.
+	preflighted := make([]pushCandidate, 0, len(candidates))
+	preflightReadFailed := false
+	for _, candidate := range candidates {
+		driftSHA, err := githubSyncRemoteBlobSHA(ctx, resolved.Client, job.Owner, job.Repo, candidate.targetPath, job.Branch)
+		if err != nil {
+			job.Errors++
+			preflightReadFailed = true
+			continue
+		}
+		link, err := svc.linkStore.GetGitHubScriptLink(candidate.stored.ID)
+		if err != nil {
+			job.Errors++
+			preflightReadFailed = true
+			continue
+		}
+		primaryTarget := githubSyncLinkMatchesTarget(link, job.Owner, job.Repo, job.Branch, candidate.targetPath)
+		baseTarget := githubSyncBaseWitnessMatchesTarget(link, job.Owner, job.Repo, job.Branch, candidate.targetPath)
+		witnessSHA, hasWitness := githubSyncDriftWitnessForTarget(link, job.Owner, job.Repo, job.Branch, candidate.targetPath)
+		if (primaryTarget || baseTarget) && !hasWitness {
+			// A link that names this target but has no coherent blob/missing
+			// witness is unsafe to overwrite automatically.
+			job.Conflicts++
+			continue
+		}
+		if hasWitness && witnessSHA != strings.TrimSpace(driftSHA) {
+			job.Conflicts++
+			continue
+		}
+		if strategy == "commit" && strings.TrimSpace(driftSHA) != "" && !hasWitness {
+			// A direct commit is not a safe first-sync takeover mechanism. Without a
+			// durable witness, replacing a pre-existing remote file would bypass the
+			// optimistic-concurrency contract even though GitHub accepts its SHA.
+			job.Conflicts++
+			continue
+		}
+		if strategy == "pr" && link != nil && !primaryTarget && !baseTarget {
+			// A pull request needs to retain both its temporary head and the
+			// preflighted base. Do not replace an unrelated script link when
+			// this single row cannot represent all three targets.
+			job.Conflicts++
+			continue
+		}
+		candidate.remoteSHA = driftSHA
+		preflighted = append(preflighted, candidate)
+	}
+	if preflightReadFailed {
+		return
+	}
+	candidates = preflighted
+	if len(candidates) == 0 {
+		return
+	}
+	// A large all-candidate preflight can consume meaningful lease time. Renew
+	// every surviving claim before creating a shared branch or writing a file.
+	for _, candidate := range candidates {
+		if !renewClaim(candidate) {
+			return
+		}
+	}
+
+	if strategy == "pr" {
+		baseCommitSHA, err := resolved.Client.GetBranchHeadSHA(ctx, job.Owner, job.Repo, job.Branch)
+		if err != nil || strings.TrimSpace(baseCommitSHA) == "" {
+			job.Errors++
+			return
+		}
+		// Job IDs are unique. Reusing a pre-existing branch would require another
+		// complete head-branch preflight, so fail closed on every create error.
+		if err := resolved.Client.CreateBranch(ctx, job.Owner, job.Repo, writeBranch, baseCommitSHA); err != nil {
+			job.Errors++
+			return
+		}
+	}
+
+	type pendingPRLink struct {
+		candidate pushCandidate
+		link      *storage.GitHubScriptLink
+	}
+	pendingPRLinks := make([]pendingPRLink, 0, len(candidates))
+	for _, candidate := range candidates {
+		stored, targetPath := candidate.stored, candidate.targetPath
+		if !renewClaim(candidate) {
+			continue
+		}
+		result, err := resolved.Client.PutFile(ctx, job.Owner, job.Repo, targetPath, writeBranch, "Sync "+stored.Name+" via APEX Load", candidate.content, candidate.remoteSHA)
 		if err != nil {
 			job.Errors++
 			continue
 		}
-		if svc.linkStore != nil {
-			if err := svc.linkStore.SaveGitHubScriptLink(&storage.GitHubScriptLink{
-				ScriptID:        stored.ID,
-				RefKey:          stored.RefKey,
-				Owner:           job.Owner,
-				Repo:            job.Repo,
-				Branch:          job.Branch,
-				Path:            targetPath,
-				LastCommitSHA:   result.Content.SHA,
-				RemoteBlobSHA:   result.Content.SHA,
-				RemoteCommitSHA: result.Commit.SHA,
-				ContentHash:     contentHash,
-			}); err != nil {
+		if strategy == "pr" {
+			// Keep the temporary head as the truthful synced target while also
+			// retaining the base blob (including known-missing) used during
+			// preflight. The link is only written after PR creation succeeds.
+			pendingPRLinks = append(pendingPRLinks, pendingPRLink{
+				candidate: candidate,
+				link: &storage.GitHubScriptLink{
+					ScriptID: stored.ID, RefKey: stored.RefKey, Owner: job.Owner, Repo: job.Repo,
+					Branch: writeBranch, Path: targetPath, LastCommitSHA: result.Content.SHA,
+					RemoteBlobSHA: result.Content.SHA, RemoteCommitSHA: result.Commit.SHA, ContentHash: candidate.contentHash,
+					BaseBranch: job.Branch, BaseBlobSHA: candidate.remoteSHA, BaseMissing: candidate.remoteSHA == "",
+				},
+			})
+		} else {
+			finalized, err := svc.claimStore.FinalizeGitHubScriptSyncClaim(&storage.GitHubScriptLink{
+				ScriptID: stored.ID, RefKey: stored.RefKey, Owner: job.Owner, Repo: job.Repo,
+				Branch: writeBranch, Path: targetPath, LastCommitSHA: result.Content.SHA,
+				RemoteBlobSHA: result.Content.SHA, RemoteCommitSHA: result.Commit.SHA, ContentHash: candidate.contentHash,
+			}, candidate.claimID)
+			if err != nil {
 				job.Errors++
+				retainClaim[stored.ID] = true
+			} else if !finalized {
+				job.Conflicts++
+				retainClaim[stored.ID] = true
 			}
 		}
 		job.Updated++
 		job.Processed++
 	}
+	if strategy == "pr" && job.Updated > 0 {
+		// Earlier writes can make a large bulk PR take longer than one lease
+		// interval. Renew every successful candidate before exposing the branch.
+		for _, pending := range pendingPRLinks {
+			if !renewClaim(pending.candidate) {
+				return
+			}
+		}
+		pull, err := resolved.Client.CreatePull(ctx, job.Owner, job.Repo, "Sync APEX Load scripts", writeBranch, job.Branch, "Bulk script synchronization from APEX Load.")
+		if err != nil {
+			job.Errors++
+			return
+		}
+		job.SummaryJSON = fmt.Sprintf(`{"strategy":"pr","branch":%q,"pull_request_url":%q,"pull_request_number":%d}`, writeBranch, pull.HTMLURL, pull.Number)
+		for _, pending := range pendingPRLinks {
+			finalized, err := svc.claimStore.FinalizeGitHubScriptSyncClaim(pending.link, pending.candidate.claimID)
+			if err != nil {
+				job.Errors++
+				retainClaim[pending.candidate.stored.ID] = true
+			} else if !finalized {
+				job.Conflicts++
+				retainClaim[pending.candidate.stored.ID] = true
+			}
+		}
+	}
+}
+
+func githubSyncRemoteBlobSHA(ctx context.Context, client *githubClient, owner, repo, path, branch string) (string, error) {
+	contents, err := client.GetContents(ctx, owner, repo, path, branch)
+	if err != nil {
+		if apiErr, ok := err.(*githubAPIError); ok && apiErr.StatusCode == http.StatusNotFound {
+			return "", nil
+		}
+		return "", err
+	}
+	if contents == nil || contents.File == nil {
+		return "", fmt.Errorf("github content path %q on branch %q is not a file", path, branch)
+	}
+	return strings.TrimSpace(contents.File.SHA), nil
+}
+
+func githubSyncLinkMatchesTarget(link *storage.GitHubScriptLink, owner, repo, branch, path string) bool {
+	return githubSyncLinkCoordinatesMatch(link, owner, repo, path) &&
+		strings.TrimSpace(link.Branch) == strings.TrimSpace(branch)
+}
+
+func githubSyncBaseWitnessMatchesTarget(link *storage.GitHubScriptLink, owner, repo, branch, path string) bool {
+	return githubSyncLinkCoordinatesMatch(link, owner, repo, path) &&
+		strings.TrimSpace(link.BaseBranch) == strings.TrimSpace(branch)
+}
+
+func githubSyncLinkCoordinatesMatch(link *storage.GitHubScriptLink, owner, repo, path string) bool {
+	return link != nil &&
+		strings.EqualFold(strings.TrimSpace(link.Owner), strings.TrimSpace(owner)) &&
+		strings.EqualFold(strings.TrimSpace(link.Repo), strings.TrimSpace(repo)) &&
+		strings.TrimSpace(link.Path) == strings.TrimSpace(path)
+}
+
+// githubSyncDriftWitnessForTarget returns the blob observed at the last safe
+// synchronization point. An empty SHA is a valid witness only when the target
+// is explicitly known to have been missing (or is a legacy primary link, whose
+// target match historically carried that meaning).
+func githubSyncDriftWitnessForTarget(link *storage.GitHubScriptLink, owner, repo, branch, path string) (string, bool) {
+	if githubSyncLinkMatchesTarget(link, owner, repo, branch, path) {
+		return strings.TrimSpace(firstNonEmpty(link.RemoteBlobSHA, link.LastCommitSHA)), true
+	}
+	if !githubSyncBaseWitnessMatchesTarget(link, owner, repo, branch, path) {
+		return "", false
+	}
+	baseSHA := strings.TrimSpace(link.BaseBlobSHA)
+	if link.BaseMissing {
+		return "", baseSHA == ""
+	}
+	return baseSHA, baseSHA != ""
 }

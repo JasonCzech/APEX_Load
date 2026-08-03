@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 57; got != want {
+	if got, want := len(specs), 65; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -50,6 +50,14 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"archive_finalization_jobs.test_id":                 "tests.id",
 		"execution_plan_schedule_occurrences.schedule_id":   "execution_plan_schedules.id",
 		"github_check_intents.project_id":                   "projects.id",
+		"github_script_sync_claims.project_id":              "projects.id",
+		"github_script_sync_claims.script_id":               "scripts.id",
+		"github_script_sync_target_claims.project_id":       "projects.id",
+		"github_script_sync_target_claims.script_id":        "scripts.id",
+		"github_script_sync_target_claims.target_key":       "github_script_sync_targets.target_key",
+		"github_script_sync_target_owners.project_id":       "projects.id",
+		"github_script_sync_target_owners.script_id":        "scripts.id",
+		"github_script_sync_target_owners.target_key":       "github_script_sync_targets.target_key",
 		"project_secrets.project_id":                        "projects.id",
 		"protected_source_secret_sessions.project_id":       "projects.id",
 		"runtime_secret_provisioning_attempts.project_id":   "projects.id",

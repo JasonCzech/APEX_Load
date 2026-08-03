@@ -313,3 +313,16 @@ func TestScriptDebugManagerFailsBeforeActionWhenStaticSecretIsMissing(t *testing
 	default:
 	}
 }
+
+func TestScriptDebugLogRetentionIsBounded(t *testing.T) {
+	session := &ScriptDebugSession{LogLevel: "trace"}
+	for index := 0; index < maxScriptDebugLogEntries+25; index++ {
+		session.appendLogLocked("info", "test", "entry", "raw", nil)
+	}
+	if len(session.Logs) != maxScriptDebugLogEntries || len(session.RawOutput) != maxScriptDebugLogEntries {
+		t.Fatalf("retained logs/raw = %d/%d, want %d", len(session.Logs), len(session.RawOutput), maxScriptDebugLogEntries)
+	}
+	if session.logBytes > maxScriptDebugLogBytes {
+		t.Fatalf("retained log bytes = %d, limit %d", session.logBytes, maxScriptDebugLogBytes)
+	}
+}

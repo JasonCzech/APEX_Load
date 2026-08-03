@@ -133,22 +133,32 @@ const (
 )
 
 type ReplayReport struct {
-	ReplaySessionID   string                    `json:"replay_session_id,omitempty"`
-	ScriptHash        string                    `json:"script_hash,omitempty"`
-	ScriptRevision    string                    `json:"script_revision,omitempty"`
-	RuntimeProfile    ReplayRuntimeProfile      `json:"runtime_profile,omitempty"`
-	ArtifactManifest  *ReplayArtifactManifest   `json:"artifact_manifest,omitempty"`
-	DiagnosisSummary  *ReplayDiagnosisSummary   `json:"diagnosis_summary,omitempty"`
-	RepairSuggestions []ReplayRepairSuggestion  `json:"repair_suggestions,omitempty"`
-	Group             string                    `json:"group"`
-	Protocol          string                    `json:"protocol"`
-	StartedAt         time.Time                 `json:"started_at"`
-	CompletedAt       time.Time                 `json:"completed_at"`
-	Success           bool                      `json:"success"`
-	Error             string                    `json:"error,omitempty"`
-	Events            []ReplayActionEvent       `json:"events"`
-	FinalVariables    map[string]string         `json:"final_variables,omitempty"`
-	Snapshots         []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
+	ReplaySessionID             string                    `json:"replay_session_id,omitempty"`
+	ScriptHash                  string                    `json:"script_hash,omitempty"`
+	ScriptRevision              string                    `json:"script_revision,omitempty"`
+	RuntimeProfile              ReplayRuntimeProfile      `json:"runtime_profile,omitempty"`
+	ArtifactManifest            *ReplayArtifactManifest   `json:"artifact_manifest,omitempty"`
+	DiagnosisSummary            *ReplayDiagnosisSummary   `json:"diagnosis_summary,omitempty"`
+	RepairSuggestions           []ReplayRepairSuggestion  `json:"repair_suggestions,omitempty"`
+	Group                       string                    `json:"group"`
+	Protocol                    string                    `json:"protocol"`
+	StartedAt                   time.Time                 `json:"started_at"`
+	CompletedAt                 time.Time                 `json:"completed_at"`
+	Success                     bool                      `json:"success"`
+	Error                       string                    `json:"error,omitempty"`
+	Events                      []ReplayActionEvent       `json:"events"`
+	DroppedEventCount           int                       `json:"dropped_event_count,omitempty"`
+	TruncatedEventEvidenceCount int                       `json:"truncated_event_evidence_count,omitempty"`
+	FinalVariables              map[string]string         `json:"final_variables,omitempty"`
+	Snapshots                   []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
+
+	totalEventCount         int
+	retainedEventJSONBytes  int
+	eventJSONBytes          []int
+	consumedEvidenceBytes   int
+	evidenceProjectionCount int
+	manifestSnapshots       map[*protocol.ErrorSnapshot]struct{}
+	retainedSnapshotClones  map[*protocol.ErrorSnapshot]*protocol.ErrorSnapshot
 }
 
 type ReplayActionEvent struct {
@@ -225,6 +235,8 @@ type ReplayArtifactManifest struct {
 	RuntimeProfile    ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
 	DataSources       []string             `json:"data_sources,omitempty"`
 	SeedVariables     []string             `json:"seed_variables,omitempty"`
+	EventCount        int                  `json:"event_count"`
+	FailureCount      int                  `json:"failure_count"`
 	Screenshots       int                  `json:"screenshots"`
 	NetworkEntries    int                  `json:"network_entries"`
 	ConsoleEntries    int                  `json:"console_entries"`
@@ -347,7 +359,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Protocol:         script.Protocol,
 		StartedAt:        startedAt,
 		Success:          true,
-		Events:           make([]ReplayActionEvent, 0, len(script.Init)+len(script.Actions)+len(script.Teardown)),
+		Events:           make([]ReplayActionEvent, 0, min(MaxRetainedReplayEvents, len(script.Init)+len(script.Actions)+len(script.Teardown))),
 	}
 	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
 		EventID:    replaySessionEventID(replaySessionID, "started"),
@@ -425,10 +437,11 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		vu.RedactionConfig,
 		vu.credentialTemplates,
 	)
-	report.Snapshots = vu.SnapshotStore.Snapshots()
-	report.DiagnosisSummary = buildReplayDiagnosisSummary(report.Events)
+	setReplayReportSnapshots(report)
 	report.RepairSuggestions = collectReplayRepairSuggestions(report.Events)
-	report.ArtifactManifest = buildReplayArtifactManifest(replaySessionID, scriptHash, opts.ScriptRevision, runtimeProfile, script, opts.Variables, report, report.CompletedAt)
+	if report.ArtifactManifest != nil {
+		report.ArtifactManifest.CreatedAt = report.CompletedAt
+	}
 	if !shouldContinue && report.Error == "" && !report.Success {
 		report.Error = "replay stopped after action failure"
 	}
@@ -471,7 +484,7 @@ func appendReplaySourceTransactionFinalizations(
 		if result == nil {
 			continue
 		}
-		eventIndex := len(report.Events)
+		eventIndex := report.nextEventIndex()
 		eventID := replayActionEventID(report.ReplaySessionID, "finalize", -1, eventIndex)
 		completedAt := result.StartTime.Add(result.Duration)
 		if completedAt.IsZero() || completedAt.Before(result.StartTime) {
@@ -498,7 +511,7 @@ func appendReplaySourceTransactionFinalizations(
 		}
 		attachReplayDiagnosis(&event)
 		scrubReplayActionEvent(&event, redactionConfig)
-		report.Events = append(report.Events, event)
+		event = appendReplayReportEvent(report, event)
 
 		debugAction := &ReplayDebugAction{
 			EventID:     event.EventID,
@@ -927,7 +940,7 @@ func runReplayUnit(
 		unit.leafOrdinal = *leafCounter
 		*leafCounter++
 	}
-	eventIndex := len(report.Events)
+	eventIndex := report.nextEventIndex()
 	eventID := replayLeafEventID(report.ReplaySessionID, unit.phase, unit.actionIndex, eventIndex, unit.stepPath)
 	debugAction := replayDebugActionFor(unit.action, unit.phase, unit.actionIndex, eventIndex)
 	debugAction.EventID = eventID
@@ -979,7 +992,7 @@ func runReplayUnit(
 		observer.ObserveCorrelationEvidence(ctx, debugAction, &event)
 	}
 	scrubReplayActionEvent(&event, vu.RedactionConfig)
-	report.Events = append(report.Events, event)
+	event = appendReplayReportEvent(report, event)
 
 	actionProgressType := ReplayProgressActionCompleted
 	if !event.Success {
@@ -990,7 +1003,7 @@ func runReplayUnit(
 		EventID:    eventID,
 		SessionID:  report.ReplaySessionID,
 		Timestamp:  event.CompletedAt,
-		EventIndex: len(report.Events) - 1,
+		EventIndex: event.EventIndex,
 		Action:     cloneReplayDebugAction(debugAction),
 		Event:      cloneReplayActionEvent(event),
 	})
@@ -999,7 +1012,7 @@ func runReplayUnit(
 		EventID:    eventID,
 		SessionID:  report.ReplaySessionID,
 		Timestamp:  event.CompletedAt,
-		EventIndex: len(report.Events) - 1,
+		EventIndex: event.EventIndex,
 		Event:      cloneReplayActionEvent(event),
 	})
 	if after, ok := debugController.(ReplayDebugControllerAfter); ok {

@@ -4,12 +4,14 @@ package api
 
 import (
 	"bytes"
+	"container/heap"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +31,14 @@ const (
 	remoteArchiveTotalMaxBytes    = int64(32 << 30)
 	remoteArchiveMaxTargets       = 256
 	remoteArchiveFetchConcurrency = 8
-	remoteArchiveMergeBufferBytes = 256 << 10
+
+	// Generator metrics archives are emitted on a one-second cadence. Fleet
+	// windows begin at the earliest pending publication and admit peers only
+	// within this half-cadence clock-skew bound. The fixed window start prevents
+	// chained timestamps from widening the window, and at most one generator
+	// snapshot contributes to it.
+	remoteArchiveSummaryCadence      = time.Second
+	remoteArchiveSummaryMaxClockSkew = remoteArchiveSummaryCadence / 2
 )
 
 type streamingArchiveGeneratorClient interface {
@@ -79,7 +88,8 @@ func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *M
 	}
 	defer func() { _ = removeArchiveSubdirectory(archiveParent, workingDir) }()
 
-	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles); err != nil {
+	targetHistory := snapshotRemoteArchiveTargetHistory(tr, test)
+	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles, targetHistory); err != nil {
 		return nil, err
 	}
 	if err := writeArchiveParquetFiles(workingDir, &manifest); err != nil {
@@ -482,6 +492,18 @@ func fetchRemoteArchiveArtifactFileWithBudget(ctx context.Context, client genera
 }
 
 func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []remoteArchiveBundle, finalStatus, finalError string, completedAt time.Time) RunArchiveManifest {
+	var initialProvenance *RunArchiveProvenance
+	if tr != nil {
+		tr.mu.RLock()
+		if test != nil && test.initialArchiveProvenance != nil {
+			initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)
+			initialProvenance = &initial
+		}
+		tr.mu.RUnlock()
+	} else if test != nil && test.initialArchiveProvenance != nil {
+		initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)
+		initialProvenance = &initial
+	}
 	manifest := RunArchiveManifest{
 		SchemaVersion:                archiveSchemaVersion,
 		TestID:                       test.ID,
@@ -491,6 +513,7 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		Status:                       finalStatus,
 		Error:                        finalError,
 		Provenance:                   buildRunArchiveProvenance(tr, test),
+		InitialProvenance:            initialProvenance,
 		TransactionsFile:             "transactions.jsonl",
 		TransactionsParquetFile:      "transactions.parquet",
 		ResourceSamplesFile:          "resources.jsonl",
@@ -506,6 +529,10 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		manifest.TransactionCount += bundle.manifest.TransactionCount
 		manifest.ResourceSampleCount += bundle.manifest.ResourceSampleCount
 		manifest.IntervalSummaryCount += bundle.manifest.IntervalSummaryCount
+		if manifest.InitialProvenance == nil && bundle.manifest.InitialProvenance != nil {
+			initial := maskRunArchiveProvenance(*bundle.manifest.InitialProvenance)
+			manifest.InitialProvenance = &initial
+		}
 	}
 	return manifest
 }
@@ -545,27 +572,1069 @@ func distributedArchiveSLA(tr *TestRunner, test *ManagedTest) (bool, bool, []str
 	return evaluated, breached || currentBreached, compactNonEmptyStrings(append(details, currentDetails...)...)
 }
 
-func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle) error {
+// remoteArchiveTargetSnapshot is controller-owned interval evidence. Generators
+// publish observed rates but do not know the goal controller's time-varying
+// target or the controller-derived telemetry-health state, so finalization
+// overlays only values actually installed in the controller's published
+// live-history row at the corresponding timestamp.
+type remoteArchiveTargetSnapshot struct {
+	timestamp       time.Time
+	targetTPS       float64
+	groups          map[string]float64
+	telemetry       *TelemetryHealth
+	telemetryStatus *TelemetryRunHealth
+}
+
+func snapshotRemoteArchiveTargetHistory(tr *TestRunner, test *ManagedTest) []remoteArchiveTargetSnapshot {
+	if test == nil {
+		return nil
+	}
+	snapshots := make([]remoteArchiveTargetSnapshot, 0, 16)
+	capture := func(live *LiveMetrics) {
+		if live == nil || live.Timestamp.IsZero() {
+			return
+		}
+		snapshot := remoteArchiveTargetSnapshot{
+			timestamp:       live.Timestamp.UTC(),
+			targetTPS:       live.TargetTPS,
+			telemetry:       cloneTelemetryHealth(live.Telemetry),
+			telemetryStatus: cloneTelemetryRunHealth(live.TelemetryStatus),
+		}
+		for name, group := range live.GroupMetrics {
+			if group == nil || group.TargetTPS <= 0 {
+				continue
+			}
+			if snapshot.groups == nil {
+				snapshot.groups = make(map[string]float64)
+			}
+			snapshot.groups[name] = group.TargetTPS
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	if tr != nil {
+		tr.mu.RLock()
+		if current := tr.tests[test.ID]; current == test {
+			for _, live := range test.History {
+				capture(live)
+			}
+			if test.LiveMetrics != nil && (len(test.History) == 0 || test.History[len(test.History)-1] != test.LiveMetrics) {
+				capture(test.LiveMetrics)
+			}
+		}
+		tr.mu.RUnlock()
+	} else {
+		for _, live := range test.History {
+			capture(live)
+		}
+		if test.LiveMetrics != nil && (len(test.History) == 0 || test.History[len(test.History)-1] != test.LiveMetrics) {
+			capture(test.LiveMetrics)
+		}
+	}
+	if len(snapshots) == 0 {
+		return nil
+	}
+	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].timestamp.Before(snapshots[j].timestamp) })
+	compacted := snapshots[:0]
+	for _, snapshot := range snapshots {
+		if len(compacted) > 0 && compacted[len(compacted)-1].timestamp.Equal(snapshot.timestamp) {
+			compacted[len(compacted)-1] = snapshot
+			continue
+		}
+		compacted = append(compacted, snapshot)
+	}
+	return compacted
+}
+
+func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot) error {
 	for _, dataset := range []struct {
-		name string
-		path func(remoteArchiveBundle) string
+		name          string
+		kind          string
+		path          func(remoteArchiveBundle) string
+		expectedCount func(remoteArchiveBundle) int64
 	}{
-		{name: manifest.TransactionsFile, path: func(bundle remoteArchiveBundle) string { return bundle.transactionsPath }},
-		{name: manifest.ResourceSamplesFile, path: func(bundle remoteArchiveBundle) string { return bundle.resourcesPath }},
-		{name: manifest.IntervalSummariesFile, path: func(bundle remoteArchiveBundle) string { return bundle.summariesPath }},
+		{
+			name: manifest.TransactionsFile, kind: "transaction",
+			path:          func(bundle remoteArchiveBundle) string { return bundle.transactionsPath },
+			expectedCount: func(bundle remoteArchiveBundle) int64 { return bundle.manifest.TransactionCount },
+		},
+		{
+			name: manifest.ResourceSamplesFile, kind: "resource sample",
+			path:          func(bundle remoteArchiveBundle) string { return bundle.resourcesPath },
+			expectedCount: func(bundle remoteArchiveBundle) int64 { return bundle.manifest.ResourceSampleCount },
+		},
 	} {
 		destinationPath, err := archiveArtifactPath(rootDir, dataset.name)
 		if err != nil {
 			return err
 		}
-		if err := mergeRemoteArchiveDataset(destinationPath, bundles, dataset.path); err != nil {
+		if err := mergeRemoteArchiveDataset(destinationPath, bundles, dataset.kind, dataset.path, dataset.expectedCount); err != nil {
 			return err
 		}
 	}
+	summariesPath, err := archiveArtifactPath(rootDir, manifest.IntervalSummariesFile)
+	if err != nil {
+		return err
+	}
+	count, err := mergeRemoteArchiveIntervalSummariesWithTargets(summariesPath, bundles, targetHistory)
+	if err != nil {
+		return err
+	}
+	manifest.IntervalSummaryCount = count
 	return nil
 }
 
-func mergeRemoteArchiveDataset(destinationPath string, bundles []remoteArchiveBundle, sourcePath func(remoteArchiveBundle) string) (err error) {
+type remoteArchiveSummaryCursor struct {
+	file      *os.File
+	decoder   *json.Decoder
+	record    IntervalSummaryRecord
+	timestamp time.Time
+	index     int
+	decoded   int64
+}
+
+type remoteArchiveSourceWindow struct {
+	end        time.Time
+	fleetIndex int
+}
+
+type remoteArchiveSummaryHeap []*remoteArchiveSummaryCursor
+
+func (h remoteArchiveSummaryHeap) Len() int { return len(h) }
+func (h remoteArchiveSummaryHeap) Less(i, j int) bool {
+	if !h[i].timestamp.Equal(h[j].timestamp) {
+		return h[i].timestamp.Before(h[j].timestamp)
+	}
+	return h[i].index < h[j].index
+}
+func (h remoteArchiveSummaryHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h *remoteArchiveSummaryHeap) Push(value any) {
+	*h = append(*h, value.(*remoteArchiveSummaryCursor))
+}
+func (h *remoteArchiveSummaryHeap) Pop() any {
+	old := *h
+	last := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return last
+}
+
+// mergeRemoteArchiveIntervalSummaries performs a bounded k-way merge over the
+// already time-ordered generator streams. Each window is anchored to the
+// earliest pending publication and has a fixed maximum width, so publications
+// at :00.499 and :00.501 align without depending on wall-clock second edges.
+//
+// Fleet percentile scalars are never averaged: quantiles are properties of a
+// distribution and cannot be merged from p50/p95 values. For archives within
+// the existing analysis record/byte budgets, fleet interval counts, errors,
+// average latency, TPS, and quantiles are rebuilt from transaction rows. Larger
+// archives retain generator rate/count data but mark multi-generator
+// percentiles unavailable.
+func mergeRemoteArchiveIntervalSummaries(destinationPath string, bundles []remoteArchiveBundle) (count int64, err error) {
+	return mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath, bundles, nil)
+}
+
+func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot) (count int64, err error) {
+	provisionalName := "." + filepath.Base(destinationPath) + ".fleet-merge"
+	provisionalPath := filepath.Join(filepath.Dir(destinationPath), provisionalName)
+	provisional, err := createArchiveArtifactExclusive(filepath.Dir(provisionalPath), filepath.Base(provisionalPath), 0o600, false)
+	if err != nil {
+		return 0, err
+	}
+	provisionalOpen := true
+	defer func() {
+		if provisionalOpen {
+			if closeErr := provisional.Close(); err == nil && closeErr != nil {
+				err = closeErr
+			}
+		}
+		if removeErr := os.Remove(provisionalPath); err == nil && removeErr != nil && !os.IsNotExist(removeErr) {
+			err = removeErr
+		}
+	}()
+
+	cursors := make(remoteArchiveSummaryHeap, 0, len(bundles))
+	openedFiles := make([]*os.File, 0, len(bundles))
+	defer func() {
+		for _, file := range openedFiles {
+			_ = file.Close()
+		}
+	}()
+	for index, bundle := range bundles {
+		path := bundle.summariesPath
+		file, _, openErr := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
+		if openErr != nil {
+			return 0, openErr
+		}
+		openedFiles = append(openedFiles, file)
+		cursor := &remoteArchiveSummaryCursor{file: file, decoder: json.NewDecoder(file), index: index}
+		if decodeErr := cursor.decoder.Decode(&cursor.record); decodeErr != nil {
+			if decodeErr == io.EOF {
+				_ = file.Close()
+				if bundle.manifest.IntervalSummaryCount != 0 {
+					return 0, fmt.Errorf("remote interval summary count for target %q is 0, manifest declares %d", bundle.target, bundle.manifest.IntervalSummaryCount)
+				}
+				continue
+			}
+			_ = file.Close()
+			return 0, decodeErr
+		}
+		cursor.decoded = 1
+		cursor.timestamp = cursor.record.Timestamp.UTC()
+		cursors = append(cursors, cursor)
+	}
+	if len(cursors) == 0 {
+		if err := provisional.Sync(); err != nil {
+			return 0, err
+		}
+		if err := provisional.Close(); err != nil {
+			return 0, err
+		}
+		provisionalOpen = false
+		return writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath, nil, false, targetHistory)
+	}
+
+	windowCapacity := len(cursors)
+	singleGenerator := len(bundles) == 1
+	heap.Init(&cursors)
+
+	encoder := json.NewEncoder(provisional)
+	windowEnds := make([]time.Time, 0, min(len(bundles)*16, maxArchiveAnalysisRecords))
+	collectWindowEnds := true
+	sourceWindows := make([][]remoteArchiveSourceWindow, len(bundles))
+	collectSourceWindows := true
+	sourceWindowCount := 0
+	windowGeneratorMarks := make([]int64, len(bundles))
+	windowRecords := make([]IntervalSummaryRecord, 0, windowCapacity)
+	var cumulativeTx, cumulativeErrors int64
+	var previousFleetTimestamp time.Time
+	for cursors.Len() > 0 {
+		windowMark := count + 1
+		anchor := heap.Pop(&cursors).(*remoteArchiveSummaryCursor)
+		windowEnd := anchor.timestamp.Add(remoteArchiveSummaryMaxClockSkew)
+		windowRecords = windowRecords[:0]
+		windowRecords = append(windowRecords, anchor.record)
+		windowGeneratorMarks[anchor.index] = windowMark
+		if collectSourceWindows {
+			if sourceWindowCount >= maxArchiveAnalysisRecords {
+				sourceWindows = nil
+				collectSourceWindows = false
+			} else {
+				sourceWindows[anchor.index] = append(sourceWindows[anchor.index], remoteArchiveSourceWindow{end: anchor.timestamp, fleetIndex: int(count)})
+				sourceWindowCount++
+			}
+		}
+		advanced, advanceErr := advanceRemoteArchiveSummaryCursor(anchor, bundles)
+		if advanceErr != nil {
+			return count, advanceErr
+		}
+		if advanced {
+			heap.Push(&cursors, anchor)
+		}
+		deferred := make([]*remoteArchiveSummaryCursor, 0, len(bundles))
+		for cursors.Len() > 0 && !cursors[0].timestamp.After(windowEnd) {
+			cursor := heap.Pop(&cursors).(*remoteArchiveSummaryCursor)
+			// Keep later rows from a generator already represented in this fleet
+			// window pending while searching for peer publications behind it in the
+			// heap. This pairs periodic and terminal drains by source ordinal instead
+			// of producing [A], [A+B], [B] for tightly spaced 2x2 sequences.
+			if windowGeneratorMarks[cursor.index] == windowMark {
+				deferred = append(deferred, cursor)
+				continue
+			}
+			windowRecords = append(windowRecords, cursor.record)
+			windowGeneratorMarks[cursor.index] = windowMark
+			if collectSourceWindows {
+				if sourceWindowCount >= maxArchiveAnalysisRecords {
+					sourceWindows = nil
+					collectSourceWindows = false
+				} else {
+					sourceWindows[cursor.index] = append(sourceWindows[cursor.index], remoteArchiveSourceWindow{end: cursor.timestamp, fleetIndex: int(count)})
+					sourceWindowCount++
+				}
+			}
+			advanced, advanceErr := advanceRemoteArchiveSummaryCursor(cursor, bundles)
+			if advanceErr != nil {
+				return count, advanceErr
+			}
+			if advanced {
+				heap.Push(&cursors, cursor)
+			}
+		}
+		for _, cursor := range deferred {
+			heap.Push(&cursors, cursor)
+		}
+		var aggregate IntervalSummaryRecord
+		var weightedResponse float64
+		var attempts, bucketTx, bucketErrors int64
+		var sourceThroughputGap float64
+		var sourceThroughputMissed bool
+		for _, record := range windowRecords {
+			if aggregate.TestID == "" {
+				aggregate.TestID, aggregate.TestName = record.TestID, record.TestName
+			}
+			if record.Timestamp.After(aggregate.Timestamp) {
+				aggregate.Timestamp = record.Timestamp.UTC()
+			}
+			aggregate.ActiveVUsers += record.ActiveVUsers
+			aggregate.TPS += record.TPS
+			aggregate.TargetTPS += record.TargetTPS
+			if record.ThroughputGapPct > sourceThroughputGap {
+				sourceThroughputGap = record.ThroughputGapPct
+			}
+			sourceThroughputMissed = sourceThroughputMissed || record.ThroughputTargetMissed
+			aggregate.Groups = mergeRemoteArchiveSummaryGroups(aggregate.Groups, record.Groups)
+			aggregate.Browser = mergeRemoteArchiveSummaryBrowser(aggregate.Browser, record.Browser)
+			aggregate.BrowserByDevice = mergeRemoteArchiveSummaryBrowserByDevice(aggregate.BrowserByDevice, record.BrowserByDevice)
+			aggregate.Telemetry = mergeRemoteArchiveSummaryTelemetry(aggregate.Telemetry, record.Telemetry)
+			aggregate.TelemetryStatus = mergeRemoteArchiveSummaryTelemetryStatus(aggregate.TelemetryStatus, record.TelemetryStatus)
+			rowAttempts := record.TotalTx + record.TotalErrors
+			attempts += rowAttempts
+			weightedResponse += record.AvgResponseMs * float64(rowAttempts)
+			bucketTx += record.TotalTx
+			bucketErrors += record.TotalErrors
+			cumulativeTx += record.TotalTx
+			cumulativeErrors += record.TotalErrors
+			if singleGenerator {
+				aggregate.P50Ms = record.P50Ms
+				aggregate.P90Ms = record.P90Ms
+				aggregate.P95Ms = record.P95Ms
+				aggregate.P99Ms = record.P99Ms
+				aggregate.PercentileQuality = archivePercentileQualitySourceGenerator
+			} else {
+				aggregate.P50Ms, aggregate.P90Ms, aggregate.P95Ms, aggregate.P99Ms = 0, 0, 0, 0
+				aggregate.PercentileQuality = archivePercentileQualityUnavailable
+			}
+		}
+		aggregate.TotalTx = cumulativeTx
+		aggregate.TotalErrors = cumulativeErrors
+		if attempts > 0 {
+			aggregate.AvgResponseMs = weightedResponse / float64(attempts)
+			aggregate.ErrorPct = float64(bucketErrors) / float64(bucketTx+bucketErrors) * 100
+		}
+		if aggregate.TargetTPS > 0 {
+			aggregate.ThroughputGapPct, aggregate.ThroughputTargetMissed = throughputGap(aggregate.TPS, aggregate.TargetTPS)
+		} else {
+			aggregate.ThroughputGapPct = sourceThroughputGap
+			aggregate.ThroughputTargetMissed = sourceThroughputMissed
+		}
+		if !previousFleetTimestamp.IsZero() && !aggregate.Timestamp.After(previousFleetTimestamp) {
+			aggregate.Timestamp = previousFleetTimestamp.Add(time.Nanosecond)
+		}
+		previousFleetTimestamp = aggregate.Timestamp
+		if err := encoder.Encode(aggregate); err != nil {
+			return count, err
+		}
+		count++
+		if collectWindowEnds {
+			if len(windowEnds) >= maxArchiveAnalysisRecords {
+				windowEnds = nil
+				collectWindowEnds = false
+			} else {
+				windowEnds = append(windowEnds, aggregate.Timestamp)
+			}
+		}
+	}
+	if err := provisional.Sync(); err != nil {
+		return count, err
+	}
+	if err := provisional.Close(); err != nil {
+		return count, err
+	}
+	provisionalOpen = false
+
+	intervals, exact, err := remoteArchiveFleetIntervalMetrics(
+		bundles, windowEnds, sourceWindows, collectWindowEnds && collectSourceWindows,
+	)
+	if err != nil {
+		return count, err
+	}
+	written, err := writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath, intervals, exact, targetHistory)
+	if err != nil {
+		return count, err
+	}
+	if written != count {
+		return count, fmt.Errorf("remote interval summary rewrite count %d does not match merged count %d", written, count)
+	}
+	return count, nil
+}
+
+func mergeRemoteArchiveSummaryGroups(destination, source map[string]*GroupLiveMetrics) map[string]*GroupLiveMetrics {
+	if len(source) == 0 {
+		return destination
+	}
+	if destination == nil {
+		destination = make(map[string]*GroupLiveMetrics, len(source))
+	}
+	for name, incoming := range source {
+		if incoming == nil {
+			continue
+		}
+		current := destination[name]
+		if current == nil {
+			current = cloneGroupLiveMetrics(incoming)
+			if current.Name == "" {
+				current.Name = name
+			}
+			if current.PercentileQuality == "" {
+				current.PercentileQuality = archivePercentileQualitySourceGenerator
+			}
+			destination[name] = current
+			continue
+		}
+
+		currentAttempts := current.Transactions + current.Errors
+		incomingAttempts := incoming.Transactions + incoming.Errors
+		combinedAttempts := currentAttempts + incomingAttempts
+		if combinedAttempts > 0 {
+			current.AvgResponseMs = mergeRemoteArchiveWeightedAverage(
+				current.AvgResponseMs, currentAttempts, incoming.AvgResponseMs, incomingAttempts,
+			)
+		}
+		// A quantile cannot be combined by weighting generator quantile scalars.
+		// The exact raw-event pass below replaces these values when group labels
+		// are available; otherwise make the missing fleet distribution explicit.
+		current.P50Ms, current.P90Ms, current.P95Ms, current.P99Ms = 0, 0, 0, 0
+		current.PercentileQuality = archivePercentileQualityUnavailable
+		sourceGap := current.ThroughputGapPct
+		if incoming.ThroughputGapPct > sourceGap {
+			sourceGap = incoming.ThroughputGapPct
+		}
+		sourceMissed := current.ThroughputTargetMissed || incoming.ThroughputTargetMissed
+		current.VUsers += incoming.VUsers
+		current.Transactions += incoming.Transactions
+		current.Errors += incoming.Errors
+		current.TPS += incoming.TPS
+		current.TargetTPS += incoming.TargetTPS
+		if current.Name == "" {
+			current.Name = firstNonEmpty(incoming.Name, name)
+		}
+		if current.TargetTPS > 0 {
+			current.ThroughputGapPct, current.ThroughputTargetMissed = throughputGap(current.TPS, current.TargetTPS)
+		} else {
+			current.ThroughputGapPct = sourceGap
+			current.ThroughputTargetMissed = sourceMissed
+		}
+	}
+	if len(destination) == 0 {
+		return nil
+	}
+	return destination
+}
+
+func mergeRemoteArchiveWeightedAverage(left float64, leftWeight int64, right float64, rightWeight int64) float64 {
+	totalWeight := leftWeight + rightWeight
+	if totalWeight <= 0 {
+		return 0
+	}
+	return (left*float64(leftWeight) + right*float64(rightWeight)) / float64(totalWeight)
+}
+
+func mergeRemoteArchiveSummaryBrowser(current, incoming *BrowserLiveMetrics) *BrowserLiveMetrics {
+	if incoming == nil || incoming.Samples <= 0 {
+		return current
+	}
+	if current == nil || current.Samples <= 0 {
+		return cloneBrowserLiveMetrics(incoming)
+	}
+	currentSamples := current.Samples
+	totalSamples := currentSamples + incoming.Samples
+	current.AvgFCPMs = mergeRemoteArchiveWeightedAverage(current.AvgFCPMs, currentSamples, incoming.AvgFCPMs, incoming.Samples)
+	current.AvgLCPMs = mergeRemoteArchiveWeightedAverage(current.AvgLCPMs, currentSamples, incoming.AvgLCPMs, incoming.Samples)
+	current.AvgCLSScore = mergeRemoteArchiveWeightedAverage(current.AvgCLSScore, currentSamples, incoming.AvgCLSScore, incoming.Samples)
+	current.AvgINPMs = mergeRemoteArchiveWeightedAverage(current.AvgINPMs, currentSamples, incoming.AvgINPMs, incoming.Samples)
+	current.AvgTTFBMs = mergeRemoteArchiveWeightedAverage(current.AvgTTFBMs, currentSamples, incoming.AvgTTFBMs, incoming.Samples)
+	current.AvgBlockingResources = mergeRemoteArchiveWeightedAverage(current.AvgBlockingResources, currentSamples, incoming.AvgBlockingResources, incoming.Samples)
+	current.AvgLongTaskCount = mergeRemoteArchiveWeightedAverage(current.AvgLongTaskCount, currentSamples, incoming.AvgLongTaskCount, incoming.Samples)
+	current.AvgJSHeapUsedMB = mergeRemoteArchiveWeightedAverage(current.AvgJSHeapUsedMB, currentSamples, incoming.AvgJSHeapUsedMB, incoming.Samples)
+	current.AvgBrowserProcessCPU = mergeRemoteArchiveWeightedAverage(current.AvgBrowserProcessCPU, currentSamples, incoming.AvgBrowserProcessCPU, incoming.Samples)
+	current.AvgBrowserProcessMem = mergeRemoteArchiveWeightedAverage(current.AvgBrowserProcessMem, currentSamples, incoming.AvgBrowserProcessMem, incoming.Samples)
+	current.Samples = totalSamples
+	return current
+}
+
+func mergeRemoteArchiveSummaryBrowserByDevice(destination, source map[string]*BrowserDeviceLiveMetrics) map[string]*BrowserDeviceLiveMetrics {
+	if len(source) == 0 {
+		return destination
+	}
+	if destination == nil {
+		destination = make(map[string]*BrowserDeviceLiveMetrics, len(source))
+	}
+	for name, incoming := range source {
+		if incoming == nil || incoming.Samples <= 0 {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			name = strings.TrimSpace(incoming.DeviceProfile)
+		}
+		if name == "" {
+			continue
+		}
+		current := destination[name]
+		if current == nil || current.Samples <= 0 {
+			copy := *incoming
+			if copy.DeviceProfile == "" {
+				copy.DeviceProfile = name
+			}
+			destination[name] = &copy
+			continue
+		}
+		currentSamples := current.Samples
+		current.AvgFCPMs = mergeRemoteArchiveWeightedAverage(current.AvgFCPMs, currentSamples, incoming.AvgFCPMs, incoming.Samples)
+		current.AvgLCPMs = mergeRemoteArchiveWeightedAverage(current.AvgLCPMs, currentSamples, incoming.AvgLCPMs, incoming.Samples)
+		current.AvgCLSScore = mergeRemoteArchiveWeightedAverage(current.AvgCLSScore, currentSamples, incoming.AvgCLSScore, incoming.Samples)
+		current.AvgINPMs = mergeRemoteArchiveWeightedAverage(current.AvgINPMs, currentSamples, incoming.AvgINPMs, incoming.Samples)
+		current.AvgTTFBMs = mergeRemoteArchiveWeightedAverage(current.AvgTTFBMs, currentSamples, incoming.AvgTTFBMs, incoming.Samples)
+		current.AvgBlockingResources = mergeRemoteArchiveWeightedAverage(current.AvgBlockingResources, currentSamples, incoming.AvgBlockingResources, incoming.Samples)
+		current.AvgLongTaskCount = mergeRemoteArchiveWeightedAverage(current.AvgLongTaskCount, currentSamples, incoming.AvgLongTaskCount, incoming.Samples)
+		current.AvgJSHeapUsedMB = mergeRemoteArchiveWeightedAverage(current.AvgJSHeapUsedMB, currentSamples, incoming.AvgJSHeapUsedMB, incoming.Samples)
+		current.AvgBrowserProcessCPU = mergeRemoteArchiveWeightedAverage(current.AvgBrowserProcessCPU, currentSamples, incoming.AvgBrowserProcessCPU, incoming.Samples)
+		current.AvgBrowserProcessMem = mergeRemoteArchiveWeightedAverage(current.AvgBrowserProcessMem, currentSamples, incoming.AvgBrowserProcessMem, incoming.Samples)
+		current.Samples += incoming.Samples
+		if current.DeviceProfile == "" {
+			current.DeviceProfile = firstNonEmpty(incoming.DeviceProfile, name)
+		}
+		if current.DevicePlatform == "" {
+			current.DevicePlatform = incoming.DevicePlatform
+		}
+		if current.DeviceTier == "" {
+			current.DeviceTier = incoming.DeviceTier
+		}
+		if current.BrowserEngine == "" {
+			current.BrowserEngine = incoming.BrowserEngine
+		}
+	}
+	if len(destination) == 0 {
+		return nil
+	}
+	return destination
+}
+
+func mergeRemoteArchiveSummaryTelemetry(current, incoming *TelemetryHealth) *TelemetryHealth {
+	if incoming == nil {
+		return current
+	}
+	if current == nil {
+		return cloneTelemetryHealth(incoming)
+	}
+	current.DroppedResults += incoming.DroppedResults
+	current.SheddedArrivals += incoming.SheddedArrivals
+	current.DroppedSubscriberBatches += incoming.DroppedSubscriberBatches
+	if incoming.HistoryPoints > current.HistoryPoints {
+		current.HistoryPoints = incoming.HistoryPoints
+	}
+	current.WebsocketClients += incoming.WebsocketClients
+	current.WebsocketDroppedMessages += incoming.WebsocketDroppedMessages
+	current.WebsocketDroppedEvents += incoming.WebsocketDroppedEvents
+	current.CollectedAt = remoteArchiveEarlierNonZeroTime(current.CollectedAt, incoming.CollectedAt)
+	current.GeneratorPublishedAt = remoteArchiveLaterTime(current.GeneratorPublishedAt, incoming.GeneratorPublishedAt)
+	current.ControllerReceivedAt = remoteArchiveLaterTime(current.ControllerReceivedAt, incoming.ControllerReceivedAt)
+	current.PublishedAt = remoteArchiveLaterTime(current.PublishedAt, incoming.PublishedAt)
+	current.GeneratorProcessingLagMs = max(current.GeneratorProcessingLagMs, incoming.GeneratorProcessingLagMs)
+	current.TransportLagMs = max(current.TransportLagMs, incoming.TransportLagMs)
+	current.ControllerFanoutLagMs = max(current.ControllerFanoutLagMs, incoming.ControllerFanoutLagMs)
+	current.BrowserRenderLagMs = max(current.BrowserRenderLagMs, incoming.BrowserRenderLagMs)
+	current.SampleAgeMs = max(current.SampleAgeMs, incoming.SampleAgeMs)
+	return current
+}
+
+func remoteArchiveEarlierNonZeroTime(current, incoming time.Time) time.Time {
+	if current.IsZero() || (!incoming.IsZero() && incoming.Before(current)) {
+		return incoming
+	}
+	return current
+}
+
+func remoteArchiveLaterTime(current, incoming time.Time) time.Time {
+	if incoming.After(current) {
+		return incoming
+	}
+	return current
+}
+
+func mergeRemoteArchiveSummaryTelemetryStatus(current, incoming *TelemetryRunHealth) *TelemetryRunHealth {
+	if incoming == nil {
+		return current
+	}
+	if current == nil {
+		return cloneTelemetryRunHealth(incoming)
+	}
+	if remoteArchivePreferTelemetryStatus(incoming, current) {
+		if incoming.Status != "" {
+			current.Status = incoming.Status
+		}
+		current.Summary = incoming.Summary
+		current.CurrentSignature = incoming.CurrentSignature
+	}
+	if remoteArchiveTelemetrySeverityRank(incoming.Severity) > remoteArchiveTelemetrySeverityRank(current.Severity) {
+		current.Severity = incoming.Severity
+	} else if current.Severity == "" {
+		current.Severity = incoming.Severity
+	}
+	conditions := make(map[string]struct{}, len(current.Conditions)+len(incoming.Conditions))
+	for _, condition := range current.Conditions {
+		if condition = strings.TrimSpace(condition); condition != "" {
+			conditions[condition] = struct{}{}
+		}
+	}
+	for _, condition := range incoming.Conditions {
+		if condition = strings.TrimSpace(condition); condition != "" {
+			conditions[condition] = struct{}{}
+		}
+	}
+	current.Conditions = current.Conditions[:0]
+	for condition := range conditions {
+		current.Conditions = append(current.Conditions, condition)
+	}
+	sort.Strings(current.Conditions)
+	current.BreachActive = current.BreachActive || incoming.BreachActive
+	current.SustainedBreach = current.SustainedBreach || incoming.SustainedBreach
+	if incoming.BreachDurationSec > current.BreachDurationSec {
+		current.BreachDurationSec = incoming.BreachDurationSec
+	}
+	if incoming.BreachStartedAt != nil && (current.BreachStartedAt == nil || incoming.BreachStartedAt.Before(*current.BreachStartedAt)) {
+		startedAt := *incoming.BreachStartedAt
+		current.BreachStartedAt = &startedAt
+	}
+	current.LastObservedAt = remoteArchiveLaterTime(current.LastObservedAt, incoming.LastObservedAt)
+	current.LastTransitionAt = remoteArchiveLaterTime(current.LastTransitionAt, incoming.LastTransitionAt)
+	return current
+}
+
+func remoteArchivePreferTelemetryStatus(candidate, current *TelemetryRunHealth) bool {
+	candidateStatus, currentStatus := remoteArchiveTelemetryStatusRank(candidate.Status), remoteArchiveTelemetryStatusRank(current.Status)
+	if candidateStatus != currentStatus {
+		return candidateStatus > currentStatus
+	}
+	candidateSeverity, currentSeverity := remoteArchiveTelemetrySeverityRank(candidate.Severity), remoteArchiveTelemetrySeverityRank(current.Severity)
+	if candidateSeverity != currentSeverity {
+		return candidateSeverity > currentSeverity
+	}
+	return candidate.LastObservedAt.After(current.LastObservedAt)
+}
+
+func remoteArchiveTelemetryStatusRank(status string) int {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "breached":
+		return 3
+	case "degraded":
+		return 2
+	case "healthy":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func remoteArchiveTelemetrySeverityRank(severity string) int {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "danger":
+		return 3
+	case "warning":
+		return 2
+	case "healthy":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func advanceRemoteArchiveSummaryCursor(cursor *remoteArchiveSummaryCursor, bundles []remoteArchiveBundle) (bool, error) {
+	previousTimestamp := cursor.timestamp
+	var next IntervalSummaryRecord
+	if err := cursor.decoder.Decode(&next); err != nil {
+		if err == io.EOF {
+			_ = cursor.file.Close()
+			expected := bundles[cursor.index].manifest.IntervalSummaryCount
+			if cursor.decoded != expected {
+				return false, fmt.Errorf("remote interval summary count for target %q is %d, manifest declares %d", bundles[cursor.index].target, cursor.decoded, expected)
+			}
+			return false, nil
+		}
+		return false, err
+	}
+	cursor.decoded++
+	nextTimestamp := next.Timestamp.UTC()
+	if nextTimestamp.Before(previousTimestamp) {
+		return false, fmt.Errorf("remote interval summaries for target %q are not time ordered", bundles[cursor.index].target)
+	}
+	cursor.record = next
+	cursor.timestamp = nextTimestamp
+	return true, nil
+}
+
+// remoteArchiveFleetIntervalMetrics recomputes interval evidence only while the
+// source data stays inside the same explicit bounds used by archive analysis.
+// This keeps finalization memory predictable. Returning exact=false is a normal
+// outcome; callers preserve generator counts/rates and expose unavailable
+// percentile quality instead of fabricating a weighted percentile.
+type remoteArchiveFleetIntervalMetric struct {
+	successes       int64
+	errors          int64
+	totalDurationMs float64
+	p50             float64
+	p90             float64
+	p95             float64
+	p99             float64
+	hasPercentiles  bool
+	groups          map[string]*remoteArchiveFleetGroupMetric
+}
+
+type remoteArchiveFleetGroupMetric struct {
+	successes       int64
+	errors          int64
+	totalDurationMs float64
+	durations       []float64
+	p50             float64
+	p90             float64
+	p95             float64
+	p99             float64
+	hasPercentiles  bool
+}
+
+func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds []time.Time, sourceWindows [][]remoteArchiveSourceWindow, completeWindows bool) ([]remoteArchiveFleetIntervalMetric, bool, error) {
+	if !completeWindows || len(windowEnds) == 0 {
+		return nil, false, nil
+	}
+	if len(sourceWindows) != len(bundles) {
+		return nil, false, fmt.Errorf("remote archive source-window plan has %d targets, want %d", len(sourceWindows), len(bundles))
+	}
+	var totalBytes int64
+	for _, bundle := range bundles {
+		path := strings.TrimSpace(bundle.transactionsPath)
+		if path == "" {
+			return nil, false, nil
+		}
+		file, info, err := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
+		if err != nil {
+			return nil, false, err
+		}
+		_ = file.Close()
+		if info.Size() < 0 || totalBytes > maxArchiveAnalysisBytes-info.Size() {
+			return nil, false, nil
+		}
+		totalBytes += info.Size()
+	}
+
+	intervals := make([]remoteArchiveFleetIntervalMetric, len(windowEnds))
+	durations := make([][]float64, len(windowEnds))
+	groupNames := make(map[string]struct{})
+	transactionCount := 0
+	for bundleIndex, bundle := range bundles {
+		path := bundle.transactionsPath
+		file, _, err := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
+		if err != nil {
+			return nil, false, err
+		}
+		decoder := json.NewDecoder(file)
+		bundleTransactionCount := int64(0)
+		for {
+			var transaction TransactionEvent
+			decodeErr := decoder.Decode(&transaction)
+			if decodeErr == io.EOF {
+				break
+			}
+			if decodeErr != nil {
+				_ = file.Close()
+				return nil, false, decodeErr
+			}
+			transactionCount++
+			bundleTransactionCount++
+			if transactionCount > maxArchiveAnalysisRecords {
+				_ = file.Close()
+				return nil, false, nil
+			}
+			windows := sourceWindows[bundleIndex]
+			if len(windows) == 0 {
+				_ = file.Close()
+				return nil, false, fmt.Errorf("remote archive target %q has transactions but no interval summary windows", bundle.target)
+			}
+			sourceIndex := sort.Search(len(windows), func(index int) bool {
+				return !transaction.Timestamp.After(windows[index].end)
+			})
+			if sourceIndex == len(windows) {
+				sourceIndex = len(windows) - 1
+			}
+			index := windows[sourceIndex].fleetIndex
+			if index < 0 || index >= len(intervals) {
+				_ = file.Close()
+				return nil, false, fmt.Errorf("remote archive target %q maps a source interval to invalid fleet window %d", bundle.target, index)
+			}
+			interval := &intervals[index]
+			if transaction.Success {
+				interval.successes++
+			} else {
+				interval.errors++
+			}
+			interval.totalDurationMs += transaction.DurationMs
+			durations[index] = append(durations[index], transaction.DurationMs)
+			groupName := strings.TrimSpace(transaction.Group)
+			if groupName != "" {
+				if _, exists := groupNames[groupName]; !exists {
+					if len(groupNames) >= maxArchiveAnalysisDimensions {
+						_ = file.Close()
+						return nil, false, fmt.Errorf("remote archive exceeds %d distinct transaction groups", maxArchiveAnalysisDimensions)
+					}
+					groupNames[groupName] = struct{}{}
+				}
+				if interval.groups == nil {
+					interval.groups = make(map[string]*remoteArchiveFleetGroupMetric)
+				}
+				group := interval.groups[groupName]
+				if group == nil {
+					group = &remoteArchiveFleetGroupMetric{}
+					interval.groups[groupName] = group
+				}
+				if transaction.Success {
+					group.successes++
+				} else {
+					group.errors++
+				}
+				group.totalDurationMs += transaction.DurationMs
+				group.durations = append(group.durations, transaction.DurationMs)
+			}
+		}
+		if err := file.Close(); err != nil {
+			return nil, false, err
+		}
+		if bundleTransactionCount != bundle.manifest.TransactionCount {
+			return nil, false, fmt.Errorf("remote transaction count for target %q is %d, manifest declares %d", bundle.target, bundleTransactionCount, bundle.manifest.TransactionCount)
+		}
+	}
+	for index, values := range durations {
+		if len(values) == 0 {
+			continue
+		}
+		sort.Float64s(values)
+		intervals[index].p50 = percentileFromSortedSamples(values, 0.50)
+		intervals[index].p90 = percentileFromSortedSamples(values, 0.90)
+		intervals[index].p95 = percentileFromSortedSamples(values, 0.95)
+		intervals[index].p99 = percentileFromSortedSamples(values, 0.99)
+		intervals[index].hasPercentiles = true
+		for _, group := range intervals[index].groups {
+			if len(group.durations) == 0 {
+				continue
+			}
+			sort.Float64s(group.durations)
+			group.p50 = percentileFromSortedSamples(group.durations, 0.50)
+			group.p90 = percentileFromSortedSamples(group.durations, 0.90)
+			group.p95 = percentileFromSortedSamples(group.durations, 0.95)
+			group.p99 = percentileFromSortedSamples(group.durations, 0.99)
+			group.hasPercentiles = true
+			group.durations = nil
+		}
+	}
+	return intervals, true, nil
+}
+
+func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, intervals []remoteArchiveFleetIntervalMetric, exact bool, targetHistory []remoteArchiveTargetSnapshot) (count int64, err error) {
+	source, _, err := openArchiveArtifactForRead(filepath.Dir(provisionalPath), filepath.Base(provisionalPath))
+	if err != nil {
+		return 0, err
+	}
+	defer source.Close()
+	destination, err := createArchiveArtifactExclusive(filepath.Dir(destinationPath), filepath.Base(destinationPath), 0o644, false)
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if closeErr := destination.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+	}()
+	decoder := json.NewDecoder(source)
+	encoder := json.NewEncoder(destination)
+	var sourceCumulativeTx, exactCumulativeTx, exactCumulativeErrors int64
+	var previousTimestamp time.Time
+	for {
+		var record IntervalSummaryRecord
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return count, err
+		}
+		if exact && int(count) < len(intervals) {
+			interval := intervals[count]
+			sourceWindowTx := record.TotalTx - sourceCumulativeTx
+			sourceCumulativeTx = record.TotalTx
+
+			// Preserve the generator's effective rate window when it is knowable
+			// from its success count and TPS. This retains the generator-side clamp
+			// for short terminal remainders while replacing the count with the exact
+			// raw transaction count. Timestamp distance and the declared cadence are
+			// bounded fallbacks for zero-count or legacy source rows.
+			windowSeconds := remoteArchiveSummaryCadence.Seconds()
+			if sourceWindowTx > 0 && record.TPS > 0 {
+				windowSeconds = float64(sourceWindowTx) / record.TPS
+			} else if !previousTimestamp.IsZero() {
+				if seconds := record.Timestamp.Sub(previousTimestamp).Seconds(); seconds > 0 {
+					windowSeconds = seconds
+				}
+			}
+			if windowSeconds <= 0 {
+				windowSeconds = remoteArchiveSummaryCadence.Seconds()
+			}
+
+			exactCumulativeTx += interval.successes
+			exactCumulativeErrors += interval.errors
+			record.TotalTx = exactCumulativeTx
+			record.TotalErrors = exactCumulativeErrors
+			record.TPS = float64(interval.successes) / windowSeconds
+			attempts := interval.successes + interval.errors
+			if attempts > 0 {
+				record.AvgResponseMs = interval.totalDurationMs / float64(attempts)
+				record.ErrorPct = float64(interval.errors) / float64(attempts) * 100
+			} else {
+				record.AvgResponseMs = 0
+				record.ErrorPct = 0
+			}
+			if interval.hasPercentiles {
+				record.P50Ms = interval.p50
+				record.P90Ms = interval.p90
+				record.P95Ms = interval.p95
+				record.P99Ms = interval.p99
+				record.PercentileQuality = archivePercentileQualityRecomputed
+			} else {
+				record.P50Ms, record.P90Ms, record.P95Ms, record.P99Ms = 0, 0, 0, 0
+				record.PercentileQuality = archivePercentileQualityUnavailable
+			}
+			if record.TargetTPS > 0 {
+				record.ThroughputGapPct, record.ThroughputTargetMissed = throughputGap(record.TPS, record.TargetTPS)
+			}
+			record.Groups = recomputeRemoteArchiveSummaryGroups(record.Groups, interval.groups, windowSeconds)
+		}
+		applyRemoteArchiveTargetSnapshot(&record, targetHistory)
+		if err := encoder.Encode(record); err != nil {
+			return count, err
+		}
+		previousTimestamp = record.Timestamp
+		count++
+	}
+	if err := destination.Sync(); err != nil {
+		return count, err
+	}
+	return count, nil
+}
+
+func applyRemoteArchiveTargetSnapshot(record *IntervalSummaryRecord, snapshots []remoteArchiveTargetSnapshot) {
+	if record == nil || record.Timestamp.IsZero() || len(snapshots) == 0 {
+		return
+	}
+	index := sort.Search(len(snapshots), func(index int) bool {
+		return !snapshots[index].timestamp.Before(record.Timestamp)
+	})
+	best := -1
+	bestDistance := time.Duration(1<<63 - 1)
+	for _, candidate := range []int{index - 1, index} {
+		if candidate < 0 || candidate >= len(snapshots) {
+			continue
+		}
+		distance := snapshots[candidate].timestamp.Sub(record.Timestamp)
+		if distance < 0 {
+			distance = -distance
+		}
+		if distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	// The controller and generator both stamp the same accepted batch window.
+	// A tolerance only accommodates sub-cadence clock skew and the 1ns terminal
+	// ordering adjustment; it must not carry a target across a missing history
+	// interval or invent a constant target timeline.
+	if best < 0 || bestDistance > remoteArchiveSummaryMaxClockSkew {
+		return
+	}
+	snapshot := snapshots[best]
+	if snapshot.telemetry != nil {
+		record.Telemetry = cloneTelemetryHealth(snapshot.telemetry)
+	}
+	if snapshot.telemetryStatus != nil {
+		record.TelemetryStatus = cloneTelemetryRunHealth(snapshot.telemetryStatus)
+	}
+	record.TargetTPS = snapshot.targetTPS
+	record.ThroughputGapPct, record.ThroughputTargetMissed = throughputGap(record.TPS, record.TargetTPS)
+	if record.Groups == nil && len(snapshot.groups) > 0 {
+		record.Groups = make(map[string]*GroupLiveMetrics, len(snapshot.groups))
+	}
+	for name, group := range record.Groups {
+		if group == nil {
+			continue
+		}
+		group.TargetTPS = snapshot.groups[name]
+		group.ThroughputGapPct, group.ThroughputTargetMissed = throughputGap(group.TPS, group.TargetTPS)
+	}
+	for name, targetTPS := range snapshot.groups {
+		if record.Groups[name] != nil {
+			continue
+		}
+		gap, missed := throughputGap(0, targetTPS)
+		record.Groups[name] = &GroupLiveMetrics{
+			Name: name, TargetTPS: targetTPS, ThroughputGapPct: gap, ThroughputTargetMissed: missed,
+			PercentileQuality: archivePercentileQualityUnavailable,
+		}
+	}
+}
+
+func recomputeRemoteArchiveSummaryGroups(
+	groups map[string]*GroupLiveMetrics,
+	exact map[string]*remoteArchiveFleetGroupMetric,
+	windowSeconds float64,
+) map[string]*GroupLiveMetrics {
+	if len(exact) == 0 {
+		return groups
+	}
+	if groups == nil {
+		groups = make(map[string]*GroupLiveMetrics, len(exact))
+	}
+	for name, interval := range exact {
+		if interval == nil {
+			continue
+		}
+		group := groups[name]
+		if group == nil {
+			group = &GroupLiveMetrics{Name: name}
+			groups[name] = group
+		}
+		group.Transactions = interval.successes
+		group.Errors = interval.errors
+		if windowSeconds > 0 {
+			group.TPS = float64(interval.successes) / windowSeconds
+		} else {
+			group.TPS = 0
+		}
+		attempts := interval.successes + interval.errors
+		if attempts > 0 {
+			group.AvgResponseMs = interval.totalDurationMs / float64(attempts)
+		} else {
+			group.AvgResponseMs = 0
+		}
+		if interval.hasPercentiles {
+			group.P50Ms = interval.p50
+			group.P90Ms = interval.p90
+			group.P95Ms = interval.p95
+			group.P99Ms = interval.p99
+			group.PercentileQuality = archivePercentileQualityRecomputed
+		} else {
+			group.P50Ms, group.P90Ms, group.P95Ms, group.P99Ms = 0, 0, 0, 0
+			group.PercentileQuality = archivePercentileQualityUnavailable
+		}
+		if group.TargetTPS > 0 {
+			group.ThroughputGapPct, group.ThroughputTargetMissed = throughputGap(group.TPS, group.TargetTPS)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	return groups
+}
+
+func mergeRemoteArchiveDataset(
+	destinationPath string,
+	bundles []remoteArchiveBundle,
+	kind string,
+	sourcePath func(remoteArchiveBundle) string,
+	expectedCount func(remoteArchiveBundle) int64,
+) (err error) {
 	destination, err := createArchiveArtifactExclusive(filepath.Dir(destinationPath), filepath.Base(destinationPath), 0o644, false)
 	if err != nil {
 		return err
@@ -575,41 +1644,41 @@ func mergeRemoteArchiveDataset(destinationPath string, bundles []remoteArchiveBu
 			err = closeErr
 		}
 	}()
-	buffer := make([]byte, remoteArchiveMergeBufferBytes)
 	for _, bundle := range bundles {
 		path := sourcePath(bundle)
 		source, _, openErr := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
 		if openErr != nil {
 			return openErr
 		}
-		info, statErr := source.Stat()
-		if statErr != nil {
-			_ = source.Close()
-			return statErr
-		}
-		if _, copyErr := io.CopyBuffer(destination, source, buffer); copyErr != nil {
-			_ = source.Close()
-			return copyErr
-		}
-		if info.Size() > 0 {
-			if _, seekErr := source.Seek(-1, io.SeekEnd); seekErr != nil {
+		scanner := newArchiveJSONLScanner(source)
+		var count int64
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			var object struct{}
+			if decodeErr := json.Unmarshal(line, &object); decodeErr != nil {
 				_ = source.Close()
-				return seekErr
+				return fmt.Errorf("decode remote %s record for target %q: %w", kind, bundle.target, decodeErr)
 			}
-			last := []byte{0}
-			if _, readErr := io.ReadFull(source, last); readErr != nil {
+			if _, writeErr := destination.Write(line); writeErr != nil {
 				_ = source.Close()
-				return readErr
+				return writeErr
 			}
-			if last[0] != '\n' {
-				if _, writeErr := destination.Write([]byte{'\n'}); writeErr != nil {
-					_ = source.Close()
-					return writeErr
-				}
+			if _, writeErr := destination.Write([]byte{'\n'}); writeErr != nil {
+				_ = source.Close()
+				return writeErr
 			}
+			count++
+		}
+		if scanErr := scanner.Err(); scanErr != nil {
+			_ = source.Close()
+			return fmt.Errorf("scan remote %s records for target %q: %w", kind, bundle.target, scanErr)
 		}
 		if closeErr := source.Close(); closeErr != nil {
 			return closeErr
+		}
+		expected := expectedCount(bundle)
+		if count != expected {
+			return fmt.Errorf("remote %s count for target %q is %d, manifest declares %d", kind, bundle.target, count, expected)
 		}
 	}
 	return destination.Sync()

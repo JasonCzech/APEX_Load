@@ -295,6 +295,8 @@ func TestHistoricalArchiveSecretSurfacesAreMasked(t *testing.T) {
 	}
 	manifest.Provenance.RuntimeSettings = runtimeSettings
 	manifest.Provenance.Groups = []TestGroup{{Name: "group", RuntimeSettings: runtimeSettings}}
+	initialProvenance := manifest.Provenance
+	manifest.InitialProvenance = &initialProvenance
 	manifest.TestManifestFile = testRunManifestFileName
 	testManifest := &TestRunManifest{
 		SchemaVersion: testRunManifestSchemaVersion, TestID: testRun.ID, TestName: testRun.Name, Status: "COMPLETE", Source: "historical",

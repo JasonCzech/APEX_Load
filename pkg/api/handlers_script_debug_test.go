@@ -84,8 +84,8 @@ func TestScriptDebugManagerBreakpointsAndStep(t *testing.T) {
 		t.Fatalf("Resume ok=%v changed=%v session=%#v, want changed", ok, changed, resumed)
 	}
 	completed := waitForScriptDebugStatus(t, manager, "debug-step", ScriptDebugCompleted)
-	if len(completed.Events) != 3 {
-		t.Fatalf("events = %d, want 3", len(completed.Events))
+	if len(completed.Events) != 0 || completed.FinalReport == nil || len(completed.FinalReport.Events) != 3 {
+		t.Fatalf("session/report events = %d/%v, want 0/3", len(completed.Events), completed.FinalReport)
 	}
 }
 
@@ -143,8 +143,8 @@ func TestScriptDebugManagerBreakOnFailurePauses(t *testing.T) {
 	// Under continue-on-error the run finishes after the failure, but a failed
 	// action makes the terminal status "failed".
 	finished := waitForScriptDebugStatus(t, manager, "debug-bof", ScriptDebugFailed)
-	if len(finished.Events) != 3 {
-		t.Fatalf("events = %d, want 3", len(finished.Events))
+	if len(finished.Events) != 0 || finished.FinalReport == nil || len(finished.FinalReport.Events) != 3 {
+		t.Fatalf("session/report events = %d/%v, want 0/3", len(finished.Events), finished.FinalReport)
 	}
 	mu.Lock()
 	gotExecuted = append([]string(nil), executed...)
@@ -251,8 +251,8 @@ func TestScriptDebugManagerBreakOnFailureAtFailingChild(t *testing.T) {
 		t.Fatalf("Resume ok=%v changed=%v, want changed", ok, changed)
 	}
 	finished := waitForScriptDebugStatus(t, manager, "debug-seq-bof", ScriptDebugFailed)
-	if len(finished.Events) != 3 {
-		t.Fatalf("events = %d, want 3 (all children once resumed)", len(finished.Events))
+	if len(finished.Events) != 0 || finished.FinalReport == nil || len(finished.FinalReport.Events) != 3 {
+		t.Fatalf("session/report events = %d/%v, want 0/3 (all children once resumed)", len(finished.Events), finished.FinalReport)
 	}
 	mu.Lock()
 	got = append([]string(nil), executed...)
@@ -306,8 +306,8 @@ func TestScriptDebugManagerPausesAtChildBreakpoint(t *testing.T) {
 		t.Fatalf("Resume failed")
 	}
 	completed := waitForScriptDebugStatus(t, manager, "debug-child-bp", ScriptDebugCompleted)
-	if len(completed.Events) != 3 {
-		t.Fatalf("events = %d, want 3", len(completed.Events))
+	if len(completed.Events) != 0 || completed.FinalReport == nil || len(completed.FinalReport.Events) != 3 {
+		t.Fatalf("session/report events = %d/%v, want 0/3", len(completed.Events), completed.FinalReport)
 	}
 }
 

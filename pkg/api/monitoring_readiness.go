@@ -357,6 +357,9 @@ func nearestSummaryP95(timestamp time.Time, summaries []IntervalSummaryRecord) (
 	bestIndex := -1
 	var bestDistance time.Duration
 	for index, summary := range summaries {
+		if !archivePercentileAvailable(summary.PercentileQuality) {
+			continue
+		}
 		distance := timestamp.Sub(summary.Timestamp)
 		if distance < 0 {
 			distance = -distance

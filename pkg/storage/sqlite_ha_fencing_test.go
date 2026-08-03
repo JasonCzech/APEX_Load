@@ -20,6 +20,35 @@ func newHAFencingStore(t *testing.T) *SQLiteStore {
 	return store
 }
 
+func TestSQLiteStoreFencesTargetedInitialProvenanceWriteByLeaseEpoch(t *testing.T) {
+	store := newHAFencingStore(t)
+	now := time.Now().UTC()
+	for _, id := range []string{"provenance-active", "provenance-stale"} {
+		if err := store.SaveTest(&TestRecord{ID: id, Name: id, Status: "INITIALIZING", ProjectID: DefaultProjectID, StartTime: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const leaseName = "targeted-initial-provenance"
+	if acquired, err := store.TryAcquireSchedulerLease(leaseName, "owner-active", now, time.Minute); err != nil || !acquired {
+		t.Fatalf("acquire lease = (%v, %v)", acquired, err)
+	}
+	saved, err := store.SaveTestInitialProvenanceIfLeaseHeld("provenance-active", DefaultProjectID, map[string]any{"total_vusers": 3}, leaseName, "owner-active")
+	if err != nil || !saved {
+		t.Fatalf("active provenance write = (%v, %v), want true", saved, err)
+	}
+	saved, err = store.SaveTestInitialProvenanceIfLeaseHeld("provenance-stale", DefaultProjectID, map[string]any{"total_vusers": 9}, leaseName, "owner-stale")
+	if err != nil || saved {
+		t.Fatalf("stale provenance write = (%v, %v), want false nil", saved, err)
+	}
+	stale, err := store.GetTest("provenance-stale")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.InitialProvenance != nil {
+		t.Fatalf("stale owner persisted provenance: %#v", stale.InitialProvenance)
+	}
+}
+
 func TestSQLiteStorePersistsTestStartDelay(t *testing.T) {
 	store := newHAFencingStore(t)
 	record := &TestRecord{

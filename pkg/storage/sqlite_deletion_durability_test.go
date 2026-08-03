@@ -39,6 +39,27 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	if err := store.SaveRunArchive(record); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.db.Exec(`INSERT INTO scenarios (id, name, duration, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, "retained-scenario", "Retained", "1m", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO scenario_schedules
+		(id, scenario_id, project_id, name, cron_expr, last_run_test_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "retained-schedule", "retained-scenario", project.ID, "Retained", "0 * * * *", testID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO scenario_schedule_occurrences
+		(id, schedule_id, scenario_id, project_id, planned_at, status, test_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, "retained-occurrence", "retained-schedule", "retained-scenario", project.ID, now, "materialized", testID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO powerbi_publishes
+		(id, test_id, project_id, workspace_id, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "retained-powerbi", testID, project.ID, "workspace", "complete", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting("report:annotations:"+testID+":engineer", `{}`); err != nil {
+		t.Fatal(err)
+	}
 
 	// Force a late failure after the binding release/outbox write. Both must roll
 	// back with the test deletion rather than leaving half-applied durable state.
@@ -88,6 +109,28 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	}
 	if job.ProjectID != project.ID || job.ArchiveRecord.ArchivePath != record.ArchivePath || job.Attempts != 0 {
 		t.Fatalf("cleanup job = %+v, want serialized archive and project", job)
+	}
+	var lastRunTestID, occurrenceTestID sql.NullString
+	if err := store.db.QueryRow(`SELECT last_run_test_id FROM scenario_schedules WHERE id = ?`, "retained-schedule").Scan(&lastRunTestID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.QueryRow(`SELECT test_id FROM scenario_schedule_occurrences WHERE id = ?`, "retained-occurrence").Scan(&occurrenceTestID); err != nil {
+		t.Fatal(err)
+	}
+	if lastRunTestID.Valid || occurrenceTestID.Valid {
+		t.Fatalf("schedule references survived test deletion: last=%v occurrence=%v", lastRunTestID, occurrenceTestID)
+	}
+	for _, query := range []string{
+		`SELECT COUNT(*) FROM powerbi_publishes WHERE test_id = 'delete-with-reservation'`,
+		`SELECT COUNT(*) FROM app_settings WHERE key = 'report:annotations:delete-with-reservation:engineer'`,
+	} {
+		var count int
+		if err := store.db.QueryRow(query).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("query %q count = %d, want 0", query, count)
+		}
 	}
 }
 

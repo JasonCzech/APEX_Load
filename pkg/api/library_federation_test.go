@@ -216,6 +216,21 @@ func TestLibraryRemoteJSONHonorsConfiguredTimeout(t *testing.T) {
 	}
 }
 
+func TestLibraryRemoteCapabilitiesHasSmallResponseLimit(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	remoteHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(bytes.Repeat([]byte(" "), int(libraryRemoteCapabilitiesMaxBytes)+1))
+	}))
+	defer remoteHTTP.Close()
+
+	server := NewServer(ServerConfig{})
+	_, err := server.remoteLibraryCapabilities(context.Background(), LibraryRemote{BaseURL: remoteHTTP.URL, AuthMethod: "none"})
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("remoteLibraryCapabilities error = %v, want response limit error", err)
+	}
+}
+
 func TestLibraryRemoteArchiveDownloadHonorsConfiguredTimeout(t *testing.T) {
 	t.Setenv("APEXLOAD_LIBRARY_REMOTE_ARCHIVE_TIMEOUT", "10ms")
 	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1") // loopback target; test the timeout, not the SSRF guard

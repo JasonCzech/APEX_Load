@@ -2,12 +2,26 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+const (
+	reportAnnotationsMaxRequestBytes = 512 << 10
+	reportAnnotationsMaxStoredBytes  = 256 << 10
+	reportAnnotationsMaxFindings     = 100
+	reportAnnotationsMaxTitleBytes   = 512
+	reportAnnotationsMaxNameBytes    = 256
+	reportAnnotationsMaxNarrative    = 32 << 10
+	reportAnnotationsMaxComment      = 32 << 10
+	reportAnnotationsMaxFindingText  = 8 << 10
+)
+
+var errReportAnnotationsTooLarge = errors.New("report annotations exceed the stored-size limit")
 
 // ReportAnnotations holds the analyst-editable commentary attached to a
 // generated report. It is persisted per (test, profile) so an analyst can
@@ -106,6 +120,9 @@ func loadReportAnnotations(store storage.Store, testID, profile string) (*Report
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
+	if len(raw) > reportAnnotationsMaxStoredBytes {
+		return nil, fmt.Errorf("stored report annotations exceed %d bytes", reportAnnotationsMaxStoredBytes)
+	}
 	var ann ReportAnnotations
 	if err := json.Unmarshal([]byte(raw), &ann); err != nil {
 		return nil, fmt.Errorf("decode report annotations: %w", err)
@@ -116,6 +133,64 @@ func loadReportAnnotations(store storage.Store, testID, profile string) (*Report
 	return &ann, nil
 }
 
+func validateReportAnnotationsRequest(profile string, req *reportAnnotationsRequest) error {
+	if req == nil {
+		return fmt.Errorf("report annotations are required")
+	}
+	for label, value := range map[string]string{
+		"title": req.Title, "prepared_by": req.PreparedBy,
+		"executive_narrative": req.ExecutiveNarrative,
+		"verdict_override":    req.VerdictOverride,
+		"verdict_explanation": req.VerdictExplanation,
+	} {
+		limit := reportAnnotationsMaxNarrative
+		switch label {
+		case "title":
+			limit = reportAnnotationsMaxTitleBytes
+		case "prepared_by", "verdict_override":
+			limit = reportAnnotationsMaxNameBytes
+		case "verdict_explanation":
+			limit = reportAnnotationsMaxFindingText
+		}
+		if len(value) > limit {
+			return fmt.Errorf("%s exceeds %d bytes", label, limit)
+		}
+	}
+	allowedSections := make(map[string]struct{})
+	for _, section := range reportCommentarySectionOrder(profile) {
+		allowedSections[section.ID] = struct{}{}
+	}
+	for key, value := range req.SectionComments {
+		if _, ok := allowedSections[key]; !ok {
+			return fmt.Errorf("unknown report section %q for profile %q", key, normalizeReportProfileID(profile))
+		}
+		if len(value) > reportAnnotationsMaxComment {
+			return fmt.Errorf("section %q exceeds %d bytes", key, reportAnnotationsMaxComment)
+		}
+	}
+	if len(req.Findings) > reportAnnotationsMaxFindings {
+		return fmt.Errorf("findings exceeds limit of %d", reportAnnotationsMaxFindings)
+	}
+	for index, finding := range req.Findings {
+		for label, value := range map[string]string{
+			"id": finding.ID, "title": finding.Title, "severity": finding.Severity,
+			"observed": finding.Observed, "evidence": finding.Evidence,
+			"root_cause": finding.RootCause, "impact": finding.Impact,
+		} {
+			limit := reportAnnotationsMaxFindingText
+			if label == "id" || label == "severity" {
+				limit = reportAnnotationsMaxNameBytes
+			} else if label == "title" {
+				limit = reportAnnotationsMaxTitleBytes
+			}
+			if len(value) > limit {
+				return fmt.Errorf("findings[%d].%s exceeds %d bytes", index, label, limit)
+			}
+		}
+	}
+	return nil
+}
+
 // saveReportAnnotations persists the annotations as JSON keyed by test+profile.
 func saveReportAnnotations(store storage.Store, ann *ReportAnnotations) error {
 	if store == nil {
@@ -124,9 +199,9 @@ func saveReportAnnotations(store storage.Store, ann *ReportAnnotations) error {
 	if ann == nil {
 		return fmt.Errorf("nil annotations")
 	}
-	data, err := json.Marshal(ann)
+	data, err := marshalReportAnnotations(ann)
 	if err != nil {
-		return fmt.Errorf("encode report annotations: %w", err)
+		return err
 	}
 	return store.SaveSetting(reportAnnotationsSettingKey(ann.TestID, ann.Profile), string(data))
 }
@@ -146,6 +221,10 @@ func saveReportAnnotationsIfUnchanged(store storage.Store, ann *ReportAnnotation
 	if !ok {
 		return false, fmt.Errorf("storage backend does not support report annotation compare-and-swap")
 	}
+	data, err := marshalReportAnnotations(ann)
+	if err != nil {
+		return false, err
+	}
 	key := reportAnnotationsSettingKey(ann.TestID, ann.Profile)
 	currentRaw, err := store.GetSetting(key)
 	if err != nil {
@@ -164,11 +243,18 @@ func saveReportAnnotationsIfUnchanged(store storage.Store, ann *ReportAnnotation
 			return false, nil
 		}
 	}
+	return cas.CompareAndSwapSetting(key, currentRaw, string(data))
+}
+
+func marshalReportAnnotations(ann *ReportAnnotations) ([]byte, error) {
 	data, err := json.Marshal(ann)
 	if err != nil {
-		return false, fmt.Errorf("encode report annotations: %w", err)
+		return nil, fmt.Errorf("encode report annotations: %w", err)
 	}
-	return cas.CompareAndSwapSetting(key, currentRaw, string(data))
+	if len(data) > reportAnnotationsMaxStoredBytes {
+		return nil, fmt.Errorf("%w of %d bytes", errReportAnnotationsTooLarge, reportAnnotationsMaxStoredBytes)
+	}
+	return data, nil
 }
 
 // resolveReportAnnotations returns the saved annotations when present, otherwise

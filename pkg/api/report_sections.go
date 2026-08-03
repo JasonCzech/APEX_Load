@@ -535,8 +535,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				limit = 10
 			}
 			for _, point := range d.Report.SummaryTimeline[:limit] {
-				*lines = append(*lines, fmt.Sprintf("- %s: %s VUsers, %.1f TPS, p95 %.1f ms, %.2f%% errors",
-					formatPDFTime(point.Timestamp), formatPDFInt(point.ActiveVUsers), point.TPS, point.P95Ms, point.ErrorPct))
+				p95 := "unavailable"
+				if point.HasP95() {
+					p95 = fmt.Sprintf("%.1f ms", point.P95Ms)
+				}
+				*lines = append(*lines, fmt.Sprintf("- %s: %s VUsers, %.1f TPS, p95 %s, %.2f%% errors",
+					formatPDFTime(point.Timestamp), formatPDFInt(point.ActiveVUsers), point.TPS, p95, point.ErrorPct))
 			}
 			if len(d.Report.SummaryTimeline) > limit {
 				*lines = append(*lines, fmt.Sprintf("... %d additional interval(s) omitted from the PDF profile.", len(d.Report.SummaryTimeline)-limit))
@@ -549,13 +553,18 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			for _, point := range d.Report.SummaryTimeline {
 				key := formatPDFTime(point.Timestamp)
+				p95 := ""
+				if point.HasP95() {
+					p95 = formatCSVFloat(point.P95Ms)
+				}
 				rows := [][2]string{
 					{"active_vusers", formatCSVInt(point.ActiveVUsers)},
 					{"tps", formatCSVFloat(point.TPS)},
 					{"target_tps", formatCSVFloat(point.TargetTPS)},
 					{"throughput_gap_pct", formatCSVFloat(point.ThroughputGapPct)},
 					{"error_pct", formatCSVFloat(point.ErrorPct)},
-					{"p95_ms", formatCSVFloat(point.P95Ms)},
+					{"p95_ms", p95},
+					{"percentile_quality", point.PercentileQuality},
 					{"total_transactions", formatCSVInt(point.TotalTx)},
 					{"total_errors", formatCSVInt(point.TotalErrors)},
 				}

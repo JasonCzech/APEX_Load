@@ -377,6 +377,22 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 	if lockedUpdatedRaw != currentUpdatedRaw {
 		return false, nil
 	}
+	if err := rejectActiveGitHubScriptSyncClaimTx(tx, id); err != nil {
+		return false, err
+	}
+	if err := detachOrDeleteGitHubCheckLinksForScriptTx(tx, id); err != nil {
+		return false, err
+	}
+	for _, query := range []string{
+		`DELETE FROM github_script_sync_target_claims WHERE script_id = ?`,
+		`DELETE FROM github_script_sync_claims WHERE script_id = ?`,
+		`DELETE FROM github_script_sync_target_owners WHERE script_id = ?`,
+		`DELETE FROM github_script_links WHERE script_id = ?`,
+	} {
+		if _, err := tx.Exec(query, id); err != nil {
+			return false, err
+		}
+	}
 	if _, err := tx.Exec(`DELETE FROM script_recordings WHERE script_id = ? AND EXISTS (
 		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
 	)`, id, id, currentUpdatedRaw); err != nil {
@@ -540,11 +556,19 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		}
 		return err
 	}
+	if err := rejectActiveGitHubScriptSyncClaimTx(tx, id); err != nil {
+		return err
+	}
+	if err := detachOrDeleteGitHubCheckLinksForScriptTx(tx, id); err != nil {
+		return err
+	}
 	for _, deletion := range []struct {
 		query string
 		args  []any
 	}{
-		{query: `DELETE FROM github_check_links WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM github_script_sync_target_claims WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM github_script_sync_claims WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM github_script_sync_target_owners WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM github_script_links WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM script_recordings WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM bruno_source_revisions WHERE script_id = ?`, args: []any{id}},
@@ -556,6 +580,19 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// detachOrDeleteGitHubCheckLinksForScriptTx preserves checks whose durable
+// lifecycle is anchored by a test. A script deletion removes only the optional
+// secondary script anchor from those rows; script-only checks have no surviving
+// owner and are deleted.
+func detachOrDeleteGitHubCheckLinksForScriptTx(tx *storeTx, scriptID string) error {
+	if _, err := tx.Exec(`UPDATE github_check_links SET script_id = ''
+		WHERE script_id = ? AND TRIM(COALESCE(test_id, '')) <> ''`, scriptID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`DELETE FROM github_check_links WHERE script_id = ?`, scriptID)
+	return err
 }
 
 func decodeStoredScriptJSON(script *dsl.Script, metadataJSON, configJSON, dataSourcesJSON, parametersJSON, initJSON, actionsJSON, teardownJSON string) error {

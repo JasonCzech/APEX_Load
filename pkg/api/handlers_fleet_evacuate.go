@@ -97,6 +97,33 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "generator evacuation requires distributed execution")
 		return
 	}
+	tests := s.activeTestsUsingGeneratorTarget(target)
+	reason := firstNonEmpty(strings.TrimSpace(req.Reason), "operator_evacuate")
+	// Validate every impacted run before changing durable fleet state. This
+	// prevents predictable refusals (stateful protocols, capacity, baseline
+	// windows) from leaving a generator drained despite Applied:false.
+	if !req.DryRun {
+		preflightImpacts := make([]GeneratorEvacuationImpact, 0)
+		for _, test := range tests {
+			impacts, err := backend.EvacuateGenerator(s.runner, test, target, true, reason)
+			preflightImpacts = append(preflightImpacts, impacts...)
+			if err == nil {
+				for _, impact := range impacts {
+					if impact.Refused {
+						err = fmt.Errorf("generator evacuation refused: %s: %s", impact.Group, impact.RefusalReason)
+						break
+					}
+				}
+			}
+			if err != nil {
+				writeJSON(w, http.StatusConflict, GeneratorEvacuationResponse{
+					GeneratorID: generatorID, Target: target, Applied: false,
+					ImpactedTests: len(tests), Impacts: preflightImpacts, Error: err.Error(),
+				})
+				return
+			}
+		}
+	}
 	if !req.DryRun {
 		previousState := s.currentGeneratorLifecycleState(generatorID, target)
 		if _, _, err := s.setGeneratorLifecycleState(generatorID, target, "draining"); err != nil {
@@ -115,7 +142,6 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	tests := s.activeTestsUsingGeneratorTarget(target)
 	response := GeneratorEvacuationResponse{
 		GeneratorID:   generatorID,
 		Target:        target,
@@ -124,12 +150,14 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 		ImpactedTests: len(tests),
 		Impacts:       []GeneratorEvacuationImpact{},
 	}
-	reason := firstNonEmpty(strings.TrimSpace(req.Reason), "operator_evacuate")
 	for _, test := range tests {
 		impacts, err := backend.EvacuateGenerator(s.runner, test, target, req.DryRun, reason)
 		response.Impacts = append(response.Impacts, impacts...)
 		if err != nil {
-			response.Applied = false
+			// The drain/cordon and any earlier per-test evacuations are already
+			// applied. Report that partial state honestly rather than claiming the
+			// request was a no-op.
+			response.Applied = !req.DryRun
 			response.Error = err.Error()
 			s.recordAuditEvent(r, "generator.evacuate", "failure", "generator", firstNonEmpty(generatorID, target), "", map[string]any{
 				"target": target, "dry_run": req.DryRun, "reason": reason, "error": err.Error(),

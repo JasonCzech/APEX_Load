@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/refkey"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type createOnlyScriptPersistence interface {
@@ -307,6 +308,171 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 
 func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, error) {
 	return tr.storeScriptDurable(script, false)
+}
+
+func (tr *TestRunner) prepareGitHubScriptImportLocked(script *dsl.Script) (*dsl.Script, *dsl.Script, error) {
+	if script == nil || strings.TrimSpace(script.ID) == "" {
+		return nil, nil, fmt.Errorf("github script import requires a deterministic script id")
+	}
+	if scriptRequiresJavaVuserAuthoringApproval(script) {
+		return nil, nil, fmt.Errorf("Java Vuser scripts cannot be imported into executable storage without local authoring-session review and approval")
+	}
+	if err := validatePersistentLibraryScript(script); err != nil {
+		return nil, nil, err
+	}
+	scriptID := strings.TrimSpace(script.ID)
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
+		return nil, nil, err
+	}
+	current, err := tr.durableScriptForMutationLocked(scriptID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if scriptRequiresJavaVuserAuthoringApproval(current) {
+		return nil, nil, fmt.Errorf("Java Vuser scripts cannot be changed through GitHub import without local authoring-session review and approval")
+	}
+	projectID := normalizeProjectID(script.ProjectID)
+	if current != nil && normalizeProjectID(current.ProjectID) != projectID {
+		return nil, nil, fmt.Errorf("%w: imported script id belongs to another project", errScriptConcurrentChange)
+	}
+	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
+		return nil, nil, err
+	}
+	projected, err := preparePersistentLibraryScript(script, current)
+	if err != nil {
+		return nil, nil, err
+	}
+	projected.ID = scriptID
+	projected.ProjectID = projectID
+	if strings.TrimSpace(projected.Version) == "" {
+		projected.Version = "1"
+	}
+	if current != nil {
+		projected.RefKey = current.RefKey
+		projected.FolderID = cloneStringPtr(current.FolderID)
+		projected.CreatedAt = current.CreatedAt
+	} else {
+		// Reference keys and folders are workspace placement, not portable source
+		// metadata. New GitHub imports start at the project root with a local key.
+		projected.RefKey = ""
+		projected.FolderID = nil
+		projected.CreatedAt = time.Time{}
+	}
+	return projected, current, nil
+}
+
+// PreflightGitHubScriptImport validates governance and existing-ID ownership
+// without mutating durable or cached state. Bulk import runs this for every
+// remote JSON file before committing the first candidate.
+func (tr *TestRunner) PreflightGitHubScriptImport(script *dsl.Script, target storage.GitHubScriptSyncTarget) error {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	_, current, err := tr.prepareGitHubScriptImportLocked(script)
+	if err != nil || current == nil {
+		return err
+	}
+	linkStore, ok := tr.scriptStore.(storage.GitHubScriptLinkStore)
+	if !ok {
+		return fmt.Errorf("durable script store does not support github link preflight")
+	}
+	link, err := linkStore.GetGitHubScriptLink(current.ID)
+	if err != nil {
+		return err
+	}
+	if !githubSyncLinkMatchesTarget(link, target.Owner, target.Repo, target.Branch, target.Path) ||
+		(strings.TrimSpace(link.BaseBranch) != "" && strings.TrimSpace(link.BaseBranch) != strings.TrimSpace(target.Branch)) {
+		return fmt.Errorf("%w: imported script id is unlinked or linked to another github target", errScriptConcurrentChange)
+	}
+	return nil
+}
+
+// StoreGitHubScriptImportDurable commits the projected script, GitHub link, and
+// target ownership through the store's single atomic boundary, then hydrates
+// the runner cache from the committed canonical script.
+func (tr *TestRunner) StoreGitHubScriptImportDurable(
+	script *dsl.Script,
+	link *storage.GitHubScriptLink,
+) (*StoredScript, storage.GitHubScriptImportOutcome, error) {
+	if link == nil {
+		return nil, storage.GitHubScriptImportConflict, fmt.Errorf("github script import link is required")
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	projected, current, err := tr.prepareGitHubScriptImportLocked(script)
+	if err != nil {
+		return nil, storage.GitHubScriptImportConflict, err
+	}
+	now := time.Now().UTC()
+	var expectedUpdatedAt time.Time
+	if current == nil {
+		sequence, err := tr.nextScriptSeqLocked()
+		if err != nil {
+			return nil, storage.GitHubScriptImportConflict, fmt.Errorf("allocate script reference key: %w", err)
+		}
+		projected.RefKey = refkey.Script(tr.envCode, sequence, 1)
+		projected.CreatedAt = now
+		projected.UpdatedAt = now
+	} else {
+		expectedUpdatedAt = current.UpdatedAt
+		currentFingerprint, err := storage.ImportSourceScriptFingerprint(current)
+		if err != nil {
+			return nil, storage.GitHubScriptImportConflict, err
+		}
+		desiredFingerprint, err := storage.ImportSourceScriptFingerprint(projected)
+		if err != nil {
+			return nil, storage.GitHubScriptImportConflict, err
+		}
+		if currentFingerprint == desiredFingerprint {
+			projected.UpdatedAt = current.UpdatedAt
+		} else {
+			if !now.After(current.UpdatedAt) {
+				now = current.UpdatedAt.Add(time.Nanosecond)
+			}
+			projected.UpdatedAt = now
+		}
+	}
+	linkCopy := *link
+	linkCopy.ScriptID = projected.ID
+	linkCopy.RefKey = projected.RefKey
+	_, contentHash, err := githubScriptEnvelope(projected)
+	if err != nil {
+		return nil, storage.GitHubScriptImportConflict, err
+	}
+	linkCopy.ContentHash = contentHash
+	importStore, ok := tr.scriptStore.(storage.GitHubScriptImportStore)
+	if !ok {
+		return nil, storage.GitHubScriptImportConflict, fmt.Errorf("durable script store does not support atomic github imports")
+	}
+	outcome, err := importStore.CommitGitHubScriptImport(projected, &linkCopy, expectedUpdatedAt)
+	if err != nil || outcome == storage.GitHubScriptImportConflict {
+		return nil, outcome, err
+	}
+	canonicalScript := cloneScriptDefinition(projected)
+	createdAt := canonicalScript.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	stored := &StoredScript{
+		ID:              canonicalScript.ID,
+		RefKey:          canonicalScript.RefKey,
+		Name:            canonicalScript.Name,
+		Protocol:        canonicalScript.Protocol,
+		Version:         canonicalScript.Version,
+		ProjectID:       canonicalScript.ProjectID,
+		FolderID:        cloneStringPtr(canonicalScript.FolderID),
+		CreatedAt:       createdAt,
+		AuthoringHealth: buildStoredScriptAuthoringHealth(canonicalScript),
+		Script:          canonicalScript,
+	}
+	if previous := tr.scripts[stored.ID]; previous != nil {
+		tr.removeRefKeyLocked(previous.RefKey)
+	}
+	tr.scripts[stored.ID] = stored
+	tr.contentRevision++
+	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
+	*script = *cloneScriptDefinition(canonicalScript)
+	*link = linkCopy
+	return cloneStoredScriptForReadLocked(stored), outcome, nil
 }
 
 // storeScriptDurableForRestore is restricted to hydrating records that already

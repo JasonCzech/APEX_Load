@@ -3671,13 +3671,20 @@ func parseRuntimeProxySettings(rc *RuntimeConfig, sections map[string]map[string
 	modeRaw, _ := firstRuntimeSectionValue(sourceSections, "Mode", "ProxyMode", "Type")
 	var validMode bool
 	rc.ProxyMode, validMode = mapRuntimeProxyMode(modeRaw)
-	rc.ProxyURL, _ = firstRuntimeSectionValue(sourceSections, "ProxyServer", "ProxyURL", "Server")
+	proxyURL, explicitProxyURL := firstRuntimeSectionValue(sourceSections, "ProxyServer", "ProxyURL", "Server")
+	rc.ProxyURL = proxyURL
 	rc.ProxyURL = strings.TrimSpace(rc.ProxyURL)
 	endpointIssue := ""
 	if rc.ProxyURL == "" {
 		rc.ProxyURL, endpointIssue = resolveRuntimeProxyEndpoints(sourceSections)
 	}
-	rc.ProxyURL = normalizeRuntimeProxyURL(rc.ProxyURL)
+	// An explicitly authored URL declares the proxy transport scheme. Port
+	// conventions cannot override it: HTTPS proxies commonly listen on 3128,
+	// 8080, or 8888 too. Endpoint synthesis may still normalize LR's separate
+	// HTTP/HTTPS destination-routing fields below.
+	if !explicitProxyURL {
+		rc.ProxyURL = normalizeRuntimeProxyURL(rc.ProxyURL)
+	}
 	rc.ProxyUser, _ = firstRuntimeSectionValue(sourceSections, "ProxyUserName", "UserName", "ProxyUser")
 	rc.ProxyUser = strings.TrimSpace(rc.ProxyUser)
 	rc.ProxyPass, _ = firstRuntimeSectionValue(sourceSections, "ProxyPassword", "Password")

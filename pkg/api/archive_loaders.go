@@ -447,6 +447,7 @@ func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *
 			record.P90Ms = quantiles.Quantile(0.90)
 			record.P95Ms = quantiles.Quantile(0.95)
 			record.P99Ms = quantiles.Quantile(0.99)
+			record.PercentileQuality = archivePercentileQualityRecomputed
 		}
 		// The whole-test throughput target does not apply to a filtered subset;
 		// derive it from the selected groups' own targets and recompute the gap

@@ -57,11 +57,50 @@ func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
 		dst.ErrorHandling = src.ErrorHandling
 	}
 	if !isEmptyWebRuntimeConfig(src.WebRuntime) {
-		dst.WebRuntime = src.WebRuntime
+		// Runtime files own transport/simulation settings, while source actions
+		// contribute ordered global checks and compatibility attributes. Preserve
+		// both instead of replacing the action-derived evidence wholesale.
+		contentChecks := cloneContentCheckConfigs(dst.WebRuntime.ContentChecks)
+		attributes := cloneStringMap(dst.WebRuntime.AdditionalAttributes)
+		dst.WebRuntime = cloneWebRuntimeConfig(src.WebRuntime)
+		dst.WebRuntime.ContentChecks = append(dst.WebRuntime.ContentChecks, contentChecks...)
+		if len(attributes) > 0 && dst.WebRuntime.AdditionalAttributes == nil {
+			dst.WebRuntime.AdditionalAttributes = map[string]string{}
+		}
+		for key, value := range attributes {
+			if _, exists := dst.WebRuntime.AdditionalAttributes[key]; !exists {
+				dst.WebRuntime.AdditionalAttributes[key] = value
+			}
+		}
 	}
 	if src.BrowserEmulation != nil {
 		dst.BrowserEmulation = cloneBrowserEmulationConfig(src.BrowserEmulation)
 	}
+}
+
+func cloneWebRuntimeConfig(src dsl.WebRuntimeConfig) dsl.WebRuntimeConfig {
+	clone := src
+	clone.AdditionalAttributes = cloneStringMap(src.AdditionalAttributes)
+	clone.DownloadFilters.Hosts = append([]string(nil), src.DownloadFilters.Hosts...)
+	clone.ContentChecks = cloneContentCheckConfigs(src.ContentChecks)
+	clone.DataFormatting.Chain = append([]dsl.DFETransform(nil), src.DataFormatting.Chain...)
+	for index := range clone.DataFormatting.Chain {
+		clone.DataFormatting.Chain[index].Options = cloneStringMap(src.DataFormatting.Chain[index].Options)
+	}
+	clone.SourceIPs = append([]string(nil), src.SourceIPs...)
+	clone.NetworkProfiles = append([]dsl.NetworkProfileWeight(nil), src.NetworkProfiles...)
+	return clone
+}
+
+func cloneContentCheckConfigs(src []dsl.ContentCheckConfig) []dsl.ContentCheckConfig {
+	if len(src) == 0 {
+		return nil
+	}
+	clone := append([]dsl.ContentCheckConfig(nil), src...)
+	for index := range clone {
+		clone[index].FailIfFound = cloneRuntimeBoolPointer(src[index].FailIfFound)
+	}
+	return clone
 }
 
 func cloneBrowserEmulationConfig(src *dsl.BrowserEmulationConfig) *dsl.BrowserEmulationConfig {
@@ -153,5 +192,5 @@ func isEmptyErrorHandlingConfig(cfg dsl.ErrorHandlingConfig) bool {
 }
 
 func isEmptyWebRuntimeConfig(cfg dsl.WebRuntimeConfig) bool {
-	return len(cfg.AdditionalAttributes) == 0 && cfg.DownloadFilters.Mode == "" && len(cfg.DownloadFilters.Hosts) == 0 && len(cfg.ContentChecks) == 0 && cfg.NetworkSimulation.Mode == "" && cfg.NetworkSimulation.Preset == "" && cfg.NetworkSimulation.BandwidthKbps == 0 && cfg.NetworkSimulation.LatencyMs == 0 && cfg.Streaming.Mode == "" && cfg.Streaming.BufferSizeSeconds == 0 && cfg.Streaming.FixedBitrateKbps == 0 && cfg.Streaming.BandwidthEstimation == "" && !cfg.DataFormatting.AutoDetect && len(cfg.DataFormatting.Chain) == 0
+	return len(cfg.AdditionalAttributes) == 0 && cfg.DownloadFilters.Mode == "" && len(cfg.DownloadFilters.Hosts) == 0 && len(cfg.ContentChecks) == 0 && cfg.NetworkSimulation.Mode == "" && cfg.NetworkSimulation.Preset == "" && cfg.NetworkSimulation.BandwidthKbps == 0 && cfg.NetworkSimulation.LatencyMs == 0 && cfg.NetworkSimulation.JitterMs == 0 && cfg.NetworkSimulation.PacketLossPct == 0 && cfg.Streaming.Mode == "" && cfg.Streaming.BufferSizeSeconds == 0 && cfg.Streaming.FixedBitrateKbps == 0 && cfg.Streaming.BandwidthEstimation == "" && !cfg.DataFormatting.AutoDetect && len(cfg.DataFormatting.Chain) == 0 && len(cfg.SourceIPs) == 0 && len(cfg.NetworkProfiles) == 0
 }

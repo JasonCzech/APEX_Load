@@ -111,8 +111,8 @@ func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *Test
 		}
 	}
 
-	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, start_authorization_json, execution_plan_approval_json, timeslot_id)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=excluded.ref_key,
 			  materialization_key=excluded.materialization_key,
@@ -128,6 +128,10 @@ func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *Test
 			  started_by_subject=excluded.started_by_subject, started_by_display_name=excluded.started_by_display_name,
 			  stopped_by_subject=excluded.stopped_by_subject, stopped_by_display_name=excluded.stopped_by_display_name, groups_json=excluded.groups_json, data_pools_json=excluded.data_pools_json,
 			  runtime_settings_json=excluded.runtime_settings_json, goal_config_json=excluded.goal_config_json, start_authorization_json=excluded.start_authorization_json, execution_plan_approval_json=excluded.execution_plan_approval_json,
+			  initial_provenance_json=CASE
+			    WHEN tests.initial_provenance_json IS NULL OR TRIM(tests.initial_provenance_json) IN ('', 'null') THEN excluded.initial_provenance_json
+			    ELSE tests.initial_provenance_json
+			  END,
 			  timeslot_id=excluded.timeslot_id
 			  WHERE tests.project_id=excluded.project_id`
 
@@ -177,8 +181,8 @@ func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, 
 	if err := lockActiveReleaseForNewTest(executor, test); err != nil {
 		return false, err
 	}
-	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, start_authorization_json, execution_plan_approval_json, timeslot_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`, args...)
 	if err != nil {
 		return false, err
@@ -270,7 +274,15 @@ func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, dataPoolsJSON, runtimeSettingsJSON, goalConfigJSON, startAuthorizationJSON, executionPlanApprovalJSON, nullableStringPointer(test.TimeslotID)}, nil
+	initialProvenanceJSON, err := marshalTestField("initial_provenance_json", test.InitialProvenance)
+	if err != nil {
+		return nil, err
+	}
+	var initialProvenanceValue any
+	if test.InitialProvenance != nil {
+		initialProvenanceValue = initialProvenanceJSON
+	}
+	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, dataPoolsJSON, runtimeSettingsJSON, goalConfigJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceValue, nullableStringPointer(test.TimeslotID)}, nil
 }
 
 // validateTestPlacement locks and verifies every durable tenant-bearing parent
@@ -467,6 +479,63 @@ func (s *SQLiteStore) SaveTestIfLeaseHeld(test *TestRecord, leaseName, leaseOwne
 	return true, nil
 }
 
+// SaveTestInitialProvenance writes only the immutable start-of-run evidence.
+// It deliberately avoids a full-row UPSERT so a startup callback cannot replay
+// stale lifecycle/configuration fields over concurrent control-plane updates.
+func (s *SQLiteStore) SaveTestInitialProvenance(id, projectID string, provenance any) (bool, error) {
+	return saveTestInitialProvenanceWithExecutor(s.db, id, projectID, provenance)
+}
+
+// SaveTestInitialProvenanceIfLeaseHeld combines the targeted write and HA
+// execution-lease check in one transaction.
+func (s *SQLiteStore) SaveTestInitialProvenanceIfLeaseHeld(id, projectID string, provenance any, leaseName, leaseOwnerID string) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" {
+		return false, errors.New("lease name and owner token are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil || !held {
+		return false, err
+	}
+	saved, err := saveTestInitialProvenanceWithExecutor(tx, id, projectID, provenance)
+	if err != nil || !saved {
+		return saved, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func saveTestInitialProvenanceWithExecutor(executor testSaveExecutor, id, projectID string, provenance any) (bool, error) {
+	id = strings.TrimSpace(id)
+	if id == "" || provenance == nil {
+		return false, errors.New("test id and initial provenance are required")
+	}
+	encoded, err := marshalTestField("initial_provenance_json", provenance)
+	if err != nil {
+		return false, err
+	}
+	result, err := executor.Exec(`UPDATE tests SET initial_provenance_json = CASE
+		WHEN initial_provenance_json IS NULL OR TRIM(initial_provenance_json) IN ('', 'null') THEN ?
+		ELSE initial_provenance_json END
+		WHERE id = ? AND project_id = ?`, encoded, id, normalizeProjectID(projectID))
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected == 1, nil
+}
+
 // RepairTestRuntimeSnapshot rewrites only the two runtime-bearing JSON columns
 // of one immutable test identity. It is used to scrub legacy snapshots without
 // replaying a stale full TestRecord over concurrently changing lifecycle state.
@@ -646,7 +715,7 @@ func (s *SQLiteStore) ListTestCapacityBindings(testIDs []string) ([]TestCapacity
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), timeslot_id`
+	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -659,8 +728,8 @@ type rowScanner interface {
 // JSON-encoded fields. Shared by GetTest, ListTests, and ListTestsByContext.
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
-	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, startAuthorizationJSON, executionPlanApprovalJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &test.TimeslotID); err != nil {
+	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceJSON string
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID); err != nil {
 		return test, err
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &test.Groups); err != nil {
@@ -694,6 +763,11 @@ func scanTest(scanner rowScanner) (TestRecord, error) {
 	if executionPlanApprovalJSON != "" && executionPlanApprovalJSON != "null" {
 		if err := json.Unmarshal([]byte(executionPlanApprovalJSON), &test.ExecutionPlanApproval); err != nil {
 			return test, fmt.Errorf("decode test %s execution_plan_approval_json: %w", test.ID, err)
+		}
+	}
+	if initialProvenanceJSON != "" && initialProvenanceJSON != "null" {
+		if err := json.Unmarshal([]byte(initialProvenanceJSON), &test.InitialProvenance); err != nil {
+			return test, fmt.Errorf("decode test %s initial_provenance_json: %w", test.ID, err)
 		}
 	}
 	return test, nil
@@ -1376,6 +1450,20 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM github_check_intents WHERE test_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM powerbi_publishes WHERE test_id = ?`, id); err != nil {
+		return err
+	}
+	annotationPrefix := "report:annotations:" + id + ":"
+	if _, err := tx.Exec(`DELETE FROM app_settings
+		WHERE SUBSTR(key, 1, LENGTH(?)) = ?`, annotationPrefix, annotationPrefix); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE scenario_schedules SET last_run_test_id = NULL WHERE last_run_test_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE scenario_schedule_occurrences SET test_id = NULL WHERE test_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, id); err != nil {

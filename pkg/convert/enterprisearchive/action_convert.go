@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -111,6 +113,13 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
 	}
+	if fn.itemDataURLForm {
+		// Literal form spans are encoded during import. Runtime templates must be
+		// encoded after their values are resolved so delimiters in parameter data
+		// cannot become new fields. The engine consumes this durable marker while
+		// preserving the ordinary {{var.*}}/{{param.*}} representation in the DSL.
+		action.Metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey] = dsl.ImportURLFormTemplateValueEncodingQueryComponent
+	}
 	if secretName := fn.Args[maskedBodySecretArgKey]; secretName != "" {
 		// Safe-by-default invariant: a masked credential payload must never
 		// reach action.Body verbatim. If the masked lr_unmask(...) call landed
@@ -129,6 +138,32 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["source_secret_function"] = convertutil.FirstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
 		action.Metadata["body_gated_by_secret"] = true
 	}
+	if reason := strings.TrimSpace(fn.itemDataReviewReason); reason != "" {
+		// The source review retains the original ITEMDATA call. Do not fabricate a
+		// raw, JSON, or multipart body from only the Name/Value subset and do not
+		// advertise its EncType on an empty/differently serialized payload.
+		action.Body = ""
+		deleteHeaderCaseInsensitive(action.Headers, "Content-Type")
+		action.HeaderList = filterHeaderListCaseInsensitive(action.HeaderList, "Content-Type")
+		action.Metadata["source_itemdata_encoding"] = "review_required"
+		location := strings.TrimSpace(fn.Filename)
+		if fn.LineNumber > 0 {
+			location = fmt.Sprintf("%s:%d", location, fn.LineNumber)
+		}
+		importreview.ApplyToAction(action, []importreview.Finding{{
+			Code:       "import_review_required",
+			Severity:   diag.Blocker,
+			Element:    "web_submit_data ITEMDATA serialization",
+			Detail:     "The source ITEMDATA encoding or field shape cannot be serialized faithfully as an APEX URL-encoded body; rebuild the request body before execution.",
+			Location:   location,
+			Source:     "enterprise_script_archive",
+			ReasonCode: reason,
+			SourceRef:  location,
+			Resolution: "rebuild_body_and_remove_gate",
+			Gate:       importreview.GateExecution,
+		}})
+		warnings = append(warnings, fmt.Sprintf("line %d: %s %q uses an unsupported ITEMDATA encoding or field shape; the request was preserved for review and blocked from execution", fn.LineNumber, fn.Name, fn.StepName))
+	}
 
 	warnings = append(warnings, annotateOpaqueTransformArgs(action, fn)...)
 	// Scrub raw masked metadata on every path: whenever a masked-body secret
@@ -143,6 +178,20 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	action.Target = convertParamReferences(action.Target)
 
 	return action, warnings
+}
+
+func filterHeaderListCaseInsensitive(headers dsl.HeaderList, name string) dsl.HeaderList {
+	filtered := headers[:0]
+	for _, header := range headers {
+		if strings.EqualFold(strings.TrimSpace(header.Name), name) {
+			continue
+		}
+		filtered = append(filtered, header)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 // reOpaqueSourceTransformCall matches request arguments produced by opaque

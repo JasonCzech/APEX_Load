@@ -88,6 +88,9 @@ func cloneReplayReport(report *ReplayReport) *ReplayReport {
 	cloned.ArtifactManifest = cloneReplayArtifactManifest(report.ArtifactManifest)
 	cloned.DiagnosisSummary = cloneReplayDiagnosisSummary(report.DiagnosisSummary)
 	cloned.RepairSuggestions = cloneReplayRepairSuggestions(report.RepairSuggestions)
+	if len(report.eventJSONBytes) > 0 {
+		cloned.eventJSONBytes = append([]int(nil), report.eventJSONBytes...)
+	}
 	snapshotClones := make(map[*protocol.ErrorSnapshot]*protocol.ErrorSnapshot, len(report.Snapshots))
 	if len(report.Snapshots) > 0 {
 		cloned.Snapshots = make([]*protocol.ErrorSnapshot, len(report.Snapshots))

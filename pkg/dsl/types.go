@@ -65,6 +65,14 @@ const (
 	// material for adapter-unsupported or conflicting Java connections. The
 	// envelope is inert and base64 encoded so repair never requires re-entry.
 	ImportPreservedEnterpriseJavaJDBCSourceKey = "enterprise_java_jdbc_source"
+	// ImportURLFormTemplateValueEncodingMetadataKey marks an imported
+	// application/x-www-form-urlencoded body whose literal spans are already
+	// escaped but whose runtime template values still need component escaping.
+	ImportURLFormTemplateValueEncodingMetadataKey = "body_template_value_encoding"
+	// ImportURLFormTemplateValueEncodingQueryComponent is the only recognized
+	// marker value. Older runtimes treat the metadata as inert instead of
+	// applying an unintended whole-body transform.
+	ImportURLFormTemplateValueEncodingQueryComponent = "url_query_component"
 )
 
 type Script struct {

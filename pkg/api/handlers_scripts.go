@@ -483,7 +483,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, err := s.runner.DeleteScriptDurableInProject(id, authorizedProjectOr(r, stored.ProjectID))
 	if err != nil {
-		if errors.Is(err, errScriptConcurrentChange) {
+		if errors.Is(err, errScriptConcurrentChange) || storage.IsGitHubScriptSyncBusy(err) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}

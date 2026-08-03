@@ -3,6 +3,8 @@ package enterprisearchive
 import (
 	"bufio"
 	"fmt"
+	"mime"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -41,6 +43,8 @@ type ParsedFunction struct {
 	containsUnsupportedTransactionCall  bool
 	dependsOnUnsupportedTransactionFlow bool
 	javaJDBCConnection                  *javaJDBCConnection
+	itemDataReviewReason                string
+	itemDataURLForm                     bool
 }
 
 type ParsedCookie struct {
@@ -666,6 +670,9 @@ func parseWebSubmitData(fn *ParsedFunction, inner string) {
 
 	// Collect ITEMDATA fields
 	extractNamedArgs(fn, inner)
+	if method := strings.TrimSpace(fn.Args["Method"]); method != "" {
+		fn.Method = strings.ToUpper(method)
+	}
 	extractItemData(fn, inner)
 }
 
@@ -892,45 +899,187 @@ func extractNamedArgs(fn *ParsedFunction, inner string) {
 	}
 }
 
-// extractItemData attempts to extract ITEMDATA form field pairs.
+const unsupportedItemDataEncodingReason = "web_submit_data_itemdata_encoding_unsupported"
+
+// extractItemData extracts the ordered ITEMDATA form occurrences. APEX can
+// faithfully materialize URL-encoded Name/Value pairs here. Other encodings
+// need a structured multipart/raw body representation, so retain the source
+// for review and leave the executable body empty instead of emitting
+// URL-encoded bytes under a contradictory Content-Type.
 func extractItemData(fn *ParsedFunction, inner string) {
-	formData := make(map[string]string)
-	currentName := ""
+	type formField struct{ name, value string }
+	formData := make([]formField, 0)
+	current := formField{}
+	hasName := false
+	hasValue := false
 	inItemData := false
+	hasItemData := false
+	hasUnsupportedField := false
+	hasMalformedItem := false
+	finished := false
+	resetItem := func() {
+		current = formField{}
+		hasName = false
+		hasValue = false
+	}
+	finishItem := func() {
+		if !hasName && !hasValue {
+			hasMalformedItem = true
+			return
+		}
+		if !hasName || !hasValue {
+			hasMalformedItem = true
+			resetItem()
+			return
+		}
+		formData = append(formData, current)
+		resetItem()
+	}
 	for _, arg := range fn.CallArgs {
 		if arg.Kind == "macro" && strings.EqualFold(arg.Value, "ITEMDATA") {
+			if inItemData {
+				hasMalformedItem = true
+			}
 			inItemData = true
+			hasItemData = true
 			continue
 		}
 		if !inItemData {
 			continue
 		}
-		if arg.Kind == "macro" && strings.EqualFold(arg.Value, "ENDITEM") {
-			currentName = ""
+		if arg.Kind == "macro" {
+			switch {
+			case strings.EqualFold(arg.Value, "ENDITEM"):
+				finishItem()
+			case strings.EqualFold(arg.Value, "LAST"):
+				if hasName || hasValue {
+					hasMalformedItem = true
+					resetItem()
+				}
+				finished = true
+				inItemData = false
+			default:
+				hasMalformedItem = true
+			}
+			if finished {
+				break
+			}
 			continue
 		}
 		if arg.Kind != "key_value" {
+			// Expressions such as "Value=" + helper() and lr_unmask(...)
+			// cannot be reconstructed as one form component. Ignoring them would
+			// leave a partial request runnable, so fail closed instead.
+			hasMalformedItem = true
 			continue
 		}
 		switch strings.ToLower(arg.Name) {
 		case "name":
-			currentName = arg.Value
-		case "value":
-			if currentName != "" {
-				formData[currentName] = arg.Value
+			if hasName || hasValue {
+				hasMalformedItem = true
+				continue
 			}
+			current.name = arg.Value
+			hasName = true
+		case "value":
+			if !hasName || hasValue {
+				hasMalformedItem = true
+				continue
+			}
+			current.value = arg.Value
+			hasValue = true
+		case "encryptedvalue", "file", "filepath", "contenttype", "contenttransferencoding":
+			hasUnsupportedField = true
+		default:
+			// Unknown ITEMDATA attributes must not be discarded: they may alter
+			// serialization or identify a source field shape APEX does not model.
+			hasMalformedItem = true
 		}
 	}
 
-	if len(formData) > 0 {
-		// Build URL-encoded body
-		pairs := make([]string, 0, len(formData))
-		for k, v := range formData {
-			pairs = append(pairs, k+"="+v)
-		}
-		fn.Body = strings.Join(pairs, "&")
-		fn.Headers["Content-Type"] = "application/x-www-form-urlencoded"
+	if !hasItemData {
+		return
 	}
+	if !finished || hasName || hasValue {
+		hasMalformedItem = true
+	}
+	contentType, supported := sourceItemDataFormContentType(fn.Args)
+	if !supported || hasUnsupportedField || hasMalformedItem {
+		fn.Body = ""
+		delete(fn.Headers, "Content-Type")
+		fn.itemDataReviewReason = unsupportedItemDataEncodingReason
+		return
+	}
+
+	pairs := make([]string, 0, len(formData))
+	for _, field := range formData {
+		pairs = append(pairs,
+			encodeSourceFormComponent(field.name)+"="+encodeSourceFormComponent(field.value),
+		)
+	}
+	fn.Body = strings.Join(pairs, "&")
+	fn.itemDataURLForm = true
+	if len(formData) > 0 {
+		fn.Headers["Content-Type"] = contentType
+	}
+}
+
+func sourceItemDataFormContentType(args map[string]string) (string, bool) {
+	raw, present := sourceNamedArg(args, "EncType")
+	if !present {
+		return "application/x-www-form-urlencoded", true
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.EqualFold(raw, "raw") {
+		return "", false
+	}
+	mediaType, params, err := mime.ParseMediaType(raw)
+	if err != nil || !strings.EqualFold(mediaType, "application/x-www-form-urlencoded") {
+		return "", false
+	}
+	for name, value := range params {
+		if !strings.EqualFold(name, "charset") ||
+			(!strings.EqualFold(value, "utf-8") && !strings.EqualFold(value, "utf8")) {
+			return "", false
+		}
+	}
+	return raw, true
+}
+
+func sourceNamedArg(args map[string]string, key string) (string, bool) {
+	if value, ok := args[key]; ok {
+		return value, true
+	}
+	for name, value := range args {
+		if strings.EqualFold(name, key) {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+// encodeSourceFormComponent applies HTML form escaping to literal spans while
+// retaining source parameter templates for replay-time interpolation.
+func encodeSourceFormComponent(value string) string {
+	value = convertParamReferences(value)
+	var encoded strings.Builder
+	for len(value) > 0 {
+		open := strings.Index(value, "{{")
+		if open < 0 {
+			encoded.WriteString(url.QueryEscape(value))
+			break
+		}
+		encoded.WriteString(url.QueryEscape(value[:open]))
+		closeOffset := strings.Index(value[open+2:], "}}")
+		if closeOffset < 0 {
+			encoded.WriteString(url.QueryEscape(value[open:]))
+			break
+		}
+		closeIndex := open + 2 + closeOffset + 2
+		encoded.WriteString(value[open:closeIndex])
+		value = value[closeIndex:]
+	}
+	return encoded.String()
 }
 
 // ParseConfigSections parses INI-style section/key=value content into nested maps.

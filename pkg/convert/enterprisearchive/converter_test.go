@@ -883,6 +883,32 @@ Action()
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_user", "config.http.auth", "converted")
 }
 
+func TestConvertPreservesWebSetUserAcrossRuntimeConfigMerge(t *testing.T) {
+	actionC := `Action()
+{
+	web_set_user("perfuser", "perfpass", "secure.example.com:443");
+	web_url("Secure Home", "URL=https://secure.example.com/app/home", LAST);
+	return 0;
+}`
+	parsed, err := ParseActionFile("Action.c", actionC)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	httpConfig := dsl.HTTPConfig{}
+	runtimeConfig := &dsl.ScriptConfig{WebRuntime: dsl.WebRuntimeConfig{NetworkSimulation: dsl.NetworkSimulationConfig{Mode: "max"}}}
+	result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{HTTPConfig: &httpConfig, RuntimeSettings: runtimeConfig})
+	if err != nil {
+		t.Fatalf("convert error: %v", err)
+	}
+	auth := result.Script.Config.HTTP.Auth
+	if auth.Type != "basic" || auth.Username != "perfuser" || auth.Password != "perfpass" {
+		t.Fatalf("http auth = %#v, want web_set_user basic auth after config merge", auth)
+	}
+	if got := result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"]; got != "secure.example.com:443" {
+		t.Fatalf("web_set_user.host = %q, want preserved host", got)
+	}
+}
+
 func TestConvertLRErrorMessageFormatsArgumentsAsNativeAction(t *testing.T) {
 	actionC := `
 #include "web_api.h"
@@ -1910,6 +1936,10 @@ AcceptLanguage=en-US,en;q=0.9
 
 [ThinkTime]
 Options=NOTHINK
+
+[ModemSpeed]
+EnableCustomModemSpeed=0
+EnableModemSpeed=0
 `,
 	})
 
@@ -1968,6 +1998,32 @@ Options=NOTHINK
 	}
 	if !result.Script.Config.ThinkTime.Ignore {
 		t.Fatalf("think time ignore = false, want NOTHINK mapped")
+	}
+}
+
+func TestWebSubmitDataPreservesMethodEncodingAndRepeatedFieldOrder(t *testing.T) {
+	parsed, err := ParseActionFile("Action.c", `Action() {
+		web_submit_data("Filters", "Action=https://example.test/search", "Method=PUT",
+			"EncType=application/x-www-form-urlencoded;charset=UTF-8", ITEMDATA,
+			"Name=color", "Value=red", ENDITEM,
+			"Name=color", "Value=blue", ENDITEM,
+			"Name=sort", "Value=price", ENDITEM, LAST);
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Functions) != 1 {
+		t.Fatalf("functions = %#v", parsed.Functions)
+	}
+	fn := parsed.Functions[0]
+	if fn.Method != "PUT" {
+		t.Fatalf("method = %q, want PUT", fn.Method)
+	}
+	if fn.Body != "color=red&color=blue&sort=price" {
+		t.Fatalf("body = %q, want ordered duplicate fields", fn.Body)
+	}
+	if got := fn.Headers["Content-Type"]; got != "application/x-www-form-urlencoded;charset=UTF-8" {
+		t.Fatalf("content type = %q", got)
 	}
 }
 
@@ -3064,7 +3120,7 @@ func TestParseRuntimeCfgNormalizesConnectProxyURLs(t *testing.T) {
 Mode=custom
 ProxyServer=https://proxy.example.test:8888
 `,
-			wantURL: "http://proxy.example.test:8888",
+			wantURL: "https://proxy.example.test:8888",
 		},
 		{
 			name: "synthesized https proxy host on connect port",

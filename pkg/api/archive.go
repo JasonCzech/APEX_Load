@@ -25,6 +25,12 @@ const browserDiagnosticsSchemaVersion = "apexload.browser_diagnostics.v1"
 const runArchiveManifestFileName = "manifest.json"
 const testRunManifestFileName = "test_manifest.json"
 
+const (
+	archivePercentileQualitySourceGenerator = "source_generator"
+	archivePercentileQualityRecomputed      = "recomputed_from_transactions"
+	archivePercentileQualityUnavailable     = "unavailable"
+)
+
 type RunArchiveManifest struct {
 	SchemaVersion string               `json:"schema_version"`
 	TestID        string               `json:"test_id"`
@@ -231,27 +237,33 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
-	Timestamp              time.Time                            `json:"timestamp"`
-	TestID                 string                               `json:"test_id"`
-	TestName               string                               `json:"test_name"`
-	ActiveVUsers           int64                                `json:"active_vusers"`
-	TPS                    float64                              `json:"tps"`
-	TargetTPS              float64                              `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64                              `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool                                 `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs          float64                              `json:"avg_response_ms"`
-	ErrorPct               float64                              `json:"error_pct"`
-	TotalTx                int64                                `json:"total_transactions"`
-	TotalErrors            int64                                `json:"total_errors"`
-	P50Ms                  float64                              `json:"p50_ms"`
-	P90Ms                  float64                              `json:"p90_ms"`
-	P95Ms                  float64                              `json:"p95_ms"`
-	P99Ms                  float64                              `json:"p99_ms"`
-	Groups                 map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
-	Browser                *BrowserLiveMetrics                  `json:"browser,omitempty"`
-	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
-	Telemetry              *TelemetryHealth                     `json:"telemetry,omitempty"`
-	TelemetryStatus        *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
+	Timestamp              time.Time `json:"timestamp"`
+	TestID                 string    `json:"test_id"`
+	TestName               string    `json:"test_name"`
+	ActiveVUsers           int64     `json:"active_vusers"`
+	TPS                    float64   `json:"tps"`
+	TargetTPS              float64   `json:"target_tps,omitempty"`
+	ThroughputGapPct       float64   `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed bool      `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs          float64   `json:"avg_response_ms"`
+	ErrorPct               float64   `json:"error_pct"`
+	TotalTx                int64     `json:"total_transactions"`
+	TotalErrors            int64     `json:"total_errors"`
+	P50Ms                  float64   `json:"p50_ms"`
+	P90Ms                  float64   `json:"p90_ms"`
+	P95Ms                  float64   `json:"p95_ms"`
+	P99Ms                  float64   `json:"p99_ms"`
+	// PercentileQuality identifies how the interval percentile distribution was
+	// obtained. It is empty for legacy/local rows, "source_generator" for an
+	// unmerged generator row, "recomputed_from_transactions" when the controller
+	// rebuilt the fleet distribution, and "unavailable" when multiple generator
+	// distributions could not be merged without inventing a percentile.
+	PercentileQuality string                               `json:"percentile_quality,omitempty"`
+	Groups            map[string]*GroupLiveMetrics         `json:"groups,omitempty"`
+	Browser           *BrowserLiveMetrics                  `json:"browser,omitempty"`
+	BrowserByDevice   map[string]*BrowserDeviceLiveMetrics `json:"browser_by_device,omitempty"`
+	Telemetry         *TelemetryHealth                     `json:"telemetry,omitempty"`
+	TelemetryStatus   *TelemetryRunHealth                  `json:"telemetry_status,omitempty"`
 }
 
 type archivePage struct {
@@ -475,8 +487,17 @@ type RunArchiveSummaryPoint struct {
 	ThroughputTargetMissed bool      `json:"throughput_target_missed,omitempty"`
 	ErrorPct               float64   `json:"error_pct"`
 	P95Ms                  float64   `json:"p95_ms"`
+	PercentileQuality      string    `json:"percentile_quality,omitempty"`
 	TotalTx                int64     `json:"total_transactions"`
 	TotalErrors            int64     `json:"total_errors"`
+}
+
+func (point RunArchiveSummaryPoint) HasP95() bool {
+	return archivePercentileAvailable(point.PercentileQuality)
+}
+
+func archivePercentileAvailable(quality string) bool {
+	return !strings.EqualFold(strings.TrimSpace(quality), archivePercentileQualityUnavailable)
 }
 
 type RunArchiveErrorPattern struct {

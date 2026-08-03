@@ -3,8 +3,33 @@ package api
 import (
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
+
+func TestMaskRunArchiveManifestClonesAndMasksInitialProvenance(t *testing.T) {
+	const secret = "initial-provenance-secret"
+	initial := RunArchiveProvenance{
+		RuntimeSettings: &RuntimeSettingsOverride{
+			HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: secret}},
+		},
+	}
+	manifest := &RunArchiveManifest{InitialProvenance: &initial}
+
+	masked := maskRunArchiveManifest(manifest)
+	if masked == nil || masked.InitialProvenance == nil || masked.InitialProvenance.RuntimeSettings == nil {
+		t.Fatalf("masked initial provenance = %#v", masked)
+	}
+	if got := masked.InitialProvenance.RuntimeSettings.HTTP.Auth.Password; got != scrub.Redacted {
+		t.Fatalf("masked password = %q, want redaction", got)
+	}
+	if got := manifest.InitialProvenance.RuntimeSettings.HTTP.Auth.Password; got != secret {
+		t.Fatalf("source password = %q, want unchanged secret", got)
+	}
+	if masked.InitialProvenance == manifest.InitialProvenance {
+		t.Fatal("masked initial provenance aliases source pointer")
+	}
+}
 
 func TestMaskRuntimeSettingsCoversConnectionCredentialEnvironmentValues(t *testing.T) {
 	input := &RuntimeSettingsOverride{Env: map[string]string{

@@ -712,6 +712,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					mappingStatus = "review_only"
 					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); the masked payload is bound to the recording machine's key and cannot be recovered at import time — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
 					mappingMode = SourceFunctionSupportReviewOnly
+				} else if fn.itemDataReviewReason != "" {
+					mappingStatus = "review_only"
+					mappingNotes = "ITEMDATA uses an encoding or field shape that cannot be serialized faithfully; the source is preserved and execution is blocked until the request body is rebuilt."
+					mappingMode = SourceFunctionSupportReviewOnly
 				}
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, targetPath, action.Name, "action", mappingStatus, mappingNotes, mappingMode))
 				// Contributors (extractors, assertions, headers) were collected in source

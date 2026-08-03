@@ -31,6 +31,7 @@ const defaultLibraryRemoteArchiveTimeout = 5 * time.Minute
 // controller CRUD requests. Keep this outbound trust boundary independent of
 // the inbound global request-body backstop.
 const libraryRemoteJSONMaxBytes int64 = 128 << 20
+const libraryRemoteCapabilitiesMaxBytes int64 = 64 << 10
 
 type LibraryCapabilitiesResponse struct {
 	SchemaVersion string    `json:"schema_version"`

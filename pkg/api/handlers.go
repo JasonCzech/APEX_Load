@@ -1573,6 +1573,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // again after decoding (e.g. for project-scope resolution).
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds the configured size limit")
+			return false
+		}
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return false
 	}

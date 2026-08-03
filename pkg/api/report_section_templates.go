@@ -431,7 +431,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
   <thead><tr><th>Timestamp</th><th class="num">Active VUsers</th><th class="num">TPS</th><th class="num">Target TPS</th><th class="num">Gap</th><th class="num">P95 (ms)</th><th class="num">Error %</th><th class="num">Total Tx</th><th class="num">Total Errors</th></tr></thead>
   <tbody>
     {{range .Report.SummaryTimeline}}
-    <tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.ActiveVUsers}}</td><td class="num">{{formatFloat .TPS}}</td><td class="num">{{formatFloat .TargetTPS}}</td><td class="num"><span class="pill {{if .ThroughputTargetMissed}}fail{{else}}pass{{end}}">{{formatPercent .ThroughputGapPct}}</span></td><td class="num">{{formatFloat .P95Ms}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td class="num">{{.TotalTx}}</td><td class="num">{{.TotalErrors}}</td></tr>
+    <tr><td>{{formatTime .Timestamp}}</td><td class="num">{{.ActiveVUsers}}</td><td class="num">{{formatFloat .TPS}}</td><td class="num">{{formatFloat .TargetTPS}}</td><td class="num"><span class="pill {{if .ThroughputTargetMissed}}fail{{else}}pass{{end}}">{{formatPercent .ThroughputGapPct}}</span></td><td class="num">{{if .HasP95}}{{formatFloat .P95Ms}}{{else}}unavailable{{end}}</td><td class="num">{{formatPercent .ErrorPct}}</td><td class="num">{{.TotalTx}}</td><td class="num">{{.TotalErrors}}</td></tr>
     {{end}}
   </tbody>
 </table>

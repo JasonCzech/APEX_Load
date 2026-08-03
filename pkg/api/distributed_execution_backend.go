@@ -696,6 +696,15 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	test.executionGeneration = executionGeneration
 	clearDistributedRunSecretSnapshotsLocked(test)
 	tr.mu.Unlock()
+
+	// Capture and persist the immutable configuration before any generator work
+	// is staged. The stored snapshot survives controller restart/failover and is
+	// never replaced by later scale, duration, or runtime-control mutations.
+	initialProvenance := maskRunArchiveProvenance(buildRunArchiveProvenance(tr, test))
+	if persistInitialErr := tr.persistInitialArchiveProvenance(test, &initialProvenance); persistInitialErr != nil {
+		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("persist initial archive provenance: %v", persistInitialErr))
+		return
+	}
 	targetSpecs := tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs())
 	if len(targetSpecs) == 0 {
 		tr.failTestBeforeRunAndLog(test, "no generator targets configured")

@@ -536,6 +536,10 @@ func maskRunArchiveManifest(manifest *RunArchiveManifest) *RunArchiveManifest {
 	}
 	masked := *manifest
 	masked.Provenance = maskRunArchiveProvenance(manifest.Provenance)
+	if manifest.InitialProvenance != nil {
+		initial := maskRunArchiveProvenance(*manifest.InitialProvenance)
+		masked.InitialProvenance = &initial
+	}
 	return &masked
 }
 

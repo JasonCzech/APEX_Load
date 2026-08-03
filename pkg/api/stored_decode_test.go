@@ -1,6 +1,36 @@
 package api
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
+)
+
+func TestDecodeStoredInitialProvenanceMasksAndClones(t *testing.T) {
+	const secret = "stored-initial-secret"
+	stored := map[string]any{
+		"total_vusers": 7,
+		"runtime_settings": map[string]any{
+			"http": map[string]any{"auth": map[string]any{"password": secret}},
+		},
+	}
+	decoded := decodeStoredInitialProvenance(stored)
+	if decoded == nil || decoded.TotalVUsers != 7 || decoded.RuntimeSettings == nil || decoded.RuntimeSettings.HTTP == nil {
+		t.Fatalf("decoded provenance = %#v", decoded)
+	}
+	if got := decoded.RuntimeSettings.HTTP.Auth.Password; got != scrub.Redacted {
+		t.Fatalf("decoded password = %q, want redaction", got)
+	}
+	original := &RunArchiveProvenance{RuntimeSettings: &RuntimeSettingsOverride{HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: secret}}}}
+	boxed := initialProvenanceForStorage(original)
+	if boxed == original {
+		t.Fatal("storage projection aliases original provenance")
+	}
+	if got := boxed.(*RunArchiveProvenance).RuntimeSettings.HTTP.Auth.Password; got != scrub.Redacted {
+		t.Fatalf("storage projection password = %q, want redaction", got)
+	}
+}
 
 func TestDecodeStoredGroups(t *testing.T) {
 	if got := decodeStoredGroups(nil); got != nil {

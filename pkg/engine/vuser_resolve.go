@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -211,7 +212,11 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		defaultHeaders, _ = vu.interpolateMapWithSecrets(vu.Script.Config.HTTP.DefaultHeaders)
 		defaultHeaderList, _ = vu.interpolateHeaderListWithSecrets(vu.Script.Config.HTTP.DefaultHeaderList)
 	}
-	body, redactedBody := vu.interpolateActionBody(action.Body, action.BodyEncoding)
+	body, redactedBody := vu.interpolateActionBody(
+		action.Body,
+		action.BodyEncoding,
+		actionBodyTemplateValueEncoding(action.Metadata),
+	)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
@@ -260,15 +265,27 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	}
 }
 
-func (vu *VUser) interpolateActionBody(body, encoding string) (string, string) {
+func actionBodyTemplateValueEncoding(metadata map[string]any) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	value, _ := metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey].(string)
+	return strings.TrimSpace(value)
+}
+
+func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding string) (string, string) {
+	interpolate := vu.interpolateWithSecrets
+	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
+		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
+	}
 	decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0)
 	if !encoded || err != nil {
 		// Preserve the established full-body-template behavior. A value such as
 		// {{secret.BASE64_PAYLOAD}} is itself resolved into encoded data and is
 		// therefore intentionally not decodable until after interpolation.
-		return vu.interpolateWithSecrets(body)
+		return interpolate(body)
 	}
-	resolved, redacted := vu.interpolateWithSecrets(string(decoded))
+	resolved, redacted := interpolate(string(decoded))
 	return base64.StdEncoding.EncodeToString([]byte(resolved)),
 		base64.StdEncoding.EncodeToString([]byte(redacted))
 }
@@ -514,6 +531,18 @@ func (vu *VUser) interpolate(s string) string {
 }
 
 func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
+	return vu.interpolateWithSecretsTransform(s, nil)
+}
+
+// interpolateURLFormTemplateValuesWithSecrets preserves the already encoded
+// literal spans of an application/x-www-form-urlencoded body and escapes each
+// template's resolved value as one form component. Unresolved templates remain
+// intact so the existing secret/file/parameter execution gates can reject them.
+func (vu *VUser) interpolateURLFormTemplateValuesWithSecrets(s string) (string, string) {
+	return vu.interpolateWithSecretsTransform(s, url.QueryEscape)
+}
+
+func (vu *VUser) interpolateWithSecretsTransform(s string, transform func(string) string) (string, string) {
 	if s == "" {
 		return s, s
 	}
@@ -563,6 +592,10 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 		}
 		if resolvedOK {
 			vu.recordRuntimeCredentialActionTemplate(expr, resolvedValue)
+			if transform != nil {
+				resolvedValue = transform(resolvedValue)
+				redactedValue = transform(redactedValue)
+			}
 		}
 		resolved.WriteString(resolvedValue)
 		redacted.WriteString(redactedValue)

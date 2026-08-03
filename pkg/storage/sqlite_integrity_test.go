@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -128,6 +129,14 @@ func TestDeleteProjectRemovesOwnedGraphAndGrants(t *testing.T) {
 	if err := store.SaveProject(project); err != nil {
 		t.Fatal(err)
 	}
+	externalArchiveJSON, err := json.Marshal(&RunArchiveRecord{
+		TestID: "source-run-delete", ArchiveBackend: "s3",
+		ArchiveURI: "s3://archive/project-delete/import-delete", ManifestURI: "s3://archive/project-delete/import-delete/manifest.json",
+		CreatedAt: now, CompletedAt: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	statements := []struct {
 		query string
 		args  []any
@@ -151,7 +160,10 @@ func TestDeleteProjectRemovesOwnedGraphAndGrants(t *testing.T) {
 		{`INSERT INTO correlation_rulesets (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, []any{"rules-delete", project.ID, "Rules", now, now}},
 		{`INSERT INTO monitoring_collectors (id, project_id, name, token_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, []any{"collector-delete", project.ID, "Collector", "hash", now, now}},
 		{`INSERT INTO reusable_blocks (id, project_id, name, component_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, []any{"block-delete", project.ID, "Block", `{}`, now, now}},
-		{`INSERT INTO external_result_imports (id, provider, name, project_id, created_at) VALUES (?, ?, ?, ?, ?)`, []any{"import-delete", "test", "Import", project.ID, now}},
+		{`INSERT INTO external_result_imports (id, provider, name, project_id, archive_record_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`, []any{"import-delete", "test", "Import", project.ID, string(externalArchiveJSON), now}},
+		{`INSERT INTO direct_import_receipts (id, project_id, source_profile, operation_key_hash, request_sha256, state, owner_token, script_ids_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, []any{"receipt-delete", project.ID, "jmeter", "operation", "request", "complete", "", "[]", now, now}},
+		{`INSERT INTO powerbi_publishes (id, test_id, project_id, workspace_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, []any{"powerbi-delete", "test-delete", project.ID, "workspace", "complete", now, now}},
+		{`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)`, []any{"report:annotations:test-delete:engineer", `{}`, now}},
 		{`INSERT INTO usage_accounting_snapshots (id, project_id, generated_at, payload_json, created_at) VALUES (?, ?, ?, ?, ?)`, []any{"usage-delete", project.ID, now, `{}`, now}},
 		{`INSERT INTO users (id, subject, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, []any{"user-delete", "subject-delete", 1, now, now}},
 		{`INSERT INTO user_role_bindings (id, user_id, scope_type, scope_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, []any{"role-delete", "user-delete", "project", project.ID, "viewer", now, now}},
@@ -187,6 +199,10 @@ func TestDeleteProjectRemovesOwnedGraphAndGrants(t *testing.T) {
 		{`SELECT COUNT(*) FROM authoring_sessions WHERE project_id = ?`, project.ID},
 		{`SELECT COUNT(*) FROM execution_plans WHERE project_id = ?`, project.ID},
 		{`SELECT COUNT(*) FROM monitoring_collectors WHERE project_id = ?`, project.ID},
+		{`SELECT COUNT(*) FROM external_result_imports WHERE project_id = ?`, project.ID},
+		{`SELECT COUNT(*) FROM direct_import_receipts WHERE project_id = ?`, project.ID},
+		{`SELECT COUNT(*) FROM powerbi_publishes WHERE project_id = ?`, project.ID},
+		{`SELECT COUNT(*) FROM app_settings WHERE key = ?`, "report:annotations:test-delete:engineer"},
 		{`SELECT COUNT(*) FROM user_role_bindings WHERE scope_type = 'project' AND scope_id = ?`, project.ID},
 	}
 	for _, check := range checks {
@@ -207,5 +223,12 @@ func TestDeleteProjectRemovesOwnedGraphAndGrants(t *testing.T) {
 	}
 	if len(account.ProjectRoles[DefaultProjectID]) != 1 {
 		t.Fatalf("unrelated service account grant was removed: %#v", account.ProjectRoles)
+	}
+	versionJobs, err := store.ListArchiveVersionCleanupJobs(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versionJobs) != 1 || versionJobs[0].ArchiveRecord.ArchiveURI != "s3://archive/project-delete/import-delete" {
+		t.Fatalf("external archive cleanup jobs = %#v", versionJobs)
 	}
 }

@@ -176,6 +176,32 @@ func listProjectRunArchivesTx(tx *storeTx, projectID string) ([]*RunArchiveRecor
 	return records, rows.Err()
 }
 
+func listProjectExternalResultArchivesTx(tx *storeTx, projectID string) ([]*RunArchiveRecord, error) {
+	rows, err := tx.Query(`SELECT id, COALESCE(archive_record_json, '')
+		FROM external_result_imports WHERE project_id = ?
+			AND COALESCE(TRIM(archive_record_json), '') NOT IN ('', 'null')`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := make([]*RunArchiveRecord, 0)
+	for rows.Next() {
+		var importID, encoded string
+		if err := rows.Scan(&importID, &encoded); err != nil {
+			return nil, err
+		}
+		var record RunArchiveRecord
+		if err := json.Unmarshal([]byte(encoded), &record); err != nil {
+			return nil, fmt.Errorf("decode external result archive %s: %w", importID, err)
+		}
+		if strings.TrimSpace(record.TestID) == "" {
+			record.TestID = "external-result:" + strings.TrimSpace(importID)
+		}
+		records = append(records, &record)
+	}
+	return records, rows.Err()
+}
+
 func (s *SQLiteStore) GetArchiveCleanupJob(testID string) (*ArchiveCleanupJob, error) {
 	var job ArchiveCleanupJob
 	var encoded string

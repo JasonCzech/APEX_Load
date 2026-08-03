@@ -692,10 +692,10 @@ func (s *SQLiteStore) DeleteApplication(id string) error {
 	var dependentCount int
 	if err := tx.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM tests WHERE application_id = ? OR release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
-		(SELECT COUNT(*) FROM external_result_imports WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
+		(SELECT COUNT(*) FROM external_result_imports WHERE application_id = ? OR release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
 		(SELECT COUNT(*) FROM scenario_schedules WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?)) +
 		(SELECT COUNT(*) FROM release_sla_waivers WHERE release_id IN (SELECT id FROM releases WHERE application_id = ?))`,
-		id, id, id, id, id).Scan(&dependentCount); err != nil {
+		id, id, id, id, id, id).Scan(&dependentCount); err != nil {
 		return err
 	}
 	if dependentCount > 0 {
@@ -1251,6 +1251,9 @@ func (s *SQLiteStore) DeleteProjectIfLeaseHeld(id, leaseName, leaseOwnerID strin
 }
 
 func deleteProjectGraphTx(tx *storeTx, id string) error {
+	if err := rejectActiveGitHubProjectSyncClaimsTx(tx, id); err != nil {
+		return err
+	}
 	archiveRecords, err := listProjectRunArchivesTx(tx, id)
 	if err != nil {
 		return err
@@ -1274,6 +1277,18 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 			continue
 		}
 		if err := enqueueArchiveCleanupTx(tx, id, &job.ArchiveRecord); err != nil {
+			return err
+		}
+	}
+	externalArchives, err := listProjectExternalResultArchivesTx(tx, id)
+	if err != nil {
+		return err
+	}
+	for _, record := range externalArchives {
+		// Imported results are publications, not test-owned singleton archives:
+		// several imports can legitimately contain the same source TestID. Key
+		// cleanup by immutable publication identity instead of source TestID.
+		if err := enqueueArchiveVersionCleanupTx(tx, id, record); err != nil {
 			return err
 		}
 	}
@@ -1324,6 +1339,11 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		// Children that can reference tests must be removed before tests.
 		{`UPDATE capacity_reservations SET bound_test_id = NULL, bound_test_status = NULL, updated_at = ? WHERE bound_test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{time.Now().UTC(), id}},
 		{`DELETE FROM github_check_intents WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM powerbi_publishes WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM app_settings WHERE EXISTS (
+			SELECT 1 FROM tests t WHERE t.project_id = ?
+			AND SUBSTR(app_settings.key, 1, LENGTH('report:annotations:' || t.id || ':')) = 'report:annotations:' || t.id || ':'
+		)`, []any{id}},
 		{`DELETE FROM github_check_links WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?) OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM test_history WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM test_notes WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
@@ -1366,6 +1386,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM provisioning_requests WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM github_sync_jobs WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM external_result_imports WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM direct_import_receipts WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM usage_accounting_snapshots WHERE project_id = ?`, []any{id}},
 		// Audit history is intentionally retained after project deletion. It is an
 		// immutable governance trail, not project-owned mutable content.
@@ -1376,6 +1397,9 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM applications WHERE project_id = ?`, []any{id}},
 
 		// Script-derived sensitive records and project repository contents.
+		{`DELETE FROM github_script_sync_target_claims WHERE project_id = ? OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM github_script_sync_claims WHERE project_id = ? OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM github_script_sync_target_owners WHERE project_id = ? OR script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM github_script_links WHERE script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM script_recordings WHERE script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM bruno_source_revisions WHERE project_id = ?`, []any{id}},

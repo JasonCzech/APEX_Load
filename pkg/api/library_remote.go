@@ -20,8 +20,16 @@ import (
 
 func (s *Server) remoteLibraryCapabilities(ctx context.Context, remote LibraryRemote) (*LibraryCapabilitiesResponse, error) {
 	var caps LibraryCapabilitiesResponse
-	if err := s.remoteJSON(ctx, remote, http.MethodGet, "/api/v1/library/capabilities", nil, &caps); err != nil {
+	if _, err := s.remoteJSONAcceptedLimit(ctx, remote, http.MethodGet, "/api/v1/library/capabilities", nil, &caps, nil, libraryRemoteCapabilitiesMaxBytes); err != nil {
 		return nil, err
+	}
+	if len(caps.ItemKinds) > 64 || len(caps.Operations) > 64 {
+		return nil, fmt.Errorf("remote library capabilities contain too many entries")
+	}
+	for _, value := range append(append([]string(nil), caps.ItemKinds...), caps.Operations...) {
+		if len(value) > 128 {
+			return nil, fmt.Errorf("remote library capability entry exceeds 128 bytes")
+		}
 	}
 	return &caps, nil
 }
@@ -180,12 +188,16 @@ func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryR
 }
 
 func decodeLibraryRemoteJSON(reader io.Reader, out any) error {
-	payload, err := io.ReadAll(io.LimitReader(reader, libraryRemoteJSONMaxBytes+1))
+	return decodeLibraryRemoteJSONLimit(reader, out, libraryRemoteJSONMaxBytes)
+}
+
+func decodeLibraryRemoteJSONLimit(reader io.Reader, out any, maxBytes int64) error {
+	payload, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
 	if err != nil {
 		return err
 	}
-	if int64(len(payload)) > libraryRemoteJSONMaxBytes {
-		return fmt.Errorf("remote library JSON response exceeds %d bytes", libraryRemoteJSONMaxBytes)
+	if int64(len(payload)) > maxBytes {
+		return fmt.Errorf("remote library JSON response exceeds %d bytes", maxBytes)
 	}
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return nil
@@ -242,6 +254,10 @@ func (s *Server) remoteJSON(ctx context.Context, remote LibraryRemote, method st
 }
 
 func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, method string, path string, body any, out any, accepted map[int]bool) (int, error) {
+	return s.remoteJSONAcceptedLimit(ctx, remote, method, path, body, out, accepted, libraryRemoteJSONMaxBytes)
+}
+
+func (s *Server) remoteJSONAcceptedLimit(ctx context.Context, remote LibraryRemote, method string, path string, body any, out any, accepted map[int]bool, maxResponseBytes int64) (int, error) {
 	base, err := url.Parse(remote.BaseURL)
 	if err != nil {
 		return 0, err
@@ -285,7 +301,7 @@ func (s *Server) remoteJSONAccepted(ctx context.Context, remote LibraryRemote, m
 	if out == nil {
 		return resp.StatusCode, nil
 	}
-	if err := decodeLibraryRemoteJSON(resp.Body, out); err != nil {
+	if err := decodeLibraryRemoteJSONLimit(resp.Body, out, maxResponseBytes); err != nil {
 		return resp.StatusCode, err
 	}
 	return resp.StatusCode, nil

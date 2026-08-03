@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -73,7 +74,7 @@ func TestReportAnnotationsEndpointsRoundTrip(t *testing.T) {
 		Title:              "Edited Title",
 		PreparedBy:         "Jane Analyst",
 		ExecutiveNarrative: "Edited narrative.",
-		SectionComments:    map[string]string{"overview": "edited overview note"},
+		SectionComments:    map[string]string{"decision": "edited decision note"},
 		VerdictOverride:    "Conditional Pass",
 		VerdictExplanation: "Transient breach recovered without intervention.",
 		Findings:           []ReportFinding{{Title: "Curated finding", Severity: "minor", Observed: "analyst observation"}},
@@ -99,8 +100,8 @@ func TestReportAnnotationsEndpointsRoundTrip(t *testing.T) {
 	if saved.Annotations.ExecutiveNarrative != "Edited narrative." {
 		t.Fatalf("narrative = %q, want edited", saved.Annotations.ExecutiveNarrative)
 	}
-	if saved.Annotations.SectionComments["overview"] != "edited overview note" {
-		t.Fatalf("overview comment = %q, want edited", saved.Annotations.SectionComments["overview"])
+	if saved.Annotations.SectionComments["decision"] != "edited decision note" {
+		t.Fatalf("decision comment = %q, want edited", saved.Annotations.SectionComments["decision"])
 	}
 	if saved.Annotations.UpdatedBy == "" {
 		t.Fatal("expected UpdatedBy to be recorded")
@@ -186,6 +187,82 @@ func TestReportAnnotationsPutUnknownTest(t *testing.T) {
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.Code)
+	}
+}
+
+func TestReportAnnotationsRejectsUnknownSectionsAndOversizedFindings(t *testing.T) {
+	server, testID := newReportAnnotationsTestServer(t)
+	path := "/api/v1/tests/" + testID + "/report/annotations?profile=executive"
+	tests := []struct {
+		name string
+		req  reportAnnotationsRequest
+	}{
+		{name: "unknown section", req: reportAnnotationsRequest{SectionComments: map[string]string{"overview": "wrong profile"}}},
+		{name: "too many findings", req: reportAnnotationsRequest{SectionComments: map[string]string{}, Findings: make([]ReportFinding, reportAnnotationsMaxFindings+1)}},
+		{name: "oversized narrative", req: reportAnnotationsRequest{SectionComments: map[string]string{}, ExecutiveNarrative: strings.Repeat("x", reportAnnotationsMaxNarrative+1)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(tt.req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPut, path, bytes.NewReader(body)))
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 (body=%s)", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestReportAnnotationsRejectsNormalizedDocumentOverStoredSizeLimit(t *testing.T) {
+	server, testID := newReportAnnotationsTestServer(t)
+	findings := make([]ReportFinding, 50)
+	for i := range findings {
+		findings[i] = ReportFinding{
+			Title:     "Finding",
+			Observed:  strings.Repeat("o", 1400),
+			Evidence:  strings.Repeat("e", 1400),
+			RootCause: strings.Repeat("r", 1400),
+			Impact:    strings.Repeat("i", 1400),
+		}
+	}
+	body, err := json.Marshal(reportAnnotationsRequest{
+		Title:           "Large but individually valid",
+		SectionComments: map[string]string{},
+		Findings:        findings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) <= reportAnnotationsMaxStoredBytes || len(body) >= reportAnnotationsMaxRequestBytes {
+		t.Fatalf("test payload size = %d, want between stored limit %d and request limit %d", len(body), reportAnnotationsMaxStoredBytes, reportAnnotationsMaxRequestBytes)
+	}
+
+	path := "/api/v1/tests/" + testID + "/report/annotations?profile=executive"
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPut, path, bytes.NewReader(body)))
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (body=%s)", resp.Code, resp.Body.String())
+	}
+}
+
+func TestReportAnnotationsRejectsRequestBodyOverEnvelope(t *testing.T) {
+	server, testID := newReportAnnotationsTestServer(t)
+	body := []byte(`{"executive_narrative":"` + strings.Repeat("x", reportAnnotationsMaxRequestBytes) + `"}`)
+	if len(body) <= reportAnnotationsMaxRequestBytes {
+		t.Fatalf("test body size = %d, want over %d", len(body), reportAnnotationsMaxRequestBytes)
+	}
+
+	path := "/api/v1/tests/" + testID + "/report/annotations?profile=executive"
+	req := httptest.NewRequest(http.MethodPut, path, bytes.NewReader(body))
+	// Exercise MaxBytesReader rather than relying on a Content-Length shortcut.
+	req.ContentLength = -1
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (body=%s)", resp.Code, resp.Body.String())
 	}
 }
 

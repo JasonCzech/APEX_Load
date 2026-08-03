@@ -760,6 +760,46 @@ func TestEvacuateGeneratorEndpointDryRunListsImpactedShards(t *testing.T) {
 	}
 }
 
+func TestEvacuateGeneratorPreflightRefusalDoesNotDrain(t *testing.T) {
+	server, _ := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+	test := &ManagedTest{
+		ID:         "run-browser-evac",
+		Name:       "Browser Evacuation Refusal",
+		Status:     "RUNNING",
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:     []TestGroup{{Name: "browser", Protocol: "browser", VUsers: 1}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"browser": {{Group: "browser", Target: "gen-a:9090", VUsers: 1}},
+		},
+		remoteClientsByTarget: map[string]generatorClient{
+			"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
+			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+		},
+		remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING"},
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[test.ID] = test
+	server.runner.mu.Unlock()
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/evacuate", map[string]any{"reason": "maintenance"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("evacuate status = %d body=%s, want conflict", rec.Code, rec.Body.String())
+	}
+	var payload GeneratorEvacuationResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Applied {
+		t.Fatalf("response = %+v, want unapplied preflight refusal", payload)
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "active" {
+		t.Fatalf("preflight refusal drain state = %q, want active", got)
+	}
+}
+
 func TestProvisioningRequestNotConfigured(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",

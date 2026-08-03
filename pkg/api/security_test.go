@@ -547,6 +547,29 @@ func TestCORSMiddlewareRejectsDisallowedMutationOrigins(t *testing.T) {
 	}
 }
 
+func TestCORSMiddlewareHonorsForwardedProtoOnlyFromTrustedProxy(t *testing.T) {
+	settings := AuthSettings{TrustedProxyCIDRs: []string{"10.0.0.0/8"}}
+	handler := corsMiddleware(nil, func() AuthSettings { return settings })(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	request := func(remoteAddr string) int {
+		req := httptest.NewRequest(http.MethodPost, "http://api.example.test/api/v1/tests/test-a/start", nil)
+		req.Host = "api.example.test"
+		req.RemoteAddr = remoteAddr
+		req.Header.Set("Origin", "https://api.example.test")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+		return resp.Code
+	}
+	if got := request("10.2.3.4:443"); got != http.StatusNoContent {
+		t.Fatalf("trusted proxy status = %d, want 204", got)
+	}
+	if got := request("203.0.113.9:443"); got != http.StatusForbidden {
+		t.Fatalf("untrusted peer status = %d, want 403", got)
+	}
+}
+
 func TestBoundAddrReady(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: "127.0.0.1:0"})
 	if server.BoundAddrReady() {

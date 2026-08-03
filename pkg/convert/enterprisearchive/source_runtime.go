@@ -38,6 +38,12 @@ func applySourceTimeout(result *ConvertResult, fn ParsedFunction) map[string]any
 }
 
 func applySourceWebSetUser(result *ConvertResult, fn ParsedFunction) map[string]any {
+	details := applySourceWebSetUserConfig(result, fn)
+	preserveSourceRuntimeControl(result.Script, "source_authentication", fn, details)
+	return details
+}
+
+func applySourceWebSetUserConfig(result *ConvertResult, fn ParsedFunction) map[string]any {
 	args := sourceControlArgs(fn)
 	username := ""
 	password := ""
@@ -66,7 +72,6 @@ func applySourceWebSetUser(result *ConvertResult, fn ParsedFunction) map[string]
 	if host != "" {
 		setSourceWebRuntimeAttribute(result.Script, "web_set_user.host", host)
 	}
-	preserveSourceRuntimeControl(result.Script, "source_authentication", fn, details)
 	return details
 }
 
@@ -282,6 +287,8 @@ func reapplySourceRuntimeControlConfig(result *ConvertResult, fn ParsedFunction)
 		applySourceSocketOptionConfig(result, fn)
 	case "web_set_timeout":
 		applySourceTimeoutConfig(result, fn)
+	case "web_set_user":
+		applySourceWebSetUserConfig(result, fn)
 	case "web_set_option", "web_set_max_retries", "web_disable_keep_alive", "web_enable_keep_alive",
 		"web_set_certificate_ex", "web_set_proxy", "web_set_secure_proxy", "web_set_proxy_bypass", "web_set_proxy_bypass_local":
 		applySourceWebRuntimeControlConfig(result, fn)

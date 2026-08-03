@@ -1709,6 +1709,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -3242,6 +3248,8 @@ paths:
                           p95_ms:
                             type: number
                             format: double
+                          percentile_quality:
+                            type: string
                           target_tps:
                             type: number
                             format: double
@@ -3837,6 +3845,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
@@ -4352,6 +4366,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write'
@@ -4616,6 +4636,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -4720,6 +4746,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -4879,6 +4911,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -5193,6 +5231,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -6997,6 +7041,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -7156,6 +7206,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -7884,6 +7940,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -8041,6 +8103,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -8110,6 +8178,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -8339,6 +8413,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -8577,6 +8657,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -8738,6 +8824,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -9129,6 +9221,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -9253,6 +9351,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -9326,6 +9430,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -9379,6 +9489,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -9698,6 +9814,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -9899,6 +10018,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -10061,6 +10183,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -10233,6 +10358,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -10401,6 +10529,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -10638,6 +10769,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -10788,6 +10925,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -10865,6 +11008,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -10957,6 +11106,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -11166,6 +11321,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -11600,6 +11761,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -11886,6 +12053,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -11988,6 +12161,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -12113,6 +12292,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -12614,6 +12799,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -12946,6 +13137,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -13181,6 +13378,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -13343,6 +13546,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -13606,6 +13815,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -13818,6 +14033,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -13979,6 +14200,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -14103,6 +14330,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -14215,6 +14448,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -14640,6 +14879,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -14804,6 +15049,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -15211,6 +15462,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
@@ -15341,6 +15598,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: The schedule changed after the supplied revision was read, or an active occurrence prevents the update.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -15491,6 +15754,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -15665,6 +15934,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -15931,6 +16206,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -16492,6 +16773,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -16664,6 +16951,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -16797,6 +17090,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -17118,6 +17417,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "501":
           description: Not Implemented
           content:
@@ -17417,6 +17722,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -18100,6 +18411,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
           content:
             application/json:
               schema:
@@ -18964,6 +19281,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: determined from the request'
@@ -19097,6 +19420,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -19402,6 +19731,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -19610,6 +19945,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -19950,6 +20291,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "502":
           description: Bad Gateway
           content:
@@ -20078,6 +20425,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "502":
           description: Bad Gateway
           content:
@@ -20153,6 +20506,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -20319,6 +20678,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -20496,6 +20861,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -20932,6 +21303,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -21378,6 +21755,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "429":
           description: Too Many Requests
           content:
@@ -21451,6 +21834,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -21531,6 +21920,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -21644,6 +22039,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -21822,6 +22223,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -22225,6 +22632,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -22461,6 +22874,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -22571,6 +22990,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -22761,6 +23186,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -23050,6 +23481,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -23163,6 +23600,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -23217,6 +23660,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -23282,6 +23731,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -23391,6 +23846,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -24182,6 +24643,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -24370,6 +24837,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -24550,6 +25023,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -24839,6 +25318,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -27457,6 +27942,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -28236,6 +28723,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -29944,6 +30437,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -32435,6 +32930,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -33214,6 +33711,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -34932,6 +35435,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -35711,6 +36216,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -37429,6 +37940,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -38208,6 +38721,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -39926,6 +40445,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -40705,6 +41226,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -42423,6 +42950,8 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                percentile_quality:
+                                  type: string
                                 target_tps:
                                   type: number
                                   format: double
@@ -43206,6 +43735,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "502":
           description: Bad Gateway
           content:
@@ -43285,6 +43820,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -43528,299 +44066,7 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
-                      error:
-                        type: string
-                      events:
-                        type: array
-                        items:
-                          type: object
-                          description: 'Go type: engine.ReplayActionEvent'
-                          additionalProperties: true
-                      group:
-                        type: string
-                      id:
-                        type: string
-                      log_level:
-                        type: string
-                      logs:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            action_index:
-                              type: integer
-                              format: int64
-                            action_name:
-                              type: string
-                            category:
-                              type: string
-                            id:
-                              type: string
-                            level:
-                              type: string
-                            message:
-                              type: string
-                            phase:
-                              type: string
-                            raw:
-                              type: string
-                            timestamp:
-                              type: string
-                              format: date-time
-                          required:
-                            - category
-                            - id
-                            - level
-                            - message
-                            - timestamp
-                      mode:
-                        type: string
-                      preflight:
-                        type: object
-                        properties:
-                          action_count:
-                            type: integer
-                            format: int64
-                          browser_required:
-                            type: boolean
-                          checks:
-                            type: array
-                            items:
-                              type: object
-                              properties:
-                                detail:
-                                  type: string
-                                id:
-                                  type: string
-                                label:
-                                  type: string
-                                status:
-                                  type: string
-                              required:
-                                - id
-                                - label
-                                - status
-                          data_source_count:
-                            type: integer
-                            format: int64
-                          expected_action_count:
-                            type: integer
-                            format: int64
-                          issues:
-                            type: array
-                            items:
-                              type: string
-                          missing_secrets:
-                            type: array
-                            items:
-                              type: string
-                          missing_variables:
-                            type: array
-                            items:
-                              type: string
-                          parameter_count:
-                            type: integer
-                            format: int64
-                          required_secrets:
-                            type: array
-                            items:
-                              type: string
-                          runtime_prerequisites:
-                            type: array
-                            items:
-                              type: string
-                          valid:
-                            type: boolean
-                          warnings:
-                            type: array
-                            items:
-                              type: string
-                        required:
-                          - action_count
-                          - browser_required
-                          - data_source_count
-                          - expected_action_count
-                          - parameter_count
-                          - valid
-                      project_id:
-                        type: string
-                      protocol:
-                        type: string
-                      raw_output:
-                        type: array
-                        items:
-                          type: string
-                      report:
-                        type: object
-                        description: 'Go type: engine.ReplayReport'
-                        additionalProperties: true
-                      runtime_profile:
-                        type: object
-                        description: 'Go type: engine.ReplayRuntimeProfile'
-                        additionalProperties: true
-                      script_id:
-                        type: string
-                      started_at:
-                        type: string
-                        format: date-time
-                      status:
-                        type: string
-                    required:
-                      - break_on_failure
-                      - current_event_index
-                      - group
-                      - id
-                      - log_level
-                      - protocol
-                      - status
-                required:
-                  - session
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: Requires Authentication
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
-      tags:
-        - Replay
-      x-handler: handleUpdateScriptDebugBreakpoints
-  /api/v1/replay/sessions/{session_id}/export:
-    get:
-      summary: Export Script Debug Session
-      description: '**Access Control:** Requires Authentication'
-      operationId: handleExportScriptDebugSession
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                description: Operation-specific JSON response.
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: Requires Authentication
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: format
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Replay
-      x-handler: handleExportScriptDebugSession
-  /api/v1/replay/sessions/{session_id}/options:
-    patch:
-      summary: Update Script Debug Options
-      description: '**Access Control:** Requires Authentication'
-      operationId: handleUpdateScriptDebugOptions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ScriptDebugOptionsRequest'
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session:
-                    type: object
-                    properties:
-                      break_on_failure:
-                        type: boolean
-                      breakpoints:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            action_index:
-                              type: integer
-                              format: int64
-                            phase:
-                              type: string
-                            request_index:
-                              type: integer
-                              format: int64
-                            step_path:
-                              type: array
-                              items:
-                                type: string
-                          required:
-                            - action_index
-                            - phase
-                      completed_at:
-                        type: string
-                        format: date-time
-                      condition_evidence:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          description: 'Go type: engine.ConditionEvidence'
-                          additionalProperties: true
-                      current_action:
-                        type: object
-                        description: 'Go type: engine.ReplayDebugAction'
-                        additionalProperties: true
-                      current_event:
-                        type: object
-                        description: 'Go type: engine.ReplayActionEvent'
-                        additionalProperties: true
-                      current_event_index:
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -43994,6 +44240,316 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Requires Authentication
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Replay
+      x-handler: handleUpdateScriptDebugBreakpoints
+  /api/v1/replay/sessions/{session_id}/export:
+    get:
+      summary: Export Script Debug Session
+      description: '**Access Control:** Requires Authentication'
+      operationId: handleExportScriptDebugSession
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Requires Authentication
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Replay
+      x-handler: handleExportScriptDebugSession
+  /api/v1/replay/sessions/{session_id}/options:
+    patch:
+      summary: Update Script Debug Options
+      description: '**Access Control:** Requires Authentication'
+      operationId: handleUpdateScriptDebugOptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugOptionsRequest'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    type: object
+                    properties:
+                      break_on_failure:
+                        type: boolean
+                      breakpoints:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action_index:
+                              type: integer
+                              format: int64
+                            phase:
+                              type: string
+                            request_index:
+                              type: integer
+                              format: int64
+                            step_path:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - action_index
+                            - phase
+                      completed_at:
+                        type: string
+                        format: date-time
+                      condition_evidence:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          description: 'Go type: engine.ConditionEvidence'
+                          additionalProperties: true
+                      current_action:
+                        type: object
+                        description: 'Go type: engine.ReplayDebugAction'
+                        additionalProperties: true
+                      current_event:
+                        type: object
+                        description: 'Go type: engine.ReplayActionEvent'
+                        additionalProperties: true
+                      current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
+                      error:
+                        type: string
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: engine.ReplayActionEvent'
+                          additionalProperties: true
+                      group:
+                        type: string
+                      id:
+                        type: string
+                      log_level:
+                        type: string
+                      logs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action_index:
+                              type: integer
+                              format: int64
+                            action_name:
+                              type: string
+                            category:
+                              type: string
+                            id:
+                              type: string
+                            level:
+                              type: string
+                            message:
+                              type: string
+                            phase:
+                              type: string
+                            raw:
+                              type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                          required:
+                            - category
+                            - id
+                            - level
+                            - message
+                            - timestamp
+                      mode:
+                        type: string
+                      preflight:
+                        type: object
+                        properties:
+                          action_count:
+                            type: integer
+                            format: int64
+                          browser_required:
+                            type: boolean
+                          checks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                detail:
+                                  type: string
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - id
+                                - label
+                                - status
+                          data_source_count:
+                            type: integer
+                            format: int64
+                          expected_action_count:
+                            type: integer
+                            format: int64
+                          issues:
+                            type: array
+                            items:
+                              type: string
+                          missing_secrets:
+                            type: array
+                            items:
+                              type: string
+                          missing_variables:
+                            type: array
+                            items:
+                              type: string
+                          parameter_count:
+                            type: integer
+                            format: int64
+                          required_secrets:
+                            type: array
+                            items:
+                              type: string
+                          runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          valid:
+                            type: boolean
+                          warnings:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - action_count
+                          - browser_required
+                          - data_source_count
+                          - expected_action_count
+                          - parameter_count
+                          - valid
+                      project_id:
+                        type: string
+                      protocol:
+                        type: string
+                      raw_output:
+                        type: array
+                        items:
+                          type: string
+                      report:
+                        type: object
+                        description: 'Go type: engine.ReplayReport'
+                        additionalProperties: true
+                      runtime_profile:
+                        type: object
+                        description: 'Go type: engine.ReplayRuntimeProfile'
+                        additionalProperties: true
+                      script_id:
+                        type: string
+                      started_at:
+                        type: string
+                        format: date-time
+                      status:
+                        type: string
+                    required:
+                      - break_on_failure
+                      - current_event_index
+                      - group
+                      - id
+                      - log_level
+                      - protocol
+                      - status
+                required:
+                  - session
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -44062,6 +44618,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -44303,6 +44862,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -44551,6 +45113,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -44796,6 +45361,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -45110,6 +45678,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -46629,6 +47203,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -47937,6 +48517,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -48043,6 +48629,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -48669,6 +49261,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -48806,6 +49404,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -48984,6 +49588,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: The schedule changed after the supplied revision was read, or an active occurrence prevents the update.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -49406,6 +50016,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: tests:run'
@@ -49528,6 +50144,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -50439,6 +51061,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -51207,6 +51835,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
@@ -51390,6 +52024,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -51634,301 +52271,7 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
-                      error:
-                        type: string
-                      events:
-                        type: array
-                        items:
-                          type: object
-                          description: 'Go type: engine.ReplayActionEvent'
-                          additionalProperties: true
-                      group:
-                        type: string
-                      id:
-                        type: string
-                      log_level:
-                        type: string
-                      logs:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            action_index:
-                              type: integer
-                              format: int64
-                            action_name:
-                              type: string
-                            category:
-                              type: string
-                            id:
-                              type: string
-                            level:
-                              type: string
-                            message:
-                              type: string
-                            phase:
-                              type: string
-                            raw:
-                              type: string
-                            timestamp:
-                              type: string
-                              format: date-time
-                          required:
-                            - category
-                            - id
-                            - level
-                            - message
-                            - timestamp
-                      mode:
-                        type: string
-                      preflight:
-                        type: object
-                        properties:
-                          action_count:
-                            type: integer
-                            format: int64
-                          browser_required:
-                            type: boolean
-                          checks:
-                            type: array
-                            items:
-                              type: object
-                              properties:
-                                detail:
-                                  type: string
-                                id:
-                                  type: string
-                                label:
-                                  type: string
-                                status:
-                                  type: string
-                              required:
-                                - id
-                                - label
-                                - status
-                          data_source_count:
-                            type: integer
-                            format: int64
-                          expected_action_count:
-                            type: integer
-                            format: int64
-                          issues:
-                            type: array
-                            items:
-                              type: string
-                          missing_secrets:
-                            type: array
-                            items:
-                              type: string
-                          missing_variables:
-                            type: array
-                            items:
-                              type: string
-                          parameter_count:
-                            type: integer
-                            format: int64
-                          required_secrets:
-                            type: array
-                            items:
-                              type: string
-                          runtime_prerequisites:
-                            type: array
-                            items:
-                              type: string
-                          valid:
-                            type: boolean
-                          warnings:
-                            type: array
-                            items:
-                              type: string
-                        required:
-                          - action_count
-                          - browser_required
-                          - data_source_count
-                          - expected_action_count
-                          - parameter_count
-                          - valid
-                      project_id:
-                        type: string
-                      protocol:
-                        type: string
-                      raw_output:
-                        type: array
-                        items:
-                          type: string
-                      report:
-                        type: object
-                        description: 'Go type: engine.ReplayReport'
-                        additionalProperties: true
-                      runtime_profile:
-                        type: object
-                        description: 'Go type: engine.ReplayRuntimeProfile'
-                        additionalProperties: true
-                      script_id:
-                        type: string
-                      started_at:
-                        type: string
-                        format: date-time
-                      status:
-                        type: string
-                    required:
-                      - break_on_failure
-                      - current_event_index
-                      - group
-                      - id
-                      - log_level
-                      - protocol
-                      - status
-                required:
-                  - session
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: Requires Authentication
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
-      tags:
-        - Script Debug
-      x-handler: handleUpdateScriptDebugBreakpoints
-  /api/v1/script-debug/sessions/{session_id}/export:
-    get:
-      summary: Export Script Debug Session
-      description: '**Access Control:** Requires Authentication'
-      operationId: handleExportScriptDebugSession_2
-      deprecated: true
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                description: Operation-specific JSON response.
-        "401":
-          description: Authentication required or invalid.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "403":
-          description: Authenticated principal lacks the required role or service-account scope.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        "404":
-          description: Not Found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        default:
-          description: Additional handler-defined response.
-      x-roles: Requires Authentication
-      parameters:
-        - name: session_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: format
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: string
-      tags:
-        - Script Debug
-      x-handler: handleExportScriptDebugSession
-  /api/v1/script-debug/sessions/{session_id}/options:
-    patch:
-      summary: Update Script Debug Options
-      description: '**Access Control:** Requires Authentication'
-      operationId: handleUpdateScriptDebugOptions_2
-      deprecated: true
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ScriptDebugOptionsRequest'
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session:
-                    type: object
-                    properties:
-                      break_on_failure:
-                        type: boolean
-                      breakpoints:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            action_index:
-                              type: integer
-                              format: int64
-                            phase:
-                              type: string
-                            request_index:
-                              type: integer
-                              format: int64
-                            step_path:
-                              type: array
-                              items:
-                                type: string
-                          required:
-                            - action_index
-                            - phase
-                      completed_at:
-                        type: string
-                        format: date-time
-                      condition_evidence:
-                        type: object
-                        additionalProperties:
-                          type: object
-                          description: 'Go type: engine.ConditionEvidence'
-                          additionalProperties: true
-                      current_action:
-                        type: object
-                        description: 'Go type: engine.ReplayDebugAction'
-                        additionalProperties: true
-                      current_event:
-                        type: object
-                        description: 'Go type: engine.ReplayActionEvent'
-                        additionalProperties: true
-                      current_event_index:
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -52102,6 +52445,318 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Requires Authentication
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Script Debug
+      x-handler: handleUpdateScriptDebugBreakpoints
+  /api/v1/script-debug/sessions/{session_id}/export:
+    get:
+      summary: Export Script Debug Session
+      description: '**Access Control:** Requires Authentication'
+      operationId: handleExportScriptDebugSession_2
+      deprecated: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: Requires Authentication
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Script Debug
+      x-handler: handleExportScriptDebugSession
+  /api/v1/script-debug/sessions/{session_id}/options:
+    patch:
+      summary: Update Script Debug Options
+      description: '**Access Control:** Requires Authentication'
+      operationId: handleUpdateScriptDebugOptions_2
+      deprecated: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScriptDebugOptionsRequest'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    type: object
+                    properties:
+                      break_on_failure:
+                        type: boolean
+                      breakpoints:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action_index:
+                              type: integer
+                              format: int64
+                            phase:
+                              type: string
+                            request_index:
+                              type: integer
+                              format: int64
+                            step_path:
+                              type: array
+                              items:
+                                type: string
+                          required:
+                            - action_index
+                            - phase
+                      completed_at:
+                        type: string
+                        format: date-time
+                      condition_evidence:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          description: 'Go type: engine.ConditionEvidence'
+                          additionalProperties: true
+                      current_action:
+                        type: object
+                        description: 'Go type: engine.ReplayDebugAction'
+                        additionalProperties: true
+                      current_event:
+                        type: object
+                        description: 'Go type: engine.ReplayActionEvent'
+                        additionalProperties: true
+                      current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
+                      error:
+                        type: string
+                      events:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: engine.ReplayActionEvent'
+                          additionalProperties: true
+                      group:
+                        type: string
+                      id:
+                        type: string
+                      log_level:
+                        type: string
+                      logs:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action_index:
+                              type: integer
+                              format: int64
+                            action_name:
+                              type: string
+                            category:
+                              type: string
+                            id:
+                              type: string
+                            level:
+                              type: string
+                            message:
+                              type: string
+                            phase:
+                              type: string
+                            raw:
+                              type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                          required:
+                            - category
+                            - id
+                            - level
+                            - message
+                            - timestamp
+                      mode:
+                        type: string
+                      preflight:
+                        type: object
+                        properties:
+                          action_count:
+                            type: integer
+                            format: int64
+                          browser_required:
+                            type: boolean
+                          checks:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                detail:
+                                  type: string
+                                id:
+                                  type: string
+                                label:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - id
+                                - label
+                                - status
+                          data_source_count:
+                            type: integer
+                            format: int64
+                          expected_action_count:
+                            type: integer
+                            format: int64
+                          issues:
+                            type: array
+                            items:
+                              type: string
+                          missing_secrets:
+                            type: array
+                            items:
+                              type: string
+                          missing_variables:
+                            type: array
+                            items:
+                              type: string
+                          parameter_count:
+                            type: integer
+                            format: int64
+                          required_secrets:
+                            type: array
+                            items:
+                              type: string
+                          runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          valid:
+                            type: boolean
+                          warnings:
+                            type: array
+                            items:
+                              type: string
+                        required:
+                          - action_count
+                          - browser_required
+                          - data_source_count
+                          - expected_action_count
+                          - parameter_count
+                          - valid
+                      project_id:
+                        type: string
+                      protocol:
+                        type: string
+                      raw_output:
+                        type: array
+                        items:
+                          type: string
+                      report:
+                        type: object
+                        description: 'Go type: engine.ReplayReport'
+                        additionalProperties: true
+                      runtime_profile:
+                        type: object
+                        description: 'Go type: engine.ReplayRuntimeProfile'
+                        additionalProperties: true
+                      script_id:
+                        type: string
+                      started_at:
+                        type: string
+                        format: date-time
+                      status:
+                        type: string
+                    required:
+                      - break_on_failure
+                      - current_event_index
+                      - group
+                      - id
+                      - log_level
+                      - protocol
+                      - status
+                required:
+                  - session
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -52171,6 +52826,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -52413,6 +53071,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -52662,6 +53323,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -52908,6 +53572,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -53296,6 +53963,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -53671,6 +54344,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -53823,6 +54502,9 @@ paths:
                         description: 'Go type: engine.ReplayActionEvent'
                         additionalProperties: true
                       current_event_index:
+                        type: integer
+                        format: int64
+                      dropped_event_count:
                         type: integer
                         format: int64
                       error:
@@ -54341,6 +55023,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -54552,6 +55240,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -54732,6 +55423,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -55374,6 +56071,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -55547,6 +56250,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -55756,6 +56465,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -55936,6 +56648,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -56660,6 +57378,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -57403,6 +58127,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -57604,6 +58334,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -57738,6 +58471,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -58158,6 +58897,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: Unprocessable Entity
           content:
@@ -58369,6 +59114,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -58547,6 +59295,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -58603,6 +59357,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -58984,6 +59744,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "429":
           description: Too Many Requests
           content:
@@ -59184,6 +59950,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -60166,6 +60938,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -60564,6 +61342,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -61012,6 +61796,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
@@ -61254,6 +62044,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: Unprocessable Entity
           content:
@@ -61423,6 +62219,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -62054,6 +62856,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
@@ -62093,6 +62901,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -62156,6 +62970,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -62287,6 +63107,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -62490,6 +63316,9 @@ paths:
                       current_event_index:
                         type: integer
                         format: int64
+                      dropped_event_count:
+                        type: integer
+                        format: int64
                       error:
                         type: string
                       events:
@@ -62664,6 +63493,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -62985,6 +63820,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -63671,6 +64512,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -64327,6 +65174,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -68417,6 +69270,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               target_tps:
                                 type: number
                                 format: double
@@ -69432,6 +70287,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             target_tps:
                               type: number
                               format: double
@@ -70668,6 +71525,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -72189,6 +73052,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               target_tps:
                                 type: number
                                 format: double
@@ -73204,6 +74069,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             target_tps:
                               type: number
                               format: double
@@ -79813,6 +80680,8 @@ paths:
                         p95_ms:
                           type: number
                           format: double
+                        percentile_quality:
+                          type: string
                         target_tps:
                           type: number
                           format: double
@@ -81996,6 +82865,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               target_tps:
                                 type: number
                                 format: double
@@ -83011,6 +83882,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             target_tps:
                               type: number
                               format: double
@@ -85718,6 +86591,8 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              percentile_quality:
+                                type: string
                               target_tps:
                                 type: number
                                 format: double
@@ -86733,6 +87608,8 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            percentile_quality:
+                              type: string
                             target_tps:
                               type: number
                               format: double
@@ -88031,6 +88908,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -88252,6 +89135,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -88456,6 +89345,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -89216,6 +90111,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -91067,6 +91968,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -91220,6 +92127,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -91354,6 +92267,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -91885,6 +92804,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -92083,6 +93008,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -92223,6 +93154,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
@@ -92273,6 +93210,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -93268,6 +94211,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
@@ -93985,6 +94934,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:

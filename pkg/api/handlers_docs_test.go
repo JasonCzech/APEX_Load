@@ -28,7 +28,18 @@ func TestAPIDocsHandlersServeEmbeddedGeneratedAssets(t *testing.T) {
 				t.Helper()
 				var spec struct {
 					OpenAPI string `yaml:"openapi"`
-					Paths   map[string]any
+					Paths   map[string]struct {
+						Put struct {
+							RequestBody struct {
+								Content map[string]struct {
+									Schema struct {
+										Type       string         `yaml:"type"`
+										Properties map[string]any `yaml:"properties"`
+									} `yaml:"schema"`
+								} `yaml:"content"`
+							} `yaml:"requestBody"`
+						} `yaml:"put"`
+					} `yaml:"paths"`
 				}
 				if err := yaml.Unmarshal([]byte(body), &spec); err != nil {
 					t.Fatalf("swagger body is not valid yaml: %v", err)
@@ -38,6 +49,20 @@ func TestAPIDocsHandlersServeEmbeddedGeneratedAssets(t *testing.T) {
 				}
 				if len(spec.Paths) == 0 {
 					t.Fatal("swagger body has no paths")
+				}
+				annotationPath, ok := spec.Paths["/api/v1/tests/{id}/report/annotations"]
+				if !ok {
+					t.Fatal("swagger body has no report annotations path")
+				}
+				jsonBody, ok := annotationPath.Put.RequestBody.Content["application/json"]
+				if !ok {
+					t.Fatalf("report annotations request content = %#v, want application/json", annotationPath.Put.RequestBody.Content)
+				}
+				if _, binary := annotationPath.Put.RequestBody.Content["application/octet-stream"]; binary {
+					t.Fatal("report annotations request was incorrectly documented as a binary body")
+				}
+				if jsonBody.Schema.Type != "object" || jsonBody.Schema.Properties["section_comments"] == nil {
+					t.Fatalf("report annotations request schema = %#v, want structured object fields", jsonBody.Schema)
 				}
 			},
 		},

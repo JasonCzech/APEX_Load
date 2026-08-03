@@ -279,3 +279,24 @@ func TestConfiguredCacheBackendReturnsUnavailableRedisWhenURLMissing(t *testing.
 		t.Fatal("expected unavailable redis ping to fail")
 	}
 }
+
+func TestMemoryCacheSweepsExpiredUniqueKeys(t *testing.T) {
+	cache := newMemoryCacheBackend(cacheRuntimeConfig{})
+	expired := time.Now().Add(-time.Minute)
+	cache.mu.Lock()
+	for index := 0; index < 300; index++ {
+		key := fmt.Sprintf("expired-%d", index)
+		cache.entries[key] = memoryCacheEntry{payload: []byte("x"), expiresAt: expired}
+		cache.rateLimits[key] = memoryRateBucket{count: 1, resetAt: expired}
+	}
+	cache.writes = 255
+	cache.mu.Unlock()
+	if _, err := cache.ReserveIdempotencyKey(context.Background(), "fresh", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if len(cache.entries) != 1 || len(cache.rateLimits) != 0 {
+		t.Fatalf("cache sizes after sweep = entries:%d rate:%d", len(cache.entries), len(cache.rateLimits))
+	}
+}

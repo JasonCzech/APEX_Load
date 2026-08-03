@@ -323,6 +323,25 @@ func TestCreateGitHubSyncJobRejectsInvalidKindBeforePersisting(t *testing.T) {
 	}
 }
 
+func TestCreateGitHubSyncJobRejectsInvalidPushStrategyBeforePersisting(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+	body := []byte(`{"project_id":"team-a","kind":"push","strategy":"force","owner":"octocat","repo":"scripts"}`)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/v1/integrations/github/sync-jobs", bytes.NewReader(body)))
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body=%s", resp.Code, resp.Body.String())
+	}
+	jobs, err := server.store.(storage.GitHubEnterpriseStore).ListGitHubSyncJobs("team-a", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("persisted jobs = %d, want 0", len(jobs))
+	}
+}
+
 func TestPublishGitHubCheckRejectsForeignProjectScript(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "github-check-project.db"))
 	if err != nil {

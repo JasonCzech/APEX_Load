@@ -982,10 +982,10 @@ func TestSharedImportCommitSchemasIncludeOptionalProtectedCandidateFields(t *tes
 		"secret_bindings":               "object",
 		"parameterization_selected_ids": "array",
 	}
-	// 429 is emitted when protected import session capacity is exhausted. It is
-	// a transient, retryable condition with a Retry-After hint, distinct from the
-	// 500 it used to be reported as.
-	wantStatuses := []string{"200", "201", "400", "401", "403", "404", "409", "429", "500", "default"}
+	// 413 is emitted when the bounded request decoder rejects an oversized
+	// document. 429 is emitted when protected import session capacity is
+	// exhausted; it is a transient, retryable condition with Retry-After.
+	wantStatuses := []string{"200", "201", "400", "401", "403", "404", "409", "413", "429", "500", "default"}
 
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {

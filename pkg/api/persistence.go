@@ -642,6 +642,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.StoppedByDisplayName = stored.StoppedByDisplayName
 	current.StartAuthorization = cloneQueuedStartAuthorization(stored.StartAuthorization)
 	current.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(stored.ExecutionPlanApproval)
+	current.initialArchiveProvenance = decodeStoredInitialProvenance(stored.initialArchiveProvenance)
 	current.Error = stored.Error
 }
 
@@ -697,47 +698,48 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 
 func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	managedTest := &ManagedTest{
-		ID:                    record.ID,
-		RefKey:                record.RefKey,
-		MaterializationKey:    record.MaterializationKey,
-		Name:                  record.Name,
-		Status:                record.Status,
-		ApplicationID:         record.ApplicationID,
-		ReleaseID:             record.ReleaseID,
-		ScenarioID:            record.ScenarioID,
-		ProjectID:             record.ProjectID,
-		FolderID:              record.FolderID,
-		DataPools:             cloneScenarioDataPoolBindings(record.DataPools),
-		Groups:                decodeStoredGroups(record.Groups),
-		Assignment:            decodeStoredGeneratorAssignment(record.Assignment),
-		ScenarioMode:          normalizeScenarioMode(record.ScenarioMode),
-		ScriptShakeout:        record.ScriptShakeout,
-		ResourceBaseline:      record.ResourceBaseline,
-		StartDelay:            record.StartDelay,
-		GoalConfig:            decodeStoredGoalConfig(record.GoalConfig),
-		RuntimeSettings:       decodeStoredRuntimeSettings(record.RuntimeSettings),
-		TotalVUsers:           record.TotalVUsers,
-		Duration:              time.Duration(record.Duration),
-		DurationStr:           time.Duration(record.Duration).String(),
-		CreatedAt:             record.StartTime,
-		ScheduledStartAt:      cloneTimePtr(record.ScheduledStartAt),
-		TimeslotID:            cloneStringPtr(record.TimeslotID),
-		PendingSince:          record.PendingSince,
-		PausedAt:              cloneTimePtr(record.PausedAt),
-		CumulativePause:       time.Duration(record.CumulativePause),
-		CapacityWindowStartAt: cloneTimePtr(record.CapacityWindowStartAt),
-		CapacityWindowEndAt:   cloneTimePtr(record.CapacityWindowEndAt),
-		BaselinePinned:        record.BaselinePinned,
-		BaselinePinnedAt:      record.BaselinePinnedAt,
-		CreatedBySubject:      record.CreatedBySubject,
-		CreatedByDisplayName:  record.CreatedByDisplayName,
-		StartedBySubject:      record.StartedBySubject,
-		StartedByDisplayName:  record.StartedByDisplayName,
-		StoppedBySubject:      record.StoppedBySubject,
-		StoppedByDisplayName:  record.StoppedByDisplayName,
-		StartAuthorization:    decodeStoredStartAuthorization(record.StartAuthorization),
-		ExecutionPlanApproval: decodeStoredExecutionPlanApproval(record.ExecutionPlanApproval),
-		Error:                 record.Error,
+		ID:                       record.ID,
+		RefKey:                   record.RefKey,
+		MaterializationKey:       record.MaterializationKey,
+		Name:                     record.Name,
+		Status:                   record.Status,
+		ApplicationID:            record.ApplicationID,
+		ReleaseID:                record.ReleaseID,
+		ScenarioID:               record.ScenarioID,
+		ProjectID:                record.ProjectID,
+		FolderID:                 record.FolderID,
+		DataPools:                cloneScenarioDataPoolBindings(record.DataPools),
+		Groups:                   decodeStoredGroups(record.Groups),
+		Assignment:               decodeStoredGeneratorAssignment(record.Assignment),
+		ScenarioMode:             normalizeScenarioMode(record.ScenarioMode),
+		ScriptShakeout:           record.ScriptShakeout,
+		ResourceBaseline:         record.ResourceBaseline,
+		StartDelay:               record.StartDelay,
+		GoalConfig:               decodeStoredGoalConfig(record.GoalConfig),
+		RuntimeSettings:          decodeStoredRuntimeSettings(record.RuntimeSettings),
+		TotalVUsers:              record.TotalVUsers,
+		Duration:                 time.Duration(record.Duration),
+		DurationStr:              time.Duration(record.Duration).String(),
+		CreatedAt:                record.StartTime,
+		ScheduledStartAt:         cloneTimePtr(record.ScheduledStartAt),
+		TimeslotID:               cloneStringPtr(record.TimeslotID),
+		PendingSince:             record.PendingSince,
+		PausedAt:                 cloneTimePtr(record.PausedAt),
+		CumulativePause:          time.Duration(record.CumulativePause),
+		CapacityWindowStartAt:    cloneTimePtr(record.CapacityWindowStartAt),
+		CapacityWindowEndAt:      cloneTimePtr(record.CapacityWindowEndAt),
+		BaselinePinned:           record.BaselinePinned,
+		BaselinePinnedAt:         record.BaselinePinnedAt,
+		CreatedBySubject:         record.CreatedBySubject,
+		CreatedByDisplayName:     record.CreatedByDisplayName,
+		StartedBySubject:         record.StartedBySubject,
+		StartedByDisplayName:     record.StartedByDisplayName,
+		StoppedBySubject:         record.StoppedBySubject,
+		StoppedByDisplayName:     record.StoppedByDisplayName,
+		StartAuthorization:       decodeStoredStartAuthorization(record.StartAuthorization),
+		ExecutionPlanApproval:    decodeStoredExecutionPlanApproval(record.ExecutionPlanApproval),
+		initialArchiveProvenance: decodeStoredInitialProvenance(record.InitialProvenance),
+		Error:                    record.Error,
 	}
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
@@ -1413,6 +1415,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		StoppedByDisplayName:  test.StoppedByDisplayName,
 		StartAuthorization:    startAuthorizationForStorage(test.StartAuthorization),
 		ExecutionPlanApproval: test.ExecutionPlanApproval,
+		InitialProvenance:     initialProvenanceForStorage(test.initialArchiveProvenance),
 		Groups:                encodeStoredGroups(test.Groups),
 		GoalConfig:            test.GoalConfig,
 		RuntimeSettings:       test.RuntimeSettings,
@@ -1445,6 +1448,66 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 			return nil
 		}
 		return tr.testStore.SaveTest(record)
+	}
+	return nil
+}
+
+type initialArchiveProvenanceStore interface {
+	SaveTestInitialProvenance(id, projectID string, provenance any) (bool, error)
+	SaveTestInitialProvenanceIfLeaseHeld(id, projectID string, provenance any, leaseName, leaseOwnerID string) (bool, error)
+}
+
+// persistInitialArchiveProvenance writes only the immutable provenance column.
+// A full-row SaveTest here could race a concurrent lifecycle mutation and then
+// replay stale status/configuration over it. The targeted storage operation is
+// also execution-lease fenced in HA mode.
+func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provenance *RunArchiveProvenance) error {
+	if tr == nil || test == nil || provenance == nil {
+		return fmt.Errorf("test and initial archive provenance are required")
+	}
+	masked := maskRunArchiveProvenance(*provenance)
+	tr.mu.Lock()
+	if test.initialArchiveProvenance == nil {
+		test.initialArchiveProvenance = &masked
+	}
+	id := test.ID
+	projectID := normalizeProjectID(test.ProjectID)
+	executionFence := test.executionFence
+	durableFence := tr.durableExecutionFence
+	stored := initialProvenanceForStorage(test.initialArchiveProvenance)
+	tr.mu.Unlock()
+
+	if tr.testStore == nil {
+		return nil
+	}
+	store, ok := tr.testStore.(initialArchiveProvenanceStore)
+	if !ok {
+		// Compatibility stores used by embedders/tests may not yet expose the
+		// targeted operation. Serialize their legacy full-row projection under the
+		// runner lock so it remains race-free; production SQL stores implement the
+		// non-blocking targeted path above.
+		tr.mu.Lock()
+		defer tr.mu.Unlock()
+		return tr.saveManagedTestRecord(test)
+	}
+	var saved bool
+	var err error
+	if durableFence {
+		if executionFence == "" {
+			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, id)
+		}
+		saved, err = store.SaveTestInitialProvenanceIfLeaseHeld(id, projectID, stored, executionLeaseName, executionFence)
+	} else {
+		saved, err = store.SaveTestInitialProvenance(id, projectID, stored)
+	}
+	if err != nil {
+		return err
+	}
+	if !saved {
+		if durableFence {
+			return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, id)
+		}
+		return fmt.Errorf("test %s was not found in project %s", id, projectID)
 	}
 	return nil
 }

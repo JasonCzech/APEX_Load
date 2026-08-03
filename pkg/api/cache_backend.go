@@ -279,6 +279,7 @@ type memoryCacheBackend struct {
 	rateLimits  map[string]memoryRateBucket
 	subscribers map[string]map[chan []byte]struct{}
 	info        CacheBackendInfo
+	writes      uint64
 }
 
 func newMemoryCacheBackend(cfg cacheRuntimeConfig) *memoryCacheBackend {
@@ -350,6 +351,7 @@ func (m *memoryCacheBackend) ReserveIdempotencyKey(ctx context.Context, key stri
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.sweepExpiredOnWriteLocked(now)
 	if entry, ok := m.entries[key]; ok && (entry.expiresAt.IsZero() || entry.expiresAt.After(now)) {
 		return false, nil
 	}
@@ -365,6 +367,7 @@ func (m *memoryCacheBackend) LoadOrStoreValue(ctx context.Context, key string, v
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.sweepExpiredOnWriteLocked(now)
 	if entry, ok := m.entries[cacheKey]; ok && (entry.expiresAt.IsZero() || entry.expiresAt.After(now)) {
 		return append([]byte(nil), entry.payload...), true, nil
 	}
@@ -387,6 +390,7 @@ func (m *memoryCacheBackend) AllowRateLimit(ctx context.Context, key string, lim
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.sweepExpiredOnWriteLocked(now)
 	bucket := m.rateLimits[cacheKey]
 	if bucket.resetAt.IsZero() || !bucket.resetAt.After(now) {
 		bucket = memoryRateBucket{resetAt: now.Add(window)}
@@ -469,8 +473,26 @@ func (m *memoryCacheBackend) setJSON(ctx context.Context, key string, value any,
 	now := time.Now()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.sweepExpiredOnWriteLocked(now)
 	m.entries[key] = memoryCacheEntry{payload: payload, expiresAt: expiryForTTL(now, ttl)}
 	return nil
+}
+
+func (m *memoryCacheBackend) sweepExpiredOnWriteLocked(now time.Time) {
+	m.writes++
+	if m.writes%256 != 0 {
+		return
+	}
+	for key, entry := range m.entries {
+		if !entry.expiresAt.IsZero() && !entry.expiresAt.After(now) {
+			delete(m.entries, key)
+		}
+	}
+	for key, bucket := range m.rateLimits {
+		if !bucket.resetAt.IsZero() && !bucket.resetAt.After(now) {
+			delete(m.rateLimits, key)
+		}
+	}
 }
 
 func (m *memoryCacheBackend) getJSON(ctx context.Context, key string, out any) error {

@@ -118,19 +118,80 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
-	Timestamp     time.Time `json:"timestamp"`
-	TestID        string    `json:"test_id"`
-	TestName      string    `json:"test_name"`
-	ActiveVUsers  int64     `json:"active_vusers"`
-	TPS           float64   `json:"tps"`
-	AvgResponseMs float64   `json:"avg_response_ms"`
-	ErrorPct      float64   `json:"error_pct"`
-	TotalTx       int64     `json:"total_transactions"`
-	TotalErrors   int64     `json:"total_errors"`
-	P50Ms         float64   `json:"p50_ms"`
-	P90Ms         float64   `json:"p90_ms"`
-	P95Ms         float64   `json:"p95_ms"`
-	P99Ms         float64   `json:"p99_ms"`
+	Timestamp       time.Time                              `json:"timestamp"`
+	TestID          string                                 `json:"test_id"`
+	TestName        string                                 `json:"test_name"`
+	ActiveVUsers    int64                                  `json:"active_vusers"`
+	TPS             float64                                `json:"tps"`
+	AvgResponseMs   float64                                `json:"avg_response_ms"`
+	ErrorPct        float64                                `json:"error_pct"`
+	TotalTx         int64                                  `json:"total_transactions"`
+	TotalErrors     int64                                  `json:"total_errors"`
+	P50Ms           float64                                `json:"p50_ms"`
+	P90Ms           float64                                `json:"p90_ms"`
+	P95Ms           float64                                `json:"p95_ms"`
+	P99Ms           float64                                `json:"p99_ms"`
+	Groups          map[string]*archiveGroupLiveMetrics    `json:"groups,omitempty"`
+	Browser         *archiveBrowserLiveMetrics             `json:"browser,omitempty"`
+	BrowserByDevice map[string]*archiveBrowserDeviceMetric `json:"browser_by_device,omitempty"`
+	Telemetry       *archiveTelemetryHealth                `json:"telemetry,omitempty"`
+}
+
+type archiveGroupLiveMetrics struct {
+	Name              string  `json:"name"`
+	VUsers            int     `json:"vusers"`
+	Transactions      int64   `json:"transactions"`
+	Errors            int64   `json:"errors"`
+	TPS               float64 `json:"tps"`
+	AvgResponseMs     float64 `json:"avg_response_ms"`
+	P50Ms             float64 `json:"p50_ms"`
+	P90Ms             float64 `json:"p90_ms"`
+	P95Ms             float64 `json:"p95_ms,omitempty"`
+	P99Ms             float64 `json:"p99_ms"`
+	PercentileQuality string  `json:"percentile_quality,omitempty"`
+}
+
+type archiveBrowserLiveMetrics struct {
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
+}
+
+type archiveBrowserDeviceMetric struct {
+	DeviceProfile        string  `json:"device_profile,omitempty"`
+	DevicePlatform       string  `json:"device_platform,omitempty"`
+	DeviceTier           string  `json:"device_tier,omitempty"`
+	BrowserEngine        string  `json:"browser_engine,omitempty"`
+	Samples              int64   `json:"samples"`
+	AvgFCPMs             float64 `json:"avg_fcp_ms,omitempty"`
+	AvgLCPMs             float64 `json:"avg_lcp_ms,omitempty"`
+	AvgCLSScore          float64 `json:"avg_cls_score,omitempty"`
+	AvgINPMs             float64 `json:"avg_inp_ms,omitempty"`
+	AvgTTFBMs            float64 `json:"avg_ttfb_ms,omitempty"`
+	AvgBlockingResources float64 `json:"avg_blocking_resources,omitempty"`
+	AvgLongTaskCount     float64 `json:"avg_long_task_count,omitempty"`
+	AvgJSHeapUsedMB      float64 `json:"avg_js_heap_used_mb,omitempty"`
+	AvgBrowserProcessCPU float64 `json:"avg_browser_process_cpu_pct,omitempty"`
+	AvgBrowserProcessMem float64 `json:"avg_browser_process_mem_mb,omitempty"`
+}
+
+type archiveTelemetryHealth struct {
+	DroppedResults           int64     `json:"dropped_results,omitempty"`
+	SheddedArrivals          int64     `json:"shedded_arrivals,omitempty"`
+	DroppedSubscriberBatches int64     `json:"dropped_subscriber_batches,omitempty"`
+	GeneratorPublishedAt     time.Time `json:"generator_published_at,omitempty"`
+	CollectedAt              time.Time `json:"collected_at,omitempty"`
+	GeneratorProcessingLagMs float64   `json:"generator_processing_lag_ms,omitempty"`
+	TransportLagMs           float64   `json:"transport_lag_ms,omitempty"`
+	SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 }
 
 type archiveRecorder struct {
@@ -413,20 +474,24 @@ type parquetResourceSample struct {
 }
 
 type parquetIntervalSummary struct {
-	TimestampUnixMs  int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
-	TimestampRFC3339 string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestID           string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	TestName         string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
-	ActiveVUsers     int64   `parquet:"name=active_vusers, type=INT64"`
-	TPS              float64 `parquet:"name=tps, type=DOUBLE"`
-	AvgResponseMs    float64 `parquet:"name=avg_response_ms, type=DOUBLE"`
-	ErrorPct         float64 `parquet:"name=error_pct, type=DOUBLE"`
-	TotalTx          int64   `parquet:"name=total_transactions, type=INT64"`
-	TotalErrors      int64   `parquet:"name=total_errors, type=INT64"`
-	P50Ms            float64 `parquet:"name=p50_ms, type=DOUBLE"`
-	P90Ms            float64 `parquet:"name=p90_ms, type=DOUBLE"`
-	P95Ms            float64 `parquet:"name=p95_ms, type=DOUBLE"`
-	P99Ms            float64 `parquet:"name=p99_ms, type=DOUBLE"`
+	TimestampUnixMs   int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
+	TimestampRFC3339  string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestID            string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	TestName          string  `parquet:"name=test_name, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	ActiveVUsers      int64   `parquet:"name=active_vusers, type=INT64"`
+	TPS               float64 `parquet:"name=tps, type=DOUBLE"`
+	AvgResponseMs     float64 `parquet:"name=avg_response_ms, type=DOUBLE"`
+	ErrorPct          float64 `parquet:"name=error_pct, type=DOUBLE"`
+	TotalTx           int64   `parquet:"name=total_transactions, type=INT64"`
+	TotalErrors       int64   `parquet:"name=total_errors, type=INT64"`
+	P50Ms             float64 `parquet:"name=p50_ms, type=DOUBLE"`
+	P90Ms             float64 `parquet:"name=p90_ms, type=DOUBLE"`
+	P95Ms             float64 `parquet:"name=p95_ms, type=DOUBLE"`
+	P99Ms             float64 `parquet:"name=p99_ms, type=DOUBLE"`
+	GroupsJSON        string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserJSON       string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserDeviceJSON string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TelemetryJSON     string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 func newArchiveRecorder(generatorID string, testID string, testName string) (*archiveRecorder, error) {
@@ -1278,20 +1343,24 @@ func toParquetSummaries(items []archiveIntervalSummary) []parquetIntervalSummary
 	rows := make([]parquetIntervalSummary, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, parquetIntervalSummary{
-			TimestampUnixMs:  item.Timestamp.UnixMilli(),
-			TimestampRFC3339: item.Timestamp.Format(time.RFC3339Nano),
-			TestID:           item.TestID,
-			TestName:         item.TestName,
-			ActiveVUsers:     item.ActiveVUsers,
-			TPS:              item.TPS,
-			AvgResponseMs:    item.AvgResponseMs,
-			ErrorPct:         item.ErrorPct,
-			TotalTx:          item.TotalTx,
-			TotalErrors:      item.TotalErrors,
-			P50Ms:            item.P50Ms,
-			P90Ms:            item.P90Ms,
-			P95Ms:            item.P95Ms,
-			P99Ms:            item.P99Ms,
+			TimestampUnixMs:   item.Timestamp.UnixMilli(),
+			TimestampRFC3339:  item.Timestamp.Format(time.RFC3339Nano),
+			TestID:            item.TestID,
+			TestName:          item.TestName,
+			ActiveVUsers:      item.ActiveVUsers,
+			TPS:               item.TPS,
+			AvgResponseMs:     item.AvgResponseMs,
+			ErrorPct:          item.ErrorPct,
+			TotalTx:           item.TotalTx,
+			TotalErrors:       item.TotalErrors,
+			P50Ms:             item.P50Ms,
+			P90Ms:             item.P90Ms,
+			P95Ms:             item.P95Ms,
+			P99Ms:             item.P99Ms,
+			GroupsJSON:        mustJSON(item.Groups),
+			BrowserJSON:       mustJSON(item.Browser),
+			BrowserDeviceJSON: mustJSON(item.BrowserByDevice),
+			TelemetryJSON:     mustJSON(item.Telemetry),
 		})
 	}
 	return rows

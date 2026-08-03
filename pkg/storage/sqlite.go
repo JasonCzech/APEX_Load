@@ -393,6 +393,7 @@ func rewriteSQL(query string, dialect storeDialect) string {
 		{"resource_baseline_enabled INTEGER DEFAULT 0", "resource_baseline_enabled BOOLEAN DEFAULT FALSE"},
 		{"enabled INTEGER DEFAULT 1", "enabled BOOLEAN DEFAULT TRUE"},
 		{"baseline_pinned INTEGER DEFAULT 0", "baseline_pinned BOOLEAN DEFAULT FALSE"},
+		{"base_missing INTEGER NOT NULL DEFAULT 0", "base_missing BOOLEAN NOT NULL DEFAULT FALSE"},
 		{"active INTEGER NOT NULL DEFAULT 1", "active BOOLEAN NOT NULL DEFAULT TRUE"},
 		{"ADD COLUMN active INTEGER NOT NULL DEFAULT 1", "ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE"},
 		{"COALESCE(shakeout_enabled, 0)", "COALESCE(shakeout_enabled, FALSE)"},

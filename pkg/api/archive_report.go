@@ -445,6 +445,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			ThroughputTargetMissed: summary.ThroughputTargetMissed,
 			ErrorPct:               summary.ErrorPct,
 			P95Ms:                  summary.P95Ms,
+			PercentileQuality:      summary.PercentileQuality,
 			TotalTx:                summary.TotalTx,
 			TotalErrors:            summary.TotalErrors,
 		})

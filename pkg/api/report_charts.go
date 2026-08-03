@@ -68,13 +68,18 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 		errPct := make([]float64, len(points))
 		vusers := make([]float64, len(points))
 		hasTarget := false
+		hasCompleteP95 := true
 		for i, p := range points {
 			tps[i] = p.TPS
 			target[i] = p.TargetTPS
 			if p.TargetTPS > 0 {
 				hasTarget = true
 			}
-			p95[i] = p.P95Ms
+			if p.HasP95() {
+				p95[i] = p.P95Ms
+			} else {
+				hasCompleteP95 = false
+			}
 			errPct[i] = p.ErrorPct
 			vusers[i] = float64(p.ActiveVUsers)
 		}
@@ -84,8 +89,10 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 			throughputSeries = append(throughputSeries, reportChartSeries{Label: "Target TPS", Color: reportChartAccent2, Values: target})
 		}
 		charts.Throughput = svgLineChart("Throughput (TPS)", "TPS", startLabel, endLabel, throughputSeries)
-		charts.ResponseTime = svgLineChart("Response Time (p95)", "ms", startLabel, endLabel,
-			[]reportChartSeries{{Label: "p95 latency", Color: reportChartAccent, Values: p95}})
+		if hasCompleteP95 {
+			charts.ResponseTime = svgLineChart("Response Time (p95)", "ms", startLabel, endLabel,
+				[]reportChartSeries{{Label: "p95 latency", Color: reportChartAccent, Values: p95}})
+		}
 		charts.ErrorRate = svgLineChart("Error Rate", "%", startLabel, endLabel,
 			[]reportChartSeries{{Label: "Error %", Color: reportChartAccent2, Values: errPct}})
 		charts.VUsers = svgLineChart("Active VUsers", "VUsers", startLabel, endLabel,

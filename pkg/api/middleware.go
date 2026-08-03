@@ -458,11 +458,16 @@ func decodeRequestBody(r *http.Request, target any) error {
 	return json.Unmarshal(body, target)
 }
 
-func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+func corsMiddleware(allowedOrigins []string, authSettings ...func() AuthSettings) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := strings.TrimSpace(r.Header.Get("Origin"))
-			originPolicy := applyCORSOriginHeaders(w, r, allowedOrigins)
+			var auth *AuthSettings
+			if len(authSettings) > 0 && authSettings[0] != nil {
+				settings := authSettings[0]()
+				auth = &settings
+			}
+			originPolicy := applyCORSOriginHeadersWithAuth(w, r, allowedOrigins, auth)
 			originIsAllowed := originPolicy.allowed
 
 			// Only ever reflect an Origin we have explicitly validated. When no
@@ -500,8 +505,12 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 }
 
 func applyCORSOriginHeaders(w http.ResponseWriter, r *http.Request, allowedOrigins []string) originPolicyDecision {
+	return applyCORSOriginHeadersWithAuth(w, r, allowedOrigins, nil)
+}
+
+func applyCORSOriginHeadersWithAuth(w http.ResponseWriter, r *http.Request, allowedOrigins []string, auth *AuthSettings) originPolicyDecision {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	decision := evaluateOriginPolicy(allowedOrigins, r)
+	decision := evaluateOriginPolicyWithAuth(allowedOrigins, r, auth)
 	if origin == "" {
 		return decision
 	}

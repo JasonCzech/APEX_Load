@@ -283,6 +283,27 @@ func TestReleaseAndApplicationDeletionRejectEveryDurableReference(t *testing.T) 
 	}
 }
 
+func TestDeleteApplicationRejectsDirectExternalResultReference(t *testing.T) {
+	store := newProjectEntityCASStore(t)
+	now := time.Now().UTC()
+	applicationID := "application-direct-result"
+	if err := store.SaveApplication(&Application{ID: applicationID, ProjectID: "project-a", Name: "app"}); err != nil {
+		t.Fatalf("SaveApplication: %v", err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO external_result_imports
+		(id, provider, name, project_id, application_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`, "direct-result", "jmeter", "result", "project-a", applicationID, now); err != nil {
+		t.Fatalf("insert direct external result: %v", err)
+	}
+
+	if err := store.DeleteApplication(applicationID); err == nil || !strings.Contains(err.Error(), "associated results") {
+		t.Fatalf("DeleteApplication error = %v, want governed dependency conflict", err)
+	}
+	if _, err := store.GetApplication(applicationID); err != nil {
+		t.Fatalf("referenced application disappeared: %v", err)
+	}
+}
+
 func TestConcurrentReleaseCreateAndApplicationDeleteCannotLeaveOrphan(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "application-release-race.db")
 	first, err := NewSQLiteStore(path)

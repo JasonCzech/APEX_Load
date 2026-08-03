@@ -133,6 +133,33 @@ func decodeStoredGoalConfig(value any) *GoalConfig {
 	return cloneGoalConfig(&config)
 }
 
+func initialProvenanceForStorage(provenance *RunArchiveProvenance) any {
+	if provenance == nil {
+		return nil
+	}
+	masked := maskRunArchiveProvenance(*provenance)
+	return &masked
+}
+
+func decodeStoredInitialProvenance(value any) *RunArchiveProvenance {
+	if value == nil {
+		return nil
+	}
+	if provenance, ok := value.(*RunArchiveProvenance); ok && provenance == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var provenance RunArchiveProvenance
+	if err := json.Unmarshal(data, &provenance); err != nil {
+		return nil
+	}
+	masked := maskRunArchiveProvenance(provenance)
+	return &masked
+}
+
 func startAuthorizationForStorage(authorization *QueuedStartAuthorization) any {
 	if authorization == nil {
 		return nil

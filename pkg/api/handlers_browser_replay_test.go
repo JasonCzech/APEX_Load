@@ -434,11 +434,11 @@ func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
 	if got.CurrentEventIndex != 0 {
 		t.Fatalf("current_event_index = %d, want 0", got.CurrentEventIndex)
 	}
-	if got.CurrentEvent == nil || got.CurrentEvent.PageTitle != "Example" {
-		t.Fatalf("current_event = %#v, want page title Example", got.CurrentEvent)
+	if got.CurrentEvent != nil || len(got.Events) != 0 {
+		t.Fatalf("completed session duplicated terminal event payload: current=%#v events=%#v", got.CurrentEvent, got.Events)
 	}
-	if len(got.Events) != 1 || got.Events[0].Screenshot != "c2NyZWVu" {
-		t.Fatalf("events = %#v, want retained screenshot event", got.Events)
+	if got.FinalReport == nil || len(got.FinalReport.Events) != 1 || got.FinalReport.Events[0].Screenshot != "c2NyZWVu" || got.FinalReport.Events[0].PageTitle != "Example" {
+		t.Fatalf("report events = %#v, want authoritative retained screenshot event", got.FinalReport)
 	}
 }
 

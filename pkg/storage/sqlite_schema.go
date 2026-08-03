@@ -458,6 +458,7 @@ func schemaCreateTableStatements() []string {
 			goal_config_json TEXT,
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
+			initial_provenance_json TEXT,
 			timeslot_id TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS test_history (
@@ -603,9 +604,64 @@ func schemaCreateTableStatements() []string {
 			last_commit_sha TEXT,
 			remote_blob_sha TEXT,
 			remote_commit_sha TEXT,
+			base_branch TEXT,
+			base_blob_sha TEXT,
+			base_missing INTEGER NOT NULL DEFAULT 0,
 			content_hash TEXT,
 			synced_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS github_script_sync_claims (
+			script_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			claim_id TEXT NOT NULL,
+			expires_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS github_script_sync_targets (
+			target_key TEXT PRIMARY KEY,
+			owner_norm TEXT NOT NULL,
+			repo_norm TEXT NOT NULL,
+			branch TEXT NOT NULL,
+			path TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(owner_norm, repo_norm, branch, path)
+		)`,
+		`CREATE TABLE IF NOT EXISTS github_script_sync_target_owners (
+			target_key TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			script_id TEXT NOT NULL,
+			owner_norm TEXT NOT NULL,
+			repo_norm TEXT NOT NULL,
+			branch TEXT NOT NULL,
+			path TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(owner_norm, repo_norm, branch, path),
+			FOREIGN KEY(target_key) REFERENCES github_script_sync_targets(target_key) ON DELETE CASCADE,
+			FOREIGN KEY(script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS github_script_sync_target_claims (
+			target_key TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			script_id TEXT NOT NULL,
+			claim_id TEXT NOT NULL,
+			owner_norm TEXT NOT NULL,
+			repo_norm TEXT NOT NULL,
+			branch TEXT NOT NULL,
+			path TEXT NOT NULL,
+			expires_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(owner_norm, repo_norm, branch, path),
+			FOREIGN KEY(target_key) REFERENCES github_script_sync_targets(target_key) ON DELETE CASCADE,
+			FOREIGN KEY(script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS github_app_installations (
 			installation_id INTEGER PRIMARY KEY,
@@ -1108,6 +1164,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.shakeout_enabled", query: `ALTER TABLE tests ADD COLUMN shakeout_enabled INTEGER DEFAULT 0`},
 		{name: "tests.resource_baseline_enabled", query: `ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`},
 		{name: "tests.start_delay", query: `ALTER TABLE tests ADD COLUMN start_delay TEXT`},
+		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},
 		{name: "scenarios.start_delay", query: `ALTER TABLE scenarios ADD COLUMN start_delay TEXT`},
 		{name: "tests.assignment_json", query: `ALTER TABLE tests ADD COLUMN assignment_json TEXT`},
@@ -1210,6 +1267,9 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "grafana_import_sessions.source_sha256", query: `ALTER TABLE grafana_import_sessions ADD COLUMN source_sha256 TEXT NOT NULL DEFAULT ''`},
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
+		{name: "github_script_links.base_branch", query: `ALTER TABLE github_script_links ADD COLUMN base_branch TEXT`},
+		{name: "github_script_links.base_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN base_blob_sha TEXT`},
+		{name: "github_script_links.base_missing", query: `ALTER TABLE github_script_links ADD COLUMN base_missing INTEGER NOT NULL DEFAULT 0`},
 		{name: "github_check_links.pending_conclusion", query: `ALTER TABLE github_check_links ADD COLUMN pending_conclusion TEXT`},
 		{name: "github_check_links.kind", query: `ALTER TABLE github_check_links ADD COLUMN kind TEXT`},
 		{name: "github_check_intents.creation_claim", query: `ALTER TABLE github_check_intents ADD COLUMN creation_claim TEXT`},
@@ -1318,6 +1378,13 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_project ON github_check_intents(project_id)`, "idx_github_check_intents_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_github_check_links_test ON github_check_links(test_id)`, "idx_github_check_links_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_github_check_links_reconcile ON github_check_links(kind, updated_at)`, "idx_github_check_links_reconcile"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_claims_expiry ON github_script_sync_claims(expires_at)`, "idx_github_script_sync_claims_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_claims_project ON github_script_sync_claims(project_id)`, "idx_github_script_sync_claims_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_target_claims_operation ON github_script_sync_target_claims(script_id, claim_id)`, "idx_github_script_sync_target_claims_operation"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_target_claims_expiry ON github_script_sync_target_claims(expires_at)`, "idx_github_script_sync_target_claims_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_target_claims_project ON github_script_sync_target_claims(project_id)`, "idx_github_script_sync_target_claims_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_target_owners_script ON github_script_sync_target_owners(script_id)`, "idx_github_script_sync_target_owners_script"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_script_sync_target_owners_project ON github_script_sync_target_owners(project_id)`, "idx_github_script_sync_target_owners_project"},
 	// audit_events and usage_accounting_snapshots grow unbounded on a long-lived
 	// controller; index the hot ListAuditEvents path (ORDER BY created_at DESC plus
 	// frequent project/actor filters) and the retention-prune scan.
@@ -1384,6 +1451,9 @@ func (s *SQLiteStore) init() error {
 	}
 	if _, err := s.db.Exec(`UPDATE github_script_links SET remote_blob_sha = last_commit_sha WHERE (remote_blob_sha IS NULL OR remote_blob_sha = '') AND last_commit_sha IS NOT NULL AND last_commit_sha != ''`); err != nil {
 		return fmt.Errorf("failed to backfill github_script_links.remote_blob_sha: %w", err)
+	}
+	if err := s.backfillGitHubScriptSyncTargetOwners(); err != nil {
+		return err
 	}
 
 	for _, idx := range schemaIndexes {

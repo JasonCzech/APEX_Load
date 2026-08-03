@@ -73,6 +73,13 @@ func (s *SQLiteStore) backfillBlankScriptIDs() error {
 }
 
 func backfillOneBlankScriptID(tx *storeTx, oldID string) (string, error) {
+	// A sync worker keeps using the script identifier it claimed. Re-keying that
+	// identifier underneath an unexpired worker would strand finalization after a
+	// possible remote mutation, so defer this startup repair until the claim has
+	// expired or been released.
+	if err := rejectActiveGitHubScriptSyncClaimTx(tx, oldID); err != nil {
+		return "", err
+	}
 	script, err := loadImportSourceRetentionScriptTx(tx, oldID, false)
 	if err != nil {
 		return "", fmt.Errorf("load script with blank id: %w", err)
@@ -126,6 +133,9 @@ func backfillOneBlankScriptID(tx *storeTx, oldID string) (string, error) {
 	}{
 		{"scenario script references", `UPDATE scenario_scripts SET script_id = ? WHERE script_id = ?`, []any{newID, oldID}},
 		{"source revision references", `UPDATE bruno_source_revisions SET script_id = ? WHERE script_id = ?`, []any{newID, oldID}},
+		{"GitHub script sync target claims", `UPDATE github_script_sync_target_claims SET script_id = ? WHERE script_id = ?`, []any{newID, oldID}},
+		{"GitHub script sync claims", `UPDATE github_script_sync_claims SET script_id = ? WHERE script_id = ?`, []any{newID, oldID}},
+		{"GitHub script sync target owners", `UPDATE github_script_sync_target_owners SET script_id = ? WHERE script_id = ?`, []any{newID, oldID}},
 		{"GitHub script links", `UPDATE github_script_links SET script_id = ? WHERE script_id = ?`, []any{newID, oldID}},
 		{"GitHub script checks", `UPDATE github_check_links SET script_id = ? WHERE script_id = ? AND LOWER(TRIM(COALESCE(kind, ''))) = 'script'`, []any{newID, oldID}},
 		{"script recording references", `UPDATE script_recordings

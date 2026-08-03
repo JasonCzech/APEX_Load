@@ -358,6 +358,9 @@ func escapeXMLText(value string) string {
 }
 
 func requestContentTypeFromFunction(fn ParsedFunction) string {
+	if fn.itemDataReviewReason != "" {
+		return ""
+	}
 	for _, key := range []string{"ContentType", "Content-Type"} {
 		if value := firstNonEmptyArg(fn, key); strings.TrimSpace(value) != "" {
 			return unescapeSourceCString(value)

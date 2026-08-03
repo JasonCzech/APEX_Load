@@ -679,6 +679,16 @@ func (s *Server) handleCreateGitHubSyncJob(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "kind must be import or push")
 		return
 	}
+	if req.Kind == "push" {
+		req.Strategy = strings.ToLower(strings.TrimSpace(req.Strategy))
+		if req.Strategy == "" {
+			req.Strategy = "pr"
+		}
+		if req.Strategy != "pr" && req.Strategy != "commit" {
+			writeError(w, http.StatusBadRequest, "strategy must be 'commit' or 'pr'")
+			return
+		}
+	}
 	owner := strings.TrimSpace(req.Owner)
 	repo := strings.TrimSpace(req.Repo)
 	policy := s.githubProjectPolicy(req.ProjectID)
@@ -688,11 +698,37 @@ func (s *Server) handleCreateGitHubSyncJob(w http.ResponseWriter, r *http.Reques
 			owner, repo = defOwner, defRepo
 		}
 	}
-	branch := firstNonEmpty(strings.TrimSpace(req.Branch), policy.DefaultBranch, settings.DefaultBranch)
+	branch := strings.TrimSpace(firstNonEmpty(strings.TrimSpace(req.Branch), policy.DefaultBranch, settings.DefaultBranch))
 	basePath := strings.Trim(strings.TrimSpace(firstNonEmpty(req.Path, policy.DefaultSyncDirectory)), "/")
 	if owner == "" || repo == "" {
 		writeError(w, http.StatusBadRequest, "owner and repo are required")
 		return
+	}
+	store, storeOK := s.githubEnterpriseStore()
+	if !storeOK {
+		writeError(w, http.StatusServiceUnavailable, "github enterprise job storage is unavailable")
+		return
+	}
+	linkStore, linkStoreOK := s.githubScriptLinkStore()
+	if req.Kind == "import" {
+		if !linkStoreOK {
+			writeError(w, http.StatusServiceUnavailable, "github link storage is unavailable")
+			return
+		}
+		if _, ok := linkStore.(storage.GitHubScriptImportStore); !ok {
+			writeError(w, http.StatusServiceUnavailable, "atomic github import storage is unavailable")
+			return
+		}
+	}
+	if req.Kind == "push" && !linkStoreOK {
+		writeError(w, http.StatusServiceUnavailable, "github link storage is unavailable")
+		return
+	}
+	if req.Kind == "push" {
+		if _, ok := linkStore.(storage.GitHubScriptSyncClaimStore); !ok {
+			writeError(w, http.StatusServiceUnavailable, "github sync claim storage is unavailable")
+			return
+		}
 	}
 	resolved, ok := s.githubClientForProjectRequest(w, r, req.ProjectID, owner, repo)
 	if !ok {
@@ -706,8 +742,6 @@ func (s *Server) handleCreateGitHubSyncJob(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	store, _ := s.githubEnterpriseStore()
-	linkStore, _ := s.githubScriptLinkStore()
 	syncService := newGitHubSyncService(s.runner, store, linkStore)
 	job, err := syncService.Run(r.Context(), resolved, githubSyncJobInput{
 		ProjectID: req.ProjectID,

@@ -201,8 +201,12 @@ func writeArchiveSummariesCSV(items []IntervalSummaryRecord, writer io.Writer) e
 		"p90_ms",
 		"p95_ms",
 		"p99_ms",
+		"percentile_quality",
+		"groups_json",
 		"browser_json",
+		"browser_by_device_json",
 		"telemetry_json",
+		"telemetry_status_json",
 	}); err != nil {
 		return err
 	}
@@ -224,8 +228,12 @@ func writeArchiveSummariesCSV(items []IntervalSummaryRecord, writer io.Writer) e
 			formatCSVFloat(item.P90Ms),
 			formatCSVFloat(item.P95Ms),
 			formatCSVFloat(item.P99Ms),
+			item.PercentileQuality,
+			formatArchiveCSVJSON(item.Groups),
 			formatArchiveCSVJSON(item.Browser),
+			formatArchiveCSVJSON(item.BrowserByDevice),
 			formatArchiveCSVJSON(item.Telemetry),
+			formatArchiveCSVJSON(item.TelemetryStatus),
 		}); err != nil {
 			return err
 		}

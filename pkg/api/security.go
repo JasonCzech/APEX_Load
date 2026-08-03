@@ -59,6 +59,10 @@ type originPolicyDecision struct {
 // safely opt into credentialed CORS) from a wildcard match (which must never be
 // combined with Access-Control-Allow-Credentials).
 func evaluateOriginPolicy(allowedOrigins []string, r *http.Request) originPolicyDecision {
+	return evaluateOriginPolicyWithAuth(allowedOrigins, r, nil)
+}
+
+func evaluateOriginPolicyWithAuth(allowedOrigins []string, r *http.Request, auth *AuthSettings) originPolicyDecision {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
 		return originPolicyDecision{allowed: true}
@@ -74,6 +78,11 @@ func evaluateOriginPolicy(allowedOrigins []string, r *http.Request) originPolicy
 	}
 	if r.URL != nil && (r.URL.Scheme == "http" || r.URL.Scheme == "https") {
 		requestScheme = r.URL.Scheme
+	}
+	if auth != nil && trustedProxyGateConfigured(*auth) && trustedProxyRequestAllowed(r, *auth) {
+		if forwarded := githubForwardedProto(r.Header.Get("X-Forwarded-Proto")); forwarded == "http" || forwarded == "https" {
+			requestScheme = forwarded
+		}
 	}
 	if parseErr == nil && parsed.Host != "" && strings.EqualFold(parsed.Scheme, requestScheme) && strings.EqualFold(parsed.Host, r.Host) {
 		return originPolicyDecision{allowed: true}

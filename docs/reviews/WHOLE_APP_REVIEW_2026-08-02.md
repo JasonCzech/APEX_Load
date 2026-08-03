@@ -1,7 +1,7 @@
-# Whole-Application Review (Partial: Backend Control Plane & Importers) — 2026-08-02
+# Whole-Application Review (Partial — 18 of 38 areas) — 2026-08-02
 
-**Branch:** main @ dc05008ab (clean tree, == origin/main) · **Scope achieved:** 14 of 38 planned areas (~250k of ~620k first-party LOC) — the pkg/api control plane (fully partitioned), the recording/replay pipeline, and the enterprise-archive + API-spec importer families. The run was descoped mid-flight due to session token limits; findings below cover only the listed areas.
-**Method:** 14 area finders over a git-archive snapshot of HEAD; 99 raw findings → 99 after dedup → **98 confirmed** (82 defects + 16 opportunities) / 1 refuted. Lean adversarial verification (token-constrained): 1 independent verifier per claimed-Critical/High finding and per suspected regression, batched single-vote verification for Medium/Low and opportunities. Prior-findings ledger (316 entries from the July reviews) tags rediscoveries instead of double-reporting them.
+**Branch:** main @ dc05008ab (clean tree, == origin/main) · **Scope achieved:** 23 of 38 planned areas (~435k of ~620k first-party LOC) — the ENTIRE Go backend and ops surface: the pkg/api control plane (fully partitioned), the recording/replay pipeline, all importer families, pkg/engine, pkg/storage, pkg/distributed, the transform + data-protection libraries, the full pkg/protocol tree, and CLI/controller/deployments/mcp (nine areas added 2026-08-03). Remaining: the dashboard frontend (9 areas) and 5 cross-cutting sweeps. The run was descoped mid-flight due to session token limits; findings below cover only the listed areas.
+**Method:** 23 area finders over a git-archive snapshot of HEAD; 165 raw findings → 164 after dedup → **162 confirmed** (138 defects + 24 opportunities) / 2 refuted. Lean adversarial verification (token-constrained): 1 independent verifier per claimed-Critical/High finding and per suspected regression, batched single-vote verification for Medium/Low and opportunities. Prior-findings ledger (316 entries from the July reviews) tags rediscoveries instead of double-reporting them.
 
 ## Remediation status
 
@@ -10,9 +10,9 @@ _Not yet remediated. Critical/High fix phase pending user go-ahead (token budget
 
 ## Coverage — what this review did and did not examine
 
-**Covered (finders + verification):** AREA-01 api-execution-core, AREA-02 api-scheduling-plans-capacity, AREA-03 api-results-archive-reporting, AREA-04 api-import-orchestration, AREA-05 api-distributed-fleet, AREA-06 api-scripts-authoring-dsl, AREA-07 api-tests-scenarios-datapools, AREA-08 api-platform-core, AREA-09 api-integrations-and-library, AREA-10 recording-replay-pipeline, AREA-11 convert-enterprisearchive-java, AREA-12 convert-enterprisearchive-core, AREA-13 convert-bruno-requestimport-credentialpolicy, AREA-14 convert-api-spec-and-datasource-importers.
+**Covered (finders + verification):** AREA-01 api-execution-core, AREA-02 api-scheduling-plans-capacity, AREA-03 api-results-archive-reporting, AREA-04 api-import-orchestration, AREA-05 api-distributed-fleet, AREA-06 api-scripts-authoring-dsl, AREA-07 api-tests-scenarios-datapools, AREA-08 api-platform-core, AREA-09 api-integrations-and-library, AREA-10 recording-replay-pipeline, AREA-11 convert-enterprisearchive-java, AREA-12 convert-enterprisearchive-core, AREA-13 convert-bruno-requestimport-credentialpolicy, AREA-14 convert-api-spec-and-datasource-importers, AREA-16 engine-core, AREA-19 distributed-data-plane, AREA-20 storage-core-identity-content, AREA-21 storage-execution-import-dialect, AREA-22 import-transforms-and-data-protection-libs, AREA-18 java-and-messaging-stack, AREA-15 convert-perftool-importers, AREA-17 protocol-web-and-transports, AREA-23 cli-controller-deployments (the last nine added 2026-08-03 — the complete Go backend and ops surface).
 
-**NOT covered** (descoped when the session hit token limits): perftool importers (jmeter/devweb/k6/trueclient), pkg/engine, pkg/protocol (all transports), java/messaging stack, pkg/distributed, pkg/storage (both areas), import-transform + data-protection libs, CLI/controller/deployments, the entire dashboard frontend (9 areas), and all 6 cross-cutting sweeps (concurrency, storage-dialect parity, generated-freshness, test-quality, docs-accuracy, dependency-upgrade regressions). A follow-up pass is needed for whole-app coverage; the finder area map is preserved in the session plan.
+**NOT covered** (descoped when the session hit token limits): the entire dashboard frontend (9 areas) and 5 of the 6 cross-cutting sweeps (concurrency, generated-freshness, test-quality, docs-accuracy, dependency-upgrade regressions; storage-dialect parity was substantially covered inside AREA-21). A follow-up pass is needed for whole-app coverage; the finder area map is preserved in the session plan.
 
 ## Baseline — all green
 
@@ -25,75 +25,99 @@ Captured before any change, against the exact HEAD bytes (which equal `origin/ma
 
 ## Verdict
 
-**82 confirmed defects: 0 critical, 7 high, 43 medium, 32 low** (+16 verified opportunities) across the covered areas. 15 previously-reported-still-open rediscoveries; 17 suspected regressions of previously-fixed findings.
+**138 confirmed defects: 0 critical, 17 high, 70 medium, 51 low** (+24 verified opportunities) across the covered areas. 21 previously-reported-still-open rediscoveries; 26 suspected regressions of previously-fixed findings.
 
 Headline themes:
 
-1. **Silent data loss in the enterprise-archive import chain** — the largest cluster, and 3 of the 7 Highs. LoadRunner archives lose `web_set_user` basic auth whenever a runtime config is present (#6), lose `web_global_verification` content checks to a wholesale WebRuntime replacement in `config_merge.go` (#5), and drop repeated ITEMDATA form fields with nondeterministic ordering (#7). Around them: trailing registrations dropped with overcounted stats, zip basename-collision misresolution, unchecked scanner truncation, and the JMeter multi-`.jmx` ZIP silently importing only the first plan. This is exactly the "conservation of elements" defect class the review targeted.
+1. **Silent fidelity loss across the importer families** — the largest cluster, 5 Highs. Enterprise-archive: `web_set_user` basic auth wiped when a runtime config is present, `web_global_verification` checks wiped by wholesale WebRuntime replacement, repeated ITEMDATA form fields dropped with nondeterministic ordering. JMeter: sampler-scoped ResponseAssertions and timers silently dropped (`jmeter/converter.go:713`), and `enabled="false"` ignored so disabled elements import as live (`converter.go:448`). Around them: trailing registrations dropped, zip basename-collision misresolution, scanner truncation, the multi-`.jmx` ZIP importing only the first plan, TruClient double-importing function bodies. k6 and recorderjson are the honest exceptions.
 
-2. **Distributed results integrity** — the fleet path degrades correctness at exactly the scale it exists for: the distributed archive merge concatenates per-generator interval summaries so report percentiles are computed over per-generator aggregates rather than merged data (#1), and `tolerate_generator_loss` fails to tolerate the one thing it names — a dead generator escalates to a whole-fleet stop (#2).
+2. **False success / wrong results at runtime** — SOAP fault detection is silently disabled by the default response-body discard, so faulted calls report as passing (`soap/soap.go:170`) — the same false-success family as the July Java `lr.AUTO` defect, now in the SOAP transport.
 
-3. **O(n²) accumulated-state broadcasts** — debug-session progress re-serializes the entire accumulated session on every event (#3, tagged regression), and browser-replay progress embeds the full event list per broadcast; long sessions degrade quadratically until effectively wedged.
+3. **Distributed results integrity** — confirmed from both sides of the RPC seam: the controller-side archive merge concatenates per-generator interval summaries so fleet percentiles are wrong; the generator side replays the last window's aggregates as fresh data on no-new-evidence ticks (`generatorrpc/service.go:2157`, regression-tagged); and `tolerate_generator_loss` escalates a dead generator into a whole-fleet stop.
 
-4. **Locks held across I/O, platform-wide stalls** — the repo's recurring theme resurfaces in new code: launch-window admission runs many storage queries under `tr.mu`, capacity fair-share sorting issues a SQL query per comparison under the same lock, remote-run handlers hold an RLock across cross-controller HTTP, and project deletion stalls every mutating request platform-wide.
+4. **Over-eager credential masking destroying legitimate data** — 4 Highs spanning API, engine, and transforms: `formSecretPattern` on JSON bodies deletes everything after a matched secret value (`paramize/secrets.go:19`), the runtime secret matcher admits arbitrarily short/common values (`redaction.go:297`), the matcher set is recompiled 2–3× per action per VUser (`imported_credential_runtime.go:167`), and `runtime_mask.go` treats any value containing `@` as a credential.
 
-5. **Integration write-safety** — bulk GitHub sync ignores the configured `pr` strategy and commits directly to the default branch (#4), and skips the drift check so it silently overwrites remote edits.
+5. **Deletion FK integrity** — schedule-launched tests cannot be deleted (`deleteTestGraphTx`, regression-tagged), projects with direct-import receipts cannot be deleted (`deleteProjectGraph` misses `direct_import_receipts`, found independently by both storage finders), and deletion orphans `powerbi_publishes` rows.
 
-6. **Over-eager masking/classification destroying legitimate data** — `runtime_mask.go` treats any value containing `@` as a credential (breaking email-valued parameters), continuing the over-scrub lineage from the July reviews.
+6. **Deployment/ops correctness** — the Helm import-only Bruno mode writes encrypted artifacts to an `emptyDir` while mounting the required PVC at an unused path, so artifacts silently vanish on pod restart (`helm/apexload/templates/controller.yaml:196`); plus the known-open onprem GOMEMLIMIT/MAX_VUSERS sizing items.
 
-7. **Time/accounting correctness** — DST fall-back double-fires schedules in the repeated hour, usage accounting bills full configured duration for stopped runs, and conflict-state schedules are durably rewritten with a revision bump every 30 seconds.
+7. **Integration write-safety** — bulk GitHub sync ignores the configured `pr` strategy and commits directly to the default branch, and skips the drift check so it silently overwrites remote edits.
+
+8. **O(n²) accumulated-state broadcasts** — debug-session progress re-serializes the entire accumulated session per event (regression-tagged); browser-replay progress embeds the full event list per broadcast.
+
+9. **Locks held across I/O, platform-wide stalls** — launch-window admission and capacity fair-share sorting run SQL under `tr.mu`, remote-run handlers hold an RLock across cross-controller HTTP, and project deletion stalls every mutating request platform-wide.
+
+10. **Time/accounting correctness** — DST fall-back double-fires schedules, usage accounting bills full duration for stopped runs, conflict-state schedules durably rewritten every 30s.
+
+By contrast, the 2026-08-03 additions verified substantial strengths across the backend: `pkg/engine` hot paths; generatorrpc epoch fencing and two-phase assignment; `pkg/storage` lock ordering, CAS fences, and dialect guards; the transform/data-protection libraries where July's hardening held; the java/messaging stack with zero High findings (new `pkg/javarunner`/`pkg/javasidecar` assessed exceptionally well engineered); k6/recorderjson import honesty; the web transports' resource discipline; and the `apexctl` CI gate path (distinct exit codes, bounded retries, evidence persisted before aborts) plus `pkg/kubeops`/`pkg/internal`/`pkg/perfevidence`. See the per-area appendix.
 
 ## Suspected regressions of previously-fixed findings
 
 _Caveat: the "regression" tag comes from a file-level match against the ledger of previously-fixed findings — it means "a confirmed defect in a file where a July review previously fixed something," not necessarily the same defect recurring. Check the verification evidence per finding._
 
-- **#11 Gradual ramps persist a full test row (incl. every compiled script) per single-VUser step ** — `pkg/api/testexecution.go:2130`
-- **#12 Usage accounting bills configured duration for every retained test, including runs that st** — `pkg/api/usage_accounting.go:245`
-- **#52 broadcastEvent reads live ManagedTest fields after tr.mu is released, racing with locked w** — `pkg/api/testexecution.go:2662`
-- **#13 Fair-share pending sort issues a reservation SQL query per sort comparison under tr.mu on ** — `pkg/api/capacity.go:556`
-- **#53 Run-calendar truncation keeps an arbitrary append-order subset instead of the events neare** — `pkg/api/run_calendar.go:269`
-- **#56 Single-slot global Bruno inspect semaphore holds its exclusive section across the request-** — `pkg/api/handlers_bruno_import.go:232`
+- **#21 Gradual ramps persist a full test row (incl. every compiled script) per single-VUser step ** — `pkg/api/testexecution.go:2130`
+- **#22 Usage accounting bills configured duration for every retained test, including runs that st** — `pkg/api/usage_accounting.go:245`
+- **#89 broadcastEvent reads live ManagedTest fields after tr.mu is released, racing with locked w** — `pkg/api/testexecution.go:2662`
+- **#23 Fair-share pending sort issues a reservation SQL query per sort comparison under tr.mu on ** — `pkg/api/capacity.go:556`
+- **#90 Run-calendar truncation keeps an arbitrary append-order subset instead of the events neare** — `pkg/api/run_calendar.go:269`
+- **#93 Single-slot global Bruno inspect semaphore holds its exclusive section across the request-** — `pkg/api/handlers_bruno_import.go:232`
 - **#3 Every debug progress broadcast serializes the entire accumulated session, making replay co** — `pkg/api/script_debug_manager.go:1379`
-- **#62 Replay-session start endpoint lacks the credential-preserving-import echo special case its** — `pkg/api/handlers_script_debug.go:181`
-- **#63 Replay progress never refreshes session activity, so an actively-running or breakpoint-pau** — `pkg/api/script_debug_manager.go:664`
-- **#26 Any value containing '@' is classified as a credential, breaking email-valued parameters a** — `pkg/api/runtime_mask.go:87`
-- **#65 Data-pool update mixes PATCH and PUT semantics: archived_at is absent-preserving but omitt** — `pkg/api/handlers_data_pools.go:262`
-- **#36 Every browser-replay progress broadcast embeds the full accumulated event list (O(n^2) CPU** — `pkg/api/browser_replay_manager.go:1112`
-- **#37 Synchronous classic replay endpoint exceeds the server's fixed 60s WriteTimeout and loses ** — `pkg/api/handlers_replay.go:172`
-- **#35 Browser-recording list summaries and WS broadcasts always report 0 network requests, 0 web** — `pkg/api/browser_recording_manager.go:1176`
-- **#70 Marker handler swallows JSON body decode errors, producing misleading validation errors** — `pkg/api/handlers_browser_recorder.go:537`
-- **#39 Live import pays for a discarded classification pass, including a duplicate full runtime-r** — `pkg/convert/enterprisearchive/java_import.go:165`
-- **#45 Native inspection re-parses YAML O(requests x ancestors x passes) and runs the full candid** — `pkg/convert/bruno/inspect.go:167`
+- **#99 Replay-session start endpoint lacks the credential-preserving-import echo special case its** — `pkg/api/handlers_script_debug.go:181`
+- **#100 Replay progress never refreshes session activity, so an actively-running or breakpoint-pau** — `pkg/api/script_debug_manager.go:664`
+- **#36 Any value containing '@' is classified as a credential, breaking email-valued parameters a** — `pkg/api/runtime_mask.go:87`
+- **#102 Data-pool update mixes PATCH and PUT semantics: archived_at is absent-preserving but omitt** — `pkg/api/handlers_data_pools.go:262`
+- **#46 Every browser-replay progress broadcast embeds the full accumulated event list (O(n^2) CPU** — `pkg/api/browser_replay_manager.go:1112`
+- **#47 Synchronous classic replay endpoint exceeds the server's fixed 60s WriteTimeout and loses ** — `pkg/api/handlers_replay.go:172`
+- **#45 Browser-recording list summaries and WS broadcasts always report 0 network requests, 0 web** — `pkg/api/browser_recording_manager.go:1176`
+- **#107 Marker handler swallows JSON body decode errors, producing misleading validation errors** — `pkg/api/handlers_browser_recorder.go:537`
+- **#49 Live import pays for a discarded classification pass, including a duplicate full runtime-r** — `pkg/convert/enterprisearchive/java_import.go:165`
+- **#55 Native inspection re-parses YAML O(requests x ancestors x passes) and runs the full candid** — `pkg/convert/bruno/inspect.go:167`
+- **#13 No-new-evidence ticks replay the last window's aggregates and transactions as fresh data** — `pkg/distributed/generatorrpc/service.go:2157`
+- **#78 Per-group publishers each archive a full cross-group interval summary, duplicating window...** — `pkg/distributed/generatorrpc/service.go:1646`
+- **#15 Schedule-launched tests cannot be deleted: deleteTestGraphTx trips tests(id) foreign keys** — `pkg/storage/sqlite_tests.go:1390`
+- **#80 powerbi_publishes rows are orphaned forever: no delete path on test or project deletion** — `pkg/storage/sqlite_tests.go:1323`
+- **#83 HAR scrub destroys base64-encoded response content while leaving encoding flag intact** — `pkg/scrub/scrub.go:1484`
+- **#70 CDP sessions leak on every window switch / popup activation** — `pkg/protocol/browser/runtime_context.go:629`
+- **#124 b.pwContext read without lock races concurrent close paths** — `pkg/protocol/browser/runtime_context.go:396`
+- **#125 HTTP regex extractor without a capture group reports 'no match' though the pattern matched** — `pkg/protocol/http/extract.go:1064`
+- **#86 apexctl run silently ignores malformed and equals-form flags, silently disabling SLA gate...** — `cmd/apexctl/main.go:263`
 
 ## Previously reported, still open
 
 Rediscovered by this review; counted in the totals but tagged rather than re-reported as new:
 
-- **#14 Conflict/failed-blocked schedules are durably rewritten with a revision bump on every 30s ** — `pkg/api/scheduler.go:2203`
-- **#15 DST fall-back: schedules firing inside the repeated local hour fire twice, ~60 minutes apa** — `pkg/api/scheduler.go:589`
-- **#57 java_vuser launch gating performs a fleet-metadata DB read and placement simulation under ** — `pkg/api/distributed_execution_backend.go:641`
-- **#58 Startup-failure cleanup stops assigned generators sequentially, so a wide-fleet failure ca** — `pkg/api/distributed_execution_backend.go:736`
-- **#28 Run manifest 'initial configuration' is read from the continuously rewritten durable recor** — `pkg/api/test_manifest.go:284`
-- **#66 Manifest configuration maps StartedAt from the stored record's ScheduledStartAt** — `pkg/api/test_manifest.go:375`
-- **#31 Failed requests permanently burn their Idempotency-Key for the TTL** — `pkg/api/middleware.go:307`
-- **#38 Proxy recorder silently drops requests once caps are hit — no warning, counter, or event** — `pkg/recorder/recorder.go:1251`
-- **#77 orderReplayOps comparator is not transitive, so produce-before-consume ordering can silent** — `pkg/convert/asyncapi/converter.go:657`
+- **#24 Conflict/failed-blocked schedules are durably rewritten with a revision bump on every 30s ** — `pkg/api/scheduler.go:2203`
+- **#25 DST fall-back: schedules firing inside the repeated local hour fire twice, ~60 minutes apa** — `pkg/api/scheduler.go:589`
+- **#94 java_vuser launch gating performs a fleet-metadata DB read and placement simulation under ** — `pkg/api/distributed_execution_backend.go:641`
+- **#95 Startup-failure cleanup stops assigned generators sequentially, so a wide-fleet failure ca** — `pkg/api/distributed_execution_backend.go:736`
+- **#38 Run manifest 'initial configuration' is read from the continuously rewritten durable recor** — `pkg/api/test_manifest.go:284`
+- **#103 Manifest configuration maps StartedAt from the stored record's ScheduledStartAt** — `pkg/api/test_manifest.go:375`
+- **#41 Failed requests permanently burn their Idempotency-Key for the TTL** — `pkg/api/middleware.go:307`
+- **#48 Proxy recorder silently drops requests once caps are hit — no warning, counter, or event** — `pkg/recorder/recorder.go:1251`
+- **#114 orderReplayOps comparator is not transitive, so produce-before-consume ordering can silent** — `pkg/convert/asyncapi/converter.go:657`
 - **#O2 Schedule CRUD, approval resolution, and timeslot bind hold the global runner write lock ac** — `pkg/api/scheduler.go:2548`
 - **#O4 Parallelize per-target script distribution and shard assignment during distributed startup** — `pkg/api/distributed_execution_backend.go:939`
 - **#O7 User listing for scoped admins is an O(users x bindings) N+1 over the store** — `pkg/api/handlers_auth.go:1673`
 - **#O9 Every browser-replay GET takes the manager write lock and runs a full prune sweep** — `pkg/api/browser_replay_manager.go:794`
 - **#O10 Retire or quarantine the dead native Java lanes and their pipeline-reconstruction tests** — `pkg/convert/enterprisearchive/java_import.go:622`
 - **#O14 matchHAR re-parses URLs O(refs x entries) times** — `pkg/convert/salesforce/analyzer.go:440`
+- **#11 Runtime secret matcher admits arbitrarily short/common values (all cookie values, auth us...** — `pkg/engine/redaction.go:297`
+- **#68 scrubRuntimeSecretText treats pre-existing NUL bytes in evidence as matched secret placeh...** — `pkg/engine/redaction.go:943`
+- **#69 JWT-shaped regex redacts ordinary dotted hostnames/identifiers in result metadata and met...** — `pkg/engine/redaction.go:101`
+- **#O17 Dead helper addTokensForElapsed and one-interval Resume hiccup in TokenBucket.SetPaused** — `pkg/engine/pacing.go:341`
+- **#O19 rewriteSQL substring translation is a latent Postgres-parity trap** — `pkg/storage/sqlite.go:377`
+- **#71 SSE streams silently killed by the default 60s client timeout despite a larger validated ...** — `pkg/protocol/http/http.go:536`
 
 ## Refuted (do not fix)
 
+- ~~Duplicate session-ID create misreported as capacity exhaustion~~ (`pkg/storage/sqlite_protected_source_sessions.go:23`, AREA-21) — Scenario unreachable: session IDs are minted server-side (uuid.New per request, handlers_project_secrets.go:560); no retry can reuse an id.
 - ~~BuildJavaVuserSourceManifest nulls the entire manifest silently on any non-canonical or ca~~ (`pkg/convert/enterprisearchive/java_source_manifest.go:44`, AREA-11) — Fail-closed: import_promotion_gating.go:147-151 blocks approval with an explicit missing-manifest blocker; no silent weakening.
 
 # Confirmed findings
 
 ## Critical (0)
 
-## High (7)
+## High (17)
 
 #### 1. Distributed archive merge concatenates per-generator interval summaries; report computes f
 **Where:** `pkg/api/distributed_archive.go:568` · **Area:** AREA-03 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
@@ -271,9 +295,248 @@ Consequence follows: replayed POST silently posts only the last duplicate value;
 </details>
 
 
-## Medium (43)
+#### 8. Sampler-scoped ResponseAssertion and timers silently dropped in JMeter import
+**Where:** `pkg/convert/jmeter/converter.go:713` · **Area:** AREA-15 · **Category:** silent-drop · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
-#### 8. Launch-window admission performs many storage queries while holding tr.mu
+walkThreadGroup never descends into HTTPSamplerProxy children (guard at converter.go:713), convertHTTPSampler only parses extractor children via parseSamplerExtractors (converter_extractors.go:16-63, extractor element types only), and diagnoseJMeterChildren treats ResponseAssertion/ConstantTimer as 'known supported' (converter_diagnostics.go:148-149,182-189) so it emits no diagnostic. A ResponseAssertion or timer nested under a sampler's hashTree — the default placement when adding an assertion or per-request think time in the JMeter GUI — is dropped with no assertion/think-time on the action, no warning, no unsupported entry, and no stats increment.
+
+**Failure scenario:** User imports a JMX where 'Login' has a child Response Assertion checking the body for 'Welcome' (added via right-click > Add > Assertions in JMeter). The imported action has zero assertions and the import reports no warning; with IncludeAssertions a generic status_code 200 is added, masking the loss. Load runs pass while the app serves an error page with HTTP 200 — silently wrong pass/fail results across every run of the imported script.
+
+**Suggested fix:** In the HTTPSamplerProxy case, walk sampler children for ResponseAssertion (append parseResponseAssertions output to the action) and timer elements (set per-action think time), mirroring jmeterSamplerScopedHeaders; anything else non-extractor should produce a needs_review diagnostic instead of silence.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # P01 — Sampler-scoped ResponseAssertion and timers silently dropped (CONFIRMED, high)
+
+Full causal chain verified statically at HEAD.
+
+1. Tree shape: buildTree (pkg/convert/jmeter/converter_xml.go:58-73) attaches a sampler's following hashTree contents as the HTTPSamplerProxy treeNode's Children — exactly where the JMeter GUI puts per-sampler assertions/timers.
+2. Drop: walkThreadGroup's recursion guard (converter.go:713) `child.Element.Name != "HTTPSamplerProxy"` never descends into sampler children, so the ResponseAssertion case (converter.go:513-516, sole caller of parseResponseAssertions) and timer case (507-512) never fire for them.
+3. No sampler-side pickup: convertHTTPSampler builds Assertions solely from scope-level ctx.assertions (converter_sampler.go:79) and ThinkTime from ctx.timerMs (129-132); sampler children are parsed only by parseSamplerExtractors (converter_extractors.go:16-63, extractor elements only) and jmeterSamplerScopedHeaders (HeaderManager only, converter.go:798).
+4. Silence: diagnoseJMeterChildren (converter.go:546) → diagnoseJMeterElement returns false with no diagnostic because isKnownJMeterSupported includes ResponseAssertion and all six timer types (converter_diagnostics.go:148-149, 182-185); no unsupported entry, no source mapping, no stats increment.
+5. Masking: IncludeAssertions adds generic status_code 200 (converter_sampler.go:126-128).
+
+Tests pin nothing opposite: both fixtures (converter_test.go:58-67, 353-375) place assertions/timers only as scope-level siblings. Consequence (silently wrong pass/fail on imported runs) follows; severity high stands — same class as the sampler HeaderManager silent-drop already fixed per the comment at converter.go:517-523.
+
+</details>
+
+
+#### 9. JMeter enabled="false" attribute ignored — disabled elements imported as live
+**Where:** `pkg/convert/jmeter/converter.go:448` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+No code in pkg/convert/jmeter ever reads the JMX 'enabled' attribute (grep over the package finds only the unrelated CookiesEnabled bool at converter.go:460). walkThreadGroup converts every child regardless, so samplers, thread groups, controllers, CSV configs, headers and assertions that the author explicitly disabled in the JMeter GUI are imported as executable actions/config.
+
+**Failure scenario:** A plan contains a disabled 'DELETE /admin/reset' sampler kept for debugging (enabled="false" — JMeter skips it). Import converts it into a live action; the first load run replays the destructive request against the target environment. Conversely a disabled ThreadGroup becomes a whole extra imported script, inflating load.
+
+**Suggested fix:** At the top of the walkThreadGroup loop (and in findTreeNodes for thread groups), skip elements with enabled="false" and record an Info diagnostic + source mapping with status 'ignored' so conservation stats stay honest.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # P02 — JMeter enabled="false" ignored — CONFIRMED (high)
+
+Claim verified statically at every hop.
+
+1. **Parse keeps but never reads the attribute.** converter_xml.go:31-33 copies all XML attrs into `node.Attrs`; `buildTree` (converter_xml.go:58-72) and `findTreeNodes` (:75-84) have no enabled filter. Package-wide grep for "enabled" hits only the unrelated `CookiesEnabled` literal at converter.go:459-460 — no code path reads `Attrs["enabled"]`.
+2. **Conversion converts everything.** `walkThreadGroup` (converter.go:444-716) switches on `child.Element.Name` with no enabled check; disabled HeaderManager/CSVDataSet/assertions/samplers all convert. Disabled ThreadGroups are picked up by `findTreeNodes(trees, "ThreadGroup")` at converter.go:203 and become full scripts (converter.go:279).
+3. **Production reachable.** pkg/api/handlers_import_jmeter.go:29 and :52 call `jmeter.ConvertJMX` on raw JMX bytes; no preprocessing strips disabled elements.
+4. **Real JMeter semantics.** The GUI Toggle/Disable writes `enabled="false"`; JMeter's HashTree compile (convertSubTree) removes disabled elements and their subtrees before running. Keeping disabled debug samplers in a plan is common practice.
+5. **No refuting guards.** residual_review/disposition passes key on element names, not attributes; all test fixtures use enabled="true" (converter_test.go et al.), so nothing pins the correct behavior.
+
+Failure scenario (disabled destructive sampler replayed; disabled ThreadGroup inflating load) follows directly. Severity high stands.
+
+</details>
+
+
+#### 10. Full runtime-secret matcher recompiled 2-3x per action per VUser with no change detection
+**Where:** `pkg/engine/imported_credential_runtime.go:167` · **Area:** AREA-16 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+publishRuntimeCredentialRedaction (imported_credential_runtime.go:167-201) is invoked with no unchanged-set short-circuit by replaceRuntimeCredentialScopes (136-165). For any cookie-bearing HTTP script it runs at least twice per action: stageRuntimeCredentialSessionSnapshot on every Execute result (vuser_execute.go:73-86; the HTTP adapter sets RuntimeCredentialValuesSnapshot on every result, pkg/protocol/http/http.go:222-227) and commitRuntimeCredentialSessionSnapshot at every resolveAction (vuser_resolve.go:198), plus a third publish per action from extendRuntimeRedactionForResolvedAction for Basic-auth/import-preserving scripts (resolved_imported_credential_redaction.go:30). Each publish calls withSecretValueRedaction(nil, values) which re-expands every value into up to 64 encoded variants (runtimeSecretRedactionVariants, redaction.go:481-567: multiple base64/URL/JSON/HTML/hex encodings), re-sorts, and builds a fresh strings.Replacer whose trie is rebuilt lazily on the next scrub. The group-level matcher cache (runtimeSecretValueSetKey/attachRuntimeSecretRedaction, group.go:280-296) exists but is never applied to these per-VUser publishes.
+
+**Failure scenario:** A typical LR-imported web script with 3 session cookies at 1,000 VUsers x 10 req/s: ~20,000 publishes/sec, each doing ~192 variant encodings plus Replacer construction and trie build (~100-300us CPU) => several cores of pure redaction-bookkeeping overhead, reducing achievable load per generator pod. Worst case: a SUT rotating a CSRF/session token per response fills the 512-entry session history (imported_credential_runtime.go:18); every stage/commit then expands ~32,000 variants and builds a multi-MB trie per action, collapsing per-VUser throughput to a handful of requests/second and pinning generator CPU -- reported test results then measure the generator, not the SUT.
+
+**Suggested fix:** In replaceRuntimeCredentialScopes, compare the normalized per-scope value slice against the current one and return early when unchanged (covers the stable-cookie steady state); additionally memoize compiled overlays keyed by runtimeSecretValueSetKey(values) per VUser so stage/commit of the same set reuses the Replacer.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # E02 — Full runtime-secret matcher recompiled 2-3x per action per VUser — CONFIRMED (high)
+
+Every hop verified in snapshot (HEAD dc05008ab):
+
+1. No change detection: `replaceRuntimeCredentialScopes` (pkg/engine/imported_credential_runtime.go:136-165) never compares `prospective` to the existing scope map; line 160 always calls `publishRuntimeCredentialRedaction`, which calls `withRuntimeSecretValueOverlay` (line 193) → `withSecretValueRedaction(nil, values)` (redaction.go:366). With config==nil, `matcherReady` is false (redaction.go:234-235) so any non-empty value set fully recompiles: `runtimeSecretRedactionVariants` expands up to 64 encodings per value (redaction.go:481-567) and a fresh `strings.NewReplacer` is built (redaction.go:344), trie rebuilt lazily on the next scrub.
+2. Frequency: HTTP `Execute` sets `RuntimeCredentialValuesSnapshot=true` on every result when a boundedCookieJar exists (pkg/protocol/http/http.go:219-227) → `stageRuntimeCredentialSessionSnapshot` per consumed result (vuser_execute.go:73-86); `commitRuntimeCredentialSessionSnapshot` fires at every next `resolveAction` once staged (vuser_resolve.go:198). Third publish: `extendRuntimeRedactionForResolvedAction` runs on every executeAction (vuser_execute.go:687) and calls `replaceRuntimeCredentialScope` unconditionally (resolved_imported_credential_redaction.go:30) — even with empty action values it republishes, recompiling the non-empty session-cookie set, so 3 publishes/action for ANY cookie-bearing script (finding understated this).
+3. The set-key cache (group.go:280-296) runs only at engine construction; per-VUser publishes have no memoization. Empty-value scripts short-circuit cheaply (redaction.go:363), so the cost is correctly scoped to cookie/credential-bearing scripts. Worst case bounded only by 32MB pattern / 101k value limits (redaction.go:42-44), so 512-history rotation makes per-action compiles MB-scale. Structural chain fully established; per-publish µs figures are estimates but the multi-core steady-state overhead on a generator hot path follows. High stands for a load-generation product.
+
+</details>
+
+
+#### 11. Runtime secret matcher admits arbitrarily short/common values (all cookie values, auth us...
+**Where:** `pkg/engine/redaction.go:297` · **Area:** AREA-16 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
+
+compileRuntimeSecretReplacement/addVariant (redaction.go:297-345) admits any non-empty string as an exact-match redaction value with no minimum length or sensitivity filter, and the sources feeding it over-collect: the HTTP adapter snapshots EVERY cookie value in the jar on every Execute (pkg/protocol/http/http.go:222-226, cookie_jar.go:126-144, no name filter) into stageRuntimeCredentialSessionSnapshot (vuser_execute.go:73-86, imported_credential_runtime.go:239-256), and resolvedActionCredentialValues registers Basic-auth usernames for ALL scripts (resolved_imported_credential_redaction.go:54-57, 319-334). scrubRuntimeSecretText then substring-replaces these values in every retained field, including ActionName/Group/DependencyTarget/ErrorMessage via scrubSensitiveResultMetadata (redaction.go:691-725), which runs before Metrics.Record (vuser_execute.go:48-61), so metrics dimension keys themselves are rewritten.
+
+**Failure scenario:** SUT sets an ordinary short cookie, e.g. Set-Cookie: locale=en or cookieconsent=true. From the next action on, the strings "en" / "true" are runtime secrets: action name "open_home" is recorded as "op[REDACTED]_home" in ByAction/ByTransaction metrics, response-body evidence '"success":true' becomes '"success":[REDACTED]', and every URL/error message containing the substring is rewritten -- silently wrong labels and destroyed diagnosis evidence for the entire run. Same mechanism with Basic-auth username "admin": every occurrence of "admin" (paths like /admin/, action names) in retained evidence is masked. If a group name contains such a substring, RecordTransactionResult attributes totals under the scrubbed name while MultiGroupRunResult reads GroupRunTotals under the configured name (group.go:675), so the terminal group result reports zero transactions.
+
+**Suggested fix:** Impose a minimum secret length (e.g. >= 8 bytes) for exact-match runtime values and their variants in compileRuntimeSecretReplacement; filter cookie snapshot collection to sensitive-named cookies (or values above the length floor); stop registering bare usernames (keep user:password composites and encoded Basic payloads).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # E01 — CONFIRMED (high)
+
+Full causal chain established at HEAD (snapshot dc05008ab), no refuting guard found:
+
+1. Cookie jar is on by default (`cookiesEnabled := true`, pkg/protocol/http/config.go:598) and `runtimeCredentialValuesSnapshot` returns EVERY current cookie value with no name/length filter (pkg/protocol/http/cookie_jar.go:126-144). `HTTP.Execute` attaches it to every result via defer (http.go:219-227).
+2. Engine consumes it unconditionally: recordResult → consumeRuntimeCredentialResultValues (pkg/engine/vuser_execute.go:27,73-86) → stageRuntimeCredentialSessionSnapshot → publishRuntimeCredentialRedaction (imported_credential_runtime.go:239-256,167-201); `uniqueSortedRuntimeCredentialValues` drops only "" (219-232).
+3. Matcher admits any non-empty value: `addVariant` rejects only ""/"[REDACTED]" (redaction.go:296-318); raw values mandatory (322-326); `runtimeSecretPlaceholder` comment even anticipates "one-byte secret" (418-423). No minimum-length floor exists anywhere (grep across all three files).
+4. Scrub is plain substring `strings.Replacer` (redaction.go:935-949, no word boundary) applied to ActionName/Group/DependencyTarget/ErrorMessage etc. (scrubSensitiveResultMetadata 691-725, called at 645) BEFORE Metrics.Record/RecordTransactionResult (vuser_execute.go:48-61); metrics key on scrubbed r.ActionName (metrics.go:616,651) while MultiGroupRunResult reads GroupRunTotals by the configured group name (group.go:676) — mismatch → zero totals sub-claim holds.
+5. Basic-auth username registered unconditionally, hand-authored scripts included (resolved_imported_credential_redaction.go:54-56,319; collector.add has no floor, imported_credential_redaction.go:375-378).
+
+So `Set-Cookie: locale=en` makes "en" a runtime secret: "open_home" → "op[REDACTED]_home" in metric dimensions and all retained evidence. Prior-report item (response body retention, PERF_REVIEW_2026-07-06) is a different concern — not a regression of it.
+
+</details>
+
+
+#### 12. SOAP fault detection silently disabled by default response-body discard
+**Where:** `pkg/protocol/soap/soap.go:170` · **Area:** AREA-17 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+soap.Execute inspects result.ResponseBody for faults (soap.go:170 detectSOAPFault(result.ResponseBody)) after delegating to http.Execute, but http.go:747-749 clears ResponseBody on success whenever action.DiscardResponseBodyOnSuccess is set — and the engine sets that flag for every action unless log level is 'extended' WITH the 'data_returned' option (pkg/engine/vuser_resolve.go:221-223, pkg/engine/vuser_execute.go:128-137), i.e. in the default load-run configuration. A SOAP fault returned with HTTP 2xx (common for stacks that do not follow the 500 rule, and for doc/literal business faults) therefore reaches detectSOAPFault as an empty string: soap_fault_code/soap_fault_category extractions and ServerTelemetry fault fields are never populated, and soap_fault_fail_on_fault never fires, so the sample is reported as PASS.
+
+**Failure scenario:** Script config: soap_fault_fail_on_fault=true, log config left at default (not extended/data_returned). Target service returns HTTP 200 with a soapenv:Fault body (e.g. business fault). http.Execute marks Success=true and discards the body; detectSOAPFault("") returns false; the run reports the transaction green and no soap_fault_code is extracted. Every fault of this shape in the whole run is silently counted as success — poisoned results.
+
+**Suggested fix:** In soap.Execute, clear prepared.DiscardResponseBodyOnSuccess before delegating and re-apply the discard (result.ResponseBody = "") after fault detection/extractions when the original flag was set and the sample stayed successful.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # W01 — SOAP fault detection disabled by default body discard: CONFIRMED (high)
+
+Every hop verified at HEAD (snapshot dc05008ab), no refuting guard found.
+
+1. Wiring: soap registered via `protocol.Register("soap", ...)` (pkg/protocol/soap/soap.go:21-25); engine dispatches via `protocol.Get(script.Protocol)` (pkg/engine/engine.go:178,314) → `vu.Proto.Execute` (pkg/engine/vuser_execute.go:457).
+2. Flag default: resolveAction sets `DiscardResponseBodyOnSuccess = !logConfigRetainsSuccessfulResponseBody(...)` unconditionally, no soap exception (pkg/engine/vuser_resolve.go:221-223, 259); retention requires level=extended AND option data_returned (pkg/engine/vuser_execute.go:128-137) — so default config discards.
+3. Propagation: `prepared := *action` copies the flag; soap.Execute never clears it (pkg/protocol/soap/soap.go:93-131, full read).
+4. Discard: `result.ResponseBody` set only when `!result.Success || !DiscardResponseBodyOnSuccess` (pkg/protocol/http/http.go:747-749). HTTP 200 + fault body → Success=true → body empty.
+5. Detection: soap.go:170 `detectSOAPFault(result.ResponseBody)`; detectSOAPFault("") fails `looksLikeSOAPEnvelope` → false (soap.go:678-685). The >=500 fallback (soap.go:188) never fires for 2xx faults; 5xx faults are unaffected (Success already false retains body).
+6. No soap test exercises DiscardResponseBodyOnSuccess (grep: only http_test.go hits).
+
+Consequence follows: with failOnFault=true and default logging, 200-status soapenv:Fault samples report PASS, soap_fault_code/category and ServerTelemetry fault fields never populate. High: silent false-success in the default configuration.
+
+</details>
+
+
+#### 13. No-new-evidence ticks replay the last window's aggregates and transactions as fresh data
+**Where:** `pkg/distributed/generatorrpc/service.go:2157` · **Area:** AREA-19 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+collectExecutionMetrics (service.go:2157-2167, plus the early path at 2120-2127) substitutes exec.lastMetrics.transactions and exec.lastMetrics.aggregates whenever a 1s drain produces no evidence (metricsAggregateSetHasEvidence false), keeping the previous WindowMs (2160-2162). The replayed set is published with a fresh TimestampUnixMs (service.go:1976), stored back into assignment.groupAggregates/groupTransactions (1642-1644), and recordMetricsBatch writes a NEW interval-summary row per tick with nonzero TPS = staleCount/window and TotalTx = stale count (service.go:1669-1681). Nothing marks the batch as replayed, and the archive gains one phantom row per second of idle.
+
+**Failure scenario:** A script with 30 transactions completing in ~3s followed by a 60s think-time loop (or a run that is paused, or a SUT that hangs so completions stop entirely): every subsequent 1s tick republishes the last active window. The live dashboard shows flat, healthy TPS at the pre-stall rate while zero transactions complete — a hung SUT is indistinguishable from a healthy one — and the generator archive's summaries.jsonl accrues one phantom row per second (60 rows x 30 tx during one think loop) with nonzero TPS/TotalTx, so archived TPS-over-time graphs and any consumer summing TotalTx across interval rows report traffic that never happened.
+
+**Suggested fix:** Restrict the lastMetrics substitution to the terminal snapshot (completeExecutionCallbacks path) or publish empty aggregates with a zero-count window on periodic no-evidence ticks; alternatively add a replayed/no-evidence flag to MetricsBatch and skip RecordIntervalSummary when set.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # S01 — No-new-evidence ticks replay last window as fresh data — CONFIRMED (high)
+
+Chain verified at every hop in the snapshot (HEAD dc05008ab):
+
+1. Publisher ticks every publishInterval=1s unconditionally (service.go:769, 2082-2089), per group execution.
+2. Idle window: DrainWindow returns nil aggregate when no completions (service.go:581-584); finalize(nil) yields empty set (398-401); mergeSnapshotSideChannelAggregates adds only network-profile/browser channels (2387-2394), so a plain-HTTP idle tick fails metricsAggregateSetHasEvidence (2171-2173) and takes the replay branch: previous transactions/aggregates/WindowMs substituted (2157-2163). Early path 2120-2127 replays the whole snapshot when engine snapshot is also absent.
+3. Replayed set stored into assignment.groupTransactions/groupAggregates (1642-1644); batch built with fresh TimestampUnixMs=time.Now() (1976) and FleetMetrics from the replayed aggregates (1841, 1988).
+4. recordMetricsBatch writes a new interval-summary row per tick: TPS=staleSuccess/staleWindow, TotalTx=stale count (1669-1681, totals via archiveTotalsFromBatch 2766-2771); RecordIntervalSummary appends unconditionally, no dedup (archive.go:853-870).
+5. No replay marker: grep of api/proto/generator.proto for replay/stale/no_evidence — nothing; no tests reference lastMetrics or the evidence check.
+
+Refutations hunted: no guard, flag, dedup, or pinning test found. Prior-report matches (heartbeat pong, RuntimeCapabilityProvider) are different symbols — not a regression of those. Consequence follows: hung/paused/think-time runs show sustained phantom TPS live and accrue one phantom archive row per second.
+
+</details>
+
+
+#### 14. Projects with direct-import receipts cannot be deleted: direct_import_receipts missing fr...
+**Where:** `pkg/storage/sqlite_projects.go:1361` · **Area:** AREA-20 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+deleteProjectGraphTx (pkg/storage/sqlite_projects.go:1223-1374) enumerates ~40 child tables but never deletes direct_import_receipts, whose project_id column is declared NOT NULL REFERENCES projects(id) (pkg/storage/sqlite_schema.go:409). Completed receipts are retained forever as the idempotency anchor (CompleteDirectImportReceipt at pkg/storage/direct_import_receipts.go:179-224 flips state to 'complete'; the only delete path is AbandonDirectImportReceipt at :225-239, which only removes pending rows owned by the abandoning token). With foreign keys enforced on both dialects (pkg/storage/sqlite.go:167; postgres_foreign_keys.go derives the same edge), the final DELETE FROM projects WHERE id = ? at sqlite_projects.go:1361 violates the FK and rolls back the entire project deletion.
+
+**Failure scenario:** Import a JMeter plan (pkg/api/handlers_import_jmeter.go uses the direct-import receipt flow) or save a browser-recorder capture (pkg/api/handlers_browser_recorder.go:1240+) into project P; the commit leaves a state='complete' direct_import_receipts row referencing P. Later call DELETE /projects/{P} (or the lease-held variant): DeleteProject/DeleteProjectIfLeaseHeld runs deleteProjectGraphTx, DELETE FROM projects fails with 'FOREIGN KEY constraint failed', the transaction (including all the child-table deletions) rolls back, and the API returns a 500. The project is permanently undeletable.
+
+**Suggested fix:** Add {`DELETE FROM direct_import_receipts WHERE project_id = ?`, []any{id}} to the deletes slice in deleteProjectGraphTx (anywhere before the final DELETE FROM projects; the imports section around line 1335 fits). Also worth a follow-up retention policy for completed receipts, which currently grow without bound.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # S08 — direct_import_receipts missing from deleteProjectGraphTx — CONFIRMED
+
+Schema: pkg/storage/sqlite_schema.go:407-421 declares `direct_import_receipts.project_id TEXT NOT NULL REFERENCES projects(id)` with no ON DELETE clause. FK enforcement is on for SQLite (pkg/storage/sqlite.go:167 `_pragma=foreign_keys(ON)`), and postgres_foreign_keys.go:29,183 derives the same constraint (NO ACTION default) for Postgres.
+
+Delete graph: deleteProjectGraphTx (pkg/storage/sqlite_projects.go:1223-1374) enumerates ~40 child tables ending with `DELETE FROM projects WHERE id = ?` (line 1361); `direct_import_receipts` appears nowhere in the file. The only DELETE on that table anywhere is AbandonDirectImportReceipt (pkg/storage/direct_import_receipts.go:231-234), scoped to `state='pending' AND owner_token=?`; CompleteDirectImportReceipt (:212) is an UPDATE that retains the row as state='complete'. No sweeper/retention path exists (repo-wide grep).
+
+Trigger is production-real: pkg/api/direct_import_idempotency.go:99/:308 claims+completes receipts, invoked by handlers_import_jmeter.go (:462,:550) and handlers_browser_recorder.go (:1240+); SQLiteStore implements DirectImportReceiptStore, so the seam is active. deleteProjectGraphTx is reached from DeleteProject (:1180) and DeleteProjectIfLeaseHeld (:1214). With an immediate (non-deferred) FK, the final DELETE FROM projects fails, rolling back the tx — the project becomes undeletable. Severity high stands.
+
+</details>
+
+
+#### 15. Schedule-launched tests cannot be deleted: deleteTestGraphTx trips tests(id) foreign keys
+**Where:** `pkg/storage/sqlite_tests.go:1390` · **Area:** AREA-20 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+deleteTestGraphTx (pkg/storage/sqlite_tests.go:1323-1394) deletes the tests row without clearing scenario_schedule_occurrences.test_id or scenario_schedules.last_run_test_id, both declared as FOREIGN KEY ... REFERENCES tests(id) (pkg/storage/sqlite_schema.go:151 and :130). The scheduler writes both pointers when it materializes an occurrence (pkg/storage/sqlite_schedules.go:668) and promotes it (pkg/storage/sqlite_scenario_occurrence_lifecycle.go:106-124 sets last_run_test_id and keeps occurrence.test_id in every lifecycle branch; nothing ever nulls them). Foreign keys are enforced on SQLite via _pragma=foreign_keys(ON) (pkg/storage/sqlite.go:167) and on Postgres via the FK graph derived from the same schema (pkg/storage/postgres_foreign_keys.go:33-49), so DELETE FROM tests fails and the whole delete transaction rolls back. Project deletion knows about both references and handles them (sqlite_projects.go:1305-1306), proving the per-test path was simply never updated.
+
+**Failure scenario:** Create a scenario schedule, let it launch one run, wait for the run to finish, then delete that run via DELETE /tests/{id} (pkg/api/handlers.go:522 -> runner.DeleteTestWithError -> store.DeleteTest -> deleteTestGraphTx). The final DELETE FROM tests violates the scenario_schedule_occurrences.test_id (and scenario_schedules.last_run_test_id) foreign keys, the transaction rolls back, and the API returns 500 'failed to delete test: FOREIGN KEY constraint failed'. Every test ever launched by a schedule is permanently undeletable until its schedule (and occurrence history) is destroyed first.
+
+**Suggested fix:** In deleteTestGraphTx, before DELETE FROM tests: UPDATE scenario_schedules SET last_run_test_id = NULL WHERE last_run_test_id = ?; and UPDATE scenario_schedule_occurrences SET test_id = NULL WHERE test_id = ? (or DELETE the occurrence rows if calendar history for deleted runs is unwanted — project deletion deletes them). Mirror the exact statements already used in deleteProjectGraphTx.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # S07 — CONFIRMED (high)
+
+FK edges are real: sqlite_schema.go:130 `FOREIGN KEY(last_run_test_id) REFERENCES tests(id)` (scenario_schedules) and :151 `FOREIGN KEY(test_id) REFERENCES tests(id)` (scenario_schedule_occurrences). Enforcement is on for SQLite via `_pragma=foreign_keys(ON)` (sqlite.go:167, sqliteDSN).
+
+Pointers are written and never cleared per-test: occurrence rows insert test_id (sqlite_schedules.go:668-673); on promotion the "started" branch sets `scenario_schedules.last_run_test_id = testID` (sqlite_scenario_occurrence_lifecycle.go:106-109) and every lifecycle branch keeps occurrence.test_id (WHERE test_id = ?, never SET NULL, :120-186). Grep confirms the only NULL-ing of last_run_test_id / occurrence deletion by test is in deleteProjectGraphTx (sqlite_projects.go:1305-1306) — proving the edges are known but omitted from the per-test path.
+
+deleteTestGraphTx (sqlite_tests.go:1323-1394) deletes 9 child tables then `DELETE FROM tests` at :1390 with no schedule/occurrence handling; both callers (DeleteTest :1233, DeleteTestIfLeaseHeld :1288) roll back on error. Reachable in production: DELETE /tests/{id} → handlers.go:547 → DeleteTestWithError (api/tests.go:1145) → deleteStoredTest (api/persistence.go:1545/1554) → deleteTestGraphTx; FK violation → 500.
+
+Prior-report check: the 2026-07-16 fix to deleteTestGraphTx concerns github_check_links/intents (guard + deletes present at :1325-1380) — a different FK edge, not a regression of that fix.
+
+</details>
+
+
+#### 16. formSecretPattern applied to JSON bodies deletes everything after a matched secret value
+**Where:** `pkg/convert/paramize/secrets.go:19` · **Area:** AREA-22 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+formSecretPattern (secrets.go:19) uses value class [^&\s]+ which includes quotes/braces, and unlike the data-param scanner (dataparams.go:117 branches on JSON prefix) it is applied unconditionally to every body by both SanitizeBodySecrets (secrets.go:49-56) and collectBodySecrets (secrets.go:141-159). When a JSON string value embeds '&<secretfield>=' (e.g. a callback URL '"redirect_url":"https://app/cb?code=1&token=xyz"'), the match's value group greedily consumes the rest of a compact JSON body up to the next '&' or whitespace, and the replacement (match[1]+template, dropping match[3]) deletes that tail — destroying the JSON structure and unrelated sibling fields. The analogous pkg/scrub pattern was hardened with a [^&\s;#"'] value class in July (scrub.go:46, known-fixed 'JSON-body scrub pattern'); this sibling in paramize was not.
+
+**Failure scenario:** Sample importer with sanitization enabled ingests a recording whose JSON body contains an OAuth-style URL '...&token=...' inside a string field. SanitizeBodySecrets truncates the body mid-string: valid JSON becomes an unterminated fragment, non-secret fields after the token are silently deleted, and the stored/previewed script body no longer parses or replays. The same corruption occurs if a user accepts the secret suggestion produced from the same match in the review UI.
+
+**Suggested fix:** Mirror the two scrub hardenings: (1) exclude quote/structural bytes from the value class ([^&\s"'<>]+ or the scrub.go:46 class), and (2) only run formSecretPattern when the trimmed body does not start with '{' or '[', matching collectBodyParams' branch in dataparams.go:117.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # T01 — formSecretPattern JSON-body tail deletion — CONFIRMED (high)
+
+Regex at pkg/convert/paramize/secrets.go:19: `(?i)((?:^|[&\s])(...|token|...)=)([^&\s]+)` — value class stops only at `&`/whitespace, so in a compact JSON body `{"redirect_url":"https://app/cb?code=1&token=xyz9","state":"keep"}` the `&token=` inside the string matches and group 3 greedily consumes `xyz9","state":"keep"}` to end-of-body. SanitizeBodySecrets (secrets.go:49-55) replaces the whole match with `match[1]+"{{secret.redacted}}"`, deleting the tail; no JSON-format branch exists (contrast dataparams' JSON prefix branch, and pkg/scrub/scrub.go:46 whose hardened class `[^&\s;#"']+` was never mirrored). isWholeSecretTemplate cannot rescue (tail is not a template).
+
+Reachability: only production callers are pkg/convert/sample/correlate_redact.go:641 (catch-all over entire preserved source-review file content), :729 (addBody — fed request bodies at :666 and response bodies at :682), :764. converter.go:239 invokes redactSourceReviewSecrets unconditionally on every sample import — no flag guards it. Suggestion path: collectBodySecrets (secrets.go:145-158) emits the over-greedy match[0] as SearchText with tail-dropping ReplaceText, so accepting the secret suggestion corrupts the executable body via ApplySuggestions.
+
+Nuance: automatic corruption hits preserved source-review files; executable-body corruption needs user acceptance of the suggestion. Silent destruction of stored import artifacts on a default-on path — high stands.
+
+</details>
+
+
+#### 17. Helm import-only Bruno mode writes encrypted artifacts to emptyDir while mounting the req...
+**Where:** `deployments/helm/apexload/templates/controller.yaml:196` · **Area:** AREA-23 · **Category:** helm-kustomize-parity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+With bruno.importEnabled=true and bruno.enabled=false, controller.yaml:196 sets APEXLOAD_BRUNO_ARTIFACT_ROOT via `ternary .Values.bruno.artifactRoot "/var/lib/apexload/bruno-artifacts" .Values.bruno.enabled`, which resolves to /var/lib/apexload/bruno-artifacts — inside the `data` emptyDir mounted at /var/lib/apexload (controller.yaml:230-231, 263-265) — while the chart simultaneously requires bruno.artifactPersistence.existingClaim (controller.yaml:272) and mounts that PVC at .Values.bruno.artifactRoot=/var/lib/apexload-bruno (controller.yaml:236-237, values.yaml:139), a path the controller then never uses. pkg/api/handlers_bruno_import.go:2949-2965 uses this env as the root of the durable encrypted content-addressed artifact store, and values.yaml:134-135 states import requires protected artifact retention.
+
+**Failure scenario:** Operator enables Bruno import only (importEnabled=true, enabled=false), supplies the required RWX claim, imports collections for weeks; a controller pod reschedule/upgrade discards the emptyDir, so every imported Bruno script's encrypted source artifact is gone — export, inspect, differential-proof, and later execution enablement against those scripts fail permanently while the paid-for PVC sits empty.
+
+**Suggested fix:** Make the env value unconditionally {{ .Values.bruno.artifactRoot }} so import-only mode uses the mounted PVC, or (if import-only is meant to be PVC-free) drop the mount/required-claim for importEnabled-only and document the retention downgrade.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ high:** # C01 — Confirmed (high)
+
+Every hop verified at HEAD in the snapshot. controller.yaml:194-197 sets APEXLOAD_BRUNO_ARTIFACT_ROOT via `ternary .Values.bruno.artifactRoot "/var/lib/apexload/bruno-artifacts" .Values.bruno.enabled`; Sprig ternary is (trueVal, falseVal, cond), so importEnabled=true + enabled=false yields /var/lib/apexload/bruno-artifacts. That path sits under the `data` volume mounted at /var/lib/apexload (controller.yaml:230-231), which is an emptyDir (controller.yaml:263-265). Meanwhile the same importEnabled condition requires bruno.artifactPersistence.existingClaim (controller.yaml:269-272) and mounts that PVC at bruno.artifactRoot, whose default is /var/lib/apexload-bruno (values.yaml:139) — a path the app never reads in this mode. Consumption chain: cmd/controller/main.go:393-395 reads the env → main.go:139 BrunoArtifactDir → pkg/api/server.go:458 brunoArtifactDir → handlers_bruno_import.go:2949-2965 as RootDir of the encrypted content-addressed artifact store (resolver registered at 2970-2972 for later inspect/export). Import-only mode is real: configmap.yaml:63 sets APEXLOAD_BRUNO_IMPORT_ENABLED from importEnabled, gating handleBrunoImport (handlers_bruno_import.go:228). values.yaml:134-135 states import requires protected artifact retention. Pod reschedule discards the emptyDir → encrypted artifacts unrecoverable while the required PVC sits empty. No refuting guard (no subPath, no alternate persistence of artifact content) found.
+
+</details>
+
+
+## Medium (70)
+
+#### 18. Launch-window admission performs many storage queries while holding tr.mu
 **Where:** `pkg/api/launch_preflight.go:564` · **Area:** AREA-01 · **Category:** performance-lock-contention · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 launchWindowConflictsLocked runs with tr.mu held (write lock on the StartTest/promotion/resume/scale path via evaluateStartGatesLocked at pkg/api/testexecution.go:578-589, read lock in PreflightLaunch at pkg/api/launch_preflight.go:102-168) and performs storage I/O inside the lock: launchCapacityEventsLocked calls tr.scenarioStore.ListAllScenarioScheduleOccurrences() (full-table read, launch_preflight.go:608), boundTimeslotBoundariesInWindowLocked does a range query (pkg/api/timeslot_reservation.go:739-756), and the per-sample loop calls launchReservationConflictAtLocked -> boundTimeslotsActiveAtLocked -> ListCapacityReservationsByTimeRange once per sample instant (launch_preflight.go:572-585, timeslot_reservation.go:712-731); sample count grows with overlapping calendar events (launchSampleTimes, launch_preflight.go:743-781). launchTimeslotRevalidationErrorLocked (timeslot_reservation.go:552-583) and ValidateScenarioLoadModel's data-pool reads under RLock (pkg/api/load_model_validation.go:36-78, 338-352) are further instances. This is the repo's documented 'locks held across DB I/O' defect class.
@@ -291,7 +554,7 @@ launchWindowConflictsLocked (pkg/api/launch_preflight.go:545-587) runs under tr.
 </details>
 
 
-#### 9. Local goal controller uses a stale groupVUsers map, misreporting current VUsers and silent
+#### 19. Local goal controller uses a stale groupVUsers map, misreporting current VUsers and silent
 **Where:** `pkg/api/metrics.go:796` · **Area:** AREA-01 · **Category:** correctness-state-divergence · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 broadcastMetrics captures groupVUsers once when the run enters RUNNING (pkg/api/metrics.go:796-801) and thereafter the map is updated ONLY by the goal controller's own successful scales (pkg/api/testexecution.go:3062). An operator ScaleVUsers call updates test.Groups and the engine but never this map, so evaluateGoalControllerLocked computes currentTotalVUsers from stale values (metrics.go:891) and applyGoalControllerUpdateWithScaler both (a) plans absolute targets from the stale distribution and skips groups whose stale value equals the computed target (testexecution.go:3036-3037), and (b) writes the stale values back into test.Groups[i].VUsers for every group in the map after any scale round (testexecution.go:3072-3076), making the durable record diverge from the engine's actual VUser count. The distributed path already rebuilds a fresh map via liveGroupVUsers (pkg/api/distributed_stream.go:1050, helper at pkg/api/goal_controller.go:405-420); the local ticker does not.
@@ -309,7 +572,7 @@ broadcastMetrics captures groupVUsers once from test.Groups at run start (pkg/ap
 </details>
 
 
-#### 10. Boot hydrates full interval history for every stored test into memory with no aggregate bo
+#### 20. Boot hydrates full interval history for every stored test into memory with no aggregate bo
 **Where:** `pkg/api/persistence.go:424` · **Area:** AREA-01 · **Category:** performance-memory · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 loadStoredTests iterates every durable test row (ListTests("", nil), pkg/api/persistence.go:402-428) and calls loadStoredTestHistory for each, which loads up to maxManagedTestHistory=3600 decoded LiveMetrics points capped at maxManagedTestHistoryBytes=64 MiB PER TEST (persistence.go:1003-1038, pkg/api/runner.go:1045-1046) and keeps them resident on the ManagedTest for the process lifetime. There is no global byte budget and no lazy loading, so controller RSS and boot time grow linearly with total retained run history across all runs (terminal runs included). The HA reload path repeats this for every newly-seen identity (persistence.go:504-511).
@@ -327,7 +590,7 @@ loadStoredTests (pkg/api/persistence.go:402-428) iterates every row from ListTes
 </details>
 
 
-#### 11. Gradual ramps persist a full test row (incl. every compiled script) per single-VUser step 
+#### 21. Gradual ramps persist a full test row (incl. every compiled script) per single-VUser step 
 **Where:** `pkg/api/testexecution.go:2130` · **Area:** AREA-01 · **Category:** performance-persistence · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 runVUserScaleRamp issues scaleVUsersNow once per single-VUser step (pkg/api/testexecution.go:1656-1677: steps = |delta|, nextTarget = current + direction*step). Each step takes tr.mu.Lock (testexecution.go:1866) and inside the lock reserveVUserScaleLocked calls tr.saveManagedTestRecord (testexecution.go:2130), which serializes the ENTIRE test row: buildManagedTestRecord -> encodeStoredGroups (pkg/api/persistence.go:1416, pkg/api/stored_decode.go:25-41) clones every group's full compiled RuntimeScript AND BaseScript via a JSON marshal+unmarshal round trip (stored_decode.go:43-56), and the storage layer marshals the groups again on write. Each step additionally repeats the full admission sweep (quota, timeslot revalidation DB read, launch-window sweep -- vuserScaleProposalLocked, testexecution.go:2059-2078). The same per-step cost applies to stage-schedule ramps and goal-controller convergence, since both route through scaleVUsersNow.
@@ -352,7 +615,7 @@ Refuting guards hunted, none found: no coalescing/dirty-flag/async persistence; 
 </details>
 
 
-#### 12. Usage accounting bills configured duration for every retained test, including runs that st
+#### 22. Usage accounting bills configured duration for every retained test, including runs that st
 **Where:** `pkg/api/usage_accounting.go:245` · **Area:** AREA-01 · **Category:** data-integrity-accounting · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 usageAccountingFromTests computes vuser_seconds as TotalVUsers x usageDurationSeconds(test.Duration) (pkg/api/usage_accounting.go:244-249), where test.Duration is the CONFIGURED duration, not actual execution time (actual is derivable from StartedAt/EndedAt/CumulativePause but unused, usage_accounting.go:440-446). The input set is listOperationalTestSnapshots (pkg/api/tests.go:512-528), which returns every retained test in every status, so QUEUED/SCHEDULED/PENDING runs and runs FAILED before start contribute full configured usage to Totals/ByProject/ByUser. These figures are exported as CSV, persisted as durable snapshots on every terminal run and on the cadence timer (pkg/api/persistence.go:1660-1705), and served by /usage endpoints -- i.e., permanently recorded wrong accounting data.
@@ -380,7 +643,7 @@ Severity stays medium: durable wrong accounting figures (up to ~48x over-attribu
 </details>
 
 
-#### 13. Fair-share pending sort issues a reservation SQL query per sort comparison under tr.mu on 
+#### 23. Fair-share pending sort issues a reservation SQL query per sort comparison under tr.mu on 
 **Where:** `pkg/api/capacity.go:556` · **Area:** AREA-02 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 sortPendingTestsForFairShareLocked (pkg/api/capacity.go:556-577) recomputes pendingFairShareRankLocked for BOTH elements on every sort.Slice comparison; each rank calls boundTimeslotsActiveAtLocked (pkg/api/capacity.go:589) which executes reservationStore.ListCapacityReservationsByTimeRange — a real SQL query (pkg/api/timeslot_reservation.go:712-731) — plus three O(len(tr.tests)) scans (capacity.go:596-597, 604-617). The sort runs inside refreshPendingQueueMetadataLocked (capacity.go:646-670), which additionally re-runs evaluateQuotaBlockLocked per pending test (another timeslot SQL + up to two projectStore.GetProject queries each, capacity.go:179-217). All of this executes while holding tr.mu as a WRITE lock, and it is triggered from read endpoints: refreshReadMetadataForTestList/refreshReadMetadataForTest call it whenever any test is QUEUED/PENDING (pkg/api/tests.go:718, 741, plus ~8 more list call sites), and from nextPromotablePendingTestLocked (pkg/api/testexecution.go:3776).
@@ -406,7 +669,7 @@ Full causal chain established at snapshot HEAD dc05008ab:
 </details>
 
 
-#### 14. Conflict/failed-blocked schedules are durably rewritten with a revision bump on every 30s 
+#### 24. Conflict/failed-blocked schedules are durably rewritten with a revision bump on every 30s 
 **Where:** `pkg/api/scheduler.go:2203` · **Area:** AREA-02 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 reconcileScenarioScheduleOccurrenceLocked's no-change early-return (pkg/api/scheduler.go:2203-2219) covers only reason codes approval_required/approval_rejected/approval_state_inconsistent. An occurrence blocked with schedule_conflict, timeslot_unavailable, environment_unavailable, or missed_run_requires_decision — or a failed occurrence — falls through to lines 2220-2276, which set LastOccurrence/UpdatedAt/LastError/NextRequiredAction and call saveScenarioScheduleForSweepLocked unconditionally. Because those branches never advance NextRunAt past the blocked plannedAt, the schedule stays due and this repeats on EVERY sweep (defaultScenarioSchedulerSweepInterval=30s, scheduler.go:81). UpdateScenarioScheduleIfRevision always writes revision=expected+1 (pkg/storage/sqlite_schedules.go:249-264), so the schedule row churns and its revision inflates indefinitely. The execution-plan side already has the missing idempotence guard for its equivalent holds (pkg/api/execution_plan_scheduler.go:1035-1038 and 799-802), proving the scenario-side omission is an oversight, not a design choice.
@@ -424,7 +687,7 @@ Sweep runs every 30s (pkg/api/scheduler.go:81,150) and processes any schedule wi
 </details>
 
 
-#### 15. DST fall-back: schedules firing inside the repeated local hour fire twice, ~60 minutes apa
+#### 25. DST fall-back: schedules firing inside the repeated local hour fire twice, ~60 minutes apa
 **Where:** `pkg/api/scheduler.go:589` · **Area:** AREA-02 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 nextCronRun matches cron fields against local wall time and returns the earliest matching UTC instant (pkg/api/scheduler.go:589-624). On a DST fall-back day both UTC instants of the repeated local hour satisfy the same cron fields. After the first materialization the schedule advances via nextScenarioScheduleRun(schedule, now) (scheduler.go:1797-1815; reconcile path 2231-2242) or nextCronRun(.., advanceFrom=plannedAt) for execution-plan schedules (pkg/api/execution_plan_scheduler.go:1098-1110), and the search — being strictly-after — lands on the SECOND instant of the same local time one hour later. Occurrence dedup keys on (scheduleID, plannedAt) via GetScenarioScheduleOccurrenceByScheduleAndPlannedAt, and the two fires have different plannedAt values, so nothing dedups them. The comment at scheduler.go:592-595 ('during fall-back the earliest matching UTC instant wins') describes only a single evaluation; the test suite pins only that first instant (pkg/api/runner_test.go:6052-6059) and never exercises the advance across the transition.
@@ -442,7 +705,7 @@ nextCronRun (pkg/api/scheduler.go:589-624) iterates UTC minutes but matches cron
 </details>
 
 
-#### 16. GET /archive/manifest re-decodes and re-scrubs the entire transaction archive on every req
+#### 26. GET /archive/manifest re-decodes and re-scrubs the entire transaction archive on every req
 **Where:** `pkg/api/handlers_archive.go:45` · **Area:** AREA-03 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleGetRunArchiveManifest calls sanitizedRunArchiveManifest (pkg/api/handlers_archive.go:45), which builds a full sanitize plan: buildSanitizedRunArchivePlan runs writeSanitizedArchiveTransactions to io.Discard over the whole transactions.jsonl — JSON-decoding, scrubbing, and re-encoding every record — solely to compute the sanitized artifact's count/size/SHA (pkg/api/archive_export_sanitize.go:37-67, pkg/api/archive_transaction_sanitize.go:36-83). Only the raw manifest is cached (cachedRunArchiveManifest); the sanitize pass has no cache keyed on the manifest hash, so every manifest fetch repeats an O(archive-size) scan bounded only at 2M records/512MiB.
@@ -460,7 +723,7 @@ Chain verified. `handleGetRunArchiveManifest` calls `sanitizedRunArchiveManifest
 </details>
 
 
-#### 17. Every JSON report GET rebuilds full reports for all sibling runs in the release against a 
+#### 27. Every JSON report GET rebuilds full reports for all sibling runs in the release against a 
 **Where:** `pkg/api/handlers_archive.go:528` · **Area:** AREA-03 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleGetRunArchiveReport's JSON path unconditionally calls attachReleaseTrend (pkg/api/handlers_archive.go:528), which runs collectReleaseTrendRuns → cachedRunArchiveReport for every archived run in the release (pkg/api/handlers_release_trend.go:39-56, 68-83). runArchiveReportCache holds only 16 entries / 128MiB (pkg/api/archive_report_cache.go:16-18), so a release with more than 16 archived runs thrashes the LRU: each report view re-streams multiple sibling archives end-to-end (buildRunArchiveReport scans up to 2M transactions per sibling), and all N cloned reports are held in memory for the trend computation. handleGetRunArchiveReportsBatch (:595-597) repeats this per batched ID.
@@ -478,7 +741,7 @@ Chain verified. The JSON report path unconditionally calls `s.attachReleaseTrend
 </details>
 
 
-#### 18. Application Load Comparison hard-fails when any run exceeds 500k transactions and holds ev
+#### 28. Application Load Comparison hard-fails when any run exceeds 500k transactions and holds ev
 **Where:** `pkg/api/handlers_load_comparison.go:76` · **Area:** AREA-03 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 collectApplicationLoadComparisonRuns calls readAllArchiveTransactions for every archived release run of the application (pkg/api/handlers_load_comparison.go:76) and propagates its error (:77-79), and readAllArchiveRecordsContext returns a hard error at maxArchiveAnalysisRecords=500_000 records or 128MiB (pkg/api/archive_loaders.go:22-23, 749-751). All runs' decoded []TransactionEvent slices are retained simultaneously in the runs slice until buildLoadComparison finishes, even though the computation only needs per-interval aggregates.
@@ -496,7 +759,7 @@ Chain verified. `collectApplicationLoadComparisonRuns` calls `readAllArchiveTran
 </details>
 
 
-#### 19. One active SLA waiver marks every release breach as waived — scope and creation time are i
+#### 29. One active SLA waiver marks every release breach as waived — scope and creation time are i
 **Where:** `pkg/api/release_sla_governance.go:233` · **Area:** AREA-03 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 buildReleaseSLAGovernance counts active waivers (pkg/api/release_sla_governance.go:163-168) and then, if any exist, sets Summary.WaivedBreaches = Summary.FailedRuns and leaves UnwaivedBreaches at 0 (:233-237), driving the release gate status to 'waived' instead of 'failed' (:238-251). The waiver's persisted Scope field (accepted from the API at :60-65, stored and returned) is never consulted, and breaches from runs completed after the waiver was created are equally treated as waived. Runs whose archive report is unreadable are conservatively counted as breached (:197-211) and are then also silently waived.
@@ -514,7 +777,7 @@ Chain verified. `buildReleaseSLAGovernance` counts waivers only by `Status == "a
 </details>
 
 
-#### 20. JMeter ZIP with multiple .jmx files silently imports only the alphabetically first plan
+#### 30. JMeter ZIP with multiple .jmx files silently imports only the alphabetically first plan
 **Where:** `pkg/api/handlers_import_jmeter.go:191` · **Area:** AREA-04 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 readJMeterZipImport (pkg/api/handlers_import_jmeter.go:172-192) collects every .jmx entry into jmxFiles, sorts the names, and returns only names[0]; the other test plans are discarded with no warning, diagnostic, or unsupported-element entry — neither handleImportJMeter (line 23) nor writeJMeterImportResponse (line 323) mentions the ignored files anywhere in the response.
@@ -532,7 +795,7 @@ readJMeterZipImport (pkg/api/handlers_import_jmeter.go:172-192) collects every `
 </details>
 
 
-#### 21. Merge re-import replaces a same-named CSV data source wholesale when its inline rows are e
+#### 31. Merge re-import replaces a same-named CSV data source wholesale when its inline rows are e
 **Where:** `pkg/api/openapi_import_commit.go:272` · **Area:** AREA-04 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 mergeCSVDataSource returns `imported, imported.Columns` whenever parseCSVInline(existing.InlineData) yields no header (pkg/api/openapi_import_commit.go:271-274), and mergeImportDataSources then overwrites the existing entry in place (line 253-255). A user-customized source whose data lives outside InlineData — Path/StorageRef file binding, or rows deliberately cleared — loses Strategy, Delimiter, Path, StorageRef and every other field to the fresh import's placeholder. Simultaneously diffImportByKey reports `PreservedDataSources = len(existing.DataSources)` and emits 'Preserved N existing data source(s)' (lines 55-64), so the dry-run and commit diff affirmatively misstate what the merge did. This is the documented merge contract's failure mode ('existing seed rows... preserved', line 237-240) and matches the area's re-import-wipes-user-edits defect class.
@@ -550,7 +813,7 @@ mergeCSVDataSource (pkg/api/openapi_import_commit.go:267-274): both sources csv-
 </details>
 
 
-#### 22. Fleet-alert webhooks fire only when a client polls GET /api/v1/fleet/alerts, and concurren
+#### 32. Fleet-alert webhooks fire only when a client polls GET /api/v1/fleet/alerts, and concurren
 **Where:** `pkg/api/handlers_fleet.go:112` · **Area:** AREA-05 · **Category:** reliability-notifications · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 routeFleetAlertNotifications is invoked solely from handleGetFleetAlerts (pkg/api/handlers_fleet.go:112-117); no background evaluator exists (only other buildFleetAlerts caller is the ack handler at 145). So configured fleet_alert webhooks never fire unless a user/dashboard happens to poll the endpoint — an unwatched controller sends no alert for an unreachable/saturated generator. Additionally routeFleetAlertNotifications (443-495) performs an unsynchronized read-modify-write of the 'fleet_alert_notification_state' setting: two concurrent GETs both load the state, both see an alert as un-routed, both Dispatch, and the second SaveSetting clobbers the first, so multi-viewer dashboards produce duplicate webhook notifications per new alert.
@@ -568,7 +831,7 @@ routeFleetAlertNotifications is called only from handleGetFleetAlerts (pkg/api/h
 </details>
 
 
-#### 23. Remote-run handlers hold remoteConfigMu.RLock across multi-call cross-controller HTTP, sta
+#### 33. Remote-run handlers hold remoteConfigMu.RLock across multi-call cross-controller HTTP, sta
 **Where:** `pkg/api/remote_runs.go:88` · **Area:** AREA-05 · **Category:** concurrency-lock-scope · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleCreateRemoteRun (pkg/api/remote_runs.go:88-89), handleGetRemoteRun (227-228) and handleRemoteRunAction (260-261) take s.remoteConfigMu.RLock with defer and then perform a chain of outbound HTTP calls — one pushRemoteWorkspaceItem per referenced scenario/script (each a remoteLibraryImport POST), the test create, an optional start, and a status refresh — each bounded only by defaultLibraryRemoteJSONTimeout of 30s (pkg/api/library_federation.go:27). handleLibraryUpdateRemote/handleLibraryDeleteRemote take the write lock (pkg/api/library_handlers.go:279, 369). Go's RWMutex blocks new readers once a writer is waiting, so a single slow remote peer freezes every endpoint that touches remoteConfigMu for the duration of the in-flight chain.
@@ -586,7 +849,7 @@ RLock+defer spans entire handlers: pkg/api/remote_runs.go:88-89 (create), 227-22
 </details>
 
 
-#### 24. Object-repository bind-from-script rebinds nested control-flow actions by name while the a
+#### 34. Object-repository bind-from-script rebinds nested control-flow actions by name while the a
 **Where:** `pkg/api/handlers_object_repository.go:395` · **Area:** AREA-06 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 objectRepositoryObjectsFromScript (handlers_object_repository.go:386-453) and ambiguousObjectNames (348-381) scan ONLY top-level script.Init/Actions/Teardown (no recursion), but bindScriptToObjectRepository (301-330) recursively walks Control.Steps/Control.Else and sets object_ref on every name match. A nested action that shares a name with a top-level action but targets a different element is never seen by the ambiguity check, so both get bound to the one repository object built from the top-level action's locator. resolveActionObjectRef (object_ref_resolver.go:169) then overwrites the nested action's inline Selector with the repository primary at script-preparation time, so the nested action executes against the wrong element — exactly the mis-binding the code comment at 389-394 says the ambiguity exclusion exists to prevent.
@@ -604,7 +867,7 @@ Scope drift verified. `ambiguousObjectNames` (pkg/api/handlers_object_repository
 </details>
 
 
-#### 25. Command Center iterations edit always 400s for groups with a create-time iteration overrid
+#### 35. Command Center iterations edit always 400s for groups with a create-time iteration overrid
 **Where:** `pkg/api/handlers_test_group_settings.go:624` · **Area:** AREA-07 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 UpdateTestGroupRuntimeSettings builds the recompile entry with Iterations: cloneIntPtr(oldGroup.IterationOverride) (pkg/api/handlers_test_group_settings.go:624) while putting the user's new iterations value into entry.RuntimeSettings via replaceRuntimeFields (handlers_test_group_settings.go:598). compileManagedTestGroupForModeWithRevisionLocked then rejects any request where group.Iterations != nil and the runtime-settings iteration value differs (pkg/api/testcreation.go:1562-1565), so a group whose iterations came from the scenario per-script Iterations field (createGroupEntriesFromStoredScenario, testcreation.go:1037 -> IterationOverride at testcreation.go:1637) can never have its iterations changed from the Command Center dialog.
@@ -622,7 +885,7 @@ Chain verified. Scenario per-script Iterations becomes CreateGroupEntry.Iteratio
 </details>
 
 
-#### 26. Any value containing '@' is classified as a credential, breaking email-valued parameters a
+#### 36. Any value containing '@' is classified as a credential, breaking email-valued parameters a
 **Where:** `pkg/api/runtime_mask.go:87` · **Area:** AREA-07 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 sensitiveEnvValue treats any string that maskURLUserinfo alters as credential-bearing, and maskURLUserinfo (runtime_mask.go:274-294) redacts EVERY string containing '@' whose url.Parse result has no User field — which includes plain email addresses ('alice@example.com' parses as an opaque path) and URLs with '@' in the path. The comment (runtime_mask.go:84-88) justifies fail-closed handling for scheme-less user:password@host strings, but the rule over-matches passwordless emails. Downstream, rejectCredentialShapedParameterEdits (handlers_test_group_settings.go:1038-1043) refuses parameter adds/edits whose values are 'credential-shaped', projectTestGroupParameters (handlers_test_group_settings.go:1266-1275) renders such values as [REDACTED], and protectRuntimeOverrideSecretsWithOptions (runtime_overrides.go:127) converts such Env values into governed {{secret.*}} references whose provisioning requires a writable project secret store (testcreation.go:687-692).
@@ -648,7 +911,7 @@ Prior-report check: W11/PERF-1 concerned missing history masking in the same fil
 </details>
 
 
-#### 27. Schedule-health endpoint materializes the entire unbounded occurrence table (and force-rel
+#### 37. Schedule-health endpoint materializes the entire unbounded occurrence table (and force-rel
 **Where:** `pkg/api/scenario.go:1040` · **Area:** AREA-07 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 ScenarioScheduleHealth calls store.ListAllScenarioScheduleOccurrences() (pkg/api/scenario.go:1040), which is 'SELECT ... ORDER BY planned_at DESC' with no LIMIT (pkg/storage/sqlite_schedules.go:972-979), decoding every occurrence row ever created just to increment per-status counters. scenario_schedule_occurrences has no automatic retention (only the manual single-occurrence delete at scenario.go:960), so the table grows one row per planned tick per schedule forever. The same method also calls refreshScenariosForHARead(true) (scenario.go:1013), and the force flag bypasses the 250 ms throttle (scenario.go:560-561), so on HA deployments every health call additionally reloads all stored scripts and scenarios. The dashboard Monitoring page polls this endpoint every 5 seconds (dashboard/src/components/MonitoringPage.tsx:687).
@@ -666,7 +929,7 @@ Chain verified. GET /api/v1/schedules/health (pkg/api/route_registry_scheduling.
 </details>
 
 
-#### 28. Run manifest 'initial configuration' is read from the continuously rewritten durable recor
+#### 38. Run manifest 'initial configuration' is read from the continuously rewritten durable recor
 **Where:** `pkg/api/test_manifest.go:284` · **Area:** AREA-07 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 initialManifestConfiguration sources the manifest's initial_configuration from tr.storedTestRecord(test.ID) (test_manifest.go:284-286), but the durable TestRecord is rewritten with the CURRENT test state on every lifecycle mutation — VUser scaling sets test.TotalVUsers/Groups and calls saveManagedTestRecord (pkg/api/testexecution.go:1963-1968), goal adjustments persist (testexecution.go:1488-1495), and there are ~34 saveManagedTestRecord call sites. For any test without an archived manifest (i.e. every live or pre-archive run), initial_configuration therefore equals current_configuration after any mid-run change, defeating the manifest's before/after comparison exactly when an operator inspects what changed mid-run.
@@ -684,7 +947,7 @@ Chain verified. For any non-archived run (source="live", pkg/api/test_manifest.g
 </details>
 
 
-#### 29. Redis AllowRateLimit INCR/EXPIRE gap can permanently lock out a key
+#### 39. Redis AllowRateLimit INCR/EXPIRE gap can permanently lock out a key
 **Where:** `pkg/api/cache_backend.go:642` · **Area:** AREA-08 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 redisCacheBackend.AllowRateLimit increments the counter and only sets the TTL when the returned count is exactly 1 (cache_backend.go:650-657); if the process crashes or the connection drops between INCR and EXPIRE (or EXPIRE errors), the key persists with no TTL, subsequent requests see count != 1 and never set an expiry, so the counter grows monotonically and once it passes the limit every request for that key is rejected forever until someone manually deletes the redis key.
@@ -702,7 +965,7 @@ redisCacheBackend.AllowRateLimit (pkg/api/cache_backend.go:642-664): Incr at 650
 </details>
 
 
-#### 30. Project and test deletion orphan powerbi_publishes rows forever
+#### 40. Project and test deletion orphan powerbi_publishes rows forever
 **Where:** `pkg/api/handlers_projects.go:552` · **Area:** AREA-08 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleDeleteProject (pkg/api/handlers_projects.go:552) deletes the project graph via deleteProjectGraphTx (pkg/storage/sqlite_projects.go:1289-1364), and handleDeleteTest via deleteTestGraphTx (pkg/storage/sqlite_tests.go:1323-1394); neither cascade contains a DELETE for powerbi_publishes, whose rows carry NOT NULL test_id and project_id (pkg/storage/sqlite_schema.go:685-700), and a repo-wide grep shows no other DELETE for that table anywhere — so publish records outlive both their test and their project permanently.
@@ -720,7 +983,7 @@ powerbi_publishes DDL carries NOT NULL test_id and project_id (pkg/storage/sqlit
 </details>
 
 
-#### 31. Failed requests permanently burn their Idempotency-Key for the TTL
+#### 41. Failed requests permanently burn their Idempotency-Key for the TTL
 **Where:** `pkg/api/middleware.go:307` · **Area:** AREA-08 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 enforceIdempotencyKey reserves the key in the coordination store BEFORE the handler runs and has no release/rollback path, so a request that fails validation (400), authorization at the handler level, or the operation itself (500) still consumes the key for configuredIdempotencyKeyTTL (default 15 min, middleware.go:353-355); a client retrying with the same key — the standard idempotency retry contract — receives 409 'duplicate idempotency key' even though nothing was ever created, and even on success a replay returns 409 instead of the original resource (except the three carved-out routes at middleware.go:314-317).
@@ -738,7 +1001,7 @@ enforceIdempotencyKey (pkg/api/middleware.go:307-342) calls store.ReserveIdempot
 </details>
 
 
-#### 32. Project deletion stalls every mutating request platform-wide, unbounded
+#### 42. Project deletion stalls every mutating request platform-wide, unbounded
 **Where:** `pkg/api/project_mutation_gate.go:15` · **Area:** AREA-08 · **Category:** concurrency · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 projectMutationAdmission takes projectMutationMu.RLock for the FULL duration of every mutating request (including reading a slow client's multi-hundred-MB upload body, since the gate wraps the mux at pkg/api/server.go:553 and handlers read bodies inside), while handleDeleteProject (pkg/api/handlers_projects.go:401) holds the write side across external secret-provider discovery (network I/O, handlers_projects.go:417), listing up to 10000 outbox jobs, acquiring per-test archive fences, the durable graph delete, and per-archive physical object-store cleanup (handlers_projects.go:582-585) — and Go's writer-preferring RWMutex blocks ALL new readers the moment the writer starts waiting.
@@ -756,7 +1019,7 @@ projectMutationMu is sync.RWMutex (pkg/api/server.go:114). projectMutationAdmiss
 </details>
 
 
-#### 33. Same-origin check ignores X-Forwarded-Proto, 403s mutations behind TLS proxies
+#### 43. Same-origin check ignores X-Forwarded-Proto, 403s mutations behind TLS proxies
 **Where:** `pkg/api/security.go:70` · **Area:** AREA-08 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 evaluateOriginPolicy derives requestScheme solely from r.TLS (security.go:71-74), so behind a TLS-terminating ingress a browser's Origin 'https://host' never matches the plain-HTTP request scheme, same-origin detection fails, and with no AllowedOrigins configured corsMiddleware rejects every non-safe-method request with 403 'request origin is not allowed' (middleware.go:492-495) and the websocket upgrade CheckOrigin (websocket.go:66-75) refuses the connection — even though securityHeadersMiddleware (middleware.go:671) already trusts X-Forwarded-Proto for HSTS, so the codebase is internally inconsistent about proxy awareness.
@@ -774,7 +1037,7 @@ evaluateOriginPolicy (pkg/api/security.go:71-78) sets requestScheme="https" only
 </details>
 
 
-#### 34. Bulk sync push skips the stored-link drift check and silently overwrites remote edits
+#### 44. Bulk sync push skips the stored-link drift check and silently overwrites remote edits
 **Where:** `pkg/api/github_sync_service.go:185` · **Area:** AREA-09 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 runPush fetches the file's CURRENT remote blob sha (pkg/api/github_sync_service.go:185-189) and passes it to PutFile (line 190), so the write always succeeds over whatever is on the branch. The single-script push path loads the stored GitHubScriptLink and returns 409 when remoteSHA != link.RemoteBlobSHA (pkg/api/github_handlers.go:433-442: "remote file has changed since the last sync; pull and review before pushing"). Bulk push never consults the link store before writing (it only writes links after, lines 195-210), so remote-side edits made since the last sync are clobbered without any conflict signal.
@@ -792,7 +1055,7 @@ Bulk push path: `pkg/api/github_sync_service.go` runPush (150-214) fetches the f
 </details>
 
 
-#### 35. Browser-recording list summaries and WS broadcasts always report 0 network requests, 0 web
+#### 45. Browser-recording list summaries and WS broadcasts always report 0 network requests, 0 web
 **Where:** `pkg/api/browser_recording_manager.go:1176` · **Area:** AREA-10 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 summaryLocked (pkg/api/browser_recording_manager.go:1176-1203) copies NetworkRequestCount, WebSocketCount, HARAvailable, and StorageStateReady from the session struct, but nothing ever writes those struct fields — they are only computed on the fly onto a clone in fullSnapshot (1217-1226; the only assignments in the package). List (handlers_browser_recorder.go:332-339) and every broadcast (broadcast at browser_recording_manager.go:1108-1124) use summary(), so GET /browser-recorder/sessions and all browser_recording_* WebSocket messages permanently carry zeros/false for these fields even for stopped sessions holding a HAR and hundreds of network events. The dashboard renders this: RecordingStudio's "Recent Browser Recordings" list shows session.network_request_count from listBrowserRecordings (dashboard/src/components/RecordingStudio.tsx:1106,1112,2805).
@@ -817,7 +1080,7 @@ Mitigations found: single-session GET/stop responses use `fullSnapshot` (correct
 </details>
 
 
-#### 36. Every browser-replay progress broadcast embeds the full accumulated event list (O(n^2) CPU
+#### 46. Every browser-replay progress broadcast embeds the full accumulated event list (O(n^2) CPU
 **Where:** `pkg/api/browser_replay_manager.go:1112` · **Area:** AREA-10 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 BrowserReplayManager.broadcast (pkg/api/browser_replay_manager.go:1108-1132) builds message["session"] from session.snapshot(); snapshotLocked (1161-1166) deep-clones every element of session.Events (headers maps, console/network entries, DOM summaries via cloneBrowserReplayEvent at 1225-1263). handleReplayProgress (1045-1070) appends each new event to session.Events and then broadcasts, so the k-th progress event clones and JSON-marshals all k prior events (hub.BroadcastJSON marshals synchronously, pkg/api/websocket.go:292-299). The marshal runs inside the engine's OnProgress callback (blocking the replay between actions) and inside m.mu.RLock via withCurrentWorkerSession (1007-1026), while Get/Stop/Pause paths take the full m.mu.Lock (794, 827) and queue behind it.
@@ -847,7 +1110,7 @@ Prior-report check: UNCOMMITTED_REVIEW items 11/12 addressed lock placement of t
 </details>
 
 
-#### 37. Synchronous classic replay endpoint exceeds the server's fixed 60s WriteTimeout and loses 
+#### 47. Synchronous classic replay endpoint exceeds the server's fixed 60s WriteTimeout and loses 
 **Where:** `pkg/api/handlers_replay.go:172` · **Area:** AREA-10 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 handleReplayRequest (pkg/api/handlers_replay.go:121-217) runs engine.ReplayScript inline and only writes the JSON report when the replay finishes (writeJSON at 210). The main API server sets a fixed WriteTimeout of 60s (pkg/api/server.go:562), and unlike artifact handlers this path never calls extendArtifactWriteDeadline (used at e.g. handlers_recorder.go:408). Go arms the connection write deadline when the request header is read, so any replay whose wall time exceeds ~60s completes server-side but the response write fails.
@@ -873,7 +1136,7 @@ Mitigations keeping it medium: default ignoreThinkTime=true; WS progress broadca
 </details>
 
 
-#### 38. Proxy recorder silently drops requests once caps are hit — no warning, counter, or event
+#### 48. Proxy recorder silently drops requests once caps are hit — no warning, counter, or event
 **Where:** `pkg/recorder/recorder.go:1251` · **Area:** AREA-10 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 recordRequestWithOptions returns 0 without any signal when len(s.Requests) >= maxRecordedRequests (pkg/recorder/recorder.go:1251-1253) and when the per-session byte budget is exceeded (1358-1361); appendWebSocketMessage silently stops at its frame/byte caps (1403-1407). recorder.Session has no warnings field and no dropped counter, no SessionEvent is emitted, and the converter's warnings (pkg/recorder/converter.go) only cover correlation/static/websocket cases — so a capped recording converts to a script and exports a HAR that simply end mid-flow with zero indication anywhere in the API or UI.
@@ -891,7 +1154,7 @@ pkg/recorder/recorder.go:1251-1253 returns 0 when `len(s.Requests) >= maxRecorde
 </details>
 
 
-#### 39. Live import pays for a discarded classification pass, including a duplicate full runtime-r
+#### 49. Live import pays for a discarded classification pass, including a duplicate full runtime-r
 **Where:** `pkg/convert/enterprisearchive/java_import.go:165` · **Area:** AREA-11 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 ConvertJava (java_import.go:152-224) calls classifyJavaArchive (java_classify.go:140) whose result is stored in state.profile (java_import.go:181) and never read on the live path — the only consumer of state.profile is the test-only JMS lane (java_idiom_registry.go:120). classifyJavaArchive internally calls javaProgramHasUnknownLR (java_classify.go:209-211), which runs a complete second buildJavaVuserRuntimeReachability(program) in addition to ConvertJava's own build at java_import.go:166, and javaExecutableEvidence/javaLooksLike* perform full protocol-receiver scans. Separately, newJavaEvidenceIndex(program) — which rescans every class source with javaCodeOnly for nested-type indexing (java_classify.go:1216-1218) — is constructed ~9 times per import (java_import.go:162, 166 via builder, 1472 guard, 4794 count, 4871 mappings, 5129 mapping index, 330 runner sources, 508 inheritance blockers, java_classify.go:1064 evidence).
@@ -919,7 +1182,7 @@ Mitigant noted: overload guard (java_import.go:164) fails closed before the expe
 </details>
 
 
-#### 40. splitJavaTopLevel treats comparison/shift operators as generics, merging call arguments
+#### 50. splitJavaTopLevel treats comparison/shift operators as generics, merging call arguments
 **Where:** `pkg/convert/enterprisearchive/java_model.go:534` · **Area:** AREA-11 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 splitJavaTopLevel (java_model.go:502-550) increments angleDepth for any '<' whenever findJavaGenericAngleEnd (java_model.go:552-592) finds a later '>', so an argument list like 'count < MAX, retries > 0' (or 'a << 2, b >> 3') is returned as ONE argument instead of two. javaCallArguments (java_import.go:1360-1377) feeds this into javaResolvedEvidenceHelperCalls (java_classify.go:4104-4119) and resolveConstructions (java_import.go:4480-4509), where javaMethodAcceptsArgumentCount (java_import.go:2063-2070) then rejects the real 2-parameter helper/constructor by arity.
@@ -937,7 +1200,7 @@ java_model.go:533-536: on `<` at depth 0, angleDepth++ whenever findJavaGenericA
 </details>
 
 
-#### 41. Registrations after the last request are silently dropped with overcounted stats and no re
+#### 51. Registrations after the last request are silently dropped with overcounted stats and no re
 **Where:** `pkg/convert/enterprisearchive/converter.go:802` · **Area:** AREA-12 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 pendingExtractors/pendingAssertions/pendingHeaders/pendingSourceMappings are attached only when a subsequent request converts (converter.go:655-738); the loop ends at converter.go:802 with no flush, so a web_reg_save_param/web_reg_find/web_add_header after the final request vanishes entirely. Stats.Extractors and NativeFunctions were already incremented at registration time (converter.go:272-273, recordSourceFunctionSupport Executable), so the fidelity report overstates conversion, and the queued source-review mapping is lost, violating the package's own no-silent-drop discipline.
@@ -955,7 +1218,7 @@ pendingExtractors/pendingAssertions/pendingHeaders/pendingSourceMappings are dec
 </details>
 
 
-#### 42. Parameter and data-source emission order is nondeterministic; shared data-file config is f
+#### 52. Parameter and data-source emission order is nondeterministic; shared data-file config is f
 **Where:** `pkg/convert/enterprisearchive/parameters.go:33` · **Area:** AREA-12 · **Category:** determinism · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 ParseParameterFile ranges over the sections map (parameters.go:33), so script.Parameters and script.DataSources order differs between imports of the identical archive. When two parameter sections reference the same data file with different delimiter/column settings, dataSourceByFile dedupes by basename (parameters.go:126-133) and whichever section the map iteration visits first defines the DataSource's delimiter/columns — a nondeterministic tie-break that can select the wrong delimiter for the other parameter.
@@ -973,7 +1236,7 @@ ParseParameterFile iterates `for sectionName, values := range sections` (paramet
 </details>
 
 
-#### 43. Legacy fallback scanner silently truncates: bufio ErrTooLong unchecked and in-string ");" 
+#### 53. Legacy fallback scanner silently truncates: bufio ErrTooLong unchecked and in-string ");" 
 **Where:** `pkg/convert/enterprisearchive/parser.go:310` · **Area:** AREA-12 · **Category:** error-handling · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 parseActionFileLegacy uses a default bufio.Scanner (64KiB token cap) and never checks scanner.Err() before returning nil error (parser.go:240-310), so a single source line over 64KiB stops the scan mid-file and every later function is dropped; ParseConfigSections/ParseUSRFile deliberately raise this limit for exactly this reason (parser.go:941-949) but the action-file scanner does not. Additionally the block terminator check strings.Contains(trimmed, ");") at parser.go:296 fires inside string literals, so a body line containing ");" truncates that call's parsed arguments.
@@ -991,7 +1254,7 @@ parseActionFileLegacy builds a default bufio.Scanner (parser.go:240) with no Buf
 </details>
 
 
-#### 44. findFile basename fallback picks an arbitrary file when basenames collide
+#### 54. findFile basename fallback picks an arbitrary file when basenames collide
 **Where:** `pkg/convert/enterprisearchive/zip.go:1430` · **Area:** AREA-12 · **Category:** determinism · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 findFile's final fallback ranges over the files map matching by basename (zip.go:1430-1435) and returns the first hit, so with two archive entries sharing a basename (e.g. data/users.dat and backup/users.dat) the parameter-file and data-file resolution (zip.go:541, parameters.go:125, runtime_credentials.go:831) selects a nondeterministic winner per import, unlike findRuntimeArchiveFile which fails closed on ambiguity (zip.go:1494-1505).
@@ -1009,7 +1272,7 @@ findFile (zip.go:1418-1437): after a direct hit (1421) and a case-insensitive fu
 </details>
 
 
-#### 45. Native inspection re-parses YAML O(requests x ancestors x passes) and runs the full candid
+#### 55. Native inspection re-parses YAML O(requests x ancestors x passes) and runs the full candid
 **Where:** `pkg/convert/bruno/inspect.go:167` · **Area:** AREA-13 · **Category:** performance · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 Inspect in native mode executes nativeRequestScripts twice (inspect.go:168 discards everything but requirements; inspect.go:239 rebuilds candidates), each call re-validates every YAML file (validateNativeYAMLFiles parses each file twice at native.go:376-386, also run at inspect.go:58), and parses folder/collection layers per request with no memoization (native.go:295-311 parses each ancestor folder.yml once per request; validateNativeEffectiveCredentialShapes at native.go:150-199 does the same full pass again). classifyFileRole (bundle.go:346-367) additionally runs yaml.Unmarshal on every request-shaped .yml each time it is consulted, and it is consulted per file in sanitizeFiles, sanitizeNativePolicyHeaders, sanitizeNativeJSONBodies, sanitizeNativeXMLBodies, sanitizeNativeURLCredentials, inspectCollection, buildManifest (twice), validateNoUnprojectedNativeCredentialTemplates, and both validateNativeYAMLFiles passes — roughly 15-20 full parses per request file plus ~3 x requests x depth folder parses per import.
@@ -1034,7 +1297,7 @@ Bounded by 32MB expanded size and import-time-only, so medium stands. Prior item
 </details>
 
 
-#### 46. Composed URL credential scrub targets use post-http.params query indexes against the autho
+#### 56. Composed URL credential scrub targets use post-http.params query indexes against the autho
 **Where:** `pkg/convert/bruno/native_url_sanitize.go:321` · **Area:** AREA-13 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 rewriteNativeURLTemplates (pkg/convert/bruno/native_url_sanitize.go:298-335) assigns pointer '/http/url/query/<index>/value' and scrub target {Kind:'url_query_value', Index:<index>} from the query string AFTER applyNativeHTTPParams (pkg/convert/bruno/native.go:818-876) has removed every raw-query pair whose name is managed by an http.params entry (including disabled ones) and re-appended enabled params at the end. applyNativeProjectedVariableSecrets (pkg/convert/bruno/native_sanitize.go:143-288) later applies that index via setNativeURLQueryValue (native_url_sanitize.go:442-480) to the AUTHORED /http/url string in the source file, whose '&'-split positions still include the removed pairs, so the index addresses the wrong pair whenever a managed/disabled pair precedes the credential pair in the authored query.
@@ -1052,7 +1315,7 @@ Chain verified. pkg/convert/bruno/native.go:1537-1547: rawTarget passes through 
 </details>
 
 
-#### 47. Empty-body captured events get a message_received assertion that deterministically fails
+#### 57. Empty-body captured events get a message_received assertion that deterministically fails
 **Where:** `pkg/convert/eventhubscapture/eventhubscapture.go:128` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 Convert counts empty-body capture records (eventhubscapture.go:94-96, warned at 141-143) but still attaches Assertions=[{Type: message_received}] to every produce action unconditionally (line 128). The eventhubs runtime evaluates produce assertions against the sent event (pkg/protocol/eventhubs/eventhubs.go:244 evaluateAssertions(action.Assertions, result, ev) where ev is the produced event), and message_received fails on len(ev.Body)==0 (pkg/protocol/eventhubs/helpers.go:253-255: "assertion message_received failed: empty event"). So the send succeeds but the action is scored failed.
@@ -1070,7 +1333,7 @@ pkg/convert/eventhubscapture/eventhubscapture.go counts empty bodies (94-96) and
 </details>
 
 
-#### 48. Wildcard response keys like "2XX" parse as status 2 and emit an always-failing assertion
+#### 58. Wildcard response keys like "2XX" parse as status 2 and emit an always-failing assertion
 **Where:** `pkg/convert/openapi/converter.go:2426` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 firstSuccessStatus (pkg/convert/openapi/converter.go:2420-2437) accepts any 3-byte key starting with '2' and parses it with fmt.Sscanf(key, "%d", &status). Sscanf does not require consuming the whole input, so the OpenAPI 3.x wildcard range key "2XX" (and "2xx") yields status=2 with a nil error (verified empirically: key="2XX" -> n=1, err=nil, status=2). buildAction (line 1346-1350) then emits Assertion{Type: status_code, Expected: 2}, and successResponseSchema (replay_helpers.go:30-37) looks up responses["2"], which misses.
@@ -1088,7 +1351,7 @@ firstSuccessStatus (pkg/convert/openapi/converter.go:2420-2437) accepts any key 
 </details>
 
 
-#### 49. RAML converter leaves {param} URI templates unresolved and asserts status 200 on every met
+#### 59. RAML converter leaves {param} URI templates unresolved and asserts status 200 on every met
 **Where:** `pkg/convert/raml/converter.go:170` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 walkResource (raml/converter.go:148-193) emits actions with Target set to the raw RAML resource path — URI parameters like /users/{userId} are never substituted, parameterized, or even parsed (there is no uriParameters handling anywhere in the package), and baseUri templates like https://api.example.com/{version} likewise pass through (line 83). Every action also gets a hard-coded Assertion{Type: status_code, Expected: 200} (line 170) regardless of the method or the responses the RAML declares. Unlike every sibling importer, no requestimport finalization or import-review gate marks these actions as needing work.
@@ -1106,7 +1369,7 @@ walkResource (pkg/convert/raml/converter.go:148-193) sets `Target: resourcePath`
 </details>
 
 
-#### 50. Doc-literal SOAP envelopes ignore schema targetNamespace and elementFormDefault
+#### 60. Doc-literal SOAP envelopes ignore schema targetNamespace and elementFormDefault
 **Where:** `pkg/convert/wsdl/converter.go:1214` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 soapEnvelope (pkg/convert/wsdl/converter.go:1213-1222) binds the single tns prefix to FirstNonEmpty(op.BodyNamespace, doc.TargetNamespace) and renderXSDFields (pkg/convert/wsdl/converter.go:1496-1544) qualifies every body/header element, at every depth, as <tns:...>. The xsdSchema struct captures targetNamespace (line 116) and elementFormDefault (line 117) but neither field is read anywhere in the package (grep-verified). For doc-literal bindings soap:body has no namespace attribute, so tns is always the WSDL definitions targetNamespace even when the input element is declared in a schema with a different targetNamespace, and child elements are namespace-qualified even when elementFormDefault is unqualified (the XSD default). RPC and encoded operations are execution-gated (credential_projection.go:66-85) but resolved doc-literal bodies ship ungated as 'converted'.
@@ -1124,9 +1387,527 @@ soapEnvelope (pkg/convert/wsdl/converter.go:1213-1222) binds the single `tns` pr
 </details>
 
 
-## Low (32)
+#### 61. DevWeb WebSocket/gRPC steps lose source position — grouped by verb and sorted before earl...
+**Where:** `pkg/convert/devweb/converter.go:536` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
-#### 51. collectorMetricStore never evicts snapshots for deleted collectors
+All WebSocket and gRPC steps are emitted with StartLine=block.StartLine (converter.go:550, 572, 584, 595, 618 — the FindAllStringSubmatch loops have no offsets), and each verb is scanned in a separate pass (news, opens, sends, receives, closes, invokes). sortParsedSteps orders by StartLine only (diagnostics.go:220-228), so ws/grpc steps sort ahead of HTTP requests that appear earlier in the source, and multi-exchange WS flows collapse into all-sends-then-all-receives regardless of authored order. Pure-WS scripts import as executable (no review gate covers bare method calls), so the scrambled order replays.
+
+**Failure scenario:** DevWeb script: HTTP login request (line 12), then ws connect (line 20), send('subscribe'), receive(), send('ack'), receive(), close(). Import orders: connect, send, send, receive, receive, close, then the login request. Replay opens the socket before authenticating and sends both messages before reading any reply — the server drops the connection and every VU errors, even though the import reported all steps converted.
+
+**Suggested fix:** Use FindAllStringSubmatchIndex for the ws/grpc patterns, derive StartLine via devwebLine(block, offset) like WebRequest does, and merge all verbs into one offset-ordered scan.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P08 — CONFIRMED (medium)
+
+All WS/gRPC steps carry StartLine=block.StartLine (pkg/convert/devweb/converter.go:550, 572, 584, 595, 618 — FindAllStringSubmatch, no offsets), while HTTP WebRequest steps get true lines via devwebLine (converter.go:474). sortParsedSteps (diagnostics.go:220-228) orders by StartLine only (strict >, so equal keys keep append order), placing the whole WS/gRPC cluster at the block's first line — ahead of HTTP requests authored earlier — and preserving the per-verb grouped append order (connects, then sends, then receives, then closes; converter.go:537-596), destroying authored send/receive interleaving. No review gate covers bare ws.send()/receive(): reviewOnlyPatterns (converter.go:109-140) matches assignments/control flow only, and `const ws = new load.WebSocket` is explicitly excluded (diagnostics.go:57-65), so a clean pure-WS script imports executable with scrambled order.
+
+</details>
+
+
+#### 62. Every DevWeb load.thinkTime() clobbers the same last step — only the final value survives
+**Where:** `pkg/convert/devweb/converter.go:620` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+The thinkTime loop (converter.go:620-628) iterates all matches and each assigns steps[len(steps)-1].Action.ThinkTime — the same 'last parsed step' index every iteration. Intermediate think times are overwritten (only the last call's value survives, attached to one step), and because ws/grpc scans run earlier, that last step is often not even the source-order predecessor of any thinkTime call. Stats.ThinkTimes still counts every occurrence, so the completeness guard (263-265) reports them as converted.
+
+**Failure scenario:** Script: request A; load.thinkTime(3); request B; load.thinkTime(5). Source pacing = 3s after A + 5s after B. Imported script: A has no think time, B gets 5s (the 3s vanishes) — and with the 1000ms config default filling gaps, the replayed pacing is unrelated to the authored load shape while stats report 2 think times converted.
+
+**Suggested fix:** Match thinkTime with FindAllStringSubmatchIndex and attach each value to the step with the greatest StartOffset below the match offset (after switching steps to offset tracking).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P09 — CONFIRMED (medium)
+
+The thinkTime loop (pkg/convert/devweb/converter.go:620-628) iterates all thinkTimePattern matches; no step is appended inside the loop, so steps[len(steps)-1] is the same fixed index every iteration — each match overwrites the previous ThinkTime and only the final value survives, attached to a single step. That target is the last-appended step from the earlier per-verb scans (often a grpc/ws step, not the source-order predecessor), and assignment happens before sortParsedSteps (630) reorders. stats.ThinkTimes++ counts every occurrence (622), so the completeness-gap formula (converter.go:263-265) subtracts all ThinkTimes and reports no gap. Script-level default fixed 1000ms (converter.go:195-197, firstPositive(opts.DefaultThinkTimeMs, 1000)) fills the wiped values. Chain holds statically.
+
+</details>
+
+
+#### 63. JMeter CSV recycle/stopThread/shareMode/ignoreFirstLine semantics dropped with no diagnos...
+**Where:** `pkg/convert/jmeter/converter_csv_timers.go:34` · **Area:** AREA-15 · **Category:** silent-drop · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+parseCSVDataSet reads only filename/variableNames/delimiter/randomOrder; grep confirms 'recycle', 'stopThread', 'shareMode' and 'ignoreFirstLine' appear nowhere in pkg/convert/jmeter. recycle=false+stopThread=true (finite-data, stop-at-EOF) imports as an endlessly recycling sequential source; shareMode 'Current thread' (per-VU iterator) becomes the platform default sharing; and ignoreFirstLine=true with explicit variableNames yields FirstRowHeader=false (line 38 computes it solely from missing variableNames) so the header row replays as a data row. None of these produce a warning or needs_review disposition, violating the importer conservation rule.
+
+**Failure scenario:** A capacity test uses a 1000-row voucher CSV with recycle=false/stopThread=true so each voucher is consumed once. Imported, the pool recycles: VUs re-submit already-used vouchers, the app returns rejections that the (also-dropped) assertions no longer catch, and the run measures a workload the source plan never described. Separately, ignoreFirstLine=true sends a literal 'username,password' request row once per cycle.
+
+**Suggested fix:** Map stopThread/recycle=false to Strategy 'unique'/'pop' where semantics fit, honor ignoreFirstLine via FirstRowHeader, and emit a Warning diagnostic for shareMode values the data-pool model cannot express.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P06 — CONFIRMED (medium)
+
+parseCSVDataSet (converter_csv_timers.go:34-61) reads only filename, variableNames, delimiter and randomOrder; FirstRowHeader is computed solely as `len(variableNames) == 0` (line 38). A case-insensitive grep for recycle/stopThread/shareMode/ignoreFirstLine over pkg/convert/jmeter returns nothing, so recycle=false/stopThread=true (stop at EOF), shareMode, and ignoreFirstLine-with-explicit-variableNames are all dropped. No diagnostic exists: the CSVDataSet case in walkThreadGroup (converter.go:500-506) emits none, and CSVDataSet is in isKnownJMeterSupported (converter_diagnostics.go:184), so diagnoseJMeterChildren stays silent too. Strategy only ever becomes sequential/random (lines 47-50). Semantics silently diverge from the source plan with no warning or needs_review disposition — confirmed at claimed medium.
+
+</details>
+
+
+#### 64. CSVDataSet inside Transaction/Loop/If/While/OnceOnly controllers dropped from DataSources...
+**Where:** `pkg/convert/jmeter/converter.go:551` · **Area:** AREA-15 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+TransactionController (converter.go:551 `next := *ctx`) and collectJMeterChildActions (converter.go:723 `next := *ctx`) walk controller children with a struct copy of the context; the CSVDataSet case (converter.go:500-506) appends to that copy's csvSources, which is discarded on return. Only the top-level ctx.csvSources is attached to the script (converter.go:309-311). Stats.CSVSources and Summary.CSVSourcesDiscovered are still incremented via the shared result, so the import summary claims the CSV was discovered while script.DataSources omits it.
+
+**Failure scenario:** Plan puts 'users.csv' CSV Data Set Config under a Transaction Controller wrapping the login flow. Import lists users.csv in CSVSourcesDiscovered, but the script has no matching DataSource; login actions target /login?user={{var.username}} which never binds, so every VU sends the literal template (or fails template validation) while the import summary looks clean.
+
+**Suggested fix:** Make csvSources a pointer (like requestReports) or hoist accumulation to a slice owned by ConvertJMX so controller-scoped CSV configs land in script.DataSources.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P03 — CONFIRMED (medium)
+
+convertContext.csvSources is a plain `[]dsl.DataSource` field (converter.go:121). TransactionController recursion copies the context by value (`next := *ctx`, converter.go:551) and collectJMeterChildActions — used for Loop/If/While/OnceOnly children — does the same (converter.go:723), so the CSVDataSet case's append (`ctx.csvSources = append(...)`, converter.go:503) mutates only the discarded copy. Only the top-level ctx.csvSources reaches script.DataSources (converter.go:309-311). Meanwhile Stats.CSVSources++ (converter.go:505) goes to the shared result, and Summary.CSVSourcesDiscovered is built from the shared csvNames map (converter.go:355, populated at 504), so the summary reports the CSV as discovered while the script has no matching DataSource. ThreadGroup/TestPlan recursion (547-548) passes ctx by pointer, so only controller-nested CSVs are lost. Causal chain fully holds.
+
+</details>
+
+
+#### 65. Sampler-scoped HeaderManager appends instead of overriding — both header values sent on t...
+**Where:** `pkg/convert/jmeter/converter.go:524` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+jmeterSamplerScopedHeaders output is appended after scope headers (converter.go:527) and convertHTTPSampler copies all entries into action.HeaderList (converter_sampler.go:82-86). JMeter merges HeaderManagers with closest-scope replacement (one occurrence, local value wins), but the runtime preserves action-list duplicates (pkg/protocol/http/capabilities.go:548 filterHeaderList(headerList, nil)) and applies them via Header.Add (http.go:1044-1050); only Host/User-Agent duplicates are rejected. A sampler-level override of Authorization, Content-Type or X-Api-Key therefore sends BOTH the thread-level and sampler-level values as repeated header fields.
+
+**Failure scenario:** Thread group HeaderManager sets 'Authorization: Bearer A'; one sampler carries its own HeaderManager with 'Authorization: Bearer B' to hit a different service. JMeter sends only B; the imported script sends two Authorization headers (A then B) — most servers read the first or reject the request, so that step authenticates wrongly under load while the import reports both headers as converted.
+
+**Suggested fix:** When merging sampler-scoped headers, remove same-named (case-insensitive) entries from the inherited list before appending, matching JMeter's replace-on-merge semantics.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P04 — CONFIRMED (medium)
+
+Converter side: jmeterSamplerScopedHeaders collects sampler-child HeaderManager entries (converter.go:798-813) and they are appended after inherited scope headers with no same-name replacement (`next.headers = append(append(dsl.HeaderList(nil), ctx.headers...), scoped...)`, converter.go:527). convertHTTPSampler copies every entry into action.HeaderList (converter_sampler.go:82-86); only the summary map dedups. Runtime side: effectiveAuthoredHeaderList keeps action HeaderList duplicates (`filterHeaderList(headerList, nil)`, capabilities.go:547,553), validation treats only Host/User-Agent as singletons (capabilities.go:224,247,297-298), and each entry is applied via req.Header.Add (http.go:246,331,1044-1049). So a sampler-level Authorization override sends both values, unlike JMeter's closest-scope replacement (HeaderManager.merge replaces same-named headers). Confirmed at claimed medium.
+
+</details>
+
+
+#### 66. JMeter TestAction pause applied to every subsequent sampler, not just the next one
+**Where:** `pkg/convert/jmeter/converter.go:464` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+The TestAction case sets ctx.timerMs (converter.go:466) and the diagnostic claims the pause 'was mapped to think time on the next converted sampler', but ctx.timerMs is never reset after consumption — convertHTTPSampler applies it to every sampler while it stays nonzero (converter_sampler.go:129-132). A one-shot flow-control pause thus becomes per-request think time for the remainder of the scope. Relatedly, scope timers are position-dependent (samplers before the timer element get nothing, while JMeter applies scope timers to all samplers) and multiple timers overwrite last-wins instead of summing.
+
+**Failure scenario:** Plan has a Flow Control Action pausing 10s once at the top of an iteration followed by 20 samplers. JMeter adds 10s per iteration; the imported script adds 10s after every one of the 20 actions (+200s/iteration), silently collapsing throughput to a fraction of the source plan's load shape.
+
+**Suggested fix:** Track TestAction pauses in a separate one-shot field cleared after the next converted sampler (or emit a dedicated wait action at that position); keep scope timers persistent but document/warn about position dependence.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P05 — CONFIRMED (medium)
+
+TestAction case sets `ctx.timerMs = pauseMs` and emits an Info diagnostic explicitly claiming the pause "was mapped to think time on the next converted sampler" (converter.go:465-470). But grep over pkg/convert/jmeter shows timerMs is only ever written at converter.go:466 (TestAction) and converter.go:508 (scope timers, last-wins overwrite) and read at converter_sampler.go:129-132, where `if ctx.timerMs > 0` attaches a fixed ThinkTime to the action — there is no reset after consumption anywhere in the package. Since ctx is a pointer through walkThreadGroup, every subsequent sampler in the scope (and controller children via context copies) inherits the pause, turning a one-shot Flow Control pause into per-request think time. Confirmed at claimed medium (load-shape distortion, diagnostic actively misleading).
+
+</details>
+
+
+#### 67. TruClient function bodies imported twice when called from inside another action
+**Where:** `pkg/convert/trueclient/converter.go:191` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+collectActionSequence gathers every 'Call Action' step recursively, including those inside action definition bodies (converter.go:191-212), and executionSteps appends flattenActionBlock output for each collected name (157-168). flattenExecutableSteps already inlines nested Call Action targets into the caller's flattened block (235-243), so a helper action invoked from within a run-logic-referenced action contributes its steps twice: once inlined in the caller, once again as its own appended sequence entry at the end.
+
+**Failure scenario:** Archive: Run Block calls 'PrimaryAction'; PrimaryAction's steps include Call Action 'LoginHelper' (a TruClient function). sequence = [PrimaryAction, LoginHelper]; the imported script contains PrimaryAction's flow with LoginHelper inlined AND a second copy of LoginHelper's navigate/fill/click steps appended after it — every iteration logs in twice, doubling that flow's load and corrupting step order, with no warning.
+
+**Suggested fix:** Collect the call sequence only from structural run-logic blocks (steps whose ancestors are not action definitions), or subtract names already reachable via inline expansion before appending.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # P07 — CONFIRMED (medium)
+
+collectActionSequence (pkg/convert/trueclient/converter.go:191-212) recurses via visit() into every child step with no exclusion for steps inside action-definition bodies (Action=="action"), collecting every "Call Action" name. executionSteps (157-164) then appends flattenActionBlock output once per collected name. Independently, flattenExecutableSteps (234-243) already inlines a nested Call Action's target block into the caller's flattened output. So a helper invoked from within a run-referenced action is emitted twice: inlined inside the caller AND again as its own sequence entry. The recursion stack (214-224) only guards cycles within one flatten pass, not cross-entry duplication. No dedup or definition-body exclusion exists. Causal chain holds statically.
+
+</details>
+
+
+#### 68. scrubRuntimeSecretText treats pre-existing NUL bytes in evidence as matched secret placeh...
+**Where:** `pkg/engine/redaction.go:943` · **Area:** AREA-16 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
+
+scrubRuntimeSecretText marks positions as redacted wherever the replaced candidate has byte 0 (redaction.go:943-949). Evidence that already contains 0x00 bytes trips this check even when no secret matched: the original NUL survives the Replacer, candidate[index]==0 sets matched=true, and expandRuntimeSecretPlaceholders (959-991) then rewrites every NUL run as "[REDACTED]" or same-width '*' runs. Any VUser with an active runtime matcher (which, per pkg/protocol/http/http.go:222-227, is every HTTP VUser once a cookie is set) corrupts such evidence.
+
+**Failure scenario:** A load script downloads a binary asset (PDF/protobuf/gzip) and the request fails; the body is retained as ResponseBody/Snapshot evidence. Because the body contains 0x00 bytes and the VUser holds any runtime secret (a single session cookie suffices), every NUL run is replaced with '[REDACTED]' (length-changing) or asterisks -- the archived evidence no longer matches what the SUT returned, misleading failure diagnosis, while the operator believes only credentials were masked.
+
+**Suggested fix:** Before masking, record positions of pre-existing NUL bytes in the original and exclude them from the matched-span union (or use a sentinel byte guaranteed absent by first checking strings.ContainsRune(original, 0) and falling back to a two-pass exact-match scan for such inputs).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # E03 — CONFIRMED (medium)
+
+Placeholders are NUL runs: runtimeSecretPlaceholder = strings.Repeat("\x00", len) (pkg/engine/redaction.go:418-423). In scrubRuntimeSecretText (redaction.go:934-949), `candidate := replacer.Replace(original)` leaves pre-existing 0x00 bytes untouched; the loop marks any `candidate[index]==0` as matched (943-948), so evidence that already contains NULs sets matched=true with no secret hit, and expandRuntimeSecretPlaceholders (959-991) rewrites every NUL run as "[REDACTED]" or same-width '*'. Gate hasRuntimeSecretReplacers (408-416) is satisfied for any VUser with staged cookie values. Binary bodies reach this path: Snapshot.ResponseBody/HTML etc. via scrubSensitiveTextWithConfig (redaction.go:670-677, 905/914) and result.ResponseBody via scrubSensitiveResultWithOptions (redaction.go:648). Prior-report item ("response body retention", PERF_REVIEW_2026-07-06) is a different, retention-policy concern — not a regression of it.
+
+</details>
+
+
+#### 69. JWT-shaped regex redacts ordinary dotted hostnames/identifiers in result metadata and met...
+**Where:** `pkg/engine/redaction.go:101` · **Area:** AREA-16 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
+
+payloadRedactionPatterns includes \b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b (redaction.go:101) intended for JWTs, but it matches any three consecutive dot-separated segments of 8+ [A-Za-z0-9_-] characters -- i.e. most internal FQDNs and many dotted metric/action identifiers. Because scrubSensitiveResultMetadata (redaction.go:691-725) applies all payload patterns to ActionName, DependencyTarget, PageURL, CorrelationID etc. before metrics recording (vuser_execute.go:48-61), those non-credential values are destroyed in ByDependencyTarget/ByAction dimensions and archives.
+
+**Failure scenario:** A JDBC/HTTP dependency target "internal-api.payments-svc.cluster1.local" (segments 12/12/8 chars) is rewritten to "[REDACTED].local": the Command Center dependency breakdown shows a single "[REDACTED].local" bucket instead of per-host rows, and multiple distinct hosts with this shape collapse into one dimension, silently merging their latency/error stats. Dotted action names from importers (e.g. "checkout_flow.submit_payment.confirm_page") suffer the same fate in ByTransaction.
+
+**Suggested fix:** Tighten the JWT heuristic: require at least one segment to contain both upper and lower case or a base64url '=' / typical JWT header prefix (eyJ), or require segments of >= 16 chars, and/or exempt strings that parse as hostnames (all-lowercase with hyphens).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # E04 — CONFIRMED (medium)
+
+Pattern verified at pkg/engine/redaction.go:100-103: `\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b` → "[REDACTED]", with no eyJ/case/entropy guard. It matches any three consecutive dot-separated 8+ char segments; for "internal-api.payments-svc.cluster1.local" the first three segments (12/12/8) match, `\b` holds at '1'|'.', yielding "[REDACTED].local". scrubSensitiveTextWithConfig applies all payloadRedactionPatterns unconditionally, even with nil config (redaction.go:906-908). ActionName/CorrelationID/DependencyTarget are scrubbed by scrubSensitiveResultMetadata (redaction.go:692,697,700), called from scrubSensitiveResultWithOptions (redaction.go:645) before Metrics.Record (pkg/engine/vuser_execute.go:49-60), and ByDependencyTarget keys on the scrubbed value (pkg/engine/metrics.go:663-676), so distinct hosts collapse into one "[REDACTED].local" bucket. Not related to the prior "response body retention" item; no regression.
+
+</details>
+
+
+#### 70. CDP sessions leak on every window switch / popup activation
+**Where:** `pkg/protocol/browser/runtime_context.go:629` · **Area:** AREA-17 · **Category:** resource-leak · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+installCDPSession (runtime_context.go:614-635) calls browserContext.NewCDPSession(page) and overwrites b.pwCDP without detaching the previous session; registerPage(page, true) calls it on EVERY activation — every browser_switch_window resolution path (frame_actions.go:648,658,668,677,687) and every popup activation — even when the page is already known. Detach happens only for the final b.pwCDP at close() (lifecycle.go:10-19). When chromium + (clientMetricsEnabled or cpuThrottleRate>1 or network simulation) is active, each switch creates a fresh CDP session (with Network.enable re-sent when shaping is on) that stays attached to a live page for the whole browser session.
+
+**Failure scenario:** A soak scenario on chromium with client metrics or network shaping enabled alternates between two windows via browser_switch_window each iteration. Each iteration attaches one more CDP session per switch to the same long-lived pages; over hours, thousands of undetached sessions accumulate in the playwright-go connection registry and in the Chromium process (each with its own event routing, and Network domain enabled), growing memory in both the generator and the browser and multiplying CDP event traffic until the pod degrades.
+
+**Suggested fix:** In installCDPSession, detach the previous b.pwCDP (if any) before storing the new one, and skip creating a session when the activated page is already the current page with a live session.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # W02 — CDP sessions leak on window switch / popup activation — CONFIRMED (medium)
+
+Chain verified at HEAD (snapshot dc05008ab):
+
+1. `pkg/protocol/browser/runtime_context.go:614-635` — `installCDPSession` calls `browserContext.NewCDPSession(page)` (line 621, always a fresh session; playwright-go has no memoization) and overwrites `b.pwCDP` (628-630) with no `Detach` of the prior session.
+2. Reachable: `registerPage(page, true)` invokes it on every activation (runtime_context.go:395-397), including for already-known pages; every `trySwitchWindow` resolution path calls `registerPage(...,true)` (frame_actions.go:648,658,668,677,687), plus setup (runtime_context.go:91), open (action_dispatch.go:263), and popup activation when `autoActivatePopups` (runtime_context.go:165).
+3. Gate is realistic: chromium + (clientMetrics config.go:180-185, cpu throttle, or network shaping) — runtime_context.go:618.
+4. No refuting guard: sole `Detach` is close() on the final `b.pwCDP` (lifecycle.go:10-19). Browser lives for the whole VU (engine.go:356 teardown deferred after all iterations); per-iteration reset only with `new_user_per_iteration` (vuser.go:434). Pages survive switches, so orphaned sessions stay attached; with shaping, each got `Network.enable` (runtime_context.go:649), multiplying event traffic.
+
+Prior-report check: WEEK_REVIEW_2026-07-02 W49 was a popup auto-activation *behavior* change, not this leak — not a regression.
+
+</details>
+
+
+#### 71. SSE streams silently killed by the default 60s client timeout despite a larger validated ...
+**Where:** `pkg/protocol/http/http.go:536` · **Area:** AREA-17 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
+
+readSSEResponse honors params.stream_timeout_ms up to MaxConfiguredTimeout = 1h (config.go:47; validated at http.go:793-799), but the shared http.Client carries Timeout = requestTimeout, defaulting to 60s (config.go:156), which net/http applies through the entire body read. The per-action override only applies when action.TimeoutMs > 0 (http.go:410-412). So an SSE action with stream_timeout_ms=300000 and no explicit request/action timeout is cancelled at 60s: the body closes mid-stream and the sample fails with 'request timeout: context deadline exceeded' even though the stream was healthy and within its declared window.
+
+**Failure scenario:** Author configures an SSE action with stream_timeout_ms=300000 (5 min) and max_events=0, leaving config.http.request_timeout_ms unset. Every VUser's SSE sample errors at exactly 60s with a timeout message, producing a run full of failed samples and misleading P99s; the author's declared stream window is silently ignored.
+
+**Suggested fix:** When shouldReadSSE(params) (or params.stream is set), raise the per-request client Timeout to at least stream_timeout_ms (plus headroom) unless the author explicitly set a smaller action timeout; or validate/warn when stream_timeout_ms exceeds the effective request timeout.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # W04 — SSE stream killed by default 60s client timeout — CONFIRMED (medium)
+
+config.go:156 requestTimeout defaults 60s; http.go:158-162 client.Timeout = h.requestTimeout; http.go:409-412 the per-request copy only raises Timeout when action.TimeoutMs > 0 — no SSE-aware adjustment anywhere (grep: only line 411 touches client.Timeout). stream_timeout_ms is validated up to MaxConfiguredTimeout=1h (http.go:793-799, config.go:47) and honored inside readSSEResponse (sse.go:77-96). net/http Client.Timeout covers body reads, so at 60s the read errors; sse.go:205-214 deliberately classifies Client.Timeout as a premature read timeout and returns it even when events were collected; http.go:584-586 then fails the sample. So stream_timeout_ms=300000 with defaults fails every sample at 60s. Prior-report item (work-limit hard-fail deliberate-nonfix) is a different branch — no match, no regression.
+
+</details>
+
+
+#### 72. Extractor on_miss contract implemented inconsistently: ws/grpc ignore it, network always ...
+**Where:** `pkg/protocol/websocket/websocket.go:272` · **Area:** AREA-17 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+The DSL validates on_miss ("", ignore, empty, fail) and mode (all) for extractors of every protocol family (pkg/dsl/validate.go:757-780 — the source/type allowlist is skipped for websocket/grpc/network but on_miss/mode are checked and accepted), and protocol.Extractor documents fail semantics (pkg/protocol/protocol.go:553-554). But websocket.receive (websocket.go:271-279) and grpc.applyResponseChecks (grpc.go:391-400) silently ignore extraction errors — on_miss:"fail" never fails, on_miss:"empty" never assigns "", mode:"all" is unsupported — while network.runNetworkExtractors (network.go:625-635) fails the whole sample on ANY miss, even with the default on_miss (ignore).
+
+**Failure scenario:** Scenario A: ws_receive with extractor {name: token, on_miss: fail}; the server message lacks the field. The action reports success, the variable stays unset, and the next ws_send transmits the literal '{{var.token}}' — a downstream 4xx blamed on the wrong step. Scenario B: a network dns/tcp action has an optional extractor with default on_miss; a miss fails the whole sample, inflating error rates for a run where the author explicitly chose lenient semantics.
+
+**Suggested fix:** Implement on_miss handling (fail/empty/ignore) in websocket.receive, grpc.applyResponseChecks, and network.runNetworkExtractors mirroring http.go's semantics; alternatively reject unsupported on_miss/mode values at DSL validation for these protocols.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # W03 — on_miss contract inconsistent (ws/grpc ignore, network always fails) — CONFIRMED (medium)
+
+pkg/dsl/validate.go:768-777 validates OnMiss (""/ignore/fail/empty) and Mode (""/all) for every protocol — only the source/type allowlist is HTTP-scoped (validate.go:744-750). protocol.go:553-554 documents "fail: fail the request". HTTP implements it (http.go:659,674,697 + on_miss tests). But websocket.go:271-279 does `if err == nil { store }` — extraction errors silently dropped, so on_miss:"fail" never fails and "empty" never assigns; grpc.go:391-400 is the identical pattern. network.go:625-635 (runNetworkExtractors) returns the error string on ANY miss, failing the sample even with default on_miss=ignore. grep confirms zero OnMiss references in websocket/grpc/network packages. Failure scenarios (unset var sent literally; inflated network error rates) follow directly. Severity medium stands.
+
+</details>
+
+
+#### 73. websocket_reconnect does not cover connections discarded by a failed receive
+**Where:** `pkg/protocol/websocket/websocket.go:206` · **Area:** AREA-17 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+receive() discards the connection on ANY read error, including an ordinary read-deadline timeout (websocket.go:259-262 -> discardConn sets w.conn=nil, correct because gorilla read errors are sticky). But send() and ping() only attempt reconnection when writeMessage/WriteControl fails on an existing conn (websocket.go:214-225, 294-306); when currentConn() finds w.conn==nil they return 'websocket connection is not open' immediately (websocket.go:206-208, 330-337) even though websocket_reconnect defaults to true (websocket.go:69) and lastTarget/lastHeaders are retained precisely for reconnection (websocket.go:349-385).
+
+**Failure scenario:** Polling script: ws_connect once, then loop {ws_send, ws_receive(timeout_ms=5000)}. The server is slow once and the receive times out; the conn is discarded. Every subsequent ws_send in every remaining iteration fails with 'websocket connection is not open' for the rest of the VUser's session, despite reconnect=true — one transient timeout converts into a permanently failing VUser without an explicit ws_connect in the loop.
+
+**Suggested fix:** In send/ping (and optionally receive), when currentConn reports no connection and w.reconnect is true and lastTarget is set, call reconnectConn instead of failing.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # W05 — reconnect does not cover conn discarded by failed receive — CONFIRMED (medium)
+
+websocket.go:259-262: receive() calls discardConn on ANY ReadMessage error, including an ordinary read-deadline timeout (deadline set at 243-251), nil-ing w.conn (387-394). send() (206-209) and ping() (289-292) call currentConn(), which returns "websocket connection is not open" when w.conn==nil (330-337) — returned immediately with no reconnect attempt. The reconnect path (reconnectConn, 349-385, using retained lastTarget/lastHeaders from 196-197) is only reachable when writeMessage/WriteControl fails on an existing conn (214-225, 294-306), despite websocket_reconnect defaulting true (line 69). So one receive timeout permanently fails all later ws_send/ws_ping for the VUser unless the script re-issues ws_connect. Minor caveat: same code path also applies after deliberate ws_close (312-316), so a fix must distinguish the two. Medium stands.
+
+</details>
+
+
+#### 74. Sidecar batch validation misreports timeout exhaustion as target_validation_failed
+**Where:** `pkg/javasidecar/server.go:512` · **Area:** AREA-18 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+handleValidate (server.go:490-518) validates every target sequentially — each an independent JVM launch via runHarness — under one shared bounded context (default 30s via boundedTimeout at server.go:478). When that budget expires mid-batch, the remaining targets' runHarness outcomes fail with a context error but are recorded indistinguishably as `target_validation_failed` (server.go:513-517). The caller preflightSidecar (pkg/protocol/java_vuser/java_vuser.go:1605-1609) passes TimeoutMS = cfg.ActionTimeout (default 30s, java_vuser.go:38) for the WHOLE batch and fails the entire preflight with the misleading per-target code (java_vuser.go:1616-1625).
+
+**Failure scenario:** A multi-class LR Java import (importer splits into 10+ Actions classes) runs runtime preflight against the sidecar. JVM spin-up is ~2-4s per target on a cold node, so targets after ~8-12 exceed the 30s batch budget. Preflight reports 'java_vuser sidecar validation failed (target_validation_failed at index 9)' — the operator debugs a perfectly valid class instead of raising the timeout, and the import is blocked on a phantom validation failure.
+
+**Suggested fix:** In handleValidate, check ctx.Err() after each target and emit a distinct issue code (e.g. validation_timeout with the index reached) instead of target_validation_failed; optionally scale the effective budget by len(targets) up to MaximumExecutionTimeout, and have preflightSidecar surface the distinct code.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # J02 — CONFIRMED (medium)
+
+handleValidate (pkg/javasidecar/server.go:468-521) builds one ctx from boundedTimeout(request.TimeoutMS, DefaultExecutionTimeout=30s; types.go:26) at server.go:490 and runs prepareRuntime, verifyHarness, then every target's runHarness (line 512, one JVM launch each) under that shared budget. runProcess sets outcome.success=false with errorCode from contextErrorCode(ctx) = "execution_timeout" on deadline expiry (server.go:1719-1722, 2025-2026), but handleValidate discards errorCode and records every failure as `target_validation_failed` (server.go:513-517). Caller preflightSidecar passes TimeoutMS = cfg.ActionTimeout (java_vuser.go:1608; default 30s at java_vuser.go:38/466) for the whole batch and surfaces the first issue verbatim (java_vuser.go:1617-1622). Timeout exhaustion mid-batch is thus reported as a per-target validation failure. Confirmed.
+
+</details>
+
+
+#### 75. Real Kafka adapter silently ignores explicit partition targeting and partition strategy
+**Where:** `pkg/protocol/kafka/realclient_franz.go:387` · **Area:** AREA-18 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+kafka.go buildRecord (kafka.go:886) sets rec.Partition via resolvePartition (kafka.go:904-926: explicit params.partition, else key-hash/round-robin per cfg.PartitionStrategy) and the mock honors it, but franzClient.Produce (realclient_franz.go:383-392) only copies rec.Partition into the kgo.Record when >0 and newClient (realclient_franz.go:163-259) never sets kgo.RecordPartitioner; franz-go v1.21.5 defaults to UniformBytesPartitioner (config.go:666 in the dependency), which ignores Record.Partition — only ManualPartitioner (partitioner.go:121) reads it. Additionally the `> 0` guard makes partition 0 unaddressable even if a manual partitioner were configured.
+
+**Failure scenario:** A script imported from LoadRunner/JMeter that pins records to a specific partition (params.partition = 2) — or relies on kafka_partition_strategy round_robin/key-hash — validates green against the mock broker (which routes via resolvePartition), then runs against a real cluster where every record is routed by franz's uniform-bytes partitioner instead. Per-partition ordering assumptions are silently violated; a partition_equals assertion fails intermittently depending on where the sticky partitioner lands, and without an assertion the misrouting is completely silent (extractions report the actual partition, masking the ignored intent).
+
+**Suggested fix:** In newClient, install a wrapper partitioner: if the record carries a non-negative explicit partition (track intent with a sentinel, e.g. Partition >= 0 plus an explicit-flag header or a dedicated field on kafkaRecord), delegate to kgo.ManualPartitioner semantics, else fall back to the default. Alternatively reject params.partition on the real adapter loudly (matching the existing per-action consumer_group fail-loud precedent at realclient_franz.go:412-414).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # J01 — CONFIRMED (medium)
+
+kafka.go:886 buildRecord sets Partition via resolvePartition (kafka.go:904-926: explicit `partition` param wins, else round-robin/key-hash per cfg.PartitionStrategy). The mock honors it (broker.go:239 returns recordMeta with rec.Partition). The real adapter does not: franzClient.Produce (realclient_franz.go:387-389) copies rec.Partition into kgo.Record only when >0 (partition 0 unaddressable), and newClient (realclient_franz.go:163-259) never sets kgo.RecordPartitioner — grep over pkg/protocol/kafka shows zero RecordPartitioner/ManualPartitioner uses. go.mod pins franz-go v1.21.5, whose default UniformBytesPartitioner ignores Record.Partition; only kgo.ManualPartitioner reads it. So explicit targeting and strategy are silently dropped on real clusters while validating green on the mock. Causal chain holds.
+
+</details>
+
+
+#### 76. Archived interval summaries drop the available t-digest, forcing the wrong fleet-percenti...
+**Where:** `pkg/distributed/generatorrpc/archive.go:120` · **Area:** AREA-19 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+archiveIntervalSummary (archive.go:120-134) persists only scalar P50/P90/P95/P99. At record time the fleet t-digest is literally in hand: recordMetricsBatch computes those scalars from batch.FleetMetrics.DurationDigest via quantileFromMetricAggregate (service.go:1677-1680, 2784-2793) and then discards the digest. The live stream (MetricAggregate.duration_digest, generator.proto:271) and the manifest TerminalMetrics tombstone (archive.go:182-200) both ship merge-capable digests, so the archive interval path is the one seam where percentile evidence is reduced to non-mergeable scalars — which is exactly where the parallel review confirmed the pkg/api distributed archive merge concatenates per-generator rows and produces wrong fleet percentiles.
+
+**Failure scenario:** A 2-generator distributed run where generator A serves fast responses (P99 50ms) and generator B is CPU-throttled (P99 900ms): each generator archives correct per-pod scalar percentiles, but the controller-side fleet merge over concatenated scalar rows cannot compute a true fleet P99 for any interval — every distributed archived run's fleet percentile time series is wrong, and no amount of controller-side fixing can recover the distribution because the digests were dropped here.
+
+**Suggested fix:** Add an optional serialized fleet TDigestSnapshot column/field to archiveIntervalSummary (JSONL + parquet schema), populated from batch.FleetMetrics.DurationDigest in recordMetricsBatch; bump archiveSchemaVersion so the controller merge can detect digest-capable archives.
+
+<details><summary>Verification evidence</summary>
+
+**downgraded @ medium:** # S02 verification — downgraded (high → medium)
+
+Mechanics confirmed at every hop. `archiveIntervalSummary` carries only scalar P50/P90/P95/P99 (pkg/distributed/generatorrpc/archive.go:120-134). At record time the fleet digest is in hand and discarded: recordMetricsBatch computes the four scalars via quantileFromMetricAggregate(batch.FleetMetrics,...) (service.go:1669-1681), which reconstructs a TDigest from the proto snapshot per call (service.go:2784-2793). The production distributed finalize path (distributed_stream.go:1516 → stageRemoteArchive, distributed_archive.go:39-124) merges per-generator interval_summaries.jsonl by raw byte concatenation (distributed_archive.go:548-609), and consumers use rows as-is with no cross-generator aggregation — report SummaryTimeline emits each row's P95Ms (archive_report.go:422-450); the summaries API only downsamples (archive_loaders.go:1111-1131). So per-interval percentile series for distributed archives are interleaved per-pod values, not fleet percentiles.
+
+However the "irrecoverable / every fleet percentile wrong" framing is refuted: the generator archive records every raw transaction with DurationMs (archive.go:710-748), transactions.jsonl is merged too (distributed_archive.go:553), and the report's whole-run Overview P50-P99 are already recomputed fleet-correct from those raw rows (archive_report.go:84, 245-248). Per-interval fleet percentiles are controller-recoverable from timestamped raw transactions without the digest. Real but bounded data-integrity defect: medium.
+
+</details>
+
+
+#### 77. Coordinated start barrier trusts generator wall clocks: skew either skews the fleet ramp ...
+**Where:** `pkg/distributed/generatorrpc/execution_control.go:365` · **Area:** AREA-19 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+CommitWork evaluates the controller-chosen start_at_unix_nano against the generator's local clock: a barrier not after local now is rejected outright ('coordinated start barrier has already elapsed', execution_control.go:366-370), one beyond the stage TTL is rejected as too far in the future (371-373), and waitForCoordinatedExecutionStart (485-498) sleeps time.Until(startAt) on the local clock. There is no clock-offset estimation even though the heartbeat exchange carries both sides' timestamps (service.go:1213-1215 replies with max(local, ping timestamp), acknowledging skew exists). A generator whose clock is ahead of the controller by more than the controller's lead time hard-fails the whole fleet commit; smaller skews silently stagger the 'coordinated' ramp across generators.
+
+**Failure scenario:** A generator node with +3s NTP drift receives a fleet commit whose barrier is 2s in the future: that generator returns rejected, the distributed start fails on an otherwise healthy fleet, and the error message gives the operator no hint that clock skew is the cause. With -1.5s drift the generator instead starts 1.5s late, so the distributed ramp the barrier exists to align is skewed by exactly the node drift.
+
+**Suggested fix:** Estimate per-generator clock offset from the heartbeat exchange (or echo the controller's now alongside start_at) and apply the offset when translating the barrier to a local deadline; include local-vs-barrier delta in the rejection message.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # S05 — CONFIRMED (medium)
+
+Controller picks the barrier from its own clock: startAt = time.Now().Add(distributedCommitStartLead(...)) (pkg/api/distributed_stream.go:195); lead is ackWindow (≤2s) + 0.5-1s margin (pkg/api/distributed_execution_backend.go:1155-1179), so ~2.5-3s. Generator evaluates it against generator-local time.Now() (execution_control.go:430 passes time.Now(); 366-373 rejects "already elapsed" if !startAt.After(now) or "too far in the future" beyond stage TTL), and waitForCoordinatedExecutionStart sleeps local time.Until(startAt) (485-498). Grep confirms no clock-offset/skew estimation anywhere in generatorrpc, though heartbeat pong clamps TimestampUnixMs to max(local, ping) (service.go:1215), acknowledging skew. So drift > ~2.5s lead hard-rejects the fleet commit; smaller drift staggers the ramp by the node offset. Causal chain holds.
+
+</details>
+
+
+#### 78. Per-group publishers each archive a full cross-group interval summary, duplicating window...
+**Where:** `pkg/distributed/generatorrpc/service.go:1646` · **Area:** AREA-19 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+publishMetricsWithAggregates runs once per group per tick (runExecutionPublisher is started per group, execution_control.go:467-474), and each call builds batch = metricsBatchLocked(testID) which merges ALL groups' latest window aggregates (service.go:1841, mergeMetricsAggregateSets 2490-2526) and then records an interval summary from the merged fleet totals (service.go:1650, 1669-1681). On a pod hosting G groups this produces G summary rows per second, each containing every group's latest window counts, so each group's window appears in ~G archived rows.
+
+**Failure scenario:** A test with 3 groups on one generator, each completing 100 tx/s: the archive gains 3 rows/sec, each with TotalTx around 300. Summing TotalTx over the summaries (run-total reconstruction, error-count rollups, CSV exports) yields around 900/s — 3x reality; even interval graphs get 3 near-duplicate points per second whose TotalTx cannot be interpreted as per-interval deltas. Single-group tests are unaffected, which is why this survives the common case.
+
+**Suggested fix:** Record interval summaries from one owner per test (e.g., only the group that triggered the publish contributes its own window, or a single per-test summary ticker), or add group_name to the summary row so each row carries only the publishing group's window.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # S04 — Per-group publishers each archive a cross-group interval summary — CONFIRMED (medium)
+
+Full chain verified statically at HEAD snapshot:
+
+1. One publisher per group: execution_control.go:375-384 builds one executionStartEvent per groupName; :456-459 applies them; :467-474 each event spawns runExecutionPublisher. So G groups on a pod → G publisher goroutines.
+2. Each ticks at publishInterval = time.Second (execution_control.go:769; service.go:2082-2089) → publishExecutionSnapshot → publishMetricsForExecution (service.go:2102, 1585-1590) → publishMetricsWithAggregates.
+3. That call stores only the caller group's window (service.go:1644) but builds batch := metricsBatchLocked(testID) which merges ALL groups: service.go:1823-1841, mergeMetricsAggregateSets (2503-2517) folds every group's retained Fleet aggregate into one.
+4. recordMetricsBatch (service.go:1650, 1669-1681) writes RecordIntervalSummary with TotalTx/TotalErrors from the merged FleetMetrics (archiveTotalsFromBatch, service.go:2766-2771) via the single per-test writer (1647).
+5. No refuting guard: archive.go:853-870 RecordIntervalSummary encodes unconditionally, no timestamp/window dedupe, IntervalSummaryCount++ per call. The comment at service.go:1842-1851 confirms the summary is intentionally fed from the cross-group batch.
+
+Net: G rows/sec, each carrying every group's latest window → each window duplicated ~G times; summing TotalTx across rows over-counts ~Gx. Single-group runs unaffected → medium stands. Prior-report items (heartbeat pong, RuntimeCapabilityProvider) are unrelated symbols; not a regression.
+
+</details>
+
+
+#### 79. mergeGeneratorStats sums process-wide gauges across co-located groups, over-reporting res...
+**Where:** `pkg/distributed/generatorrpc/stats.go:106` · **Area:** AREA-19 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+Each group execution's stats come from its own engine snapshot, and SystemResources measures the whole generator process (pkg/engine/sys_metrics.go:106-131: rc.proc.CPUPercent, NumThreads, NumFDs, runtime.ReadMemStats, runtime.NumGoroutine). metricsBatchForAssignment merges per-group stats with mergeGeneratorStats (service.go:1823-1828), which ADDS CPUPercent, MemoryBytes, GoroutineCount, ThreadCount, OpenFDCount, GCCountDelta, GCPauseMs, HeapAllocMB, HeapInUseMB, ContainerCPULimitCores, ContainerCPUThrottledSecondsRate, ContainerMemoryWorkingSetMB, ContainerMemoryLimitMB, TCPEstablished, TCPTimeWait (stats.go:107-140). Every group's snapshot describes the SAME process, so a test with G groups on one pod reports ~G x the true process CPU/memory/threads/FDs and counts each GC G times. The code already uses max() for other host-wide values (CPUUserPct, Load1/5/15, ContainerCPUUsagePct), showing the summed fields are an inconsistency, not a policy.
+
+**Failure scenario:** A scenario with 4 groups assigned to one generator pod running at 60% real process CPU and 2GB RSS publishes batches claiming ~240% CPU and ~8GB memory; RecordResourceSample archives the inflated values (service.go:1661), generator health graphs and archived resource timelines are wrong for every multi-group distributed run, and any threshold/auto-stop or capacity logic keyed on generator CPU/memory can false-trigger.
+
+**Suggested fix:** In mergeGeneratorStats, treat process/host-wide gauges (CPUPercent, MemoryBytes, heap, threads, FDs, goroutines, GC deltas, container limits/working set, TCP counts) as max() or last-sample, keeping only ActiveVUsers (and true per-group counters, if any) additive.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # S03 — CONFIRMED (medium)
+
+mergeGeneratorStats (pkg/distributed/generatorrpc/stats.go:106-145) sums CPUPercent, MemoryBytes, ThreadCount, OpenFDCount, GoroutineCount, GCCountDelta, GCPauseMs, HeapAllocMB/InUseMB, ContainerCPULimitCores, ContainerMemoryWorkingSetMB/LimitMB, TCPEstablished/TimeWait while using maxFloat64 for CPUUserPct/Load/ContainerCPUUsagePct — confirming the inconsistency. Each group's stats come from generatorStatsFromResources (stats.go:17-18: CPUPercent=CPUProcessPct, MemoryBytes=process RSS) fed by engine.SystemResources measuring the whole process (pkg/engine/sys_metrics.go:106-121: rc.proc, runtime.ReadMemStats). Per-group snapshots are stored (service.go:2195) and summed per batch (service.go:1822-1824), so G co-located groups report ~G× real process resources; RecordResourceSample archives the inflated values (service.go:1661). No downstream normalization found.
+
+</details>
+
+
+#### 80. powerbi_publishes rows are orphaned forever: no delete path on test or project deletion
+**Where:** `pkg/storage/sqlite_tests.go:1323` · **Area:** AREA-20 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+The powerbi_publishes table (pkg/storage/sqlite_schema.go:685-702) stores test_id and project_id without foreign keys, and no code anywhere deletes from it: sqlite_powerbi.go exposes only Save/UpdateStatus/GetLatest/List (pkg/storage/sqlite_powerbi.go:27-111), deleteTestGraphTx (sqlite_tests.go:1323-1394) and deleteProjectGraphTx (sqlite_projects.go:1293-1362) both omit it, and there is no retention sweep. Deleting a test or project strands its publish audit rows permanently.
+
+**Failure scenario:** Publish run results to Power BI (creates a powerbi_publishes row keyed by test_id), then delete the test or its project. The publish rows survive as orphans: (1) the table grows without bound across the controller's lifetime as runs are published and pruned; (2) because dedup/re-publish logic anchors on GetLatestPowerBIPublishForTest/GetLatestPowerBIPublishForDataset (sqlite_powerbi.go:91-110), a future test that reuses a deterministic test ID (CI materialization keys produce deterministic IDs) observes the deleted run's publish state and can wrongly skip or misreport a publish.
+
+**Suggested fix:** Add `DELETE FROM powerbi_publishes WHERE test_id = ?` to deleteTestGraphTx and `DELETE FROM powerbi_publishes WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)` to deleteProjectGraphTx, next to the other test-scoped audit rows (github_check_links pattern).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # S09 — powerbi_publishes orphaned forever: CONFIRMED (medium)
+
+Snapshot HEAD dc05008ab, paths repo-relative.
+
+1. Table has no FK edges: pkg/storage/sqlite_schema.go:685-702 defines powerbi_publishes with test_id/project_id TEXT NOT NULL and no REFERENCES clause (contrast the preceding table at :683 which references projects(id)). Because postgres_foreign_keys.go derives FKs from this same schema, neither dialect enforces anything — deletes succeed silently, leaving orphans.
+2. No delete path anywhere: grep across the snapshot for "powerbi_publishes" hits only sqlite_schema.go (create + two indexes) and sqlite_powerbi.go (INSERT :40, UPDATE :69, SELECTs :92/:102/:115). No `DELETE FROM powerbi_publishes` exists in any .go file; no retention sweep.
+3. Both delete graphs omit it: deleteTestGraphTx (pkg/storage/sqlite_tests.go:1323-1394; tail read directly — test_history, test_notes, interval summaries, grafana snapshots, github check links/intents, run_archives, archive jobs, then tests) and deleteProjectGraphTx (sqlite_projects.go) never mention the table (grep-verified).
+4. Consequence real: rows accumulate forever; dedup anchors on GetLatestPowerBIPublishForTest (pkg/api/powerbi_publish.go:274 → powerBIPublishConflict :139-160 returns 409 unless force=true), and test-ID reuse is realistic — CI runs pass RequestedTestID/MaterializationKey (pkg/api/ci_runs.go:357, honored at testcreation.go:83), so a rematerialized run with a reused ID inherits the deleted run's publish state and false-conflicts.
+
+Prior-report check: the "deleteTestGraphTx fixed 2026-07-16" item predates the powerbi_publishes table (added with Power BI publishing 2026-07-23), so this is a new omission, not a regression of that fix. Severity medium stands: silent unbounded growth plus a plausible-but-narrow dedup misfire, no broken headline workflow.
+
+</details>
+
+
+#### 81. Data-param SearchText 'key=value' has no left boundary; applying a short-key suggestion r...
+**Where:** `pkg/convert/paramize/dataparams.go:107` · **Area:** AREA-22 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+collectQueryParams (dataparams.go:107) and the form branch (dataparams.go:168) record SearchText as key+"="+value with no leading delimiter, and ApplySuggestions performs plain substring replacement over the whole field via strings.NewReplacer (apply.go:545-552, replaceOutsideTemplates). 'id=1' is a substring of 'user_id=1', so applying only the 'id' suggestion on a target '?user_id=1&id=1' also rewrites the tail of the unrelated user_id parameter. The overlap validator (apply.go:146-191) only compares literals between two *selected* suggestions — selecting both fails closed with an error, but selecting just the short-key suggestion silently corrupts the other parameter.
+
+**Failure scenario:** Import produces data-param suggestions for '?session_id=7&id=7' (both keys pass LooksParameterName, same recorded value). The reviewer selects only the 'id' suggestion. Apply rewrites the target to '?session_id={{var.id}}&id={{var.id}}': session_id is silently bound to the id data column, so at runtime every VUser sends its id-column value as session_id — wrong data with no diagnostic, and the diff (truncated to 80 chars) can easily hide it.
+
+**Suggested fix:** Anchor replacements: store the preceding delimiter in SearchText (e.g. '?id=1'/'&id=1' per occurrence like formSecretPattern does with its (?:^|[&\s]) group), or validate each selected suggestion's literal against the field for embedded longer-key occurrences (reuse the existing mergedLiteralOccurs machinery) and fail closed.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # T02 — CONFIRMED (medium)
+
+pkg/convert/paramize/dataparams.go:106-107 records SearchText as `key+"="+value` with no leading `?`/`&` anchor (form branch identical at :167-168). Application path: apply.go:435-436 groups literals per field, :469-473 `replaceInFieldValues` calls `replaceOutsideTemplates` (:522-568), which builds `strings.NewReplacer` over raw literals and replaces every occurrence in the field — no key-boundary awareness, so `id=1` matches inside `user_id=1`, rewriting the unrelated key's value. The overlap validator (apply.go:164-190) only compares literals among other *selected* suggestions via `owners[key]`; a single selected suggestion is never checked against surrounding field text. `LooksParameterName` (heuristics.go:32-39) accepts exact `id` and `_id` suffixes, so both suggestions are genuinely emitted. Causal chain holds end-to-end.
+
+</details>
+
+
+#### 82. JMeter __counter/__threadNum translate to {{var.*}} variables nothing defines, reported a...
+**Where:** `pkg/convert/tmpl/functions.go:77` · **Area:** AREA-22 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+translateJMeterFunction maps ${__counter(...)} to {{var.jmeter_counter}} (functions.go:77-82) and ${__threadNum} to {{var.jmeter_thread_num}} (functions.go:84) and returns ok=true, so no diagnostic is emitted (the not-ok path at functions.go:30 is the only warning). Grep over the whole pkg tree shows no other reference to jmeter_counter/jmeter_thread_num — no engine builtin, no materialized parameter — so the imported script references variables that are never set. Untranslatable functions at least warn and keep the original token; these silently claim a successful translation that produces a wrong value at replay.
+
+**Failure scenario:** A JMeter plan uses ${__counter(TRUE,idx)} in a request parameter to generate unique IDs. Import succeeds with zero diagnostics for that token; the generated script sends whatever the engine substitutes for an undefined {{var.idx}} (empty string or the literal template) on every iteration — duplicate/invalid IDs at load-test time, with nothing in the import review pointing at the cause.
+
+**Suggested fix:** Either synthesize a real counter (materialize a parameter/extractor or engine builtin) or return ok=false so the shared 'left intact + warning' path applies; at minimum emit addWarning for counter/threadNum like the other approximations.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # T04 — CONFIRMED (medium)
+
+pkg/convert/tmpl/functions.go:77-84: `__counter` → `{{var.jmeter_counter}}` (or sanitized arg name) and `__threadnum` → `{{var.jmeter_thread_num}}`, both returning ok=true; the only warning path is the !ok branch at functions.go:30. Grep across pkg/internal/cmd/dashboard for `jmeter_counter|jmeter_thread_num` matches only functions.go and its test — no engine builtin, importer materialization, or parameter defines them; pkg/convert/jmeter has no counter handling. At replay, pkg/engine/vuser_resolve.go:670-678 fails the `var.` lookup, and vuser_resolve.go:541-554 then keeps the literal token in the request and tracks unresolved refs only for secret./file./param. — var.* misses are fully silent. Import reports success; runtime sends the literal `{{var.jmeter_counter}}` with no diagnostic anywhere. Confirmed.
+
+</details>
+
+
+#### 83. HAR scrub destroys base64-encoded response content while leaving encoding flag intact
+**Where:** `pkg/scrub/scrub.go:1484` · **Area:** AREA-22 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+scrubHAREntry (scrub.go:1484-1488) runs cp.value over response content.text without checking content.encoding == "base64". A base64 body is one long [A-Za-z0-9+/=]{24,} run with letters, digits, and >=4.0 shannon entropy, so highEntropyToken + looksSensitiveToken (scrub.go:75, 1048-1054, 1544-1562) replace it — sometimes partially, leaving invalid base64 — with [REDACTED], while the sibling "encoding":"base64" field is preserved. Every binary response (images, fonts, protobuf) in every scrubbed HAR is destroyed and no longer decodes, contradicting redactBareTokens' own stated contract (scrub.go:1038-1040: 'keeping scrubbed artifacts usable as evidence and re-import inputs').
+
+**Failure scenario:** A browser-recorder session records a page with images; scrub-on-write replaces each base64 content.text with [REDACTED] (or a partial '[REDACTED]<residue>') while encoding stays 'base64'. Any consumer that decodes content per the HAR spec (viewer preview, replay-fidelity comparison, re-import) gets a decode error or garbage for every binary entry of every recording — silent, systematic loss of all binary evidence rather than targeted secret removal.
+
+**Suggested fix:** In scrubHAREntry, when content.encoding is 'base64' either skip the value pass, or decode → scrub → re-encode, or replace the whole content object with a deliberate redaction marker (empty text plus a _scrubbed annotation) so the encoding contract is not silently violated. At minimum drop the encoding field when text is redacted.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # T03 — HAR scrub destroys base64 response content — CONFIRMED (medium)
+
+Chain verified at HEAD. `scrubHAREntry` (pkg/scrub/scrub.go:1484-1488) runs `cp.value` on `response.content.text` unconditionally; grep shows no read of `content["encoding"]` anywhere in the package (only the `encoding/json` import matches). `cp.value` calls `redactBareTokens` (scrub.go:228 → 1041-1054), which applies `highEntropyToken` (`\b[A-Za-z0-9+/=_-]{24,}\b`, line 75) gated by `looksSensitiveToken` (1544-1562: len>=24, letter+digit, entropy>=4.0). Empirical check (scratch Python, same formulas): even the 96-char 1x1-PNG base64 has entropy 4.39 with letters+digits → redacted, and the `\b` regex matches span [0,94), producing `[REDACTED]==` — invalid base64 exactly as claimed; 4KB binary bodies hit entropy 6.0. Production reachability: `scrub.HAR` with default Policy is called on the persistence/import paths at pkg/protocol/browser/har_capture.go:301 (Playwright HAR scrub-on-write; Playwright emits base64 binary content), pkg/convert/har/converter.go:73, pkg/api/handlers_recorder.go:441, pkg/api/handlers_browser_recorder.go:1737 (DevTools HAR uploads use `encoding:"base64"`). No test pins base64 content preservation. Prior-report check: WEEK_REVIEW_2026-07-02's entropy/JWT fixes added the hostname/low-entropy gates — distinct issue, not a regression; base64 binary legitimately passes those gates. Data-integrity defect, not security → medium stands.
+
+</details>
+
+
+#### 84. apexctl run --api polls forever with no overall deadline
+**Where:** `cmd/apexctl/api_client.go:272` · **Area:** AREA-23 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+pollTest (cmd/apexctl/api_client.go:269-332) loops on a fixed 2s time.Sleep with no context, no overall timeout, and no flag to bound it; maxPollErrors=5 only bounds consecutive transport errors, so a controller that keeps answering 200 with a non-terminal status keeps the CLI alive indefinitely. `apexctl run` exposes no --timeout flag (parseRunArgs, main.go:253-360), unlike `apexctl wait` (30m default) and `apexctl ci run` (hard timeout + abort).
+
+**Failure scenario:** A distributed run wedges non-terminal on the controller (e.g. generator fleet lost mid-run and the run stays RUNNING); a pipeline invoking `apexctl run --api ... --junit out.xml` hangs until the CI job's own wall-clock limit kills it, producing no JUnit evidence at all instead of a failed gate.
+
+**Suggested fix:** Add a --timeout flag (default e.g. duration+30m) to run, thread a context into pollTest, and on expiry write the JUnit/JSON evidence with an execution error before exiting non-zero.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # C04 — `apexctl run --api` polls forever — CONFIRMED (medium)
+
+cmd/apexctl/api_client.go:269-332: pollTest is an unbounded `for {}` with `time.Sleep(2s)`, no context/deadline; maxPollErrors=5 (line 267) only bounds *consecutive transport errors* and resets to 0 on any 200 (line ~292). Loop exits only on status COMPLETE/FAILED/ABORTED, so a run wedged in RUNNING keeps the CLI alive indefinitely. Called from the run --api path at api_client.go:172. parseRunArgs (main.go:253-360 case list: --script/--api/--api-key/--bearer-token/--base-url/--env/--format/--junit/--vusers/--duration/--ramp-up/SLA flags) has no --timeout. Contrast: `wait` defaults 30m (commands.go:29,63-67) and `ci run` has a hard timeout + ctx (ci.go:215,433). Causal chain holds.
+
+</details>
+
+
+#### 85. apexctl wait fails the CI gate on a single transient status-poll error
+**Where:** `cmd/apexctl/api_client.go:364` · **Area:** AREA-23 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+WaitForTest (cmd/apexctl/api_client.go:357-379) returns immediately on any GetTestStatus error — no retry tolerance — while the sibling pollTest tolerates 5 consecutive errors (api_client.go:267, 283-290). One transient 502/timeout from an ingress during a potentially 30-minute wait aborts the command, and waitCmd (cmd/apexctl/commands.go:206-213) exits 1, the same exit code as a genuine SLA breach.
+
+**Failure scenario:** A rolling ingress-controller restart drops one poll mid-wait; the pipeline's `apexctl wait --test <id> --junit results.xml` exits 1 with an ExecutionError JUnit while the load test is actually still running and ultimately passes — a false CI failure and an orphaned run nobody is watching.
+
+**Suggested fix:** Apply the same consecutive-error tolerance (and ideally backoff) used by pollTest inside WaitForTest before giving up.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # C05 — `apexctl wait` fails on one transient poll error — CONFIRMED (medium)
+
+cmd/apexctl/api_client.go:357-379: inside WaitForTest's loop, `test, err := c.GetTestStatus(testID); if err != nil { return nil, err }` — any single error (transient 502/timeout surfaces as error from GetTestStatus, api_client.go:337-354 returns error on any non-200) aborts immediately, with no retry counter. Sibling pollTest tolerates 5 consecutive errors (api_client.go:267,283-292), proving the intended pattern. waitCmd (commands.go:134-216) then hits `if runErr != nil { ... os.Exit(1) }` (~lines 206-213) — the same exit 1 as a genuine SLA breach — after writing an error JUnit. One dropped poll during a 30-minute wait therefore produces a false CI failure while the run continues. Causal chain holds.
+
+</details>
+
+
+#### 86. apexctl run silently ignores malformed and equals-form flags, silently disabling SLA gate...
+**Where:** `cmd/apexctl/main.go:263` · **Area:** AREA-23 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+parseRunArgs (cmd/apexctl/main.go:253-360) is a hand-rolled switch over exact tokens: `--vusers=100` / `--p95-latency-ms=800` (equals form) match no case and are silently dropped; a malformed SLA value (`--p95-latency-ms 800ms`) fails strconv.ParseFloat at main.go:325 and is silently dropped; and `--duration 5min` at main.go:315 discards the ParseDuration error while overwriting the 60s default with 0. There is no unknown-flag error and no requireSLA backstop on this path (unlike ci.go, which validates everything).
+
+**Failure scenario:** A pipeline runs `apexctl run --script s.json --p95-latency-ms=800 --max-error-pct=2 --junit out.xml`; both thresholds are silently ignored, resolveGoalConfig returns nil, the JUnit reports sla skipped ('no SLA thresholds configured'), and the process exits 0 — the performance gate is green with no SLA ever evaluated. The `--duration 5min` variant fails loudly locally (engine.New rejects Duration<=0 at pkg/engine/engine.go:125) but in --api mode sends duration "0s" to the controller.
+
+**Suggested fix:** Replace parseRunArgs/parseCtlArgs/parseArchiveVerifyArgs with flag.FlagSet parsing (as ci.go already does), which handles --k=v, rejects unknown flags, and surfaces value-parse errors; exit 2 on any parse failure.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # C02 — apexctl run silently ignores malformed/equals-form flags — CONFIRMED (medium)
+
+Chain verified at snapshot HEAD dc05008ab:
+
+1. **Code exists / reachable**: `apexctlCommandHandlers["run"] = runTest` (cmd/apexctl/main.go:22) → `parseRunArgs(os.Args[2:])` (main.go:74). parseRunArgs (main.go:253-360) is an exact-token switch with **no default case**: `--p95-latency-ms=800` (equals form) matches no case and is silently dropped; malformed values discard errors — `strconv.ParseFloat` err ignored (main.go:325-328, 332, 339, 346, 353), and `r.duration, _ = time.ParseDuration(args[i])` (main.go:315) overwrites the 60s default with 0 on error.
+2. **Consequence follows**: with all threshold pointers nil, `buildGoalConfigFromArgs` returns nil (sla.go:23-26); absent a script-level GoalConfig, `resolveGoalConfig` is nil, `evaluateLocalSLA` returns nil (sla.go:134-136). JUnit then emits testcase "sla" as **Skipped: "no SLA thresholds configured"** (junit.go:126-135), not a failure; text/JSON paths exit 0 when slaSummary is nil and runErr nil (main.go:181-184, 225-231). Gate is green with zero SLA evaluation.
+3. **No refuting guard found**: no unknown-flag error, no requireSLA backstop on this path (unlike ci.go's FlagSet parsing).
+
+**Prior-report check**: the 2026-07-16 fixed item (L2, "partial-evidence SLA output", Evaluated=false+Breached=true display) is a different defect in the same file — NOT a regression of this finding.
+
+Severity medium stands: silent CI-gate disablement, but requires equals-form/malformed flag usage.
+
+</details>
+
+
+#### 87. Helm generator DNS target hardcodes the apexload namespace while everything else is names...
+**Where:** `deployments/helm/apexload/values.yaml:48` · **Area:** AREA-23 · **Category:** helm-kustomize-parity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+values.yaml:48 defaults dataPlatform.generators to dns://apexload-generator.apexload.svc.cluster.local:9090 (literal 'apexload' namespace) and configmap.yaml:45 emits it verbatim, while the neighboring TLS server-name on configmap.yaml:52 is correctly templated with {{ include "apexload.namespace" . }} — so installing the chart with namespace.name != apexload leaves the controller dialing a service in the wrong namespace even though every other resource follows the configured namespace.
+
+**Failure scenario:** Operator installs with namespace.name=perf-tools; controller starts cleanly (config validation passes), generator discovery resolves nothing (or a foreign cluster's apexload namespace), every distributed run fails to stage with 'no generators available', and the operator hunts through gRPC/TLS settings because the templated server-name looks right.
+
+**Suggested fix:** Template the default in configmap.yaml: when .Values.dataPlatform.generators is empty, emit dns://apexload-generator.{{ include "apexload.namespace" . }}.svc.cluster.local:9090; keep the value override for external fleets.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ medium:** # C06 — Helm generators URL hardcodes apexload namespace — CONFIRMED (medium)
+
+deployments/helm/apexload/values.yaml:48: `generators: dns://apexload-generator.apexload.svc.cluster.local:9090` (literal namespace); values.yaml:1-3 makes namespace.name configurable (default apexload). templates/configmap.yaml:45 emits `{{ .Values.dataPlatform.generators | quote }}` verbatim, while configmap.yaml:52 and certificates.yaml:55-56 correctly template `{{ include "apexload.namespace" . }}` (helper = `default .Release.Namespace .Values.namespace.name`, _helpers.tpl:1-3). The generator Service (templates/generator.yaml:10-11) is named apexload-generator in the templated namespace. No other values/overlay file supplies dataPlatform.generators (chart contains only values.yaml + values.schema.json). Installing with namespace.name != apexload leaves the controller dialing the wrong namespace by default. Confirmed at medium.
+
+</details>
+
+
+## Low (51)
+
+#### 88. collectorMetricStore never evicts snapshots for deleted collectors
 **Where:** `pkg/api/collector_metrics.go:59` · **Area:** AREA-01 · **Category:** resource-leak · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 collectorMetricStore only has put/get (pkg/api/collector_metrics.go:59-70) and the only writers are the heartbeat handler (collector_metrics.go:157) and reader (line 180) -- verified there is no delete call anywhere (pkg/api/server.go:127,441 are the only other references). Deleting a monitoring collector removes its durable row but its last in-memory snapshot (up to maxCollectorHeartbeatBytes=256 KiB of decoded packs, collector_metrics.go:28-31) stays in the map until process restart, so memory grows monotonically with collector churn.
@@ -1144,7 +1925,7 @@ collectorMetricStore (pkg/api/collector_metrics.go:50-70) exposes only put and g
 </details>
 
 
-#### 52. broadcastEvent reads live ManagedTest fields after tr.mu is released, racing with locked w
+#### 89. broadcastEvent reads live ManagedTest fields after tr.mu is released, racing with locked w
 **Where:** `pkg/api/testexecution.go:2662` · **Area:** AREA-01 · **Category:** concurrency-data-race · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 Several lifecycle paths release tr.mu and then call tr.broadcastEvent(eventType, test) with the live pointer -- test_paused at pkg/api/testexecution.go:2662, test_resumed at 2816, test_aborted at 1094, test_failed at 3243 -- and broadcastEvent reads test.Status/test.Name/test.ProjectID without any lock (pkg/api/metrics.go:957-980). A concurrent request mutating the same test under tr.mu (e.g. an immediate ResumeTest writing Status at testexecution.go:2774, or attribution writes at persistence.go:1462) races with those unlocked reads. Other sites already avoid this by snapshotting under the lock (cloneManagedTestFieldsLocked at testexecution.go:3189; stoppingSnapshot at 1181-1183), so the remaining raw-pointer sites are inconsistent stragglers.
@@ -1166,7 +1947,7 @@ But a real unguarded writer exists: the local run goroutine (execution_backend.g
 </details>
 
 
-#### 53. Run-calendar truncation keeps an arbitrary append-order subset instead of the events neare
+#### 90. Run-calendar truncation keeps an arbitrary append-order subset instead of the events neare
 **Where:** `pkg/api/run_calendar.go:269` · **Area:** AREA-02 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 BuildRunCalendar enforces maxEvents inside appendEvent during per-source iteration (materialized occurrences → ad-hoc tests → scenario projections → plan occurrences → plan projections) and only sorts by StartAt afterwards (pkg/api/run_calendar.go:269-278, 351-356). When the window holds more events than the cap (runCalendarMaxEvents=2000 or a smaller ?limit, line 247-250), the surviving subset is determined by source order and snapshot iteration order, not by time — later sources (execution-plan projections) are dropped wholesale while every earlier-source event survives.
@@ -1193,7 +1974,7 @@ Prior-report check: W18 (windowed occurrence DB query, fixed) and PERF-27 (manif
 </details>
 
 
-#### 54. Browser diagnostics download fails outright past 5,000 events instead of returning a trunc
+#### 91. Browser diagnostics download fails outright past 5,000 events instead of returning a trunc
 **Where:** `pkg/api/archive_browser.go:52` · **Area:** AREA-03 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 buildRunArchiveBrowserDiagnosticsContext returns an error once a run has more than maxBrowserDiagnosticEvents=5000 browser transactions (pkg/api/archive_browser.go:42, 52-53) or 128MiB of payload (:121-124), so handleDownloadRunArchiveBrowserDiagnostics responds 500 with no partial bundle — the limit converts a large-but-valid archive into a completely unretrievable diagnostics set via this endpoint.
@@ -1211,7 +1992,7 @@ pkg/api/archive_browser.go:42-53: once len(bundle.Events) >= maxBrowserDiagnosti
 </details>
 
 
-#### 55. SOAP fault timeline bucket permanently drops by-code (or by-category) counts after a first
+#### 92. SOAP fault timeline bucket permanently drops by-code (or by-category) counts after a first
 **Where:** `pkg/api/archive_report_aggregate.go:383` · **Area:** AREA-03 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 mergeArchiveSOAPFaultTimelineBucket nils a bucket's ByCode/ByCategory map whenever it is empty after a merge (pkg/api/archive_report_aggregate.go:383-388). Because incrementArchiveCount is a no-op on a nil map (:351-356), a minute bucket whose first fault carries only a category (empty code) sets ByCode=nil forever: every later fault code in that minute is silently uncounted while bucket.Total still increments, and vice versa for ByCategory.
@@ -1229,7 +2010,7 @@ pkg/api/archive_report_aggregate.go:371-388: a new minute bucket is created with
 </details>
 
 
-#### 56. Single-slot global Bruno inspect semaphore holds its exclusive section across the request-
+#### 93. Single-slot global Bruno inspect semaphore holds its exclusive section across the request-
 **Where:** `pkg/api/handlers_bruno_import.go:232` · **Area:** AREA-04 · **Category:** performance-scalability · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 brunoInspectConcurrency is a fixed capacity-1 channel (pkg/api/handlers_bruno_import.go:149) acquired at the top of handleInspectBrunoImport (lines 232-238) BEFORE readBrunoInspectInput reads the request body (line 240) and before brunoconvert.Inspect (line 251) and the two encrypted artifact PutBytes writes (lines 405-414). The exclusive section therefore includes the client's upload over the network (limit 272 MiB per brunoImportMaxBodyBytes at pkg/api/route_catalog.go:603), so one slow-uplink client serializes every other Bruno inspection on the whole controller for the duration of their upload; queued requests wait indefinitely (no timeout, only client-context cancel).
@@ -1249,7 +2030,7 @@ Refuting guard the finding missed: the API server sets `ReadTimeout: 15 * time.S
 </details>
 
 
-#### 57. java_vuser launch gating performs a fleet-metadata DB read and placement simulation under 
+#### 94. java_vuser launch gating performs a fleet-metadata DB read and placement simulation under 
 **Where:** `pkg/api/distributed_execution_backend.go:641` · **Area:** AREA-05 · **Category:** performance-lock-scope · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 enrichGeneratorTargetSpecsWithLabels executes tr.fleetStore.ListGeneratorMetadata(0,0) — an unbounded full-table SQLite read (confirmed limit=0 means no LIMIT in pkg/storage/sqlite_fleet.go:458-468) — and is called from distributedJavaVuserGroupRunnerAvailableLocked (pkg/api/external_runner_gating.go:514) and distributedJavaVuserRunnerAvailableLocked (490), which run while the caller holds the global TestRunner mutex (call sites: testexecution.go:564, testcreation.go:575, launch_preflight.go:128, testexecution.go:3585). Blocking DB I/O plus a full placement simulation (chooseGeneratorShardsForGroup) inside tr.mu stalls every other API request that touches runner state for the duration of the query.
@@ -1267,7 +2048,7 @@ enrichGeneratorTargetSpecsWithLabels calls tr.fleetStore.ListGeneratorMetadata(0
 </details>
 
 
-#### 58. Startup-failure cleanup stops assigned generators sequentially, so a wide-fleet failure ca
+#### 95. Startup-failure cleanup stops assigned generators sequentially, so a wide-fleet failure ca
 **Where:** `pkg/api/distributed_execution_backend.go:736` · **Area:** AREA-05 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 The cleanup closure in Run() iterates startedTargets sequentially, issuing stopGeneratorTest with a fresh b.timeout (default 10s) context per target (pkg/api/distributed_execution_backend.go:736-747). Every other stop fanout in this file is parallel (stopTestContext:1339-1360, forceStopDistributedTargets:568-584, commit:1209-1228). With up to maxDistributedTargetsPerRun=256 targets, a late startup failure (e.g. metrics-stream open failure at 1038-1042) during a fleet-wide network incident performs up to 256 sequential 10s-timeout stops (~43 minutes) before failTestBeforeRunAndLog marks the test FAILED.
@@ -1285,7 +2066,7 @@ Cleanup closure (pkg/api/distributed_execution_backend.go:736-747) iterates `sta
 </details>
 
 
-#### 59. Evacuate endpoint pre-applies draining+cordon, then reports Applied=false on refusal while
+#### 96. Evacuate endpoint pre-applies draining+cordon, then reports Applied=false on refusal while
 **Where:** `pkg/api/handlers_fleet_evacuate.go:93` · **Area:** AREA-05 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleEvacuateGenerator marks the generator draining and persists the metadata cordon BEFORE computing evacuation impacts (pkg/api/handlers_fleet_evacuate.go:93-102). When EvacuateGenerator refuses (stateful protocol, no survivor capacity, pre-baseline window), the handler returns 409 with Applied=false and an error (117-125), but the drain state and cordon metadata remain applied — the response contradicts the actual state change, and the generator silently stops receiving new placements until an operator notices and uncordons.
@@ -1303,7 +2084,7 @@ Non-dry-run path pre-applies state: handlers_fleet_evacuate.go:93-101 sets drain
 </details>
 
 
-#### 60. isAIGeneratedDraft matches the bare substring "ai" in generated_by, misclassifying manual 
+#### 97. isAIGeneratedDraft matches the bare substring "ai" in generated_by, misclassifying manual 
 **Where:** `pkg/api/authoring_ai_guardrails.go:57` · **Area:** AREA-06 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 isAIGeneratedDraft (authoring_ai_guardrails.go:55-63) returns true when generated_by merely CONTAINS "ai" (or import source contains "llm"). generated_by is a free-form client-suppliable field (dsl.Script.GeneratedBy); values like "maintainer-tool", "main-suite-gen", or "aisha" trip the check. A misclassified draft gets an AIGuardrailReport whose diff_review and replay_before_save items are "blocked" (buildAIGuardrailReport:25-41), which drives AuthoringHealth to blocked and makes handleApproveAuthoringSession return 400 with the validation payload (handlers_authoring_sessions.go:542-561), so the session cannot be approved without attaching bogus AI evidence.
@@ -1321,7 +2102,7 @@ pkg/api/authoring_ai_guardrails.go:57: `strings.Contains(generatedBy, "ai")` —
 </details>
 
 
-#### 61. Capabilities endpoint reports the ai_generated authoring source as "planned" while the AI 
+#### 98. Capabilities endpoint reports the ai_generated authoring source as "planned" while the AI 
 **Where:** `pkg/api/authoring_capabilities.go:533` · **Area:** AREA-06 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 The authoring capability catalog marks Source "ai_generated" with Status "planned" and a note that "Generation guardrails are not complete" (authoring_capabilities.go, ai_generated entry near the file tail), while POST /api/v1/ai/drafts is fully implemented (handleAIDraftGeneration, ai_assistance.go:374-434, creates real authoring sessions) and GET /api/v1/ai/authoring/contract reports Status "active" with guardrails enforced (ai_assistance.go:265). Two server-owned discovery endpoints disagree about the same feature's availability, so a client that honors the capabilities contract hides or disables a working workflow.
@@ -1339,7 +2120,7 @@ Contradiction verified between two served discovery endpoints. Capabilities cata
 </details>
 
 
-#### 62. Replay-session start endpoint lacks the credential-preserving-import echo special case its
+#### 99. Replay-session start endpoint lacks the credential-preserving-import echo special case its
 **Where:** `pkg/api/handlers_script_debug.go:181` · **Area:** AREA-06 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 handleStartScriptDebugScript (handlers_script_debug.go:110-129) detects that a request body script is the unchanged disclosure projection of a credential-preserving import (matchesStoredScriptDisclosureProjection) and substitutes the durable server-owned snapshot with trustedPreservedImport=true. handleStartReplaySessionScript (181-198) — the sibling endpoint for the same body shape — omits that check: when req.Script is present it always takes the untrusted path, where prepareTransientExecutableScript (handlers_replay.go:801-810) re-projects the already-masked script and discoverSecretBindingRequirements (secret_bindings.go:110-124) raises binding requirements for every [REDACTED] sentinel, failing the request with secret-bindings-required. Identical request bodies therefore succeed on the debug endpoint and 4xx on the replay endpoint. handleReplayScript (handlers_replay.go:101-112, out of scope) has the same gap.
@@ -1359,7 +2140,7 @@ Refuting evidence on trigger: the dashboard never calls this endpoint — Script
 </details>
 
 
-#### 63. Replay progress never refreshes session activity, so an actively-running or breakpoint-pau
+#### 100. Replay progress never refreshes session activity, so an actively-running or breakpoint-pau
 **Where:** `pkg/api/script_debug_manager.go:664` · **Area:** AREA-06 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 cancelIdleRunningSessionLocked (script_debug_manager.go:664-677) stops Running/Paused sessions when now-lastActivityAt exceeds retention.idleCancel (default 30m, replay_session_retention.go:18). lastActivityAt is refreshed only by REST accessors (getForProject:951, updateStatus:1143, stopForProject:1202, etc.); the replay progress path (handleReplayProgress:828-904), BeforeAction/AfterAction pause loops, and correlation-evidence observation never touch it. A session that is demonstrably alive — streaming script_debug_event broadcasts or parked at a breakpoint the user is inspecting — is cancelled by the janitor (StartJanitor ticks at most every minute) with "Debugger session stopped after idle timeout" unless some client happens to poll a REST endpoint.
@@ -1384,7 +2165,7 @@ Prior items 37/38 (UNCOMMITTED_REVIEW_2026-07-22.md:664,678) are different defec
 </details>
 
 
-#### 64. Application/release 'optimistic' updates use a server-loaded token, so stale renames silen
+#### 101. Application/release 'optimistic' updates use a server-loaded token, so stale renames silen
 **Where:** `pkg/api/handlers_applications.go:102` · **Area:** AREA-07 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleUpdateApplication calls UpdateApplicationIfUnchanged(application, application.UpdatedAt) where application (and its UpdatedAt) was loaded inside the same handler (handlers_applications.go:81, 102); handleUpdateRelease does the same (handlers_applications.go:301, 322). The CAS therefore only guards the microseconds inside the handler, not the client's read-modify-write window — precisely the anti-pattern the data-pool handler documents and forbids ('Substituting the freshly loaded value here would only guard the in-handler window and let a stale editor silently overwrite changes', handlers_data_pools.go:289-291). The API contract is inconsistent: pools require the client token (400 without it), applications/releases ignore client staleness entirely.
@@ -1402,7 +2183,7 @@ handleUpdateApplication loads the row server-side (pkg/api/handlers_applications
 </details>
 
 
-#### 65. Data-pool update mixes PATCH and PUT semantics: archived_at is absent-preserving but omitt
+#### 102. Data-pool update mixes PATCH and PUT semantics: archived_at is absent-preserving but omitt
 **Where:** `pkg/api/handlers_data_pools.go:262` · **Area:** AREA-07 · **Category:** api-contract · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 handleUpdateDataPool deliberately uses json.RawMessage for archived_at so an absent field preserves state (handlers_data_pools.go:253-256), but unconditionally assigns existing.Description = req.Description and existing.Schema = req.Schema (handlers_data_pools.go:263-264), so a request that omits those fields clears them. The endpoint therefore invites PATCH-style requests (that is the documented archived_at contract) while silently destroying sibling metadata for any field other than archived_at — the exact partial-update wipe class this repo has hit before. The dashboard happens to be safe because it re-sends the full object (dashboard/src/components/ApplicationRepositoryPage.tsx:610-618).
@@ -1428,7 +2209,7 @@ Prior items C3 (row list limit) / C7 (CAS token) are different issues — not a 
 </details>
 
 
-#### 66. Manifest configuration maps StartedAt from the stored record's ScheduledStartAt
+#### 103. Manifest configuration maps StartedAt from the stored record's ScheduledStartAt
 **Where:** `pkg/api/test_manifest.go:375` · **Area:** AREA-07 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 manifestConfigurationFromTestRecord sets StartedAt: cloneTimePtr(record.ScheduledStartAt) (test_manifest.go:375). storage.TestRecord has no actual started-at field (StartTime holds CreatedAt per managedTestFromRecord at pkg/api/persistence.go:722 and buildManagedTestRecord at persistence.go:1396), so the scheduled launch time is presented as the start time.
@@ -1446,7 +2227,7 @@ Chain verified. manifestConfigurationFromTestRecord sets StartedAt: cloneTimePtr
 </details>
 
 
-#### 67. Default in-memory cache backend never evicts expired entries
+#### 104. Default in-memory cache backend never evicts expired entries
 **Where:** `pkg/api/cache_backend.go:345` · **Area:** AREA-08 · **Category:** unbounded-growth · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 memoryCacheBackend has no sweep goroutine: expired entries in m.entries are physically removed only when the SAME key is read via getJSON (cache_backend.go:483-487) or re-reserved, and m.rateLimits buckets are never deleted at all (cache_backend.go:390-395 only overwrites the same key) — so idempotency reservations (one per unique actor|method|path|Idempotency-Key, middleware.go:330) and atomic values accumulate forever on the default 'memory' backend.
@@ -1464,7 +2245,7 @@ newMemoryCacheBackend (pkg/api/cache_backend.go:284-295) only allocates maps; no
 </details>
 
 
-#### 68. Remote probe persists remote-supplied Capabilities into the shared settings row without it
+#### 105. Remote probe persists remote-supplied Capabilities into the shared settings row without it
 **Where:** `pkg/api/library_handlers.go:460` · **Area:** AREA-09 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 handleLibraryProbeRemote stores the remote's LibraryCapabilitiesResponse verbatim on the remote record (pkg/api/library_handlers.go:460) and persistLibraryRemotes serializes all remotes — including Capabilities — into the single library.remotes.v1 setting (pkg/api/library_federation.go:330-371). The only bound on the capabilities payload is decodeLibraryRemoteJSON's shared 128MB cap (pkg/api/library_federation.go:33, pkg/api/library_remote.go:168-180), which is sized for bundle exports, not a capabilities probe.
@@ -1482,7 +2263,7 @@ Chain verified: handleLibraryProbeRemote stores the remote-supplied capabilities
 </details>
 
 
-#### 69. PowerBI row-push retry can duplicate rows under the SAME publish_id, defeating the documen
+#### 106. PowerBI row-push retry can duplicate rows under the SAME publish_id, defeating the documen
 **Where:** `pkg/api/powerbi_client.go:116` · **Area:** AREA-09 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 doJSON (pkg/api/powerbi_client.go:116-171) retries up to 3 times on transport errors (lines 134-141) and on 408/429/5xx/401 (line 162). pushRows (lines 276-293) sends the rows POST through this retry loop with no idempotency mechanism (the Power BI push API has none), so a request that Power BI applied but whose response was lost (client timeout, connection reset after write) is re-sent and the same rows land twice with the SAME publish_id. Every documented duplicate-mitigation in this feature — powerBIPublishConflict's messages (pkg/api/powerbi_publish.go:139-160) and the force-republish flow — assumes duplicates are distinguishable by publish_id ("reports must keep only the latest publish_id per run"); intra-publish retry duplicates are invisible to that filter.
@@ -1500,7 +2281,7 @@ Technical chain is real: `pkg/api/powerbi_client.go` doJSON retries up to 3x on 
 </details>
 
 
-#### 70. Marker handler swallows JSON body decode errors, producing misleading validation errors
+#### 107. Marker handler swallows JSON body decode errors, producing misleading validation errors
 **Where:** `pkg/api/handlers_browser_recorder.go:537` · **Area:** AREA-10 · **Category:** error-handling · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
 
 handleBrowserRecordingMarker uses a bare `json.NewDecoder(r.Body).Decode(&req)` with the error discarded (pkg/api/handlers_browser_recorder.go:537), unlike every sibling handler which uses decodeJSONBody/decodeOptionalJSONBody. A syntactically invalid body proceeds with zero-valued fields, so the caller gets a downstream domain error instead of a 400 about malformed JSON, and any oversized/streaming protections in decodeJSONBody are bypassed for this one route.
@@ -1528,7 +2309,7 @@ Commands: grep for handlers/helpers + ranged sed reads; no test needed (static c
 </details>
 
 
-#### 71. browser_ws_wait match hints are built from scrubbed WS payloads and can never match at rep
+#### 108. browser_ws_wait match hints are built from scrubbed WS payloads and can never match at rep
 **Where:** `pkg/recorder/browser/convert.go:749` · **Area:** AREA-10 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 recordWSFrame scrubs captured WebSocket payloads before storage (pkg/recorder/browser/recorder.go:1794-1803: `text = r.opts.Scrubber(text)`, wired to scrub.Value by the manager at pkg/api/browser_recording_manager.go:299), and websocketWaitAction then uses that stored payload as the browser_ws_wait `match` value with match_mode contains (pkg/recorder/browser/convert.go:746-755). When the scrubber rewrote secret-looking content (tokens, session ids) the emitted match string contains the redaction marker, which the live server will never send, so the generated wait always exhausts its 10s timeout.
@@ -1546,7 +2327,7 @@ Chain verified. pkg/recorder/browser/recorder.go:1795-1798 scrubs the frame text
 </details>
 
 
-#### 72. Translated outer loop containing an untranslated nested loop splits into two loop blocks, 
+#### 109. Translated outer loop containing an untranslated nested loop splits into two loop blocks, 
 **Where:** `pkg/convert/enterprisearchive/control_flow_import.go:375` · **Area:** AREA-11 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 structureFlowActions groups consecutive actions by exact loopID (control_flow_import.go:375), and tagSourceFlowMetadata only translates single-loop contexts (len(fn.Loops)==1, control_flow_import.go:250). Actions inside a nested loop carry loopID "outer>>inner" while outer-only siblings carry "outer", so one source loop body [A, inner-loop, B] imports as control_loop{A} xN, inner actions once (warned), control_loop{B} xN — two separate wrappers instead of one.
@@ -1564,7 +2345,7 @@ tagSourceFlowMetadata stamps loopID as the full frame join (control_flow_import.
 </details>
 
 
-#### 73. sourceControlArgs breaks positional integrity on empty arguments (C drops trailing args, J
+#### 110. sourceControlArgs breaks positional integrity on empty arguments (C drops trailing args, J
 **Where:** `pkg/convert/enterprisearchive/source_runtime.go:567` · **Area:** AREA-11 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 parseSourceRuntimeControl (parser.go:471-476) skips empty cleaned arguments but keeps original indices, leaving gaps in fn.Args (arg1, arg3 with no arg2); sourceControlArgs (source_runtime.go:569-577) iterates arg1..argN and BREAKS at the first missing key, silently dropping every argument after an empty one. The Java path (javaLRParsedFunction, java_import.go:5786-5790) stores empty strings instead, and sourceControlArgs skips them, SHIFTING later arguments into earlier positions.
@@ -1582,7 +2363,7 @@ C path: web_set_user routes to parseSourceRuntimeControl (parser.go:440,451). pa
 </details>
 
 
-#### 74. Any parsed call name starting with "sql" classifies content as database ahead of web reque
+#### 111. Any parsed call name starting with "sql" classifies content as database ahead of web reque
 **Where:** `pkg/convert/enterprisearchive/protocol_detection.go:321` · **Area:** AREA-12 · **Category:** protocol-detection · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 profileFromContent checks containsFunctionPrefix(counts, "sql") before counting web request functions (protocol_detection.go:321-329), so one custom C helper call named e.g. sqlEscape(...) or sqlite_log(...) in an otherwise pure web script makes the content profile 'database'. With a Web .usr this creates a metadata/content conflict that demotes an entirely convertible script to review-only (DetectProtocol:201-206); without a .usr the script is routed to ConvertDatabase.
@@ -1600,7 +2381,7 @@ protocol_detection.go:321-324: `containsFunctionPrefix(counts, "sql")` (prefix m
 </details>
 
 
-#### 75. Explicit https:// proxy URLs on ports 3128/8080/8888 silently rewritten to http://
+#### 112. Explicit https:// proxy URLs on ports 3128/8080/8888 silently rewritten to http://
 **Where:** `pkg/convert/enterprisearchive/runtime_config.go:4046` · **Area:** AREA-12 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 normalizeRuntimeProxyURL rewrites any https-scheme proxy URL whose port is 3128, 8080, or 8888 to http:// (runtime_config.go:4052-4059). That is a reasonable guess for endpoints synthesized from ProxyHTTPSHost/Port (where 'HTTPS' means proxied traffic, not TLS-to-proxy), but it also applies to an operator-authored ProxyServer=https://proxy.corp:8080 value, silently changing the transport to cleartext with no runtime issue or review note.
@@ -1618,7 +2399,7 @@ runtime_config.go:3674-3675 reads the operator-authored `ProxyServer`/`ProxyURL`
 </details>
 
 
-#### 76. removeConsumedLiteralScriptParameters drops parameters still referenced by non-credential 
+#### 113. removeConsumedLiteralScriptParameters drops parameters still referenced by non-credential 
 **Where:** `pkg/convert/requestimport/script_parameter_credentials.go:150` · **Area:** AREA-13 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 ReconcileProtectedScriptCredentialSources (script_parameter_credentials.go:106-155) calls removeConsumedLiteralScriptParameters (invoked at line 152, removal loop at lines 150-162), which deletes every script parameter whose name appears in a requirement's Value/SourceVariableNames without checking whether other, non-credential surfaces of the script still reference {{param.NAME}}; MaterializeSourceVariables only substitutes the parameter inside credential-bearing scalars, so any remaining reference in a non-sensitive field is left dangling after the parameter is removed.
@@ -1636,7 +2417,7 @@ Code-level claim verified. pkg/convert/requestimport/script_credential_projectio
 </details>
 
 
-#### 77. orderReplayOps comparator is not transitive, so produce-before-consume ordering can silent
+#### 114. orderReplayOps comparator is not transitive, so produce-before-consume ordering can silent
 **Where:** `pkg/convert/asyncapi/converter.go:657` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** previously_reported_open
 
 orderReplayOps (asyncapi/converter.go:637-663) sorts with a comparator that returns kindRank ordering only when a.topic == b.topic and false for any cross-topic pair. That relation is a partial order, and sort.SliceStable does not totalize it: when a same-topic produce and consume are separated by an op on another topic, the pair is never compared and the consume stays first. Verified empirically: input [consume(X), produce(Y), produce(X)] sorts to [consume(X), produce(Y), produce(X)] — the intended produce-before-consume invariant for topic X does not hold.
@@ -1654,7 +2435,7 @@ pkg/convert/asyncapi/converter.go:649-661: comparator orders by targetProtocol, 
 </details>
 
 
-#### 78. allOf flattening drops member required lists (and scalar facets), silencing response body 
+#### 115. allOf flattening drops member required lists (and scalar facets), silencing response body 
 **Where:** `pkg/convert/openapi/converter.go:1163` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 resolveSchema's allOf merge (openapi/converter.go:1160-1177) copies only member Properties and (first non-empty) Type into the merged schema; member Required lists, Enum, Format, Example and Items are discarded. responseBodyAssertions (converter.go:1655-1680) reads resolved.Required to derive body_contains assertions, so any success-response schema composed via allOf — the standard base-plus-extension modeling pattern — produces zero body assertions even when members declare required properties. Sample bodies are unaffected (properties are merged), so this matches the 'allOf flattening dropping fields' defect class only for required/facets.
@@ -1672,7 +2453,7 @@ pkg/convert/openapi/converter.go:1160-1177: allOf branch builds `merged := s`, c
 </details>
 
 
-#### 79. Structured (non-string) authored example under an XML content type renders Go map syntax a
+#### 116. Structured (non-string) authored example under an XML content type renders Go map syntax a
 **Where:** `pkg/convert/openapi/converter.go:2128` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 renderGovernedExample (openapi/converter.go:2090-2136) handles XML content types only when the authored example is already a string (2120-2127). A structured example (YAML mapping / JSON object under application/xml) falls through to renderExample (2080-2088), which for non-JSON content types returns fmt.Sprint(value) — producing a Go-syntax body like 'map[user:map[name:bob]]' with no review code from this function. Downstream the shared XML projector receives non-XML bytes; depending on its malformed-XML disposition the action is either shipped with the garbage body or blocked — either way the authored example is destroyed rather than rendered or honestly gated at the source.
@@ -1690,7 +2471,7 @@ pkg/convert/openapi/converter.go:2120-2127: the XML branch of renderGovernedExam
 </details>
 
 
-#### 80. Source-review masking via bare ReplaceAll of example values can shred the review copy
+#### 117. Source-review masking via bare ReplaceAll of example values can shred the review copy
 **Where:** `pkg/convert/openapi/converter.go:485` · **Area:** AREA-14 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 Convert masks sensitive source values in the review copy with strings.ReplaceAll(reviewContent, sensitiveValue, scrub.Redacted) for every value collected by sensitiveOpenAPISourceValues (openapi/converter.go:484-491). The collected values are examples/defaults/enums of credential-shaped fields with no minimum length or word-boundary check, so a short or common example value (e.g. a password example of "test" or "admin") replaces every occurrence of that substring across the entire document — operation IDs, paths, titles — corrupting the operator-facing source review. If the mangled text then fails the disclosure re-parse, disclosureSafeOpenAPISourceReview (673-740) falls back to omitting the review entirely. Executable output is unaffected; this is review-copy functional correctness (over-scrubbing), which is in scope.
@@ -1708,7 +2489,7 @@ pkg/convert/openapi/converter.go:484-490: for each collected value, `reviewConte
 </details>
 
 
-#### 81. Structured Postman URL objects drop the port (and hash) fields
+#### 118. Structured Postman URL objects drop the port (and hash) fields
 **Where:** `pkg/convert/postman/converter.go:1156` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 The postmanURL struct (postman/converter.go:231-238) models raw, protocol, host, path, query, and variable but omits the Postman URL object's 'port' and 'hash' members. rawURL (1148-1173) therefore reconstructs structured URLs as protocol://host/path?query with no port. When 'raw' is present (the common case) the port survives via raw, but collections generated programmatically (schema allows raw to be absent) lose it.
@@ -1726,7 +2507,7 @@ pkg/convert/postman/converter.go:231-238: postmanURL declares Raw, Protocol, Hos
 </details>
 
 
-#### 82. Test-script pm.*.set literals apply retroactively to earlier requests
+#### 119. Test-script pm.*.set literals apply retroactively to earlier requests
 **Where:** `pkg/convert/postman/converter.go:821` · **Area:** AREA-14 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
 
 applyPostmanEventVariables (postman/converter.go:808-827) scans every request's event scripts for pm.environment/collectionVariables.set("k","literal") and writes the value into the shared vars map before any request is converted. The value therefore participates in variable resolution for requests that execute before the script that sets it, which inverts Postman's runtime scoping (a set takes effect only after its owning request runs). Response-derived sets are correctly modeled as extractors with ordering awareness (request_pipeline.go:150-159 registers proven variables only after the producing action), but literal sets have no such ordering.
@@ -1744,9 +2525,403 @@ pkg/convert/postman/converter.go:319 calls `applyPostmanEventVariables(sourceVar
 </details>
 
 
+#### 120. DevWeb transaction attribution only tracks the last-declared transaction variable
+**Where:** `pkg/convert/devweb/diagnostics.go:257` · **Area:** AREA-15 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+activeDevWebTransaction takes the LAST `new load.Transaction(...)` match in the prefix as the only candidate (diagnostics.go:263-269), then checks start/stop only for that variable. Scripts that declare several transactions up front (`const t1 = new load.Transaction('Login'); const t2 = new load.Transaction('Search');`) and then run t1.start()...t1.stop() lose attribution entirely: activeVar is t2, whose .start() is never found, so requests inside the Login transaction get no source_transaction metadata. The substring search (`activeVar+".start("`) can also false-match longer variable names ending in the same identifier.
+
+**Failure scenario:** A DevWeb script declares Login and Search transactions at the top of the action (common style), starts/stops each around its requests. Imported actions carry no transaction metadata for Login (and Search only if it happens to be last-declared), so per-transaction reporting groups collapse and results dashboards lose the transaction breakdown the source defined.
+
+**Suggested fix:** Track all declared transaction vars in a map and pick the one with the latest .start() (word-boundary matched) not followed by its .stop() before the request offset.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # P12 — CONFIRMED (low)
+
+pkg/convert/devweb/diagnostics.go:263-269: the loop over all
+`new load.Transaction` matches overwrites activeVar/activeName each iteration,
+keeping only the LAST declaration in the prefix; lines 273-278 then LastIndex-search
+`.start(`/`.stop(` for that one variable only. With `const t1=...; const t2=...`
+declared up front, a request inside t1's start/stop window sees activeVar=t2,
+t2.start absent (start=-1), so "" is returned. converter.go:464-471 is the sole
+place `source_transaction`/`devweb_transaction` metadata is set (the
+transactionNewPattern loop at converter.go:527-533 only counts stats), so those
+requests lose transaction attribution. Substring LastIndex also allows suffix
+false-matches (e.g. var `t` matching `xt.start(`). Only bites the
+declare-all-up-front style; per-request metadata loss only — low is right.
+
+</details>
+
+
+#### 121. Source mappings for samplers inside Loop/If/While/OnceOnly controllers discarded
+**Where:** `pkg/convert/jmeter/converter.go:725` · **Area:** AREA-15 · **Category:** observability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+collectJMeterChildActions walks controller children into a temp script with a local tempMappings slice (converter.go:726-727) that is never merged back; only the controller itself gets one aggregate mapping. Nested samplers therefore have no per-sampler source-view mapping, and tallyJMeterCategories (converter.go:360) under-counts Mapped for plans that use controllers, skewing the four-way classification stats the UI reports.
+
+**Failure scenario:** A plan whose 30 samplers all live in a LoopController imports with Stats.Mapped counting only the loop controller; the source-review pane shows the sampler XML as unmapped lines, so an operator auditing conversion fidelity cannot tell those samplers were converted.
+
+**Suggested fix:** Rebase tempMappings target paths onto the parent control action path (actions[i].control.steps[j]) and append them to the shared sourceMappings.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # P11 — CONFIRMED (low)
+
+pkg/convert/jmeter/converter.go:725-729: collectJMeterChildActions builds a local
+`tempMappings []sourceview.Mapping`, passes `&tempMappings` to walkThreadGroup, then
+returns only actions; mergeJMeterRuntimeParity (line 728) merges parity metadata,
+never mappings. Call sites OnceOnly/Loop/If/While (lines 560, 580, 614, 640) each
+`continue` after appending a single aggregate controller mapping (572, 594, 627, 660),
+so the tail re-walk at 713-715 with the real slice is skipped — nested sampler
+mappings are dropped. Line 402 builds result.SourceReview from top-level
+sourceMappings only, and line 360 tallies Stats.Mapped from the same slice
+(support.go:139-155), so nested samplers show unmapped and Mapped under-counts.
+Conversion itself is unaffected — observability only; low severity stands.
+
+</details>
+
+
+#### 122. k6 import silently injects a fixed 1000ms think time absent from the source
+**Where:** `pkg/convert/k6/converter.go:124` · **Area:** AREA-15 · **Category:** load-shape · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+Convert hardcodes Config.ThinkTime {fixed, 1000ms} (converter.go:124-127). k6 has no implicit pacing — a script without sleep() iterates at maximum rate — and the engine applies the script-level think time globally per action (pkg/engine/replay.go:395-403 builds globalThinkCfg from Config.ThinkTime). The sleep-related warning (converter.go:252-254) fires only when the source contains sleep(), so a sleep-free k6 script (the exact case where the injected pause changes behavior most) imports executable with no disclosure that per-action 1s pauses were added.
+
+**Failure scenario:** User imports `export default function () { http.get('https://api/x'); }` (a max-throughput probe; clean subset, no review gates). Against a 50ms endpoint, k6 drives ~20 req/s/VU; the imported script drives <1 req/s/VU because of the invented 1s pause. Capacity conclusions drawn from the imported test are ~20x off with no warning anywhere in the result.
+
+**Suggested fix:** Default Config.ThinkTime to zero/none for k6 imports (map static sleep() literals instead — see companion opportunity), or at minimum emit an assumption/warning stating the injected default.
+
+<details><summary>Verification evidence</summary>
+
+**downgraded @ low:** # P10 — DOWNGRADED (medium -> low)
+
+True facts: pkg/convert/k6/converter.go:124-127 unconditionally sets Config.ThinkTime {fixed, 1000ms}, and warnings (249-254) fire only when Checks/Sleeps > 0, so a sleep-free script gets no disclosure. BUT the impact chain breaks: both execution paths gate per-action think time on action.ThinkTimeAfter — pkg/engine/vuser.go:1414-1416 (`!action.ThinkTimeAfter` returns immediately, no sleep) and pkg/engine/replay.go:1305. The k6 pipeline never sets ThinkTimeAfter anywhere (no occurrence in pkg/convert/k6/ or its requestimport.go boundary; requestimport/project.go:1107 propagates it only if the source adapter sets it, unlike jmeter/converter_sampler.go:131). Repo-wide, no other non-test consumer of Config.ThinkTime applies pauses. So no 1s pause is injected and the claimed ~20x throughput distortion does not occur; residual is a dormant/misleading config value that could activate if ThinkTimeAfter is later enabled.
+
+</details>
+
+
+#### 123. TDigest.compress tracks cumWeight inconsistently, skewing the k1 size limit
+**Where:** `pkg/engine/tdigest.go:247` · **Area:** AREA-16 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+In compress (tdigest.go:247-270) cumWeight starts as centroids[0].weight (INCLUDING the current last centroid), but after the first non-merge (`cumWeight += last.weight` then append) it EXCLUDES the new last centroid; the q used for maxWeight (`(cumWeight - last.weight/2 + proposedWeight/2)/totalWeight`, line 255) is therefore computed against two different conventions and is off by up to last.weight/2 relative to the true midpoint of the proposed merged centroid.
+
+**Failure scenario:** During a run with heavy-tailed latencies, centroids near the affected quantile positions are allowed to grow slightly larger (or forced smaller) than the k1 scale function intends, degrading P95/P99 accuracy modestly versus a correct merging digest -- wrong by a small margin, not corrupt, but this digest feeds every published percentile including SLA verdicts.
+
+**Suggested fix:** Maintain cumWeight strictly as the total weight of result centroids BEFORE last (start at 0), and compute q = (cumWeight + proposedWeight/2)/totalWeight; update cumWeight += last.weight only when starting a new centroid.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # E05 — CONFIRMED (low)
+
+pkg/engine/tdigest.go:244-270. For q to be the midpoint of the proposed merged centroid, q=(B+proposedWeight/2)/total where B = weight strictly before `last`. The code's formula (line 255) `(cumWeight - last.weight/2 + proposedWeight/2)` is only correct if cumWeight = B + last.weight/2; but init sets cumWeight = centroids[0].weight (line 247, = B + full last.weight), the merge branch (260-264) grows last.weight without any cumWeight compensation, and the new-centroid branch adds full last.weight (267). The three sites imply different conventions; e.g. unit-weight trace at i=1 gives q=1.5/T vs true midpoint 1.0/T (off by last.weight/2), and the error drifts as merges enlarge last.weight. maxWeight(q) (277-279) is thus evaluated at a skewed quantile — modest percentile-accuracy skew, not corruption. Claim's exact "excludes new last" wording is imprecise for unequal weights, but the inconsistency and bound (≤ last.weight/2) hold. Low severity appropriate.
+
+</details>
+
+
+#### 124. b.pwContext read without lock races concurrent close paths
+**Where:** `pkg/protocol/browser/runtime_context.go:396` · **Area:** AREA-17 · **Category:** concurrency · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+registerPage reads b.pwContext unguarded at runtime_context.go:396 (after releasing b.mu) and contextPages reads it unguarded (frame_actions.go:695-698), while close() nils it under b.mu via takeBrowserContext (lifecycle.go:82-88) and the HAR monitor goroutine nils it under b.mu in closeOversizedHARContext (har_capture.go:157-166). registerPage runs on Playwright's OnPage dispatch goroutine, so these are genuine data races visible to -race; installCDPSession's nil check limits the practical blast radius but a stale non-nil context can be used after Close.
+
+**Failure scenario:** HAR size limit trips (monitor goroutine closes and nils pwContext) while a popup opens concurrently: OnPage -> registerPage reads the stale context and calls NewCDPSession on a closed context, surfacing a spurious error or (under -race in CI) a reported data race that fails the build.
+
+**Suggested fix:** Add a locked accessor (currentBrowserContext()) mirroring currentPage() and use it in registerPage/contextPages.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # W06 — b.pwContext read without lock races concurrent close paths — CONFIRMED (low)
+
+Every hop verified in snapshot (HEAD dc05008ab):
+
+1. **Unguarded read**: `registerPage` releases `b.mu` at pkg/protocol/browser/runtime_context.go:390, then reads `b.pwContext` with no lock at :396 (`b.installCDPSession(b.pwContext, page)`). `contextPages` (pkg/protocol/browser/frame_actions.go:696-697) also reads it unguarded — it even takes `b.mu` for its fallback branch, but not the primary read.
+2. **Concurrent locked writers**: `closeOversizedHARContext` nils `b.pwContext` under `b.mu` (har_capture.go:158-162) and runs on the independent HAR-monitor goroutine (har_capture.go:137,146, spawned whenever HAR capture is enabled); `takeBrowserContext` nils it under `b.mu` at close (lifecycle.go:82-88).
+3. **Cross-goroutine reachability**: OnPage handler calls `registerPage` on Playwright's dispatch goroutine (runtime_context.go:161-165); action-goroutine `registerPage(...,true)` calls (frame_actions.go:648-687, runtime_context.go:91) race the monitor goroutine regardless of `autoActivatePopups`. Unsynchronized load vs mutex-guarded store = data race per Go memory model, -race detectable.
+4. **Bounded blast radius**: stale context → `NewCDPSession` error is swallowed (runtime_context.go:621-623); nil check at :615 catches nil. So consequence is a -race failure / spurious error, matching claimed severity low.
+
+Prior "popup auto-activation" fix (WEEK_REVIEW_2026-07-02) guarded the `pwCDP` **write** (comment runtime_context.go:625-627) and de-defaulted popup activation; the `pwContext` **read** was left unguarded — residual gap, not a regression.
+
+</details>
+
+
+#### 125. HTTP regex extractor without a capture group reports 'no match' though the pattern matched
+**Where:** `pkg/protocol/http/extract.go:1064` · **Area:** AREA-17 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** regression
+
+extractRegex requires len(matches) >= 2 (extract.go:1064-1067), so a regex with no capture group that DOES match the body returns the misleading error 'no match for regex ...'; extractAllRegex silently skips such matches (extract.go:1213-1215). The sibling dialect used by the network protocol (pkg/protocol/jsonextract/jsonextract.go:97-110) falls back to the whole match instead, so the same expression behaves differently across protocols.
+
+**Failure scenario:** An imported script carries extractor regex 'csrf-[0-9a-f]+' (no parentheses). The token is present in every response, yet the extractor reports 'no match for regex' and on_miss=fail fails every sample; the author debugs a 'missing' value that is plainly present, because the error message misstates the cause.
+
+**Suggested fix:** Either fall back to the whole match (matching jsonextract), or return a distinct error 'regex matched but has no capture group' so the misconfiguration is diagnosable.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # W07 — Group-less regex extractor reports "no match" though pattern matched — CONFIRMED (low)
+
+Code at HEAD: pkg/protocol/http/extract.go:1059-1071 — extractRegex calls re.FindSubmatch(body); when a pattern with zero capture groups matches, FindSubmatch returns a length-1 slice (whole match only), so the `len(matches) < 2` guard at extract.go:1065 returns the misleading error `no match for regex %q` even though the pattern matched. extractAllRegex (extract.go:1213-1215) silently `continue`s on `len(match) < 2`, dropping every such match.
+
+Reachability: extractRegex is dispatched for extractor type "regex" on both header (extract.go:425) and body (extract.go:463) sources. No refuting guard exists: pkg/dsl/validate.go:786,790 only allowlists the type string; a repo-wide grep for NumSubexp shows the only capture-group check is in the Bruno importer (pkg/convert/bruno/native.go:3081) — hand-authored DSL and other import paths accept group-less regexes.
+
+Divergence confirmed: pkg/protocol/jsonextract/jsonextract.go:102-109 (used by network protocol) falls back to the whole match when no group exists, so identical expressions behave differently across protocols.
+
+Trigger/consequence realistic: a matching group-less regex yields a "no match" diagnostic; with on_miss=fail every sample fails while the value is plainly present. Not a regression of the prior fixed items (aggregate budget, extractJSONPath) — different symbol/behavior. Severity low (diagnosability/consistency, no data corruption) is apt.
+
+</details>
+
+
+#### 126. jsonextract JSONPath silently drops unparsable array indexes
+**Where:** `pkg/protocol/jsonextract/jsonextract.go:73` · **Area:** AREA-17 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+splitPathToken (jsonextract.go:61-80) parses '[n]' with Sscanf and, on parse failure, silently skips the index (no error), so an expression like 'items[abc]' or a typo 'items[0' degrades to plain 'items' and returns the whole array as the extracted value instead of failing.
+
+**Failure scenario:** A network/database extractor authored as 'records[O]' (letter O typo for 0) silently stores the JSON of the entire records array into the variable; a later request body embeds a JSON array where a scalar was expected, failing downstream in a way that never points at the typo.
+
+**Suggested fix:** Return an error from splitPathToken/JSONPath when a bracket segment is present but unparsable.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # W08 — jsonextract silently drops unparsable array indexes — CONFIRMED (low)
+
+pkg/protocol/jsonextract/jsonextract.go:61-80 splitPathToken: inside the bracket loop, line 73-75 does `if _, err := fmt.Sscanf(rest[1:end], "%d", &index); err == nil { indexes = append(...) }` with no else branch and no error return — an unparsable segment like "[abc]" is silently skipped. An unterminated "[0" hits `end <= 1 -> break` (69-70), also silently. Caller JSONPath (33-57) then applies only the key lookup and, with an empty index list, returns Stringify of the whole array (line 58 / 50-56 loop skipped), instead of erroring. So "items[abc]" or "records[O]" degrades to "items"/"records" and stores the entire array JSON, exactly as claimed; failure surfaces only downstream. Signature returns (string, []int) with no error, confirming no path reports the typo. Low severity appropriate.
+
+</details>
+
+
+#### 127. applySOAPDefaults force-overwrites an authored Content-Type header
+**Where:** `pkg/protocol/soap/soap.go:755` · **Area:** AREA-17 · **Category:** correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+applySOAPDefaults unconditionally stamps Content-Type via setHeaderCanonical (soap.go:755), unlike SOAPAction (whose existing value is preserved, soap.go:756-762) and Accept (only set when absent, soap.go:766-768). An authored or imported Content-Type — e.g. 'multipart/related' for MTOM-style payloads or a specific charset — is silently replaced with the version default ('text/xml; charset=utf-8').
+
+**Failure scenario:** A migrated LR SOAP script sets Content-Type 'application/soap+xml; action="urn:op"' on a 1.1-configured service that requires it (or a multipart payload); the wire request goes out as text/xml, the server responds 415/fault, and the diff between authored headers and the snapshot is confusing because the action's own header was rewritten by the protocol.
+
+**Suggested fix:** Only apply the default Content-Type when the action has none (mirroring Accept), or preserve authored parameters while normalizing the media type.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # W09 — applySOAPDefaults force-overwrites authored Content-Type — CONFIRMED (low)
+
+soap.Execute always runs applySOAPDefaults on the prepared action (pkg/protocol/soap/soap.go:110, headers cloned from the authored action at :103). At soap.go:755 it unconditionally calls setHeaderCanonical(action.Headers, "Content-Type", defaultSOAPContentType(...)); setHeaderCanonical (soap.go:786-793) deletes any case-insensitive match and stamps the default, so an authored Content-Type (e.g. multipart/related or a custom charset) never reaches the wire. The asymmetry is real: SOAPAction preserves an existing value (soap.go:757-761 reads it when SOAP.Action is empty, then re-quotes it), and Accept is set only when absent (soap.go:766-768). No later code restores the authored header before delegation to http.Execute. Failure scenario holds; impact limited to SOAP scripts with deliberate non-default Content-Type — low severity is right.
+
+</details>
+
+
+#### 128. Persistent sidecar session JVM exit status is captured but never surfaced (waitErr is wri...
+**Where:** `pkg/javasidecar/session.go:240` · **Area:** AREA-18 · **Category:** diagnostics · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+persistentSession.waitErr is assigned from cmd.Wait() (session.go:240) but read nowhere: failAndReap (session.go:424-462) and close (session.go:464-499) build the failure outcome from stdout/stderr/diagnostics only, so the ExecutionResponse for a died-JVM session carries error_code session_unusable with no exit status. The local runner has parity here — java_vuser/session.go:744-762 processExitError includes s.waitErr (exit code/signal) in the action error.
+
+**Failure scenario:** A persistent sidecar JVM is OOM-killed by the kernel mid-iteration. The generator surfaces 'java_vuser sidecar execution failed (session_unusable)' plus whatever stderr noise was captured; nothing indicates the JVM died from SIGKILL vs a harness protocol fault, sending the operator down a contract-mismatch debugging path instead of a heap-sizing one. The same failure in local runner mode names the signal.
+
+**Suggested fix:** In failAndReap, when waitDone is closed, append a bounded rendering of waitErr (exit status/signal) to the merged stderr diagnostics, mirroring the local runner's processExitError.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # J05 — CONFIRMED (low)
+
+Grep over pkg/javasidecar shows exactly two `waitErr` occurrences: the field
+declaration (pkg/javasidecar/session.go:52) and the single write
+`session.waitErr = cmd.Wait()` (session.go:240). No read exists anywhere.
+`failAndReap` (session.go:424-462) builds its `processOutcome` solely from
+events/stdout/stderr/diagnostics snapshots — the exit status never enters
+`mergedStderr` or the error code. `close` (session.go:464-499) returns only
+`safeFailure` codes (`process_containment_unavailable` / context code).
+Parity claim holds: local-mode `processExitError`
+(pkg/protocol/java_vuser/session.go:744-762) wraps `s.waitErr` into the
+surfaced error, so signal/exit-code (e.g. SIGKILL on OOM) is visible there but
+lost in sidecar mode. Defect confirmed; diagnostics-only impact → low.
+
+</details>
+
+
+#### 129. Database assertions overwrite the root-cause SQL error message
+**Where:** `pkg/protocol/database/database.go:194` · **Area:** AREA-18 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+evaluateDatabaseAssertions runs unconditionally (database.go:194-198) even when the action already failed (err set at 182-186), and a failing assertion replaces result.ErrorMessage; extractors are correctly gated on result.Success (database.go:187) but assertions are not.
+
+**Failure scenario:** A db_query fails with a driver error ('relation "orders" does not exist'); the action's body_contains assertion then fails against the empty body and result.ErrorMessage becomes 'body_contains assertion failed: ... not found'. The run report and error taxonomy bucket the failure as an assertion failure and the actual SQL root cause is lost from the result row.
+
+**Suggested fix:** Guard the assertion block with `if result.Success` (matching the extractor guard), or append rather than replace the message.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # J04 — CONFIRMED (low)
+
+pkg/protocol/database/database.go:182-186 sets result.ErrorMessage from the SQL/driver error. Extractors are gated on `if result.Success` (line 187), but the assertion block at lines 194-198 runs unconditionally and assigns `result.ErrorMessage = assertionErr`, replacing the root cause. evaluateDatabaseAssertions (database.go:754-793) has no success/err guard and will fail e.g. body_contains against the empty/partial ResponseBody of a failed query (line 786-789 returns "body_contains assertion failed: %q not found"), so the driver error is overwritten and the failure is re-bucketed as an assertion failure. Causal chain holds; low severity (diagnostics only — Success/StatusCode already reflect failure).
+
+</details>
+
+
+#### 130. txPoisoned early return skips Duration, ProtocolEvidence and telemetry finalization
+**Where:** `pkg/protocol/kafka/kafka.go:362` · **Area:** AREA-18 · **Category:** reliability · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+Execute's poisoned-transaction guard (kafka.go:358-363) returns the result immediately, bypassing the shared finalization at kafka.go:411-430: result.Duration stays 0, ServerTelemetry stays nil, and ProtocolEvidence is never built, unlike every other failure path in the same function.
+
+**Failure scenario:** After one failed transactional commit poisons the client, every subsequent action of that VUser (potentially thousands over the remaining run) is recorded with zero duration and no protocol evidence; run-report duration percentiles for the group are skewed toward zero and the evidence panel for those failures is empty, obscuring when the poisoning happened.
+
+**Suggested fix:** Replace the early return with `err = fmt.Errorf(...)` falling through to the shared finalization block (mirrors how validateActionBounds failures at 347-354 at least set Duration/ProtocolEvidence).
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # J03 — CONFIRMED (low)
+
+pkg/protocol/kafka/kafka.go:358-363: the txPoisoned guard sets Success=false/StatusCode=500/ErrorMessage then `return result, nil` immediately, skipping the shared finalization: result.Duration is set at line 411, ServerTelemetry at 412-414, and ProtocolEvidence at line 430 — none run, so Duration stays 0, telemetry nil, evidence nil. Contrast: the adjacent validateActionBounds failure path (kafka.go:347-354) does set Duration and ProtocolEvidence before returning. Since txPoisoned persists for the client's remaining lifetime, every subsequent action of that VUser records zero duration and no evidence, skewing duration stats and hiding the poisoning context. Low severity fits (diagnostics/telemetry only, already-failing actions).
+
+</details>
+
+
+#### 131. Consume served from the pending buffer always reports consumer lag 0
+**Where:** `pkg/protocol/kafka/realclient_franz.go:440` · **Area:** AREA-18 · **Category:** telemetry · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+When Consume returns a record stashed in c.pending by an earlier poll (realclient_franz.go:426-443), it returns lag 0 unconditionally (`return record, 0, nil` at line 440), so the kafka_consumer_lag extraction (kafka.go:780) reads 0 for those samples even when the partition backlog is large; only records fetched fresh compute lag from the high watermark (realclient_franz.go:468-476).
+
+**Failure scenario:** A multi-topic script alternates kafka_consume between topics A and B; polls for A frequently buffer B records into pending. Every B consume served from the buffer reports kafka_consumer_lag=0 while the real backlog grows, so a lag-based SLA/assertion or dashboard trend on that extraction shows a sawtooth of false zeros and understates backlog during exactly the interleaved-consumption pattern that creates it.
+
+**Suggested fix:** Record the HighWatermark alongside each buffered pendingReply at stash time (available from the fetch) and compute lag = hw - offset - 1 when serving from the buffer, or return -1/omit the extraction to mark it unknown rather than claiming 0.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # J06 — CONFIRMED (low)
+
+pkg/protocol/kafka/realclient_franz.go:426-443: when a matching record is
+found in `c.pending`, the buffered path ends with `return record, 0, nil`
+(line 440) — lag hardcoded to 0. The buffer is populated cross-topic: during a
+poll for topic A, records for other topics are stashed via `addPendingLocked`
+(lines 453-465), so a later Consume of topic B is served from pending and
+skips the fresh-fetch path (467-483) that computes
+`lag = highWatermark - offset - 1` from `fetches.EachPartition`. The stashed
+`pendingReply` carries no high-watermark, so the buffered path cannot compute
+lag. Downstream, kafka.go:764 receives the lag and kafka.go:780 emits it as
+`Extractions["kafka_consumer_lag"]`, producing false zeros exactly in the
+interleaved multi-topic pattern claimed. Telemetry-only impact → low.
+
+</details>
+
+
+#### 132. Slow-controller live streams silently drop whole metric windows with only a cumulative co...
+**Where:** `pkg/distributed/generatorrpc/metrics_broker.go:91` · **Area:** AREA-19 · **Category:** data-integrity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+A metrics subscriber queue is capped at 16 batches (metrics_broker.go:17); when the controller's StreamMetrics consumer stalls, non-terminal batches are dropped at enqueue (91-96) and only counted in broker.droppedBatches, which surfaces as a cumulative DroppedSubscriberBatches value inside LATER batches (service.go:2154). MetricsBatch carries no sequence number (generator.proto:194-217), so the controller cannot tell WHICH windows were lost or re-request them; each batch is the only carrier of its window's per-window aggregates, so the live view permanently loses those intervals (the generator-local archive does retain them for post-run fetch, which bounds the damage).
+
+**Failure scenario:** During a 30s controller GC pause or network stall on a run publishing 1 batch/s, ~14 windows are dropped after the 16-deep queue fills; the live Command Center shows a gap-free line (subsequent timestamps just jump) with no gap marker, and the only evidence is a counter buried in later batch telemetry. Terminal state is protected (tombstone replay), so results are eventually correct from the archive, but live-view operators see silently thinned data during exactly the incidents they are watching for.
+
+**Suggested fix:** Add a per-subscriber monotonically increasing sequence (or per-test batch index) to MetricsBatch so the controller can detect and annotate gaps; optionally coalesce dropped windows into the next batch's telemetry as a delta rather than a lifetime cumulative counter.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # S06 — CONFIRMED (low)
+
+metricsSubscriberQueueCapacity=16 (metrics_broker.go:17); enqueue drops non-terminal batches at capacity, returning 1 (metrics_broker.go:91-93), counted only into broker.droppedBatches (345-347). The count surfaces solely as cumulative telemetry.DroppedSubscriberBatches on later batches (service.go:2154); controller merge just copies/sums it (pkg/api/distributed_metrics.go:126,207). MetricsBatch (api/proto/generator.proto:194-217) has timestamp_unix_ms and window_ms but no sequence/batch-index field, so the controller cannot identify which windows were lost; subscriber re-registration replays only the current live snapshot plus terminal tombstones (metrics_broker.go:250-261), not missed windows. Damage bounded as claimed: recordMetricsBatch archives every interval locally (service.go:1656-1681) independent of subscribers, so only the live view is thinned. Low severity fits.
+
+</details>
+
+
+#### 133. RetainImportSource silently drops parent-revision lineage on query error
+**Where:** `pkg/storage/sqlite_import_source_retention.go:149` · **Area:** AREA-21 · **Category:** error-handling · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+The previous-active-revision lookup 'if err := tx.QueryRow(...).Scan(&previousActiveID); err == nil { revision.ParentRevisionID = previousActiveID }' treats every error — including real driver/transaction failures, not just sql.ErrNoRows — as 'no previous revision', so a transient error yields a committed revision with NULL parent_revision_id instead of failing the operation.
+
+**Failure scenario:** During a re-import that retains source for an existing script, the SELECT for the current active revision fails transiently (context cancellation propagated into the tx, or an I/O error). The retention proceeds, deactivates all prior revisions, and commits a new active revision whose parent_revision_id is NULL — the revision chain for that script is permanently broken (history/diff views can no longer link the new revision to its predecessor), with no error surfaced anywhere.
+
+**Suggested fix:** Handle the error explicitly: on sql.ErrNoRows leave ParentRevisionID empty; on any other error return it.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # S13 — RetainImportSource drops parent lineage on query error — CONFIRMED (low)
+
+pkg/storage/sqlite_import_source_retention.go:148-152: `if err := tx.QueryRow(...active_flag = 1...).Scan(&previousActiveID); err == nil { revision.ParentRevisionID = previousActiveID }` — any non-nil error (scan/conversion failure, transient driver error) is conflated with sql.ErrNoRows. Execution then proceeds: line 153-156 deactivates all prior revisions, lines 162-174 insert the new revision with nullableString(ParentRevisionID)=NULL, line 175 commits. On SQLite a per-statement error does not abort the tx, so the silent NULL-parent commit is reachable. Contrast: the same lookup in pkg/storage/sqlite_bruno_imports.go:111-115 correctly returns non-ErrNoRows errors. Broken lineage, no data loss — low severity holds.
+
+</details>
+
+
+#### 134. powerbi_publishes rows are never cleaned up on test or project deletion
+**Where:** `pkg/storage/sqlite_powerbi.go:28` · **Area:** AREA-21 · **Category:** retention-orphans · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+powerbi_publishes (sqlite_schema.go:685-697) stores test_id and project_id with no foreign keys, and there is no 'DELETE FROM powerbi_publishes' anywhere in the package: deleteTestGraphTx (sqlite_tests.go:1323, which does clean grafana_dashboard_snapshots at line 1372) and the project-deletion cascade (sqlite_projects.go:1300-1361) both omit it. Publish-history rows referencing deleted tests/projects accumulate indefinitely.
+
+**Failure scenario:** An installation publishes runs to Power BI routinely and prunes old tests on a retention schedule. Every deleted test leaves its powerbi_publishes row(s) behind forever: unbounded slow growth of a table that can never shrink, and ListPowerBIPublishesForTest/project listings can return records pointing at tests that no longer exist, confusing the publish-history UI.
+
+**Suggested fix:** Add 'DELETE FROM powerbi_publishes WHERE test_id = ?' to deleteTestGraphTx and 'DELETE FROM powerbi_publishes WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)' to the project cascade.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # S12 — powerbi_publishes never cleaned up — CONFIRMED (low)
+
+DDL at pkg/storage/sqlite_schema.go:685-700 stores test_id and project_id with no REFERENCES clause, so no FK error ever surfaces the gap. A grep across pkg/ finds zero `DELETE FROM powerbi_publishes` in non-test code; the only writers are INSERT/UPDATE in pkg/storage/sqlite_powerbi.go:40/69. deleteTestGraphTx (pkg/storage/sqlite_tests.go:1323) cleans grafana_dashboard_snapshots at line 1372 but never touches powerbi_publishes, and the project-deletion cascade in sqlite_projects.go contains no reference to the table either (grep confirms only sqlite_powerbi.go and sqlite_schema.go mention it). Rows referencing deleted tests/projects therefore accumulate indefinitely. Orphan-growth/stale-listing impact only; low severity is appropriate.
+
+</details>
+
+
+#### 135. RedactCredentialBody re-serializes form bodies: params re-sorted, escapes normalized, sen...
+**Where:** `pkg/scrub/credentials.go:98` · **Area:** AREA-22 · **Category:** data-fidelity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+The form-encoded branch of RedactCredentialBody (credentials.go:98-111) parses the whole body with url.ParseQuery and re-emits it with values.Encode() whenever any credential field is present. Encode() sorts keys alphabetically and re-escapes every value, so the recorded baseline's parameter order and byte spellings (lowercase escapes, '+' vs '%20') are rewritten for all non-credential fields too, and the '[REDACTED]' sentinel itself is emitted percent-encoded as '%5BREDACTED%5D' — a spelling the rest of the codebase's sentinel checks (e.g. scrub.go:212's HasPrefix(matches[2], Redacted) idempotence guards and any UI matching on [REDACTED]) do not recognize.
+
+**Failure scenario:** Recorded baseline body 'z=%2fpath&b=2&password=x&a=1' becomes 'a=1&b=2&password=%5BREDACTED%5D&z=%2Fpath': side-by-side source review shows a reordered, re-escaped body that no longer matches the recording; a correlation/consistency check that looks for the original '%2fpath' spelling in the stored baseline misses; UI code looking for the literal '[REDACTED]' marker does not flag the field as redacted.
+
+**Suggested fix:** Redact in place instead of round-tripping: reuse redactSensitiveQueryAssignments (already called as fallback at credentials.go:113) as the primary mechanism with isCredentialField, which surgically replaces only the credential value bytes and preserves order/spelling and the plain sentinel.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # T05 — CONFIRMED (low)
+
+pkg/scrub/credentials.go:97-110: when any credential field is present, the whole form body is round-tripped through `url.ParseQuery` then `values.Encode()`. Go's documented `url.Values.Encode` sorts keys alphabetically and QueryEscapes every value, so non-credential params are re-ordered and re-escaped (`%2f`→`%2F`, space→`+`), and the sentinel `Redacted = "[REDACTED]"` (pkg/credential/credential.go:27) is emitted as `%5BREDACTED%5D`. scrub.go:212 and :220 idempotence guards use `strings.HasPrefix(..., Redacted)` against the literal spelling and would not recognize the percent-encoded form. Package comment (credentials.go:12-19) confirms this path exists to preserve the recorded baseline for correlation, which the re-serialization undermines. Low severity is right: values are redacted correctly; harm is baseline fidelity/sentinel-matching only.
+
+</details>
+
+
+#### 136. HA active-EndpointSlice port is hardcoded to 8080 regardless of APEXLOAD_ADDR
+**Where:** `cmd/controller/main.go:429` · **Area:** AREA-23 · **Category:** operational-correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+activeEndpointPublisherFromEnv (cmd/controller/main.go:397-431) always publishes PortName "http"/Port 8080 into the leader EndpointSlice, while the actual listen port comes from APEXLOAD_ADDR via config.ResolveControllerBindAddr (main.go:71, pkg/config/bind_addr.go:16-28) and is operator-configurable.
+
+**Failure scenario:** An operator overrides APEXLOAD_ADDR=:9443 (e.g. to co-exist with another listener) in an HA deployment; leadership is won and the slice publishes 8080, so the apexload-controller-active Service targetPort routes execution-mutating CI traffic to a closed port — followers 503 and the leader is unreachable, breaking all execution-routing until the port is reverted.
+
+**Suggested fix:** Derive the published port from the resolved bind address (or a dedicated APEXLOAD_ACTIVE_ENDPOINT_PORT env) and fail startup on mismatch.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # C07 — CONFIRMED (low)
+
+cmd/controller/main.go:422-430: `activeEndpointPublisherFromEnv` hardcodes `PortName: "http", Port: 8080`; no env var exists to change it. pkg/kubeops/active_endpoint.go:251-254 publishes exactly `cfg.Port` into the EndpointSlice (`ownPort`, used at :125). Meanwhile the real listener honors `APEXLOAD_ADDR` (cmd/controller/main.go:71 → pkg/config/bind_addr.go:20-21), so setting `APEXLOAD_ADDR=:9443` moves the listener but the leader slice still advertises 8080 → active-Service routes to a closed port. Mitigation check: shipped manifests pin `APEXLOAD_ADDR=":8080"` (deployments/k8s/onprem/controller-deployment.yaml:61-62; deployments/helm/apexload/templates/controller.yaml:167-168, literal, not values-templated), so defect is latent and only triggers on operator override — severity low stands.
+
+</details>
+
+
+#### 137. Helm default nodeSelector strands generator pods Pending on clusters without the generato...
+**Where:** `deployments/helm/apexload/values.yaml:107` · **Area:** AREA-23 · **Category:** helm-kustomize-parity · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+values.yaml:107-113 ships nodeSelector apexload.io/node-pool: generators (plus a matching toleration) as the default, so a stock helm install schedules zero generator pods unless nodes are pre-labeled; the equivalent kustomize onprem base leaves the same selector commented out as an optional recommendation (deployments/k8s/onprem/generator-statefulset.yaml:24-33), a defaults divergence between the two packaging paths for the same knob.
+
+**Failure scenario:** First-time helm install on a standard AKS cluster: controller comes up, all generator pods sit Pending on an unsatisfiable nodeSelector, distributed runs fail to stage, and (with keda.enabled=true default) KEDA scale-ups just add more Pending pods; nothing in values.yaml warns that node labeling is a prerequisite.
+
+**Suggested fix:** Default nodeSelector/tolerations to empty ({}/[]) and document the dedicated-pool recommendation in README/values comments, matching the kustomize base.
+
+<details><summary>Verification evidence</summary>
+
+**confirmed @ low:** # C08 — CONFIRMED (low)
+
+deployments/helm/apexload/values.yaml:107-113 ships default `generator.nodeSelector: {apexload.io/node-pool: generators}` plus matching toleration; templates/generator.yaml:61-62 (`{{- with .Values.generator.nodeSelector }}`) renders it into the StatefulSet, so a stock `helm install` on an unlabeled cluster leaves all generator pods Pending (unsatisfiable selector). Divergence confirmed: kustomize base deployments/k8s/onprem/generator-statefulset.yaml:24-33 has the identical selector/toleration commented out as an optional recommendation ("Label/taint your nodes ... and uncomment"). No warning anywhere in the chart: values.yaml lines 102-113 carry no comment, no NOTES.txt exists in templates/, and README.md has zero mentions of node-pool/nodeSelector/labeling. Severity low stands (symptom is standard, diagnosable Pending state).
+
+</details>
+
+
+#### 138. Production dashboard is built with Node 26 while CI validates it with Node 22
+**Where:** `Dockerfile:3` · **Area:** AREA-23 · **Category:** operational-correctness · **Verification:** 1 adversarial verifier confirmed · **Prior:** new
+
+Dockerfile:3 pins the dashboard build stage to node:26.5.0-alpine3.23, but every dashboard job in .github/workflows/ci.yml pins node-version 22.22.0 (lines 177, 439, 549), and dashboard/package.json declares no engines constraint — so lint/typecheck/vitest/build validation runs on a different Node major than the one that produces the shipped production bundle.
+
+**Failure scenario:** A vite/rollup/esbuild toolchain behavior difference or native-module incompatibility that only manifests on Node 26 breaks or subtly corrupts the embedded dashboard bundle in the release image while every CI job stays green on Node 22; the divergence is discovered only in a deployed controller.
+
+**Suggested fix:** Align both to one pinned Node version (add an engines field, use the same version in CI setup-node and the Dockerfile builder stage; ideally derive both from one source such as .nvmrc).
+
+<details><summary>Verification evidence</summary>
+
+**downgraded @ low:** # C03 — Node 26 build vs Node 22 CI validation — CONFIRMED, downgraded to low
+
+Skew is real: Dockerfile:3 pins `node:26.5.0-alpine3.23` for dashboard-builder; .github/workflows/ci.yml:177,439,549 pin setup-node 22.22.0 for all dashboard lint/typecheck/vitest/build jobs; dashboard/package.json has no engines/packageManager and no .nvmrc exists. However, the failure scenario is partly mitigated: the `containers` CI job (ci.yml:840-887) builds the exact main Dockerfile (4 controller/generator matrix entries, docker/build-push-action) and smoke-tests the controller image, so a hard Node-26 build break or native-module failure DOES fail CI. Only silent behavioral/bundle differences (validated on 22, shipped from 26) survive — a real but lower-impact skew. Downgrade medium → low.
+
+</details>
+
+
 ## Opportunities (non-defect)
 
-16 verified improvement opportunities (Effort S/M/L/XL, Impact/Risk low/med/high), quick wins first. These do not enter the fix phase.
+24 verified improvement opportunities (Effort S/M/L/XL, Impact/Risk low/med/high), quick wins first. These do not enter the fix phase.
 
 | ID | Title | Where | Area | Eff | Imp | Risk |
 |----|-------|-------|------|-----|-----|------|
@@ -1757,15 +2932,25 @@ pkg/convert/postman/converter.go:319 calls `applyPostmanEventVariables(sourceVar
 | O11 | extractDatabaseBinds builds heuristic bind order from Go map iteration | `pkg/convert/enterprisearchive/database_import.go:551` | AREA-11 | S | low | low |
 | O13 | Nine duplicated maxLogicalSecretNameBytes=249 constants shadow credential.MaxLogicalNameBy | `pkg/convert/bruno/native.go:2798` | AREA-13 | S | low | low |
 | O16 | projectJSONExampleCredentials can never report unsafe, leaving a dead review code and guar | `pkg/convert/openapi/converter.go:2287` | AREA-14 | S | low | low |
+| O17 | Dead helper addTokensForElapsed and one-interval Resume hiccup in TokenBucket.SetPaused | `pkg/engine/pacing.go:341` | AREA-16 | S | low | low |
+| O20 | GetDeploymentLease performs write statements on every read | `pkg/storage/deployment_lease.go:178` | AREA-21 | S | low | low |
+| O23 | jsonextract.Regex recompiles the pattern on every call | `pkg/protocol/jsonextract/jsonextract.go:98` | AREA-17 | S | low | low |
+| O24 | apexctl wait/status conflate transport failure and SLA breach into exit 1 | `cmd/apexctl/commands.go:206` | AREA-23 | S | low | low |
+| O22 | Translate static k6 sleep()/status-check patterns instead of review-gating every request | `pkg/convert/k6/converter.go:888` | AREA-15 | M | high | med |
 | O1 | Schedule-occurrence tables have no retention while the sibling timeslot table does | `pkg/api/timeslot_retention.go:3` | AREA-02 | M | med | low |
 | O2 | Schedule CRUD, approval resolution, and timeslot bind hold the global runner write lock ac | `pkg/api/scheduler.go:2548` | AREA-02 | M | med | med |
 | O4 | Parallelize per-target script distribution and shard assignment during distributed startup | `pkg/api/distributed_execution_backend.go:939` | AREA-05 | M | med | med |
 | O5 | Scenario list enrichment is O(scenarios x tests) under the runner read lock | `pkg/api/scenario.go:1067` | AREA-07 | M | med | low |
 | O10 | Retire or quarantine the dead native Java lanes and their pipeline-reconstruction tests | `pkg/convert/enterprisearchive/java_import.go:622` | AREA-11 | M | med | low |
 | O12 | Native import is all-or-nothing: one malformed request file rejects every candidate | `pkg/convert/bruno/native.go:276` | AREA-13 | M | med | med |
+| O18 | Deletion graphs are hand-maintained; add a schema-derived coverage guard test | `pkg/storage/sqlite_projects.go:1223` | AREA-20 | M | med | low |
+| O19 | rewriteSQL substring translation is a latent Postgres-parity trap | `pkg/storage/sqlite.go:377` | AREA-21 | M | med | low |
 | O6 | Route access rules are linear-scanned with per-rule string splits, 3x per request | `pkg/api/route_catalog.go:399` | AREA-08 | M | low | low |
 | O7 | User listing for scoped admins is an O(users x bindings) N+1 over the store | `pkg/api/handlers_auth.go:1673` | AREA-08 | M | low | low |
 | O3 | Import response builder re-serializes the same script tree many times per request | `pkg/api/import_response.go:83` | AREA-04 | L | med | med |
+| O21 | Solace JMS sidecar forks one OS process per messaging action | `pkg/protocol/jms/sidecar_adapter.go:130` | AREA-18 | L | med | med |
+
+_1 raw findings were duplicates of the above (multiple finders converging on the same site) and were merged._
 
 # Appendix: per-area assessments
 
@@ -1852,6 +3037,60 @@ _Boundary leads:_ pkg/dslwalk bounded-traversal limit vs maximum importable scri
 This area is in genuinely strong shape overall. The OpenAPI, Postman, WSDL, Salesforce, and Grafana converters show consistent defensive engineering: bounded work budgets (Salesforce correlation budget, Postman variable-binding dependency limits, Grafana structural caps), cycle guards on every ref-resolution path, honest review-only dispositions instead of silent drops, and conservation guards (completeness stats plus explicit skipped lists). Standouts are the Salesforce analyzer (budgeted shape-aware correlation passes with collision-safety analysis and non-transitive-safe replacement ownership), the Grafana importer (strict variable policy, PromQL run-scope validator used at both import and query time, honest unit/panel dispositions), and the Postman pipeline (topologically resolved variable graph with fail-closed limits). The weak points are fidelity edges rather than structural rot: the WSDL doc-literal envelope ignores schema target namespaces and elementFormDefault, the RAML converter is far below its siblings' bar (no requestimport pipeline, raw URI templates, blanket 200 assertions), and a handful of correctness papercuts (OpenAPI wildcard '2XX' status keys, Event Hubs capture empty-body assertions, AsyncAPI replay-order comparator).
 
 _Boundary leads:_ pkg/api/handlers_web_api_imports.go:675 — mixed-protocol AsyncAPI import: the response-level Preflight is built from result.Script (the first script, always Kafka) only, while per-script preflight is attached at lines 676-678; the dashboard (dashboard/src/components/ProtocolAssetImport.tsx ~365) prefers result.preflight over the per-script metadata, so the JMS tab of a mixed Kafka+JMS import shows the Kafka script's preflight. Fix belongs in pkg/api / dashboard, not pkg/convert/asyncapi. · pkg/convert/har/converter.go:89-113 — the actual HAR-to-script conversion and correlation detection live in pkg/convert/sample (outside AREA-14); the HAR governance wrapper's claim that scrubbed responses carry no raw secrets depends on sample.Correlation.Value remaining json-omitted and on scrub.Value coverage in that package.
+
+**AREA-15** — raw 13, confirmed 13, refuted 0
+
+The six importers are at very different maturity levels. k6 and recorderjson are genuinely solid: k6's residual-source net (residual_review.go) plus per-request review gates make its constrained-subset claim honest, and recorderjson tracks a disposition (mapped/degraded/skipped) for every Chrome Recorder step with counted skips and warnings. TruClient's step conservation (ReviewOnlySteps, Catch Error body preservation) reflects the earlier hardening pass and holds up, but its run-sequence reconstruction double-imports function bodies called from inside other actions. The JMeter converter is the weakest relative to its ambition: its completeness guard only counts samplers, so non-sampler elements in sampler scope (ResponseAssertion, timers) and CSV configs inside controllers are dropped with zero diagnostics, the enabled="false" attribute is never read anywhere, and CSV EOF/sharing semantics are not modeled. DevWeb converts a useful subset honestly but scrambles WebSocket/gRPC ordering (all steps pinned to the block start line and grouped by verb) and collapses all load.thinkTime calls onto one step.
+
+_Boundary leads:_ pkg/convert/devweb/converter.go:270-276 comment admits the zip-metadata path (zipmeta.go) has 'pre-existing parameter/data-source defects' that FinalizeScript would surface as hard failures; zipmeta.go was not reviewed here and deserves its own pass. · pkg/protocol/http/capabilities.go:516-558 + http.go:1044-1050: authored action HeaderList duplicates are all sent via Header.Add with singleton checks only for Host/User-Agent; any importer that models a header override as an appended duplicate double-sends it. Transport-side half of the JMeter sampler-HeaderManager finding. · pkg/engine/replay.go:395-403 applies script.Config.ThinkTime globally to every action; any importer that invents a nonzero default (k6 and devweb both hardcode 1000ms) silently reshapes load. A cross-importer convention (default 0 unless source had pacing) would fix this class once. · pkg/convert/jmeter side of multi-plan imports: ConvertJMX takes a single []byte and makes no multi-file assumptions; the multi-.jmx ZIP silent-drop is entirely in the pkg/api handler (owned by another area).
+
+**AREA-16** — raw 6, confirmed 6, refuted 0
+
+Engine core is in genuinely good shape in its classic hot paths: the execution-goal reservation protocol (reserve/commit/release with pending-suppressed cancellation) is carefully reasoned and consistent across the iteration loop and lifecycle blocks; pause/active-clock plumbing (SleepActive/ActiveElapsed/pauseCompensation) correctly excludes paused time from pacing and the run deadline; open-workload arrival scheduling has explicit bounded catch-up and in-flight shedding; teardown is deadline-bounded and slot-capped so stuck adapters cannot leak unbounded goroutines; metrics dimensions and snapshot memory are bounded. The concentrated risk is the new (post-2026-07-23) runtime credential-redaction subsystem: its fail-closed architecture is sound, but it over-collects exact-match values (every cookie value in the jar, auth usernames) with no minimum-length or sensitivity floor -- so short common values corrupt action/group/dependency labels and all retained evidence -- and it recompiles the full ~64-variant-per-value matcher two-to-three times per action per VUser with no change detection, a material hot-path CPU cost that grows toward pathological with rotating session tokens.
+
+_Boundary leads:_ pkg/protocol/http/http.go:212-227 attaches a full cookie-jar value snapshot (RuntimeCredentialValues + RuntimeCredentialValuesSnapshot=true) to EVERY Execute result, even when no cookie changed -- this is the trigger frequency for the engine-side per-action matcher recompile (AREA protocol-http should consider a jar dirty-flag). · pkg/scrub (Value/Structured) runs on every retained metadata field per result via scrubSensitiveTextWithConfig (redaction.go:919); its bare-token/entropy heuristics deserve their own over-redaction/perf review in the scrub area. · TDigest has no internal synchronization; engine usage is single-goroutine (aggregate loop), but controller-side distributed Merge callers (outside pkg/engine) should be audited for concurrent Merge/Quantile on shared digests. · replay.go:390,417 fail the whole replay closed on refreshImportedCredentialRuntimeValues errors -- replay-area reviewer should check how a sticky 'runtime credential redaction capacity exceeded' error surfaces to users.
+
+**AREA-17** — raw 10, confirmed 10, refuted 0
+
+This area is in genuinely strong shape on resource discipline: the HTTP path has process-wide response-capture and cookie budgets, bounded buffer pools, bounded compiled-expression caches, per-action extractor/assertion work budgets, a memory-accounted per-VUser response cache with correct clone-on-store of pooled buffers, and race-conscious httptrace handling; websocket/grpc/network all set deadlines, bound message sizes, and cancel streams via deferred contexts, and the browser package rings/bounds console, network, HAR, and page state carefully. The real weaknesses are behavioral-consistency seams rather than raw resource bugs: the SOAP wrapper inspects result.ResponseBody after the HTTP layer has already discarded successful bodies under the default log config (silently disabling fault detection), the extractor on_miss contract that the DSL validates for every protocol is implemented three different ways (honored in HTTP, silently ignored in websocket/grpc, always-fail in network), the browser protocol accumulates CDP sessions on every window switch/popup activation without detaching prior ones, and SSE stream timeouts up to 1h are validated while the default 60s client timeout silently kills the stream first.
+
+_Boundary leads:_ DiscardResponseBodyOnSuccess is computed in pkg/engine/vuser_resolve.go:221-223 from log config and applied to ALL protocols' actions; wrapper protocols (soap, and any future composite) need a way to see the body before discard. The right fix may be an engine-side contract change (discard after wrapper post-processing), not a soap-only patch. · pkg/protocol/database (out of my scope) uses the same jsonextract package and likely the same always-fail-on-miss extractor pattern as pkg/protocol/network/network.go:625-635 — the on_miss inconsistency finding probably extends there. · The extractor on_miss/mode contract is validated protocol-agnostically in pkg/dsl/validate.go:757-780; either the validator should reject on_miss/mode for protocols that do not implement them, or the protocols should implement them — decision spans dsl + protocol packages. · Browser 'ps fork per action' (runtime metrics process snapshot) remains open per PERF_REVIEW_2026-07-06; not re-reported.
+
+**AREA-18** — raw 7, confirmed 7, refuted 0
+
+This stack is in far better shape than its defect history suggests. The new pkg/javarunner and pkg/javasidecar packages (post-7/23, previously unreviewed) are exceptionally carefully engineered: strong process containment with terminal quarantine leases (process.go, process_linux.go cgroup.kill + pidfd identities), HMAC frame-token request/response correlation for persistent sessions, owner-generation fencing with reap-before-ready takeover, bounded captures everywhere, and content-hash-verified classpath materialization with atomic rename publish. The notorious Java Vuser lifecycle classes (false success on nonzero exit, teardown hangs, wedged RPC correlation) are genuinely closed on both local and sidecar paths — envelope success is authoritative, timeouts kill-and-poison rather than wedge, and ambiguous transport outcomes fail closed. JMS/Kafka/EventHubs adapters are resource-bounded with deliberate rebalance fencing (franz ownership generations, discard-on-assign/revoke) and I verified the Commit-under-assignmentMu pattern against franz-go v1.21.5 internals: no deadlock cycle exists (callbacks run outside the join&sync commit-block window). What remains are moderate correctness gaps: the real Kafka adapter silently ignores explicit partition targeting that the mock honors, sidecar batch validation misreports budget exhaustion as invalid targets, and a handful of diagnostics/telemetry papercuts.
+
+_Boundary leads:_ pkg/protocol/database/database.go:247 BeginTx binds the open transaction to the ctx passed into Execute; today the engine (pkg/engine/vuser_execute.go:765) passes a vuser-lifetime context so this is safe, but any future engine change to per-action contexts with cancel would silently roll back every db_begin transaction after the action returns. The contract is implicit and untested on the engine side. · pkg/javasidecar/server.go relies on the controller/generator explicitly closing poisoned session tombstones (unusableSessions, 15min TTL); if any engine-side vuser recycle path reuses a session ID without CloseSession within the TTL it gets session_unusable — worth confirming the engine's vuser-restart path calls Teardown (which does CloseSession) in all abort flows (engine scope, not verified here).
+
+**AREA-19** — raw 6, confirmed 6, refuted 0
+
+The generatorrpc data plane is genuinely well engineered: execution-epoch fencing is backed by durable state written with tmp-file + fsync + rename + directory-sync and an owner-bound restart revalidation path; assignment staging/commit is a real two-phase protocol with rollback, stage TTLs, and a single lifecycle transition table; stop handles staged-vs-running groups, detached drains, bounded fence worker pools, and archive-finalizer tracking; archive artifact streaming validates offset/size/eof on every chunk; archive writes are quota- and free-space-bounded with sticky failure escalation. The defects I found are concentrated in metrics semantics rather than lifecycle correctness: the no-new-evidence 'lastMetrics' replay fabricates sustained TPS during stalls/pauses and writes phantom interval-summary rows into the archive; archived interval summaries persist only scalar percentiles even though a merge-capable t-digest is in hand at record time (the generator side of the confirmed wrong-fleet-percentile merge); per-group publishers each record a full cross-group interval row so multi-group pods duplicate window counts; and mergeGeneratorStats sums process-wide gauges (CPU%, memory, heap, threads, FDs, GC) across co-located groups, over-reporting generator resources by the group count.
+
+_Boundary leads:_ pkg/api archive merge (parallel review): generator archives DO carry merge-capable fleet t-digests in manifest TerminalMetrics and in every live MetricsBatch (MetricAggregate.duration_digest), but summaries.jsonl/parquet rows only carry scalar P50/P90/P95/P99 — the controller-side fleet-percentile merge should either consume digests (requires generator schema addition, see finding) or stop presenting concatenated scalar rows as fleet percentiles. · pkg/api live-view ingestion cannot distinguish a replayed no-new-evidence batch from fresh traffic: MetricsBatch has no 'replayed'/'no-evidence' marker, so buildLiveMetricsFromDistributedBatch (pkg/api/distributed_metrics.go) renders phantom sustained TPS during a full SUT stall. Fix needs a proto marker plus controller handling. · Interval-summary Timestamp is generator-local time.Now() (service.go:1976 via recordMetricsBatch); cross-generator archive alignment by these timestamps inherits node clock skew. Heartbeat carries both controller and generator timestamps (HeartbeatPing/Pong.timestamp_unix_ms) so an offset estimate is available but unused — controller-side merge concern, generator ships no offset metadata. · Coordinated start barrier semantics are shared with pkg/api distributed_execution_backend.go: the controller picks start_at_unix_nano lead time; generator-side rejection windows (elapsed / beyond stage TTL) are evaluated against the generator's local clock (execution_control.go:365-374), so the controller's lead-time choice must budget for fleet clock skew.
+
+**AREA-20** — raw 4, confirmed 4, refuted 0
+
+This slice of pkg/storage is unusually disciplined for a hand-rolled SQL layer: every mutating path begins a transaction, locks parent rows in a documented deterministic order (project -> application -> release -> child) to avoid Postgres deadlocks, uses CAS-on-CAST(updated_at AS TEXT) fences for optimistic concurrency, and the newer repair passes (blank-script-ID backfill, script-recording binding/projection/sidecar/status convergence loops) are byte-bounded, cursor-paged, and CAS-guarded against concurrent writers. Scan lists match column lists on the wide tests/recordings tables, typed-nil boxing is defused by explicit "null"/"{}" checks (marshalNullableJSON, decodeStoredScriptJSON optional fields), and schema migrations are idempotent. The real weakness is deletion-graph completeness versus the FK graph: newer tables (direct_import_receipts, powerbi_publishes) and the schedule-occurrence/last-run test pointers were never folded into the per-test and per-project delete graphs, so foreign keys (enforced on both SQLite via _pragma=foreign_keys(ON) and Postgres via the derived FK pass) now abort two headline delete workflows, and one table leaks orphans forever.
+
+_Boundary leads:_ pkg/api/tests.go DeleteTestWithError surfaces the storage FK failure as a raw 500 'failed to delete test: FOREIGN KEY constraint failed' with the archive-commit fence held; once the storage graph is fixed, no API change is needed, but the error mapping there hides the actionable cause today. · Completed direct_import_receipts rows (pkg/storage/direct_import_receipts.go) are retained forever by design for idempotency but have no retention/pruning path at all; whichever area owns import lifecycle should decide a TTL, since they also block project deletion (reported here) and grow unboundedly. · pkg/storage/sqlite_schedules.go schedule/occurrence deletion paths were not verified to clear scenario_schedule_occurrences.test_id before deleting their parent schedule; the schedules-area reviewer should confirm DeleteScenarioSchedule does not hit the same tests(id) FK interaction in reverse. · replay_session_leases carries project_id with no FK and is not touched by deleteProjectGraphTx; rows are TTL-expired so this is likely benign, but the replay-session area should confirm the expiry sweep always runs on followers too.
+
+**AREA-21** — raw 6, confirmed 4, refuted 1
+
+This area is in genuinely strong shape. Dialect discipline is consistently applied: preciseDatabaseTime/Context guards strftime vs clock_timestamp, correlationRulesetJSONByteLengthSQL guards OCTET_LENGTH vs LENGTH(CAST AS BLOB), FOR UPDATE is appended only on Postgres with SQLite relying on write-reservation no-op updates, PRAGMA-based repair paths early-return on non-SQLite, and postgres_foreign_keys.go derives the FK graph programmatically from the actual schema text (verified: every REFERENCES clause in sqlite_schema.go is single-line single-column, so the line parser is sound). CAS is pervasive and correct — revision fences on occurrences/schedules, generation fences on finalization jobs and replay leases, predicate-fenced deletes on external-result evidence, and the datapools rows_revision/row_count fence is maintained self-correctingly by every mutation path I read. A sweep of all 43 scope files found zero unguarded SQLite-only constructs and zero nested-query-while-rows-open patterns (the single-connection deadlock class). The one real defect found is a deletion-cascade completeness gap: direct_import_receipts carries a projects FK but is missing from the hand-enumerated project-deletion cascade, permanently blocking project deletion once a direct import has run; powerbi_publishes has the inverse problem (no FK, no cleanup, orphans forever).
+
+_Boundary leads:_ pkg/api/direct_import_idempotency.go:99 is the live caller of ClaimDirectImportReceipt; whoever fixes the project-deletion cascade gap should also confirm the API layer surfaces a sane error today when project deletion fails mid-transaction (currently the FK violation bubbles up as a raw 500-class storage error). · powerbi_publishes rows reference test_id/project_id with no FK and no cleanup; the Power BI publish feature (pkg/api powerbi routes) may also want a retention policy for publish history independent of test deletion. · sqlite_projects.go maintains the project-deletion cascade as a hand-enumerated list; a schema-driven completeness test (diff tables carrying project_id REFERENCES projects(id) against the cascade list) lives naturally next to postgres_foreign_keys_test.go and would have caught the direct_import_receipts gap automatically.
+
+**AREA-22** — raw 5, confirmed 5, refuted 0
+
+This area is in unusually strong shape: the July hardening waves are visible everywhere (deterministic work budgets with fail-closed exhaustion in paramize/correlate/scrub/quoted_values, escape-preserving nested-URL rewrites, idempotent redaction sentinels, claim-token-fenced session lifecycles in importsession/importartifact/secretstore, and a genuinely careful disclosure projector). keywrap/refkey round-trips, uniquify's case-folded dedup, srcparse's ambiguity rejection, and importreview's gate normalization are all correct as far as I could push them. The real defects live at the seams the hardening missed: paramize's secret form-field regex never received the quote-exclusion + JSON-body-branch hardening that the analogous pkg/scrub pattern got in July (so it can destroy JSON bodies), paramize's data-param SearchText has no left boundary while apply is a global substring replacer, scrub's entropy heuristic wipes base64-encoded HAR response content while leaving the encoding flag in place, and tmpl silently translates JMeter counters to variables nothing defines.
+
+_Boundary leads:_ pkg/convert/uniquify returns Rename{OldName,NewName} for side-data reconciliation, but when two actions carried the *identical* name the first occurrence keeps OldName while the second is renamed; any caller (e.g. enterprise-archive source-review TargetName reconciliation) that rewrites side data by matching OldName will also retarget records belonging to the kept first action. The rename list cannot disambiguate; callers need positional identity. Primary cause is in the callers under pkg/convert/enterprisearchive, outside this area. · pkg/convert/har/converter.go:73 runs scrub.HAR over the uploaded document before conversion, so the base64-content destruction described in the scrub finding also degrades the HAR import/conversion input path itself (response bodies become [REDACTED] before candidate discovery); worth checking whether the har converter should convert from raw and only persist scrubbed. · pkg/convert/sample/correlate_redact.go (lines ~605, 641, 729, 764) is the automatic blast radius for the paramize SanitizeBodySecrets JSON-corruption finding; once the regex is fixed, previously-sanitized stored artifacts produced through that path may already contain truncated bodies.
+
+**AREA-23** — raw 9, confirmed 9, refuted 0
+
+This area is in much better shape than 'never deeply reviewed' suggested. The CI gate path (cmd/apexctl/ci.go) is exceptionally hardened: bounded retries with jittered backoff and a retry window, distinct exit codes per outcome, evidence persisted before remote aborts, and abort confirmation loops with timeouts. pkg/kubeops (lease-fenced EndpointSlice publishing with JSON-patch resourceVersion tests), pkg/internal (zipbounds central-directory preflight, subprocessguard env allowlisting, diskspace overflow clamping), pkg/perfevidence (self-recomputing statistics, explicit no-target-attainment claim policy), and the controller/generator mains (coordinated shutdown, archive-safe drain, fail-closed transport checks) are all genuinely solid. The MCP Python server has zero path drift against the live route registry (verified programmatically), and every helm template .Values reference exists in values.yaml (also verified programmatically). The real defects cluster in two places: the older hand-rolled flag parsing in the non-ci apexctl subcommands (silent flag drops that can disable an SLA gate, an unbounded poll loop, a brittle wait loop), and helm packaging seams (import-only Bruno artifacts placed on an emptyDir while the required PVC mounts at an unused path, a Node major-version gap between CI and the production Dockerfile, a namespace-hardcoded generator DNS default).
+
+_Boundary leads:_ dashboard/package.json has no engines field and no packageManager pin, which is why the Node 22-vs-26 CI/Dockerfile divergence is silent; adding an engines pin is a dashboard-area change (evidence: Dockerfile:3 uses node:26.5.0-alpine, .github/workflows/ci.yml:177/439/549 use node-version 22.22.0). · pkg/api importAssetDir fallback: when APEXLOAD_BRUNO_ARTIFACT_ROOT is empty the encrypted Bruno artifact store defaults to filepath.Join(s.importAssetDir, ".bruno-artifacts") (pkg/api/handlers_bruno_import.go:2949-2951); in the kustomize onprem deployment the data dirs are emptyDir, so any storage-area review should confirm import-enabled deployments never silently place durable encrypted artifacts on pod-local scratch. · Managed-test status vocabulary is duplicated across at least pkg/api/execution_backend.go:556, pkg/api/persistence.go:653, pkg/api/capacity.go:75, and cmd/apexctl/api_client.go:409; today they agree (verified), but there is no shared constant or test enforcing it, so a new terminal status added in pkg/api would silently hang apexctl wait/run polling.
 
 ---
 *Generated by a multi-agent adversarially-verified review (Claude, 2026-08-02). Non-security scope; security is covered by separate dedicated passes. Partial coverage — see the Coverage section.*

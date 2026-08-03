@@ -111,6 +111,12 @@ type parquetIntervalSummary struct {
 	P90Ms                  float64 `parquet:"name=p90_ms, type=DOUBLE"`
 	P95Ms                  float64 `parquet:"name=p95_ms, type=DOUBLE"`
 	P99Ms                  float64 `parquet:"name=p99_ms, type=DOUBLE"`
+	PercentileQuality      string  `parquet:"name=percentile_quality, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	GroupsJSON             string  `parquet:"name=groups_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserJSON            string  `parquet:"name=browser_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	BrowserDeviceJSON      string  `parquet:"name=browser_by_device_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TelemetryJSON          string  `parquet:"name=telemetry_json, type=BYTE_ARRAY, convertedtype=UTF8"`
+	TelemetryStatusJSON    string  `parquet:"name=telemetry_status_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) error {
@@ -318,6 +324,12 @@ func toParquetSummaries(items []IntervalSummaryRecord) []parquetIntervalSummary 
 			P90Ms:                  item.P90Ms,
 			P95Ms:                  item.P95Ms,
 			P99Ms:                  item.P99Ms,
+			PercentileQuality:      item.PercentileQuality,
+			GroupsJSON:             mustJSON(item.Groups),
+			BrowserJSON:            mustJSON(item.Browser),
+			BrowserDeviceJSON:      mustJSON(item.BrowserByDevice),
+			TelemetryJSON:          mustJSON(item.Telemetry),
+			TelemetryStatusJSON:    mustJSON(item.TelemetryStatus),
 		})
 	}
 	return rows

@@ -562,12 +562,16 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
+		if storage.IsGitHubScriptSyncBusy(err) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	switch deleteResult {
 	case storage.LeaseFencedDeleteActive:
-		writeError(w, http.StatusConflict, "project has active tests")
+		writeError(w, http.StatusConflict, "project has active tests or synchronization operations")
 		return
 	case storage.LeaseFencedDeleteMissing:
 		writeError(w, http.StatusNotFound, "project not found")
@@ -661,6 +665,9 @@ func (s *Server) deleteProjectDurably(id string) (storage.LeaseFencedDeleteResul
 	if err := s.store.DeleteProject(id); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return storage.LeaseFencedDeleteMissing, nil
+		}
+		if storage.IsGitHubScriptSyncBusy(err) {
+			return storage.LeaseFencedDeleteActive, nil
 		}
 		return storage.LeaseFencedDeleteFenced, err
 	}

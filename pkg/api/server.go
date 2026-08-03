@@ -568,7 +568,7 @@ func NewServer(cfg ServerConfig) *Server {
 }
 
 func (s *Server) routes(allowedOrigins []string) {
-	cors := corsMiddleware(allowedOrigins)
+	cors := corsMiddleware(allowedOrigins, func() AuthSettings { return s.runner.GetSystemSettings().Auth })
 	log := loggingMiddleware
 	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
 	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}

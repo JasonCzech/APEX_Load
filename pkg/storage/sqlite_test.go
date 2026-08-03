@@ -39,6 +39,56 @@ func TestSQLiteStoreUsesSingleWriterPool(t *testing.T) {
 	}
 }
 
+func TestSQLiteStorePersistsInitialProvenanceOnce(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+
+	record := &TestRecord{
+		ID: "initial-provenance-run", Name: "Initial provenance", Status: "QUEUED",
+		StartTime: time.Now().UTC(),
+	}
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest without provenance: %v", err)
+	}
+	saved, err := store.SaveTestInitialProvenance(record.ID, "another-project", map[string]any{"total_vusers": 99})
+	if err != nil || saved {
+		t.Fatalf("wrong-project SaveTestInitialProvenance = (%v, %v), want (false, nil)", saved, err)
+	}
+	saved, err = store.SaveTestInitialProvenance(record.ID, DefaultProjectID, map[string]any{"total_vusers": 3, "duration": "3m"})
+	if err != nil || !saved {
+		t.Fatalf("SaveTestInitialProvenance = (%v, %v), want (true, nil)", saved, err)
+	}
+	// Later full-row saves carry mutable current state but cannot replace the
+	// immutable initial snapshot. The targeted write likewise remains write-once.
+	record.InitialProvenance = map[string]any{"total_vusers": 9, "duration": "9m"}
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest replacement provenance: %v", err)
+	}
+	saved, err = store.SaveTestInitialProvenance(record.ID, DefaultProjectID, map[string]any{"total_vusers": 12})
+	if err != nil || !saved {
+		t.Fatalf("second SaveTestInitialProvenance = (%v, %v), want matched row", saved, err)
+	}
+
+	stored, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest: %v", err)
+	}
+	payload, err := json.Marshal(stored.InitialProvenance)
+	if err != nil {
+		t.Fatalf("marshal stored provenance: %v", err)
+	}
+	var provenance map[string]any
+	if err := json.Unmarshal(payload, &provenance); err != nil {
+		t.Fatalf("decode stored provenance: %v", err)
+	}
+	if got := int(provenance["total_vusers"].(float64)); got != 3 {
+		t.Fatalf("stored total_vusers = %d, want immutable 3", got)
+	}
+}
+
 func TestSQLiteStoreSaveTestPersistsBlankOptionalRelationsAsNull(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

@@ -1667,17 +1667,21 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		avgResponse = totalDuration / float64(totalAttempts)
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
-		Timestamp:     time.UnixMilli(batch.TimestampUnixMs),
-		ActiveVUsers:  int64(batch.GetStats().GetActiveVusers()),
-		TPS:           float64(totalSuccess) / windowSecondsFromMs(batch.GetWindowMs()),
-		AvgResponseMs: avgResponse,
-		ErrorPct:      errorPct(totalErrors, totalSuccess+totalErrors),
-		TotalTx:       totalSuccess,
-		TotalErrors:   totalErrors,
-		P50Ms:         quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.50),
-		P90Ms:         quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.90),
-		P95Ms:         quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.95),
-		P99Ms:         quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
+		Timestamp:       time.UnixMilli(batch.TimestampUnixMs),
+		ActiveVUsers:    int64(batch.GetStats().GetActiveVusers()),
+		TPS:             float64(totalSuccess) / windowSecondsFromMs(batch.GetWindowMs()),
+		AvgResponseMs:   avgResponse,
+		ErrorPct:        errorPct(totalErrors, totalSuccess+totalErrors),
+		TotalTx:         totalSuccess,
+		TotalErrors:     totalErrors,
+		P50Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.50),
+		P90Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.90),
+		P95Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.95),
+		P99Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
+		Groups:          archiveSummaryGroupsFromBatch(batch),
+		Browser:         archiveSummaryBrowserFromBatch(batch),
+		BrowserByDevice: archiveSummaryBrowserDevicesFromBatch(batch),
+		Telemetry:       archiveSummaryTelemetryFromBatch(batch),
 	})
 	if archiveErr := writer.claimRecordingFailure(); archiveErr != nil {
 		// The engine's result-sink contract is non-blocking and intentionally
@@ -1686,6 +1690,112 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		// this same execution's completion barrier.
 		go s.FailTest(testID, "generator archive recording failed: "+archiveErr.Error())
 	}
+}
+
+func archiveSummaryGroupsFromBatch(batch *pb.MetricsBatch) map[string]*archiveGroupLiveMetrics {
+	if batch == nil || len(batch.GetGroups()) == 0 {
+		return nil
+	}
+	groups := make(map[string]*archiveGroupLiveMetrics, len(batch.GetGroups()))
+	windowSeconds := windowSecondsFromMs(batch.GetWindowMs())
+	for _, group := range batch.GetGroups() {
+		name := strings.TrimSpace(group.GetName())
+		if name == "" {
+			continue
+		}
+		out := &archiveGroupLiveMetrics{
+			Name: name, VUsers: int(group.GetActiveVusers()),
+			PercentileQuality: "source_generator",
+		}
+		if aggregate := metricAggregateFromProto(group.GetMetrics()); aggregate != nil {
+			out.Transactions = aggregate.Count - aggregate.Errors
+			if out.Transactions < 0 {
+				out.Transactions = 0
+			}
+			out.Errors = aggregate.Errors
+			out.TPS = aggregate.TPS
+			if out.TPS <= 0 && out.Transactions > 0 {
+				out.TPS = float64(out.Transactions) / windowSeconds
+			}
+			out.AvgResponseMs = aggregate.AvgMs
+			out.P50Ms = aggregate.P50Ms
+			out.P90Ms = aggregate.P90Ms
+			out.P95Ms = aggregate.P95Ms
+			out.P99Ms = aggregate.P99Ms
+		}
+		groups[name] = out
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	return groups
+}
+
+func archiveSummaryBrowserFromBatch(batch *pb.MetricsBatch) *archiveBrowserLiveMetrics {
+	if batch == nil {
+		return nil
+	}
+	metrics := browserMetricsFromProto(batch.GetBrowserMetrics())
+	if metrics == nil {
+		return nil
+	}
+	return &archiveBrowserLiveMetrics{
+		Samples: metrics.Samples, AvgFCPMs: metrics.AvgFCPMs, AvgLCPMs: metrics.AvgLCPMs,
+		AvgCLSScore: metrics.AvgCLSScore, AvgINPMs: metrics.AvgINPMs, AvgTTFBMs: metrics.AvgTTFBMs,
+		AvgBlockingResources: metrics.AvgBlockingResources, AvgLongTaskCount: metrics.AvgLongTaskCount,
+		AvgJSHeapUsedMB: metrics.AvgJSHeapUsedMB, AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
+		AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
+	}
+}
+
+func archiveSummaryBrowserDevicesFromBatch(batch *pb.MetricsBatch) map[string]*archiveBrowserDeviceMetric {
+	if batch == nil {
+		return nil
+	}
+	values := browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics())
+	if len(values) == 0 {
+		return nil
+	}
+	out := make(map[string]*archiveBrowserDeviceMetric, len(values))
+	for _, value := range values {
+		profile := strings.TrimSpace(value.DeviceProfile)
+		if profile == "" || value.Metrics.Samples <= 0 {
+			continue
+		}
+		metrics := value.Metrics
+		out[profile] = &archiveBrowserDeviceMetric{
+			DeviceProfile: profile, DevicePlatform: value.DevicePlatform, DeviceTier: value.DeviceTier, BrowserEngine: value.BrowserEngine,
+			Samples: metrics.Samples, AvgFCPMs: metrics.AvgFCPMs, AvgLCPMs: metrics.AvgLCPMs,
+			AvgCLSScore: metrics.AvgCLSScore, AvgINPMs: metrics.AvgINPMs, AvgTTFBMs: metrics.AvgTTFBMs,
+			AvgBlockingResources: metrics.AvgBlockingResources, AvgLongTaskCount: metrics.AvgLongTaskCount,
+			AvgJSHeapUsedMB: metrics.AvgJSHeapUsedMB, AvgBrowserProcessCPU: metrics.AvgBrowserProcessCPU,
+			AvgBrowserProcessMem: metrics.AvgBrowserProcessMem,
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func archiveSummaryTelemetryFromBatch(batch *pb.MetricsBatch) *archiveTelemetryHealth {
+	if batch == nil || batch.GetTelemetry() == nil {
+		return nil
+	}
+	telemetry := batch.GetTelemetry()
+	out := &archiveTelemetryHealth{
+		DroppedResults: telemetry.GetDroppedResults(), SheddedArrivals: telemetry.GetSheddedArrivals(),
+		DroppedSubscriberBatches: telemetry.GetDroppedSubscriberBatches(),
+		GeneratorProcessingLagMs: telemetry.GetGeneratorProcessingLagMs(), TransportLagMs: telemetry.GetTransportLagMs(),
+		SampleAgeMs: telemetry.GetSampleAgeMs(),
+	}
+	if telemetry.GetCollectedAtUnixMs() > 0 {
+		out.CollectedAt = time.UnixMilli(telemetry.GetCollectedAtUnixMs())
+	}
+	if telemetry.GetPublishedAtUnixMs() > 0 {
+		out.GeneratorPublishedAt = time.UnixMilli(telemetry.GetPublishedAtUnixMs())
+	}
+	return out
 }
 
 func (s *Service) isCurrentExecution(testID string, groupName string, expected *groupExecution) bool {
