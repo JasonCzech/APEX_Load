@@ -47,8 +47,8 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cloud_provider is required")
 		return
 	}
-	if req.MaxSize > 0 && req.MinSize > req.MaxSize {
-		writeError(w, http.StatusBadRequest, "min_size cannot exceed max_size")
+	if err := validateFleetPoolSizing(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	req.ID = uuid.New().String()
@@ -129,10 +129,6 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 	if name := strings.TrimSpace(req.Name); name != "" {
 		existing.Name = name
 	}
-	if req.MaxSize > 0 && req.MinSize > req.MaxSize {
-		writeError(w, http.StatusBadRequest, "min_size cannot exceed max_size")
-		return
-	}
 	existing.Description = req.Description
 	if cp := strings.TrimSpace(req.CloudProvider); cp != "" {
 		existing.CloudProvider = cp
@@ -145,6 +141,10 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 		existing.Status = req.Status
 	}
 	existing.Tags = req.Tags
+	if err := validateFleetPoolSizing(existing); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	prepareFleetPoolMembers(existing.ID, req.Members)
 	updater, supported := s.store.(interface {
 		UpdateFleetPoolIfUnchanged(pool *storage.FleetPool, members []*storage.FleetPoolMember, replaceMembers bool, expectedUpdatedAt time.Time) (bool, error)
@@ -215,6 +215,88 @@ func prepareFleetPoolMembers(poolID string, members []*storage.FleetPoolMember) 
 	}
 }
 
+func validateFleetPoolSizing(pool *storage.FleetPool) error {
+	if pool == nil {
+		return errors.New("fleet pool is required")
+	}
+	if pool.MinSize < 0 || pool.MaxSize < 0 || pool.DesiredSize < 0 {
+		return errors.New("min_size, max_size, and desired_size must be nonnegative")
+	}
+	if pool.MaxSize > 0 && pool.MinSize > pool.MaxSize {
+		return errors.New("min_size cannot exceed max_size")
+	}
+	if pool.DesiredSize < pool.MinSize {
+		return errors.New("desired_size cannot be lower than min_size")
+	}
+	if pool.MaxSize > 0 && pool.DesiredSize > pool.MaxSize {
+		return errors.New("desired_size cannot exceed max_size")
+	}
+	return nil
+}
+
+// runtimeFleetPoolTargetCount mirrors runner_assignment.go: explicit members and
+// metadata-bound targets form one deduplicated runtime membership set. Provisioning
+// may scale only targets operators have associated ahead of time; scaling a
+// StatefulSet does not itself create a durable pool binding.
+func runtimeFleetPoolTargetCount(store storage.Store, pool *storage.FleetPool) (int, error) {
+	if store == nil || pool == nil {
+		return 0, nil
+	}
+	targets := make(map[string]struct{})
+	add := func(target string) {
+		target = strings.TrimSpace(target)
+		if target != "" {
+			targets[target] = struct{}{}
+		}
+	}
+	for _, member := range pool.Members {
+		if member != nil {
+			add(member.Target)
+		}
+	}
+	metadata, err := store.ListGeneratorMetadata(0, 0)
+	if err != nil {
+		return 0, err
+	}
+	for _, generator := range metadata {
+		if generator != nil && generator.FleetPoolID != nil && strings.TrimSpace(*generator.FleetPoolID) == pool.ID {
+			add(generator.Target)
+		}
+	}
+	return len(targets), nil
+}
+
+func validateProvisioningRuntimeTargets(store storage.Store, pool *storage.FleetPool, desiredCount int) error {
+	count, err := runtimeFleetPoolTargetCount(store, pool)
+	if err != nil {
+		return fmt.Errorf("load fleet pool runtime membership: %w", err)
+	}
+	if count < desiredCount {
+		return fmt.Errorf("fleet pool has %d associated runtime target(s), but desired_count is %d; add generator metadata with a runtime target and this pool assignment before provisioning", count, desiredCount)
+	}
+	return nil
+}
+
+// effectiveProvisioningDesiredCount validates the requested replica count
+// against the pool contract before runtime-target validation or external scale
+// work begins. Keeping the returned effective count explicit prevents callers
+// from validating one count while a provisioner silently applies another.
+func effectiveProvisioningDesiredCount(pool *storage.FleetPool, desiredCount int) (int, error) {
+	if pool == nil {
+		return 0, errors.New("fleet pool is required")
+	}
+	if desiredCount <= 0 {
+		return 0, errors.New("desired_count must be greater than zero")
+	}
+	if desiredCount < pool.MinSize {
+		return 0, fmt.Errorf("desired_count %d cannot be lower than fleet pool min_size %d", desiredCount, pool.MinSize)
+	}
+	if pool.MaxSize > 0 && desiredCount > pool.MaxSize {
+		return 0, fmt.Errorf("desired_count %d cannot exceed fleet pool max_size %d", desiredCount, pool.MaxSize)
+	}
+	return desiredCount, nil
+}
+
 func updateFleetPoolDesiredSize(store storage.Store, poolID string, desiredSize int) error {
 	updater, ok := store.(interface {
 		UpdateFleetPoolDesiredSize(id string, desiredSize int, updatedAt time.Time) error
@@ -270,7 +352,7 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	generatorID := r.PathValue("id")
+	generatorID := strings.TrimSpace(r.PathValue("id"))
 	var patch struct {
 		Target         *string           `json:"target"`
 		FleetPoolID    *string           `json:"fleet_pool_id"`
@@ -282,6 +364,10 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 	}
 	if !decodeJSONBody(w, r, &patch) {
 		return
+	}
+	if patch.Target != nil {
+		target := strings.TrimSpace(*patch.Target)
+		patch.Target = &target
 	}
 	metadataPatch := storage.GeneratorMetadataPatch{Target: patch.Target, Region: patch.Region, ProviderID: patch.ProviderID, ProviderStatus: patch.ProviderStatus, Cordoned: patch.Cordoned, Tags: patch.Tags, TagsSet: patch.Tags != nil}
 	if patch.FleetPoolID != nil {
@@ -301,6 +387,10 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 			metadataPatch.FleetPoolID = &poolID
 		}
 	}
+	if err := validateGeneratorMetadataRuntimeTarget(s.store, generatorID, metadataPatch); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	patcher, supported := s.store.(interface {
 		PatchGeneratorMetadata(generatorID string, patch storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
 	})
@@ -308,20 +398,43 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotImplemented, "atomic generator metadata patches are not supported by this storage backend")
 		return
 	}
+	previousState := "active"
+	liveApplied := false
+	if patch.Cordoned != nil {
+		previousState = s.currentGeneratorLifecycleState(generatorID, generatorID)
+		var err error
+		liveApplied, err = s.reconcileMetadataCordonState(generatorID, *patch.Cordoned)
+		if err != nil {
+			if liveApplied {
+				_ = s.restoreGeneratorLifecycleState(generatorID, generatorID, previousState)
+			}
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	metadata, err := patcher.PatchGeneratorMetadata(generatorID, metadataPatch)
 	if err != nil {
+		// Reconcile a lost acknowledgement before compensating the live lifecycle
+		// state. The storage PATCH is atomic, so a matching authoritative row means
+		// the intended mutation committed despite the returned error.
+		if current, readErr := s.store.GetGeneratorMetadata(generatorID); readErr == nil && generatorMetadataPatchApplied(current, metadataPatch) {
+			metadata = current
+			err = nil
+		}
+	}
+	if err != nil {
+		if liveApplied {
+			if rollbackErr := s.restoreGeneratorLifecycleState(generatorID, generatorID, previousState); rollbackErr != nil {
+				writeError(w, http.StatusInternalServerError, "generator metadata update failed and the prior lifecycle state could not be restored: "+errors.Join(err, rollbackErr).Error())
+				return
+			}
+		}
 		if metadataPatch.FleetPoolIDSet && metadataPatch.FleetPoolID != nil && errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "fleet pool not found")
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-	if patch.Cordoned != nil {
-		if err := s.reconcileMetadataCordonState(generatorID, *patch.Cordoned); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
 	}
 	s.recordAuditEvent(r, "generator.metadata.patch", "success", "generator", generatorID, "", map[string]any{
 		"cordoned": metadata.Cordoned,
@@ -330,14 +443,84 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, metadata)
 }
 
-func (s *Server) reconcileMetadataCordonState(generatorID string, cordoned bool) error {
+func validateGeneratorMetadataRuntimeTarget(store storage.Store, generatorID string, patch storage.GeneratorMetadataPatch) error {
+	if store == nil {
+		return nil
+	}
+	var current *storage.GeneratorMetadata
+	if existing, err := store.GetGeneratorMetadata(generatorID); err == nil {
+		current = existing
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("load current generator metadata: %w", err)
+	}
+	effectiveTarget := ""
+	if current != nil {
+		effectiveTarget = strings.TrimSpace(current.Target)
+	}
+	if patch.Target != nil {
+		effectiveTarget = strings.TrimSpace(*patch.Target)
+	}
+	var effectivePoolID *string
+	if current != nil {
+		effectivePoolID = current.FleetPoolID
+	}
+	if patch.FleetPoolIDSet {
+		effectivePoolID = patch.FleetPoolID
+	}
+	if effectivePoolID != nil && strings.TrimSpace(*effectivePoolID) != "" && effectiveTarget == "" {
+		return errors.New("a generator assigned to a fleet pool requires a non-empty runtime target")
+	}
+	return nil
+}
+
+func generatorMetadataPatchApplied(current *storage.GeneratorMetadata, patch storage.GeneratorMetadataPatch) bool {
+	if current == nil {
+		return false
+	}
+	if patch.Target != nil && current.Target != *patch.Target {
+		return false
+	}
+	if patch.FleetPoolIDSet {
+		if patch.FleetPoolID == nil && current.FleetPoolID != nil {
+			return false
+		}
+		if patch.FleetPoolID != nil && (current.FleetPoolID == nil || *current.FleetPoolID != *patch.FleetPoolID) {
+			return false
+		}
+	}
+	if patch.Region != nil && current.Region != *patch.Region {
+		return false
+	}
+	if patch.ProviderID != nil && current.ProviderID != *patch.ProviderID {
+		return false
+	}
+	if patch.ProviderStatus != nil && current.ProviderStatus != *patch.ProviderStatus {
+		return false
+	}
+	if patch.Cordoned != nil && current.Cordoned != *patch.Cordoned {
+		return false
+	}
+	if patch.TagsSet {
+		if len(current.Tags) != len(patch.Tags) {
+			return false
+		}
+		for key, value := range patch.Tags {
+			if current.Tags[key] != value {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (s *Server) reconcileMetadataCordonState(generatorID string, cordoned bool) (bool, error) {
 	generatorID = strings.TrimSpace(generatorID)
 	if generatorID == "" || s == nil || s.runner == nil {
-		return nil
+		return false, nil
 	}
 	backend, ok := s.runner.getExecutionBackend().(drainableExecutionBackend)
 	if !ok {
-		return nil
+		return false, nil
 	}
 	state := "active"
 	if cordoned {
@@ -349,18 +532,18 @@ func (s *Server) reconcileMetadataCordonState(generatorID string, cordoned bool)
 		// the metadata cordon is persisted, and applyMetadataCordonOnReconnect will
 		// enforce it once the generator (re)connects. So don't fail the PATCH.
 		if identityBackend.GeneratorTargetForID(generatorID) == "" {
-			return nil
+			return false, nil
 		}
 		if _, err := identityBackend.SetGeneratorDrainStateByID(generatorID, state); err != nil {
-			return err
+			return false, err
 		}
 	} else if err := backend.SetGeneratorDrainState(generatorID, state); err != nil {
-		return err
+		return false, err
 	}
 	if persistent, ok := backend.(persistentDrainBackend); ok {
-		return s.saveGeneratorDrainStates(persistent.GeneratorDrainStates())
+		return true, s.saveGeneratorDrainStates(persistent.GeneratorDrainStates())
 	}
-	return nil
+	return true, nil
 }
 
 // drainStateReader reads a generator's live drain state by id (implemented by the
@@ -528,6 +711,12 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, fmt.Sprintf("fleet pool %q is %s", firstNonEmpty(pool.Name, pool.ID), status))
 		return
 	}
+	effectiveDesiredCount, err := effectiveProvisioningDesiredCount(pool, req.DesiredCount)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	req.DesiredCount = effectiveDesiredCount
 	req.ID = uuid.New().String()
 	req.Revision = 1
 	req.AttemptToken = uuid.New().String()
@@ -536,6 +725,10 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	now := time.Now()
 
 	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+		if err := validateProvisioningRuntimeTargets(s.store, pool, effectiveDesiredCount); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		// A real provisioner is wired: actually scale the pool's workload and
 		// drive the request through its lifecycle.
 		req.Status = "provisioning"
@@ -552,7 +745,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		s.saveProvisioningEvent(req.ID, "provisioning", fmt.Sprintf("scaling pool %q toward %d generators", pool.Name, req.DesiredCount), now)
 
 		scaleCtx, cancelScale := s.runner.executionOperationContext(r.Context())
-		workload, scaledTo, perr := s.fleetScaler.ScalePool(scaleCtx, pool, req.DesiredCount)
+		workload, scaledTo, perr := s.fleetScaler.ScalePool(scaleCtx, pool, effectiveDesiredCount)
 		cancelScale()
 		if s.runner == nil || !s.runner.isExecutionLeader() {
 			writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
@@ -753,6 +946,17 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusConflict, fmt.Sprintf("fleet pool %q is %s", firstNonEmpty(pool.Name, pool.ID), status))
 		return
 	}
+	effectiveDesiredCount, err := effectiveProvisioningDesiredCount(pool, req.DesiredCount)
+	if err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+		if err := validateProvisioningRuntimeTargets(s.store, pool, effectiveDesiredCount); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
 
 	now := time.Now()
 	expectedRevision := req.Revision
@@ -807,8 +1011,15 @@ func (s *Server) handleRetryProvisioningRequest(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) executeProvisioningScale(ctx context.Context, req *storage.ProvisioningRequest, pool *storage.FleetPool) (status string, workload string, scaledTo int, message string) {
+	effectiveDesiredCount, err := effectiveProvisioningDesiredCount(pool, req.DesiredCount)
+	if err != nil {
+		return "failed", "", 0, err.Error()
+	}
 	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
-		workload, scaledTo, err := s.fleetScaler.ScalePool(ctx, pool, req.DesiredCount)
+		if err := validateProvisioningRuntimeTargets(s.store, pool, effectiveDesiredCount); err != nil {
+			return "failed", "", 0, err.Error()
+		}
+		workload, scaledTo, err := s.fleetScaler.ScalePool(ctx, pool, effectiveDesiredCount)
 		if err != nil {
 			return "failed", workload, scaledTo, "provisioning failed: " + err.Error()
 		}

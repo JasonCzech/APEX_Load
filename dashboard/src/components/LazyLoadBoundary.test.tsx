@@ -17,16 +17,23 @@ class ThrowingChild extends Component<{ fail: boolean; children?: ReactNode }> {
 describe('LazyLoadBoundary', () => {
   let container: HTMLDivElement
   let root: Root
+  const suppressExpectedRenderError = (event: ErrorEvent) => {
+    if (event.error instanceof Error && event.error.message === 'chunk unavailable') {
+      event.preventDefault()
+    }
+  }
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    window.addEventListener('error', suppressExpectedRenderError)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
   })
 
   afterEach(async () => {
     await act(async () => root.unmount())
+    window.removeEventListener('error', suppressExpectedRenderError)
     container.remove()
     vi.restoreAllMocks()
   })

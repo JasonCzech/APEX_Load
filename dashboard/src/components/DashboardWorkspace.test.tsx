@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DashboardWorkspace, {
   type DashboardWorkspaceCard,
@@ -69,6 +69,22 @@ describe('DashboardWorkspace', () => {
     expect(selectedTabLabel()).toBe('Details')
     expect(container.textContent).toContain('Beta body')
     expect(container.textContent).not.toContain('Alpha body')
+  })
+
+  it('reports persisted tab synchronization separately from user tab navigation', async () => {
+    const onActiveTabChange = vi.fn()
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([{
+      ...defaultProfile,
+      activeTabId: 'details',
+    }]))
+
+    await renderWorkspace({ onActiveTabChange })
+
+    expect(onActiveTabChange).toHaveBeenLastCalledWith('details', 'sync')
+
+    await click(tabButton('Overview'))
+
+    expect(onActiveTabChange).toHaveBeenLastCalledWith('overview', 'user')
   })
 
   it('collapses and expands card library categories from the header', async () => {

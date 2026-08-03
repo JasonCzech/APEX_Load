@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TimeslotsPanel from './TimeslotsPanel'
 import { CapacityTimeslot } from '../types'
 import { ApiError } from '../hooks/apiClient'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -56,6 +57,12 @@ async function flush() {
   })
 }
 
+function setNativeInput(element: HTMLInputElement | null | undefined, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setter?.call(element, value)
+  element?.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 function slot(overrides: Partial<CapacityTimeslot>): CapacityTimeslot {
   return {
     id: 'slot-1',
@@ -86,7 +93,7 @@ describe('TimeslotsPanel', () => {
       root.render(<TimeslotsPanel projectId="proj-a" canManage />)
     })
     await flush()
-    expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'proj-a' })
+    expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
     expect(container.textContent).toContain('No capacity reservations')
     expect(container.textContent).toContain('New Reservation')
   })
@@ -269,6 +276,125 @@ describe('TimeslotsPanel', () => {
     expect(container.textContent).not.toContain('Approve')
     expect(container.textContent).not.toContain('Delete')
   })
+
+  it('ignores a late timeslot response from the previous project', async () => {
+    let resolveProjectA: ((value: { timeslots: CapacityTimeslot[]; count: number }) => void) | undefined
+    capacityApiMock.listTimeslots.mockImplementation(({ project_id }: { project_id: string }) => {
+      if (project_id === 'proj-a') return new Promise(resolve => { resolveProjectA = resolve })
+      return Promise.resolve({ timeslots: [slot({ id: 'slot-b', project_id: 'proj-b', scenario_id: 'project-b-scenario' })], count: 1 })
+    })
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.textContent).toContain('project-b-scenario')
+
+    await act(async () => {
+      resolveProjectA?.({ timeslots: [slot({ scenario_id: 'stale-project-a-scenario' })], count: 1 })
+    })
+    await flush()
+    expect(container.textContent).toContain('project-b-scenario')
+    expect(container.textContent).not.toContain('stale-project-a-scenario')
+  })
+
+  it('closes and clears a reservation draft when the project changes', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Reservation')?.click()
+    })
+    const dateFields = container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+    await act(async () => setNativeInput(dateFields[0], '2026-07-01T10:00'))
+
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Reservation')?.click()
+    })
+    expect(container.querySelector<HTMLInputElement>('input[type="datetime-local"]')?.value).toBe('')
+  })
+
+  it('keeps the last good timeslot list when a same-project refresh fails', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValueOnce({ timeslots: [slot({ approval_state: 'pending', scenario_id: 'retained-scenario' })], count: 1 })
+    capacityApiMock.approveTimeslot.mockResolvedValue(slot({ approval_state: 'approved' }))
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
+    await flush()
+    capacityApiMock.listTimeslots.mockRejectedValueOnce(new ApiError('timeslot refresh unavailable', 503))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Approve')?.click()
+    })
+    await flush()
+    expect(container.textContent).toContain('retained-scenario')
+    expect(container.textContent).toContain('timeslot refresh unavailable')
+  })
+
+  it('keeps the bind draft open when binding fails so it can be retried', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [slot({ approval_state: 'approved' })], count: 1 })
+    capacityApiMock.bindTimeslot.mockRejectedValue(new ApiError('bind failed', 409))
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Bind test')?.click()
+    })
+    const testInput = container.querySelector<HTMLInputElement>('input[placeholder="test id to bind"]')
+    await act(async () => setNativeInput(testInput, 'test-1'))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Bind')?.click()
+    })
+    await flush()
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="test id to bind"]')?.value).toBe('test-1')
+    expect(container.textContent).toContain('bind failed')
+  })
+
+  it('keeps the delete confirmation open when deletion fails', async () => {
+    capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [slot({ approval_state: 'approved' })], count: 1 })
+    capacityApiMock.deleteTimeslot.mockRejectedValue(new ApiError('delete failed', 503))
+    await act(async () => { root.render(<TimeslotsPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
+    })
+    const modalInputs = container.querySelectorAll<HTMLInputElement>('[role="dialog"] input')
+    await act(async () => {
+      setNativeInput(modalInputs[0], 'cleanup')
+      setNativeInput(modalInputs[1], 'slot-1')
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete reservation')?.click()
+    })
+    await flush()
+    expect(container.textContent).toContain('Delete capacity reservation')
+    expect(container.textContent).toContain('delete failed')
+  })
+
+	it('guards a dirty reservation draft before closing the editor', async () => {
+		capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
+		await act(async () => {
+			root.render(
+				<NavigationGuardProvider>
+					<TimeslotsPanel projectId="proj-a" canManage />
+				</NavigationGuardProvider>,
+			)
+		})
+		await flush()
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Reservation')?.click()
+		})
+		const start = container.querySelector<HTMLInputElement>('input[type="datetime-local"]')
+		await act(async () => setNativeInput(start, '2026-07-01T10:00'))
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-modal-actions button')).find(button => button.textContent === 'Cancel')?.click()
+		})
+
+		expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+		expect(container.querySelector<HTMLInputElement>('input[type="datetime-local"]')?.value).toBe('2026-07-01T10:00')
+		const discard = Array.from(document.querySelectorAll<HTMLButtonElement>('.unsaved-changes-modal button'))
+			.find(button => button.textContent === 'Discard changes')
+		await act(async () => discard?.click())
+		expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+		expect(container.querySelector('input[type="datetime-local"]')).toBeNull()
+	})
 })
 
 async function flushFocus() {

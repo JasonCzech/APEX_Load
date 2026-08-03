@@ -3,6 +3,7 @@ import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { APMIntegrationProfilesResponse, DashboardAuditEvent, FleetAlert, FleetCapacityResponse, HealthResponse, InfrastructureMonitorPacksResponse, ProvisionerInfo, RunCalendarCapacityDay, RunCalendarEvent, RunCalendarResponse, ScenarioScheduleHealth, SystemInventoryGenerator, SystemInventoryResponse, SystemReadinessResponse, SystemRestartCapabilities, SystemRestartRequest, SystemServicesResponse, TelemetryDiagnosticEntry } from '../types'
@@ -300,6 +301,7 @@ function restartErrorMessage(error: unknown): string {
 
 export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], thresholdAlerts = [], onAcknowledgeThresholdAlert, onSelectTest, canManageSystem = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const { activeProject } = useProject()
   const activeProjectId = activeProject?.id
   const refreshGenerationRef = useRef(0)
@@ -1524,11 +1526,13 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const activeVisibleCards = orderedCards.filter(card => activeCategoryCardIds.has(card.id))
 
   const selectCategory = useCallback((id: MonitorCategoryId) => {
-    if (controlledCategoryId === undefined) {
-      setInternalCategoryId(id)
-    }
-    onCategoryChange?.(id)
-  }, [controlledCategoryId, onCategoryChange])
+    runGuarded(() => {
+      if (controlledCategoryId === undefined) {
+        setInternalCategoryId(id)
+      }
+      onCategoryChange?.(id)
+    })
+  }, [controlledCategoryId, onCategoryChange, runGuarded])
 
   const monitorCategoryControls = useMemo(() => (
     <div className="monitor-tab-row topbar-page-section-toggle" role="tablist" aria-label="Monitor categories">

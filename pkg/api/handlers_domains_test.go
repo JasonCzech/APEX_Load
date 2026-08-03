@@ -111,7 +111,16 @@ func TestDomainRepositoryProjectReleaseHandlers(t *testing.T) {
 	if err := json.Unmarshal(listReleaseResp.Body.Bytes(), &listedReleases); err != nil {
 		t.Fatalf("unmarshal releases: %v", err)
 	}
-	if listedReleases.Count != 1 || listedReleases.Releases[0].ProjectID != project.ID {
+	createdReleaseFound := false
+	legacyReleaseFound := false
+	for _, listed := range listedReleases.Releases {
+		if listed.ProjectID != project.ID {
+			t.Fatalf("listed release escaped project scope: %#v", listed)
+		}
+		createdReleaseFound = createdReleaseFound || listed.ID == release.ID
+		legacyReleaseFound = legacyReleaseFound || listed.Name == "Imported Legacy"
+	}
+	if listedReleases.Count != 2 || !createdReleaseFound || !legacyReleaseFound {
 		t.Fatalf("listed releases = %#v", listedReleases)
 	}
 }

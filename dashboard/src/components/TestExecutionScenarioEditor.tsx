@@ -18,6 +18,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
   const { activeProject } = useProject()
   const [availableScripts, setAvailableScripts] = useState<StoredScript[]>([])
   const initialScenario = useMemo(() => (test ? buildScenarioDraftFromTest(test) : undefined), [test])
+  const owningProjectId = test?.project_id || activeProject?.id
 
   useEffect(() => {
     if (!open) return
@@ -26,7 +27,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
 
     const loadScripts = async () => {
       try {
-        const response = await api.listScripts(activeProject?.id)
+        const response = await api.listScripts(owningProjectId)
         if (!cancelled) {
           setAvailableScripts(response.scripts || [])
         }
@@ -41,7 +42,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, api, open])
+  }, [api, open, owningProjectId])
 
   if (!open || !test || !initialScenario) {
     return null
@@ -51,7 +52,7 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
     <Suspense fallback={<div className="page-loading" role="status">Loading scenario editor…</div>}>
       <CreateTestModal
         mode="revise-queued-run"
-        projectId={activeProject?.id}
+        projectId={owningProjectId}
         scripts={availableScripts}
         initialScenario={initialScenario}
         onClose={onClose}

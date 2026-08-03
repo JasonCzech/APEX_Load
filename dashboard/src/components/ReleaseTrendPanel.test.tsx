@@ -70,4 +70,39 @@ describe('ReleaseTrendPanel', () => {
     await flush()
     expect(container.textContent).toContain('boom')
   })
+
+  it('ignores a stale release response after the selected release changes', async () => {
+    let resolveFirst: ((trend: ReleaseTrend) => void) | undefined
+    let resolveSecond: ((trend: ReleaseTrend) => void) | undefined
+    const first = new Promise<ReleaseTrend>(resolve => { resolveFirst = resolve })
+    const second = new Promise<ReleaseTrend>(resolve => { resolveSecond = resolve })
+    const getReleaseTrend = vi.fn((id: string) => id === 'rel-1' ? first : second)
+
+    await act(async () => {
+      root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={getReleaseTrend} />)
+    })
+    await act(async () => {
+      root.render(<ReleaseTrendPanel releaseId="rel-2" getReleaseTrend={getReleaseTrend} />)
+    })
+    await act(async () => {
+      resolveSecond?.({
+        ...trendFixture(),
+        release_id: 'rel-2',
+        points: [{ ...trendFixture().points[0], run_id: 'current', run_name: 'Current Release Run' }],
+        run_count: 1,
+      })
+    })
+    await flush()
+    await act(async () => {
+      resolveFirst?.({
+        ...trendFixture(),
+        points: [{ ...trendFixture().points[0], run_id: 'stale', run_name: 'Stale Release Run' }],
+        run_count: 1,
+      })
+    })
+    await flush()
+
+    expect(container.textContent).toContain('Current Release Run')
+    expect(container.textContent).not.toContain('Stale Release Run')
+  })
 })

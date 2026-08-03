@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, readAppHistoryIndex, viewToLocationHash, withAppHistoryIndex, type AppView } from './appRouting'
+import { APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
 
 describe('appRouting', () => {
+  it('maps run workspaces to the sidebar area that owns their current flow', () => {
+    for (const tab of [undefined, 'overview', 'control', 'graphs', 'diagnostics'] as const) {
+      expect(navPageForAppView({ page: 'test', testId: 'run-1', ...(tab ? { tab } : {}) })).toBe('command-center')
+    }
+    for (const tab of ['archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const) {
+      expect(navPageForAppView({ page: 'test', testId: 'run-1', tab })).toBe('results')
+    }
+    expect(navPageForAppView({ page: 'report', testId: 'run-1' })).toBe('results')
+    expect(navPageForAppView({ page: 'tests' })).toBe('tests')
+  })
+
   it('defaults empty and invalid hashes to the dashboard', () => {
     expect(parseAppViewFromHash('')).toEqual({ page: 'dashboard' })
     expect(parseAppViewFromHash('#/unknown')).toEqual({ page: 'dashboard' })
@@ -29,6 +40,38 @@ describe('appRouting', () => {
     expect(parseAppViewFromHash('#/repository')).toEqual({ page: 'repository' })
     expect(parseAppViewFromHash('#/swagger')).toEqual({ page: 'swagger' })
     expect(parseAppViewFromHash('#/repository-guide')).toEqual({ page: 'repository-guide' })
+  })
+
+  it.each([
+    { page: 'dashboard' },
+    { page: 'repository' },
+    { page: 'tests', scenarioView: 'plans' },
+    { page: 'results' },
+    { page: 'monitoring', category: 'telemetry' },
+    { page: 'fleet' },
+    { page: 'schedules' },
+    { page: 'docs', guidePage: 'mcp' },
+    { page: 'access' },
+    { page: 'settings' },
+  ] as AppView[])('round-trips project, application, and release scope for generic route $page', (view) => {
+    const scoped = scopeAppViewToWorkspace(view, {
+      projectId: 'project/1',
+      applicationId: 'application/2',
+      releaseId: 'release/3',
+    })
+
+    expect(parseAppViewFromHash(viewToLocationHash(scoped))).toEqual(scoped)
+  })
+
+  it('accepts legacy workspace parameter aliases without adding scope to unscoped links', () => {
+    expect(parseAppViewFromHash('#/results?project=project-a&application=app-a&release=release-a')).toEqual({
+      page: 'results',
+      projectId: 'project-a',
+      applicationId: 'app-a',
+      releaseId: 'release-a',
+    })
+    expect(parseAppViewFromHash('#/results')).toEqual({ page: 'results' })
+    expect(viewToLocationHash({ page: 'results' })).toBe('#/results')
   })
 
   it('round-trips deep links for runs, scenario launches, and scripts', () => {
@@ -64,6 +107,28 @@ describe('appRouting', () => {
       mode: 'edit',
       scriptId: 'script-1',
     })
+    expect(parseAppViewFromHash(viewToLocationHash({
+      page: 'new-test',
+      scenarioId: 'scenario/1',
+      projectId: 'project/2',
+    }))).toEqual({ page: 'new-test', scenarioId: 'scenario/1', projectId: 'project/2' })
+    expect(parseAppViewFromHash(viewToLocationHash({
+      page: 'scripts',
+      mode: 'edit',
+      scriptId: 'script/1',
+      projectId: 'project/2',
+    }))).toEqual({ page: 'scripts', mode: 'edit', scriptId: 'script/1', projectId: 'project/2' })
+    expect(parseAppViewFromHash(viewToLocationHash({
+      page: 'test',
+      testId: 'run/1',
+      tab: 'archive',
+      projectId: 'project/2',
+    }))).toEqual({ page: 'test', testId: 'run/1', tab: 'archive', projectId: 'project/2' })
+    expect(parseAppViewFromHash(viewToLocationHash({
+      page: 'command-center',
+      testId: 'run/1',
+      projectId: 'project/2',
+    }))).toEqual({ page: 'command-center', testId: 'run/1', projectId: 'project/2' })
     expect(viewToLocationHash({ page: 'swagger' })).toBe('#/swagger')
     expect(viewToLocationHash({ page: 'docs' })).toBe('#/docs')
     expect(viewToLocationHash({ page: 'docs', guidePage: 'general' })).toBe('#/docs')
@@ -114,6 +179,133 @@ describe('appRouting', () => {
       tab: 'archive',
     })
     expect(normalizeReportViewForFeatureFlag({ page: 'report', testId: 'run-1' }, true)).toEqual({ page: 'report', testId: 'run-1' })
+    expect(normalizeReportViewForFeatureFlag({ page: 'report', testId: 'run-1', projectId: 'project-2' }, false)).toEqual({
+      page: 'test',
+      testId: 'run-1',
+      tab: 'archive',
+      projectId: 'project-2',
+    })
+    expect(normalizeReportViewForFeatureFlag({
+      page: 'report',
+      testId: 'run-1',
+      projectId: 'project-2',
+      applicationId: 'app-2',
+      releaseId: 'release-2',
+    }, false)).toEqual({
+      page: 'test',
+      testId: 'run-1',
+      tab: 'archive',
+      projectId: 'project-2',
+      applicationId: 'app-2',
+      releaseId: 'release-2',
+    })
+  })
+
+  it('replaces stale child scope when a view is moved to another workspace', () => {
+    const original: AppView = {
+      page: 'results',
+      projectId: 'project-a',
+      applicationId: 'app-a',
+      releaseId: 'release-a',
+    }
+
+    expect(scopeAppViewToWorkspace(original, { projectId: 'project-b' })).toEqual({
+      page: 'results',
+      projectId: 'project-b',
+    })
+    expect(workspaceScopeForAppView(scopeAppViewToWorkspace(original, {
+      projectId: 'project-b',
+      applicationId: 'app-b',
+    }))).toEqual({
+      projectId: 'project-b',
+      applicationId: 'app-b',
+    })
+
+    expect(mergeAppViewWithWorkspace({ page: 'results' }, workspaceScopeForAppView(original))).toEqual(original)
+    expect(mergeAppViewWithWorkspace({ page: 'results', projectId: 'project-b' }, workspaceScopeForAppView(original))).toEqual({
+      page: 'results',
+      projectId: 'project-b',
+    })
+    expect(mergeAppViewWithWorkspace({
+      page: 'results',
+      projectId: 'project-a',
+      applicationId: 'app-b',
+    }, workspaceScopeForAppView(original))).toEqual({
+      page: 'results',
+      projectId: 'project-a',
+      applicationId: 'app-b',
+    })
+  })
+
+  it('clears stale asset identifiers when the user changes project scope', () => {
+    expect(resetProjectScopedAssetView({ page: 'tests', scenarioView: 'builder' }, 'project-b')).toEqual({
+      page: 'tests',
+      scenarioView: 'library',
+    })
+    expect(resetProjectScopedAssetView({ page: 'scripts', mode: 'edit', scriptId: 'script-a', projectId: 'project-a' }, 'project-b')).toEqual({
+      page: 'scripts',
+      projectId: 'project-b',
+    })
+    expect(resetProjectScopedAssetView({ page: 'new-test', scenarioId: 'scenario-a' }, 'project-b')).toEqual({
+      page: 'new-test',
+      projectId: 'project-b',
+    })
+    expect(resetProjectScopedAssetView({ page: 'command-center', testId: 'run-a' }, 'project-b')).toEqual({
+      page: 'command-center',
+      projectId: 'project-b',
+    })
+    expect(resetProjectScopedAssetView({ page: 'test', testId: 'run-a' }, 'project-b')).toEqual({
+      page: 'command-center',
+      projectId: 'project-b',
+    })
+    expect(resetProjectScopedAssetView({ page: 'test', testId: 'run-a', tab: 'diagnostics' }, 'project-b')).toEqual({
+      page: 'command-center',
+      projectId: 'project-b',
+    })
+    expect(resetProjectScopedAssetView({ page: 'test', testId: 'run-a', tab: 'archive' }, 'project-b')).toEqual({ page: 'results' })
+    expect(resetProjectScopedAssetView({ page: 'test', testId: 'run-a', tab: 'load-impact' }, 'project-b')).toEqual({ page: 'results' })
+    expect(resetProjectScopedAssetView({ page: 'report', testId: 'run-a' }, 'project-b')).toEqual({ page: 'results' })
+  })
+
+  it.each([
+    [{ page: 'scripts', mode: 'edit', scriptId: 'script-a' }, { kind: 'script', id: 'script-a' }],
+    [{ page: 'new-test', scenarioId: 'scenario-a' }, { kind: 'scenario', id: 'scenario-a' }],
+    [{ page: 'test', testId: 'run-a' }, { kind: 'test', id: 'run-a' }],
+    [{ page: 'report', testId: 'run-a' }, { kind: 'test', id: 'run-a' }],
+    [{ page: 'command-center', testId: 'run-a' }, { kind: 'test', id: 'run-a' }],
+  ] as Array<[AppView, { kind: 'script' | 'scenario' | 'test'; id: string }]>) (
+    'identifies the owner lookup required for a legacy %s route',
+    (view, expectedAsset) => {
+      expect(unscopedProjectAssetForAppView(view)).toEqual(expectedAsset)
+      expect(unscopedProjectAssetForAppView(scopeAppViewToProject(view, 'project-b'))).toBeNull()
+    },
+  )
+
+  it('does not resolve ownership for project-scoped routes or asset-free workspaces', () => {
+    expect(unscopedProjectAssetForAppView({ page: 'scripts' })).toBeNull()
+    expect(unscopedProjectAssetForAppView({ page: 'new-test' })).toBeNull()
+    expect(unscopedProjectAssetForAppView({ page: 'command-center' })).toBeNull()
+    expect(unscopedProjectAssetForAppView({ page: 'test', testId: 'run-a', projectId: 'project-b' })).toBeNull()
+  })
+
+  it('retains asset identity for validating already project-scoped routes', () => {
+    expect(projectAssetForAppView({ page: 'scripts', mode: 'edit', scriptId: 'script-a', projectId: 'project-a' })).toEqual({ kind: 'script', id: 'script-a' })
+    expect(projectAssetForAppView({ page: 'new-test', scenarioId: 'scenario-a', projectId: 'project-a' })).toEqual({ kind: 'scenario', id: 'scenario-a' })
+    expect(projectAssetForAppView({ page: 'new-test', projectId: 'project-a' })).toBeNull()
+  })
+
+  it('identifies run routes that require application and release reconciliation', () => {
+    expect(testIdForAppView({ page: 'test', testId: 'run-a', projectId: 'project-a' })).toBe('run-a')
+    expect(testIdForAppView({ page: 'report', testId: 'run-b', projectId: 'project-b' })).toBe('run-b')
+    expect(testIdForAppView({ page: 'command-center', testId: 'run-c', projectId: 'project-c' })).toBe('run-c')
+    expect(testIdForAppView({ page: 'command-center' })).toBeUndefined()
+    expect(testIdForAppView({ page: 'results' })).toBeUndefined()
+  })
+
+  it('provides a safe workspace recovery route for every legacy asset kind', () => {
+    expect(recoveryViewForUnscopedProjectAsset({ kind: 'script', id: 'script-a' })).toEqual({ page: 'scripts' })
+    expect(recoveryViewForUnscopedProjectAsset({ kind: 'scenario', id: 'scenario-a' })).toEqual({ page: 'tests' })
+    expect(recoveryViewForUnscopedProjectAsset({ kind: 'test', id: 'run-a' })).toEqual({ page: 'results' })
   })
 
   it('applies browser route changes immediately when no dirty guard is registered', () => {
@@ -135,6 +327,31 @@ describe('appRouting', () => {
 
     expect(guarded).toBe(false)
     expect(applied).toEqual([{ page: 'results' }])
+  })
+
+  it('treats a workspace-only hash change as a real history transition', () => {
+    const applied: AppView[] = []
+
+    handleGuardedRouteChange({
+      currentView: {
+        page: 'results',
+        projectId: 'project-a',
+        applicationId: 'app-a',
+        releaseId: 'release-a',
+      },
+      locationHash: '#/results?projectId=project-b&applicationId=app-b&releaseId=release-b',
+      hasDirtyGuard: () => false,
+      runGuarded: () => undefined,
+      restoreHash: () => undefined,
+      applyView: (view) => applied.push(view),
+    })
+
+    expect(applied).toEqual([{
+      page: 'results',
+      projectId: 'project-b',
+      applicationId: 'app-b',
+      releaseId: 'release-b',
+    }])
   })
 
   it('restores the current hash and waits for guard confirmation before applying browser route changes', () => {

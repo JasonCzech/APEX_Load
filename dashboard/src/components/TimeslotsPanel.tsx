@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useCapacityApi } from '../hooks/api/useCapacityApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { CapacityTimeslot, FleetPool } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
+import { listAllFleetPools } from './fleetCatalogModel'
+import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import './parityPanels.css'
 
 interface Props {
@@ -45,6 +48,19 @@ type Draft = {
   generators: string
   vusers: string
   pool_id: string
+	baseline: string
+}
+
+type DraftFields = Omit<Draft, 'baseline'>
+
+function draftSnapshot(draft: DraftFields | Draft): string {
+	const fields = { ...draft } as Partial<Draft>
+	delete fields.baseline
+	return JSON.stringify(fields)
+}
+
+function withDraftBaseline(fields: DraftFields): Draft {
+	return { ...fields, baseline: draftSnapshot(fields) }
 }
 
 function emptyDraft(): Draft {
@@ -54,12 +70,13 @@ function emptyDraft(): Draft {
   } catch {
     tz = 'UTC'
   }
-  return { scenario_id: '', start_local: '', end_local: '', timezone: tz, generators: '', vusers: '', pool_id: '' }
+	return withDraftBaseline({ scenario_id: '', start_local: '', end_local: '', timezone: tz, generators: '', vusers: '', pool_id: '' })
 }
 
 export default function TimeslotsPanel({ projectId, canManage = false }: Props) {
   const api = useCapacityApi()
   const fleetApi = useFleetApi()
+	const { runGuarded } = useNavigationGuardRunner()
   const [timeslots, setTimeslots] = useState<CapacityTimeslot[]>([])
   const [pools, setPools] = useState<FleetPool[]>([])
   const [loading, setLoading] = useState(false)
@@ -70,6 +87,14 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
   const [bindFor, setBindFor] = useState<{ slot: CapacityTimeslot; testId: string } | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CapacityTimeslot | null>(null)
   const [busy, setBusy] = useState(false)
+  const scopeRef = useRef({ projectId, generation: 0 })
+  const loadGenerationRef = useRef(0)
+  if (scopeRef.current.projectId !== projectId) {
+    scopeRef.current = { projectId, generation: scopeRef.current.generation + 1 }
+  }
+  const isCurrentScope = useCallback((scope: { projectId?: string; generation: number }) => (
+    scopeRef.current.projectId === scope.projectId && scopeRef.current.generation === scope.generation
+  ), [])
   const draftDialogRef = useRef<HTMLDivElement | null>(null)
   const startInputRef = useRef<HTMLInputElement | null>(null)
   const bindDialogRef = useRef<HTMLDivElement | null>(null)
@@ -77,38 +102,64 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
   const reservationTitleId = useId()
   const bindTitleId = useId()
 
-  const closeDraft = useCallback(() => setDraft(null), [])
-  const closeBind = useCallback(() => setBindFor(null), [])
+	const discardDraft = useCallback(() => {
+		setDraft(null)
+		setAvailability(null)
+		setAvailabilityError(false)
+		setError(null)
+	}, [])
+	const discardBind = useCallback(() => {
+		setBindFor(null)
+		setError(null)
+	}, [])
+	const closeDraft = useCallback(() => runGuarded(discardDraft), [discardDraft, runGuarded])
+	const closeBind = useCallback(() => runGuarded(discardBind), [discardBind, runGuarded])
   useModalDialog({
     dialogRef: draftDialogRef,
     enabled: Boolean(draft),
     initialFocusRef: startInputRef,
-    onClose: closeDraft,
+		onClose: busy ? undefined : closeDraft,
   })
   useModalDialog({
     dialogRef: bindDialogRef,
     enabled: Boolean(bindFor),
     initialFocusRef: bindTestInputRef,
-    onClose: closeBind,
+		onClose: busy ? undefined : closeBind,
   })
 
+  useLayoutEffect(() => {
+    loadGenerationRef.current += 1
+    setTimeslots([])
+    setLoading(false)
+    setError(null)
+    setDraft(null)
+    setAvailability(null)
+    setAvailabilityError(false)
+    setBindFor(null)
+    setDeleteTarget(null)
+    setBusy(false)
+  }, [projectId])
+
   const load = useCallback(async () => {
+    const scope = { ...scopeRef.current }
+    const requestGeneration = ++loadGenerationRef.current
     if (!projectId) {
-      setTimeslots([])
+      if (isCurrentScope(scope)) setTimeslots([])
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listTimeslots({ project_id: projectId })
-      setTimeslots(res.timeslots || [])
+      const nextTimeslots = await listAllCapacityTimeslots(api.listTimeslots, projectId)
+      if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
+      setTimeslots(nextTimeslots)
     } catch (err) {
+      if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load timeslots.')
-      setTimeslots([])
     } finally {
-      setLoading(false)
+      if (isCurrentScope(scope) && requestGeneration === loadGenerationRef.current) setLoading(false)
     }
-  }, [api, projectId])
+  }, [api, isCurrentScope, projectId])
 
   useEffect(() => {
     void load()
@@ -118,8 +169,8 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
   // capacity envelope instead of the global pool).
   useEffect(() => {
     let cancelled = false
-    fleetApi.listFleetPools().then(res => {
-      if (!cancelled) setPools(res.fleet_pools || [])
+    listAllFleetPools(fleetApi.listFleetPools).then(nextPools => {
+      if (!cancelled) setPools(nextPools)
     }).catch(() => {
       if (!cancelled) setPools([])
     })
@@ -130,6 +181,13 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     if (!id) return ''
     return pools.find(p => p.id === id)?.name || id
   }, [pools])
+	const applyCommittedTimeslot = useCallback((saved: CapacityTimeslot) => {
+		setTimeslots(current => {
+			const existing = current.find(timeslot => timeslot.id === saved.id)
+			const committed = existing ? { ...existing, ...saved } : saved
+			return [...current.filter(timeslot => timeslot.id !== saved.id), committed]
+		})
+	}, [])
 
   const draftValid = useMemo(
     () => Boolean(draft && draft.start_local && draft.end_local && new Date(draft.start_local) < new Date(draft.end_local)),
@@ -142,22 +200,27 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
 
   const checkAvailability = useCallback(async () => {
     if (!draft || !projectId || !draftValid) return
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setAvailability(null)
     setAvailabilityError(false)
     try {
       const res = await api.checkTimeslotAvailability({ project_id: projectId, start_at: toISO(draft.start_local), end_at: toISO(draft.end_local) })
+      if (!isCurrentScope(scope)) return
       setAvailability(res.available ? 'Window is available — no conflicting reservations.' : res.summary || `${res.count} conflicting reservation(s) in this window.`)
     } catch (err) {
-      setAvailability(err instanceof ApiError ? err.message : 'Availability check failed.')
-      setAvailabilityError(true)
+      if (isCurrentScope(scope)) {
+        setAvailability(err instanceof ApiError ? err.message : 'Availability check failed.')
+        setAvailabilityError(true)
+      }
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, draft, draftValid, projectId])
+  }, [api, draft, draftValid, isCurrentScope, projectId])
 
-  const submitDraft = useCallback(async () => {
-    if (!draft || !projectId) return
+	const submitDraft = useCallback(async (): Promise<boolean> => {
+		if (!draft || !projectId) return false
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setError(null)
     const requested =
@@ -169,7 +232,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
           }
         : undefined
     try {
-      await api.createTimeslot({
+			const saved = await api.createTimeslot({
         project_id: projectId,
         scenario_id: draft.scenario_id.trim() || undefined,
         start_at: toISO(draft.start_local),
@@ -177,64 +240,110 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
         timezone: draft.timezone.trim() || undefined,
         requested_capacity: requested,
       })
+			if (!isCurrentScope(scope)) return false
+			applyCommittedTimeslot(saved)
       setDraft(null)
       setAvailability(null)
       setAvailabilityError(false)
       await load()
+			return true
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create timeslot.')
+      if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to create timeslot.')
+			return false
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, draft, load, projectId])
+	}, [api, applyCommittedTimeslot, draft, isCurrentScope, load, projectId])
 
   const act = useCallback(
-    async (fn: () => Promise<unknown>, failMsg: string) => {
+		async (fn: () => Promise<unknown>, failMsg: string, applyCommitted?: (result: unknown) => void): Promise<boolean> => {
+      const scope = { ...scopeRef.current }
       setBusy(true)
       setError(null)
       try {
-        await fn()
+				const result = await fn()
+        if (!isCurrentScope(scope)) return false
+				applyCommitted?.(result)
         await load()
+        return true
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : failMsg)
+        if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : failMsg)
+        return false
       } finally {
-        setBusy(false)
+        if (isCurrentScope(scope)) setBusy(false)
       }
     },
-    [load],
+    [isCurrentScope, load],
   )
 
   const approveSlot = useCallback(async (slot: CapacityTimeslot) => {
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setError(null)
     try {
-      await api.approveTimeslot(slot.id)
+			const saved = await api.approveTimeslot(slot.id)
+      if (!isCurrentScope(scope)) return
+			applyCommittedTimeslot(saved)
       await load()
     } catch (err) {
+      if (!isCurrentScope(scope)) return
       if (err instanceof ApiError && err.status === 409 && err.message.includes('conflict_override')) {
         const reason = window.prompt('This reservation overlaps existing capacity. Enter an override reason to approve anyway:')
         if (reason?.trim()) {
           try {
-            await api.approveTimeslot(slot.id, { conflict_override: true, reason: reason.trim() })
+							const saved = await api.approveTimeslot(slot.id, { conflict_override: true, reason: reason.trim() })
+            if (!isCurrentScope(scope)) return
+							applyCommittedTimeslot(saved)
             await load()
             return
           } catch (overrideErr) {
-            setError(overrideErr instanceof ApiError ? overrideErr.message : 'Failed to approve with override.')
+            if (isCurrentScope(scope)) {
+              setError(overrideErr instanceof ApiError ? overrideErr.message : 'Failed to approve with override.')
+            }
             return
           }
         }
       }
       setError(err instanceof ApiError ? err.message : 'Failed to approve.')
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, load])
+	}, [api, applyCommittedTimeslot, isCurrentScope, load])
 
-  const submitBind = useCallback(async () => {
-    if (!bindFor || !bindFor.testId.trim()) return
-    await act(() => api.bindTimeslot(bindFor.slot.id, bindFor.testId.trim()), 'Failed to bind timeslot.')
-    setBindFor(null)
-  }, [act, api, bindFor])
+	const submitBind = useCallback(async (): Promise<boolean> => {
+		if (!bindFor || !bindFor.testId.trim()) return false
+		const succeeded = await act(
+			() => api.bindTimeslot(bindFor.slot.id, bindFor.testId.trim()),
+			'Failed to bind timeslot.',
+			result => applyCommittedTimeslot(result as CapacityTimeslot),
+		)
+    if (succeeded) setBindFor(null)
+		return succeeded
+	}, [act, api, applyCommittedTimeslot, bindFor])
+
+	const draftDirty = Boolean(draft && draftSnapshot(draft) !== draft.baseline)
+	const bindDirty = Boolean(bindFor?.testId.trim())
+	const editorDirty = draftDirty || bindDirty
+	const editorDirtyRef = useRef(editorDirty)
+	editorDirtyRef.current = editorDirty
+	const saveEditorRef = useRef<() => Promise<boolean>>(async () => false)
+	saveEditorRef.current = async () => {
+		if (draftDirty) return submitDraft()
+		if (bindDirty) return submitBind()
+		return true
+	}
+	const discardEditor = useCallback(() => {
+		discardDraft()
+		discardBind()
+	}, [discardBind, discardDraft])
+	const editorGuard = useMemo<NavigationGuard>(() => ({
+		id: 'capacity-timeslot-draft',
+		label: 'Capacity reservation editor',
+		isDirty: () => editorDirtyRef.current,
+		save: () => saveEditorRef.current(),
+		discard: discardEditor,
+	}), [discardEditor])
+	useNavigationGuard(editorGuard, editorDirty)
 
   return (
     <div className="pp-panel">
@@ -286,7 +395,11 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
                       <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void approveSlot(slot)}>
                         Approve
                       </button>
-                      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void act(() => api.rejectTimeslot(slot.id), 'Failed to reject.')}>
+												<button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void act(
+													() => api.rejectTimeslot(slot.id),
+													'Failed to reject.',
+													result => applyCommittedTimeslot(result as CapacityTimeslot),
+												)}>
                         Reject
                       </button>
                     </>
@@ -317,7 +430,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
           <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={reservationTitleId}>
             <div className="pp-modal-header">
               <h3 id={reservationTitleId}>New Capacity Reservation</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>Close</button>
+								<button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft} disabled={busy}>Close</button>
             </div>
             <div className="pp-modal-form">
               <div className="pp-field-row">
@@ -377,7 +490,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={closeDraft}>Cancel</button>
+								<button type="button" className="btn btn-secondary" onClick={closeDraft} disabled={busy}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>
                 {busy ? 'Reserving…' : 'Reserve'}
               </button>
@@ -397,7 +510,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
           <div ref={bindDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby={bindTitleId}>
             <div className="pp-modal-header">
               <h3 id={bindTitleId}>Bind a test to this reservation</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeBind}>Close</button>
+								<button type="button" className="btn btn-ghost btn-sm" onClick={closeBind} disabled={busy}>Close</button>
             </div>
             <div className="pp-modal-form">
               <label className="pp-field">
@@ -406,7 +519,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
               </label>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={closeBind}>Cancel</button>
+								<button type="button" className="btn btn-secondary" onClick={closeBind} disabled={busy}>Cancel</button>
               <button type="button" className="btn btn-primary" disabled={busy || !bindFor.testId.trim()} onClick={() => void submitBind()}>
                 {busy ? 'Binding…' : 'Bind'}
               </button>
@@ -424,7 +537,13 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
           confirmLabel="Delete reservation"
           loading={busy}
           onCancel={() => setDeleteTarget(null)}
-          onConfirm={() => void act(() => api.deleteTimeslot(deleteTarget.id), 'Failed to delete.').then(() => setDeleteTarget(null))}
+			onConfirm={() => void act(
+				() => api.deleteTimeslot(deleteTarget.id),
+				'Failed to delete.',
+				() => setTimeslots(current => current.filter(timeslot => timeslot.id !== deleteTarget.id)),
+			).then(succeeded => {
+            if (succeeded) setDeleteTarget(null)
+          })}
         />
       )}
     </div>

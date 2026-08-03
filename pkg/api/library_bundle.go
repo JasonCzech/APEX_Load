@@ -154,7 +154,7 @@ func (s *Server) libraryCatalogPage(projectID string, kind string, offset int, l
 				}
 				retain(libraryCatalogCandidate{item: LibraryCatalogItem{
 					Kind: "result", ID: test.ID, Name: test.Name, ProjectID: test.ProjectID,
-					ReleaseID: test.ReleaseID, ReleaseName: releaseRef.Name, Status: test.Status,
+					ApplicationID: test.ApplicationID, ReleaseID: test.ReleaseID, ReleaseName: releaseRef.Name, Status: test.Status,
 					SourceInstanceID: s.controllerID, SourceItemID: test.ID,
 					ExecutionRunDate: managedTestExecutionRunDate(test), UpdatedAt: managedTestCompletedAt(test),
 					HasArchive: test.Archive != nil,
@@ -476,6 +476,10 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 	if err != nil {
 		return nil, err
 	}
+	applicationID, releaseID, err := s.validateLibraryImportResultPlacement(req, projectID)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.recoverExpiredLibraryImportClaims(); err != nil {
 		return nil, fmt.Errorf("recover expired library import before preflight: %w", err)
 	}
@@ -652,17 +656,20 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 			archivePath := ""
 			archiveExisted := false
 			if archiveExpected {
-				archivePath = libraryImportedArchiveDir(importID)
-				if _, statErr := os.Stat(archivePath); statErr == nil {
-					archiveExisted = true
-				} else if !os.IsNotExist(statErr) {
-					return abort(LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: importID, Reason: "inspect result archive before import: " + statErr.Error()})
+				archiveExisted = resultBefore != nil && resultBefore.ArchiveRecord != nil
+				if currentArchiveBackend().Backend == archiveBackendFilesystem {
+					archivePath = libraryImportedArchiveDir(importID)
+					if _, statErr := os.Stat(archivePath); statErr == nil {
+						archiveExisted = true
+					} else if !os.IsNotExist(statErr) {
+						return abort(LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: importID, Reason: "inspect result archive before import: " + statErr.Error()})
+					}
 				}
 			}
 			if err := claims.prepare(item, importID, linkBefore, nil, nil, resultBefore, archiveExpected, archiveExisted, archivePath); err != nil {
 				return abort(LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: importID, Reason: "persist result import intent: " + err.Error()})
 			}
-			localID, action, archiveActivated, conflict := s.importLibraryResultWithOutcome(item, projectID, remoteID, itemArchive)
+			localID, action, archiveActivated, conflict := s.importLibraryResultWithDestinationOutcome(item, projectID, applicationID, releaseID, remoteID, itemArchive)
 			if conflict != nil {
 				return abort(*conflict)
 			}
@@ -679,7 +686,7 @@ func (s *Server) importLibraryBundleWithArchive(req LibraryImportRequest, remote
 			if linkAfter != nil && linkAfter.MutationID == item.importMutationID {
 				ownedLinkAfter = linkAfter
 			}
-			if archiveActivated {
+			if archiveActivated && currentArchiveBackend().Backend == archiveBackendFilesystem {
 				archivePath = libraryImportedArchiveDir(importID)
 			}
 			journal.recordResult(strings.HasPrefix(action, "created"), resultAfter, archiveActivated, archivePath, remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID, linkBefore, ownedLinkAfter)
@@ -1124,16 +1131,20 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 }
 
 func (s *Server) importLibraryResult(item LibraryBundleItem, projectID string, remoteID string, archiveImport *libraryArchiveImport) (string, string, *LibraryConflict) {
-	return s.importLibraryResultTrackingArchive(item, projectID, remoteID, archiveImport, nil)
+	return s.importLibraryResultTrackingArchive(item, projectID, "", "", remoteID, archiveImport, nil)
 }
 
 func (s *Server) importLibraryResultWithOutcome(item LibraryBundleItem, projectID string, remoteID string, archiveImport *libraryArchiveImport) (string, string, bool, *LibraryConflict) {
+	return s.importLibraryResultWithDestinationOutcome(item, projectID, "", "", remoteID, archiveImport)
+}
+
+func (s *Server) importLibraryResultWithDestinationOutcome(item LibraryBundleItem, projectID string, applicationID string, releaseID string, remoteID string, archiveImport *libraryArchiveImport) (string, string, bool, *LibraryConflict) {
 	archiveActivated := false
-	localID, action, conflict := s.importLibraryResultTrackingArchive(item, projectID, remoteID, archiveImport, &archiveActivated)
+	localID, action, conflict := s.importLibraryResultTrackingArchive(item, projectID, applicationID, releaseID, remoteID, archiveImport, &archiveActivated)
 	return localID, action, archiveActivated, conflict
 }
 
-func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, projectID string, remoteID string, archiveImport *libraryArchiveImport, archiveActivated *bool) (string, string, *LibraryConflict) {
+func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, projectID string, applicationID string, releaseID string, remoteID string, archiveImport *libraryArchiveImport, archiveActivated *bool) (string, string, *LibraryConflict) {
 	if archiveActivated != nil {
 		*archiveActivated = false
 	}
@@ -1174,6 +1185,7 @@ func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, proj
 	}
 	archiveDir := ""
 	finalArchiveDir := ""
+	var archiveRecord *storage.RunArchiveRecord
 	defer func() {
 		if archiveDir != "" {
 			_ = os.RemoveAll(archiveDir)
@@ -1240,16 +1252,25 @@ func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, proj
 	} else if item.Result.ArchiveManifestHash != "" || item.Result.ArchiveSizeBytes > 0 {
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "archive payload is missing"}
 	}
+	if archiveDir != "" {
+		archiveRecord, err = buildImportedLibraryArchiveRecord(importID, archiveDir, finalArchiveDir, rawResult["imported_archive_manifest_hash"].(string))
+		if err != nil {
+			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "build imported archive record: " + err.Error()}
+		}
+	}
 	imported := &storage.ExternalResultImport{
-		ID:         importID,
-		Provider:   "apexload",
-		Name:       firstNonEmpty(strings.TrimSpace(item.Name), "APEX Load result import"),
-		ProjectID:  projectID,
-		ScenarioID: "",
-		Source:     "library://" + item.SourceInstanceID + "/" + item.SourceItemID,
-		Summary:    cloneAnyMap(item.Result.Summary),
-		RawResult:  rawResult,
-		CreatedAt:  time.Now().UTC(),
+		ID:            importID,
+		Provider:      "apexload",
+		Name:          firstNonEmpty(strings.TrimSpace(item.Name), "APEX Load result import"),
+		ProjectID:     projectID,
+		ApplicationID: strings.TrimSpace(applicationID),
+		ReleaseID:     strings.TrimSpace(releaseID),
+		ScenarioID:    "",
+		Source:        "library://" + item.SourceInstanceID + "/" + item.SourceItemID,
+		Summary:       cloneAnyMap(item.Result.Summary),
+		RawResult:     rawResult,
+		ArchiveRecord: archiveRecord,
+		CreatedAt:     time.Now().UTC(),
 	}
 	if imported.Summary == nil {
 		imported.Summary = map[string]any{"status": "imported", "provider": "apexload"}
@@ -1263,7 +1284,7 @@ func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, proj
 		return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: importID, Reason: "immutable result evidence already exists with different content: " + externalResultImportDifference(existing, imported)}
 	}
 	if archiveDir != "" {
-		activated, err := s.activateImmutableLibraryResultArchive(item.Result, archiveDir, finalArchiveDir)
+		activated, err := s.activateImmutableLibraryResultArchive(item.Result, archiveDir, finalArchiveDir, archiveRecord, created)
 		if err != nil {
 			if created {
 				deleted, deleteErr := s.deleteExternalResultImportIfUnchanged(imported)
@@ -1271,6 +1292,10 @@ func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, proj
 					err = fmt.Errorf("%w; rollback result evidence: %v", err, deleteErr)
 				} else if !deleted {
 					err = fmt.Errorf("%w; rollback result evidence lost its version fence", err)
+				} else if archiveRecord != nil && archiveRecordBackend(archiveRecord) != archiveBackendFilesystem {
+					if cleanupErr := deleteArchiveBackendObjects(context.Background(), archiveRecord); cleanupErr != nil {
+						err = fmt.Errorf("%w; rollback imported archive objects: %v", err, cleanupErr)
+					}
 				}
 			}
 			return "", "", &LibraryConflict{Kind: "result", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: importID, Reason: err.Error()}
@@ -1291,6 +1316,27 @@ func (s *Server) importLibraryResultTrackingArchive(item LibraryBundleItem, proj
 	return imported.ID, action, nil
 }
 
+func (s *Server) validateLibraryImportResultPlacement(req LibraryImportRequest, projectID string) (string, string, error) {
+	applicationID := strings.TrimSpace(req.ApplicationID)
+	releaseID := strings.TrimSpace(req.ReleaseID)
+	if applicationID == "" && releaseID == "" {
+		return "", "", nil
+	}
+	if applicationID == "" || releaseID == "" {
+		return "", "", fmt.Errorf("application_id and release_id must be provided together for result imports")
+	}
+	if s.store != nil {
+		releaseProjectID, _, releaseApplicationID, err := s.releaseContext(releaseID)
+		if err != nil {
+			return "", "", err
+		}
+		if normalizeProjectID(releaseProjectID) != normalizeProjectID(projectID) || strings.TrimSpace(releaseApplicationID) != applicationID {
+			return "", "", fmt.Errorf("release_id does not belong to the destination application and project")
+		}
+	}
+	return applicationID, releaseID, nil
+}
+
 func equivalentExternalResultImport(left, right *storage.ExternalResultImport) bool {
 	if left == nil || right == nil {
 		return left == right
@@ -1298,11 +1344,13 @@ func equivalentExternalResultImport(left, right *storage.ExternalResultImport) b
 	return strings.EqualFold(strings.TrimSpace(left.Provider), strings.TrimSpace(right.Provider)) &&
 		strings.TrimSpace(left.Name) == strings.TrimSpace(right.Name) &&
 		normalizeProjectID(left.ProjectID) == normalizeProjectID(right.ProjectID) &&
+		strings.TrimSpace(left.ApplicationID) == strings.TrimSpace(right.ApplicationID) &&
 		strings.TrimSpace(left.ReleaseID) == strings.TrimSpace(right.ReleaseID) &&
 		strings.TrimSpace(left.ScenarioID) == strings.TrimSpace(right.ScenarioID) &&
 		strings.TrimSpace(left.Source) == strings.TrimSpace(right.Source) &&
 		hashCanonical(canonicalJSONValue(left.Summary)) == hashCanonical(canonicalJSONValue(right.Summary)) &&
-		hashCanonical(canonicalExternalResultRawEvidence(left.RawResult)) == hashCanonical(canonicalExternalResultRawEvidence(right.RawResult))
+		hashCanonical(canonicalExternalResultRawEvidence(left.RawResult)) == hashCanonical(canonicalExternalResultRawEvidence(right.RawResult)) &&
+		hashCanonical(left.ArchiveRecord) == hashCanonical(right.ArchiveRecord)
 }
 
 func externalResultImportDifference(left, right *storage.ExternalResultImport) string {
@@ -1316,6 +1364,8 @@ func externalResultImportDifference(left, right *storage.ExternalResultImport) s
 		return "name differs"
 	case normalizeProjectID(left.ProjectID) != normalizeProjectID(right.ProjectID):
 		return "project differs"
+	case strings.TrimSpace(left.ApplicationID) != strings.TrimSpace(right.ApplicationID):
+		return "application differs"
 	case strings.TrimSpace(left.ReleaseID) != strings.TrimSpace(right.ReleaseID):
 		return "release differs"
 	case strings.TrimSpace(left.ScenarioID) != strings.TrimSpace(right.ScenarioID):
@@ -1326,6 +1376,8 @@ func externalResultImportDifference(left, right *storage.ExternalResultImport) s
 		return "summary differs"
 	case hashCanonical(canonicalExternalResultRawEvidence(left.RawResult)) != hashCanonical(canonicalExternalResultRawEvidence(right.RawResult)):
 		return "raw evidence differs"
+	case hashCanonical(left.ArchiveRecord) != hashCanonical(right.ArchiveRecord):
+		return "archive storage metadata differs"
 	default:
 		return "evidence differs"
 	}
@@ -1337,12 +1389,28 @@ func canonicalExternalResultRawEvidence(raw map[string]any) any {
 	return canonicalJSONValue(cloned)
 }
 
-// activateImmutableLibraryResultArchive installs a verified archive only when
-// the deterministic evidence path is empty. Identical retries validate and
-// reuse the existing directory; they never replace previously accepted bytes.
-func (s *Server) activateImmutableLibraryResultArchive(result *LibraryResultPayload, stagedDir string, finalDir string) (bool, error) {
+// activateImmutableLibraryResultArchive installs a verified archive through
+// the configured archive backend. Filesystem deployments retain the atomic
+// rename behavior; object-backed deployments publish artifacts first and the
+// manifest commit marker last through the shared archive abstraction.
+func (s *Server) activateImmutableLibraryResultArchive(result *LibraryResultPayload, stagedDir string, finalDir string, record *storage.RunArchiveRecord, created bool) (bool, error) {
 	s.libraryArchiveImportMu.Lock()
 	defer s.libraryArchiveImportMu.Unlock()
+	if record == nil {
+		return false, fmt.Errorf("imported archive record is required")
+	}
+	if archiveRecordBackend(record) != archiveBackendFilesystem {
+		publication := *record
+		publication.ArchivePath = stagedDir
+		publication.ManifestPath = filepath.Join(stagedDir, runArchiveManifestFileName)
+		if err := publishRunArchive(context.Background(), &publication); err != nil {
+			return false, fmt.Errorf("publish imported archive: %w", err)
+		}
+		if err := os.RemoveAll(stagedDir); err != nil {
+			return false, fmt.Errorf("remove imported archive staging directory: %w", err)
+		}
+		return created, nil
+	}
 	if err := os.MkdirAll(filepath.Dir(finalDir), 0o750); err != nil {
 		return false, err
 	}

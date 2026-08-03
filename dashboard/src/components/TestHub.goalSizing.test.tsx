@@ -241,6 +241,32 @@ describe('TestHub build-from-goal', () => {
     expect(numberInputs.some(input => input.value === '300')).toBe(true)
   })
 
+  it('drains bounded test pages so older completed baselines remain selectable', async () => {
+    const newest = { id: 'run-newest', name: 'Newest Baseline', status: 'COMPLETE', groups: [], total_vusers: 4, duration: '3m', created_at: '2026-05-02T10:00:00Z' }
+    const oldest = { id: 'run-oldest', name: 'Oldest Baseline', status: 'COMPLETE', groups: [], total_vusers: 1, duration: '1m', created_at: '2026-05-01T10:00:00Z' }
+    apiMock.listTests.mockImplementation(({ offset = 0 }: { offset?: number }) => Promise.resolve({
+      tests: offset === 0 ? [newest] : [oldest],
+      count: 1,
+      total: 2,
+      limit: 1000,
+      offset,
+    }))
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flush()
+    await act(async () => { findButton(container, 'Scenario Builder')?.click() })
+    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await flush()
+
+    expect(apiMock.listTests).toHaveBeenNthCalledWith(1, { limit: 1000, offset: 0, project_id: 'project-1', summary: true })
+    expect(apiMock.listTests).toHaveBeenNthCalledWith(2, { limit: 1000, offset: 1, project_id: 'project-1', summary: true })
+    expect(container.textContent).toContain('Newest Baseline')
+    expect(container.textContent).toContain('Oldest Baseline')
+    expect(container.textContent).toContain('2 completed runs available')
+  })
+
   it('ignores a completed-run list that resolves after the active project changes', async () => {
     const projectAResponse = deferred<{ tests: Array<{ id: string; name: string; status: string; groups: never[]; total_vusers: number; duration: string; created_at: string }> }>()
     apiMock.listTests.mockReturnValueOnce(projectAResponse.promise)
@@ -251,7 +277,7 @@ describe('TestHub build-from-goal', () => {
     await flush()
     await act(async () => { findButton(container, 'Scenario Builder')?.click() })
     await act(async () => { findButton(container, 'Build from Goal')?.click() })
-    expect(apiMock.listTests).toHaveBeenCalledWith({ project_id: 'project-1' })
+    expect(apiMock.listTests).toHaveBeenCalledWith({ limit: 1000, offset: 0, project_id: 'project-1', summary: true })
 
     projectMockState.activeProjectId = 'project-2'
     await act(async () => {
@@ -273,7 +299,7 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { findButton(container, 'Build from Goal')?.click() })
     await flush()
 
-    expect(apiMock.listTests).toHaveBeenLastCalledWith({ project_id: 'project-2' })
+    expect(apiMock.listTests).toHaveBeenLastCalledWith({ limit: 1000, offset: 0, project_id: 'project-2', summary: true })
     expect(container.textContent).toContain('Project B Baseline')
     expect(container.textContent).not.toContain('Project A Baseline')
   })

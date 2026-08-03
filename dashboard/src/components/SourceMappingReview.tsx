@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import {
@@ -383,6 +383,17 @@ export default function SourceMappingReview({
     ? virtualRows.map(virtualRow => ({ mapping: filteredMappings[virtualRow.index], virtualItem: virtualRow }))
     : filteredMappings.map(mapping => ({ mapping, virtualItem: null as VirtualItem | null }))
 
+  const selectMapping = useCallback((mapping: SourceReviewMapping | null) => {
+    if (!mapping) return
+    setInspectedUnmappedFilePath('')
+    setSelectedMappingId(mapping.id)
+    if (mapping.source_file) {
+      const nextFile = findSourceFile(files, mapping.source_file, sourcePathResolver)
+      setSelectedFilePath(nextFile?.path || '')
+    }
+    setCopied('')
+  }, [files, sourcePathResolver])
+
   useEffect(() => {
     const hasNewFocusRequest = !!focusedMappingId && lastTableScrollFocusRequestRef.current !== focusRequestId
     const idToScroll = hasNewFocusRequest ? focusedMappingId : selectedMappingId
@@ -404,17 +415,6 @@ export default function SourceMappingReview({
       }
     })
   }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId, filteredMappings, rowVirtualizer, virtualizeRows])
-
-  const selectMapping = (mapping: SourceReviewMapping | null) => {
-    if (!mapping) return
-    setInspectedUnmappedFilePath('')
-    setSelectedMappingId(mapping.id)
-    if (mapping.source_file) {
-      const nextFile = findSourceFile(files, mapping.source_file, sourcePathResolver)
-      setSelectedFilePath(nextFile?.path || '')
-    }
-    setCopied('')
-  }
 
   const toggleCategoryFilter = (category: MappingCategory) => {
     setCategoryFilter(current => (current === category ? '' : category))
@@ -504,7 +504,7 @@ export default function SourceMappingReview({
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [filteredMappings, selectedMappingId, approvedMappingIds])
+  }, [approvedMappingIds, filteredMappings, selectMapping, selectedMappingId])
 
   if (files.length === 0 && mappings.length === 0) {
     return null

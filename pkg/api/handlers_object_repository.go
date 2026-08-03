@@ -204,6 +204,7 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		return
 	}
 	var req struct {
+		ProjectID  string `json:"project_id"`
 		ScriptID   string `json:"script_id"`
 		Name       string `json:"name,omitempty"`
 		BindScript bool   `json:"bind_script,omitempty"`
@@ -222,6 +223,15 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		return
 	}
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
+		return
+	}
+	expectedProjectID := normalizeProjectID(req.ProjectID)
+	if expectedProjectID == "" {
+		writeError(w, http.StatusBadRequest, "project_id is required")
+		return
+	}
+	if expectedProjectID != normalizeProjectID(stored.ProjectID) {
+		writeError(w, http.StatusConflict, "script does not belong to the requested project")
 		return
 	}
 	objects := objectRepositoryObjectsFromScript(stored.Script, scriptID)

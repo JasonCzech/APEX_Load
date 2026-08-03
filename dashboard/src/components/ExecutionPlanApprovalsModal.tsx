@@ -38,28 +38,54 @@ export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, on
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [reasons, setReasons] = useState<Record<string, string>>({})
+  const [loadFailed, setLoadFailed] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+  const activePlanIdRef = useRef(plan.id)
+  const loadGenerationRef = useRef(0)
+  activePlanIdRef.current = plan.id
   const titleId = useId()
 
   useModalDialog({ dialogRef, initialFocusRef: closeButtonRef, onClose })
 
+  useEffect(() => {
+    loadGenerationRef.current += 1
+    setApprovals([])
+    setLoading(false)
+    setError(null)
+    setBusyId(null)
+    setReasons({})
+    setLoadFailed(false)
+  }, [plan.id])
+
   const load = useCallback(async () => {
+    const requestedPlanId = plan.id
+    const requestGeneration = ++loadGenerationRef.current
+    const isCurrentRequest = () => (
+      activePlanIdRef.current === requestedPlanId
+      && loadGenerationRef.current === requestGeneration
+    )
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listExecutionPlanApprovals(plan.id)
+      const res = await api.listExecutionPlanApprovals(requestedPlanId)
+      if (!isCurrentRequest()) return
       setApprovals(res.approvals || [])
+      setLoadFailed(false)
     } catch (err) {
+      if (!isCurrentRequest()) return
       setError(err instanceof ApiError ? err.message : 'Failed to load approvals.')
-      setApprovals([])
+      setLoadFailed(true)
     } finally {
-      setLoading(false)
+      if (isCurrentRequest()) setLoading(false)
     }
   }, [api, plan.id])
 
   useEffect(() => {
     void load()
+    return () => {
+      loadGenerationRef.current += 1
+    }
   }, [load])
 
   const resolve = useCallback(
@@ -68,11 +94,14 @@ export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, on
       setError(null)
       try {
         const reason = reasons[approval.id]?.trim() || undefined
+        let updated: ExecutionPlanApproval
         if (approve) {
-          await api.approveExecutionPlanApproval(plan.id, approval.id, reason)
+          updated = await api.approveExecutionPlanApproval(plan.id, approval.id, reason)
         } else {
-          await api.rejectExecutionPlanApproval(plan.id, approval.id, reason)
+          updated = await api.rejectExecutionPlanApproval(plan.id, approval.id, reason)
         }
+        if (activePlanIdRef.current !== plan.id) return
+        setApprovals(prev => prev.map(candidate => candidate.id === updated.id ? updated : candidate))
         await load()
         onResolved?.()
       } catch (err) {
@@ -108,7 +137,16 @@ export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, on
               {pendingCount > 0 ? ` ${pendingCount} pending.` : ''}
             </span>
           </div>
-          {error && <div className="pp-error" role="alert">{error}</div>}
+          {error && (
+            <div className="pp-error" role="alert">
+              {error}
+              {loadFailed && (
+                <button type="button" className="btn btn-secondary btn-sm" disabled={loading || busyId !== null} onClick={() => { void load() }}>
+                  Retry approvals
+                </button>
+              )}
+            </div>
+          )}
 
           {loading ? (
             <div className="pp-empty">Loading approvals…</div>

@@ -131,6 +131,46 @@ func saveReportAnnotations(store storage.Store, ann *ReportAnnotations) error {
 	return store.SaveSetting(reportAnnotationsSettingKey(ann.TestID, ann.Profile), string(data))
 }
 
+// saveReportAnnotationsIfUnchanged protects the full-document editor from
+// overwriting commentary saved by another browser between load and save. The
+// annotations timestamp is the user-visible revision while the exact stored
+// JSON is the durable CAS witness used across controller replicas.
+func saveReportAnnotationsIfUnchanged(store storage.Store, ann *ReportAnnotations, expectedUpdatedAt time.Time) (bool, error) {
+	if store == nil {
+		return false, fmt.Errorf("storage backend unavailable")
+	}
+	if ann == nil {
+		return false, fmt.Errorf("nil annotations")
+	}
+	cas, ok := store.(settingsCompareAndSwapper)
+	if !ok {
+		return false, fmt.Errorf("storage backend does not support report annotation compare-and-swap")
+	}
+	key := reportAnnotationsSettingKey(ann.TestID, ann.Profile)
+	currentRaw, err := store.GetSetting(key)
+	if err != nil {
+		return false, err
+	}
+	if strings.TrimSpace(currentRaw) == "" {
+		if !expectedUpdatedAt.IsZero() {
+			return false, nil
+		}
+	} else {
+		var current ReportAnnotations
+		if err := json.Unmarshal([]byte(currentRaw), &current); err != nil {
+			return false, fmt.Errorf("decode current report annotations: %w", err)
+		}
+		if expectedUpdatedAt.IsZero() || !current.UpdatedAt.Equal(expectedUpdatedAt) {
+			return false, nil
+		}
+	}
+	data, err := json.Marshal(ann)
+	if err != nil {
+		return false, fmt.Errorf("encode report annotations: %w", err)
+	}
+	return cas.CompareAndSwapSetting(key, currentRaw, string(data))
+}
+
 // resolveReportAnnotations returns the saved annotations when present, otherwise
 // freshly generated defaults seeded from the report data. The result always has
 // a populated SectionComments map covering reportCommentarySectionOrder so the

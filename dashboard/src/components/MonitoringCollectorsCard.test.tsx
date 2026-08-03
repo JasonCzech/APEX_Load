@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
 import { MonitoringCollector } from '../types'
+import { ApiError } from '../hooks/apiClient'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -65,7 +67,7 @@ describe('MonitoringCollectorsCard', () => {
       root.render(<MonitoringCollectorsCard projectId="proj-a" canManage />)
     })
     await flush()
-    expect(collectorsApiMock.listCollectors).toHaveBeenCalledWith({ project_id: 'proj-a' })
+		expect(collectorsApiMock.listCollectors).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
     expect(container.textContent).toContain('No monitoring collectors registered')
     expect(container.textContent).toContain('Register Collector')
   })
@@ -152,4 +154,96 @@ describe('MonitoringCollectorsCard', () => {
     expect(container.querySelector('.pp-pill-muted')).toBeTruthy()
     expect(container.querySelector('.pp-pill-success')).toBeFalsy()
   })
+
+  it('ignores a late collector response from the previous project', async () => {
+    let resolveProjectA: ((value: { collectors: MonitoringCollector[]; count: number }) => void) | undefined
+    collectorsApiMock.listCollectors.mockImplementation(({ project_id }: { project_id: string }) => {
+      if (project_id === 'proj-a') {
+        return new Promise(resolve => { resolveProjectA = resolve })
+      }
+      return Promise.resolve({ collectors: [collector({ id: 'c-b', project_id: 'proj-b', name: 'project-b-collector' })], count: 1 })
+    })
+
+    await act(async () => { root.render(<MonitoringCollectorsCard projectId="proj-a" canManage />) })
+    await act(async () => { root.render(<MonitoringCollectorsCard projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.textContent).toContain('project-b-collector')
+
+    await act(async () => {
+      resolveProjectA?.({ collectors: [collector({ name: 'stale-project-a-collector' })], count: 1 })
+    })
+    await flush()
+    expect(container.textContent).toContain('project-b-collector')
+    expect(container.textContent).not.toContain('stale-project-a-collector')
+  })
+
+  it('closes and clears a registration draft when the project changes', async () => {
+    collectorsApiMock.listCollectors.mockResolvedValue({ collectors: [], count: 0 })
+    await act(async () => { root.render(<MonitoringCollectorsCard projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Register Collector')?.click()
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="e.g. edge-eu-collector"]')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(nameInput, 'project-a-draft')
+      nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    await act(async () => { root.render(<MonitoringCollectorsCard projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Register Collector')?.click()
+    })
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. edge-eu-collector"]')?.value).toBe('')
+  })
+
+  it('keeps the last good collector list when a same-project refresh fails', async () => {
+    collectorsApiMock.listCollectors.mockResolvedValueOnce({ collectors: [collector({ name: 'edge-eu' })], count: 1 })
+    collectorsApiMock.rotateCollectorToken.mockResolvedValue({ token: 'rotated-token' })
+    await act(async () => { root.render(<MonitoringCollectorsCard projectId="proj-a" canManage />) })
+    await flush()
+    collectorsApiMock.listCollectors.mockRejectedValueOnce(new ApiError('collector refresh unavailable', 503))
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rotate token')?.click()
+    })
+    await flush()
+    expect(container.textContent).toContain('edge-eu')
+    expect(container.textContent).toContain('collector refresh unavailable')
+  })
+
+	it('guards a dirty collector registration before closing the editor', async () => {
+		collectorsApiMock.listCollectors.mockResolvedValue({ collectors: [], count: 0 })
+		await act(async () => {
+			root.render(
+				<NavigationGuardProvider>
+					<MonitoringCollectorsCard projectId="proj-a" canManage />
+				</NavigationGuardProvider>,
+			)
+		})
+		await flush()
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Register Collector')?.click()
+		})
+		const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="e.g. edge-eu-collector"]')
+		await act(async () => {
+			Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(nameInput, 'edge-draft')
+			nameInput?.dispatchEvent(new Event('input', { bubbles: true }))
+		})
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Cancel')?.click()
+		})
+
+		expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+		expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. edge-eu-collector"]')?.value).toBe('edge-draft')
+		const discard = Array.from(document.querySelectorAll<HTMLButtonElement>('.unsaved-changes-modal button'))
+			.find(button => button.textContent === 'Discard changes')
+		await act(async () => discard?.click())
+		expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+		expect(container.querySelector('input[placeholder="e.g. edge-eu-collector"]')).toBeNull()
+	})
 })

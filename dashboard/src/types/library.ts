@@ -13,6 +13,7 @@ export type LibraryCatalogItem = {
   id: string
   name: string
   project_id?: string
+  application_id?: string
   release_id?: string
   release_name?: string
   protocol?: string
@@ -26,11 +27,23 @@ export type LibraryCatalogItem = {
   sync_status?: string
   local_item_id?: string
   remote_item_id?: string
+  source_instance_id?: string
+  source_item_id?: string
 }
 
 export type LibraryCatalogResponse = {
   items?: LibraryCatalogItem[]
   count?: number
+  total?: number
+  limit?: number
+  offset?: number
+  has_more?: boolean
+}
+
+export type LibraryCatalogPageOptions = {
+  limit?: number
+  offset?: number
+  signal?: AbortSignal
 }
 
 export type LibraryCapabilitiesResponse = {
@@ -46,6 +59,8 @@ export type LibraryRemote = {
   base_url: string
   default_project_id?: string
   project_mappings?: Record<string, string>
+  application_mappings?: Record<string, string>
+  release_mappings?: Record<string, string>
   auth_method?: string
   credential_ref?: string
   credential_configured?: boolean
@@ -62,6 +77,8 @@ export type LibraryRemoteRequest = {
   base_url?: string
   default_project_id?: string
   project_mappings?: Record<string, string>
+  application_mappings?: Record<string, string>
+  release_mappings?: Record<string, string>
   auth_method?: string
   credential_ref?: string
   api_key?: string
@@ -121,6 +138,8 @@ export type LibraryTransferRequest = {
   local_id?: string
   remote_id?: string
   project_id?: string
+  application_id?: string
+  release_id?: string
   include_dependencies?: boolean
 }
 

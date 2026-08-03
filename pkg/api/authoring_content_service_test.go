@@ -196,7 +196,7 @@ func TestObjectRepositoryBindingConflictRollsBackThroughServiceFence(t *testing.
 		deleteResult:    true,
 	}
 	server := &Server{objectRepositoryService: service}
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/object-repositories/from-script", bytes.NewBufferString(`{"script_id":"script-1","bind_script":true}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/object-repositories/from-script", bytes.NewBufferString(`{"project_id":"project-a","script_id":"script-1","bind_script":true}`))
 	response := httptest.NewRecorder()
 
 	server.handleObjectRepositoryFromScript(response, request)

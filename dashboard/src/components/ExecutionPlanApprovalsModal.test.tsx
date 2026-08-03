@@ -67,7 +67,57 @@ describe('ExecutionPlanApprovalsModal accessibility', () => {
       root.render(<ExecutionPlanApprovalsModal plan={plan} canAdmin onClose={() => {}} />)
     })
     await flush()
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe('approvals unavailable')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('approvals unavailable')
+    expect(button('Retry approvals')).toBeTruthy()
+  })
+
+  it('preserves the committed approval when the follow-up GET fails', async () => {
+    const pending = {
+      id: 'approval-1',
+      plan_id: plan.id,
+      project_id: 'project-1',
+      policy: 'vuser_quota',
+      status: 'pending',
+      requested_at: '2026-08-03T10:00:00Z',
+      created_at: '2026-08-03T10:00:00Z',
+      updated_at: '2026-08-03T10:00:00Z',
+    }
+    const approved = {
+      ...pending,
+      status: 'approved',
+      resolved_by: 'admin',
+      resolved_at: '2026-08-03T11:00:00Z',
+      updated_at: '2026-08-03T11:00:00Z',
+    }
+    const onResolved = vi.fn()
+    apiMock.listExecutionPlanApprovals
+      .mockResolvedValueOnce({ approvals: [pending], count: 1 })
+      .mockRejectedValueOnce(new ApiError('approval refresh unavailable', 503))
+      .mockResolvedValueOnce({ approvals: [approved], count: 1 })
+    apiMock.approveExecutionPlanApproval.mockResolvedValueOnce(approved)
+
+    await act(async () => {
+      root.render(<ExecutionPlanApprovalsModal plan={plan} canAdmin onClose={() => {}} onResolved={onResolved} />)
+    })
+    await flush()
+    await act(async () => {
+      button('Approve').click()
+    })
+    await flush()
+
+    expect(apiMock.approveExecutionPlanApproval).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('approved')
+    expect(container.textContent).toContain('approval refresh unavailable')
+    expect(button('Retry approvals')).toBeTruthy()
+    expect(onResolved).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      button('Retry approvals').click()
+    })
+    await flush()
+    expect(apiMock.approveExecutionPlanApproval).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain('approved')
+    expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent === 'Retry approvals')).toBe(false)
   })
 
   function button(label: string) {

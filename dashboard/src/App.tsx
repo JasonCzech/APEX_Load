@@ -32,13 +32,24 @@ import TablePaginationManager from "./components/TablePaginationManager";
 import {
   type AppView,
   handleGuardedRouteChange,
+  mergeAppViewWithWorkspace,
+  navPageForAppView,
   normalizeReportViewForFeatureFlag,
   parseAppViewFromHash,
   parseDesktopDeepLink,
+  projectAssetForAppView,
+  projectIdForAppView,
   readAppHistoryIndex,
+  recoveryViewForUnscopedProjectAsset,
+  resetProjectScopedAssetView,
+  scopeAppViewToProject,
+  scopeAppViewToWorkspace,
+  testIdForAppView,
   type TestWorkspaceTabID,
+  unscopedProjectAssetForAppView,
   viewToLocationHash,
   withAppHistoryIndex,
+  workspaceScopeForAppView,
 } from "./appRouting";
 import { appendBoundedMetricsHistory } from "./appMetricsHistory";
 import { mapExecutionMetricToHistoryPoint } from "./components/testExecutionMetricsModel";
@@ -55,6 +66,7 @@ import { useDevView } from "./hooks/useDevView";
 import { useSystemApi } from "./hooks/api/useSystemApi";
 import { useRepositoryApi } from "./hooks/api/useRepositoryApi";
 import { useLibraryApi } from "./hooks/api/useLibraryApi";
+import { useScriptApi } from "./hooks/api/useScriptApi";
 import { useTestApi } from "./hooks/api/useTestApi";
 import { useSharedTestList } from "./hooks/useSharedTestList";
 import {
@@ -122,11 +134,21 @@ import {
 import { openDesktopBrowserWithPreview } from "./hooks/apiClient";
 import {
   appendProjectTelemetryDiagnostic,
+  isCurrentCatalogRequest,
   isCurrentRepositoryRequest,
   isProjectScopedMessageCurrent,
   projectForActiveDomain,
   telemetryDiagnosticsForProject,
 } from "./appProjectScope";
+import {
+  createRepositoryCatalogState,
+  createRepositoryCategoryMutationLedger,
+  mergeRepositoryCatalogRefresh,
+  reconcileRepositoryCategorySnapshot,
+  recordCommittedRepositoryCategory,
+  repositoryCatalogForDomain,
+  type RepositoryCatalogRefreshPatch,
+} from "./repositoryCatalogState";
 import {
   acknowledgeProjectThresholdAlert,
   appendProjectThresholdAlert,
@@ -139,6 +161,7 @@ import {
 } from "./thresholdAlerts";
 import type { ScriptsAuthoringSubView } from "./components/useScriptsAuthoringState";
 import type { MonitorCategoryId } from "./components/MonitoringPage";
+import { commitGuardedNavigation } from "./guardedNavigation";
 import {
   resolveNativeImportRequest,
   type NativeImportRequest,
@@ -364,6 +387,7 @@ function AppShell({
       : (readAppHistoryIndex(window.history.state) ?? 0),
   );
   const popstateHashToIgnore = useRef<string | null>(null);
+  const replaceRouteOnNextViewSync = useRef(false);
   const guardedHistoryTraversal = useRef<{
     phase: "restoring" | "proceeding";
     pending: PendingGuardedHistoryTraversal;
@@ -404,18 +428,37 @@ function AppShell({
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false);
   const [effectiveAccessError, setEffectiveAccessError] = useState(false);
   const [domains, setDomains] = useState<import("./types").Domain[]>([]);
+  const [domainsLoaded, setDomainsLoaded] = useState(false);
+  const [domainsError, setDomainsError] = useState("");
+  const domainsRef = useRef(domains);
+  domainsRef.current = domains;
+  const domainsRequestGenerationRef = useRef(0);
   const [activeDomain, setActiveDomainState] = useState<
     import("./types").Domain | null
   >(null);
-  const [loadedApplicationRepository, setApplicationRepository] = useState<
-    import("./types").ApplicationRepository | null
-  >(null);
-  const [loadedRepositoryCategories, setRepositoryCategories] = useState<
-    import("./types").RepositoryCategory[]
-  >([]);
+  const [repositoryCatalogState, setRepositoryCatalogState] = useState(
+    createRepositoryCatalogState,
+  );
+  const repositoryCategoryMutationLedgerRef = useRef(
+    createRepositoryCategoryMutationLedger(),
+  );
   const repositoryRequestGenerationRef = useRef(0);
   const activeDomainIDRef = useRef(activeDomain?.id || "");
   activeDomainIDRef.current = activeDomain?.id || "";
+  const setActiveDomain = useCallback((domain: import("./types").Domain) => {
+    // Mutation responses are authoritative even when a follow-up catalog read
+    // fails or observes an older snapshot. Keep that row available locally.
+    setDomains((current) => {
+      const next = current.some((candidate) => candidate.id === domain.id)
+        ? current.map((candidate) =>
+            candidate.id === domain.id ? domain : candidate,
+          )
+        : [...current, domain];
+      return next.sort((left, right) => left.name.localeCompare(right.name));
+    });
+    setActiveDomainState(domain);
+    writeStoredString("apexload.activeDomainId", domain.id);
+  }, []);
   const [desktopStatus, setDesktopStatus] =
     useState<DesktopStatusResponse | null>(null);
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>(
@@ -429,6 +472,7 @@ function AppShell({
   // refetches its (admin-gated) review when the posture changes server-side.
   const [accessReviewSignal, setAccessReviewSignal] = useState(0);
   const testApi = useTestApi();
+  const scriptApi = useScriptApi();
   const runReportEnabled = useMemo(() => isRunReportEnabled(), []);
   const activeTopbarContribution = useActiveTopbarContribution();
   const { hasDirtyGuard, runGuarded } = useNavigationGuardRunner();
@@ -595,9 +639,14 @@ function AppShell({
   const outerProjectContext = useProject();
   const {
     projects,
+    projectsLoading,
+    projectsError,
     activeProject: selectedProject,
     setActiveProject: setOuterActiveProject,
+		removeProject: removeOuterProject,
     createAndSelectProject: createOuterProject,
+		updateProject: updateOuterProject,
+		deleteProject: deleteOuterProject,
     refreshProjects,
   } = outerProjectContext;
   const domainProjects = useMemo(() => {
@@ -609,24 +658,76 @@ function AppShell({
   const activeProject = projectForActiveDomain(activeDomain, selectedProject);
   const setActiveProject = useCallback<ProjectContextValue["setActiveProject"]>(
     (project) => {
-      if (projectForActiveDomain(activeDomain, project))
+      if (projectForActiveDomain(activeDomain, project)) {
+        const projectChanged = selectedProject?.id !== project.id;
         setOuterActiveProject(project);
+        if (projectChanged) {
+          setView((current) =>
+            scopeAppViewToWorkspace(
+              resetProjectScopedAssetView(current, project.id),
+              { projectId: project.id },
+            ),
+          );
+        }
+      }
     },
-    [activeDomain, setOuterActiveProject],
+    [activeDomain, selectedProject?.id, setOuterActiveProject],
   );
   const createAndSelectProject = useCallback<
     ProjectContextValue["createAndSelectProject"]
   >(
-    (project) => {
+    async (project) => {
       const domainID = activeDomain?.id;
       const payload =
         typeof project === "string"
           ? { name: project, domain_id: domainID }
           : { ...project, domain_id: project.domain_id || domainID };
-      return createOuterProject(payload);
+      const created = await createOuterProject(payload);
+      setView((current) =>
+        scopeAppViewToWorkspace(
+          resetProjectScopedAssetView(current, created.id),
+          { projectId: created.id },
+        ),
+      );
+      return created;
     },
     [activeDomain?.id, createOuterProject],
   );
+	const removeProject = useCallback<ProjectContextValue["removeProject"]>(
+		(projectID) => {
+			if (domainProjects.some((project) => project.id === projectID)) {
+				removeOuterProject(projectID);
+				if (selectedProject?.id === projectID) {
+					setView((current) =>
+						scopeAppViewToWorkspace(resetProjectScopedAssetView(current), {}),
+					);
+				}
+			}
+		},
+		[domainProjects, removeOuterProject, selectedProject?.id],
+	);
+	const updateProject = useCallback<ProjectContextValue["updateProject"]>(
+		(projectID, project) => {
+			if (!domainProjects.some((candidate) => candidate.id === projectID))
+				return Promise.reject(new Error("The project belongs to a different domain."));
+			return updateOuterProject(projectID, project);
+		},
+		[domainProjects, updateOuterProject],
+	);
+	const deleteProject = useCallback<ProjectContextValue["deleteProject"]>(
+		async (projectID) => {
+			if (!domainProjects.some((candidate) => candidate.id === projectID))
+				return Promise.reject(new Error("The project belongs to a different domain."));
+			const deleted = await deleteOuterProject(projectID);
+			if (selectedProject?.id === projectID) {
+				setView((current) =>
+					scopeAppViewToWorkspace(resetProjectScopedAssetView(current), {}),
+				);
+			}
+			return deleted;
+		},
+		[deleteOuterProject, domainProjects, selectedProject?.id],
+	);
   const telemetryDiagnostics = telemetryDiagnosticsForProject(
     telemetryDiagnosticsByProject,
     activeProject?.id,
@@ -668,6 +769,12 @@ function AppShell({
         : [],
     [activeProject, outerApplicationContext.applications],
   );
+  const applicationsLoading = activeProject
+    ? outerApplicationContext.applicationsLoading
+    : false;
+  const applicationsError = activeProject
+    ? outerApplicationContext.applicationsError
+    : "";
   const activeApplication =
     activeProject &&
     outerApplicationContext.activeApplication &&
@@ -700,6 +807,16 @@ function AppShell({
         activeApplication.id)
       ? outerApplicationContext.activeRelease
       : null;
+  const currentWorkspaceScope = useMemo(
+    () => ({
+      ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+      ...(activeApplication?.id
+        ? { applicationId: activeApplication.id }
+        : {}),
+      ...(activeRelease?.id ? { releaseId: activeRelease.id } : {}),
+    }),
+    [activeApplication?.id, activeProject?.id, activeRelease?.id],
+  );
   const setActiveApplication = useCallback<
     ApplicationContextValue["setActiveApplication"]
   >(
@@ -708,10 +825,19 @@ function AppShell({
         activeProject &&
         (!application.project_id || application.project_id === activeProject.id)
       ) {
+        const applicationChanged = activeApplication?.id !== application.id;
         outerApplicationContext.setActiveApplication(application);
+        if (applicationChanged) {
+          setView((current) =>
+            scopeAppViewToWorkspace(
+              resetProjectScopedAssetView(current, activeProject.id),
+              { projectId: activeProject.id, applicationId: application.id },
+            ),
+          );
+        }
       }
     },
-    [activeProject, outerApplicationContext],
+    [activeApplication?.id, activeProject, outerApplicationContext],
   );
   const setActiveRelease = useCallback<
     ApplicationContextValue["setActiveRelease"]
@@ -722,64 +848,164 @@ function AppShell({
         (!release.application_id ||
           release.application_id === activeApplication.id)
       ) {
+        const releaseChanged = activeRelease?.id !== release.id;
         outerApplicationContext.setActiveRelease(release);
+        if (releaseChanged) {
+          setView((current) =>
+            scopeAppViewToWorkspace(
+              resetProjectScopedAssetView(current, activeProject?.id),
+              {
+                ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+                applicationId: activeApplication.id,
+                releaseId: release.id,
+              },
+            ),
+          );
+        }
       }
     },
-    [activeApplication, outerApplicationContext],
+    [activeApplication, activeProject?.id, activeRelease?.id, outerApplicationContext],
   );
-  const refreshApplications = useCallback(
-    () =>
+  const removeApplication = useCallback<
+    ApplicationContextValue["removeApplication"]
+  >(
+    (applicationID) => {
+      if (applications.some((application) => application.id === applicationID)) {
+        outerApplicationContext.removeApplication(applicationID);
+        if (activeApplication?.id === applicationID) {
+          setView((current) =>
+            scopeAppViewToWorkspace(
+              resetProjectScopedAssetView(current, activeProject?.id),
+              activeProject?.id ? { projectId: activeProject.id } : {},
+            ),
+          );
+        }
+      }
+    },
+    [activeApplication?.id, activeProject?.id, applications, outerApplicationContext],
+  );
+  const removeRelease = useCallback<ApplicationContextValue["removeRelease"]>(
+    (releaseID) => {
+      if (releases.some((release) => release.id === releaseID)) {
+        outerApplicationContext.removeRelease(releaseID);
+        if (activeRelease?.id === releaseID) {
+          setView((current) =>
+            scopeAppViewToWorkspace(
+              resetProjectScopedAssetView(current, activeProject?.id),
+              {
+                ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+                ...(activeApplication?.id
+                  ? { applicationId: activeApplication.id }
+                  : {}),
+              },
+            ),
+          );
+        }
+      }
+    },
+    [
+      activeApplication?.id,
+      activeProject?.id,
+      activeRelease?.id,
+      outerApplicationContext,
+      releases,
+    ],
+  );
+  const refreshApplications = useCallback<
+    ApplicationContextValue["refreshApplications"]
+  >(
+    (options) =>
       activeProject
-        ? outerApplicationContext.refreshApplications()
+        ? outerApplicationContext.refreshApplications(options)
         : Promise.resolve(),
     [activeProject, outerApplicationContext],
   );
-  const refreshReleases = useCallback(
-    (applicationID?: string) =>
+  const refreshReleases = useCallback<
+    ApplicationContextValue["refreshReleases"]
+  >(
+    (applicationID, options) =>
       activeApplication &&
       (!applicationID || applicationID === activeApplication.id)
-        ? outerApplicationContext.refreshReleases(applicationID)
+        ? outerApplicationContext.refreshReleases(applicationID, options)
         : Promise.resolve(),
     [activeApplication, outerApplicationContext],
   );
   const createAndSelectApplication = useCallback<
     ApplicationContextValue["createAndSelectApplication"]
   >(
-    async (name) => {
+    async (name, projectID) => {
       if (!activeProject)
         throw new Error("Select a project before creating an application.");
-      return outerApplicationContext.createAndSelectApplication(name);
+      if (projectID && projectID !== activeProject.id)
+        throw new Error(
+          "The application draft belongs to a different project. Return to that project before saving it.",
+        );
+      const created = await outerApplicationContext.createAndSelectApplication(
+        name,
+        projectID || activeProject.id,
+      );
+      setView((current) =>
+        scopeAppViewToWorkspace(
+          resetProjectScopedAssetView(current, activeProject.id),
+          { projectId: activeProject.id, applicationId: created.id },
+        ),
+      );
+      return created;
     },
     [activeProject, outerApplicationContext],
   );
   const createAndSelectRelease = useCallback<
     ApplicationContextValue["createAndSelectRelease"]
   >(
-    (name) => {
-      if (!activeApplication) return Promise.resolve(null);
-      return outerApplicationContext.createAndSelectRelease(name);
+    async (name) => {
+      if (!activeApplication) return null;
+      const created = await outerApplicationContext.createAndSelectRelease(name);
+      if (!created) return null;
+      setView((current) =>
+        scopeAppViewToWorkspace(
+          resetProjectScopedAssetView(current, activeProject?.id),
+          {
+            ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+            applicationId: activeApplication.id,
+            releaseId: created.id,
+          },
+        ),
+      );
+      return created;
     },
-    [activeApplication, outerApplicationContext],
+    [activeApplication, activeProject?.id, outerApplicationContext],
   );
   const scopedProjectContextValue = useMemo<ProjectContextValue>(
     () => ({
       projects: domainProjects,
+      projectsLoading,
+      projectsError,
       activeProject,
       setActiveProject,
+			removeProject,
       refreshProjects,
       createAndSelectProject,
+			updateProject,
+			deleteProject,
     }),
     [
       activeProject,
       createAndSelectProject,
+			deleteProject,
       domainProjects,
+      projectsError,
+      projectsLoading,
       refreshProjects,
+			removeProject,
       setActiveProject,
+			updateProject,
     ],
   );
   const scopedApplicationContextValue = useMemo<ApplicationContextValue>(
     () => ({
       applications,
+      applicationsLoading,
+      applicationsError,
       releases,
       releasesLoading,
       releasesError,
@@ -787,6 +1013,8 @@ function AppShell({
       activeRelease,
       setActiveApplication,
       setActiveRelease,
+      removeApplication,
+      removeRelease,
       refreshApplications,
       refreshReleases,
       createAndSelectApplication,
@@ -796,8 +1024,12 @@ function AppShell({
       activeApplication,
       activeRelease,
       applications,
+      applicationsError,
+      applicationsLoading,
       createAndSelectApplication,
       createAndSelectRelease,
+      removeApplication,
+      removeRelease,
       refreshApplications,
       refreshReleases,
       releases,
@@ -930,90 +1162,871 @@ function AppShell({
     activeProject?.id,
   );
 
-  const setGuardedView = useCallback(
-    (next: AppView | ((current: AppView) => AppView)) => {
-      runGuarded(() => {
+  const selectProjectScopeForRoute = useCallback(
+    (projectID: string) => {
+      const project = projects.find((candidate) => candidate.id === projectID);
+      if (!project) return false;
+
+      const projectDomainID = project.domain_id || "default";
+      if (activeDomain?.id !== projectDomainID) {
+        const projectDomain = domains.find(
+          (candidate) => candidate.id === projectDomainID,
+        );
+        if (!projectDomain) return false;
+        setActiveDomain(projectDomain);
+      }
+      setOuterActiveProject(project);
+      return true;
+    },
+    [activeDomain?.id, domains, projects, setActiveDomain, setOuterActiveProject],
+  );
+  const requestedRouteProjectID = projectIdForAppView(view);
+  const requestedRouteApplicationID = view.applicationId;
+  const requestedRouteReleaseID = view.releaseId;
+  const routeTestID = testIdForAppView(view);
+  const requestedRouteProject = requestedRouteProjectID
+    ? projects.find((project) => project.id === requestedRouteProjectID)
+    : undefined;
+  const requestedRouteDomainID = requestedRouteProject
+    ? requestedRouteProject.domain_id || "default"
+    : undefined;
+  const routeProjectScopePending = Boolean(
+    requestedRouteProjectID && activeProject?.id !== requestedRouteProjectID,
+  );
+  const routeProjectMissing = Boolean(
+    requestedRouteProjectID &&
+      !projectsLoading &&
+      !requestedRouteProject,
+  );
+  const routeProjectDomainMissing = Boolean(
+    requestedRouteProject &&
+      requestedRouteDomainID &&
+      domainsLoaded &&
+      !domains.some((domain) => domain.id === requestedRouteDomainID),
+  );
+  const routeProjectScopeMissing =
+    routeProjectMissing || routeProjectDomainMissing;
+  const routeWorkspaceHierarchyError = requestedRouteApplicationID && !requestedRouteProjectID
+    ? "Application workspace scope requires a project scope."
+    : requestedRouteReleaseID && !requestedRouteApplicationID
+      ? "Release workspace scope requires an application scope."
+      : "";
+  const genericRouteWorkspaceKey =
+    !routeTestID && requestedRouteProjectID && requestedRouteApplicationID
+      ? `${requestedRouteProjectID}\u0000${requestedRouteApplicationID}\u0000${requestedRouteReleaseID || ""}`
+      : "";
+  const [genericRouteWorkspaceResolution, setGenericRouteWorkspaceResolution] =
+    useState<{
+      key: string;
+      status: "reconciling" | "resolved" | "error";
+      applicationsRefreshRequested?: boolean;
+      releasesRefreshRequested?: boolean;
+      message?: string;
+    } | null>(null);
+
+  useEffect(() => {
+    setGenericRouteWorkspaceResolution(
+      genericRouteWorkspaceKey
+        ? { key: genericRouteWorkspaceKey, status: "reconciling" }
+        : null,
+    );
+  }, [genericRouteWorkspaceKey]);
+
+  useEffect(() => {
+    const resolution = genericRouteWorkspaceResolution;
+    if (
+      !resolution ||
+      resolution.key !== genericRouteWorkspaceKey ||
+      resolution.status !== "reconciling" ||
+      !requestedRouteProjectID ||
+      !requestedRouteApplicationID ||
+      activeProject?.id !== requestedRouteProjectID
+    ) {
+      return;
+    }
+
+    const targetApplication = applications.find(
+      (application) => application.id === requestedRouteApplicationID,
+    );
+    if (!targetApplication) {
+      if (applicationsLoading) return;
+      if (!resolution.applicationsRefreshRequested) {
+        setGenericRouteWorkspaceResolution({
+          ...resolution,
+          applicationsRefreshRequested: true,
+        });
+        void outerApplicationContext.refreshApplications().catch(() => undefined);
+        return;
+      }
+      setGenericRouteWorkspaceResolution({
+        ...resolution,
+        status: "error",
+        message:
+          applicationsError ||
+          `Application ${requestedRouteApplicationID} is unavailable in project ${requestedRouteProjectID}.`,
+      });
+      return;
+    }
+
+    if (activeApplication?.id !== targetApplication.id) {
+      outerApplicationContext.setActiveApplication(targetApplication);
+      setGenericRouteWorkspaceResolution({
+        ...resolution,
+        releasesRefreshRequested: Boolean(requestedRouteReleaseID),
+      });
+      if (requestedRouteReleaseID) {
+        void outerApplicationContext
+          .refreshReleases(targetApplication.id)
+          .catch(() => undefined);
+      }
+      return;
+    }
+
+    if (!requestedRouteReleaseID) {
+      setGenericRouteWorkspaceResolution({ ...resolution, status: "resolved" });
+      return;
+    }
+
+    const targetRelease = releases.find(
+      (release) => release.id === requestedRouteReleaseID,
+    );
+    if (!targetRelease) {
+      if (releasesLoading) return;
+      if (!resolution.releasesRefreshRequested) {
+        setGenericRouteWorkspaceResolution({
+          ...resolution,
+          releasesRefreshRequested: true,
+        });
+        void outerApplicationContext
+          .refreshReleases(targetApplication.id)
+          .catch(() => undefined);
+        return;
+      }
+      setGenericRouteWorkspaceResolution({
+        ...resolution,
+        status: "error",
+        message:
+          releasesError ||
+          `Release ${requestedRouteReleaseID} is unavailable in application ${targetApplication.name}.`,
+      });
+      return;
+    }
+
+    if (activeRelease?.id !== targetRelease.id) {
+      outerApplicationContext.setActiveRelease(targetRelease);
+    }
+    setGenericRouteWorkspaceResolution({ ...resolution, status: "resolved" });
+  }, [
+    activeApplication?.id,
+    activeProject?.id,
+    activeRelease?.id,
+    applications,
+    applicationsError,
+    applicationsLoading,
+    genericRouteWorkspaceKey,
+    genericRouteWorkspaceResolution,
+    outerApplicationContext,
+    releases,
+    releasesError,
+    releasesLoading,
+    requestedRouteApplicationID,
+    requestedRouteProjectID,
+    requestedRouteReleaseID,
+    setActiveApplication,
+    setActiveRelease,
+  ]);
+
+  const genericRouteWorkspacePending = Boolean(
+    genericRouteWorkspaceKey &&
+      (genericRouteWorkspaceResolution?.key !== genericRouteWorkspaceKey ||
+        genericRouteWorkspaceResolution.status === "reconciling"),
+  );
+  const genericRouteWorkspaceError =
+    genericRouteWorkspaceResolution?.key === genericRouteWorkspaceKey &&
+    genericRouteWorkspaceResolution.status === "error"
+      ? genericRouteWorkspaceResolution.message || "Workspace scope is unavailable."
+      : "";
+
+  const unscopedRouteAsset = unscopedProjectAssetForAppView(view);
+  const unscopedRouteAssetKind = unscopedRouteAsset?.kind;
+  const unscopedRouteAssetID = unscopedRouteAsset?.id;
+  const unscopedRouteAssetKey = unscopedRouteAsset
+    ? `${unscopedRouteAsset.kind}:${unscopedRouteAsset.id}`
+    : "";
+  const [unscopedRouteScopeResolution, setUnscopedRouteScopeResolution] =
+    useState<{
+      key: string;
+      status: "resolving" | "error";
+      message?: string;
+    } | null>(null);
+
+  useEffect(() => {
+    if (!unscopedRouteAssetKind || !unscopedRouteAssetID) {
+      setUnscopedRouteScopeResolution(null);
+      return;
+    }
+
+    const key = `${unscopedRouteAssetKind}:${unscopedRouteAssetID}`;
+    let cancelled = false;
+    setUnscopedRouteScopeResolution({ key, status: "resolving" });
+
+    const ownerRequest =
+      unscopedRouteAssetKind === "script"
+        ? scriptApi.getScript(unscopedRouteAssetID)
+        : unscopedRouteAssetKind === "scenario"
+          ? scriptApi.getScenario(unscopedRouteAssetID)
+          : testApi.getTest(unscopedRouteAssetID);
+
+    void ownerRequest
+      .then((asset) => {
+        if (cancelled) return;
+        const ownerProjectID = asset.project_id?.trim();
+        if (!ownerProjectID) {
+          throw new Error("the server response did not identify an owning project");
+        }
         setView((current) => {
-          const resolved = typeof next === "function" ? next(current) : next;
-          return normalizeReportViewForFeatureFlag(resolved, runReportEnabled);
+          const currentAsset = unscopedProjectAssetForAppView(current);
+          if (
+            !currentAsset ||
+            `${currentAsset.kind}:${currentAsset.id}` !== key
+          ) {
+            return current;
+          }
+          const scopedView = scopeAppViewToProject(current, ownerProjectID);
+          if (typeof window !== "undefined") {
+            window.history.replaceState(
+              window.history.state,
+              "",
+              viewToLocationHash(scopedView),
+            );
+          }
+          return scopedView;
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        const detail =
+          error instanceof Error && error.message
+            ? ` ${error.message}`
+            : "";
+        setUnscopedRouteScopeResolution({
+          key,
+          status: "error",
+          message: `This older link does not include project scope, and the owning project could not be resolved.${detail}`,
         });
       });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    scriptApi,
+    testApi,
+    unscopedRouteAssetID,
+    unscopedRouteAssetKind,
+  ]);
+
+  const unscopedRouteScopeError =
+    unscopedRouteScopeResolution?.key === unscopedRouteAssetKey &&
+    unscopedRouteScopeResolution.status === "error"
+      ? unscopedRouteScopeResolution.message || "Project scope is unavailable."
+      : "";
+  const scopedRouteAssetCandidate = requestedRouteProjectID
+    ? projectAssetForAppView(view)
+    : null;
+  // Runs also reconcile application/release identity below. Scripts and
+  // scenarios still need an owner lookup: a stale projectId must never cause
+  // their pages to mount against another project's catalog.
+  const scopedRouteAsset =
+    scopedRouteAssetCandidate?.kind === "test"
+      ? null
+      : scopedRouteAssetCandidate;
+  const scopedRouteAssetKind = scopedRouteAsset?.kind;
+  const scopedRouteAssetID = scopedRouteAsset?.id;
+  const scopedRouteAssetKey =
+    scopedRouteAsset && requestedRouteProjectID
+      ? `${scopedRouteAsset.kind}:${scopedRouteAsset.id}:${requestedRouteProjectID}`
+      : "";
+  const [scopedRouteScopeResolution, setScopedRouteScopeResolution] =
+    useState<{
+      key: string;
+      status: "resolving" | "resolved" | "error";
+      message?: string;
+    } | null>(null);
+
+  useEffect(() => {
+    if (
+      !scopedRouteAssetKind ||
+      !scopedRouteAssetID ||
+      !requestedRouteProjectID
+    ) {
+      setScopedRouteScopeResolution(null);
+      return;
+    }
+
+    const key = `${scopedRouteAssetKind}:${scopedRouteAssetID}:${requestedRouteProjectID}`;
+    let cancelled = false;
+    setScopedRouteScopeResolution({ key, status: "resolving" });
+    const ownerRequest =
+      scopedRouteAssetKind === "script"
+        ? scriptApi.getScript(scopedRouteAssetID)
+        : scriptApi.getScenario(scopedRouteAssetID);
+
+    void ownerRequest
+      .then((asset) => {
+        if (cancelled) return;
+        const ownerProjectID = asset.project_id?.trim();
+        if (!ownerProjectID) {
+          throw new Error("the server response did not identify an owning project");
+        }
+        if (ownerProjectID !== requestedRouteProjectID) {
+          setView((current) => {
+            const currentAsset = projectAssetForAppView(current);
+            if (
+              projectIdForAppView(current) !== requestedRouteProjectID ||
+              !currentAsset ||
+              `${currentAsset.kind}:${currentAsset.id}` !==
+                `${scopedRouteAssetKind}:${scopedRouteAssetID}`
+            ) {
+              return current;
+            }
+            const corrected = scopeAppViewToProject(current, ownerProjectID);
+            if (typeof window !== "undefined") {
+              window.history.replaceState(
+                window.history.state,
+                "",
+                viewToLocationHash(corrected),
+              );
+            }
+            return corrected;
+          });
+          return;
+        }
+        setScopedRouteScopeResolution({ key, status: "resolved" });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        const detail =
+          cause instanceof Error && cause.message ? ` ${cause.message}` : "";
+        setScopedRouteScopeResolution({
+          key,
+          status: "error",
+          message: `The ${scopedRouteAssetKind} workspace could not be resolved.${detail}`,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    requestedRouteProjectID,
+    scopedRouteAssetID,
+    scopedRouteAssetKind,
+    scriptApi,
+  ]);
+
+  const scopedRouteScopePending = Boolean(
+    scopedRouteAssetKey &&
+      (scopedRouteScopeResolution?.key !== scopedRouteAssetKey ||
+        scopedRouteScopeResolution.status === "resolving"),
+  );
+  const scopedRouteScopeError =
+    scopedRouteScopeResolution?.key === scopedRouteAssetKey &&
+    scopedRouteScopeResolution.status === "error"
+      ? scopedRouteScopeResolution.message || "Project scope is unavailable."
+      : "";
+  const routeTestScopeKey =
+    routeTestID && requestedRouteProjectID
+      ? `${routeTestID}\u0000${requestedRouteProjectID}\u0000${requestedRouteApplicationID || ""}\u0000${requestedRouteReleaseID || ""}`
+      : "";
+  const [routeTestScopeResolution, setRouteTestScopeResolution] = useState<{
+    key: string;
+    status: "resolving" | "reconciling" | "resolved" | "error";
+    test?: import("./types").TestSummary;
+    applicationsRefreshRequested?: boolean;
+    releasesRefreshRequested?: boolean;
+    message?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!routeTestID || !requestedRouteProjectID || unscopedRouteAsset) {
+      setRouteTestScopeResolution(null);
+      return;
+    }
+    const key = `${routeTestID}\u0000${requestedRouteProjectID}\u0000${requestedRouteApplicationID || ""}\u0000${requestedRouteReleaseID || ""}`;
+    let cancelled = false;
+    setRouteTestScopeResolution({ key, status: "resolving" });
+    void testApi
+      .getTest(routeTestID)
+      .then((test) => {
+        if (cancelled) return;
+        const ownerProjectID = test.project_id?.trim();
+        if (!ownerProjectID) {
+          throw new Error("the run response did not identify an owning project");
+        }
+        if (!test.application_id?.trim() || !test.release_id?.trim()) {
+          throw new Error(
+            "the run response did not identify its application and release",
+          );
+        }
+        const ownerScope = {
+          projectId: ownerProjectID,
+          applicationId: test.application_id,
+          releaseId: test.release_id,
+        };
+        if (
+          ownerProjectID !== requestedRouteProjectID ||
+          requestedRouteApplicationID !== test.application_id ||
+          requestedRouteReleaseID !== test.release_id
+        ) {
+          setView((current) => {
+            if (
+              testIdForAppView(current) !== routeTestID ||
+              current.projectId !== requestedRouteProjectID ||
+              current.applicationId !== requestedRouteApplicationID ||
+              current.releaseId !== requestedRouteReleaseID
+            ) {
+              return current;
+            }
+            const corrected = scopeAppViewToWorkspace(current, ownerScope);
+            if (typeof window !== "undefined") {
+              window.history.replaceState(
+                window.history.state,
+                "",
+                viewToLocationHash(corrected),
+              );
+            }
+            return corrected;
+          });
+          return;
+        }
+        setRouteTestScopeResolution({ key, status: "reconciling", test });
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        const detail =
+          cause instanceof Error && cause.message ? ` ${cause.message}` : "";
+        setRouteTestScopeResolution({
+          key,
+          status: "error",
+          message: `The run workspace could not be resolved.${detail}`,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    requestedRouteApplicationID,
+    requestedRouteProjectID,
+    requestedRouteReleaseID,
+    routeTestID,
+    testApi,
+    unscopedRouteAsset,
+  ]);
+
+  useEffect(() => {
+    const resolution = routeTestScopeResolution;
+    if (
+      !resolution ||
+      resolution.key !== routeTestScopeKey ||
+      resolution.status !== "reconciling" ||
+      !resolution.test ||
+      activeProject?.id !== resolution.test.project_id
+    )
+      return;
+
+    const targetApplication = applications.find(
+      (application) => application.id === resolution.test?.application_id,
+    );
+    if (!targetApplication) {
+      if (applicationsLoading) return;
+      if (!resolution.applicationsRefreshRequested) {
+        setRouteTestScopeResolution((current) =>
+          current?.key === resolution.key
+            ? { ...current, applicationsRefreshRequested: true }
+            : current,
+        );
+        void outerApplicationContext.refreshApplications().catch(() => undefined);
+        return;
+      }
+      setRouteTestScopeResolution({
+        ...resolution,
+        status: "error",
+        message:
+          applicationsError ||
+          `Application ${resolution.test.application_id} for this run is unavailable in project ${resolution.test.project_id}.`,
+      });
+      return;
+    }
+
+    if (activeApplication?.id !== targetApplication.id) {
+      outerApplicationContext.setActiveApplication(targetApplication);
+      setRouteTestScopeResolution((current) =>
+        current?.key === resolution.key
+          ? { ...current, releasesRefreshRequested: true }
+          : current,
+      );
+      void outerApplicationContext
+        .refreshReleases(targetApplication.id)
+        .catch(() => undefined);
+      return;
+    }
+
+    const targetRelease = releases.find(
+      (release) => release.id === resolution.test?.release_id,
+    );
+    if (!targetRelease) {
+      if (releasesLoading) return;
+      if (!resolution.releasesRefreshRequested) {
+        setRouteTestScopeResolution((current) =>
+          current?.key === resolution.key
+            ? { ...current, releasesRefreshRequested: true }
+            : current,
+        );
+        void outerApplicationContext
+          .refreshReleases(targetApplication.id)
+          .catch(() => undefined);
+        return;
+      }
+      setRouteTestScopeResolution({
+        ...resolution,
+        status: "error",
+        message:
+          releasesError ||
+          `Release ${resolution.test.release_id} for this run is unavailable in application ${targetApplication.name}.`,
+      });
+      return;
+    }
+
+    if (activeRelease?.id !== targetRelease.id) {
+      outerApplicationContext.setActiveRelease(targetRelease);
+    }
+    setRouteTestScopeResolution({ ...resolution, status: "resolved" });
+  }, [
+    activeApplication?.id,
+    activeProject?.id,
+    activeRelease?.id,
+    applications,
+    applicationsError,
+    applicationsLoading,
+    outerApplicationContext,
+    releases,
+    releasesError,
+    releasesLoading,
+    routeTestScopeKey,
+    routeTestScopeResolution,
+    setActiveApplication,
+    setActiveRelease,
+  ]);
+
+  const routeTestScopePending = Boolean(
+    routeTestScopeKey &&
+      (routeTestScopeResolution?.key !== routeTestScopeKey ||
+        routeTestScopeResolution.status === "resolving" ||
+        routeTestScopeResolution.status === "reconciling"),
+  );
+  const routeTestScopeError =
+    routeTestScopeResolution?.key === routeTestScopeKey &&
+    routeTestScopeResolution.status === "error"
+      ? routeTestScopeResolution.message || "The run workspace is unavailable."
+      : "";
+  const routeProjectScopeError = projectsError && requestedRouteProjectID
+    ? projectsError
+    : routeProjectMissing
+    ? `Project ${requestedRouteProjectID} is unavailable. Select an accessible project to continue.`
+    : routeProjectDomainMissing
+      ? `The owning domain ${requestedRouteDomainID} for project ${requestedRouteProjectID} is unavailable. Select an accessible project to continue.`
+      : "";
+  const routeAssetOwnerScopeError =
+    unscopedRouteScopeError || scopedRouteScopeError;
+  const recoverableRouteAsset = unscopedRouteAsset || scopedRouteAsset;
+  const routeAssetScopeError =
+    routeWorkspaceHierarchyError ||
+    routeAssetOwnerScopeError ||
+    routeProjectScopeError ||
+    genericRouteWorkspaceError ||
+    routeTestScopeError;
+  const routeAssetScopeBlocked = Boolean(
+    routeWorkspaceHierarchyError ||
+      unscopedRouteAsset ||
+      scopedRouteScopePending ||
+      scopedRouteScopeError ||
+      routeProjectScopePending ||
+      routeProjectScopeMissing ||
+      genericRouteWorkspacePending ||
+      genericRouteWorkspaceError ||
+      routeTestScopePending ||
+      routeTestScopeError,
+  );
+
+  useEffect(() => {
+    if (!requestedRouteProjectID || activeProject?.id === requestedRouteProjectID)
+      return;
+    selectProjectScopeForRoute(requestedRouteProjectID);
+  }, [activeProject?.id, requestedRouteProjectID, selectProjectScopeForRoute]);
+
+  useEffect(() => {
+    // A project-scoped generic route may initially omit child scope while the
+    // provider loads it (for example immediately after a project selection).
+    // Canonicalize only after the route's requested parents are active; never
+    // fill a deep link from the previous workspace's transient context.
+    if (
+      !requestedRouteProjectID ||
+      routeTestID ||
+      routeWorkspaceHierarchyError ||
+      routeProjectScopeMissing ||
+      genericRouteWorkspacePending ||
+      genericRouteWorkspaceError ||
+      activeProject?.id !== requestedRouteProjectID ||
+      (requestedRouteApplicationID &&
+        activeApplication?.id !== requestedRouteApplicationID) ||
+      (requestedRouteReleaseID && activeRelease?.id !== requestedRouteReleaseID)
+    ) {
+      return;
+    }
+
+    const nextScope = {
+      projectId: requestedRouteProjectID,
+      ...(requestedRouteApplicationID
+        ? { applicationId: requestedRouteApplicationID }
+        : activeApplication?.id
+          ? { applicationId: activeApplication.id }
+          : {}),
+      ...(requestedRouteReleaseID
+        ? { releaseId: requestedRouteReleaseID }
+        : activeRelease?.id &&
+            (requestedRouteApplicationID || activeApplication?.id) ===
+              activeApplication?.id
+          ? { releaseId: activeRelease.id }
+          : {}),
+    };
+    const currentScope = workspaceScopeForAppView(view);
+    if (
+      currentScope.projectId === nextScope.projectId &&
+      currentScope.applicationId === nextScope.applicationId &&
+      currentScope.releaseId === nextScope.releaseId
+    ) {
+      return;
+    }
+
+    const currentHash = viewToLocationHash(view);
+    setView((current) => {
+      if (viewToLocationHash(current) !== currentHash) return current;
+      replaceRouteOnNextViewSync.current = true;
+      return scopeAppViewToWorkspace(current, nextScope);
+    });
+  }, [
+    activeApplication?.id,
+    activeProject?.id,
+    activeRelease?.id,
+    genericRouteWorkspaceError,
+    genericRouteWorkspacePending,
+    requestedRouteApplicationID,
+    requestedRouteProjectID,
+    requestedRouteReleaseID,
+    routeProjectScopeMissing,
+    routeTestID,
+    routeWorkspaceHierarchyError,
+    view,
+  ]);
+
+  const setGuardedView = useCallback(
+    (
+      next: AppView | ((current: AppView) => AppView),
+      afterCommit?: () => void,
+      options?: { preserveUnscopedWorkspace?: boolean },
+    ) => {
+      commitGuardedNavigation(runGuarded, () => {
+        const prepareView = (candidate: AppView) =>
+          options?.preserveUnscopedWorkspace
+            ? candidate
+            : mergeAppViewWithWorkspace(candidate, currentWorkspaceScope);
+        if (typeof next !== "function") {
+          const nextProjectID = projectIdForAppView(prepareView(next));
+          if (nextProjectID) selectProjectScopeForRoute(nextProjectID);
+        }
+        setView((current) => {
+          const candidate = typeof next === "function" ? next(current) : next;
+          const resolved = prepareView(candidate);
+          return normalizeReportViewForFeatureFlag(resolved, runReportEnabled);
+        });
+      }, afterCommit);
     },
-    [runGuarded, runReportEnabled],
+    [currentWorkspaceScope, runGuarded, runReportEnabled, selectProjectScopeForRoute],
+  );
+
+  const handleSidebarDomainChange = useCallback(
+    (domain: import("./types").Domain) => {
+      runGuarded(() => {
+        const targetProject = projects.find(
+          (project) => (project.domain_id || "default") === domain.id,
+        );
+        setActiveDomain(domain);
+        setView((current) =>
+          scopeAppViewToWorkspace(
+            resetProjectScopedAssetView(current, targetProject?.id),
+            targetProject?.id ? { projectId: targetProject.id } : {},
+          ),
+        );
+      });
+    },
+    [projects, runGuarded, setActiveDomain],
+  );
+  const handleSidebarProjectChange = useCallback(
+    (project: import("./types").Project) => {
+      runGuarded(() => {
+        setActiveProject(project);
+        setView((current) =>
+          scopeAppViewToWorkspace(
+            resetProjectScopedAssetView(current, project.id),
+            { projectId: project.id },
+          ),
+        );
+      });
+    },
+    [runGuarded, setActiveProject],
+  );
+  const handleSidebarApplicationChange = useCallback(
+    (application: import("./types").Application) => {
+      runGuarded(() => {
+        setActiveApplication(application);
+        setView((current) =>
+          scopeAppViewToWorkspace(
+            resetProjectScopedAssetView(current, activeProject?.id),
+            {
+              ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+              applicationId: application.id,
+            },
+          ),
+        );
+      });
+    },
+    [activeProject?.id, runGuarded, setActiveApplication],
+  );
+  const handleSidebarReleaseChange = useCallback(
+    (release: import("./types").Release) => {
+      runGuarded(() => {
+        setActiveRelease(release);
+        setView((current) =>
+          scopeAppViewToWorkspace(
+            resetProjectScopedAssetView(current, activeProject?.id),
+            {
+              ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+              ...(activeApplication?.id
+                ? { applicationId: activeApplication.id }
+                : {}),
+              releaseId: release.id,
+            },
+          ),
+        );
+      });
+    },
+    [activeApplication?.id, activeProject?.id, runGuarded, setActiveRelease],
   );
 
   const navigateToTest = useCallback(
-    (id: string, tab?: TestWorkspaceTabID) => {
-      setGuardedView(
-        tab ? { page: "test", testId: id, tab } : { page: "test", testId: id },
-      );
-      void addRecent({
-        kind: "test",
-        id,
-        name: id,
-        route: viewToLocationHash({ page: "test", testId: id }),
-      }).then(reloadRecents);
+    (id: string, tab?: TestWorkspaceTabID, projectID = activeProject?.id) => {
+      const next: Extract<AppView, { page: "test" }> = {
+        page: "test",
+        testId: id,
+        ...(tab ? { tab } : {}),
+        ...(projectID ? { projectId: projectID } : {}),
+      };
+      setGuardedView(next, () => {
+        void addRecent({
+          kind: "test",
+          id,
+          name: id,
+          route: viewToLocationHash(next),
+        }).then(reloadRecents);
+      });
     },
-    [reloadRecents, setGuardedView],
+    [activeProject?.id, reloadRecents, setGuardedView],
+  );
+  const handleTestWorkspaceTabChange = useCallback(
+    (tab: TestWorkspaceTabID | undefined, options: { replace: boolean }) => {
+      setView((current) => {
+        if (current.page !== "test" || current.tab === tab) return current;
+        replaceRouteOnNextViewSync.current = options.replace;
+        return tab
+          ? { ...current, tab }
+          : {
+              page: "test",
+              testId: current.testId,
+              ...workspaceScopeForAppView(current),
+            };
+      });
+    },
+    [],
   );
   const navigateToTestArchive = useCallback(
     (id: string) => navigateToTest(id, "archive"),
     [navigateToTest],
   );
   const navigateToRunReport = useCallback(
-    (id: string) => {
+    (id: string, projectID = activeProject?.id) => {
       if (!runReportEnabled) {
-        navigateToTest(id, "archive");
+        navigateToTest(id, "archive", projectID);
         return;
       }
-      const next = { page: "report", testId: id } as const;
-      setGuardedView(next);
-      void addRecent({
-        kind: "test",
-        id,
-        name: id,
-        route: viewToLocationHash(next),
-      }).then(reloadRecents);
+      const next: Extract<AppView, { page: "report" }> = {
+        page: "report",
+        testId: id,
+        ...(projectID ? { projectId: projectID } : {}),
+      };
+      setGuardedView(next, () => {
+        void addRecent({
+          kind: "test",
+          id,
+          name: id,
+          route: viewToLocationHash(next),
+        }).then(reloadRecents);
+      });
     },
-    [navigateToTest, reloadRecents, runReportEnabled, setGuardedView],
+    [activeProject?.id, navigateToTest, reloadRecents, runReportEnabled, setGuardedView],
   );
   const navigateToCommandCenter = useCallback(
-    (id?: string) => {
-      setGuardedView(
-        id
-          ? { page: "command-center", testId: id }
-          : { page: "command-center" },
-      );
+    (id?: string, projectID = activeProject?.id) => {
+      setGuardedView({
+        page: "command-center",
+        ...(id ? { testId: id } : {}),
+        ...(projectID ? { projectId: projectID } : {}),
+      });
     },
-    [setGuardedView],
+    [activeProject?.id, setGuardedView],
   );
   const openCompletedRun = runReportEnabled
     ? navigateToRunReport
     : navigateToTestArchive;
-  const activePage: NavPage =
-    view.page === "test"
-      ? "tests"
-      : view.page === "report"
-        ? "results"
-        : view.page === "swagger" || view.page === "repository-guide"
-          ? "docs"
-          : view.page === "recorder-panel"
-            ? "scripts"
-            : view.page;
+  const activePage = navPageForAppView(view);
 
-  const navigateToScriptEdit = (scriptId: string) => {
-    setGuardedView({ page: "scripts", mode: "edit", scriptId });
-    void addRecent({
-      kind: "script",
-      id: scriptId,
-      name: scriptId,
-      route: viewToLocationHash({ page: "scripts", mode: "edit", scriptId }),
-    }).then(reloadRecents);
+  const navigateToScriptEdit = (scriptId: string, projectID = activeProject?.id) => {
+    const next: Extract<AppView, { page: "scripts" }> = {
+      page: "scripts",
+      mode: "edit",
+      scriptId,
+      ...(projectID ? { projectId: projectID } : {}),
+    };
+    setGuardedView(next, () => {
+      void addRecent({
+        kind: "script",
+        id: scriptId,
+        name: scriptId,
+        route: viewToLocationHash(next),
+      }).then(reloadRecents);
+    });
   };
   const navigateToScenarioBuilder = () =>
     setGuardedView({ page: "tests", scenarioView: "builder" });
-  const navigateToNewTestForScenario = (scenarioId: string) => {
-    setView({ page: "new-test", scenarioId });
+  const navigateToNewTestForScenario = (
+    scenarioId: string,
+    projectID = activeProject?.id,
+  ) => {
+    setGuardedView({
+      page: "new-test",
+      scenarioId,
+      ...(projectID ? { projectId: projectID } : {}),
+    });
   };
 
   const navigateToScheduleForDate = useCallback(
@@ -1034,8 +2047,8 @@ function AppShell({
       setScriptsNavigationVersion((version) => version + 1);
       setScriptsTopbarState(null);
     }
-    setView({ page });
-  }, []);
+    setView(mergeAppViewWithWorkspace({ page }, currentWorkspaceScope));
+  }, [currentWorkspaceScope]);
 
   const handleNavigate = useCallback(
     (page: NavPage) => {
@@ -1060,12 +2073,17 @@ function AppShell({
             setNativeImportRequest(request);
             setScriptsNavigationVersion((version) => version + 1);
             setScriptsTopbarState(null);
-            setView({ page: "scripts" });
+            setView(
+              mergeAppViewWithWorkspace(
+                { page: "scripts" },
+                currentWorkspaceScope,
+              ),
+            );
           });
         },
       );
     },
-    [runGuarded],
+    [currentWorkspaceScope, runGuarded],
   );
 
   // Desktop workspace hub wiring.
@@ -1091,7 +2109,9 @@ function AppShell({
   const handleOpenRecent = useCallback(
     (item: RecentItem) => {
       if (item.route) {
-        setGuardedView(parseAppViewFromHash(item.route));
+        setGuardedView(parseAppViewFromHash(item.route), undefined, {
+          preserveUnscopedWorkspace: true,
+        });
       }
     },
     [setGuardedView],
@@ -1141,14 +2161,22 @@ function AppShell({
   const handleDesktopOpenURL = useCallback(
     (url: string) => {
       const nextView = parseDesktopDeepLink(url);
-      if (nextView) setGuardedView(nextView);
+      if (nextView) {
+        setGuardedView(nextView, undefined, {
+          preserveUnscopedWorkspace: true,
+        });
+      }
     },
     [setGuardedView],
   );
   const handleDesktopOpenRecent = useCallback(
     (route: string) => {
       // Native File > Open Recent click → navigate to the recent's route.
-      if (route) setGuardedView(parseAppViewFromHash(route));
+      if (route) {
+        setGuardedView(parseAppViewFromHash(route), undefined, {
+          preserveUnscopedWorkspace: true,
+        });
+      }
     },
     [setGuardedView],
   );
@@ -1193,10 +2221,21 @@ function AppShell({
         if (current.page !== "tests") return current;
         const next: AppView =
           scenarioView === "builder"
-            ? { page: "tests", scenarioView: "builder" }
+            ? {
+                page: "tests",
+                scenarioView: "builder",
+                ...workspaceScopeForAppView(current),
+              }
             : scenarioView === "plans"
-              ? { page: "tests", scenarioView: "plans" }
-              : { page: "tests" };
+              ? {
+                  page: "tests",
+                  scenarioView: "plans",
+                  ...workspaceScopeForAppView(current),
+                }
+              : {
+                  page: "tests",
+                  ...workspaceScopeForAppView(current),
+                };
         return viewToLocationHash(current) === viewToLocationHash(next)
           ? current
           : next;
@@ -1221,8 +2260,15 @@ function AppShell({
     },
     [runGuarded, setGuardedView],
   );
-  const navigateBackToTests = useCallback(
-    () => navigateBack("tests"),
+  const navigateBackFromTest = useCallback(
+    () => {
+      const current = viewRef.current;
+      navigateBack(
+        current.page === "test"
+          ? navPageForAppView(current)
+          : "command-center",
+      );
+    },
     [navigateBack],
   );
 
@@ -1465,7 +2511,17 @@ function AppShell({
       return;
     }
 
+    const replaceCurrentRoute = replaceRouteOnNextViewSync.current;
+    replaceRouteOnNextViewSync.current = false;
     if (window.location.hash !== nextHash) {
+      if (replaceCurrentRoute) {
+        window.history.replaceState(
+          withAppHistoryIndex(window.history.state, appHistoryIndex.current),
+          "",
+          nextHash,
+        );
+        return;
+      }
       const nextHistoryIndex = appHistoryIndex.current + 1;
       appHistoryIndex.current = nextHistoryIndex;
       popstateHashToIgnore.current = null;
@@ -1481,7 +2537,9 @@ function AppShell({
     enabled: desktopSurface,
     route: viewToLocationHash(view),
     restoreRoute: useCallback(
-      (route) => setGuardedView(parseAppViewFromHash(route)),
+      (route) => setGuardedView(parseAppViewFromHash(route), undefined, {
+        preserveUnscopedWorkspace: true,
+      }),
       [setGuardedView],
     ),
   });
@@ -1498,17 +2556,43 @@ function AppShell({
     };
   }, [desktopHandlerCoordinator, desktopShellHandlers]);
 
-  const setActiveDomain = useCallback((domain: import("./types").Domain) => {
-    setActiveDomainState(domain);
-    writeStoredString("apexload.activeDomainId", domain.id);
-  }, []);
-
   const refreshDomains = useCallback(
-    async (preferredId?: string) => {
+    async (
+      preferredId?: string,
+      reconciliation?: {
+        preserveDomain?: import("./types").Domain;
+        removeDomainId?: string;
+      },
+    ) => {
+      const requestGeneration = ++domainsRequestGenerationRef.current;
+      const requestIsCurrent = () =>
+        isCurrentCatalogRequest(
+          requestGeneration,
+          domainsRequestGenerationRef.current,
+        );
+      const reconcile = (catalog: import("./types").Domain[]) => {
+        const withoutRemoved = reconciliation?.removeDomainId
+          ? catalog.filter(
+              (domain) => domain.id !== reconciliation.removeDomainId,
+            )
+          : catalog;
+        const preserved = reconciliation?.preserveDomain;
+        const merged = preserved
+          ? withoutRemoved.some((domain) => domain.id === preserved.id)
+            ? withoutRemoved.map((domain) =>
+                domain.id === preserved.id ? preserved : domain,
+              )
+            : [...withoutRemoved, preserved]
+          : withoutRemoved;
+        return [...merged].sort((left, right) => left.name.localeCompare(right.name));
+      };
       try {
         const response = await repositoryApi.listDomains();
-        const next = response.domains || [];
+        if (!requestIsCurrent()) return domainsRef.current;
+        const next = reconcile(response.domains || []);
         setDomains(next);
+        setDomainsLoaded(true);
+        setDomainsError("");
         setActiveDomainState((prev) => {
           const storedId = readStoredString("apexload.activeDomainId");
           const selected =
@@ -1523,17 +2607,23 @@ function AppShell({
           return selected;
         });
         return next;
-      } catch {
-        const fallback: import("./types").Domain = {
-          id: "default",
-          name: "Default Domain",
-          created_at: new Date(0).toISOString(),
-          updated_at: new Date(0).toISOString(),
-        };
-        setDomains([fallback]);
-        setActiveDomainState(fallback);
-        writeStoredString("apexload.activeDomainId", fallback.id);
-        return [fallback];
+      } catch (cause: unknown) {
+        if (!requestIsCurrent()) return domainsRef.current;
+        const message =
+          cause instanceof Error && cause.message
+            ? `Unable to load domains: ${cause.message}`
+            : "Unable to load domains.";
+        setDomains((current) => reconcile(current));
+        setDomainsLoaded(true);
+        setDomainsError(message);
+        if (reconciliation?.removeDomainId) {
+          setActiveDomainState((current) => {
+            if (current?.id !== reconciliation.removeDomainId) return current;
+            removeStoredItem("apexload.activeDomainId");
+            return null;
+          });
+        }
+        throw cause;
       }
     },
     [repositoryApi],
@@ -1542,45 +2632,73 @@ function AppShell({
   const refreshRepository = useCallback(async () => {
     const domainID = activeDomain?.id || "";
     const requestGeneration = ++repositoryRequestGenerationRef.current;
-    if (!domainID) {
-      setApplicationRepository(null);
-      setRepositoryCategories([]);
-      return;
-    }
-    try {
-      const [repo, categoryResponse] = await Promise.all([
-        repositoryApi.getApplicationRepository(domainID),
-        repositoryApi.listRepositoryCategories(domainID),
-      ]);
-      if (
-        !isCurrentRepositoryRequest(
-          requestGeneration,
-          domainID,
-          repositoryRequestGenerationRef.current,
-          activeDomainIDRef.current,
-        )
+    if (!domainID) return;
+
+    const [repositoryResult, categoriesResult] = await Promise.allSettled([
+      repositoryApi.getApplicationRepository(domainID),
+      repositoryApi.listRepositoryCategories(domainID),
+    ]);
+    if (
+      !isCurrentRepositoryRequest(
+        requestGeneration,
+        domainID,
+        repositoryRequestGenerationRef.current,
+        activeDomainIDRef.current,
       )
-        return;
-      setApplicationRepository(repo);
-      setRepositoryCategories(categoryResponse.categories || []);
-    } catch (error) {
-      if (
-        isCurrentRepositoryRequest(
-          requestGeneration,
-          domainID,
-          repositoryRequestGenerationRef.current,
-          activeDomainIDRef.current,
-        )
-      ) {
-        setApplicationRepository(null);
-        setRepositoryCategories([]);
-      }
-      throw error;
+    )
+      return;
+
+    const patch: RepositoryCatalogRefreshPatch = {};
+    if (repositoryResult.status === "fulfilled") {
+      patch.repository = repositoryResult.value;
     }
+    if (categoriesResult.status === "fulfilled") {
+      const reconciliation = reconcileRepositoryCategorySnapshot(
+        domainID,
+        categoriesResult.value.categories || [],
+        repositoryCategoryMutationLedgerRef.current,
+      );
+      for (const categoryID of reconciliation.acknowledgedCommittedIDs) {
+        repositoryCategoryMutationLedgerRef.current.committedByID.delete(categoryID);
+      }
+      patch.categories = reconciliation.categories;
+    }
+    setRepositoryCatalogState((current) =>
+      mergeRepositoryCatalogRefresh(current, domainID, patch),
+    );
+
+    const failedResult = [repositoryResult, categoriesResult].find(
+      (result) => result.status === "rejected",
+    );
+    if (failedResult?.status === "rejected") throw failedResult.reason;
   }, [activeDomain?.id, repositoryApi]);
 
+  const createRepositoryCategory = useCallback(
+    async (
+      domainID: string,
+      data: { name: string; description?: string; sort_order?: number },
+    ) => {
+      const category = await repositoryApi.createRepositoryCategory(domainID, data);
+      recordCommittedRepositoryCategory(
+        repositoryCategoryMutationLedgerRef.current,
+        category,
+      );
+      setRepositoryCatalogState((current) => {
+        const previousCategories = current.categoriesByDomain[domainID] || [];
+        return mergeRepositoryCatalogRefresh(current, domainID, {
+          categories: [
+            ...previousCategories.filter((candidate) => candidate.id !== category.id),
+            category,
+          ],
+        });
+      });
+      return category;
+    },
+    [repositoryApi],
+  );
+
   useEffect(() => {
-    void refreshDomains();
+    void refreshDomains().catch(() => undefined);
   }, [refreshDomains]);
 
   useEffect(() => {
@@ -1593,17 +2711,18 @@ function AppShell({
       !selectedProject ||
       (selectedProject.domain_id || "default") !== activeDomain.id
     ) {
-      setActiveProject(domainProjects[0]);
+      // Provider initialization is a fallback, not a user navigation. Keep an
+      // explicit route workspace authoritative until its reconciliation effect
+      // selects the requested project.
+      setOuterActiveProject(domainProjects[0]);
     }
-  }, [activeDomain, domainProjects, selectedProject, setActiveProject]);
+  }, [activeDomain, domainProjects, selectedProject, setOuterActiveProject]);
 
-  const applicationRepository =
-    loadedApplicationRepository?.domain_id === activeDomain?.id
-      ? loadedApplicationRepository
-      : null;
-  const repositoryCategories = loadedRepositoryCategories.filter(
-    (category) => category.domain_id === activeDomain?.id,
-  );
+  const { repository: applicationRepository, categories: repositoryCategories } =
+    repositoryCatalogForDomain(
+      repositoryCatalogState,
+      activeDomain?.id,
+    );
 
   useEffect(() => {
     let cancelled = false;
@@ -1650,7 +2769,10 @@ function AppShell({
     }
     setView((current) => {
       if (current.page === "settings") {
-        return { page: "dashboard" };
+        return scopeAppViewToWorkspace(
+          { page: "dashboard" },
+          workspaceScopeForAppView(current),
+        );
       }
       return current;
     });
@@ -1662,7 +2784,12 @@ function AppShell({
       view.page === "access" &&
       !canUseAccessWorkspace
     ) {
-      setView({ page: "dashboard" });
+      setView((current) =>
+        scopeAppViewToWorkspace(
+          { page: "dashboard" },
+          workspaceScopeForAppView(current),
+        ),
+      );
     }
   }, [canUseAccessWorkspace, effectiveAccessLoaded, view.page]);
 
@@ -1785,7 +2912,11 @@ function AppShell({
 
   // The recorder control panel renders chrome-less so it works as a compact
   // companion popup window next to the recording browser.
-  if (view.page === "recorder-panel" && view.sessionId) {
+  if (
+    view.page === "recorder-panel" &&
+    view.sessionId &&
+    !routeAssetScopeBlocked
+  ) {
     return (
       <ScopedAppContextProviders
         projectValue={scopedProjectContextValue}
@@ -1811,17 +2942,17 @@ function AppShell({
           authStatus={authStatus}
           projects={domainProjects}
           activeProject={activeProject}
-          onProjectChange={setActiveProject}
+          onProjectChange={handleSidebarProjectChange}
           onCreateProject={createAndSelectProject}
           domains={domains}
           activeDomain={activeDomain}
-          onDomainChange={setActiveDomain}
+          onDomainChange={handleSidebarDomainChange}
           applications={applications}
           releases={releases}
           activeApplication={activeApplication}
           activeRelease={activeRelease}
-          onApplicationChange={setActiveApplication}
-          onReleaseChange={setActiveRelease}
+          onApplicationChange={handleSidebarApplicationChange}
+          onReleaseChange={handleSidebarReleaseChange}
           onCreateApplication={createAndSelectApplication}
           showAccess={canUseAccessWorkspace}
         />
@@ -1867,10 +2998,12 @@ function AppShell({
                     <a
                       key={run.id}
                       className={`topbar-run-chip ${tone}`}
-                      href={viewToLocationHash({
-                        page: "command-center",
-                        testId: run.id,
-                      })}
+                      href={viewToLocationHash(
+                        mergeAppViewWithWorkspace(
+                          { page: "command-center", testId: run.id },
+                          currentWorkspaceScope,
+                        ),
+                      )}
                       title={`Open ${run.name} (${statusLabel})`}
                       onClick={(event) => {
                         event.preventDefault();
@@ -1885,7 +3018,12 @@ function AppShell({
                 {hiddenTopbarRunCount > 0 && (
                   <a
                     className="topbar-run-chip topbar-run-more"
-                    href={viewToLocationHash({ page: "tests" })}
+                    href={viewToLocationHash(
+                      mergeAppViewWithWorkspace(
+                        { page: "tests" },
+                        currentWorkspaceScope,
+                      ),
+                    )}
                     onClick={(event) => {
                       event.preventDefault();
                       setGuardedView({ page: "tests" });
@@ -1979,12 +3117,66 @@ function AppShell({
               {desktopBrowserLaunchError}
             </div>
           )}
+          {(projectsError || domainsError) && (
+            <div className="main-topbar-feedback" role="alert">
+              <span>{[projectsError, domainsError].filter(Boolean).join(" ")}</span>
+              <button
+                className="btn btn-sm btn-secondary"
+                type="button"
+                onClick={() => {
+                  void Promise.allSettled([refreshProjects(), refreshDomains()]);
+                }}
+              >
+                Retry workspace catalogs
+              </button>
+            </div>
+          )}
           <LazyLoadBoundary
             key={activeRouteHash}
             title="This dashboard page could not be loaded."
           >
             <Suspense fallback={<div className="page">Loading page...</div>}>
-              {view.page === "dashboard" && desktopSurface && (
+              {routeAssetScopeBlocked && (
+                <div
+                  className={routeAssetScopeError ? "error-message" : "page-loading"}
+                  role={routeAssetScopeError ? "alert" : "status"}
+                >
+                  {routeAssetScopeError ||
+                    (unscopedRouteAsset
+                      ? "Resolving the asset's project workspace…"
+                      : scopedRouteScopePending
+                        ? "Verifying the asset's project workspace…"
+                      : genericRouteWorkspacePending
+                        ? "Restoring the application and release workspace…"
+                      : routeTestScopePending
+                        ? "Loading the run's application and release workspace…"
+                        : "Loading project workspace…")}
+                  {routeAssetOwnerScopeError && recoverableRouteAsset && (
+                    <div>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        type="button"
+                        onClick={() =>
+                          setGuardedView(
+                            recoveryViewForUnscopedProjectAsset(
+                              recoverableRouteAsset,
+                            ),
+                          )
+                        }
+                      >
+                        {recoverableRouteAsset.kind === "script"
+                          ? "Open Script Library"
+                          : recoverableRouteAsset.kind === "scenario"
+                            ? "Open Scenario Library"
+                            : "Open Results"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {view.page === "dashboard" &&
+                desktopSurface &&
+                !routeAssetScopeBlocked && (
                 <DesktopHome
                   status={desktopStatus}
                   startupError={desktopStartupError}
@@ -2000,7 +3192,7 @@ function AppShell({
                   onDropError={setDesktopImportError}
                 />
               )}
-              {view.page === "dashboard" && (
+              {view.page === "dashboard" && !routeAssetScopeBlocked && (
                 <DashboardPage
                   testStatuses={testStatuses}
                   metricsHistory={metricsHistory}
@@ -2012,7 +3204,7 @@ function AppShell({
                   snapshotAudience={snapshotAudience}
                 />
               )}
-              {view.page === "command-center" && (
+              {view.page === "command-center" && !routeAssetScopeBlocked && (
                 <CommandCenterPrototype
                   testId={view.testId}
                   history={view.testId ? metricsHistory[view.testId] || [] : []}
@@ -2034,7 +3226,7 @@ function AppShell({
                   onOpenResults={() => handleNavigate("results")}
                 />
               )}
-              {view.page === "tests" && (
+              {view.page === "tests" && !routeAssetScopeBlocked && (
                 <TestHub
                   applicationRepository={applicationRepository}
                   initialView={view.scenarioView}
@@ -2046,7 +3238,7 @@ function AppShell({
                   onScenarioViewChange={handleScenarioViewChange}
                 />
               )}
-              {view.page === "new-test" && (
+              {view.page === "new-test" && !routeAssetScopeBlocked && (
                 <NewTestPage
                   activeApplication={activeApplication}
                   applicationRepository={applicationRepository}
@@ -2066,18 +3258,19 @@ function AppShell({
                   onOpenScenarioBuilder={navigateToScenarioBuilder}
                 />
               )}
-              {view.page === "test" && (
+              {view.page === "test" && !routeAssetScopeBlocked && (
                 <TestExecution
                   testId={view.testId}
                   history={metricsHistory[view.testId] || []}
                   initialWorkspaceTabId={view.tab}
-                  onBack={navigateBackToTests}
+                  onBack={navigateBackFromTest}
                   onEditScript={navigateToScriptEdit}
+                  onWorkspaceTabChange={handleTestWorkspaceTabChange}
                   onSelectTest={navigateToTest}
                   onOpenCommandCenter={navigateToCommandCenter}
                 />
               )}
-              {view.page === "report" && (
+              {view.page === "report" && !routeAssetScopeBlocked && (
                 <RunReportPage
                   testId={view.testId}
                   initialLens={view.lens}
@@ -2089,12 +3282,13 @@ function AppShell({
                     setGuardedView({
                       page: "report",
                       testId: view.testId,
+                      ...(view.projectId ? { projectId: view.projectId } : {}),
                       ...next,
                     })
                   }
                 />
               )}
-              {view.page === "scripts" && (
+              {view.page === "scripts" && !routeAssetScopeBlocked && (
                 <ScriptsPage
                   key={`scripts-${scriptsNavigationVersion}-${scriptMode || "list"}-${scriptEditId || ""}`}
                   applicationRepository={applicationRepository}
@@ -2109,7 +3303,7 @@ function AppShell({
                   onAuthoringStateChange={handleScriptsAuthoringStateChange}
                 />
               )}
-              {view.page === "results" && (
+              {view.page === "results" && !routeAssetScopeBlocked && (
                 <ResultsPage
                   testStatuses={testStatuses}
                   onSelectTest={navigateToTest}
@@ -2120,9 +3314,10 @@ function AppShell({
                   activeRelease={activeRelease}
                 />
               )}
-              {(view.page === "monitoring" ||
-                view.page === "fleet" ||
-                view.page === "schedules") && (
+              {!routeAssetScopeBlocked &&
+                (view.page === "monitoring" ||
+                  view.page === "fleet" ||
+                  view.page === "schedules") && (
                 <MonitoringPage
                   connectionState={connectionState}
                   telemetryDiagnostics={telemetryDiagnostics}
@@ -2136,7 +3331,7 @@ function AppShell({
                   fleetEventSignal={fleetEventSignal}
                 />
               )}
-              {view.page === "docs" && (
+              {view.page === "docs" && !routeAssetScopeBlocked && (
                 <ApiGuidePage
                   activePage={view.guidePage}
                   onNavigate={handleNavigate}
@@ -2145,17 +3340,17 @@ function AppShell({
                   effectiveAccessError={effectiveAccessError}
                 />
               )}
-              {view.page === "swagger" && (
+              {view.page === "swagger" && !routeAssetScopeBlocked && (
                 <SwaggerDocsPage
                   effectiveAccessResources={effectiveAccessResources}
                   effectiveAccessLoaded={effectiveAccessLoaded}
                   effectiveAccessError={effectiveAccessError}
                 />
               )}
-              {view.page === "repository-guide" && (
+              {view.page === "repository-guide" && !routeAssetScopeBlocked && (
                 <RepositoryGuidePage effectiveAccessResources={effectiveAccessResources} />
               )}
-              {view.page === "repository" && (
+              {view.page === "repository" && !routeAssetScopeBlocked && (
                 <ApplicationRepositoryPage
                   domains={domains}
                   activeDomain={activeDomain}
@@ -2166,17 +3361,21 @@ function AppShell({
                   canManageRepository={canManageRepository}
                   canManageProjects={canManageRepositoryProjects}
                   canManageReleases={canManageRepositoryReleases}
-                  onDomainChange={setActiveDomain}
+                  onDomainChange={handleSidebarDomainChange}
                   onRepositoryRefresh={refreshRepository}
+                  onRepositoryCategoryCreate={createRepositoryCategory}
                   onProjectsRefresh={refreshProjects}
                   onProjectCreated={createAndSelectProject}
+					onProjectDelete={deleteProject}
                   onOpenScript={navigateToScriptEdit}
-                  onOpenTest={navigateToTest}
+                  onOpenTest={(testID, projectID) =>
+                    navigateToTest(testID, undefined, projectID)
+                  }
                   onOpenCommandCenter={navigateToCommandCenter}
                   onCreateTestFromScenario={navigateToNewTestForScenario}
                 />
               )}
-              {view.page === "access" && (
+              {view.page === "access" && !routeAssetScopeBlocked && (
                 <AccessPage
                   projects={projects}
                   domains={domains}
@@ -2190,7 +3389,7 @@ function AppShell({
                   accessReviewRefreshSignal={accessReviewSignal}
                 />
               )}
-              {view.page === "settings" && (
+              {view.page === "settings" && !routeAssetScopeBlocked && (
                 <SettingsPage
                   theme={theme}
                   onThemeChange={setTheme}
@@ -2201,6 +3400,7 @@ function AppShell({
                   applicationRepository={applicationRepository}
                   onDomainChange={setActiveDomain}
                   onDomainsRefresh={refreshDomains}
+                  onProjectUpdate={updateOuterProject}
                 />
               )}
             </Suspense>

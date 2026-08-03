@@ -227,7 +227,7 @@ func TestObjectRepositoryFromScript(t *testing.T) {
 		},
 	})
 
-	body := `{"script_id":"` + stored.ID + `"}`
+	body := `{"project_id":"` + stored.ProjectID + `","script_id":"` + stored.ID + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/object-repositories/from-script", strings.NewReader(body))
 	resp := httptest.NewRecorder()
 	server.handleObjectRepositoryFromScript(resp, req)
@@ -246,6 +246,17 @@ func TestObjectRepositoryFromScript(t *testing.T) {
 	}
 	if object.BestConfidence != 88 || len(object.Candidates) != 2 || object.SourceScriptID != stored.ID {
 		t.Errorf("ranking/source not carried: best=%d candidates=%d source=%q", object.BestConfidence, len(object.Candidates), object.SourceScriptID)
+	}
+
+	// The expected dashboard scope is part of the mutation contract. A script
+	// from another selected project must be rejected before another repository
+	// can be created or the source script can be rebound.
+	mismatchBody := `{"project_id":"different-project","script_id":"` + stored.ID + `","bind_script":true}`
+	mismatch := httptest.NewRequest(http.MethodPost, "/api/v1/object-repositories/from-script", strings.NewReader(mismatchBody))
+	mismatchResp := httptest.NewRecorder()
+	server.handleObjectRepositoryFromScript(mismatchResp, mismatch)
+	if mismatchResp.Code != http.StatusConflict {
+		t.Fatalf("expected 409 for a cross-project import, got %d: %s", mismatchResp.Code, mismatchResp.Body.String())
 	}
 
 	// Unknown script → 404.

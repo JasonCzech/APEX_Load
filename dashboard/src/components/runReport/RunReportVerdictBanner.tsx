@@ -6,7 +6,11 @@ import { effectiveReportVerdict } from './runReportModel'
 interface Props {
   report: RunArchiveReport | null
   annotations: ReportAnnotations | null
+  status: string
+  explanation: string
   saving: boolean
+  onStatusChange: (status: string) => void
+  onExplanationChange: (explanation: string) => void
   onSaveOverride: (status: string, explanation: string) => Promise<boolean>
 }
 
@@ -16,17 +20,22 @@ function verdictTone(verdict: ReturnType<typeof effectiveReportVerdict>) {
   return 'pass'
 }
 
-export default function RunReportVerdictBanner({ report, annotations, saving, onSaveOverride }: Props) {
+export default function RunReportVerdictBanner({
+  report,
+  annotations,
+  status,
+  explanation,
+  saving,
+  onStatusChange,
+  onExplanationChange,
+  onSaveOverride,
+}: Props) {
   const verdict = effectiveReportVerdict(report, annotations)
-  const [status, setStatus] = useState(annotations?.verdict_override || verdict.status)
-  const [explanation, setExplanation] = useState(annotations?.verdict_explanation || verdict.explanation)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    setStatus(annotations?.verdict_override || verdict.status)
-    setExplanation(annotations?.verdict_explanation || verdict.explanation)
     setMessage('')
-  }, [annotations?.verdict_explanation, annotations?.verdict_override, verdict.explanation, verdict.status])
+  }, [explanation, status])
 
   const save = async () => {
     setMessage('')
@@ -54,7 +63,7 @@ export default function RunReportVerdictBanner({ report, annotations, saving, on
         <div className="run-report-override-grid">
           <label>
             <span>Status</span>
-            <select value={status} onChange={event => setStatus(event.currentTarget.value)}>
+            <select value={status} onChange={event => onStatusChange(event.currentTarget.value)} disabled={saving}>
               <option value="Pass">Pass</option>
               <option value="Conditional Pass">Conditional Pass</option>
               <option value="Fail">Fail</option>
@@ -62,7 +71,7 @@ export default function RunReportVerdictBanner({ report, annotations, saving, on
           </label>
           <label>
             <span>Explanation</span>
-            <textarea value={explanation} onChange={event => setExplanation(event.currentTarget.value)} rows={3} />
+            <textarea value={explanation} onChange={event => onExplanationChange(event.currentTarget.value)} rows={3} disabled={saving} />
           </label>
           <div className="run-report-override-actions">
             <button className="btn btn-sm btn-primary" type="button" onClick={() => void save()} disabled={saving}>

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ResultsPage from './ResultsPage'
 import { buildComparisonSummarySeries, comparisonChartYAxisLabel } from './resultsComparisonChartModel'
 import { downloadBlob } from '../utils/fileUtils'
+import type { WailsDesktopBridge } from '../desktop/desktopBridge'
 
 const apiMock = {
   listTests: vi.fn(),
@@ -49,6 +50,8 @@ vi.mock('../utils/fileUtils', () => ({
   disconnect() {}
 } as typeof ResizeObserver
 
+type BridgeWindow = typeof window & { go?: { main?: { App?: WailsDesktopBridge } } }
+
 describe('ResultsPage', () => {
   let container: HTMLDivElement
   let root: Root
@@ -82,7 +85,7 @@ describe('ResultsPage', () => {
         },
       ],
       count: 2,
-      total: 1200,
+      total: 2,
       limit: 1000,
       offset: 0,
     })
@@ -258,7 +261,9 @@ describe('ResultsPage', () => {
         name: 'Team AKS',
         base_url: 'https://apexload.example.test',
         default_project_id: 'project-1',
-		project_mappings: { 'project-1': 'project-1' },
+        project_mappings: { 'project-1': 'project-1' },
+        application_mappings: { 'app-1': 'remote-storefront-app' },
+        release_mappings: { 'rel-1': 'remote-rel-1', 'rel-2': 'remote-rel-2' },
         auth_method: 'service_account',
         credential_configured: true,
         status: 'healthy',
@@ -314,7 +319,9 @@ describe('ResultsPage', () => {
       root.unmount()
     })
     container.remove()
+    delete (window as BridgeWindow).go
     vi.useRealTimers()
+    vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
 
@@ -1194,7 +1201,12 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('Release SLA Gate')
     expect(container.textContent).not.toContain('External Results')
     expect(apiMock.getReleaseSLAGovernance).not.toHaveBeenCalled()
-    expect(apiMock.listExternalResultImports).not.toHaveBeenCalled()
+    expect(apiMock.listExternalResultImports).toHaveBeenCalledWith(expect.objectContaining({
+      application_id: 'app-1',
+      limit: 1000,
+      offset: 0,
+      release_id: 'rel-1',
+    }))
     expect(container.textContent).toContain('Results Library')
     expect(container.querySelector('.results-filter-bar')).toBeNull()
     expect(selectByLabel(container, 'Associated Release')?.value).toBe('rel-1')
@@ -1211,7 +1223,7 @@ describe('ResultsPage', () => {
       release_id: 'rel-1',
       summary: true,
     }))
-    expect(container.querySelector('.results-truncation-status')?.textContent).toContain('Showing the newest 2 of 1,200 local results')
+    expect(container.querySelector('.results-truncation-status')).toBeNull()
     expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Library Sources'])
     const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
       .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
@@ -1248,57 +1260,337 @@ describe('ResultsPage', () => {
     expect(sourceRowNamed(container, 'iPhone Checkout').textContent).not.toContain('Root Cause')
   })
 
+  it('reconciles partial bulk deletes, hides confirmed deletions, and retains only failed selections', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    apiMock.deleteTest.mockImplementation(async (id: string) => {
+      if (id === 'run-b') throw new Error('result is locked')
+    })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('tbody input[type="checkbox"]'))
+    await act(async () => {
+      checkboxes.forEach(checkbox => {
+        checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    })
+    expect(buttonByText(container, 'Delete Selected (2)')).toBeDefined()
+
+    await act(async () => {
+      buttonByText(container, 'Delete Selected (2)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushPromises()
+
+    expect(apiMock.deleteTest).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('iPhone Checkout')
+    expect(container.textContent).toContain('iPad Checkout')
+    expect(container.textContent).toContain('Deleted 1 of 2 selected results. run-b: result is locked')
+    expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('1 selected')
+    expect(buttonByText(container, 'Delete Selected (1)')).toBeDefined()
+  })
+
+  it('coalesces repeated row delete clicks while the first request is in flight', async () => {
+    const confirmDelete = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmDelete)
+    let resolveDelete: (() => void) | undefined
+    apiMock.deleteTest.mockReturnValue(new Promise<void>(resolve => { resolveDelete = resolve }))
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const row = sourceRowNamed(container, 'iPhone Checkout')
+    const deleteButton = buttonInRow(row, 'Delete')
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(confirmDelete).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteTest).toHaveBeenCalledTimes(1)
+    expect(buttonInRow(row, 'Deleting…')?.disabled).toBe(true)
+
+    await act(async () => resolveDelete?.())
+    await flushPromises()
+  })
+
+  it('does not resurrect a deleted result when an older paginated tail resolves later', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const runA = {
+      id: 'run-a',
+      name: 'iPhone Checkout',
+      status: 'COMPLETE',
+      total_vusers: 10,
+      duration: '5m',
+      created_at: '2026-05-12T18:00:00Z',
+      ended_at: '2026-05-12T18:05:00Z',
+      archive: { transaction_count: 1000 },
+    }
+    const runB = {
+      id: 'run-b',
+      name: 'iPad Checkout',
+      status: 'COMPLETE',
+      total_vusers: 12,
+      duration: '5m',
+      created_at: '2026-05-12T19:00:00Z',
+      ended_at: '2026-05-12T19:05:00Z',
+      archive: { transaction_count: 1100 },
+    }
+    let deleted = false
+    let resolveStaleTail: ((value: { tests: typeof runA[]; total: number; count: number; limit: number; offset: number }) => void) | undefined
+    apiMock.listTests.mockImplementation(async (params: { offset?: number }) => {
+      if ((params.offset || 0) > 0) {
+        return new Promise(resolve => { resolveStaleTail = resolve })
+      }
+      const tests = deleted ? [runB] : [runA, runB]
+      return { tests, total: deleted ? 1 : 3, count: tests.length, limit: 1000, offset: 0 }
+    })
+    apiMock.deleteTest.mockImplementation(async () => { deleted = true })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+    expect(resolveStaleTail).toBeDefined()
+
+    const deleteButton = buttonInRow(sourceRowNamed(container, 'iPhone Checkout'), 'Delete')
+    await act(async () => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(container.textContent).not.toContain('iPhone Checkout')
+
+    await act(async () => {
+      resolveStaleTail?.({ tests: [runA], total: 3, count: 1, limit: 1000, offset: 2 })
+      await Promise.resolve()
+    })
+    await flushPromises()
+
+    expect(container.textContent).not.toContain('iPhone Checkout')
+    expect(container.textContent).toContain('iPad Checkout')
+  })
+
+  it('prunes destructive selections when filters hide the selected row', async () => {
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const checkbox = container.querySelector<HTMLInputElement>('input[aria-label="Select iPhone Checkout for comparison"]')
+    await act(async () => {
+      checkbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      checkbox?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(buttonByText(container, 'Delete Selected (1)')).toBeDefined()
+
+    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'iPad Checkout')
+    await flushPromises()
+
+    expect(container.textContent).not.toContain('Delete Selected')
+    expect(container.querySelector('.results-table-selection-toolbar')?.textContent).toContain('0 selected')
+    expect(apiMock.deleteTest).not.toHaveBeenCalled()
+  })
+
   it('filters unified local and remote result sources by active release and exposes remote actions', async () => {
-    libraryApiMock.remoteCatalog.mockResolvedValue({
-      remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
-      catalog: {
-        items: [
-          {
-            kind: 'result',
-            id: 'remote-run-a',
-            name: 'Remote ID Match',
-            project_id: 'project-1',
-            release_id: 'rel-1',
-            release_name: 'Sprint 24',
-            status: 'COMPLETE',
-            content_hash: 'remoteidmatch123456',
-            execution_run_date: '2026-05-13T12:00:00Z',
-            updated_at: '2026-05-13T12:05:00Z',
-            has_archive: true,
-            sync_status: 'synced',
-            local_item_id: 'run-a',
-            remote_item_id: 'remote-run-a',
-          },
-          {
-            kind: 'result',
-            id: 'remote-name-match',
-            name: 'Remote Name Match',
-            project_id: 'project-1',
-            release_name: 'Sprint 24',
-            status: 'FAILED',
-            content_hash: 'remotenamematch123456',
-            execution_run_date: '2026-05-13T13:00:00Z',
-            updated_at: '2026-05-13T13:05:00Z',
-            has_archive: false,
-            sync_status: 'host only',
-          },
-          {
-            kind: 'result',
-            id: 'remote-other-release',
-            name: 'Remote Other Release',
-            project_id: 'project-1',
-            release_id: 'rel-2',
-            release_name: 'Sprint 25',
-            status: 'COMPLETE',
-            content_hash: 'remoteother123456',
-            execution_run_date: '2026-05-14T12:00:00Z',
-            updated_at: '2026-05-14T12:05:00Z',
-            has_archive: true,
-            sync_status: 'host only',
-          },
-        ],
-        count: 3,
+    const activeReleaseTests = [
+      {
+        id: 'run-a',
+        name: 'iPhone Checkout',
+        status: 'COMPLETE',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        created_at: '2026-05-12T18:00:00Z',
+        archive: { transaction_count: 1000 },
       },
+      {
+        id: 'run-b',
+        name: 'iPad Checkout',
+        status: 'COMPLETE',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        created_at: '2026-05-12T19:00:00Z',
+        archive: { transaction_count: 1100 },
+      },
+    ]
+    apiMock.listTests.mockImplementation(async (params: { release_id?: string }) => {
+      const tests = params.release_id
+        ? activeReleaseTests
+        : [
+            ...activeReleaseTests,
+            {
+              id: 'run-other-release',
+              name: 'Local Other Release',
+              status: 'COMPLETE',
+              application_id: 'app-1',
+              release_id: 'rel-2',
+              created_at: '2026-05-14T10:00:00Z',
+              archive: { transaction_count: 1200 },
+            },
+          ]
+      return { tests, count: tests.length, total: tests.length, limit: 1000, offset: 0 }
+    })
+    libraryApiMock.remoteCatalog.mockImplementation(async (_remoteId: string, _kind: string, _projectId: string, page?: { offset?: number }) => {
+      if (page?.offset === 0) {
+        return {
+          remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
+          catalog: {
+            items: Array.from({ length: 50 }, (_, index) => ({
+              kind: 'result',
+              id: `remote-filler-${index}`,
+              name: `Remote filler ${index}`,
+              project_id: 'project-1',
+              application_id: 'remote-back-office-app',
+              release_id: 'rel-1',
+              release_name: 'Sprint 24',
+              status: 'COMPLETE',
+            })),
+            count: 50,
+            total: 56,
+            limit: 100,
+            offset: 0,
+            has_more: true,
+          },
+        }
+      }
+      return {
+        remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
+        catalog: {
+          items: [
+            {
+              kind: 'result',
+              id: 'remote-run-a',
+              name: 'Remote ID Match',
+              project_id: 'project-1',
+              application_id: 'remote-storefront-app',
+              release_id: 'remote-rel-1',
+              release_name: 'Sprint 24',
+              status: 'COMPLETE',
+              content_hash: 'remoteidmatch123456',
+              execution_run_date: '2026-05-13T12:00:00Z',
+              updated_at: '2026-05-13T12:05:00Z',
+              has_archive: true,
+              sync_status: 'synced',
+              local_item_id: 'run-a',
+              remote_item_id: 'remote-run-a',
+            },
+            {
+              kind: 'result',
+              id: 'remote-name-match',
+              name: 'Remote Name Match',
+              project_id: 'project-1',
+              application_id: 'remote-storefront-app',
+              release_id: 'remote-rel-1',
+              release_name: 'Sprint 24',
+              status: 'FAILED',
+              content_hash: 'remotenamematch123456',
+              execution_run_date: '2026-05-13T13:00:00Z',
+              updated_at: '2026-05-13T13:05:00Z',
+              has_archive: false,
+              sync_status: 'host only',
+            },
+            {
+              kind: 'result',
+              id: 'remote-same-name-other-app',
+              name: 'Remote Same Name Other App',
+              project_id: 'project-1',
+              application_id: 'remote-back-office-app',
+              release_id: 'remote-rel-1',
+              release_name: 'Sprint 24',
+              status: 'COMPLETE',
+              content_hash: 'remoteotherapp123456',
+              execution_run_date: '2026-05-13T14:00:00Z',
+              updated_at: '2026-05-13T14:05:00Z',
+              has_archive: true,
+              sync_status: 'host only',
+            },
+            {
+              kind: 'result',
+              id: 'remote-unmapped-application',
+              name: 'Remote Unmapped Application',
+              project_id: 'project-1',
+              application_id: 'remote-unmapped-app',
+              release_id: 'remote-rel-1',
+              release_name: 'Sprint 24',
+              status: 'COMPLETE',
+              content_hash: 'remoteunmapped123456',
+              execution_run_date: '2026-05-13T14:30:00Z',
+              updated_at: '2026-05-13T14:35:00Z',
+              has_archive: true,
+              sync_status: 'host only',
+            },
+            {
+              kind: 'result',
+              id: 'remote-other-release',
+              name: 'Remote Other Release',
+              project_id: 'project-1',
+              application_id: 'remote-storefront-app',
+              release_id: 'remote-rel-2',
+              release_name: 'Sprint 25',
+              status: 'COMPLETE',
+              content_hash: 'remoteother123456',
+              execution_run_date: '2026-05-14T12:00:00Z',
+              updated_at: '2026-05-14T12:05:00Z',
+              has_archive: true,
+              sync_status: 'host only',
+            },
+            {
+              kind: 'result',
+              id: 'remote-duplicate-release-name',
+              name: 'Remote Duplicate Release Name',
+              project_id: 'project-1',
+              application_id: 'remote-storefront-app',
+              release_id: 'remote-rel-duplicate',
+              release_name: 'Sprint 24',
+              status: 'COMPLETE',
+              content_hash: 'remoteduplicate123456',
+              execution_run_date: '2026-05-13T15:00:00Z',
+              updated_at: '2026-05-13T15:05:00Z',
+              has_archive: true,
+              sync_status: 'host only',
+            },
+          ],
+          count: 6,
+          total: 56,
+          limit: 100,
+          offset: 50,
+          has_more: false,
+        },
+      }
     })
 
     await act(async () => {
@@ -1315,15 +1607,60 @@ describe('ResultsPage', () => {
 
     expect(sourceRowNamed(container, 'Remote ID Match').textContent).toContain('Remote')
     expect(sourceRowNamed(container, 'Remote Name Match').textContent).toContain('FAILED')
+    expect(libraryApiMock.remoteCatalog).toHaveBeenCalledWith(
+      'remote-1',
+      'result',
+      'project-1',
+      expect.objectContaining({ limit: 100, offset: 50 }),
+    )
+    expect(container.textContent).not.toContain('Remote Same Name Other App')
+    expect(container.textContent).not.toContain('Remote Unmapped Application')
     expect(container.textContent).not.toContain('Remote Other Release')
+    expect(container.textContent).not.toContain('Remote Duplicate Release Name')
+    expect(container.textContent).not.toContain('Local Other Release')
     expect(sourceRowNamed(container, 'Remote ID Match').textContent).toContain('-')
     expect(selectByLabel(container, 'Associated Release')?.value).toBe('rel-1')
+    expect(apiMock.listTests).toHaveBeenCalledWith(expect.objectContaining({
+      application_id: 'app-1',
+      release_id: 'rel-1',
+    }))
 
     await changeSelect(selectByLabel(container, 'Associated Release')!, 'all')
-    expect(sourceRowNamed(container, 'Remote Other Release')).toBeDefined()
+    await flushPromises()
+    expect(container.textContent).not.toContain('Remote Same Name Other App')
+    expect(container.textContent).not.toContain('Remote Unmapped Application')
+    expect(container.textContent).not.toContain('Remote Duplicate Release Name')
+    const remoteOtherReleaseRow = sourceRowNamed(container, 'Remote Other Release')
+    expect(remoteOtherReleaseRow).toBeDefined()
+    expect(sourceRowNamed(container, 'Local Other Release')).toBeDefined()
+    const applicationCatalogCall = apiMock.listTests.mock.calls.find(([params]) => !params.release_id)
+    expect(applicationCatalogCall?.[0]).toEqual(expect.objectContaining({
+      application_id: 'app-1',
+      project_id: 'project-1',
+    }))
+    expect(applicationCatalogCall?.[0]).not.toHaveProperty('release_id')
+
+    const otherReleasePull = buttonInRow(remoteOtherReleaseRow, 'Pull')
+    expect(otherReleasePull?.disabled).toBe(false)
+    await act(async () => {
+      otherReleasePull?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(libraryApiMock.pullRemoteItem).toHaveBeenCalledWith('remote-1', expect.objectContaining({
+      kind: 'result',
+      id: 'remote-other-release',
+      remote_id: 'remote-other-release',
+      application_id: 'app-1',
+      release_id: 'rel-2',
+    }))
 
     await changeSelect(selectByLabel(container, 'Associated Release')!, 'rel-1')
+    await flushPromises()
+    expect(container.textContent).not.toContain('Remote Same Name Other App')
+    expect(container.textContent).not.toContain('Remote Unmapped Application')
+    expect(container.textContent).not.toContain('Remote Duplicate Release Name')
     expect(container.textContent).not.toContain('Remote Other Release')
+    expect(container.textContent).not.toContain('Local Other Release')
 
     const remoteIDRow = sourceRowNamed(container, 'Remote ID Match')
     const pullButton = buttonInRow(remoteIDRow, 'Pull')
@@ -1351,6 +1688,8 @@ describe('ResultsPage', () => {
       kind: 'result',
       id: 'remote-run-a',
       remote_id: 'remote-run-a',
+      application_id: 'app-1',
+      release_id: 'rel-1',
     }))
 
     await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'Remote Name')
@@ -1368,6 +1707,165 @@ describe('ResultsPage', () => {
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('iPhone Checkout')
     expect(container.textContent).not.toContain('Remote ID Match')
+  })
+
+  it('keeps pulled result evidence usable as a local archive row after its remote is disconnected', async () => {
+    apiMock.listExternalResultImports.mockResolvedValue({
+      imports: [{
+        id: 'imported-result-1',
+        provider: 'apexload',
+        name: 'Pulled Checkout Evidence',
+        project_id: 'project-1',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        content_hash: 'sha256:durable-evidence',
+        has_archive: true,
+        summary: { status: 'complete', transactions: 321 },
+        created_at: '2026-05-15T12:00:00Z',
+      }],
+      count: 1,
+      limit: 1000,
+      offset: 0,
+    })
+    libraryApiMock.listRemotes.mockResolvedValue({ remotes: [], count: 0 })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const row = sourceRowNamed(container, 'Pulled Checkout Evidence')
+    expect(row.querySelector('.results-source-cell')?.textContent?.trim()).toBe('Local')
+    expect(row.textContent).toContain('321 tx')
+    expect(buttonInRow(row, 'Push')).toBeUndefined()
+    expect(buttonInRow(row, 'Pull')).toBeUndefined()
+    const archiveLink = Array.from(row.querySelectorAll('a')).find(link => link.textContent?.trim() === 'Open Archive')
+    expect(archiveLink?.getAttribute('href')).toBe('/api/v1/library/results/imported-result-1/archive')
+  })
+
+  it('routes a pulled result archive through the native desktop resource bridge', async () => {
+    const saveAPIResourceNative = vi.fn().mockResolvedValue('/tmp/Pulled Checkout Evidence.zip')
+    ;(window as BridgeWindow).go = { main: { App: { SaveAPIResourceNative: saveAPIResourceNative } } }
+    apiMock.listExternalResultImports.mockResolvedValue({
+      imports: [{
+        id: 'imported-result-1',
+        provider: 'apexload',
+        name: 'Pulled Checkout Evidence',
+        project_id: 'project-1',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        content_hash: 'sha256:durable-evidence',
+        has_archive: true,
+        summary: { status: 'complete', transactions: 321 },
+        created_at: '2026-05-15T12:00:00Z',
+      }],
+      count: 1,
+      limit: 1000,
+      offset: 0,
+    })
+    libraryApiMock.listRemotes.mockResolvedValue({ remotes: [], count: 0 })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const row = sourceRowNamed(container, 'Pulled Checkout Evidence')
+    expect(Array.from(row.querySelectorAll('a')).some(link => link.textContent?.trim() === 'Open Archive')).toBe(false)
+    await act(async () => {
+      buttonInRow(row, 'Open Archive')?.click()
+      await Promise.resolve()
+    })
+
+    expect(saveAPIResourceNative.mock.calls[0]?.slice(0, 2)).toEqual([
+      '/api/v1/library/results/imported-result-1/archive',
+      'Pulled Checkout Evidence-imported-result-1.zip',
+    ])
+  })
+
+  it('compares a durable pulled result by its local import identity', async () => {
+    apiMock.listExternalResultImports.mockResolvedValue({
+      imports: [{
+        id: 'imported-result-1',
+        provider: 'apexload',
+        name: 'Pulled Checkout Evidence',
+        project_id: 'project-1',
+        application_id: 'app-1',
+        release_id: 'rel-1',
+        content_hash: 'sha256:durable-evidence',
+        has_archive: true,
+        summary: { status: 'complete' },
+        created_at: '2026-05-15T12:00:00Z',
+      }],
+      count: 1,
+      limit: 1000,
+      offset: 0,
+    })
+    libraryApiMock.remoteCatalog.mockResolvedValue({
+      remote: { id: 'remote-1', name: 'Team AKS', base_url: 'https://apexload.example.test' },
+      catalog: {
+        items: [{
+          kind: 'result',
+          id: 'remote-result-1',
+          remote_item_id: 'remote-result-1',
+          local_item_id: 'imported-result-1',
+          name: 'Remote Checkout Evidence',
+          project_id: 'project-1',
+          application_id: 'remote-storefront-app',
+          release_id: 'remote-rel-1',
+          release_name: 'Sprint 24',
+          status: 'COMPLETE',
+          content_hash: 'sha256:durable-evidence',
+          has_archive: true,
+          sync_status: 'synced',
+        }],
+        count: 1,
+        total: 1,
+        limit: 100,
+        offset: 0,
+        has_more: false,
+      },
+    })
+
+    await act(async () => {
+      root.render(
+        <ResultsPage
+          testStatuses={{}}
+          onSelectTest={vi.fn()}
+          activeApplication={{ id: 'app-1', project_id: 'project-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }}
+          activeRelease={{ id: 'rel-1', application_id: 'app-1', project_id: 'project-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const row = sourceRowNamed(container, 'Pulled Checkout Evidence')
+    const compareButton = buttonInRow(row, 'Compare')
+    expect(compareButton).toBeDefined()
+    await act(async () => {
+      compareButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(libraryApiMock.compareItems).toHaveBeenCalledWith('remote-1', expect.objectContaining({
+      kind: 'result',
+      local_id: 'imported-result-1',
+      remote_id: 'remote-result-1',
+    }))
   })
 })
 

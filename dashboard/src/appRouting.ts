@@ -1,7 +1,13 @@
 import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPageID } from './apiGuideNavigation'
 import type { NavPage } from './components/Sidebar'
 
-export type AppView =
+export type AppWorkspaceScope = {
+  projectId?: string
+  applicationId?: string
+  releaseId?: string
+}
+
+export type AppView = AppWorkspaceScope & (
   | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring'> }
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
@@ -14,6 +20,7 @@ export type AppView =
   | { page: 'repository-guide' }
   | { page: 'recorder-panel'; sessionId: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
+)
 
 const NAV_PAGES: NavPage[] = [
   'dashboard',
@@ -41,7 +48,23 @@ export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]
 export type MonitoringCategoryID = typeof MONITORING_CATEGORIES[number]
 export type ReportLens = typeof REPORT_LENSES[number]
 
+const ARCHIVE_TEST_WORKSPACE_TABS = ['archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const satisfies readonly TestWorkspaceTabID[]
+
 export const APP_HISTORY_INDEX_KEY = '__apexloadHistoryIndex'
+
+export function isArchiveTestWorkspaceTab(value: string | null | undefined): value is typeof ARCHIVE_TEST_WORKSPACE_TABS[number] {
+  return ARCHIVE_TEST_WORKSPACE_TABS.includes(value as typeof ARCHIVE_TEST_WORKSPACE_TABS[number])
+}
+
+export function navPageForAppView(view: AppView): NavPage {
+  if (view.page === 'test') {
+    return isArchiveTestWorkspaceTab(view.tab) ? 'results' : 'command-center'
+  }
+  if (view.page === 'report') return 'results'
+  if (view.page === 'swagger' || view.page === 'repository-guide') return 'docs'
+  if (view.page === 'recorder-panel') return 'scripts'
+  return view.page
+}
 
 export function readAppHistoryIndex(state: unknown): number | null {
   if (!state || typeof state !== 'object') return null
@@ -80,7 +103,7 @@ function isScenarioView(value: string | null): value is NonNullable<Extract<AppV
   return SCENARIO_VIEWS.includes(value as NonNullable<Extract<AppView, { page: 'tests' }>['scenarioView']>)
 }
 
-function isTestWorkspaceTab(value: string | null): value is TestWorkspaceTabID {
+export function isTestWorkspaceTab(value: string | null): value is TestWorkspaceTabID {
   return TEST_WORKSPACE_TABS.includes(value as TestWorkspaceTabID)
 }
 
@@ -92,12 +115,30 @@ export function isReportLens(value: string | null | undefined): value is ReportL
   return REPORT_LENSES.includes(value as ReportLens)
 }
 
+function workspaceScopeFromParams(params: URLSearchParams): AppWorkspaceScope {
+  const projectId = params.get('projectId') || params.get('project') || undefined
+  const applicationId = params.get('applicationId') || params.get('application') || undefined
+  const releaseId = params.get('releaseId') || params.get('release') || undefined
+  return {
+    ...(projectId ? { projectId } : {}),
+    ...(applicationId ? { applicationId } : {}),
+    ...(releaseId ? { releaseId } : {}),
+  }
+}
+
+function appendWorkspaceScope(params: URLSearchParams, view: AppView) {
+  if (view.projectId) params.set('projectId', view.projectId)
+  if (view.applicationId) params.set('applicationId', view.applicationId)
+  if (view.releaseId) params.set('releaseId', view.releaseId)
+}
+
 export function parseAppViewFromHash(hash: string): AppView {
   const route = hash.replace(/^#/, '').replace(/^\/+/, '')
   const [pathPart, queryString = ''] = route.split('?')
   const segments = pathPart.split('/').filter(Boolean).map(cleanSegment)
   const page = segments[0] || 'dashboard'
   const params = new URLSearchParams(queryString)
+  const workspaceScope = workspaceScopeFromParams(params)
 
   if (page === 'test' && segments[1]) {
     const tab = params.get('tab')
@@ -105,6 +146,7 @@ export function parseAppViewFromHash(hash: string): AppView {
       page: 'test',
       testId: segments[1],
       ...(isTestWorkspaceTab(tab) ? { tab } : {}),
+      ...workspaceScope,
     }
   }
 
@@ -115,6 +157,7 @@ export function parseAppViewFromHash(hash: string): AppView {
       page: 'new-test',
       ...(scenarioId ? { scenarioId } : {}),
       ...(prefillStartLocal ? { prefillStartLocal } : {}),
+      ...workspaceScope,
     }
   }
 
@@ -123,12 +166,15 @@ export function parseAppViewFromHash(hash: string): AppView {
     return {
       page: 'tests',
       ...(isScenarioView(scenarioView) ? { scenarioView } : {}),
+      ...workspaceScope,
     }
   }
 
   if (page === 'command-center') {
     const testId = segments[1] || params.get('testId') || undefined
-    return testId ? { page: 'command-center', testId } : { page: 'command-center' }
+    return testId
+      ? { page: 'command-center', testId, ...workspaceScope }
+      : { page: 'command-center', ...workspaceScope }
   }
 
   if (page === 'report' && segments[1]) {
@@ -139,6 +185,7 @@ export function parseAppViewFromHash(hash: string): AppView {
       testId: segments[1],
       ...(isReportLens(lens) ? { lens } : {}),
       ...(compare ? { compare } : {}),
+      ...workspaceScope,
     }
   }
 
@@ -149,6 +196,7 @@ export function parseAppViewFromHash(hash: string): AppView {
       page: 'scripts',
       ...(isScriptMode(mode) ? { mode } : {}),
       ...(scriptId ? { scriptId } : {}),
+      ...workspaceScope,
     }
   }
 
@@ -157,6 +205,7 @@ export function parseAppViewFromHash(hash: string): AppView {
     return {
       page: 'docs',
       ...(isApiGuideContentPageID(guidePage) ? { guidePage } : {}),
+      ...workspaceScope,
     }
   }
 
@@ -165,25 +214,28 @@ export function parseAppViewFromHash(hash: string): AppView {
     return {
       page: 'monitoring',
       ...(isMonitoringCategory(category) && category !== 'overview' ? { category } : {}),
+      ...workspaceScope,
     }
   }
 
   if (page === 'swagger') {
-    return { page: 'swagger' }
+    return { page: 'swagger', ...workspaceScope }
   }
 
   if (page === 'repository-guide') {
-    return { page: 'repository-guide' }
+    return { page: 'repository-guide', ...workspaceScope }
   }
 
   if (page === 'recorder-panel') {
     const sessionId = params.get('session') || undefined
     // The compact recorder panel cannot function without a session. Recover to
     // the script library instead of leaving the normal application shell blank.
-    return sessionId ? { page: 'recorder-panel', sessionId } : { page: 'scripts' }
+    return sessionId
+      ? { page: 'recorder-panel', sessionId, ...workspaceScope }
+      : { page: 'scripts', ...workspaceScope }
   }
 
-  return isNavPage(page) ? { page } : { page: 'dashboard' }
+  return isNavPage(page) ? { page, ...workspaceScope } : { page: 'dashboard' }
 }
 
 const DESKTOP_DEEP_LINK_PAGES = new Set<string>([
@@ -246,6 +298,7 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'test') {
     const params = new URLSearchParams()
     if (view.tab) params.set('tab', view.tab)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/test/${encodeURIComponent(view.testId)}?${query}` : `#/test/${encodeURIComponent(view.testId)}`
   }
@@ -254,6 +307,7 @@ export function viewToLocationHash(view: AppView): string {
     const params = new URLSearchParams()
     if (view.scenarioId) params.set('scenarioId', view.scenarioId)
     if (view.prefillStartLocal) params.set('prefillStartLocal', view.prefillStartLocal)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/new-test?${query}` : '#/new-test'
   }
@@ -261,18 +315,24 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'tests') {
     const params = new URLSearchParams()
     if (view.scenarioView) params.set('view', view.scenarioView)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/tests?${query}` : '#/tests'
   }
 
   if (view.page === 'command-center') {
-    return view.testId ? `#/command-center/${encodeURIComponent(view.testId)}` : '#/command-center'
+    const params = new URLSearchParams()
+    appendWorkspaceScope(params, view)
+    const query = params.toString()
+    const path = view.testId ? `#/command-center/${encodeURIComponent(view.testId)}` : '#/command-center'
+    return query ? `${path}?${query}` : path
   }
 
   if (view.page === 'report') {
     const params = new URLSearchParams()
     if (view.lens) params.set('lens', view.lens)
     if (view.compare) params.set('compare', view.compare)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/report/${encodeURIComponent(view.testId)}?${query}` : `#/report/${encodeURIComponent(view.testId)}`
   }
@@ -281,6 +341,7 @@ export function viewToLocationHash(view: AppView): string {
     const params = new URLSearchParams()
     if (view.mode) params.set('mode', view.mode)
     if (view.scriptId) params.set('scriptId', view.scriptId)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/scripts?${query}` : '#/scripts'
   }
@@ -288,6 +349,7 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'docs') {
     const params = new URLSearchParams()
     if (view.guidePage && view.guidePage !== API_GUIDE_DEFAULT_PAGE) params.set('guide', view.guidePage)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/docs?${query}` : '#/docs'
   }
@@ -295,28 +357,162 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'monitoring') {
     const params = new URLSearchParams()
     if (view.category && view.category !== 'overview') params.set('category', view.category)
+    appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/monitoring?${query}` : '#/monitoring'
   }
 
   if (view.page === 'swagger') {
-    return '#/swagger'
+    const params = new URLSearchParams()
+    appendWorkspaceScope(params, view)
+    const query = params.toString()
+    return query ? `#/swagger?${query}` : '#/swagger'
   }
 
   if (view.page === 'repository-guide') {
-    return '#/repository-guide'
+    const params = new URLSearchParams()
+    appendWorkspaceScope(params, view)
+    const query = params.toString()
+    return query ? `#/repository-guide?${query}` : '#/repository-guide'
   }
 
   if (view.page === 'recorder-panel') {
-    return `#/recorder-panel?session=${encodeURIComponent(view.sessionId)}`
+    const params = new URLSearchParams({ session: view.sessionId })
+    appendWorkspaceScope(params, view)
+    return `#/recorder-panel?${params.toString()}`
   }
 
-  return `#/${view.page}`
+  const params = new URLSearchParams()
+  appendWorkspaceScope(params, view)
+  const query = params.toString()
+  return query ? `#/${view.page}?${query}` : `#/${view.page}`
+}
+
+export function projectIdForAppView(view: AppView): string | undefined {
+  return view.projectId
+}
+
+export function workspaceScopeForAppView(view: AppView): AppWorkspaceScope {
+  return {
+    ...(view.projectId ? { projectId: view.projectId } : {}),
+    ...(view.applicationId ? { applicationId: view.applicationId } : {}),
+    ...(view.releaseId ? { releaseId: view.releaseId } : {}),
+  }
+}
+
+export function scopeAppViewToWorkspace(view: AppView, scope: AppWorkspaceScope): AppView {
+  const next = { ...view }
+  delete next.projectId
+  delete next.applicationId
+  delete next.releaseId
+  return {
+    ...next,
+    ...(scope.projectId ? { projectId: scope.projectId } : {}),
+    ...(scope.applicationId ? { applicationId: scope.applicationId } : {}),
+    ...(scope.releaseId ? { releaseId: scope.releaseId } : {}),
+  } as AppView
+}
+
+// Internal navigation inherits the current workspace, but only while each
+// parent scope still matches. This prevents a route targeting another project
+// or application from accidentally serializing stale child context.
+export function mergeAppViewWithWorkspace(view: AppView, current: AppWorkspaceScope): AppView {
+  const projectId = view.projectId || current.projectId
+  const applicationId = view.applicationId || (
+    projectId && projectId === current.projectId ? current.applicationId : undefined
+  )
+  const releaseId = view.releaseId || (
+    applicationId
+    && applicationId === current.applicationId
+    && projectId === current.projectId
+      ? current.releaseId
+      : undefined
+  )
+  return scopeAppViewToWorkspace(view, { projectId, applicationId, releaseId })
+}
+
+export function testIdForAppView(view: AppView): string | undefined {
+  if (view.page === 'test' || view.page === 'report') return view.testId
+  if (view.page === 'command-center') return view.testId
+  return undefined
+}
+
+export type UnscopedProjectAsset = {
+  kind: 'script' | 'scenario' | 'test'
+  id: string
+}
+
+export function projectAssetForAppView(view: AppView): UnscopedProjectAsset | null {
+  if (view.page === 'scripts' && view.scriptId) return { kind: 'script', id: view.scriptId }
+  if (view.page === 'new-test' && view.scenarioId) return { kind: 'scenario', id: view.scenarioId }
+  if (view.page === 'test' || view.page === 'report') return { kind: 'test', id: view.testId }
+  if (view.page === 'command-center' && view.testId) return { kind: 'test', id: view.testId }
+  return null
+}
+
+// Older bookmarks and desktop recents predate project-aware routes. Resolve
+// their owning project before mounting an asset page so the currently selected
+// project can never be applied to an unrelated script, scenario, or run.
+export function unscopedProjectAssetForAppView(view: AppView): UnscopedProjectAsset | null {
+  if (projectIdForAppView(view)) return null
+  return projectAssetForAppView(view)
+}
+
+export function scopeAppViewToProject(view: AppView, projectId: string): AppView {
+  if (view.page === 'scripts') return scopeAppViewToWorkspace(view, { projectId })
+  if (view.page === 'new-test') return scopeAppViewToWorkspace(view, { projectId })
+  if (view.page === 'test') return scopeAppViewToWorkspace(view, { projectId })
+  if (view.page === 'report') return scopeAppViewToWorkspace(view, { projectId })
+  if (view.page === 'command-center') return scopeAppViewToWorkspace(view, { projectId })
+  return view
+}
+
+export function recoveryViewForUnscopedProjectAsset(asset: UnscopedProjectAsset): AppView {
+  if (asset.kind === 'script') return { page: 'scripts' }
+  if (asset.kind === 'scenario') return { page: 'tests' }
+  return { page: 'results' }
+}
+
+// A manual workspace-scope change intentionally clears entity identifiers from
+// the previous project. Keeping those identifiers would make the destination
+// page request an asset that cannot belong to the newly selected project.
+export function resetProjectScopedAssetView(view: AppView, projectId?: string): AppView {
+  if (view.page === 'tests' && view.scenarioView === 'builder') {
+    return { page: 'tests', scenarioView: 'library' }
+  }
+  if (view.page === 'scripts') {
+    return {
+      page: 'scripts',
+      ...(view.mode && view.mode !== 'edit' ? { mode: view.mode } : {}),
+      ...(projectId ? { projectId } : {}),
+    }
+  }
+  if (view.page === 'new-test') {
+    return {
+      page: 'new-test',
+      ...(view.prefillStartLocal ? { prefillStartLocal: view.prefillStartLocal } : {}),
+      ...(projectId ? { projectId } : {}),
+    }
+  }
+  if (view.page === 'command-center') {
+    return { page: 'command-center', ...(projectId ? { projectId } : {}) }
+  }
+  if (view.page === 'test') {
+    if (isArchiveTestWorkspaceTab(view.tab)) return { page: 'results' }
+    return { page: 'command-center', ...(projectId ? { projectId } : {}) }
+  }
+  if (view.page === 'report') return { page: 'results' }
+  return view
 }
 
 export function normalizeReportViewForFeatureFlag(view: AppView, runReportEnabled: boolean): AppView {
   if (runReportEnabled || view.page !== 'report') return view
-  return { page: 'test', testId: view.testId, tab: 'archive' }
+  return {
+    page: 'test',
+    testId: view.testId,
+    tab: 'archive',
+    ...workspaceScopeForAppView(view),
+  }
 }
 
 interface GuardedRouteChangeOptions {

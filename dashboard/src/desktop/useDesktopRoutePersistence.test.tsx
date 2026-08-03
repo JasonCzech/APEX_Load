@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { act, useState } from 'react'
+import { act, useEffect, useLayoutEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -14,6 +15,7 @@ type BridgeWindow = typeof window & { go?: { main?: { App?: WailsDesktopBridge }
 
 function Harness({ route: initialRoute, onRestore }: { route: string; onRestore?: (route: string) => void }) {
   const [route, setRoute] = useState(initialRoute)
+  useEffect(() => setRoute(initialRoute), [initialRoute])
   useDesktopRoutePersistence({
     enabled: true,
     route,
@@ -27,6 +29,23 @@ function Harness({ route: initialRoute, onRestore }: { route: string; onRestore?
 
 function PersistenceHarness({ route }: { route: string }) {
   useDesktopRoutePersistence({ enabled: true, route, restoreRoute: () => undefined })
+  return null
+}
+
+function CommitRaceHarness({
+  route,
+  settleRestoreOnCommit,
+  onRestore,
+}: {
+  route: string
+  settleRestoreOnCommit?: () => void
+  onRestore: (route: string) => void
+}) {
+  // Register this first so the saved-route promise is settled at the beginning
+  // of the commit. The persistence hook must observe this route in the same
+  // layout phase, before the promise continuation can run.
+  useLayoutEffect(() => settleRestoreOnCommit?.(), [route, settleRestoreOnCommit])
+  useDesktopRoutePersistence({ enabled: true, route, restoreRoute: onRestore })
   return null
 }
 
@@ -90,6 +109,48 @@ describe('useDesktopRoutePersistence', () => {
       expect(restoreRoute).not.toHaveBeenCalled()
     },
   )
+
+  it('does not let a delayed restore overwrite renderer navigation', async () => {
+    let resolveSavedRoute!: (route: string) => void
+    const getLastRoute = vi.fn(() => new Promise<string>(resolve => { resolveSavedRoute = resolve }))
+    const setLastRoute = vi.fn().mockResolvedValue(undefined)
+    const restoreRoute = vi.fn()
+    ;(window as BridgeWindow).go = { main: { App: { GetLastRoute: getLastRoute, SetLastRoute: setLastRoute } } }
+
+    await act(async () => root.render(<Harness route="#/dashboard" onRestore={restoreRoute} />))
+    await act(async () => root.render(<Harness route="#/scripts" onRestore={restoreRoute} />))
+    await act(async () => resolveSavedRoute('#/results'))
+
+    expect(restoreRoute).not.toHaveBeenCalled()
+    expect(setLastRoute).toHaveBeenCalledWith('#/scripts')
+  })
+
+  it('observes renderer navigation before a saved route settled during commit can restore', async () => {
+    let resolveSavedRoute!: (route: string) => void
+    const getLastRoute = vi.fn(() => new Promise<string>(resolve => { resolveSavedRoute = resolve }))
+    const setLastRoute = vi.fn().mockResolvedValue(undefined)
+    const restoreRoute = vi.fn()
+    ;(window as BridgeWindow).go = { main: { App: { GetLastRoute: getLastRoute, SetLastRoute: setLastRoute } } }
+
+    await act(async () => root.render(
+      <CommitRaceHarness route="#/dashboard" onRestore={restoreRoute} />,
+    ))
+
+    flushSync(() => root.render(
+      <CommitRaceHarness
+        route="#/scripts"
+        settleRestoreOnCommit={() => resolveSavedRoute('#/results')}
+        onRestore={restoreRoute}
+      />,
+    ))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(restoreRoute).not.toHaveBeenCalled()
+    expect(setLastRoute).toHaveBeenCalledWith('#/scripts')
+  })
 
   it('serializes rapid route writes before they cross the Wails bridge', async () => {
     window.history.replaceState({}, '', '#/first')

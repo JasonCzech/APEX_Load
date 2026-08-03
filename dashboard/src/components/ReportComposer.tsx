@@ -58,6 +58,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const [verdictOverride, setVerdictOverride] = useState('')
   const [verdictExplanation, setVerdictExplanation] = useState('')
   const [findings, setFindings] = useState<ReportFinding[]>([])
+  const [annotationsUpdatedAt, setAnnotationsUpdatedAt] = useState('')
   const [updatedBy, setUpdatedBy] = useState('')
   const [testNotes, setTestNotes] = useState<TestNote[]>([])
   const [testNotesError, setTestNotesError] = useState('')
@@ -78,6 +79,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setVerdictOverride(annotations.verdict_override || '')
     setVerdictExplanation(annotations.verdict_explanation || '')
     setFindings(annotations.findings || [])
+    setAnnotationsUpdatedAt(annotations.updated_at || '')
     setUpdatedBy(annotations.updated_by || '')
     setSavedDraftSnapshot(reportDraftSnapshot(annotations))
   }, [])
@@ -149,6 +151,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
         .map((finding) => ({ ...finding, title: finding.title.trim() }))
         .filter((finding) => finding.title !== '')
       const response = await api.saveTestReportAnnotations(testId, profile, {
+        expected_updated_at: annotationsUpdatedAt,
         title: title.trim(),
         prepared_by: preparedBy.trim(),
         executive_narrative: narrative.trim(),
@@ -166,7 +169,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     } finally {
       setSaving(false)
     }
-  }, [api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, findings, applyAnnotations])
+  }, [annotationsUpdatedAt, api, testId, profile, title, preparedBy, narrative, comments, verdictOverride, verdictExplanation, findings, applyAnnotations])
 
   const currentDraftSnapshot = useMemo(() => reportDraftSnapshot({
     title,

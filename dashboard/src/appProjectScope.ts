@@ -15,6 +15,13 @@ export function isCurrentRepositoryRequest(
   return requestGeneration === currentGeneration && requestDomainID === currentDomainID
 }
 
+export function isCurrentCatalogRequest(
+  requestGeneration: number,
+  currentGeneration: number,
+): boolean {
+  return requestGeneration === currentGeneration
+}
+
 export function isProjectScopedMessageCurrent(messageProjectID?: string, currentProjectID?: string): boolean {
   return !messageProjectID || messageProjectID === currentProjectID
 }

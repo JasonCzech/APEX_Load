@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useObjectRepositoryApi } from '../hooks/api/useObjectRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
+import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ObjectRepository, RepositoryObject } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
@@ -9,6 +10,18 @@ import './parityPanels.css'
 interface Props {
   projectId?: string
   canManage?: boolean
+}
+
+const CATALOG_PAGE_SIZE = 100
+const MAX_CATALOG_PAGES = 1_000
+
+function snapshotCaughtUp(listed: ObjectRepository, committed: ObjectRepository): boolean {
+  if (JSON.stringify(listed) === JSON.stringify(committed)) return true
+  const listedTimestamp = Date.parse(listed.updated_at || '')
+  const committedTimestamp = Date.parse(committed.updated_at || '')
+  return Number.isFinite(listedTimestamp)
+    && Number.isFinite(committedTimestamp)
+    && listedTimestamp > committedTimestamp
 }
 
 function formatTimestamp(value?: string): string {
@@ -32,6 +45,18 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
   const [expanded, setExpanded] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ObjectRepository | null>(null)
   const [busy, setBusy] = useState(false)
+  const actionSequenceRef = useRef(0)
+  const activeActionRef = useRef<{ id: number; projectId?: string; generation: number } | null>(null)
+  const committedRepositoriesRef = useRef(new Map<string, ObjectRepository>())
+  const deletedRepositoryIDsRef = useRef(new Set<string>())
+  const scopeRef = useRef({ projectId, generation: 0 })
+  const loadGenerationRef = useRef(0)
+  if (scopeRef.current.projectId !== projectId) {
+    scopeRef.current = { projectId, generation: scopeRef.current.generation + 1 }
+  }
+  const isCurrentScope = useCallback((scope: { projectId?: string; generation: number }) => (
+    scopeRef.current.projectId === scope.projectId && scopeRef.current.generation === scope.generation
+  ), [])
 
   useEffect(() => {
     mountedRef.current = true
@@ -40,59 +65,141 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
     }
   }, [])
 
+  useLayoutEffect(() => {
+    loadGenerationRef.current += 1
+    setRepositories([])
+    setLoading(false)
+    setError(null)
+    setShowCreate(false)
+    setCreateForm({ name: '', description: '' })
+    setImportForm({ scriptId: '', name: '', bindScript: false })
+    setExpanded(null)
+    setDeleteTarget(null)
+    setBusy(false)
+    activeActionRef.current = null
+    committedRepositoriesRef.current.clear()
+    deletedRepositoryIDsRef.current.clear()
+  }, [projectId])
+
   const load = useCallback(async () => {
+    const scope = { ...scopeRef.current }
+    const requestGeneration = ++loadGenerationRef.current
     if (!projectId) {
-      if (mountedRef.current) setRepositories([])
+      if (mountedRef.current && isCurrentScope(scope)) setRepositories([])
       return
     }
     if (!mountedRef.current) return
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listObjectRepositories({ project_id: projectId })
-      if (!mountedRef.current) return
-      setRepositories(res.object_repositories || [])
+      const listedByID = new Map<string, ObjectRepository>()
+      const pageSignatures = new Set<string>()
+      let offset = 0
+      for (let pageNumber = 0; pageNumber < MAX_CATALOG_PAGES; pageNumber += 1) {
+        const res = await api.listObjectRepositories({ project_id: projectId, limit: CATALOG_PAGE_SIZE, offset })
+        if (!mountedRef.current || !isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
+        const page = res.object_repositories || []
+        page.forEach(repository => listedByID.set(repository.id, repository))
+        if (page.length < CATALOG_PAGE_SIZE) break
+        const signature = page.map(repository => repository.id).join('\u0000')
+        if (pageSignatures.has(signature)) throw new ApiError('Object repository pagination did not advance.', 502)
+        pageSignatures.add(signature)
+        const responseOffset = typeof res.offset === 'number' ? res.offset : offset
+        const nextOffset = responseOffset + page.length
+        if (nextOffset <= offset) throw new ApiError('Object repository pagination did not advance.', 502)
+        offset = nextOffset
+        if (pageNumber === MAX_CATALOG_PAGES - 1) throw new ApiError('Object repository catalog exceeded the supported page limit.', 502)
+      }
+      if (!mountedRef.current || !isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
+      const listed = [...listedByID.values()]
+      const listedIDs = new Set(listed.map(repository => repository.id))
+      deletedRepositoryIDsRef.current.forEach(id => {
+        if (!listedIDs.has(id)) deletedRepositoryIDsRef.current.delete(id)
+      })
+      const next = listed.filter(repository => !deletedRepositoryIDsRef.current.has(repository.id))
+      committedRepositoriesRef.current.forEach((repository, id) => {
+        if (deletedRepositoryIDsRef.current.has(id)) return
+        const listedRepository = listed.find(candidate => candidate.id === id)
+        if (listedRepository && snapshotCaughtUp(listedRepository, repository)) {
+          committedRepositoriesRef.current.delete(id)
+          return
+        }
+        const index = next.findIndex(candidate => candidate.id === id)
+        if (index >= 0) next[index] = repository
+        else next.push(repository)
+      })
+      setRepositories(next.sort((left, right) => left.name.localeCompare(right.name)))
     } catch (err) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || !isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load object repositories.')
-      setRepositories([])
     } finally {
-      if (mountedRef.current) setLoading(false)
+      if (mountedRef.current && isCurrentScope(scope) && requestGeneration === loadGenerationRef.current) setLoading(false)
     }
-  }, [api, projectId])
+  }, [api, isCurrentScope, projectId])
 
   useEffect(() => { void load() }, [load])
 
-  const runAction = async (action: () => Promise<unknown>, onDone?: () => void) => {
-    if (!mountedRef.current) return
+  const runAction = async <T,>(action: () => Promise<T>, onDone?: (result: T) => void): Promise<boolean> => {
+    if (!mountedRef.current || activeActionRef.current) return false
+    const scope = { ...scopeRef.current }
+    const operation = { id: ++actionSequenceRef.current, ...scope }
+    activeActionRef.current = operation
     setBusy(true)
     setError(null)
     try {
-      await action()
-      if (!mountedRef.current) return
-      onDone?.()
+      const result = await action()
+      if (!mountedRef.current || !isCurrentScope(scope) || activeActionRef.current !== operation) return false
+      onDone?.(result)
       await load()
+      return true
     } catch (err) {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || !isCurrentScope(scope) || activeActionRef.current !== operation) return false
       setError(err instanceof ApiError ? err.message : 'Action failed.')
+      return false
     } finally {
-      if (mountedRef.current) setBusy(false)
+      if (activeActionRef.current === operation) {
+        activeActionRef.current = null
+        if (mountedRef.current && isCurrentScope(scope)) setBusy(false)
+      }
     }
   }
 
-  const handleCreate = () => {
-    if (!projectId || !createForm.name.trim()) return
-    void runAction(
+  const handleCreate = (): Promise<boolean> => {
+    if (!projectId || !createForm.name.trim()) return Promise.resolve(false)
+    return runAction(
       () => api.createObjectRepository({ project_id: projectId, name: createForm.name.trim(), description: createForm.description.trim() || undefined, objects: [] }),
-      () => { setShowCreate(false); setCreateForm({ name: '', description: '' }) },
+      committed => {
+        committedRepositoriesRef.current.set(committed.id, committed)
+        deletedRepositoryIDsRef.current.delete(committed.id)
+        setRepositories(current => [...current.filter(repository => repository.id !== committed.id), committed].sort((left, right) => left.name.localeCompare(right.name)))
+        setShowCreate(false)
+        setCreateForm({ name: '', description: '' })
+      },
     )
   }
 
-  const handleImport = () => {
-    if (!importForm.scriptId.trim()) return
-    void runAction(
-      () => api.createObjectRepositoryFromScript({ script_id: importForm.scriptId.trim(), name: importForm.name.trim() || undefined, bind_script: importForm.bindScript || undefined }),
-      () => setImportForm({ scriptId: '', name: '', bindScript: false }),
+  const handleImport = (): Promise<boolean> => {
+    const requestedProject = projectId
+    if (!requestedProject || !importForm.scriptId.trim()) return Promise.resolve(false)
+    return runAction(
+      async () => {
+        const committed = await api.createObjectRepositoryFromScript({
+          project_id: requestedProject,
+          script_id: importForm.scriptId.trim(),
+          name: importForm.name.trim() || undefined,
+          bind_script: importForm.bindScript || undefined,
+        })
+        if ((committed.project_id || '').trim() !== requestedProject) {
+          throw new ApiError('The selected script belongs to a different project. Select a script from the active project.', 409)
+        }
+        return committed
+      },
+      committed => {
+        committedRepositoriesRef.current.set(committed.id, committed)
+        deletedRepositoryIDsRef.current.delete(committed.id)
+        setRepositories(current => [...current.filter(repository => repository.id !== committed.id), committed].sort((left, right) => left.name.localeCompare(right.name)))
+        setImportForm({ scriptId: '', name: '', bindScript: false })
+      },
     )
   }
 
@@ -121,17 +228,59 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
     // Send the current auto_promote_on_heal so a candidate promotion never
     // implicitly resets it (the server also preserves omitted fields, but being
     // explicit keeps the client intent unambiguous).
-    void runAction(() => api.updateObjectRepository(repo.id, { name: repo.name, description: repo.description, objects, auto_promote_on_heal: repo.auto_promote_on_heal }))
+    void runAction(
+      () => api.updateObjectRepository(repo.id, { name: repo.name, description: repo.description, objects, auto_promote_on_heal: repo.auto_promote_on_heal }),
+      committed => {
+        committedRepositoriesRef.current.set(committed.id, committed)
+        setRepositories(current => current.map(repository => repository.id === committed.id ? committed : repository))
+      },
+    )
   }
 
   const toggleAutoPromote = (repo: ObjectRepository) => {
-    void runAction(() => api.updateObjectRepository(repo.id, {
-      name: repo.name,
-      description: repo.description,
-      objects: repo.objects,
-      auto_promote_on_heal: !repo.auto_promote_on_heal,
-    }))
+    void runAction(
+      () => api.updateObjectRepository(repo.id, {
+        name: repo.name,
+        description: repo.description,
+        objects: repo.objects,
+        auto_promote_on_heal: !repo.auto_promote_on_heal,
+      }),
+      committed => {
+        committedRepositoriesRef.current.set(committed.id, committed)
+        setRepositories(current => current.map(repository => repository.id === committed.id ? committed : repository))
+      },
+    )
   }
+
+  const draftDirty = Boolean(
+    (showCreate && (createForm.name.trim() || createForm.description.trim()))
+    || importForm.scriptId.trim()
+    || importForm.name.trim()
+    || importForm.bindScript,
+  )
+  const draftDirtyRef = useRef(draftDirty)
+  draftDirtyRef.current = draftDirty
+  const saveDraftRef = useRef<() => Promise<boolean>>(async () => false)
+  saveDraftRef.current = async () => {
+    if (showCreate && (createForm.name.trim() || createForm.description.trim()) && !(await handleCreate())) return false
+    if ((importForm.scriptId.trim() || importForm.name.trim() || importForm.bindScript) && !(await handleImport())) return false
+    return true
+  }
+  const discardDraftRef = useRef<() => void>(() => undefined)
+  discardDraftRef.current = () => {
+    setShowCreate(false)
+    setCreateForm({ name: '', description: '' })
+    setImportForm({ scriptId: '', name: '', bindScript: false })
+    setError(null)
+  }
+  const navigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'object-repository-draft',
+    label: 'Object repository draft',
+    isDirty: () => draftDirtyRef.current,
+    save: () => saveDraftRef.current(),
+    discard: () => discardDraftRef.current(),
+  }), [])
+  useNavigationGuard(navigationGuard, draftDirty)
 
   return (
     <div className="pp-panel" aria-label="Object repositories">
@@ -151,7 +300,7 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
         <div className="pp-field-row">
           <input className="pp-field" placeholder="Repository name" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} />
           <input className="pp-field" placeholder="Description (optional)" value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))} />
-          <button type="button" className="btn btn-primary btn-sm" onClick={handleCreate} disabled={busy || !createForm.name.trim()}>Create</button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => { void handleCreate() }} disabled={busy || !createForm.name.trim()}>Create</button>
         </div>
       )}
 
@@ -163,7 +312,7 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
             <input type="checkbox" checked={importForm.bindScript} onChange={e => setImportForm(f => ({ ...f, bindScript: e.target.checked }))} />
             Bind script
           </label>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={handleImport} disabled={busy || !importForm.scriptId.trim()}>Import from script</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => { void handleImport() }} disabled={busy || !importForm.scriptId.trim()}>Import from script</button>
         </div>
       )}
 
@@ -242,11 +391,19 @@ export default function ObjectRepositoryPanel({ projectId, canManage = false }: 
           targetLabel="Repository"
           confirmLabel="Delete repository"
           loading={busy}
+          error={error}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
             const target = deleteTarget
-            setDeleteTarget(null)
-            void runAction(() => api.deleteObjectRepository(target.id))
+            void runAction(
+              () => api.deleteObjectRepository(target.id),
+              () => {
+                deletedRepositoryIDsRef.current.add(target.id)
+                committedRepositoriesRef.current.delete(target.id)
+                setRepositories(current => current.filter(repository => repository.id !== target.id))
+                setDeleteTarget(null)
+              },
+            )
           }}
         />
       )}

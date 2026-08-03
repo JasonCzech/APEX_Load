@@ -26,29 +26,33 @@ const runArchiveManifestFileName = "manifest.json"
 const testRunManifestFileName = "test_manifest.json"
 
 type RunArchiveManifest struct {
-	SchemaVersion                string               `json:"schema_version"`
-	TestID                       string               `json:"test_id"`
-	TestName                     string               `json:"test_name"`
-	CreatedAt                    time.Time            `json:"created_at"`
-	CompletedAt                  time.Time            `json:"completed_at,omitempty"`
-	Status                       string               `json:"status,omitempty"`
-	Error                        string               `json:"error,omitempty"`
-	Provenance                   RunArchiveProvenance `json:"provenance,omitempty"`
-	TransactionsFile             string               `json:"transactions_file"`
-	TransactionsParquetFile      string               `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string               `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string               `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string               `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string               `json:"interval_summaries_parquet_file,omitempty"`
-	TestManifestFile             string               `json:"test_manifest_file,omitempty"`
-	TestNotesFile                string               `json:"test_notes_file,omitempty"`
-	Artifacts                    []RunArchiveArtifact `json:"artifacts,omitempty"`
-	TransactionCount             int64                `json:"transaction_count"`
-	ResourceSampleCount          int64                `json:"resource_sample_count"`
-	IntervalSummaryCount         int64                `json:"interval_summary_count"`
-	SLAEvaluated                 bool                 `json:"sla_evaluated,omitempty"`
-	SLABreached                  bool                 `json:"sla_breached"`
-	SLADetails                   []string             `json:"sla_details,omitempty"`
+	SchemaVersion string               `json:"schema_version"`
+	TestID        string               `json:"test_id"`
+	TestName      string               `json:"test_name"`
+	CreatedAt     time.Time            `json:"created_at"`
+	CompletedAt   time.Time            `json:"completed_at,omitempty"`
+	Status        string               `json:"status,omitempty"`
+	Error         string               `json:"error,omitempty"`
+	Provenance    RunArchiveProvenance `json:"provenance,omitempty"`
+	// InitialProvenance is captured once when archive recording begins and is
+	// never refreshed by runtime controls. Provenance remains the final enriched
+	// execution snapshot for generator inventory, actors, and governance.
+	InitialProvenance            *RunArchiveProvenance `json:"initial_provenance,omitempty"`
+	TransactionsFile             string                `json:"transactions_file"`
+	TransactionsParquetFile      string                `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string                `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string                `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string                `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string                `json:"interval_summaries_parquet_file,omitempty"`
+	TestManifestFile             string                `json:"test_manifest_file,omitempty"`
+	TestNotesFile                string                `json:"test_notes_file,omitempty"`
+	Artifacts                    []RunArchiveArtifact  `json:"artifacts,omitempty"`
+	TransactionCount             int64                 `json:"transaction_count"`
+	ResourceSampleCount          int64                 `json:"resource_sample_count"`
+	IntervalSummaryCount         int64                 `json:"interval_summary_count"`
+	SLAEvaluated                 bool                  `json:"sla_evaluated,omitempty"`
+	SLABreached                  bool                  `json:"sla_breached"`
+	SLADetails                   []string              `json:"sla_details,omitempty"`
 }
 
 type RunArchiveArtifact struct {

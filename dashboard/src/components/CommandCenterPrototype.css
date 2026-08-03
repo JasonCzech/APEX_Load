@@ -136,6 +136,10 @@
   line-height: 1.45;
 }
 
+.command-history-banner .command-history-retry-error {
+  color: var(--danger);
+}
+
 .command-history-actions {
   flex: 0 0 auto;
   display: flex;

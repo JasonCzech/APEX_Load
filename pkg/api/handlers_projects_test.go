@@ -57,6 +57,28 @@ func TestProjectAndFolderHandlers(t *testing.T) {
 	if err := json.Unmarshal(projectResp.Body.Bytes(), &project); err != nil {
 		t.Fatalf("unmarshal project: %v", err)
 	}
+	applications, err := store.ListApplications()
+	if err != nil {
+		t.Fatalf("list applications after project create: %v", err)
+	}
+	projectApplicationCount := 0
+	var projectApplicationID string
+	for _, application := range applications {
+		if application.ProjectID == project.ID {
+			projectApplicationCount++
+			projectApplicationID = application.ID
+		}
+	}
+	if projectApplicationCount != 1 {
+		t.Fatalf("new project applications = %d, want one server-provisioned Legacy application", projectApplicationCount)
+	}
+	releases, err := store.ListReleases(projectApplicationID, true)
+	if err != nil {
+		t.Fatalf("list releases after project create: %v", err)
+	}
+	if len(releases) != 1 || releases[0].Name != "Imported Legacy" {
+		t.Fatalf("new project releases = %#v, want one server-provisioned Imported Legacy release", releases)
+	}
 
 	createFolder := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+project.ID+"/folders", bytes.NewBufferString(`{"name":"Checkout","category":"scripts"}`))
 	createFolder.Header.Set("Content-Type", "application/json")

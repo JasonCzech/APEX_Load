@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ObjectRepositoryPanel from './ObjectRepositoryPanel'
 import { ObjectRepository } from '../types'
+import { ApiError } from '../hooks/apiClient'
+import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -72,7 +74,7 @@ describe('ObjectRepositoryPanel', () => {
     await act(async () => { findButton('Import from script')!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flush()
 
-    expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith({ script_id: 'script-7' })
+    expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith({ project_id: 'proj-a', script_id: 'script-7' })
   })
 
   it('creates an empty repository', async () => {
@@ -147,5 +149,114 @@ describe('ObjectRepositoryPanel', () => {
     await flush()
 
     expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledWith(expect.objectContaining({ script_id: 'script-9', bind_script: true }))
+  })
+
+  it('ignores a late object-repository response from the previous project', async () => {
+    let resolveProjectA: ((value: { object_repositories: ObjectRepository[]; count: number }) => void) | undefined
+    apiMock.listObjectRepositories.mockImplementation(({ project_id }: { project_id: string }) => {
+      if (project_id === 'proj-a') return new Promise(resolve => { resolveProjectA = resolve })
+      return Promise.resolve({ object_repositories: [repo({ id: 'r-b', project_id: 'proj-b', name: 'Project B Repository' })], count: 1 })
+    })
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.textContent).toContain('Project B Repository')
+
+    await act(async () => {
+      resolveProjectA?.({ object_repositories: [repo({ name: 'Stale Project A Repository' })], count: 1 })
+    })
+    await flush()
+    expect(container.textContent).toContain('Project B Repository')
+    expect(container.textContent).not.toContain('Stale Project A Repository')
+  })
+
+  it('clears create and import drafts when the project changes', async () => {
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => findButton('New repository')?.click())
+    setInput('Repository name', 'Project A draft')
+    setInput('Seed from script id…', 'project-a-script')
+
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.querySelector('input[placeholder="Repository name"]')).toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Seed from script id…"]')?.value).toBe('')
+    await act(async () => findButton('New repository')?.click())
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Repository name"]')?.value).toBe('')
+  })
+
+  it('keeps the last good repository list when a same-project refresh fails', async () => {
+    apiMock.listObjectRepositories.mockResolvedValueOnce({ object_repositories: [repo({ name: 'Retained Repository' })], count: 1 })
+    apiMock.updateObjectRepository.mockResolvedValue(repo({ name: 'Retained Repository', auto_promote_on_heal: true }))
+    await act(async () => { root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />) })
+    await flush()
+    apiMock.listObjectRepositories.mockRejectedValueOnce(new ApiError('repository refresh unavailable', 503))
+    const checkbox = container.querySelector<HTMLInputElement>('.pp-row-actions input[type="checkbox"]')
+    await act(async () => checkbox?.click())
+    await flush()
+    expect(container.textContent).toContain('Retained Repository')
+    expect(container.textContent).toContain('repository refresh unavailable')
+  })
+
+  it('loads every repository page instead of truncating the catalog at 100', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => repo({ id: `repo-${index}`, name: `Repository ${index}` }))
+    apiMock.listObjectRepositories
+      .mockResolvedValueOnce({ object_repositories: firstPage, count: 100, limit: 100, offset: 0 })
+      .mockResolvedValueOnce({ object_repositories: [repo({ id: 'repo-100', name: 'Repository 100' })], count: 1, limit: 100, offset: 100 })
+
+    await act(async () => root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />))
+    await flush()
+
+    expect(apiMock.listObjectRepositories).toHaveBeenNthCalledWith(1, { project_id: 'proj-a', limit: 100, offset: 0 })
+    expect(apiMock.listObjectRepositories).toHaveBeenNthCalledWith(2, { project_id: 'proj-a', limit: 100, offset: 100 })
+    expect(container.textContent).toContain('Repository 100')
+  })
+
+  it('locks rapid imports and rejects a response owned by another project', async () => {
+    let resolveImport!: (value: ObjectRepository) => void
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    apiMock.createObjectRepositoryFromScript.mockReturnValue(new Promise(resolve => { resolveImport = resolve }))
+    await act(async () => root.render(<ObjectRepositoryPanel projectId="proj-a" canManage />))
+    await flush()
+    setInput('Seed from script id…', 'script-b')
+    const importButton = findButton('Import from script')!
+    act(() => {
+      importButton.click()
+      importButton.click()
+    })
+    expect(apiMock.createObjectRepositoryFromScript).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveImport(repo({ id: 'repo-b', project_id: 'proj-b', name: 'Project B objects' }))
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(container.textContent).toContain('different project')
+    expect(container.textContent).not.toContain('Project B objects')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Seed from script id…"]')?.value).toBe('script-b')
+  })
+
+  it('registers create and import edits with the global navigation guard', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    apiMock.listObjectRepositories.mockResolvedValue({ object_repositories: [], count: 0 })
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <ObjectRepositoryPanel projectId="proj-a" canManage />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flush()
+    setInput('Seed from script id…', 'script-draft')
+    await flush()
+    expect(registration?.dirty).toBe(true)
+
+    act(() => registration?.guard.discard())
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Seed from script id…"]')?.value).toBe('')
   })
 })

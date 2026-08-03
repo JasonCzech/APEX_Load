@@ -65,13 +65,15 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		return nil, fmt.Errorf("open summaries archive: %w", err)
 	}
 
+	initialProvenance := maskRunArchiveProvenance(provenance)
 	writer := &runArchiveWriter{
 		manifest: RunArchiveManifest{
 			SchemaVersion:                archiveSchemaVersion,
 			TestID:                       test.ID,
 			TestName:                     test.Name,
 			CreatedAt:                    time.Now(),
-			Provenance:                   maskRunArchiveProvenance(provenance),
+			Provenance:                   initialProvenance,
+			InitialProvenance:            &initialProvenance,
 			TransactionsFile:             "transactions.jsonl",
 			TransactionsParquetFile:      "transactions.parquet",
 			ResourceSamplesFile:          "resources.jsonl",

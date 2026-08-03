@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { ApiError } from '../hooks/apiClient'
+import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { CorrelationRuleset, CorrelationRulesetApplyResponse } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import './parityPanels.css'
@@ -11,10 +12,25 @@ interface Props {
   canManage?: boolean
 }
 
+const CATALOG_PAGE_SIZE = 100
+const MAX_CATALOG_PAGES = 1_000
+
 function formatTimestamp(value?: string): string {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function snapshotCaughtUp(
+  listed: { updated_at?: string },
+  committed: { updated_at?: string },
+): boolean {
+  if (JSON.stringify(listed) === JSON.stringify(committed)) return true
+  const listedTimestamp = Date.parse(listed.updated_at || '')
+  const committedTimestamp = Date.parse(committed.updated_at || '')
+  return Number.isFinite(listedTimestamp)
+    && Number.isFinite(committedTimestamp)
+    && listedTimestamp > committedTimestamp
 }
 
 // Project-scoped catalog of learned, reusable correlation rules. Discover rules
@@ -27,10 +43,13 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   const actionRequestRef = useRef(0)
   const actionInFlightRef = useRef(false)
   const applyRequestRef = useRef(0)
+  const committedRulesetsRef = useRef(new Map<string, CorrelationRuleset>())
+  const deletedRulesetIdsRef = useRef(new Set<string>())
   currentProjectRef.current = projectId
   const [rulesets, setRulesets] = useState<CorrelationRuleset[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const [discoverForm, setDiscoverForm] = useState({ scriptId: '', name: '' })
   const [expanded, setExpanded] = useState<string | null>(null)
   const [applyForm, setApplyForm] = useState<{ rulesetId: string; scriptId: string }>({ rulesetId: '', scriptId: '' })
@@ -53,9 +72,12 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     actionRequestRef.current += 1
     applyRequestRef.current += 1
     actionInFlightRef.current = false
+    committedRulesetsRef.current.clear()
+    deletedRulesetIdsRef.current.clear()
     setRulesets([])
     setLoading(false)
     setError(null)
+    setLoadError(false)
     setDiscoverForm({ scriptId: '', name: '' })
     setExpanded(null)
     setApplyForm({ rulesetId: '', scriptId: '' })
@@ -79,14 +101,59 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     if (!isCurrentRequest()) return
     setLoading(true)
     setError(null)
+    setLoadError(false)
     try {
-      const res = await api.listCorrelationRulesets({ project_id: requestedProject })
+      const listedByID = new Map<string, CorrelationRuleset>()
+      const pageSignatures = new Set<string>()
+      let offset = 0
+      for (let pageNumber = 0; pageNumber < MAX_CATALOG_PAGES; pageNumber += 1) {
+        const res = await api.listCorrelationRulesets({
+          project_id: requestedProject,
+          limit: CATALOG_PAGE_SIZE,
+          offset,
+        })
+        if (!isCurrentRequest()) return
+        const page = res.correlation_rulesets || []
+        page.forEach(ruleset => listedByID.set(ruleset.id, ruleset))
+        if (page.length < CATALOG_PAGE_SIZE) break
+        const signature = page.map(ruleset => ruleset.id).join('\u0000')
+        if (pageSignatures.has(signature)) {
+          throw new ApiError('Correlation ruleset pagination did not advance.', 502)
+        }
+        pageSignatures.add(signature)
+        const responseOffset = Number.isFinite(res.offset) ? Number(res.offset) : offset
+        const nextOffset = responseOffset + page.length
+        if (nextOffset <= offset) {
+          throw new ApiError('Correlation ruleset pagination did not advance.', 502)
+        }
+        offset = nextOffset
+        if (pageNumber === MAX_CATALOG_PAGES - 1) {
+          throw new ApiError('Correlation ruleset catalog exceeded the supported page limit.', 502)
+        }
+      }
       if (!isCurrentRequest()) return
-      setRulesets(res.correlation_rulesets || [])
+      const listed = [...listedByID.values()]
+      const listedIds = new Set(listed.map(ruleset => ruleset.id))
+      deletedRulesetIdsRef.current.forEach(id => {
+        if (!listedIds.has(id)) deletedRulesetIdsRef.current.delete(id)
+      })
+      const next = listed.filter(ruleset => !deletedRulesetIdsRef.current.has(ruleset.id))
+      committedRulesetsRef.current.forEach((ruleset, id) => {
+        if (deletedRulesetIdsRef.current.has(id)) return
+        const listedRuleset = listed.find(candidate => candidate.id === id)
+        if (listedRuleset && snapshotCaughtUp(listedRuleset, ruleset)) {
+          committedRulesetsRef.current.delete(id)
+          return
+        }
+        const index = next.findIndex(candidate => candidate.id === id)
+        if (index >= 0) next[index] = ruleset
+        else next.push(ruleset)
+      })
+      setRulesets(next.sort((left, right) => left.name.localeCompare(right.name)))
     } catch (err) {
       if (!isCurrentRequest()) return
       setError(err instanceof ApiError ? err.message : 'Failed to load correlation rulesets.')
-      setRulesets([])
+      setLoadError(true)
     } finally {
       if (isCurrentRequest()) setLoading(false)
     }
@@ -94,8 +161,8 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
 
   useEffect(() => { void load() }, [load])
 
-  const runAction = async (action: () => Promise<unknown>, onDone?: () => void) => {
-    if (!mountedRef.current || actionInFlightRef.current) return
+  const runAction = async <T,>(action: () => Promise<T>, onDone?: (result: T) => void): Promise<boolean> => {
+    if (!mountedRef.current || actionInFlightRef.current) return false
     const requestedProject = projectId
     const requestID = ++actionRequestRef.current
     const isCurrentAction = () => (
@@ -106,14 +173,17 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     actionInFlightRef.current = true
     setBusy(true)
     setError(null)
+    setLoadError(false)
     try {
-      await action()
-      if (!isCurrentAction()) return
-      onDone?.()
+      const result = await action()
+      if (!isCurrentAction()) return false
+      onDone?.(result)
       await load()
+      return true
     } catch (err) {
-      if (!isCurrentAction()) return
+      if (!isCurrentAction()) return false
       setError(err instanceof ApiError ? err.message : 'Action failed.')
+      return false
     } finally {
       if (isCurrentAction()) {
         actionInFlightRef.current = false
@@ -122,11 +192,26 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     }
   }
 
-  const handleDiscover = () => {
-    if (!discoverForm.scriptId.trim()) return
-    void runAction(
-      () => api.discoverCorrelationRulesetFromScript({ script_id: discoverForm.scriptId.trim(), name: discoverForm.name.trim() || undefined }),
-      () => setDiscoverForm({ scriptId: '', name: '' }),
+  const handleDiscover = (): Promise<boolean> => {
+    const requestedProject = projectId
+    if (!requestedProject || !discoverForm.scriptId.trim()) return Promise.resolve(false)
+    return runAction(
+      async () => {
+        const committed = await api.discoverCorrelationRulesetFromScript({ script_id: discoverForm.scriptId.trim(), name: discoverForm.name.trim() || undefined })
+        if ((committed.project_id || '').trim() !== requestedProject) {
+          throw new ApiError('The selected script belongs to a different project. Select a script from the active project.', 409)
+        }
+        return committed
+      },
+      committed => {
+        committedRulesetsRef.current.set(committed.id, committed)
+        deletedRulesetIdsRef.current.delete(committed.id)
+        setRulesets(current => [
+          ...current.filter(ruleset => ruleset.id !== committed.id),
+          committed,
+        ].sort((left, right) => left.name.localeCompare(right.name)))
+        setDiscoverForm({ scriptId: '', name: '' })
+      },
     )
   }
 
@@ -166,7 +251,7 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
       if (commit) await load()
     } catch (err) {
       if (!isCurrentApply()) return
-      if (commit) setApplyResult(null)
+      setApplyResult(null)
       setError(err instanceof ApiError ? err.message : 'Apply failed.')
     } finally {
       if (isCurrentAction()) {
@@ -193,20 +278,61 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     setApplyResult(null)
   }
 
+  const draftDirty = Boolean(
+    discoverForm.scriptId.trim()
+    || discoverForm.name.trim()
+    || applyForm.scriptId.trim(),
+  )
+  const draftDirtyRef = useRef(draftDirty)
+  draftDirtyRef.current = draftDirty
+  const saveDraftRef = useRef<() => Promise<boolean>>(async () => false)
+  saveDraftRef.current = async () => {
+    if (applyForm.scriptId.trim()) {
+      setError('Finish or clear the correlation preview before leaving this page.')
+      return false
+    }
+    return handleDiscover()
+  }
+  const discardDraftRef = useRef<() => void>(() => undefined)
+  discardDraftRef.current = () => {
+    applyRequestRef.current += 1
+    setDiscoverForm({ scriptId: '', name: '' })
+    setApplyForm({ rulesetId: '', scriptId: '' })
+    setApplyResult(null)
+    setError(null)
+  }
+  const navigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'correlation-ruleset-draft',
+    label: 'Correlation ruleset draft',
+    isDirty: () => draftDirtyRef.current,
+    save: () => saveDraftRef.current(),
+    discard: () => discardDraftRef.current(),
+  }), [])
+  useNavigationGuard(navigationGuard, draftDirty)
+
   return (
     <div className="pp-panel" aria-label="Correlation rulesets">
       <div className="pp-toolbar">
         <h3 className="pp-toolbar-title">Correlation Rulesets</h3>
       </div>
 
-      {error && <div className="pp-error">{error}</div>}
+      {error && (
+        <div>
+          <div className="pp-error" role="alert">{error}</div>
+          {loadError && (
+            <button type="button" className="btn btn-secondary btn-sm" disabled={loading || busy} onClick={() => { void load() }}>
+              Retry rulesets
+            </button>
+          )}
+        </div>
+      )}
       {!projectId && <div className="pp-empty">Select a project to view its correlation rulesets.</div>}
 
       {canManage && projectId && (
         <div className="pp-field-row">
           <input className="pp-field" placeholder="Discover from script id…" value={discoverForm.scriptId} onChange={e => setDiscoverForm(f => ({ ...f, scriptId: e.target.value }))} />
           <input className="pp-field" placeholder="Ruleset name (optional)" value={discoverForm.name} onChange={e => setDiscoverForm(f => ({ ...f, name: e.target.value }))} />
-          <button type="button" className="btn btn-primary btn-sm" onClick={handleDiscover} disabled={busy || !discoverForm.scriptId.trim()}>Discover from script</button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => { void handleDiscover() }} disabled={busy || !discoverForm.scriptId.trim()}>Discover from script</button>
         </div>
       )}
 
@@ -281,11 +407,19 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
           targetLabel="Ruleset"
           confirmLabel="Delete ruleset"
           loading={busy}
+          error={error}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
             const target = deleteTarget
-            setDeleteTarget(null)
-            void runAction(() => api.deleteCorrelationRuleset(target.id))
+            void runAction(
+              () => api.deleteCorrelationRuleset(target.id),
+              () => {
+                deletedRulesetIdsRef.current.add(target.id)
+                committedRulesetsRef.current.delete(target.id)
+                setRulesets(current => current.filter(ruleset => ruleset.id !== target.id))
+                setDeleteTarget(null)
+              },
+            )
           }}
         />
       )}

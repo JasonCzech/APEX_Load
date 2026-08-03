@@ -57,6 +57,7 @@ type LibraryCatalogItem struct {
 	ID               string              `json:"id"`
 	Name             string              `json:"name"`
 	ProjectID        string              `json:"project_id,omitempty"`
+	ApplicationID    string              `json:"application_id,omitempty"`
 	ReleaseID        string              `json:"release_id,omitempty"`
 	ReleaseName      string              `json:"release_name,omitempty"`
 	Protocol         string              `json:"protocol,omitempty"`
@@ -129,9 +130,11 @@ type LibraryResultPayload struct {
 }
 
 type LibraryImportRequest struct {
-	Bundle    LibraryBundle `json:"bundle"`
-	ProjectID string        `json:"project_id,omitempty"`
-	Mode      string        `json:"mode,omitempty"`
+	Bundle        LibraryBundle `json:"bundle"`
+	ProjectID     string        `json:"project_id,omitempty"`
+	ApplicationID string        `json:"application_id,omitempty"`
+	ReleaseID     string        `json:"release_id,omitempty"`
+	Mode          string        `json:"mode,omitempty"`
 }
 
 type LibraryImportResponse struct {
@@ -165,6 +168,8 @@ type LibraryRemote struct {
 	BaseURL              string                       `json:"base_url"`
 	DefaultProjectID     string                       `json:"default_project_id,omitempty"`
 	ProjectMappings      map[string]string            `json:"project_mappings,omitempty"`
+	ApplicationMappings  map[string]string            `json:"application_mappings,omitempty"`
+	ReleaseMappings      map[string]string            `json:"release_mappings,omitempty"`
 	AuthMethod           string                       `json:"auth_method"`
 	CredentialRef        string                       `json:"credential_ref,omitempty"`
 	CredentialConfigured bool                         `json:"credential_configured"`
@@ -178,13 +183,15 @@ type LibraryRemote struct {
 }
 
 type LibraryRemoteRequest struct {
-	Name             string            `json:"name"`
-	BaseURL          string            `json:"base_url"`
-	DefaultProjectID string            `json:"default_project_id,omitempty"`
-	ProjectMappings  map[string]string `json:"project_mappings,omitempty"`
-	AuthMethod       string            `json:"auth_method,omitempty"`
-	CredentialRef    string            `json:"credential_ref,omitempty"`
-	APIKey           string            `json:"api_key,omitempty"`
+	Name                string            `json:"name"`
+	BaseURL             string            `json:"base_url"`
+	DefaultProjectID    string            `json:"default_project_id,omitempty"`
+	ProjectMappings     map[string]string `json:"project_mappings,omitempty"`
+	ApplicationMappings map[string]string `json:"application_mappings,omitempty"`
+	ReleaseMappings     map[string]string `json:"release_mappings,omitempty"`
+	AuthMethod          string            `json:"auth_method,omitempty"`
+	CredentialRef       string            `json:"credential_ref,omitempty"`
+	APIKey              string            `json:"api_key,omitempty"`
 }
 
 type LibraryRemoteListResponse struct {
@@ -203,6 +210,8 @@ type LibraryTransferRequest struct {
 	LocalID             string `json:"local_id,omitempty"`
 	RemoteID            string `json:"remote_id,omitempty"`
 	ProjectID           string `json:"project_id,omitempty"`        // local authorized project (pull: local destination)
+	ApplicationID       string `json:"application_id,omitempty"`    // local destination application for result pulls
+	ReleaseID           string `json:"release_id,omitempty"`        // local destination release for result pulls
 	RemoteProjectID     string `json:"remote_project_id,omitempty"` // optional source/destination project on the remote controller
 	IncludeDependencies bool   `json:"include_dependencies,omitempty"`
 }
@@ -252,6 +261,18 @@ func (s *Server) loadLibraryState() {
 						projectMappings = nil
 					}
 					remote.ProjectMappings = projectMappings
+					applicationMappings, mappingErr := normalizeLibraryRemoteApplicationMappings(remote.ApplicationMappings)
+					if mappingErr != nil {
+						slog.Warn("discarding invalid library remote application mappings", "remote_id", remote.ID, "err", mappingErr)
+						applicationMappings = nil
+					}
+					remote.ApplicationMappings = applicationMappings
+					releaseMappings, mappingErr := normalizeLibraryRemoteReleaseMappings(remote.ReleaseMappings)
+					if mappingErr != nil {
+						slog.Warn("discarding invalid library remote release mappings", "remote_id", remote.ID, "err", mappingErr)
+						releaseMappings = nil
+					}
+					remote.ReleaseMappings = releaseMappings
 					if remote.ID != "" {
 						copied := remote
 						loaded[remote.ID] = &copied
@@ -342,6 +363,8 @@ func (s *Server) persistLibraryRemotes() error {
 		copied.APIKey = ""
 		copied.CredentialConfigured = false
 		copied.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+		copied.ApplicationMappings = cloneLibraryRemoteApplicationMappings(remote.ApplicationMappings)
+		copied.ReleaseMappings = cloneLibraryRemoteReleaseMappings(remote.ReleaseMappings)
 		remotes = append(remotes, copied)
 	}
 	sort.SliceStable(remotes, func(i, j int) bool {
@@ -458,10 +481,21 @@ func resolveLibraryTransferRequestProjectID(req LibraryTransferRequest, path str
 		actualProjectID = resolved
 	case "result":
 		test, err := store.GetTest(lookupID)
-		if err != nil {
+		if err == nil && test != nil {
+			actualProjectID = normalizeProjectID(test.ProjectID)
+			break
+		}
+		imports, ok := store.(interface {
+			GetExternalResultImport(string) (*storage.ExternalResultImport, error)
+		})
+		if !ok {
 			return "", http.StatusNotFound, "result not found"
 		}
-		actualProjectID = normalizeProjectID(test.ProjectID)
+		imported, importErr := imports.GetExternalResultImport(lookupID)
+		if importErr != nil || imported == nil {
+			return "", http.StatusNotFound, "result not found"
+		}
+		actualProjectID = normalizeProjectID(imported.ProjectID)
 	default:
 		return "", http.StatusBadRequest, "kind must be one of script, scenario, or result"
 	}
@@ -526,8 +560,16 @@ func resolveLibraryResultArchiveProjectID(r *http.Request, store storage.Store) 
 		return "", http.StatusBadRequest, "result id is required"
 	}
 	test, err := store.GetTest(id)
-	if err != nil {
-		return "", http.StatusNotFound, "result not found"
+	if err == nil && test != nil {
+		return normalizeProjectID(test.ProjectID), 0, ""
 	}
-	return normalizeProjectID(test.ProjectID), 0, ""
+	if imports, ok := store.(interface {
+		GetExternalResultImport(string) (*storage.ExternalResultImport, error)
+	}); ok {
+		imported, importErr := imports.GetExternalResultImport(id)
+		if importErr == nil && imported != nil {
+			return normalizeProjectID(imported.ProjectID), 0, ""
+		}
+	}
+	return "", http.StatusNotFound, "result not found"
 }

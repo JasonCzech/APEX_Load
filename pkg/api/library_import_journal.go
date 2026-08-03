@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -161,7 +162,7 @@ func (j *libraryImportJournal) recordResult(created bool, after *storage.Externa
 		return
 	}
 	afterCopy := cloneExternalResultImport(after)
-	archiveActivated = archiveActivated && strings.TrimSpace(archivePath) != ""
+	archiveActivated = archiveActivated && (strings.TrimSpace(archivePath) != "" || afterCopy.ArchiveRecord != nil)
 	compensate := func() error {
 		if created {
 			deleted, err := j.server.deleteExternalResultImportIfUnchanged(afterCopy)
@@ -173,7 +174,11 @@ func (j *libraryImportJournal) recordResult(created bool, after *storage.Externa
 			}
 		}
 		if archiveActivated {
-			if err := os.RemoveAll(archivePath); err != nil {
+			if afterCopy.ArchiveRecord != nil && archiveRecordBackend(afterCopy.ArchiveRecord) != archiveBackendFilesystem {
+				if err := deleteArchiveBackendObjects(context.Background(), afterCopy.ArchiveRecord); err != nil {
+					return fmt.Errorf("rollback imported result archive %s: %w", afterCopy.ID, err)
+				}
+			} else if err := os.RemoveAll(archivePath); err != nil {
 				return fmt.Errorf("rollback imported result archive %s: %w", afterCopy.ID, err)
 			}
 		}
@@ -189,6 +194,10 @@ func cloneExternalResultImport(result *storage.ExternalResultImport) *storage.Ex
 	copy := *result
 	copy.Summary = cloneExternalResultJSONMap(result.Summary)
 	copy.RawResult = cloneExternalResultJSONMap(result.RawResult)
+	if result.ArchiveRecord != nil {
+		archiveRecord := *result.ArchiveRecord
+		copy.ArchiveRecord = &archiveRecord
+	}
 	return &copy
 }
 

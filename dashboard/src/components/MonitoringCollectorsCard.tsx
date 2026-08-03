@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useMonitoringCollectorsApi } from '../hooks/api/useMonitoringCollectorsApi'
 import { ApiError } from '../hooks/apiClient'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { CollectorMetricSnapshot, MonitoringCollector } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import { dialogBackdropProps } from './dialogBackdropProps'
+import { listAllMonitoringCollectors } from './monitoringCatalogModel'
 import './parityPanels.css'
 
 interface Props {
@@ -47,10 +49,20 @@ function freshness(snapshot: CollectorMetricSnapshot): { label: string; cls: str
   return { label: 'online', cls: 'pp-pill pp-pill-success' }
 }
 
-type EditState = { id: string; name: string; description: string; health: string; packs: string }
+type EditState = { id: string; name: string; description: string; health: string; packs: string; baseline: string }
+
+function editSnapshot(edit: Pick<EditState, 'name' | 'description' | 'health' | 'packs'>): string {
+  return JSON.stringify({
+    name: edit.name,
+    description: edit.description,
+    health: edit.health,
+    packs: edit.packs,
+  })
+}
 
 export default function MonitoringCollectorsCard({ projectId, canManage = false }: Props) {
   const api = useMonitoringCollectorsApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const [collectors, setCollectors] = useState<MonitoringCollector[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -62,46 +74,81 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   const [metrics, setMetrics] = useState<{ name: string; snapshot: CollectorMetricSnapshot } | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const scopeRef = useRef({ projectId, generation: 0 })
+  const loadGenerationRef = useRef(0)
+  if (scopeRef.current.projectId !== projectId) {
+    scopeRef.current = { projectId, generation: scopeRef.current.generation + 1 }
+  }
+  const isCurrentScope = useCallback((scope: { projectId?: string; generation: number }) => (
+    scopeRef.current.projectId === scope.projectId && scopeRef.current.generation === scope.generation
+  ), [])
   const createDialogRef = useRef<HTMLDivElement>(null)
   const editDialogRef = useRef<HTMLDivElement>(null)
   const tokenDialogRef = useRef<HTMLDivElement>(null)
   const metricsDialogRef = useRef<HTMLDivElement>(null)
-  const closeCreate = useCallback(() => setShowCreate(false), [])
-  const closeEdit = useCallback(() => setEdit(null), [])
+  const resetCreate = useCallback(() => setCreateForm({ name: '', description: '', packs: '' }), [])
+  const discardCreate = useCallback(() => {
+    setShowCreate(false)
+    resetCreate()
+    setError(null)
+  }, [resetCreate])
+  const discardEdit = useCallback(() => {
+    setEdit(null)
+    setError(null)
+  }, [])
+  const closeCreate = useCallback(() => runGuarded(discardCreate), [discardCreate, runGuarded])
+  const closeEdit = useCallback(() => runGuarded(discardEdit), [discardEdit, runGuarded])
   const closeToken = useCallback(() => setOneTimeToken(null), [])
   const closeMetrics = useCallback(() => setMetrics(null), [])
 
-  useModalDialog({ dialogRef: createDialogRef, enabled: showCreate, onClose: closeCreate })
-  useModalDialog({ dialogRef: editDialogRef, enabled: Boolean(edit), onClose: closeEdit })
+  useModalDialog({ dialogRef: createDialogRef, enabled: showCreate, onClose: busy ? undefined : closeCreate })
+  useModalDialog({ dialogRef: editDialogRef, enabled: Boolean(edit), onClose: busy ? undefined : closeEdit })
   useModalDialog({ dialogRef: tokenDialogRef, enabled: Boolean(oneTimeToken), onClose: closeToken })
   useModalDialog({ dialogRef: metricsDialogRef, enabled: Boolean(metrics), onClose: closeMetrics })
 
+  useLayoutEffect(() => {
+    loadGenerationRef.current += 1
+    setCollectors([])
+    setLoading(false)
+    setError(null)
+    setShowCreate(false)
+    setCreateForm({ name: '', description: '', packs: '' })
+    setEdit(null)
+    setDeleteTarget(null)
+    setOneTimeToken(null)
+    setMetrics(null)
+    setBusy(false)
+    setCopied(false)
+  }, [projectId])
+
   const load = useCallback(async () => {
+    const scope = { ...scopeRef.current }
+    const requestGeneration = ++loadGenerationRef.current
     if (!projectId) {
-      setCollectors([])
+      if (isCurrentScope(scope)) setCollectors([])
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listCollectors({ project_id: projectId })
-      setCollectors(res.collectors || [])
+			const nextCollectors = await listAllMonitoringCollectors(api.listCollectors, projectId)
+      if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
+			setCollectors(nextCollectors)
     } catch (err) {
+      if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load monitoring collectors.')
-      setCollectors([])
     } finally {
-      setLoading(false)
+      if (isCurrentScope(scope) && requestGeneration === loadGenerationRef.current) setLoading(false)
     }
-  }, [api, projectId])
+  }, [api, isCurrentScope, projectId])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const resetCreate = () => setCreateForm({ name: '', description: '', packs: '' })
-
-  const submitCreate = useCallback(async () => {
-    if (!projectId || !createForm.name.trim()) return
+  const submitCreate = useCallback(async (): Promise<boolean> => {
+    if (!projectId || !createForm.name.trim()) return false
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setError(null)
     try {
@@ -111,84 +158,103 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
         description: createForm.description.trim() || undefined,
         allowed_metric_packs: textToPacks(createForm.packs),
       })
+			if (!isCurrentScope(scope)) return false
+			setCollectors(current => [...current.filter(collector => collector.id !== res.collector.id), res.collector])
       setShowCreate(false)
       resetCreate()
       setOneTimeToken({ name: res.collector.name, token: res.token })
       await load()
+			return true
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to register collector.')
+      if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to register collector.')
+			return false
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, createForm, load, projectId])
+	}, [api, createForm, isCurrentScope, load, projectId, resetCreate])
 
-  const submitEdit = useCallback(async () => {
-    if (!edit) return
+  const submitEdit = useCallback(async (): Promise<boolean> => {
+    if (!edit) return false
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setError(null)
     try {
-      await api.patchCollector(edit.id, {
+      const saved = await api.patchCollector(edit.id, {
         name: edit.name.trim() || undefined,
         description: edit.description,
         health: edit.health,
         allowed_metric_packs: textToPacks(edit.packs),
       })
+			if (!isCurrentScope(scope)) return false
+			setCollectors(current => current.map(collector => collector.id === saved.id ? saved : collector))
       setEdit(null)
       await load()
+			return true
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to update collector.')
+      if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to update collector.')
+			return false
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, edit, load])
+  }, [api, edit, isCurrentScope, load])
 
   const rotate = useCallback(
     async (collector: MonitoringCollector) => {
+      const scope = { ...scopeRef.current }
       setBusy(true)
       setError(null)
       try {
         const res = await api.rotateCollectorToken(collector.id)
+        if (!isCurrentScope(scope)) return
+				if (res.collector) {
+					setCollectors(current => current.map(candidate => candidate.id === res.collector.id ? res.collector : candidate))
+				}
         setOneTimeToken({ name: collector.name, token: res.token })
         await load()
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Failed to rotate token.')
+        if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to rotate token.')
       } finally {
-        setBusy(false)
+        if (isCurrentScope(scope)) setBusy(false)
       }
     },
-    [api, load],
+    [api, isCurrentScope, load],
   )
 
   const viewMetrics = useCallback(
     async (collector: MonitoringCollector) => {
+      const scope = { ...scopeRef.current }
       setBusy(true)
       setError(null)
       try {
         const snapshot = await api.getCollectorMetrics(collector.id)
+        if (!isCurrentScope(scope)) return
         setMetrics({ name: collector.name, snapshot })
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Failed to load collector metrics.')
+        if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to load collector metrics.')
       } finally {
-        setBusy(false)
+        if (isCurrentScope(scope)) setBusy(false)
       }
     },
-    [api],
+    [api, isCurrentScope],
   )
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setError(null)
     try {
       await api.deleteCollector(deleteTarget.id)
+      if (!isCurrentScope(scope)) return
+			setCollectors(current => current.filter(collector => collector.id !== deleteTarget.id))
       setDeleteTarget(null)
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to delete collector.')
+      if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to delete collector.')
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, deleteTarget, load])
+  }, [api, deleteTarget, isCurrentScope, load])
 
   const copyToken = useCallback(() => {
     if (!oneTimeToken) return
@@ -199,6 +265,29 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   }, [oneTimeToken])
 
   const createValid = useMemo(() => Boolean(projectId && createForm.name.trim()), [projectId, createForm.name])
+	const createDirty = showCreate && Boolean(createForm.name.trim() || createForm.description.trim() || createForm.packs.trim())
+	const editDirty = Boolean(edit && editSnapshot(edit) !== edit.baseline)
+	const draftDirty = createDirty || editDirty
+	const draftDirtyRef = useRef(draftDirty)
+	draftDirtyRef.current = draftDirty
+	const saveDraftRef = useRef<() => Promise<boolean>>(async () => false)
+	saveDraftRef.current = async () => {
+		if (createDirty) return submitCreate()
+		if (editDirty) return submitEdit()
+		return true
+	}
+	const discardDraft = useCallback(() => {
+		discardCreate()
+		discardEdit()
+	}, [discardCreate, discardEdit])
+	const draftGuard = useMemo<NavigationGuard>(() => ({
+		id: 'monitoring-collector-draft',
+		label: 'Monitoring collector editor',
+		isDirty: () => draftDirtyRef.current,
+		save: () => saveDraftRef.current(),
+		discard: discardDraft,
+	}), [discardDraft])
+	useNavigationGuard(draftGuard, draftDirty)
 
   return (
     <div className="monitor-body pp-panel">
@@ -213,7 +302,8 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
             disabled={!projectId}
             title={projectId ? undefined : 'Select a project to register a collector'}
             onClick={() => {
-              resetCreate()
+								discardEdit()
+								resetCreate()
               setShowCreate(true)
             }}
           >
@@ -257,15 +347,16 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                       type="button"
                       className="btn btn-ghost btn-sm"
                       disabled={busy}
-                      onClick={() =>
-                        setEdit({
+						onClick={() => {
+										const fields = {
                           id: collector.id,
                           name: collector.name,
                           description: collector.description || '',
                           health: collector.health,
                           packs: packsToText(collector.allowed_metric_packs),
-                        })
-                      }
+										}
+										setEdit({ ...fields, baseline: editSnapshot(fields) })
+									}}
                     >
                       Edit
                     </button>
@@ -289,7 +380,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
           <div ref={createDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-create-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-create-dialog-title">Register Monitoring Collector</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeCreate}>
+								<button type="button" className="btn btn-ghost btn-sm" onClick={closeCreate} disabled={busy}>
                 Close
               </button>
             </div>
@@ -320,7 +411,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </label>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={closeCreate}>
+								<button type="button" className="btn btn-secondary" onClick={closeCreate} disabled={busy}>
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" disabled={!createValid || busy} onClick={() => void submitCreate()}>
@@ -337,7 +428,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
           <div ref={editDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-edit-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-edit-dialog-title">Edit Collector</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeEdit}>
+								<button type="button" className="btn btn-ghost btn-sm" onClick={closeEdit} disabled={busy}>
                 Close
               </button>
             </div>
@@ -366,7 +457,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={closeEdit}>
+								<button type="button" className="btn btn-secondary" onClick={closeEdit} disabled={busy}>
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void submitEdit()}>

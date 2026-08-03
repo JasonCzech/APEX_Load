@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type CSSProperties } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { useApi } from '../hooks/useApi'
@@ -6,6 +6,7 @@ import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
+import { getErrorMessage } from '../utils/errorUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { SortIndicator as SortIcon } from './SortIndicator'
@@ -16,6 +17,7 @@ import { type NavPage } from './Sidebar'
 import StatusBadge from './StatusBadge'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useSharedTestList } from '../hooks/useSharedTestList'
+import { DEFAULT_TEST_CATALOG_PAGE_SIZE, loadTestSummaryTail } from './testCatalogPagination'
 import './DashboardPage.css'
 
 interface Props {
@@ -138,6 +140,7 @@ interface DashboardTestListState {
 }
 
 const ARCHIVE_REPORT_BATCH_LIMIT = 50
+const EMPTY_DASHBOARD_TESTS: TestSummary[] = []
 
 const tableBottomGutterPx = 24
 const tableMinimumViewportHeightPx = 80
@@ -177,6 +180,17 @@ const activitySortDefaults: Record<ActivitySortField, SortDirection> = {
 
 function formatNumber(value: number, digits = 0) {
   return Number.isFinite(value) ? value.toFixed(digits) : digits > 0 ? '0.0' : '0'
+}
+
+function orderDashboardTestCatalog(tests: TestSummary[]) {
+  return [...tests].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at || '')
+    const rightTime = Date.parse(right.created_at || '')
+    const normalizedLeftTime = Number.isFinite(leftTime) ? leftTime : 0
+    const normalizedRightTime = Number.isFinite(rightTime) ? rightTime : 0
+    if (normalizedLeftTime !== normalizedRightTime) return normalizedRightTime - normalizedLeftTime
+    return left.id.localeCompare(right.id)
+  })
 }
 
 function formatOptionalNumber(value?: number, digits = 0) {
@@ -614,16 +628,124 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     project_id: activeProjectId,
     application_id: activeApplicationId,
     summary: true,
-    limit: 500,
+    limit: DEFAULT_TEST_CATALOG_PAGE_SIZE,
+    offset: 0,
   } : null, [activeApplicationId, activeProjectId, dashboardScopeReady])
   const {
-    tests,
+    tests: firstDashboardTestPage,
+    total: dashboardTestTotal,
     error: testListError,
     loading: testListLoading,
     refreshing: testListRefreshing,
     updatedAt: testListUpdatedAt,
     refresh: refreshTestList,
   } = useSharedTestList(testListParams, { loader: api.listTests, pollIntervalMs: 3000 })
+  const dashboardCatalogScopeKey = useMemo(() => JSON.stringify(testListParams || {}), [testListParams])
+  const dashboardCatalogScopeKeyRef = useRef(dashboardCatalogScopeKey)
+  dashboardCatalogScopeKeyRef.current = dashboardCatalogScopeKey
+  const [dashboardCatalog, setDashboardCatalog] = useState<{
+    scopeKey: string
+    tests: TestSummary[]
+    total: number
+  }>({ scopeKey: '', tests: [], total: 0 })
+  const dashboardCatalogRef = useRef(dashboardCatalog)
+  const dashboardTailGenerationRef = useRef(0)
+  const dashboardTailScopeRef = useRef('')
+  const [dashboardTailLoading, setDashboardTailLoading] = useState(false)
+  const [dashboardTailError, setDashboardTailError] = useState('')
+  const commitDashboardCatalog = useCallback((next: typeof dashboardCatalog) => {
+    dashboardCatalogRef.current = next
+    setDashboardCatalog(next)
+  }, [])
+
+  useEffect(() => {
+    dashboardTailGenerationRef.current += 1
+    dashboardTailScopeRef.current = ''
+    commitDashboardCatalog({ scopeKey: dashboardCatalogScopeKey, tests: [], total: 0 })
+    setDashboardTailLoading(false)
+    setDashboardTailError('')
+  }, [commitDashboardCatalog, dashboardCatalogScopeKey])
+
+  useEffect(() => () => {
+    dashboardTailGenerationRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    if (!testListParams || testListUpdatedAt === null) return
+    const current = dashboardCatalogRef.current
+    const shouldReset = current.scopeKey !== dashboardCatalogScopeKey || dashboardTestTotal < current.total
+    const testsByID = new Map<string, TestSummary>()
+    if (!shouldReset) current.tests.forEach(test => testsByID.set(test.id, test))
+    firstDashboardTestPage.forEach(test => testsByID.set(test.id, test))
+    if (testsByID.size > dashboardTestTotal) {
+      testsByID.clear()
+      firstDashboardTestPage.forEach(test => testsByID.set(test.id, test))
+    }
+    const next = {
+      scopeKey: dashboardCatalogScopeKey,
+      tests: orderDashboardTestCatalog(Array.from(testsByID.values())),
+      total: dashboardTestTotal,
+    }
+    commitDashboardCatalog(next)
+    if (next.tests.length >= dashboardTestTotal || dashboardTailScopeRef.current === dashboardCatalogScopeKey) {
+      if (next.tests.length >= dashboardTestTotal) {
+        setDashboardTailLoading(false)
+        setDashboardTailError('')
+      }
+      return
+    }
+
+    const requestGeneration = ++dashboardTailGenerationRef.current
+    dashboardTailScopeRef.current = dashboardCatalogScopeKey
+    setDashboardTailLoading(true)
+    setDashboardTailError('')
+    void loadTestSummaryTail(api.listTests, testListParams, {
+      startOffset: firstDashboardTestPage.length,
+      total: dashboardTestTotal,
+      seenTestIds: firstDashboardTestPage.map(test => test.id),
+      onPage: (pageTests, total) => {
+        if (
+          requestGeneration !== dashboardTailGenerationRef.current
+          || dashboardCatalogScopeKeyRef.current !== dashboardCatalogScopeKey
+        ) return
+        const latest = dashboardCatalogRef.current
+        const merged = new Map(latest.tests.map(test => [test.id, test]))
+        pageTests.forEach(test => merged.set(test.id, test))
+        commitDashboardCatalog({
+          scopeKey: dashboardCatalogScopeKey,
+          tests: orderDashboardTestCatalog(Array.from(merged.values())),
+          total,
+        })
+      },
+    }).catch(error => {
+      if (
+        requestGeneration === dashboardTailGenerationRef.current
+        && dashboardCatalogScopeKeyRef.current === dashboardCatalogScopeKey
+      ) setDashboardTailError(getErrorMessage(error, 'Unable to load older dashboard runs'))
+    }).finally(() => {
+      if (
+        requestGeneration === dashboardTailGenerationRef.current
+        && dashboardCatalogScopeKeyRef.current === dashboardCatalogScopeKey
+      ) {
+        dashboardTailScopeRef.current = ''
+        setDashboardTailLoading(false)
+      }
+    })
+  }, [api.listTests, commitDashboardCatalog, dashboardCatalogScopeKey, dashboardTestTotal, firstDashboardTestPage, testListParams, testListUpdatedAt])
+
+  const tests = dashboardCatalog.scopeKey === dashboardCatalogScopeKey ? dashboardCatalog.tests : EMPTY_DASHBOARD_TESTS
+  const dashboardCatalogReady = testListUpdatedAt !== null
+    && dashboardCatalog.scopeKey === dashboardCatalogScopeKey
+    && tests.length >= dashboardTestTotal
+    && !dashboardTailLoading
+  const refreshDashboardCatalog = useCallback(async () => {
+    dashboardTailGenerationRef.current += 1
+    dashboardTailScopeRef.current = ''
+    commitDashboardCatalog({ scopeKey: dashboardCatalogScopeKey, tests: [], total: 0 })
+    setDashboardTailLoading(false)
+    setDashboardTailError('')
+    await refreshTestList()
+  }, [commitDashboardCatalog, dashboardCatalogScopeKey, refreshTestList])
   const [health, setHealth] = useState<HealthData | null>(null)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [releasePanelOpen, setReleasePanelOpen] = useState(true)
@@ -644,12 +766,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const testListState = useMemo<DashboardTestListState>(() => ({
     scopeReady: dashboardScopeReady,
-    ready: testListUpdatedAt !== null,
-    loading: testListLoading,
-    refreshing: testListRefreshing,
-    error: testListError,
-    onRefresh: refreshTestList,
-  }), [dashboardScopeReady, refreshTestList, testListError, testListLoading, testListRefreshing, testListUpdatedAt])
+    ready: dashboardCatalogReady,
+    loading: testListLoading || dashboardTailLoading,
+    refreshing: testListRefreshing || dashboardTailLoading,
+    error: testListError || dashboardTailError,
+    onRefresh: refreshDashboardCatalog,
+  }), [dashboardCatalogReady, dashboardScopeReady, dashboardTailError, dashboardTailLoading, refreshDashboardCatalog, testListError, testListLoading, testListRefreshing])
 
   useEffect(() => {
     if (!dashboardScopeReady) {

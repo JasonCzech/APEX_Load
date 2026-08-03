@@ -1,4 +1,10 @@
-import type { ScriptActionDefinition, ScriptDefinition, ScriptExtractorDefinition } from '../types/scripts'
+import type {
+  CorrelationRepairSuggestion,
+  CorrelationStep,
+  ScriptActionDefinition,
+  ScriptDefinition,
+  ScriptExtractorDefinition,
+} from '../types/scripts'
 import { headerListToCompatibilityMap } from './scriptActionHelpers'
 
 export interface CorrelationRepairLocation {
@@ -17,6 +23,25 @@ export interface CorrelationApplyResult {
   extractorAdded: boolean
   extractorAvailable: boolean
   requestRepaired: boolean
+}
+
+export function repairLocationsFromSuggestion(
+  suggestion: CorrelationRepairSuggestion,
+  replay: CorrelationStep[],
+): CorrelationRepairLocation[] {
+  if (typeof suggestion.failing_step_id !== 'number' || !replay.some(candidate => candidate.id === suggestion.failing_step_id)) return []
+  const locations: CorrelationRepairLocation[] = []
+  for (const location of suggestion.repair_locations || []) {
+    const isRequestField = location.field === 'request_url' || location.field === 'request_body' || location.field.startsWith('request_headers.')
+    // A suggestion is one repair transaction. If even one requested location
+    // is unproven or malformed, do not apply a "safe" subset and leave another
+    // stale use behind.
+    if (location.editable_surface_exact !== true || !isRequestField || !Number.isInteger(location.start) || !Number.isInteger(location.end) || location.start < 0 || location.end <= location.start) return []
+    if (!locations.some(candidate => candidate.field === location.field && candidate.start === location.start && candidate.end === location.end)) {
+      locations.push({ field: location.field, start: location.start, end: location.end })
+    }
+  }
+  return locations
 }
 
 function replaceRequestLocations(

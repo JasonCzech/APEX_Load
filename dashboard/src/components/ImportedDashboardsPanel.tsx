@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { ImportedDashboard, ImportedDashboardGraphsResponse, ImportedDashboardImportReview, Project } from '../types'
 import { useSystemApi } from '../hooks/api/useSystemApi'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import PrometheusPanelCard from './PrometheusPanelCard'
+import { listAllImportedDashboards } from './monitoringCatalogModel'
 
 interface Props {
   projects: Project[]
@@ -21,11 +23,13 @@ type PanelMode = 'list' | 'review'
 // a very different artifact.
 export default function ImportedDashboardsPanel({ projects, defaultProjectId, prometheusConfigured }: Props) {
   const { listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, deleteImportedDashboard, patchImportedDashboard } = useSystemApi()
+  const { runGuarded } = useNavigationGuardRunner()
 
   const [projectId, setProjectId] = useState(defaultProjectId || projects[0]?.id || '')
   const [dashboards, setDashboards] = useState<ImportedDashboard[]>([])
   const [mode, setMode] = useState<PanelMode>('list')
   const [review, setReview] = useState<ImportedDashboardImportReview | null>(null)
+  const [reviewProjectId, setReviewProjectId] = useState('')
   const [bindingValues, setBindingValues] = useState<Record<string, string>>({})
   const [bindingOptions, setBindingOptions] = useState<Record<string, string[]>>({})
   const [loadingBinding, setLoadingBinding] = useState('')
@@ -42,7 +46,25 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 	const operationInFlight = useRef(false)
 	const refreshGeneration = useRef(0)
 	const previousDefaultProjectId = useRef(defaultProjectId)
+	const scopeRef = useRef({ projectId, generation: 0 })
+	if (scopeRef.current.projectId !== projectId) {
+		scopeRef.current = { projectId, generation: scopeRef.current.generation + 1 }
+	}
+	const isCurrentScope = useCallback((scope: { projectId: string; generation: number }) => (
+		scopeRef.current.projectId === scope.projectId && scopeRef.current.generation === scope.generation
+	), [])
 	const controlsBusy = busy || mutatingDashboardId !== ''
+	const discardReview = useCallback(() => {
+		setMode('list')
+		setReview(null)
+		setReviewProjectId('')
+		setBindingValues({})
+		setBindingOptions({})
+		setPreview(null)
+		setPreviewTestId('')
+		setError('')
+	}, [])
+	const requestDiscardReview = useCallback(() => runGuarded(discardReview), [discardReview, runGuarded])
 
   const refresh = useCallback(async (pid: string) => {
 		const generation = ++refreshGeneration.current
@@ -51,9 +73,9 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
       return
     }
     try {
-      const response = await listImportedDashboards({ project_id: pid })
+			const nextDashboards = await listAllImportedDashboards(listImportedDashboards, pid)
 		if (generation === refreshGeneration.current) {
-			setDashboards(response.dashboards ?? [])
+			setDashboards(nextDashboards)
 			setError('')
 		}
     } catch (err) {
@@ -72,16 +94,38 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 		})
 	}, [defaultProjectId, projects])
 
+	useLayoutEffect(() => {
+		refreshGeneration.current += 1
+		operationInFlight.current = false
+		setDashboards([])
+		setMode('list')
+		setReview(null)
+		setReviewProjectId('')
+		setBindingValues({})
+		setBindingOptions({})
+		setLoadingBinding('')
+		setPreview(null)
+		setPreviewLoading(false)
+		setPreviewTestId('')
+		setTestedDashboardId('')
+		setTestedResult(null)
+		setBusy(false)
+		setMutatingDashboardId('')
+		setError('')
+		setNotice('')
+	}, [projectId])
+
   useEffect(() => {
     void refresh(projectId)
 		return () => { refreshGeneration.current += 1 }
   }, [projectId, refresh])
 
-  const requiredBindings = useMemo(() => review?.required_bindings ?? [], [review])
-	const reviewNeedsTestId = useMemo(() => dashboardUsesTestID(review?.dashboard.panels ?? []) || (review?.bindings ?? []).some(binding => expressionUsesTestID(binding.query ?? '')), [review])
+	const activeReview = reviewProjectId === projectId ? review : null
+  const requiredBindings = useMemo(() => activeReview?.required_bindings ?? [], [activeReview])
+	const reviewNeedsTestId = useMemo(() => dashboardUsesTestID(activeReview?.dashboard.panels ?? []) || (activeReview?.bindings ?? []).some(binding => expressionUsesTestID(binding.query ?? '')), [activeReview])
 
 	useEffect(() => {
-		if (!review || review.has_blockers || !prometheusConfigured || (reviewNeedsTestId && !previewTestId.trim()) || !requiredBindings.every(name => (bindingValues[name] ?? '').trim())) {
+		if (!activeReview || activeReview.has_blockers || !prometheusConfigured || (reviewNeedsTestId && !previewTestId.trim()) || !requiredBindings.every(name => (bindingValues[name] ?? '').trim())) {
 			setPreview(null)
 			setPreviewLoading(false)
 			return
@@ -91,16 +135,16 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 			setPreviewLoading(true)
 			try {
 				const end = new Date()
-				const response = await previewGrafanaDashboardImport({ project_id: projectId, import_session_id: review.import_session_id, bindings: bindingValues, test_id: previewTestId.trim() || undefined, start: new Date(end.getTime() - 15 * 60_000).toISOString(), end: end.toISOString(), step_seconds: 15 })
+				const response = await previewGrafanaDashboardImport({ project_id: projectId, import_session_id: activeReview.import_session_id, bindings: bindingValues, test_id: previewTestId.trim() || undefined, start: new Date(end.getTime() - 15 * 60_000).toISOString(), end: end.toISOString(), step_seconds: 15 })
 				if (!cancelled) setPreview(response)
 			} catch (err) {
-				if (!cancelled) setPreview({ enabled: true, configured: true, generated_at: new Date().toISOString(), dashboards: [{ dashboard_id: review.import_session_id, dashboard_title: review.dashboard.source_title, panels: (review.dashboard.panels ?? []).map(panel => ({ ...panel, error: getErrorMessage(err, 'Preview unavailable.') })) }] })
+				if (!cancelled) setPreview({ enabled: true, configured: true, generated_at: new Date().toISOString(), dashboards: [{ dashboard_id: activeReview.import_session_id, dashboard_title: activeReview.dashboard.source_title, panels: (activeReview.dashboard.panels ?? []).map(panel => ({ ...panel, error: getErrorMessage(err, 'Preview unavailable.') })) }] })
 			} finally {
 				if (!cancelled) setPreviewLoading(false)
 			}
 		}, 500)
 		return () => { cancelled = true; window.clearTimeout(timer) }
-	}, [bindingValues, previewGrafanaDashboardImport, previewTestId, projectId, prometheusConfigured, requiredBindings, review, reviewNeedsTestId])
+	}, [activeReview, bindingValues, previewGrafanaDashboardImport, previewTestId, projectId, prometheusConfigured, requiredBindings, reviewNeedsTestId])
 
 	const handleFile = useCallback(async (file: File | null) => {
 		if (!file) return
@@ -110,83 +154,112 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
       return
     }
 		operationInFlight.current = true
+		const scope = { ...scopeRef.current }
 		refreshGeneration.current += 1
 		setBusy(true)
     setError('')
     setNotice('')
     try {
       const content = await file.text()
-      const result = await importGrafanaDashboard({ project_id: projectId, name: file.name.replace(/\.json$/i, ''), content })
+		if (!isCurrentScope(scope)) return
+      const result = await importGrafanaDashboard({ project_id: scope.projectId, name: file.name.replace(/\.json$/i, ''), content })
+		if (!isCurrentScope(scope)) return
       setReview(result)
+		setReviewProjectId(scope.projectId)
       setBindingValues({})
       setBindingOptions({})
 		setPreviewTestId('')
       setMode('review')
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to parse the dashboard JSON.'))
+		if (isCurrentScope(scope)) setError(getErrorMessage(err, 'Failed to parse the dashboard JSON.'))
 		} finally {
-			operationInFlight.current = false
-			setBusy(false)
+			if (isCurrentScope(scope)) {
+				operationInFlight.current = false
+				setBusy(false)
+			}
     }
-	}, [importGrafanaDashboard, projectId])
+	}, [importGrafanaDashboard, isCurrentScope, projectId])
 
   const handleLoadBindingOptions = useCallback(async (name: string) => {
-    if (!review || loadingBinding) return
+		const scopedReview = activeReview
+    if (!scopedReview || loadingBinding) return
+		const scope = { ...scopeRef.current }
     setLoadingBinding(name)
     setError('')
     try {
-		const response = await resolveGrafanaImportLabelValues({ project_id: projectId, import_session_id: review.import_session_id, variable: name, bindings: bindingValues, test_id: previewTestId.trim() || undefined })
-      setBindingOptions(current => ({ ...current, [name]: response.options ?? [] }))
+		const response = await resolveGrafanaImportLabelValues({ project_id: scope.projectId, import_session_id: scopedReview.import_session_id, variable: name, bindings: bindingValues, test_id: previewTestId.trim() || undefined })
+		if (isCurrentScope(scope)) setBindingOptions(current => ({ ...current, [name]: response.options ?? [] }))
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to resolve label values.'))
+		if (isCurrentScope(scope)) setError(getErrorMessage(err, 'Failed to resolve label values.'))
     } finally {
-      setLoadingBinding('')
+		if (isCurrentScope(scope)) setLoadingBinding('')
     }
-	}, [bindingValues, loadingBinding, previewTestId, projectId, resolveGrafanaImportLabelValues, review])
+	}, [activeReview, bindingValues, isCurrentScope, loadingBinding, previewTestId, resolveGrafanaImportLabelValues])
 
 	const handleLiveUID = useCallback(async () => {
 		if (!projectId || !grafanaUID.trim() || operationInFlight.current) return
 		operationInFlight.current = true
+		const scope = { ...scopeRef.current }
 		setBusy(true); setError('')
 		try {
-			const result = await importGrafanaDashboardByUID({ project_id: projectId, uid: grafanaUID.trim() })
-			setReview(result); setBindingValues({}); setBindingOptions({}); setPreviewTestId(''); setMode('review')
-		} catch (err) { setError(getErrorMessage(err, 'Failed to fetch Grafana dashboard.')) }
-		finally { operationInFlight.current = false; setBusy(false) }
-	}, [grafanaUID, importGrafanaDashboardByUID, projectId])
+			const result = await importGrafanaDashboardByUID({ project_id: scope.projectId, uid: grafanaUID.trim() })
+			if (!isCurrentScope(scope)) return
+			setReview(result); setReviewProjectId(scope.projectId); setBindingValues({}); setBindingOptions({}); setPreviewTestId(''); setMode('review')
+		} catch (err) { if (isCurrentScope(scope)) setError(getErrorMessage(err, 'Failed to fetch Grafana dashboard.')) }
+		finally {
+			if (isCurrentScope(scope)) {
+				operationInFlight.current = false
+				setBusy(false)
+			}
+		}
+	}, [grafanaUID, importGrafanaDashboardByUID, isCurrentScope, projectId])
 
-	const handleCommit = useCallback(async () => {
-		if (!review) return
-		if (operationInFlight.current) return
+	const handleCommit = useCallback(async (): Promise<boolean> => {
+		const scopedReview = activeReview
+		if (!scopedReview) return false
+		if (scopedReview.has_blockers || !requiredBindings.every(name => (bindingValues[name] ?? '').trim())) {
+			setError('Resolve the dashboard import blockers and required variables before importing.')
+			return false
+		}
+		if (operationInFlight.current) return false
 		operationInFlight.current = true
+		const scope = { ...scopeRef.current }
     setBusy(true)
     setError('')
     try {
-      await commitGrafanaDashboardImport({
-        project_id: projectId,
-        import_session_id: review.import_session_id,
+      const committed = await commitGrafanaDashboardImport({
+				project_id: scope.projectId,
+				import_session_id: scopedReview.import_session_id,
         bindings: bindingValues,
       })
+			if (!isCurrentScope(scope)) return false
+			setDashboards(current => [...current.filter(dashboard => dashboard.id !== committed.id), committed])
       setReview(null)
+			setReviewProjectId('')
 		setPreviewTestId('')
       setMode('list')
       setNotice('Dashboard imported.')
-      await refresh(projectId)
+			await refresh(scope.projectId)
+			return true
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to commit the dashboard import.'))
+			if (isCurrentScope(scope)) setError(getErrorMessage(err, 'Failed to commit the dashboard import.'))
+			return false
 		} finally {
-			operationInFlight.current = false
-      setBusy(false)
+			if (isCurrentScope(scope)) {
+				operationInFlight.current = false
+				setBusy(false)
+			}
     }
-  }, [bindingValues, commitGrafanaDashboardImport, projectId, refresh, review])
+	}, [activeReview, bindingValues, commitGrafanaDashboardImport, isCurrentScope, refresh, requiredBindings])
 
   const handleToggle = useCallback(async (dashboard: ImportedDashboard) => {
 		if (operationInFlight.current) return
 		operationInFlight.current = true
 		setMutatingDashboardId(dashboard.id)
-		setError('')
+    setError('')
     try {
-      await patchImportedDashboard(dashboard.id, { enabled: !dashboard.enabled })
+			const saved = await patchImportedDashboard(dashboard.id, { enabled: !dashboard.enabled })
+			setDashboards(current => current.map(candidate => candidate.id === saved.id ? saved : candidate))
       await refresh(projectId)
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to update the dashboard.'))
@@ -201,9 +274,10 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 		if (!window.confirm(`Delete imported dashboard "${dashboard.name}"? This cannot be undone.`)) return
 		operationInFlight.current = true
 		setMutatingDashboardId(dashboard.id)
-		setError('')
+    setError('')
     try {
       await deleteImportedDashboard(dashboard.id)
+			setDashboards(current => current.filter(candidate => candidate.id !== dashboard.id))
       await refresh(projectId)
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to delete the dashboard.'))
@@ -251,7 +325,8 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 		operationInFlight.current = true
 		setMutatingDashboardId(dashboard.id)
 		try {
-			await patchImportedDashboard(dashboard.id, { bindings: next })
+			const saved = await patchImportedDashboard(dashboard.id, { bindings: next })
+			setDashboards(current => current.map(candidate => candidate.id === saved.id ? saved : candidate))
 			setNotice('Dashboard bindings updated.')
 			await refresh(projectId)
 		} catch (err) {
@@ -262,7 +337,21 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 		}
 	}, [patchImportedDashboard, projectId, refresh])
 
-  const canCommit = review !== null && !review.has_blockers && requiredBindings.every(name => (bindingValues[name] ?? '').trim() !== '')
+	const reviewDirty = activeReview !== null
+	const reviewDirtyRef = useRef(reviewDirty)
+	reviewDirtyRef.current = reviewDirty
+	const handleCommitRef = useRef(handleCommit)
+	handleCommitRef.current = handleCommit
+	const importNavigationGuard = useMemo<NavigationGuard>(() => ({
+		id: 'imported-dashboard-review',
+		label: 'Imported dashboard review',
+		isDirty: () => reviewDirtyRef.current,
+		save: () => handleCommitRef.current(),
+		discard: discardReview,
+	}), [discardReview])
+	useNavigationGuard(importNavigationGuard, reviewDirty)
+
+  const canCommit = activeReview !== null && !activeReview.has_blockers && requiredBindings.every(name => (bindingValues[name] ?? '').trim() !== '')
 
   return (
     <div className="settings-group imported-dashboards-panel">
@@ -294,14 +383,8 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 			value={projectId}
 			disabled={controlsBusy}
 			onChange={event => {
-				refreshGeneration.current += 1
-				setDashboards([])
-				setProjectId(event.target.value)
-				setMode('list')
-				setReview(null)
-				setPreviewTestId('')
-				setError('')
-				setNotice('')
+				const nextProjectId = event.target.value
+				runGuarded(() => setProjectId(nextProjectId))
 			}}
           >
             <option value="">Select a project…</option>
@@ -330,7 +413,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
                 <li key={dashboard.id} className="imported-dashboards-item">
                   <div className="imported-dashboards-item-main">
                     <strong>{dashboard.name}</strong>
-                    <span className="setting-desc">{dashboard.panels.length} panel{dashboard.panels.length === 1 ? '' : 's'}</span>
+										<span className="setting-desc">{(dashboard.panels ?? []).length} panel{(dashboard.panels ?? []).length === 1 ? '' : 's'}</span>
                   </div>
                   <div className="imported-dashboards-item-actions">
                     <label className="settings-checkbox-label">
@@ -350,12 +433,12 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
               {dashboards.length === 0 && projectId && <li className="setting-desc">No dashboards imported yet.</li>}
             </ul>
           </>
-        ) : review ? (
+        ) : activeReview ? (
           <div className="imported-dashboards-review">
-            <h4>Review import{review.dashboard.source_title ? `: ${review.dashboard.source_title}` : ''}</h4>
+            <h4>Review import{activeReview.dashboard.source_title ? `: ${activeReview.dashboard.source_title}` : ''}</h4>
             <p className="setting-desc">
-              {review.stats.panels_converted} of {review.stats.panels_seen} panels importable
-              ({review.stats.line_charts} chart{review.stats.line_charts === 1 ? '' : 's'}, {review.stats.single_value_tiles} tile{review.stats.single_value_tiles === 1 ? '' : 's'}, {review.stats.tables ?? 0} table{review.stats.tables === 1 ? '' : 's'}, {review.stats.heatmaps ?? 0} heatmap{review.stats.heatmaps === 1 ? '' : 's'}).
+              {activeReview.stats.panels_converted} of {activeReview.stats.panels_seen} panels importable
+              ({activeReview.stats.line_charts} chart{activeReview.stats.line_charts === 1 ? '' : 's'}, {activeReview.stats.single_value_tiles} tile{activeReview.stats.single_value_tiles === 1 ? '' : 's'}, {activeReview.stats.tables ?? 0} table{activeReview.stats.tables === 1 ? '' : 's'}, {activeReview.stats.heatmaps ?? 0} heatmap{activeReview.stats.heatmaps === 1 ? '' : 's'}).
             </p>
 
             <div className="imported-dashboards-review-panels">
@@ -368,7 +451,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
 			{preview?.dashboards.flatMap(dashboard => dashboard.panels).map(panel => (
 				<PrometheusPanelCard key={`preview-${panel.panel_id}`} title={panel.title} unit={panel.unit} kind={panel.kind} series={panel.series} value={panel.value} error={panel.error} thresholds={panel.thresholds} height={160} />
 			))}
-			{(review.dashboard.panels ?? []).map((panel, panelIndex) => (
+			{(activeReview.dashboard.panels ?? []).map((panel, panelIndex) => (
                 <div key={`${panel.panel_id}-${panelIndex}`} className="imported-dashboards-review-panel">
 				  <span className={`imported-dashboards-badge badge-${panel.kind}`}>{panelKindLabel(panel.kind)}</span>
                   <strong>{panel.title}</strong>
@@ -385,7 +468,7 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
               <div className="imported-dashboards-bindings">
                 <h5>Required variables</h5>
                 {requiredBindings.map(name => {
-                  const definition = review.bindings?.find(binding => binding.name === name)
+									const definition = activeReview.bindings?.find(binding => binding.name === name)
                   const options = bindingOptions[name] ?? definition?.options ?? []
                   return <div key={name} className="setting-row">
                     <div className="setting-info">
@@ -406,9 +489,9 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
               </div>
             )}
 
-            {review.review_sections && review.review_sections.length > 0 && (
+						{activeReview.review_sections && activeReview.review_sections.length > 0 && (
               <div className="imported-dashboards-unsupported">
-                {review.review_sections.map(section => (
+								{activeReview.review_sections.map(section => (
                   <div key={section.key}>
                     <h5>{section.title}</h5>
                     <ul>
@@ -421,12 +504,12 @@ export default function ImportedDashboardsPanel({ projects, defaultProjectId, pr
               </div>
             )}
 
-            {review.has_blockers && (
+						{activeReview.has_blockers && (
               <div className="settings-inline-error" role="alert">This dashboard has blocking issues and cannot be imported until they are resolved.</div>
             )}
 
             <div className="imported-dashboards-review-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => { setMode('list'); setReview(null); setPreviewTestId('') }} disabled={busy}>Cancel</button>
+								<button type="button" className="btn btn-secondary" onClick={requestDiscardReview} disabled={busy}>Cancel</button>
               <button type="button" className="btn btn-primary" onClick={handleCommit} disabled={!canCommit || busy}>Import dashboard</button>
             </div>
           </div>

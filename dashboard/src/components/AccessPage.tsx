@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
 import {
@@ -7,12 +7,14 @@ import {
   DashboardAuditEvent,
   DashboardServiceAccount,
   DashboardUser,
+  DashboardUserRoleBinding,
   DashboardUserRoleScopeType,
   UsageAccountingBucket,
 } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { AccessIssuedKeyModal } from './AccessIssuedKeyModal'
 import { SortHeader } from './SortHeader'
 import type {
@@ -34,6 +36,115 @@ import {
 } from './accessUtils'
 
 const USER_PAGE_SIZE_OPTIONS = [25, 50, 100]
+
+type AuthoritativeEntity<T> = {
+  entity: T
+  listScope?: string | null
+  isSatisfiedBy?: (serverEntity: T, authoritativeEntity: T) => boolean
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map(canonicalize)
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((result, key) => {
+        result[key] = canonicalize((value as Record<string, unknown>)[key])
+        return result
+      }, {})
+  }
+  return value
+}
+
+function dataSignature(value: unknown): string {
+  return JSON.stringify(canonicalize(value))
+}
+
+function serverHasAuthoritativeEntity<T>(serverEntity: T, authoritative: AuthoritativeEntity<T>): boolean {
+  const authoritativeEntity = authoritative.entity
+  if (dataSignature(serverEntity) === dataSignature(authoritativeEntity)) return true
+  return authoritative.isSatisfiedBy?.(serverEntity, authoritativeEntity) || false
+}
+
+function reconcileAuthoritativeEntities<T extends { id: string; updated_at: string }>(
+  serverEntities: T[],
+  authoritativeEntities: Map<string, AuthoritativeEntity<T>>,
+  deletedEntityIDs: Set<string>,
+  listScope?: string,
+): { entities: T[]; deletedFromResponse: number; insertedAuthoritative: number } {
+  const seen = new Set<string>()
+  let deletedFromResponse = 0
+  const entities = serverEntities.flatMap(serverEntity => {
+    if (deletedEntityIDs.has(serverEntity.id)) {
+      deletedFromResponse += 1
+      return []
+    }
+    seen.add(serverEntity.id)
+    const authoritative = authoritativeEntities.get(serverEntity.id)
+    if (!authoritative) return [serverEntity]
+    if (serverHasAuthoritativeEntity(serverEntity, authoritative)) {
+      authoritativeEntities.delete(serverEntity.id)
+      return [serverEntity]
+    }
+    return [authoritative.entity]
+  })
+
+  let insertedAuthoritative = 0
+  authoritativeEntities.forEach(authoritative => {
+    if (deletedEntityIDs.has(authoritative.entity.id) || seen.has(authoritative.entity.id)) return
+    if (authoritative.listScope === null) return
+    if (authoritative.listScope !== undefined && authoritative.listScope !== listScope) return
+    entities.unshift(authoritative.entity)
+    seen.add(authoritative.entity.id)
+    insertedAuthoritative += 1
+  })
+
+  return { entities, deletedFromResponse, insertedAuthoritative }
+}
+
+function userDraftSignature(form: UserForm, bindings: UserBindingForm[]): string {
+  return dataSignature({
+    form,
+    bindings: normalizedUserBindingDrafts(bindings).map(draftSignature),
+  })
+}
+
+function serviceAccountDraftSignature(form: ServiceAccountForm): string {
+  return dataSignature(form)
+}
+
+function userMutationStateSignature(user: DashboardUser): string {
+  return dataSignature({
+    subject: user.subject,
+    email: user.email || '',
+    displayName: user.display_name || '',
+    active: user.active,
+    bindings: (user.bindings || []).map(binding => bindingSignature(binding)),
+  })
+}
+
+function accountMutationStateSignature(account: DashboardServiceAccount): string {
+  return dataSignature({
+    name: account.name,
+    description: account.description || '',
+    ownerID: account.owner_id || '',
+    contactEmail: account.contact_email || '',
+    active: account.active,
+    globalRoles: account.global_roles || [],
+    projectRoles: account.project_roles || {},
+    domainRoles: account.domain_roles || {},
+    applicationRepositoryRoles: account.application_repository_roles || {},
+    scopes: account.scopes || [],
+    expiresAt: account.expires_at || '',
+    keyRotatedAt: account.key_rotated_at || '',
+    rotationIntervalDays: account.rotation_interval_days || 0,
+    rotationDueAt: account.rotation_due_at || '',
+  })
+}
 
 function isValidOptionalEmail(value: string): boolean {
   const trimmed = value.trim()
@@ -81,6 +192,7 @@ export default function AccessPage({
   accessReviewRefreshSignal = 0,
 }: AccessPageProps) {
   const api = useApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const canUseUsers = canManageUserLifecycle || canManageUserBindings
   const [activeTab, setActiveTab] = useState<AccessTab>(() => preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity))
   const [userSubTab, setUserSubTab] = useState<UserSubTab>('existing')
@@ -128,6 +240,9 @@ export default function AccessPage({
   const [loading, setLoading] = useState(true)
   const [usersLoading, setUsersLoading] = useState(true)
   const [activityLoading, setActivityLoading] = useState(true)
+  const [accountsLoadFailed, setAccountsLoadFailed] = useState(false)
+  const [usersLoadFailed, setUsersLoadFailed] = useState(false)
+  const [activityLoadFailed, setActivityLoadFailed] = useState(false)
   const [activityExporting, setActivityExporting] = useState(false)
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -143,6 +258,19 @@ export default function AccessPage({
   const [simulatorResult, setSimulatorResult] = useState<DashboardAuthEffectiveAccess | null>(null)
   const [simulatorError, setSimulatorError] = useState('')
   const [simulatorLoading, setSimulatorLoading] = useState(false)
+  const [accessMutationBusy, setAccessMutationBusy] = useState(false)
+  const accountsLoadGenerationRef = useRef(0)
+  const usersLoadGenerationRef = useRef(0)
+  const activityLoadGenerationRef = useRef(0)
+  const accessReviewLoadGenerationRef = useRef(0)
+  const simulatorGenerationRef = useRef(0)
+  const accessMutationInFlightRef = useRef(false)
+  const authoritativeAccountsRef = useRef(new Map<string, AuthoritativeEntity<DashboardServiceAccount>>())
+  const deletedAccountIDsRef = useRef(new Set<string>())
+  const authoritativeUsersRef = useRef(new Map<string, AuthoritativeEntity<DashboardUser>>())
+  const deletedUserIDsRef = useRef(new Set<string>())
+  const editingUserIDRef = useRef('')
+  const editingUserSnapshotRef = useRef<DashboardUser | null>(null)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
 
   const selectedUser = useMemo(() => users.find(user => user.id === selectedUserID) || null, [selectedUserID, users])
@@ -157,6 +285,22 @@ export default function AccessPage({
   const editUserEmailInvalid = !isValidOptionalEmail(editUserForm.email)
   const accountContactInvalid = !isValidOptionalEmail(form.contact)
   const editAccountContactInvalid = !isValidOptionalEmail(editAccountForm.contact)
+  const simulatorScopeKey = [
+    simulatorPrincipal.type,
+    simulatorPrincipal.id,
+    activeProject?.id || '',
+    activeProject?.domain_id || activeDomain?.id || '',
+    applicationRepository?.id || '',
+  ].join('\u0000')
+  const simulatorScopeKeyRef = useRef(simulatorScopeKey)
+  simulatorScopeKeyRef.current = simulatorScopeKey
+  const userListScopeKey = dataSignature({
+    page: userPage,
+    pageSize: userPageSize,
+    query: userFilters.query.trim(),
+    role: userFilters.role,
+    status: userFilters.status,
+  })
   // Attention summary for the access-review badge: flagged principals + recent denials.
   const accessReviewAttention = useMemo(() => {
     if (!accessReview) return null
@@ -176,17 +320,17 @@ export default function AccessPage({
     accessWorkspaceAvailable ? (
       <div className="access-tab-row topbar-page-section-toggle" role="tablist" aria-label="Access workspace sections">
         {canUseUsers && (
-          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
+          <button type="button" role="tab" aria-selected={activeTab === 'users'} className={`access-tab ${activeTab === 'users' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('users'))}>
             Users <strong>{usersTotal > users.length ? `${users.length} of ${usersTotal}` : users.length}</strong>
           </button>
         )}
         {canManageServiceAccounts && (
-          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => setActiveTab('service_accounts')}>
+          <button type="button" role="tab" aria-selected={activeTab === 'service_accounts'} className={`access-tab ${activeTab === 'service_accounts' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('service_accounts'))}>
             Service Accounts <strong>{accounts.length}</strong>
           </button>
         )}
         {canViewUserActivity && (
-          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => setActiveTab('activity')}>
+          <button type="button" role="tab" aria-selected={activeTab === 'activity'} className={`access-tab ${activeTab === 'activity' ? 'active' : ''}`} onClick={() => runGuarded(() => setActiveTab('activity'))}>
             Activity <strong>{activityEvents.length}</strong>
             {accessReviewAttention && (
               <span className="access-attention-badge" title={`${accessReviewAttention.total} item(s) need review`}>{accessReviewAttention.total}</span>
@@ -195,7 +339,7 @@ export default function AccessPage({
         )}
       </div>
     ) : null
-  ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, users.length, usersTotal])
+  ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, runGuarded, users.length, usersTotal])
 
   const accessTopbarContribution = useMemo(() => ({
     id: 'access-page',
@@ -355,28 +499,47 @@ export default function AccessPage({
   }, [usageSearch, usageSort, userBuckets])
 
   const loadAccounts = useCallback(async () => {
+    const requestGeneration = ++accountsLoadGenerationRef.current
+    const isCurrentRequest = () => accountsLoadGenerationRef.current === requestGeneration
     if (!canManageServiceAccounts) {
-      setAccounts([])
-      setLoading(false)
+      if (isCurrentRequest()) {
+        setAccounts([])
+        setAccountsLoadFailed(false)
+        setLoading(false)
+      }
       return
     }
     setLoading(true)
     try {
       const response = await api.listAuthServiceAccounts()
-      setAccounts(response.service_accounts || [])
+      if (!isCurrentRequest()) return
+      const reconciled = reconcileAuthoritativeEntities(
+        response.service_accounts || [],
+        authoritativeAccountsRef.current,
+        deletedAccountIDsRef.current,
+      )
+      setAccounts(reconciled.entities)
       setActionError('')
+      setAccountsLoadFailed(false)
     } catch (error: unknown) {
+      if (!isCurrentRequest()) return
       setActionError(getErrorMessage(error, 'Unable to load service accounts'))
-      setAccounts([])
+      setAccountsLoadFailed(true)
     } finally {
-      setLoading(false)
+      if (isCurrentRequest()) setLoading(false)
     }
   }, [api, canManageServiceAccounts])
 
   const loadUsers = useCallback(async () => {
+    const requestGeneration = ++usersLoadGenerationRef.current
+    const isCurrentRequest = () => usersLoadGenerationRef.current === requestGeneration
     if (!canUseUsers) {
-      setUsers([])
-      setUsersLoading(false)
+      if (isCurrentRequest()) {
+        setUsers([])
+        setUsersTotal(0)
+        setUsersLoadFailed(false)
+        setUsersLoading(false)
+      }
       return
     }
     setUsersLoading(true)
@@ -389,69 +552,123 @@ export default function AccessPage({
       if (userFilters.status === 'disabled') requestFilter.active = 'false'
       if (userFilters.role) requestFilter.role = userFilters.role
       const response = await api.listAuthUsers(requestFilter)
-      setUsers(response.users || [])
-      const total = typeof response.total === 'number' ? response.total : (response.users || []).length
+      if (!isCurrentRequest()) return
+      const reconciled = reconcileAuthoritativeEntities(
+        response.users || [],
+        authoritativeUsersRef.current,
+        deletedUserIDsRef.current,
+        userListScopeKey,
+      )
+      const usersForDisplay = [...reconciled.entities]
+      const editingUser = editingUserSnapshotRef.current
+      if (editingUser) {
+        const loadedEditingUser = usersForDisplay.find(user => user.id === editingUser.id)
+        if (loadedEditingUser) {
+          editingUserSnapshotRef.current = loadedEditingUser
+        } else if (!deletedUserIDsRef.current.has(editingUser.id)) {
+          usersForDisplay.push(editingUser)
+        }
+      }
+      setUsers(usersForDisplay)
+      const serverTotal = typeof response.total === 'number' ? response.total : (response.users || []).length
+      const visibleRangeFloor = reconciled.entities.length > 0 ? offset + reconciled.entities.length : 0
+      const total = Math.max(
+        0,
+        serverTotal - reconciled.deletedFromResponse,
+        visibleRangeFloor,
+      )
       setUsersTotal(total)
       if (offset >= total && total > 0) {
         setUserPage(Math.max(0, Math.ceil(total / userPageSize) - 1))
       }
       setUserActionError('')
+      setUsersLoadFailed(false)
     } catch (error: unknown) {
+      if (!isCurrentRequest()) return
       setUserActionError(getErrorMessage(error, 'Unable to load users'))
-      setUsers([])
-      setUsersTotal(0)
+      setUsersLoadFailed(true)
     } finally {
-      setUsersLoading(false)
+      if (isCurrentRequest()) setUsersLoading(false)
     }
-  }, [api, canUseUsers, userFilters.query, userFilters.role, userFilters.status, userPage, userPageSize])
+  }, [api, canUseUsers, userFilters.query, userFilters.role, userFilters.status, userListScopeKey, userPage, userPageSize])
 
   useEffect(() => {
     setUserPage(0)
   }, [userFilters.query, userFilters.role, userFilters.status])
 
   const loadActivity = useCallback(async () => {
+    const requestGeneration = ++activityLoadGenerationRef.current
+    const isCurrentRequest = () => activityLoadGenerationRef.current === requestGeneration
     if (!canViewUserActivity) {
-      setActivityEvents([])
-      setActivityUsage(null)
-      setActivityLoading(false)
+      if (isCurrentRequest()) {
+        setActivityEvents([])
+        setActivityUsage(null)
+        setActivityLoadFailed(false)
+        setActivityLoading(false)
+      }
       return
     }
     setActivityLoading(true)
     try {
       const response = await api.getAuthUserActivity(buildActivityFilter(activityFilter))
+      if (!isCurrentRequest()) return
       setActivityEvents(response.events || [])
       setActivityUsage(response.usage)
       setActivityError('')
+      setActivityLoadFailed(false)
     } catch (error: unknown) {
+      if (!isCurrentRequest()) return
       setActivityError(getErrorMessage(error, 'Unable to load activity'))
-      setActivityEvents([])
-      setActivityUsage(null)
+      setActivityLoadFailed(true)
     } finally {
-      setActivityLoading(false)
+      if (isCurrentRequest()) setActivityLoading(false)
     }
   }, [activityFilter, api, canViewUserActivity])
 
   const loadAccessReview = useCallback(async () => {
+    const requestGeneration = ++accessReviewLoadGenerationRef.current
+    const isCurrentRequest = () => accessReviewLoadGenerationRef.current === requestGeneration
     // The report endpoint is gated by user-lifecycle admin.
-    if (!canManageUserLifecycle) return
+    if (!canManageUserLifecycle) {
+      if (isCurrentRequest()) {
+        setAccessReview(null)
+        setAccessReviewError('')
+        setAccessReviewLoading(false)
+      }
+      return
+    }
     setAccessReviewLoading(true)
     try {
       const response = await api.getAccessReview()
+      if (!isCurrentRequest()) return
       setAccessReview(response)
       setAccessReviewError('')
     } catch (error: unknown) {
+      if (!isCurrentRequest()) return
       setAccessReviewError(getErrorMessage(error, 'Unable to load access review'))
       setAccessReview(null)
     } finally {
-      setAccessReviewLoading(false)
+      if (isCurrentRequest()) setAccessReviewLoading(false)
     }
   }, [api, canManageUserLifecycle])
 
   useEffect(() => {
-    if (activeTab === 'activity' && activitySubTab === 'review' && canManageUserLifecycle && !accessReview && !accessReviewLoading) {
+    if (canManageUserLifecycle) return
+    accessReviewLoadGenerationRef.current += 1
+    setAccessReview(null)
+    setAccessReviewError('')
+    setAccessReviewLoading(false)
+  }, [canManageUserLifecycle])
+
+  useEffect(() => () => {
+    accessReviewLoadGenerationRef.current += 1
+  }, [])
+
+  useEffect(() => {
+    if (activeTab === 'activity' && activitySubTab === 'review' && canManageUserLifecycle && !accessReview && !accessReviewError && !accessReviewLoading) {
       void loadAccessReview()
     }
-  }, [activeTab, activitySubTab, accessReview, accessReviewLoading, canManageUserLifecycle, loadAccessReview])
+  }, [activeTab, activitySubTab, accessReview, accessReviewError, accessReviewLoading, canManageUserLifecycle, loadAccessReview])
 
   useEffect(() => {
     if (!canManageUserLifecycle && activitySubTab === 'review') {
@@ -483,16 +700,32 @@ export default function AccessPage({
   }, [canManageUserLifecycle, userSubTab])
 
   useEffect(() => {
-    loadAccounts()
+    void loadAccounts()
+    return () => {
+      accountsLoadGenerationRef.current += 1
+    }
   }, [loadAccounts])
 
   useEffect(() => {
-    loadUsers()
+    void loadUsers()
+    return () => {
+      usersLoadGenerationRef.current += 1
+    }
   }, [loadUsers])
 
   useEffect(() => {
-    loadActivity()
+    void loadActivity()
+    return () => {
+      activityLoadGenerationRef.current += 1
+    }
   }, [loadActivity])
+
+  useEffect(() => {
+    simulatorGenerationRef.current += 1
+    setSimulatorResult(null)
+    setSimulatorError('')
+    setSimulatorLoading(false)
+  }, [simulatorScopeKey])
 
   useEffect(() => {
     if (users.length === 0) {
@@ -514,6 +747,13 @@ export default function AccessPage({
     }
   }, [accounts, selectedAccountID])
 
+  useEffect(() => {
+    if (!selectedUserEditMode || !editingUserIDRef.current || editingUserIDRef.current === selectedUserID) return
+    editingUserIDRef.current = ''
+    editingUserSnapshotRef.current = null
+    setSelectedUserEditMode(false)
+  }, [selectedUserEditMode, selectedUserID])
+
   // Leave edit mode whenever the selected account changes, so a stale edit draft can't
   // be saved against a different account.
   useEffect(() => {
@@ -531,6 +771,7 @@ export default function AccessPage({
   }, [activityEvents, selectedActivityID])
 
   useEffect(() => {
+    if (selectedUserEditMode) return
     if (!selectedUser) {
       setEditUserForm({ subject: '', email: '', displayName: '' })
       setEditBindingDrafts([])
@@ -542,11 +783,79 @@ export default function AccessPage({
       displayName: selectedUser.display_name || '',
     })
     setEditBindingDrafts((selectedUser.bindings || []).map(userBindingDraftFromBinding))
-  }, [selectedUser])
+  }, [selectedUser, selectedUserEditMode])
 
   useEffect(() => {
     setOnboardBindingDrafts(prev => prev.length > 0 ? prev : initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
   }, [activeDomain, activeProject, applicationRepository, domains, projects])
+
+  const userMatchesCurrentServerFilters = (user: DashboardUser) => {
+    if (userFilters.status === 'active' && !user.active) return false
+    if (userFilters.status === 'disabled' && user.active) return false
+    const roles = userRoleList(user)
+    if (userFilters.role && !roles.includes(userFilters.role)) return false
+    return includesQuery([
+      user.subject,
+      user.email,
+      user.display_name,
+      ...roles,
+      ...userAccessLabels(user, projects, domains, applicationRepository),
+    ], userFilters.query)
+  }
+
+  const publishAuthoritativeUser = (user: DashboardUser, listScope = userListScopeKey) => {
+    if (!user?.id) return
+    usersLoadGenerationRef.current += 1
+    deletedUserIDsRef.current.delete(user.id)
+    authoritativeUsersRef.current.set(user.id, {
+      entity: user,
+      listScope: userMatchesCurrentServerFilters(user) ? listScope : null,
+      isSatisfiedBy: (serverUser, authoritativeUser) => userMutationStateSignature(serverUser) === userMutationStateSignature(authoritativeUser),
+    })
+    setUsers(prev => prev.some(existing => existing.id === user.id)
+      ? prev.map(existing => existing.id === user.id ? user : existing)
+      : [user, ...prev])
+  }
+
+  const publishDeletedUser = (userID: string) => {
+    usersLoadGenerationRef.current += 1
+    authoritativeUsersRef.current.delete(userID)
+    deletedUserIDsRef.current.add(userID)
+    setUsers(prev => prev.filter(user => user.id !== userID))
+  }
+
+  const publishAuthoritativeAccount = (account: DashboardServiceAccount) => {
+    if (!account?.id) return
+    accountsLoadGenerationRef.current += 1
+    deletedAccountIDsRef.current.delete(account.id)
+    authoritativeAccountsRef.current.set(account.id, {
+      entity: account,
+      isSatisfiedBy: (serverAccount, authoritativeAccount) => accountMutationStateSignature(serverAccount) === accountMutationStateSignature(authoritativeAccount),
+    })
+    setAccounts(prev => prev.some(existing => existing.id === account.id)
+      ? prev.map(existing => existing.id === account.id ? account : existing)
+      : [account, ...prev])
+  }
+
+  const publishDeletedAccount = (accountID: string) => {
+    accountsLoadGenerationRef.current += 1
+    authoritativeAccountsRef.current.delete(accountID)
+    deletedAccountIDsRef.current.add(accountID)
+    setAccounts(prev => prev.filter(account => account.id !== accountID))
+  }
+
+  const runAccessMutation = async (operation: () => Promise<void>): Promise<boolean> => {
+    if (accessMutationInFlightRef.current) return false
+    accessMutationInFlightRef.current = true
+    setAccessMutationBusy(true)
+    try {
+      await operation()
+      return true
+    } finally {
+      accessMutationInFlightRef.current = false
+      setAccessMutationBusy(false)
+    }
+  }
 
   const applyPreset = (preset: PurposePreset) => {
     setForm(buildPresetForm(preset, activeProject?.id))
@@ -554,260 +863,330 @@ export default function AccessPage({
     setActionMessage('')
   }
 
-  const createUser = async () => {
+  const createUser = async (): Promise<boolean> => {
+    if (accessMutationInFlightRef.current) return false
     if (!canManageUserLifecycle) {
       setUserActionError('Current session cannot manage users.')
       setUserActionMessage('')
-      return
+      return false
     }
     if (!userForm.subject.trim()) {
       setUserActionError('Subject is required.')
       setUserActionMessage('')
-      return
+      return false
     }
     if (onboardEmailInvalid) {
       setUserActionError('Enter a valid email address before creating the user.')
       setUserActionMessage('')
-      return
+      return false
     }
     const initialBindings = normalizedUserBindingDrafts(onboardBindingDrafts)
     if (initialBindings.length === 0) {
       setUserActionError('Choose at least one initial role binding.')
       setUserActionMessage('')
-      return
+      return false
     }
-    try {
-      const user = await api.onboardAuthUser({
-        subject: userForm.subject.trim(),
-        email: userForm.email.trim() || undefined,
-        display_name: userForm.displayName.trim() || undefined,
-        bindings: initialBindings.map(binding => ({
-          scope_type: binding.scopeType,
-          scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
-          role: binding.role,
-        })),
-      })
-      setSelectedUserID(user.id)
-      setUserInspectorCollapsed(false)
-      setUserSubTab('existing')
-      setUserForm({ subject: '', email: '', displayName: '' })
-      setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
-      setSelectedUserEditMode(false)
-      setUserActionMessage(`Onboarded ${user.display_name || user.email || user.subject} with ${initialBindings.length} role ${initialBindings.length === 1 ? 'binding' : 'bindings'}.`)
-      setUserActionError('')
-      await loadUsers()
-    } catch (error: unknown) {
-      setUserActionError(getErrorMessage(error, 'Unable to create user'))
-      setUserActionMessage('')
-    }
+    let succeeded = false
+    await runAccessMutation(async () => {
+      try {
+        const user = await api.onboardAuthUser({
+          subject: userForm.subject.trim(),
+          email: userForm.email.trim() || undefined,
+          display_name: userForm.displayName.trim() || undefined,
+          bindings: initialBindings.map(binding => ({
+            scope_type: binding.scopeType,
+            scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
+            role: binding.role,
+          })),
+        })
+        publishAuthoritativeUser(user)
+        if (userMatchesCurrentServerFilters(user)) setUsersTotal(total => total + 1)
+        setSelectedUserID(user.id)
+        setUserInspectorCollapsed(false)
+        setUserSubTab('existing')
+        setUserForm({ subject: '', email: '', displayName: '' })
+        setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
+        setSelectedUserEditMode(false)
+        setUserActionMessage(`Onboarded ${user.display_name || user.email || user.subject} with ${initialBindings.length} role ${initialBindings.length === 1 ? 'binding' : 'bindings'}.`)
+        setUserActionError('')
+        succeeded = true
+        await loadUsers()
+      } catch (error: unknown) {
+        setUserActionError(getErrorMessage(error, 'Unable to create user'))
+        setUserActionMessage('')
+      }
+    })
+    return succeeded
   }
 
-  const updateSelectedUser = async () => {
-    if (!selectedUser || !canManageUserBindings) return
+  const updateSelectedUser = async (): Promise<boolean> => {
+    if (accessMutationInFlightRef.current) return false
+    if (!selectedUser || !canManageUserBindings) return false
     if (canManageUserLifecycle && !editUserForm.subject.trim()) {
       setUserActionError('Subject is required.')
       setUserActionMessage('')
-      return
+      return false
     }
     if (canManageUserLifecycle && editUserEmailInvalid) {
       setUserActionError('Enter a valid email address before saving the user.')
       setUserActionMessage('')
-      return
+      return false
     }
     const desiredBindings = normalizedUserBindingDrafts(editBindingDrafts)
-    try {
-      const user = canManageUserLifecycle
-        ? await api.updateAuthUser(selectedUser.id, {
-          subject: editUserForm.subject.trim(),
-          email: editUserForm.email.trim() || undefined,
-          display_name: editUserForm.displayName.trim() || undefined,
-        })
-        : selectedUser
-      const desiredSignatures = new Set(desiredBindings.map(draftSignature))
-      const existingBindings = selectedUser.bindings || []
-      const existingSignatures = new Set(existingBindings.map(bindingSignature))
-      for (const binding of existingBindings) {
-        if (!desiredSignatures.has(bindingSignature(binding))) {
-          await api.deleteAuthUserBinding(selectedUser.id, binding.id)
-        }
+    let succeeded = false
+    await runAccessMutation(async () => {
+      let reconciledUser = selectedUser
+      let reconciledBindings = [...(selectedUser.bindings || [])]
+      let committedAnyChange = false
+      const publishReconciledUser = () => {
+        const snapshot: DashboardUser = { ...selectedUser, ...reconciledUser, bindings: reconciledBindings }
+        publishAuthoritativeUser(snapshot)
+        return snapshot
       }
-      for (const binding of desiredBindings) {
-        if (!existingSignatures.has(draftSignature(binding))) {
-          await api.createAuthUserBinding(selectedUser.id, {
-            scope_type: binding.scopeType,
-            scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
-            role: binding.role,
+      try {
+        if (canManageUserLifecycle) {
+          reconciledUser = await api.updateAuthUser(selectedUser.id, {
+            subject: editUserForm.subject.trim(),
+            email: editUserForm.email.trim() || undefined,
+            display_name: editUserForm.displayName.trim() || undefined,
           })
+          reconciledBindings = [...(reconciledUser.bindings || reconciledBindings)]
+          committedAnyChange = true
         }
+        const desiredSignatures = new Set(desiredBindings.map(draftSignature))
+        const existingSignatures = new Set(reconciledBindings.map(bindingSignature))
+        for (const binding of [...reconciledBindings]) {
+          if (!desiredSignatures.has(bindingSignature(binding))) {
+            await api.deleteAuthUserBinding(selectedUser.id, binding.id)
+            reconciledBindings = reconciledBindings.filter(candidate => candidate.id !== binding.id)
+            existingSignatures.delete(bindingSignature(binding))
+            committedAnyChange = true
+          }
+        }
+        for (const binding of desiredBindings) {
+          const signature = draftSignature(binding)
+          if (!existingSignatures.has(signature)) {
+            const created = await api.createAuthUserBinding(selectedUser.id, {
+              scope_type: binding.scopeType,
+              scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
+              role: binding.role,
+            }) as DashboardUserRoleBinding
+            reconciledBindings = [...reconciledBindings, created]
+            existingSignatures.add(signature)
+            committedAnyChange = true
+          }
+        }
+        const user = publishReconciledUser()
+        setSelectedUserID(user.id)
+        editingUserIDRef.current = ''
+        editingUserSnapshotRef.current = null
+        setSelectedUserEditMode(false)
+        setUserActionMessage(`${canManageUserLifecycle ? 'Updated' : 'Updated access for'} ${user.display_name || user.email || user.subject}.`)
+        setUserActionError('')
+        succeeded = true
+        await loadUsers()
+      } catch (error: unknown) {
+        const message = getErrorMessage(error, 'Unable to update user')
+        if (committedAnyChange) {
+          publishReconciledUser()
+          editingUserIDRef.current = ''
+          editingUserSnapshotRef.current = null
+          setSelectedUserEditMode(false)
+          await loadUsers()
+          setUserActionError(`${message} Some changes were already applied; current access was reconciled before retrying.`)
+        } else {
+          setUserActionError(message)
+        }
+        setUserActionMessage('')
       }
-      setSelectedUserID(user.id)
-      setSelectedUserEditMode(false)
-      setUserActionMessage(`${canManageUserLifecycle ? 'Updated' : 'Updated access for'} ${user.display_name || user.email || user.subject}.`)
-      setUserActionError('')
-      await loadUsers()
-    } catch (error: unknown) {
-      setUserActionError(getErrorMessage(error, 'Unable to update user'))
-      setUserActionMessage('')
-    }
+    })
+    return succeeded
   }
 
   const setUserActive = async (user: DashboardUser, active: boolean) => {
-    if (!canManageUserLifecycle) return
+    if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
     const action = active ? 'restore access for' : 'remove access from'
     if (typeof window !== 'undefined' && !window.confirm(`Really ${action} ${user.display_name || user.subject}?`)) {
       return
     }
-    try {
-      await (active ? api.enableAuthUser(user.id) : api.disableAuthUser(user.id))
-      setUserActionMessage(`${active ? 'Restored access for' : 'Removed access from'} ${user.display_name || user.subject}.`)
-      setUserActionError('')
-      await loadUsers()
-    } catch (error: unknown) {
-      setUserActionError(getErrorMessage(error, `Unable to ${active ? 'restore' : 'remove'} user access`))
-      setUserActionMessage('')
-    }
+    await runAccessMutation(async () => {
+      try {
+        const updated = await (active ? api.enableAuthUser(user.id) : api.disableAuthUser(user.id))
+        publishAuthoritativeUser(updated)
+        setUserActionMessage(`${active ? 'Restored access for' : 'Removed access from'} ${user.display_name || user.subject}.`)
+        setUserActionError('')
+        await loadUsers()
+      } catch (error: unknown) {
+        setUserActionError(getErrorMessage(error, `Unable to ${active ? 'restore' : 'remove'} user access`))
+        setUserActionMessage('')
+      }
+    })
   }
 
   const revokeSessions = async (user: DashboardUser) => {
-    if (!canManageUserLifecycle) return
+    if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
     if (typeof window !== 'undefined' && !window.confirm(`Sign out all active sessions for ${user.display_name || user.subject}? Their account stays active but they must sign in again.`)) {
       return
     }
-    try {
-      await api.revokeAuthUserSessions(user.id)
-      setUserActionMessage(`Revoked active sessions for ${user.display_name || user.subject}.`)
-      setUserActionError('')
-      await loadUsers()
-    } catch (error: unknown) {
-      setUserActionError(getErrorMessage(error, 'Unable to revoke user sessions'))
-      setUserActionMessage('')
-    }
+    await runAccessMutation(async () => {
+      try {
+        const updated = await api.revokeAuthUserSessions(user.id)
+        publishAuthoritativeUser(updated)
+        setUserActionMessage(`Revoked active sessions for ${user.display_name || user.subject}.`)
+        setUserActionError('')
+        await loadUsers()
+      } catch (error: unknown) {
+        setUserActionError(getErrorMessage(error, 'Unable to revoke user sessions'))
+        setUserActionMessage('')
+      }
+    })
   }
 
   const deleteUser = async (user: DashboardUser) => {
-    if (!canManageUserLifecycle) return
+    if (!canManageUserLifecycle || accessMutationInFlightRef.current) return
     if (typeof window !== 'undefined' && !window.confirm(`Permanently delete ${user.display_name || user.subject} and all of their role bindings? This cannot be undone. To preserve the audit trail, use Remove Access instead.`)) {
       return
     }
-    try {
-      await api.deleteAuthUser(user.id)
-      setUserActionMessage(`Deleted ${user.display_name || user.subject}.`)
-      setUserActionError('')
-      setSelectedUserID('')
-      await loadUsers()
-    } catch (error: unknown) {
-      setUserActionError(getErrorMessage(error, 'Unable to delete user'))
-      setUserActionMessage('')
-    }
+    await runAccessMutation(async () => {
+      try {
+        await api.deleteAuthUser(user.id)
+        publishDeletedUser(user.id)
+        setUsersTotal(total => Math.max(0, total - 1))
+        setUserActionMessage(`Deleted ${user.display_name || user.subject}.`)
+        setUserActionError('')
+        setSelectedUserID('')
+        await loadUsers()
+      } catch (error: unknown) {
+        setUserActionError(getErrorMessage(error, 'Unable to delete user'))
+        setUserActionMessage('')
+      }
+    })
   }
 
-  const createAccount = async () => {
+  const createAccount = async (): Promise<boolean> => {
+    if (accessMutationInFlightRef.current) return false
     if (!canManageServiceAccounts) {
       setActionError('Current session cannot manage service-account API keys.')
       setActionMessage('')
-      return
+      return false
     }
     if (!form.name.trim()) {
       setActionError('Service account name is required.')
       setActionMessage('')
-      return
+      return false
     }
     if (form.globalRoles.length === 0) {
       setActionError('Choose at least one global role.')
       setActionMessage('')
-      return
+      return false
     }
     if (form.scopes.length === 0) {
       setActionError('Choose at least one token scope.')
       setActionMessage('')
-      return
+      return false
     }
     if (accountContactInvalid) {
       setActionError('Enter a valid contact email before creating the service account.')
       setActionMessage('')
-      return
+      return false
     }
     if (!confirmBroadAutomationScope(form.scopes, 'This service account')) {
-      return
+      return false
     }
 
-    try {
-      const response = await api.createAuthServiceAccount({
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        owner_id: form.owner.trim() || undefined,
-        contact_email: form.contact.trim() || undefined,
-        global_roles: form.globalRoles,
-        project_roles: toProjectRolesPayload(form.projectRoles),
-        domain_roles: toProjectRolesPayload(form.domainRoles),
-        application_repository_roles: toProjectRolesPayload(form.applicationRepositoryRoles),
-        scopes: form.scopes,
-        expires_at: parseOptionalDateTime(form.expiresAt),
-        rotation_interval_days: parseRotationDays(form.rotationDays),
-      })
-      setIssuedKey({ key: response.api_key, accountName: response.service_account.name, mode: 'created' })
-      setSelectedAccountID(response.service_account.id)
-      setAccountInspectorCollapsed(false)
-      setServiceAccountSubTab('existing')
-      setActionMessage(`Created ${response.service_account.name}. Copy the issued key before closing the dialog.`)
-      setActionError('')
-      await loadAccounts()
-    } catch (error: unknown) {
-      setActionError(getErrorMessage(error, 'Unable to create service account'))
-      setActionMessage('')
-    }
+    let succeeded = false
+    await runAccessMutation(async () => {
+      try {
+        const response = await api.createAuthServiceAccount({
+          name: form.name.trim(),
+          description: form.description.trim() || undefined,
+          owner_id: form.owner.trim() || undefined,
+          contact_email: form.contact.trim() || undefined,
+          global_roles: form.globalRoles,
+          project_roles: toProjectRolesPayload(form.projectRoles),
+          domain_roles: toProjectRolesPayload(form.domainRoles),
+          application_repository_roles: toProjectRolesPayload(form.applicationRepositoryRoles),
+          scopes: form.scopes,
+          expires_at: parseOptionalDateTime(form.expiresAt),
+          rotation_interval_days: parseRotationDays(form.rotationDays),
+        })
+        publishAuthoritativeAccount(response.service_account)
+        setIssuedKey({ key: response.api_key, accountName: response.service_account.name, mode: 'created' })
+        setSelectedAccountID(response.service_account.id)
+        setAccountInspectorCollapsed(false)
+        setServiceAccountSubTab('existing')
+        setForm(buildPresetForm(presetByID('ci'), activeProject?.id))
+        setActionMessage(`Created ${response.service_account.name}. Copy the issued key before closing the dialog.`)
+        setActionError('')
+        succeeded = true
+        await loadAccounts()
+      } catch (error: unknown) {
+        setActionError(getErrorMessage(error, 'Unable to create service account'))
+        setActionMessage('')
+      }
+    })
+    return succeeded
   }
 
   const rotateAccount = async (account: DashboardServiceAccount) => {
-    if (!canManageServiceAccounts) return
+    if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
     if (typeof window !== 'undefined' && !window.confirm(`Rotate API key for ${account.name}? Existing automation must be updated with the new key.`)) {
       return
     }
-    try {
-      const response = await api.rotateAuthServiceAccount(account.id)
-      setIssuedKey({ key: response.api_key, accountName: response.service_account.name, mode: 'rotated' })
-      setSelectedAccountID(response.service_account.id)
-      setAccountInspectorCollapsed(false)
-      setActionMessage(`Rotated API key for ${response.service_account.name}.`)
-      setActionError('')
-      await loadAccounts()
-    } catch (error: unknown) {
-      setActionError(getErrorMessage(error, 'Unable to rotate service account key'))
-      setActionMessage('')
-    }
+    await runAccessMutation(async () => {
+      try {
+        const response = await api.rotateAuthServiceAccount(account.id)
+        publishAuthoritativeAccount(response.service_account)
+        setIssuedKey({ key: response.api_key, accountName: response.service_account.name, mode: 'rotated' })
+        setSelectedAccountID(response.service_account.id)
+        setAccountInspectorCollapsed(false)
+        setActionMessage(`Rotated API key for ${response.service_account.name}.`)
+        setActionError('')
+        await loadAccounts()
+      } catch (error: unknown) {
+        setActionError(getErrorMessage(error, 'Unable to rotate service account key'))
+        setActionMessage('')
+      }
+    })
   }
 
   const setAccountActive = async (account: DashboardServiceAccount, active: boolean) => {
-    if (!canManageServiceAccounts) return
+    if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
     const action = active ? 'enable' : 'disable'
     if (typeof window !== 'undefined' && !window.confirm(`Really ${action} ${account.name}?`)) {
       return
     }
-    try {
-      await api.updateAuthServiceAccount(account.id, { active })
-      setActionMessage(`${active ? 'Enabled' : 'Disabled'} ${account.name}.`)
-      setActionError('')
-      await loadAccounts()
-    } catch (error: unknown) {
-      setActionError(getErrorMessage(error, `Unable to ${action} service account`))
-      setActionMessage('')
-    }
+    await runAccessMutation(async () => {
+      try {
+        const updated = await api.updateAuthServiceAccount(account.id, { active }) as DashboardServiceAccount
+        publishAuthoritativeAccount(updated)
+        setActionMessage(`${active ? 'Enabled' : 'Disabled'} ${account.name}.`)
+        setActionError('')
+        await loadAccounts()
+      } catch (error: unknown) {
+        setActionError(getErrorMessage(error, `Unable to ${action} service account`))
+        setActionMessage('')
+      }
+    })
   }
 
   const deleteAccount = async (account: DashboardServiceAccount) => {
-    if (!canManageServiceAccounts) return
+    if (!canManageServiceAccounts || accessMutationInFlightRef.current) return
     if (typeof window !== 'undefined' && !window.confirm(`Delete ${account.name}? This cannot be undone.`)) {
       return
     }
-    try {
-      await api.deleteAuthServiceAccount(account.id)
-      setActionMessage(`Deleted ${account.name}.`)
-      setActionError('')
-      await loadAccounts()
-    } catch (error: unknown) {
-      setActionError(getErrorMessage(error, 'Unable to delete service account'))
-      setActionMessage('')
-    }
+    await runAccessMutation(async () => {
+      try {
+        await api.deleteAuthServiceAccount(account.id)
+        publishDeletedAccount(account.id)
+        setActionMessage(`Deleted ${account.name}.`)
+        setActionError('')
+        await loadAccounts()
+      } catch (error: unknown) {
+        setActionError(getErrorMessage(error, 'Unable to delete service account'))
+        setActionMessage('')
+      }
+    })
   }
 
   const beginEditAccount = (account: DashboardServiceAccount) => {
@@ -822,51 +1201,57 @@ export default function AccessPage({
     setActionError('')
   }
 
-  const updateAccount = async (account: DashboardServiceAccount) => {
-    if (!canManageServiceAccounts) return
+  const updateAccount = async (account: DashboardServiceAccount): Promise<boolean> => {
+    if (!canManageServiceAccounts || accessMutationInFlightRef.current) return false
     if (!editAccountForm.name.trim()) {
       setActionError('Service account name is required.')
-      return
+      return false
     }
     // The backend rejects empty role/scope sets on a PATCH (disable a key with the
     // Disable action instead of stripping its permissions).
     if (editAccountForm.globalRoles.length === 0) {
       setActionError('Keep at least one global role (use Disable to deactivate the key).')
-      return
+      return false
     }
     if (editAccountForm.scopes.length === 0) {
       setActionError('Keep at least one token scope (use Disable to deactivate the key).')
-      return
+      return false
     }
     if (editAccountContactInvalid) {
       setActionError('Enter a valid contact email before saving the service account.')
-      return
+      return false
     }
     if (!confirmBroadAutomationScope(editAccountForm.scopes, account.name)) {
-      return
+      return false
     }
-    try {
-      await api.updateAuthServiceAccount(account.id, {
-        name: editAccountForm.name.trim(),
-        description: editAccountForm.description.trim(),
-        owner_id: editAccountForm.owner.trim(),
-        contact_email: editAccountForm.contact.trim(),
-        global_roles: editAccountForm.globalRoles,
-        project_roles: mergeScopedRolesPayload(editAccountForm.projectRoles, account.project_roles),
-        domain_roles: mergeScopedRolesPayload(editAccountForm.domainRoles, account.domain_roles),
-        application_repository_roles: mergeScopedRolesPayload(editAccountForm.applicationRepositoryRoles, account.application_repository_roles),
-        scopes: editAccountForm.scopes,
-        expires_at: parseOptionalDateTime(editAccountForm.expiresAt) ?? '',
-        rotation_interval_days: parseRotationDays(editAccountForm.rotationDays),
-      })
-      setAccountEditMode(false)
-      setActionMessage(`Updated ${editAccountForm.name.trim()}.`)
-      setActionError('')
-      await loadAccounts()
-    } catch (error: unknown) {
-      setActionError(getErrorMessage(error, 'Unable to update service account'))
-      setActionMessage('')
-    }
+    let succeeded = false
+    await runAccessMutation(async () => {
+      try {
+        const updated = await api.updateAuthServiceAccount(account.id, {
+          name: editAccountForm.name.trim(),
+          description: editAccountForm.description.trim(),
+          owner_id: editAccountForm.owner.trim(),
+          contact_email: editAccountForm.contact.trim(),
+          global_roles: editAccountForm.globalRoles,
+          project_roles: mergeScopedRolesPayload(editAccountForm.projectRoles, account.project_roles),
+          domain_roles: mergeScopedRolesPayload(editAccountForm.domainRoles, account.domain_roles),
+          application_repository_roles: mergeScopedRolesPayload(editAccountForm.applicationRepositoryRoles, account.application_repository_roles),
+          scopes: editAccountForm.scopes,
+          expires_at: parseOptionalDateTime(editAccountForm.expiresAt) ?? '',
+          rotation_interval_days: parseRotationDays(editAccountForm.rotationDays),
+        }) as DashboardServiceAccount
+        publishAuthoritativeAccount(updated)
+        setAccountEditMode(false)
+        setActionMessage(`Updated ${editAccountForm.name.trim()}.`)
+        setActionError('')
+        succeeded = true
+        await loadAccounts()
+      } catch (error: unknown) {
+        setActionError(getErrorMessage(error, 'Unable to update service account'))
+        setActionMessage('')
+      }
+    })
+    return succeeded
   }
 
   const runSimulator = async () => {
@@ -876,6 +1261,12 @@ export default function AccessPage({
       setSimulatorResult(null)
       return
     }
+    const requestGeneration = ++simulatorGenerationRef.current
+    const requestedScopeKey = simulatorScopeKey
+    const isCurrentRequest = () => (
+      simulatorGenerationRef.current === requestGeneration
+      && simulatorScopeKeyRef.current === requestedScopeKey
+    )
     setSimulatorLoading(true)
     setSimulatorError('')
     try {
@@ -886,12 +1277,13 @@ export default function AccessPage({
         domain_id: activeProject?.domain_id || activeDomain?.id,
         application_repository_id: applicationRepository?.id,
       })
-      setSimulatorResult(result)
+      if (isCurrentRequest()) setSimulatorResult(result)
     } catch (error: unknown) {
+      if (!isCurrentRequest()) return
       setSimulatorError(getErrorMessage(error, 'Unable to simulate effective access'))
       setSimulatorResult(null)
     } finally {
-      setSimulatorLoading(false)
+      if (isCurrentRequest()) setSimulatorLoading(false)
     }
   }
 
@@ -948,28 +1340,155 @@ export default function AccessPage({
     setEditBindingDrafts((selectedUser.bindings || []).map(userBindingDraftFromBinding))
   }
 
-  const selectUser = (user: DashboardUser) => {
-    setSelectedUserID(user.id)
-    setUserInspectorCollapsed(false)
+  const cancelSelectedUserEdit = () => {
+    resetSelectedUserEditDrafts()
+    editingUserIDRef.current = ''
+    editingUserSnapshotRef.current = null
     setSelectedUserEditMode(false)
+  }
+
+  const resetOnboardDrafts = () => {
+    setUserForm({ subject: '', email: '', displayName: '' })
+    setOnboardBindingDrafts(initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
+    setUserActionError('')
+  }
+
+  const resetAccountCreationDraft = () => {
+    setForm(buildPresetForm(presetByID('ci'), activeProject?.id))
+    setActionError('')
+  }
+
+  const selectUser = (user: DashboardUser) => {
+    runGuarded(() => {
+      editingUserIDRef.current = ''
+      editingUserSnapshotRef.current = null
+      setSelectedUserID(user.id)
+      setUserInspectorCollapsed(false)
+      setSelectedUserEditMode(false)
+    })
   }
 
   const editUser = (user: DashboardUser) => {
     if (!canManageUserBindings) return
-    setSelectedUserID(user.id)
-    setUserInspectorCollapsed(false)
-    setSelectedUserEditMode(true)
+    if (selectedUserEditMode && selectedUserID === user.id) {
+      setUserInspectorCollapsed(false)
+      return
+    }
+    runGuarded(() => {
+      editingUserIDRef.current = user.id
+      editingUserSnapshotRef.current = user
+      setSelectedUserID(user.id)
+      setUserInspectorCollapsed(false)
+      setSelectedUserEditMode(true)
+    })
   }
 
   const selectAccount = (account: DashboardServiceAccount) => {
-    setSelectedAccountID(account.id)
-    setAccountInspectorCollapsed(false)
+    if (selectedAccountID === account.id) {
+      setAccountInspectorCollapsed(false)
+      return
+    }
+    runGuarded(() => {
+      setSelectedAccountID(account.id)
+      setAccountInspectorCollapsed(false)
+    })
   }
 
   const selectActivity = (event: DashboardAuditEvent) => {
     setSelectedActivityID(event.id)
     setActivityInspectorCollapsed(false)
   }
+
+  const onboardInitialDraftSignature = userDraftSignature(
+    { subject: '', email: '', displayName: '' },
+    initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository),
+  )
+  const onboardDraftDirty = userSubTab === 'onboard'
+    && userDraftSignature(userForm, onboardBindingDrafts) !== onboardInitialDraftSignature
+  const selectedUserDraftDirty = Boolean(
+    selectedUserEditMode
+    && selectedUser
+    && userDraftSignature(editUserForm, editBindingDrafts) !== userDraftSignature(
+      {
+        subject: selectedUser.subject || '',
+        email: selectedUser.email || '',
+        displayName: selectedUser.display_name || '',
+      },
+      (selectedUser.bindings || []).map(userBindingDraftFromBinding),
+    ),
+  )
+  const accountCreationDraftDirty = serviceAccountSubTab === 'generate'
+    && serviceAccountDraftSignature(form) !== serviceAccountDraftSignature(buildPresetForm(presetByID('ci'), activeProject?.id))
+  const selectedAccountDraftDirty = Boolean(
+    accountEditMode
+    && selectedAccount
+    && serviceAccountDraftSignature(editAccountForm) !== serviceAccountDraftSignature(formFromServiceAccount(selectedAccount)),
+  )
+
+  const onboardDraftDirtyRef = useRef(onboardDraftDirty)
+  onboardDraftDirtyRef.current = onboardDraftDirty
+  const createUserRef = useRef(createUser)
+  createUserRef.current = createUser
+  const resetOnboardDraftsRef = useRef(resetOnboardDrafts)
+  resetOnboardDraftsRef.current = resetOnboardDrafts
+  const onboardNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'access-onboard-user-draft',
+    label: 'User onboarding form',
+    isDirty: () => onboardDraftDirtyRef.current,
+    save: () => createUserRef.current(),
+    discard: () => resetOnboardDraftsRef.current(),
+  }), [])
+  useNavigationGuard(canManageUserLifecycle ? onboardNavigationGuard : null, onboardDraftDirty)
+
+  const selectedUserDraftDirtyRef = useRef(selectedUserDraftDirty)
+  selectedUserDraftDirtyRef.current = selectedUserDraftDirty
+  const updateSelectedUserRef = useRef(updateSelectedUser)
+  updateSelectedUserRef.current = updateSelectedUser
+  const discardSelectedUserDraftRef = useRef<() => void>(() => undefined)
+  discardSelectedUserDraftRef.current = cancelSelectedUserEdit
+  const selectedUserNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'access-selected-user-edit-draft',
+    label: 'User editor',
+    isDirty: () => selectedUserDraftDirtyRef.current,
+    save: () => updateSelectedUserRef.current(),
+    discard: () => discardSelectedUserDraftRef.current(),
+  }), [])
+  useNavigationGuard(selectedUser ? selectedUserNavigationGuard : null, selectedUserDraftDirty)
+
+  const accountCreationDraftDirtyRef = useRef(accountCreationDraftDirty)
+  accountCreationDraftDirtyRef.current = accountCreationDraftDirty
+  const createAccountRef = useRef(createAccount)
+  createAccountRef.current = createAccount
+  const resetAccountCreationDraftRef = useRef(resetAccountCreationDraft)
+  resetAccountCreationDraftRef.current = resetAccountCreationDraft
+  const accountCreationNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'access-service-account-create-draft',
+    label: 'Service-account creation form',
+    isDirty: () => accountCreationDraftDirtyRef.current,
+    save: () => createAccountRef.current(),
+    discard: () => resetAccountCreationDraftRef.current(),
+  }), [])
+  useNavigationGuard(canManageServiceAccounts ? accountCreationNavigationGuard : null, accountCreationDraftDirty)
+
+  const selectedAccountDraftDirtyRef = useRef(selectedAccountDraftDirty)
+  selectedAccountDraftDirtyRef.current = selectedAccountDraftDirty
+  const selectedAccountRef = useRef(selectedAccount)
+  selectedAccountRef.current = selectedAccount
+  const updateAccountRef = useRef(updateAccount)
+  updateAccountRef.current = updateAccount
+  const discardSelectedAccountDraftRef = useRef<() => void>(() => undefined)
+  discardSelectedAccountDraftRef.current = () => cancelEditAccount()
+  const selectedAccountNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'access-selected-service-account-edit-draft',
+    label: 'Service-account editor',
+    isDirty: () => selectedAccountDraftDirtyRef.current,
+    save: () => {
+      const account = selectedAccountRef.current
+      return account ? updateAccountRef.current(account) : false
+    },
+    discard: () => discardSelectedAccountDraftRef.current(),
+  }), [])
+  useNavigationGuard(selectedAccount ? selectedAccountNavigationGuard : null, selectedAccountDraftDirty)
 
   const renderUserBindingDraftEditor = (drafts: UserBindingForm[], setter: Dispatch<SetStateAction<UserBindingForm[]>>) => (
     <div className="access-binding-editor">
@@ -1054,7 +1573,7 @@ export default function AccessPage({
                 <h4>User Access</h4>
                 <p>Review assigned roles, domains, and projects. Click Edit to change access.</p>
               </div>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setSelectedUserEditMode(true)} disabled={!canManageUserBindings}>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => editUser(selectedUser)} disabled={!canManageUserBindings || accessMutationBusy}>
                 Edit
               </button>
             </div>
@@ -1100,15 +1619,15 @@ export default function AccessPage({
             </label>
           </div>
           <div className="access-account-actions">
-            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={!canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save Changes</button>
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => { resetSelectedUserEditDrafts(); setSelectedUserEditMode(false) }}>Cancel</button>
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={!canManageUserLifecycle}>
+            <button className="btn btn-primary btn-sm" type="button" onClick={updateSelectedUser} disabled={accessMutationBusy || !canManageUserBindings || (canManageUserLifecycle && editUserEmailInvalid)}>Save Changes</button>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={cancelSelectedUserEdit} disabled={accessMutationBusy}>Cancel</button>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUserActive(selectedUser, !selectedUser.active)} disabled={accessMutationBusy || !canManageUserLifecycle}>
               {selectedUser.active ? 'Remove Access' : 'Restore Access'}
             </button>
-            <button className="btn btn-secondary btn-sm" type="button" onClick={() => revokeSessions(selectedUser)} disabled={!canManageUserLifecycle} title="Sign the user out of all active sessions without disabling the account">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => revokeSessions(selectedUser)} disabled={accessMutationBusy || !canManageUserLifecycle} title="Sign the user out of all active sessions without disabling the account">
               Revoke Sessions
             </button>
-            <button className="btn btn-danger btn-sm" type="button" onClick={() => deleteUser(selectedUser)} disabled={!canManageUserLifecycle} title="Permanently delete the user and their role bindings (prefer Remove Access to keep the audit trail)">
+            <button className="btn btn-danger btn-sm" type="button" onClick={() => deleteUser(selectedUser)} disabled={accessMutationBusy || !canManageUserLifecycle} title="Permanently delete the user and their role bindings (prefer Remove Access to keep the audit trail)">
               Delete User
             </button>
           </div>
@@ -1331,11 +1850,18 @@ export default function AccessPage({
         </div>
       )}
       {(actionError || actionMessage) && (
-        <div className={`access-alert ${actionError ? 'error' : 'success'}`}>{actionError || actionMessage}</div>
+        <div className={`access-alert ${actionError ? 'error' : 'success'}`}>
+          {actionError || actionMessage}
+          {accountsLoadFailed && (
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void loadAccounts() }} disabled={loading || accessMutationBusy}>
+              Retry accounts
+            </button>
+          )}
+        </div>
       )}
       <div className="access-account-actions">
-        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={!canManageServiceAccounts || editAccountContactInvalid}>Save Changes</button>
-        <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount}>Cancel</button>
+        <button className="btn btn-primary btn-sm" type="button" onClick={() => updateAccount(account)} disabled={accessMutationBusy || !canManageServiceAccounts || editAccountContactInvalid}>Save Changes</button>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditAccount} disabled={accessMutationBusy}>Cancel</button>
       </div>
     </aside>
     )
@@ -1375,12 +1901,12 @@ export default function AccessPage({
           <div><dt>Updated</dt><dd>{formatTimestamp(selectedAccount.updated_at)}</dd></div>
         </dl>
         <div className="access-account-actions">
-          <button className="btn btn-primary btn-sm" type="button" onClick={() => beginEditAccount(selectedAccount)} disabled={!canManageServiceAccounts}>Edit</button>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => rotateAccount(selectedAccount)} disabled={!canManageServiceAccounts}>Rotate Key</button>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAccountActive(selectedAccount, !selectedAccount.active)} disabled={!canManageServiceAccounts}>
+          <button className="btn btn-primary btn-sm" type="button" onClick={() => beginEditAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Edit</button>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => rotateAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Rotate Key</button>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={() => setAccountActive(selectedAccount, !selectedAccount.active)} disabled={accessMutationBusy || !canManageServiceAccounts}>
             {selectedAccount.active ? 'Disable' : 'Enable'}
           </button>
-          <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={() => deleteAccount(selectedAccount)} disabled={!canManageServiceAccounts}>Delete</button>
+          <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={() => deleteAccount(selectedAccount)} disabled={accessMutationBusy || !canManageServiceAccounts}>Delete</button>
         </div>
       </aside>
     )
@@ -1561,9 +2087,9 @@ export default function AccessPage({
               )}
             </div>
             <div className="access-subtab-row" role="tablist" aria-label="User workspace views">
-              <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => setUserSubTab('existing')}>Existing Users</button>
+              <button type="button" role="tab" aria-selected={userSubTab === 'existing'} className={`access-subtab ${userSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('existing'))}>Existing Users</button>
               {canManageUserLifecycle && (
-                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => setUserSubTab('onboard')}>Onboard Users</button>
+                <button type="button" role="tab" aria-selected={userSubTab === 'onboard'} className={`access-subtab ${userSubTab === 'onboard' ? 'active' : ''}`} onClick={() => runGuarded(() => setUserSubTab('onboard'))}>Onboard Users</button>
               )}
             </div>
 
@@ -1608,6 +2134,11 @@ export default function AccessPage({
                 {(userActionError || userActionMessage) && (
                   <div className={`access-alert ${userActionError ? 'error' : 'success'}`}>
                     {userActionError || userActionMessage}
+                    {usersLoadFailed && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void loadUsers() }} disabled={usersLoading || accessMutationBusy}>
+                        Retry users
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1659,8 +2190,8 @@ export default function AccessPage({
                         <td aria-label="Service account actions">
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }} disabled={!canManageUserBindings}>Edit</button>
-                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }} disabled={!canManageUserLifecycle}>
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }} disabled={accessMutationBusy || !canManageUserBindings}>Edit</button>
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setUserActive(user, !user.active) }} disabled={accessMutationBusy || !canManageUserLifecycle}>
                                   {user.active ? 'Remove Access' : 'Restore Access'}
                                 </button>
                               </div>
@@ -1720,10 +2251,15 @@ export default function AccessPage({
                 {(userActionError || userActionMessage) && (
                   <div className={`access-alert ${userActionError ? 'error' : 'success'}`}>
                     {userActionError || userActionMessage}
+                    {usersLoadFailed && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void loadUsers() }} disabled={usersLoading || accessMutationBusy}>
+                        Retry users
+                      </button>
+                    )}
                   </div>
                 )}
                 <div className="access-form-actions">
-                  <button className="btn btn-primary" type="button" onClick={createUser} disabled={!canManageUserLifecycle || !userForm.subject.trim() || onboardEmailInvalid}>
+                  <button className="btn btn-primary" type="button" onClick={createUser} disabled={accessMutationBusy || !canManageUserLifecycle || !userForm.subject.trim() || onboardEmailInvalid}>
                     Create User
                   </button>
                 </div>
@@ -1755,13 +2291,13 @@ export default function AccessPage({
                   <span>{accessReviewAttention.denials} recent access denial(s). </span>
                 )}
                 {canManageUserLifecycle && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setActiveTab('activity'); setActivitySubTab('review') }}>Open access review</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => { setActiveTab('activity'); setActivitySubTab('review') })}>Open access review</button>
                 )}
               </div>
             )}
             <div className="access-subtab-row" role="tablist" aria-label="Service account workspace views">
-              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'existing'} className={`access-subtab ${serviceAccountSubTab === 'existing' ? 'active' : ''}`} onClick={() => setServiceAccountSubTab('existing')}>Existing Accounts</button>
-              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => setServiceAccountSubTab('generate')}>Generate Key</button>
+              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'existing'} className={`access-subtab ${serviceAccountSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('existing'))}>Existing Accounts</button>
+              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('generate'))}>Generate Key</button>
             </div>
 
             {serviceAccountSubTab === 'existing' && (
@@ -1815,6 +2351,11 @@ export default function AccessPage({
                 {(actionError || actionMessage) && (
                   <div className={`access-alert ${actionError ? 'error' : 'success'}`}>
                     {actionError || actionMessage}
+                    {accountsLoadFailed && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void loadAccounts() }} disabled={loading || accessMutationBusy}>
+                        Retry accounts
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1864,11 +2405,11 @@ export default function AccessPage({
                             <td aria-label="Service account actions">
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectAccount(account) }}>Inspect</button>
-                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); rotateAccount(account) }}>Rotate Key</button>
-                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setAccountActive(account, !account.active) }}>
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); rotateAccount(account) }} disabled={accessMutationBusy}>Rotate Key</button>
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={event => { event.stopPropagation(); setAccountActive(account, !account.active) }} disabled={accessMutationBusy}>
                                   {account.active ? 'Disable' : 'Enable'}
                                 </button>
-                                <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={event => { event.stopPropagation(); deleteAccount(account) }}>Delete</button>
+                                <button className="btn btn-ghost btn-sm access-danger-action" type="button" onClick={event => { event.stopPropagation(); deleteAccount(account) }} disabled={accessMutationBusy}>Delete</button>
                               </div>
                             </td>
                           </tr>
@@ -1935,11 +2476,16 @@ export default function AccessPage({
                 {(actionError || actionMessage) && (
                   <div className={`access-alert ${actionError ? 'error' : 'success'}`}>
                     {actionError || actionMessage}
+                    {accountsLoadFailed && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void loadAccounts() }} disabled={loading || accessMutationBusy}>
+                        Retry accounts
+                      </button>
+                    )}
                   </div>
                 )}
 
                 <div className="access-form-actions">
-                  <button className="btn btn-primary" type="button" onClick={createAccount} disabled={!canManageServiceAccounts || !form.name.trim() || accountContactInvalid}>
+                  <button className="btn btn-primary" type="button" onClick={createAccount} disabled={accessMutationBusy || !canManageServiceAccounts || !form.name.trim() || accountContactInvalid}>
                     Create Service Account
                   </button>
                 </div>
@@ -2038,6 +2584,11 @@ export default function AccessPage({
                 {(activityError || activityMessage) && (
                   <div className={`access-alert ${activityError ? 'error' : 'success'}`} role="status" aria-live="polite">
                     {activityError || activityMessage}
+                    {activityLoadFailed && (
+                      <button className="btn btn-secondary btn-sm" type="button" onClick={() => { void loadActivity() }} disabled={activityLoading}>
+                        Retry activity
+                      </button>
+                    )}
                   </div>
                 )}
 

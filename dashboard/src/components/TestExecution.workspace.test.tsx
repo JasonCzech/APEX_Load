@@ -239,6 +239,37 @@ describe('TestExecution workspace layout', () => {
     expect(container.textContent).toContain('Archive Empty Content report')
   })
 
+  it('forwards synchronized and user-selected workspace tabs with history intent', async () => {
+    const onWorkspaceTabChange = vi.fn()
+
+    await renderExecution({
+      initialWorkspaceTabId: 'archive',
+      onWorkspaceTabChange,
+    })
+
+    expect(onWorkspaceTabChange).toHaveBeenLastCalledWith('archive', { replace: true })
+
+    await clickWorkspaceTab('Overview')
+
+    expect(onWorkspaceTabChange).toHaveBeenLastCalledWith('overview', { replace: false })
+  })
+
+  it('clears route ownership when a persisted custom workspace tab is active', async () => {
+    const onWorkspaceTabChange = vi.fn()
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([{
+      id: 'default',
+      name: 'Default Execution Layout',
+      activeTabId: 'team-notes',
+      tabs: [{ id: 'team-notes', label: 'Team Notes', cardIds: [] }],
+      unassignedCardIds: [],
+    }]))
+
+    await renderExecution({ onWorkspaceTabChange })
+
+    expect(selectedTabLabel()).toBe('Team Notes')
+    expect(onWorkspaceTabChange).toHaveBeenLastCalledWith(undefined, { replace: true })
+  })
+
   it('publishes queued and active run controls to the contextual topbar', async () => {
     await renderExecution()
 
@@ -371,6 +402,34 @@ describe('TestExecution workspace layout', () => {
 
     await clickWorkspaceTab('Transaction Drill-Down')
     expect(container.textContent).toContain('Transaction Drill-Down Content')
+  })
+
+  it('offers an in-place archive check after terminal publication polling times out', async () => {
+    const test = makeTest('FAILED')
+    const checkArchiveAgain = vi.fn()
+    configureHooks(test)
+    hookMocks.useExecutionTestPolling.mockReturnValue({
+      test,
+      setTest: vi.fn(),
+      error: '',
+      archiveFinalizationTimedOut: true,
+      archiveCheckPending: false,
+      archiveCheckError: '',
+      checkArchiveAgain,
+    })
+
+    await renderExecution()
+
+    expect(container.textContent).toContain('Archive publication is taking longer than expected')
+    const checkAgainButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.trim() === 'Check again')
+    expect(checkAgainButton).toBeDefined()
+    await act(async () => {
+      checkAgainButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(checkArchiveAgain).toHaveBeenCalledOnce()
   })
 
   it('defaults cards to full width except compact and natural overview cards', async () => {
@@ -654,7 +713,15 @@ describe('TestExecution workspace layout', () => {
 			importedDashboardsLoading: false,
 			importedDashboardsError: '',
 		})
-    hookMocks.useExecutionTestPolling.mockReturnValue({ test, setTest: vi.fn(), error: '' })
+    hookMocks.useExecutionTestPolling.mockReturnValue({
+      test,
+      setTest: vi.fn(),
+      error: '',
+      archiveFinalizationTimedOut: false,
+      archiveCheckPending: false,
+      archiveCheckError: '',
+      checkArchiveAgain: vi.fn(),
+    })
     hookMocks.useExecutionViewState.mockReturnValue({
       expandedChart: null,
       onExpandedChartChange: vi.fn(),
@@ -662,10 +729,12 @@ describe('TestExecution workspace layout', () => {
       onExpandedScenarioScriptChange: vi.fn(),
     })
     hookMocks.useExecutionScenarioPreviewModel.mockReturnValue({
+      scenarioSnapshot: test,
+      snapshotSource: 'immutable_manifest',
       queuedScenarioPreview: {},
       queuedScenarioRows: [],
-      scriptDetailsLoading: false,
-      scriptDetailsError: '',
+      snapshotLoading: false,
+      snapshotError: '',
     })
     hookMocks.useExecutionMetricsStream.mockReturnValue({ localMetricsHistory: [], latestMetrics: null })
     hookMocks.useExecutionArchiveResourceHistory.mockReturnValue({

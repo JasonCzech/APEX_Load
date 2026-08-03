@@ -4,6 +4,8 @@ import { Application, Release } from '../types'
 
 export interface ApplicationContextValue {
   applications: Application[]
+  applicationsLoading: boolean
+  applicationsError: string
   releases: Release[]
   releasesLoading: boolean
   releasesError: string
@@ -11,9 +13,11 @@ export interface ApplicationContextValue {
   activeRelease: Release | null
   setActiveApplication: (application: Application) => void
   setActiveRelease: (release: Release) => void
-  refreshApplications: () => Promise<void>
-  refreshReleases: (applicationId?: string) => Promise<void>
-  createAndSelectApplication: (name: string) => Promise<Application>
+  removeApplication: (applicationId: string) => void
+  removeRelease: (releaseId: string) => void
+  refreshApplications: (options?: { preserveApplication?: Application }) => Promise<void>
+  refreshReleases: (applicationId?: string, options?: { preserveRelease?: Release }) => Promise<void>
+  createAndSelectApplication: (name: string, projectId?: string) => Promise<Application>
   createAndSelectRelease: (name: string) => Promise<Release | null>
 }
 

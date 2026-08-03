@@ -4,7 +4,9 @@ import { act, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import NewTestPage, { pacingFromEdit } from './NewTestPage'
+import NewTestPage from './NewTestPage'
+import { pacingFromEdit } from './pacingEditModel'
+import { persistNewTestQueueAttempt } from './newTestQueueAttempt'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -19,6 +21,7 @@ const apiMock = {
   approveScenarioScheduleApproval: vi.fn(),
   rejectScenarioScheduleApproval: vi.fn(),
   createTest: vi.fn(),
+  getTest: vi.fn(),
   estimateTest: vi.fn(),
   preflightTest: vi.fn(),
   startTest: vi.fn(),
@@ -119,6 +122,8 @@ describe('NewTestPage', () => {
   })
 
   beforeEach(() => {
+    window.localStorage.clear()
+    window.sessionStorage.clear()
     projectMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -154,6 +159,7 @@ describe('NewTestPage', () => {
       ],
     })
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
+    apiMock.getTest.mockRejectedValue(new Error('test not found'))
     apiMock.estimateTest.mockResolvedValue({})
     apiMock.preflightTest.mockResolvedValue({
       decision: 'start_now',
@@ -255,6 +261,8 @@ describe('NewTestPage', () => {
     })
     container.remove()
     consoleErrorSpy.mockRestore()
+    window.localStorage.clear()
+    window.sessionStorage.clear()
     vi.clearAllMocks()
     vi.useRealTimers()
   })
@@ -432,6 +440,7 @@ describe('NewTestPage', () => {
             activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
             activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
             releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            initialScenarioId="scenario-1"
             onSelectTest={vi.fn()}
             onCreateRelease={vi.fn().mockResolvedValue(null)}
           />
@@ -440,7 +449,7 @@ describe('NewTestPage', () => {
     })
     await flushPromises()
 
-    const runNameInput = findControlByLabel<HTMLInputElement>(container, 'Run Name', 'input')
+    const runNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')
     expect(runNameInput).toBeDefined()
     if (!runNameInput) return
 
@@ -465,6 +474,140 @@ describe('NewTestPage', () => {
       discardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(container.textContent).toContain('Scenario Schedule')
+  })
+
+  it('guards scenario row changes that would discard dirty launch overrides', async () => {
+    const currentScenarios = await apiMock.listScenarios()
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        ...currentScenarios.scenarios,
+        {
+          id: 'scenario-2',
+          name: 'Alternate Checkout',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [{ order: 1, name: 'Alternate', script_id: 'script-2', script_name: 'Alternate Script', protocol: 'http', vusers: 5 }],
+          script_count: 1,
+          created_at: '2026-05-13T20:00:00Z',
+          updated_at: '2026-05-13T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            initialScenarioId="scenario-1"
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const runNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')
+    const alternateRow = Array.from(container.querySelectorAll<HTMLTableRowElement>('.new-test-scenario-table-row'))
+      .find(row => row.textContent?.includes('Alternate Checkout'))
+    expect(runNameInput).toBeTruthy()
+    expect(alternateRow).toBeTruthy()
+    await act(async () => {
+      if (runNameInput) setInputValue(runNameInput, 'Dirty launch name')
+      alternateRow?.click()
+    })
+
+    expect(container.textContent).toContain('Unsaved Changes')
+    expect(container.querySelector('.new-test-scenario-table-row.selected')?.textContent).toContain('Multi-group')
+
+    const discardButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Discard changes'))
+    await act(async () => discardButton?.click())
+
+    expect(container.querySelector('.new-test-scenario-table-row.selected')?.textContent).toContain('Alternate Checkout')
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).not.toBe('Dirty launch name')
+  })
+
+  it('guards an unsaved run-default modal draft before leaving run setup', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            initialScenarioId="scenario-1"
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const durationCard = Array.from(container.querySelectorAll<HTMLButtonElement>('button.new-test-default-card'))
+      .find(button => button.textContent?.includes('Duration'))
+    await act(async () => durationCard?.click())
+    const durationInput = findControlByLabel<HTMLInputElement>(document.querySelector('.run-default-modal') as HTMLElement, 'Run duration', 'input')
+    expect(durationInput).toBeTruthy()
+    await act(async () => {
+      if (durationInput) setInputValue(durationInput, '45m')
+    })
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+
+    expect(container.textContent).toContain('Unsaved Changes')
+    expect(document.querySelector('.run-default-modal')).toBeTruthy()
+  })
+
+  it('queues a guarded run with the still-open group editor draft applied', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            initialScenarioId="scenario-1"
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const selectedScenario = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row.selected')
+    await act(async () => selectedScenario?.click())
+    const groupRow = container.querySelector<HTMLTableRowElement>('.new-test-script-row')
+    await act(async () => groupRow?.click())
+    const groupModal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(groupModal).toBeTruthy()
+    const vusersInput = groupModal ? findControlByLabel<HTMLInputElement>(groupModal, 'VUsers', 'input') : null
+    await act(async () => {
+      if (vusersInput) setInputValue(vusersInput, '25')
+    })
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+    expect(container.textContent).toContain('Unsaved Changes')
+    const saveChanges = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save changes'))
+    await act(async () => saveChanges?.click())
+    await vi.waitFor(() => expect(apiMock.createTest).toHaveBeenCalledTimes(1))
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      scenario_id: 'scenario-1',
+      groups: [expect.objectContaining({ script_id: 'script-1', vusers: 25 })],
+    }))
     expect(container.textContent).toContain('Scenario Schedule')
   })
 
@@ -636,6 +779,167 @@ describe('NewTestPage', () => {
         timezone: 'Asia/Tokyo',
       })],
     }))
+  })
+
+  it('ignores a stale schedule response after the selected scenario changes', async () => {
+    let resolveScenarioOne: ((value: { schedules: ReturnType<typeof scheduleWithDistinctWindowTimezones>[]; count: number }) => void) | undefined
+    const scenarioOneSchedules = new Promise<{ schedules: ReturnType<typeof scheduleWithDistinctWindowTimezones>[]; count: number }>(resolve => {
+      resolveScenarioOne = resolve
+    })
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Scenario One',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [],
+          script_count: 0,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+        {
+          id: 'scenario-2',
+          name: 'Scenario Two',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [],
+          script_count: 0,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+    apiMock.listScenarioSchedules.mockImplementation((scenarioID: string) => {
+      if (scenarioID === 'scenario-1') return scenarioOneSchedules
+      return Promise.resolve({
+        schedules: [{
+          ...scheduleWithDistinctWindowTimezones(),
+          id: 'schedule-2',
+          scenario_id: 'scenario-2',
+          name: 'Scenario Two Schedule',
+        }],
+        count: 1,
+      })
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    expect(apiMock.listScenarioSchedules).toHaveBeenCalledWith('scenario-1')
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+    const scenarioSelect = container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-scenario-label"]')
+    expect(scenarioSelect).toBeTruthy()
+    await act(async () => {
+      if (scenarioSelect) setSelectValue(scenarioSelect, 'scenario-2')
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Scenario Two Schedule')
+
+    await act(async () => {
+      resolveScenarioOne?.({
+        schedules: [{ ...scheduleWithDistinctWindowTimezones(), name: 'Stale Scenario One Schedule' }],
+        count: 1,
+      })
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Scenario Two Schedule')
+    expect(container.textContent).not.toContain('Stale Scenario One Schedule')
+  })
+
+  it('guards navigation away from a dirty schedule draft', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+    const scheduleNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-name-label"]')
+    expect(scheduleNameInput).toBeTruthy()
+    await act(async () => {
+      if (scheduleNameInput) setInputValue(scheduleNameInput, 'Dirty recurring schedule')
+    })
+
+    const runSetupButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run Setup')
+    await act(async () => runSetupButton?.click())
+    expect(container.textContent).toContain('Unsaved Changes')
+    expect(container.textContent).toContain('Scenario Schedule')
+
+    const discardButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Discard changes'))
+    await act(async () => discardButton?.click())
+    expect(container.textContent).not.toContain('Scenario Schedule')
+    expect(container.textContent).toContain('Run Summary')
+  })
+
+  it('guards editing another schedule when the current schedule draft is dirty', async () => {
+    apiMock.listScenarioSchedules.mockResolvedValue({
+      schedules: [
+        scheduleWithDistinctWindowTimezones(),
+        { ...scheduleWithDistinctWindowTimezones(), id: 'schedule-2', name: 'Second Schedule', revision: 2 },
+      ],
+      count: 2,
+    })
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NewTestPage
+            activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+            activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+            releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+            onSelectTest={vi.fn()}
+            onCreateRelease={vi.fn().mockResolvedValue(null)}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+    await flushPromises()
+    const editButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent === 'Edit')
+    expect(editButtons).toHaveLength(2)
+    await act(async () => editButtons[0]?.click())
+    const scheduleNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-name-label"]')
+    expect(scheduleNameInput?.value).toBe('Regional Windows')
+    await act(async () => {
+      if (scheduleNameInput) setInputValue(scheduleNameInput, 'Dirty first schedule')
+      editButtons[1]?.click()
+    })
+
+    expect(container.textContent).toContain('Unsaved Changes')
+    expect(scheduleNameInput?.value).toBe('Dirty first schedule')
+
+    const discardButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Discard changes'))
+    await act(async () => discardButton?.click())
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-name-label"]')?.value).toBe('Second Schedule')
   })
 
   it('sorts, filters, and expands launch scenarios from the scenario table', async () => {
@@ -1710,15 +2014,229 @@ describe('NewTestPage', () => {
     await act(async () => {
       queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await vi.waitFor(() => {
+      expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+        scenario_id: 'scenario-1',
+        release_id: 'release-1',
+      }))
+      expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
+      expect(openCommandCenter).toHaveBeenCalledWith('test-1')
+    })
+    expect(selectTest).not.toHaveBeenCalled()
+  })
+
+  it('recovers an uncertain queued-run create response by its client-requested ID', async () => {
+    const openCommandCenter = vi.fn()
+    let requestedTestId = ''
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'queue',
+      start_now_allowed: false,
+      schedule_allowed: false,
+      queue_allowed: true,
+      queue_reason: 'Controller concurrency is currently full.',
+      candidate_window: { start_at: '2026-05-12T20:00:00Z', end_at: '2026-05-12T20:10:00Z', duration_seconds: 600 },
+      blocking_conflicts: [],
+      warnings: [],
+    })
+    apiMock.createTest.mockImplementation(async (payload: { requested_test_id?: string }) => {
+      requestedTestId = payload.requested_test_id || ''
+      throw new Error('connection closed after create')
+    })
+    apiMock.getTest.mockImplementation(async (id: string) => ({
+      id,
+      name: 'Recovered Queue Run',
+      status: 'QUEUED',
+      project_id: 'project-1',
+      application_id: 'app-1',
+      release_id: 'release-1',
+      scenario_id: 'scenario-1',
+      total_vusers: 10,
+      duration: '30m0s',
+      created_at: '2026-05-12T20:00:00Z',
+      groups: [],
+    }))
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={openCommandCenter}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
-    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
-      scenario_id: 'scenario-1',
+    expect(requestedTestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({ requested_test_id: requestedTestId }))
+    expect(apiMock.getTest).toHaveBeenCalledWith(requestedTestId)
+    expect(apiMock.startTest).toHaveBeenCalledWith(requestedTestId)
+    expect(openCommandCenter).toHaveBeenCalledWith(requestedTestId)
+    expect(window.localStorage.length).toBe(0)
+  })
+
+  it('recovers the same queued run after unmount and remount instead of creating a duplicate', async () => {
+    const openCommandCenter = vi.fn()
+    let createdRun: Record<string, unknown> | null = null
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'queue',
+      start_now_allowed: false,
+      schedule_allowed: false,
+      queue_allowed: true,
+      queue_reason: 'Controller concurrency is currently full.',
+      candidate_window: { start_at: '2026-05-12T20:00:00Z', end_at: '2026-05-12T20:10:00Z', duration_seconds: 600 },
+      blocking_conflicts: [],
+      warnings: [],
+    })
+    apiMock.createTest.mockImplementation(async (payload: { requested_test_id?: string }) => {
+      createdRun = {
+        id: payload.requested_test_id,
+        name: 'Preserved Queue Run',
+        status: 'QUEUED',
+        project_id: 'project-1',
+        application_id: 'app-1',
+        release_id: 'release-1',
+        scenario_id: 'scenario-1',
+        total_vusers: 10,
+        duration: '30m0s',
+        created_at: '2026-05-12T20:00:00Z',
+        groups: [],
+      }
+      return createdRun
+    })
+    apiMock.getTest.mockImplementation(async () => createdRun)
+    apiMock.startTest.mockRejectedValueOnce(new Error('start acknowledgement lost')).mockResolvedValueOnce({})
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={openCommandCenter}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+    await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    const requestedTestId = apiMock.createTest.mock.calls[0][0].requested_test_id as string
+    expect(container.textContent).toContain('queued run was preserved for recovery')
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.startTest).toHaveBeenLastCalledWith(requestedTestId)
+    expect(window.localStorage.length).toBe(1)
+
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={openCommandCenter}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    expect(container.textContent).toContain('Preserved queued run')
+    const remountedRunName = container.querySelector<HTMLInputElement>('input[aria-labelledby="new-test-run-name-label"]')
+    expect(remountedRunName).toBeTruthy()
+    if (remountedRunName) {
+      await act(async () => setInputValue(remountedRunName, 'Different replacement draft'))
+    }
+    const remountedQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
+    expect(remountedQueuedButton?.disabled).toBe(true)
+    const resumeButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Resume queued run')
+    await act(async () => resumeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.getTest).toHaveBeenCalledWith(requestedTestId)
+    expect(apiMock.createTest).toHaveBeenCalledTimes(1)
+    expect(apiMock.startTest).toHaveBeenCalledTimes(2)
+    expect(apiMock.startTest).toHaveBeenLastCalledWith(requestedTestId)
+    expect(window.localStorage.length).toBe(0)
+  })
+
+  it('requires explicit confirmation before replacing a preserved queued-run attempt', async () => {
+    const preserved = persistNewTestQueueAttempt(
+      'old-payload',
+      'queued-existing',
+      { projectId: 'project-1', applicationId: 'app-1' },
+    )
+    apiMock.getTest.mockResolvedValue({
+      id: preserved.requestedTestId,
+      name: 'Existing Queue Run',
+      status: 'QUEUED',
+      project_id: 'project-1',
+      application_id: 'app-1',
       release_id: 'release-1',
+      scenario_id: 'scenario-1',
+      total_vusers: 10,
+      duration: '30m0s',
+      created_at: '2026-05-12T20:00:00Z',
+      groups: [],
+    })
+    apiMock.preflightTest.mockResolvedValue({
+      decision: 'queue',
+      start_now_allowed: false,
+      schedule_allowed: false,
+      queue_allowed: true,
+      queue_reason: 'Controller concurrency is currently full.',
+      candidate_window: { start_at: '2026-05-12T20:00:00Z', end_at: '2026-05-12T20:10:00Z', duration_seconds: 600 },
+      blocking_conflicts: [],
+      warnings: [],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onOpenCommandCenter={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+    await flushDebouncedPreflight()
+
+    expect(container.textContent).toContain('Existing Queue Run')
+    const queuedButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create Queued Run') as HTMLButtonElement | undefined
+    expect(queuedButton?.disabled).toBe(true)
+
+    const createAnother = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create another run')
+    await act(async () => createAnother?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(container.textContent).toContain('existing queued run was not deleted')
+    expect(queuedButton?.disabled).toBe(false)
+    expect(window.localStorage.length).toBe(0)
+
+    await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await vi.waitFor(() => expect(apiMock.createTest).toHaveBeenCalledTimes(1))
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      requested_test_id: expect.not.stringMatching(/^queued-existing$/),
     }))
-    expect(apiMock.startTest).toHaveBeenCalledWith('test-1')
-    expect(openCommandCenter).toHaveBeenCalledWith('test-1')
-    expect(selectTest).not.toHaveBeenCalled()
   })
 
   it('binds a selected reserved timeslot to the run it launches', async () => {

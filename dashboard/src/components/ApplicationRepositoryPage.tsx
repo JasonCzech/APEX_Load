@@ -16,6 +16,7 @@ import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useProjectApi, type DeleteEntityResponse } from '../hooks/api/useProjectApi'
 import { useScriptApi } from '../hooks/api/useScriptApi'
 import { useTestApi } from '../hooks/api/useTestApi'
+import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import StatusBadge from './StatusBadge'
 import { SortHeader } from './SortHeader'
 import {
@@ -31,6 +32,7 @@ import {
   sortRepositoryRows,
   summarizeRepositoryRows,
 } from './repositoryCatalogUtils'
+import { drainBoundedOffsetCatalog } from './catalogPagination'
 
 interface Props {
   domains: Domain[]
@@ -44,12 +46,17 @@ interface Props {
   canManageReleases: boolean
   onDomainChange: (domain: Domain) => void
   onRepositoryRefresh: () => Promise<void>
+  onRepositoryCategoryCreate?: (
+    domainId: string,
+    data: { name: string; description?: string; sort_order?: number },
+  ) => Promise<RepositoryCategory>
   onProjectsRefresh: () => Promise<void>
   onProjectCreated: (project: { name: string; domain_id?: string; category_id?: string }) => Promise<Project>
-  onOpenScript?: (scriptId: string) => void
-  onOpenTest?: (testId: string) => void
-  onOpenCommandCenter?: (testId: string) => void
-  onCreateTestFromScenario?: (scenarioId: string) => void
+	onProjectDelete?: (projectId: string) => Promise<DeleteEntityResponse>
+  onOpenScript?: (scriptId: string, projectId: string) => void
+  onOpenTest?: (testId: string, projectId: string) => void
+  onOpenCommandCenter?: (testId: string, projectId: string) => void
+  onCreateTestFromScenario?: (scenarioId: string, projectId: string) => void
 }
 
 type ProjectAssetResult<T> = {
@@ -63,6 +70,26 @@ type StructureSection = {
   description?: string
   category?: RepositoryCategory
 }
+
+type CategoryCreationDraft = {
+  domainId: string
+  name: string
+  sortOrder: number
+}
+
+type ProjectCreationDraft = {
+  domainId: string
+  categoryId?: string
+  name: string
+}
+
+type ReleaseCreationDraft = {
+  projectId: string
+  applicationId?: string
+  name: string
+}
+
+type ReconciliationTarget = 'repository' | 'projects'
 
 const UNCATEGORIZED_ID = '__uncategorized__'
 
@@ -201,8 +228,10 @@ export default function ApplicationRepositoryPage({
   canManageReleases,
   onDomainChange,
   onRepositoryRefresh,
+  onRepositoryCategoryCreate,
   onProjectsRefresh,
   onProjectCreated,
+	onProjectDelete,
   onOpenScript,
   onOpenTest,
   onOpenCommandCenter,
@@ -212,9 +241,9 @@ export default function ApplicationRepositoryPage({
   const projectApi = useProjectApi()
   const scriptApi = useScriptApi()
   const testApi = useTestApi()
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const [newProjectNameByCategory, setNewProjectNameByCategory] = useState<Record<string, string>>({})
-  const [newReleaseNameByProject, setNewReleaseNameByProject] = useState<Record<string, string>>({})
+  const [categoryCreationDraft, setCategoryCreationDraft] = useState<CategoryCreationDraft | null>(null)
+  const [projectCreationDrafts, setProjectCreationDrafts] = useState<Record<string, ProjectCreationDraft>>({})
+  const [releaseCreationDrafts, setReleaseCreationDrafts] = useState<Record<string, ReleaseCreationDraft>>({})
   const [releasesByProject, setReleasesByProject] = useState<Record<string, Release[]>>({})
   const [scriptsByProject, setScriptsByProject] = useState<Record<string, StoredScript[]>>({})
   const [scenariosByProject, setScenariosByProject] = useState<Record<string, StoredScenario[]>>({})
@@ -230,7 +259,14 @@ export default function ApplicationRepositoryPage({
   const [bulkBusy, setBulkBusy] = useState(false)
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
+  const [reconciliationWarnings, setReconciliationWarnings] = useState<Partial<Record<ReconciliationTarget, string>>>({})
   const catalogLoadGenerationRef = useRef(0)
+  const categoryCreationDraftRef = useRef(categoryCreationDraft)
+  const projectCreationDraftsRef = useRef(projectCreationDrafts)
+  const releaseCreationDraftsRef = useRef(releaseCreationDrafts)
+  categoryCreationDraftRef.current = categoryCreationDraft
+  projectCreationDraftsRef.current = projectCreationDrafts
+  releaseCreationDraftsRef.current = releaseCreationDrafts
   const activeDomainIdRef = useRef(activeDomain?.id)
   activeDomainIdRef.current = activeDomain?.id
 
@@ -298,8 +334,20 @@ export default function ApplicationRepositoryPage({
         return response.scenarios || []
       }),
       loadProjectAssets(scopedProjects, 'Tests', async project => {
-        const response = await testApi.listTests({ project_id: project.id })
-        return response.tests || []
+        return drainBoundedOffsetCatalog(
+          async (limit, offset) => {
+            const response = await testApi.listTests({ project_id: project.id, limit, offset })
+            const items = response.tests || []
+            return {
+              items,
+              hasMore: response.total === undefined
+                ? undefined
+                : offset + items.length < response.total,
+            }
+          },
+          test => test.id,
+          `Tests for project ${project.id}`,
+        )
       }),
       loadProjectAssets(scopedProjects, 'Data Pools', async project => {
         const response = await scriptApi.listDataPools(project.id, true)
@@ -429,15 +477,19 @@ export default function ApplicationRepositoryPage({
   )
 
   const visibleRows = useMemo(() => sortRepositoryRows(filteredRows, sort), [filteredRows, sort])
+  const selectableVisibleRows = useMemo(
+    () => activeTab === 'structure' ? [] : visibleRows,
+    [activeTab, visibleRows],
+  )
 
   useEffect(() => {
-    const validKeys = new Set(catalogRows.map(repositoryRowKey))
+    const visibleKeys = new Set(selectableVisibleRows.map(repositoryRowKey))
     setSelectedRowKeys(prev => {
       if (prev.size === 0) return prev
       let changed = false
       const next = new Set<string>()
       prev.forEach(key => {
-        if (validKeys.has(key)) {
+        if (visibleKeys.has(key)) {
           next.add(key)
         } else {
           changed = true
@@ -445,19 +497,14 @@ export default function ApplicationRepositoryPage({
       })
       return changed ? next : prev
     })
-  }, [catalogRows])
-
-  const selectedRows = useMemo(
-    () => catalogRows.filter(row => selectedRowKeys.has(repositoryRowKey(row))),
-    [catalogRows, selectedRowKeys],
-  )
+  }, [selectableVisibleRows])
 
   const selectedVisibleRows = useMemo(
-    () => visibleRows.filter(row => selectedRowKeys.has(repositoryRowKey(row))),
-    [selectedRowKeys, visibleRows],
+    () => selectableVisibleRows.filter(row => selectedRowKeys.has(repositoryRowKey(row))),
+    [selectableVisibleRows, selectedRowKeys],
   )
 
-  const allVisibleRowsSelected = visibleRows.length > 0 && selectedVisibleRows.length === visibleRows.length
+  const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
   const hasPartialVisibleSelection = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
 
   const filterActive = filters.query.trim()
@@ -469,16 +516,147 @@ export default function ApplicationRepositoryPage({
     || filters.customStartDate
     || filters.customEndDate
 
+  const updateReconciliationWarning = useCallback((target: ReconciliationTarget, message?: string) => {
+    setReconciliationWarnings(previous => {
+      const next = { ...previous }
+      if (message) next[target] = message
+      else delete next[target]
+      return next
+    })
+  }, [])
+
+  const reconcileCommittedDrafts = useCallback(async (target: ReconciliationTarget) => {
+    try {
+      if (target === 'repository') await onRepositoryRefresh()
+      else await onProjectsRefresh()
+      updateReconciliationWarning(target)
+      return true
+    } catch {
+      updateReconciliationWarning(
+        target,
+        target === 'repository'
+          ? 'Repository changes were saved, but repository data could not be fully refreshed. The mutation succeeded—do not save it again.'
+          : 'Project changes were saved, but the project list could not be refreshed. The mutation succeeded—do not create the project again.',
+      )
+      return false
+    }
+  }, [onProjectsRefresh, onRepositoryRefresh, updateReconciliationWarning])
+
+  const commitCategoryDraft = useCallback(async (draft: CategoryCreationDraft) => {
+    const name = draft.name.trim()
+    if (!name) return false
+    const createCategory = onRepositoryCategoryCreate || repositoryApi.createRepositoryCategory
+    await createCategory(draft.domainId, { name, sort_order: draft.sortOrder })
+    if (categoryCreationDraftRef.current === draft) {
+      categoryCreationDraftRef.current = null
+      setCategoryCreationDraft(null)
+    }
+    return true
+  }, [onRepositoryCategoryCreate, repositoryApi.createRepositoryCategory])
+
+  const commitProjectDraft = useCallback(async (key: string, draft: ProjectCreationDraft) => {
+    const name = draft.name.trim()
+    if (!name) return false
+    await onProjectCreated({ name, domain_id: draft.domainId, category_id: draft.categoryId })
+    if (projectCreationDraftsRef.current[key] === draft) {
+      const next = { ...projectCreationDraftsRef.current }
+      delete next[key]
+      projectCreationDraftsRef.current = next
+      setProjectCreationDrafts(next)
+    }
+    return true
+  }, [onProjectCreated])
+
+  const commitReleaseDraft = useCallback(async (key: string, draft: ReleaseCreationDraft) => {
+    const name = draft.name.trim()
+    if (!name) return false
+    const release = await repositoryApi.createProjectRelease(draft.projectId, {
+      name,
+      application_id: draft.applicationId,
+    })
+    setReleasesByProject(previous => ({
+      ...previous,
+      [draft.projectId]: [release, ...(previous[draft.projectId] || []).filter(candidate => candidate.id !== release.id)],
+    }))
+    if (releaseCreationDraftsRef.current[key] === draft) {
+      const next = { ...releaseCreationDraftsRef.current }
+      delete next[key]
+      releaseCreationDraftsRef.current = next
+      setReleaseCreationDrafts(next)
+    }
+    return true
+  }, [repositoryApi])
+
+  const saveAllCreationDrafts = useCallback(async () => {
+    setError('')
+    setStatus('')
+    let repositoryChanged = false
+    let projectsChanged = false
+
+    const categoryDraft = categoryCreationDraftRef.current
+    if (categoryDraft?.name.trim()) {
+      repositoryChanged = await commitCategoryDraft(categoryDraft)
+      if (repositoryChanged) {
+        await reconcileCommittedDrafts('repository')
+        repositoryChanged = false
+      }
+    }
+    for (const [key, draft] of Object.entries(projectCreationDraftsRef.current)) {
+      if (!draft.name.trim()) continue
+      projectsChanged = (await commitProjectDraft(key, draft)) || projectsChanged
+      if (projectsChanged) {
+        await reconcileCommittedDrafts('projects')
+        projectsChanged = false
+      }
+    }
+    for (const [key, draft] of Object.entries(releaseCreationDraftsRef.current)) {
+      if (!draft.name.trim()) continue
+      await commitReleaseDraft(key, draft)
+    }
+
+    // Reconciliation is GET-only and best effort. A failure here must not keep
+    // the guard wired to replay an already-committed POST.
+    if (repositoryChanged) await reconcileCommittedDrafts('repository')
+    if (projectsChanged) await reconcileCommittedDrafts('projects')
+    setStatus('Repository drafts saved.')
+    return true
+  }, [commitCategoryDraft, commitProjectDraft, commitReleaseDraft, reconcileCommittedDrafts])
+
+  const creationDraftDirty = Boolean(
+    categoryCreationDraft?.name.trim()
+    || Object.values(projectCreationDrafts).some(draft => draft.name.trim())
+    || Object.values(releaseCreationDrafts).some(draft => draft.name.trim()),
+  )
+  const creationDraftDirtyRef = useRef(false)
+  creationDraftDirtyRef.current = creationDraftDirty
+  const saveAllCreationDraftsRef = useRef(saveAllCreationDrafts)
+  saveAllCreationDraftsRef.current = saveAllCreationDrafts
+  const creationDraftGuard = useMemo<NavigationGuard>(() => ({
+    id: 'application-repository-creation-drafts',
+    label: 'Repository creation form',
+    isDirty: () => creationDraftDirtyRef.current,
+    save: () => saveAllCreationDraftsRef.current(),
+    discard: () => {
+      categoryCreationDraftRef.current = null
+      projectCreationDraftsRef.current = {}
+      releaseCreationDraftsRef.current = {}
+      setCategoryCreationDraft(null)
+      setProjectCreationDrafts({})
+      setReleaseCreationDrafts({})
+    },
+  }), [])
+  useNavigationGuard(creationDraftGuard, creationDraftDirty)
+
   const submitCategory = async (event: FormEvent) => {
     event.preventDefault()
-    if (!activeDomain || !newCategoryName.trim()) return
+    const draft = categoryCreationDraftRef.current
+    if (!draft?.name.trim()) return
     setError('')
     setStatus('')
     try {
-      await repositoryApi.createRepositoryCategory(activeDomain.id, { name: newCategoryName.trim(), sort_order: categories.length + 1 })
-      setNewCategoryName('')
-      await onRepositoryRefresh()
+      await commitCategoryDraft(draft)
       setStatus('Category created.')
+      await reconcileCommittedDrafts('repository')
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to create category.'))
     }
@@ -486,15 +664,16 @@ export default function ApplicationRepositoryPage({
 
   const submitProject = async (event: FormEvent, section: StructureSection) => {
     event.preventDefault()
-    const name = (newProjectNameByCategory[section.id] || '').trim()
-    if (!activeDomain || !name) return
+    if (!activeDomain) return
+    const key = `${activeDomain.id}:${section.id}`
+    const draft = projectCreationDraftsRef.current[key]
+    if (!draft?.name.trim()) return
     setError('')
     setStatus('')
     try {
-      await onProjectCreated({ name, domain_id: activeDomain.id, category_id: section.category?.id })
-      setNewProjectNameByCategory(prev => ({ ...prev, [section.id]: '' }))
-      await onProjectsRefresh()
+      await commitProjectDraft(key, draft)
       setStatus('Project created.')
+      await reconcileCommittedDrafts('projects')
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to create project.'))
     }
@@ -502,17 +681,12 @@ export default function ApplicationRepositoryPage({
 
   const submitRelease = async (event: FormEvent, project: Project) => {
     event.preventDefault()
-    const name = (newReleaseNameByProject[project.id] || '').trim()
-    if (!name) return
+    const draft = releaseCreationDraftsRef.current[project.id]
+    if (!draft?.name.trim()) return
     setError('')
     setStatus('')
     try {
-      const release = await repositoryApi.createProjectRelease(project.id, {
-        name,
-        application_id: activeApplication?.project_id === project.id ? activeApplication.id : undefined,
-      })
-      setReleasesByProject(prev => ({ ...prev, [project.id]: [release, ...(prev[project.id] || [])] }))
-      setNewReleaseNameByProject(prev => ({ ...prev, [project.id]: '' }))
+      await commitReleaseDraft(project.id, draft)
       setStatus('Release created.')
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to create release.'))
@@ -529,9 +703,9 @@ export default function ApplicationRepositoryPage({
     setSelectedRowKeys(prev => {
       const next = new Set(prev)
       if (allVisibleRowsSelected) {
-        visibleRows.forEach(row => next.delete(repositoryRowKey(row)))
+        selectableVisibleRows.forEach(row => next.delete(repositoryRowKey(row)))
       } else {
-        visibleRows.forEach(row => next.add(repositoryRowKey(row)))
+        selectableVisibleRows.forEach(row => next.add(repositoryRowKey(row)))
       }
       return next
     })
@@ -568,19 +742,19 @@ export default function ApplicationRepositoryPage({
   }, [canManageReleases, canManageRepository])
 
   const deletableSelectedRows = useMemo(
-    () => selectedRows.filter(canDeleteRow).sort((left, right) => BULK_DELETE_ORDER[left.kind] - BULK_DELETE_ORDER[right.kind]),
-    [canDeleteRow, selectedRows],
+    () => selectedVisibleRows.filter(canDeleteRow).sort((left, right) => BULK_DELETE_ORDER[left.kind] - BULK_DELETE_ORDER[right.kind]),
+    [canDeleteRow, selectedVisibleRows],
   )
 
   const archiveableSelectedRows = useMemo(
-    () => selectedRows.filter(canArchiveRow),
-    [canArchiveRow, selectedRows],
+    () => selectedVisibleRows.filter(canArchiveRow),
+    [canArchiveRow, selectedVisibleRows],
   )
 
   const deleteRepositoryRow = useCallback(async (row: RepositoryAssetRow) => {
     switch (row.kind) {
       case 'project':
-        return projectApi.deleteProject(row.id)
+				return onProjectDelete ? onProjectDelete(row.id) : projectApi.deleteProject(row.id)
       case 'release':
         await repositoryApi.deleteRelease(row.id)
         break
@@ -599,7 +773,7 @@ export default function ApplicationRepositoryPage({
       default:
         break
     }
-  }, [projectApi, repositoryApi, scriptApi, testApi])
+	}, [onProjectDelete, projectApi, repositoryApi, scriptApi, testApi])
 
   const archiveRepositoryRow = useCallback(async (row: RepositoryAssetRow) => {
     if (row.kind === 'release') {
@@ -658,7 +832,7 @@ export default function ApplicationRepositoryPage({
 
     const publishDeletionStatus = () => {
       if (deletedRows.length === 0) return
-      const unchanged = selectedRows.length - deletedRows.length
+      const unchanged = selectedVisibleRows.length - deletedRows.length
       setStatus(`Deleted ${plural(deletedRows.length, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}${cleanupNotice()}`)
     }
 
@@ -746,7 +920,7 @@ export default function ApplicationRepositoryPage({
       if (archivedRows.length > 0) {
         const archivedKeys = new Set(archivedRows.map(repositoryRowKey))
         setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !archivedKeys.has(key))))
-        const unchanged = selectedRows.length - archivedRows.length
+        const unchanged = selectedVisibleRows.length - archivedRows.length
         setStatus(`Archived ${plural(archivedRows.length, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}`)
       }
 
@@ -788,17 +962,17 @@ export default function ApplicationRepositoryPage({
 
   const renderRowAction = (row: RepositoryAssetRow) => {
     if (row.kind === 'script' && onOpenScript) {
-      return <button type="button" className="repository-row-action" onClick={() => onOpenScript(row.id)}>Edit</button>
+      return <button type="button" className="repository-row-action" onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
     }
     if (row.kind === 'scenario' && onCreateTestFromScenario) {
-      return <button type="button" className="repository-row-action" onClick={() => onCreateTestFromScenario(row.id)}>New Test</button>
+      return <button type="button" className="repository-row-action" onClick={() => onCreateTestFromScenario(row.id, row.projectId)}>New Test</button>
     }
     if (row.kind === 'test' && onOpenTest) {
       return (
         <div className="repository-row-actions">
-          <button type="button" className="repository-row-action" onClick={() => onOpenTest(row.id)}>Open</button>
+          <button type="button" className="repository-row-action" onClick={() => onOpenTest(row.id, row.projectId)}>Open</button>
           {onOpenCommandCenter && (
-            <button type="button" className="repository-row-action" onClick={() => onOpenCommandCenter(row.id)}>Run Dashboard</button>
+            <button type="button" className="repository-row-action" onClick={() => onOpenCommandCenter(row.id, row.projectId)}>Run Dashboard</button>
           )}
         </div>
       )
@@ -836,6 +1010,18 @@ export default function ApplicationRepositoryPage({
 
       {status && <div className="form-success" role="status">{status}</div>}
       {error && <div className="form-error" role="alert">{error}</div>}
+      {Object.entries(reconciliationWarnings).map(([target, message]) => (
+        <div className="repository-warning-list" role="alert" key={target}>
+          <span>{message}</span>
+          <button
+            type="button"
+            className="repository-row-action"
+            onClick={() => { void reconcileCommittedDrafts(target as ReconciliationTarget) }}
+          >
+            Retry {target === 'repository' ? 'repository' : 'project'} synchronization
+          </button>
+        </div>
+      ))}
 
       <section className="repository-catalog-shell">
         <div className="repository-catalog-toolbar">
@@ -959,10 +1145,10 @@ export default function ApplicationRepositoryPage({
           </div>
         )}
 
-        {activeTab !== 'structure' && selectedRows.length > 0 && (
+        {activeTab !== 'structure' && selectedVisibleRows.length > 0 && (
           <div className="repository-bulk-bar" role="region" aria-label="Bulk repository actions">
             <div className="repository-bulk-summary">
-              <strong>{plural(selectedRows.length, 'item')} selected</strong>
+              <strong>{plural(selectedVisibleRows.length, 'item')} selected</strong>
               <span>{archiveableSelectedRows.length > 0 ? plural(archiveableSelectedRows.length, 'archiveable item') : 'No archiveable items'}</span>
             </div>
             <div className="repository-bulk-actions">
@@ -995,15 +1181,29 @@ export default function ApplicationRepositoryPage({
               <form className="repository-inline-form" onSubmit={submitCategory}>
                 <label>
                   <span>New Category</span>
-                  <input value={newCategoryName} onChange={event => setNewCategoryName(event.target.value)} placeholder="Payments, Claims, Search" />
+                  <input
+                    value={categoryCreationDraft?.domainId === activeDomain.id ? categoryCreationDraft.name : ''}
+                    onChange={event => {
+                      const name = event.target.value
+                      const draft = name
+                        ? { domainId: activeDomain.id, name, sortOrder: categories.length + 1 }
+                        : null
+                      categoryCreationDraftRef.current = draft
+                      setCategoryCreationDraft(draft)
+                    }}
+                    placeholder="Payments, Claims, Search"
+                  />
                 </label>
-                <button type="submit" disabled={!newCategoryName.trim()}>Add Category</button>
+                <button type="submit" disabled={!categoryCreationDraft?.name.trim()}>Add Category</button>
               </form>
             )}
 
             <div className="repository-category-grid">
-              {structureSections.map(section => (
-                <section key={section.id} className="repository-category">
+              {structureSections.map(section => {
+                const projectDraftKey = `${activeDomain?.id || ''}:${section.id}`
+                const projectDraft = projectCreationDrafts[projectDraftKey]
+                return (
+                  <section key={section.id} className="repository-category">
                   <div className="repository-category-header">
                     <div>
                       <h2>{section.name}</h2>
@@ -1015,11 +1215,26 @@ export default function ApplicationRepositoryPage({
                   {canManageProjects && (
                     <form className="repository-compact-form" onSubmit={event => submitProject(event, section)}>
                       <input
-                        value={newProjectNameByCategory[section.id] || ''}
-                        onChange={event => setNewProjectNameByCategory(prev => ({ ...prev, [section.id]: event.target.value }))}
+                        value={projectDraft?.name || ''}
+                        onChange={event => {
+                          if (!activeDomain) return
+                          const name = event.target.value
+                          const next = { ...projectCreationDraftsRef.current }
+                          if (name) {
+                            next[projectDraftKey] = {
+                              domainId: activeDomain.id,
+                              categoryId: section.category?.id,
+                              name,
+                            }
+                          } else {
+                            delete next[projectDraftKey]
+                          }
+                          projectCreationDraftsRef.current = next
+                          setProjectCreationDrafts(next)
+                        }}
                         placeholder="New project name"
                       />
-                      <button type="submit" disabled={!(newProjectNameByCategory[section.id] || '').trim()}>Create Project</button>
+                      <button type="submit" disabled={!projectDraft?.name.trim()}>Create Project</button>
                     </form>
                   )}
 
@@ -1036,11 +1251,25 @@ export default function ApplicationRepositoryPage({
                         {canManageReleases && (
                           <form className="repository-compact-form" onSubmit={event => submitRelease(event, project)}>
                             <input
-                              value={newReleaseNameByProject[project.id] || ''}
-                              onChange={event => setNewReleaseNameByProject(prev => ({ ...prev, [project.id]: event.target.value }))}
+                              value={releaseCreationDrafts[project.id]?.name || ''}
+                              onChange={event => {
+                                const name = event.target.value
+                                const next = { ...releaseCreationDraftsRef.current }
+                                if (name) {
+                                  next[project.id] = {
+                                    projectId: project.id,
+                                    applicationId: activeApplication?.project_id === project.id ? activeApplication.id : undefined,
+                                    name,
+                                  }
+                                } else {
+                                  delete next[project.id]
+                                }
+                                releaseCreationDraftsRef.current = next
+                                setReleaseCreationDrafts(next)
+                              }}
                               placeholder="New release name"
                             />
-                            <button type="submit" disabled={!(newReleaseNameByProject[project.id] || '').trim()}>Add Release</button>
+                            <button type="submit" disabled={!releaseCreationDrafts[project.id]?.name.trim()}>Add Release</button>
                           </form>
                         )}
                         <div className="repository-release-list">
@@ -1055,8 +1284,9 @@ export default function ApplicationRepositoryPage({
                       <div className="repository-empty">No projects in this category.</div>
                     )}
                   </div>
-                </section>
-              ))}
+                  </section>
+                )
+              })}
               {structureSections.length === 0 && (
                 <div className="repository-empty wide">No repository structure exists for this domain yet.</div>
               )}

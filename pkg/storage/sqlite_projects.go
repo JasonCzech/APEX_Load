@@ -674,6 +674,9 @@ func (s *SQLiteStore) DeleteApplication(id string) error {
 		return err
 	}
 	projectID = normalizeProjectID(projectID)
+	if id == legacyApplicationID(projectID) {
+		return errors.New("legacy application cannot be deleted")
+	}
 	// Match the project -> application -> release lock order used by every
 	// hierarchy writer so a concurrent child insert cannot outlive this delete.
 	if _, err := tx.Exec(`UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID); err != nil {
@@ -924,6 +927,13 @@ func (s *SQLiteStore) ArchiveRelease(id string) error {
 	if affected != 1 {
 		return sql.ErrNoRows
 	}
+	var projectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM releases WHERE id = ?`, id).Scan(&projectID); err != nil {
+		return err
+	}
+	if id == legacyReleaseID(projectID) {
+		return errors.New("legacy release cannot be archived")
+	}
 	var count int
 	if err := tx.QueryRow(`SELECT
 		(SELECT COUNT(*) FROM tests WHERE release_id = ?) +
@@ -962,6 +972,9 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 		return err
 	}
 	projectID = normalizeProjectID(projectID)
+	if id == legacyReleaseID(projectID) {
+		return errors.New("legacy release cannot be deleted")
+	}
 	// Use the same project -> application -> release order as SaveRelease and
 	// child writers. Once the release row is held, every reference check and the
 	// delete occur in this transaction.
@@ -993,6 +1006,18 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 }
 
 func (s *SQLiteStore) SaveProject(project *Project) error {
+	return s.saveProject(project, false)
+}
+
+// CreateProjectWithLegacyHierarchy creates a project and its deterministic
+// compatibility application/release in one transaction. API project creation
+// uses this path; SaveProject remains suitable for migrations and fixtures that
+// intentionally assemble a hierarchy in separate steps.
+func (s *SQLiteStore) CreateProjectWithLegacyHierarchy(project *Project) error {
+	return s.saveProject(project, true)
+}
+
+func (s *SQLiteStore) saveProject(project *Project, provisionLegacyHierarchy bool) error {
 	if project.ID == "" {
 		return errors.New("project id is required")
 	}
@@ -1023,6 +1048,11 @@ func (s *SQLiteStore) SaveProject(project *Project) error {
 		project.ID, project.DomainID, project.CategoryID, project.Name, string(settingsJSON), project.CreatedAt, project.UpdatedAt)
 	if err != nil {
 		return err
+	}
+	if provisionLegacyHierarchy {
+		if err := ensureLegacyProjectHierarchyTx(tx, project.ID, project.CreatedAt); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

@@ -40,6 +40,7 @@ export interface StoredScenario {
   id: string
   ref_key?: string
   name: string
+  project_id?: string
   duration: string
   start_delay?: string
   scenario_mode?: ScenarioMode

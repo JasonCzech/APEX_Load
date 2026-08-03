@@ -323,7 +323,7 @@ func scanReleaseSLAWaiver(row scanner) (*ReleaseSLAWaiver, error) {
 }
 
 func (s *SQLiteStore) SaveExternalResultImport(result *ExternalResultImport) error {
-	summaryJSON, rawJSON, err := prepareExternalResultImportInsert(result)
+	summaryJSON, rawJSON, archiveRecordJSON, err := prepareExternalResultImportInsert(result)
 	if err != nil {
 		return err
 	}
@@ -335,27 +335,31 @@ func (s *SQLiteStore) SaveExternalResultImport(result *ExternalResultImport) err
 	if _, err := validateExternalResultImportPlacement(tx, result, true); err != nil {
 		return err
 	}
-	written, err := tx.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, release_id, scenario_id, source, summary_json, raw_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	written, err := tx.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, application_id, release_id, scenario_id, source, summary_json, raw_json, archive_record_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			provider=excluded.provider,
 			name=excluded.name,
 			project_id=excluded.project_id,
+			application_id=excluded.application_id,
 			release_id=excluded.release_id,
 			scenario_id=excluded.scenario_id,
 			source=excluded.source,
 			summary_json=excluded.summary_json,
-			raw_json=excluded.raw_json
+			raw_json=excluded.raw_json,
+			archive_record_json=excluded.archive_record_json
 		WHERE external_result_imports.project_id=excluded.project_id`,
 		result.ID,
 		result.Provider,
 		result.Name,
 		result.ProjectID,
+		nullableString(result.ApplicationID),
 		result.ReleaseID,
 		result.ScenarioID,
 		result.Source,
 		summaryJSON,
 		rawJSON,
+		archiveRecordJSON,
 		result.CreatedAt,
 	)
 	if err != nil {
@@ -379,11 +383,15 @@ func (s *SQLiteStore) ListExternalResultImports(filter ExternalResultImportFilte
 		filter.Offset = 0
 	}
 	query := strings.Builder{}
-	query.WriteString(`SELECT id, provider, name, COALESCE(project_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(source, ''), COALESCE(summary_json, ''), COALESCE(raw_json, ''), created_at FROM external_result_imports WHERE 1 = 1`)
-	args := make([]any, 0, 6)
+	query.WriteString(`SELECT id, provider, name, COALESCE(project_id, ''), COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(source, ''), COALESCE(summary_json, ''), COALESCE(raw_json, ''), COALESCE(archive_record_json, ''), created_at FROM external_result_imports WHERE 1 = 1`)
+	args := make([]any, 0, 7)
 	if projectID := strings.TrimSpace(filter.ProjectID); projectID != "" {
 		query.WriteString(` AND project_id = ?`)
 		args = append(args, normalizeProjectID(projectID))
+	}
+	if applicationID := strings.TrimSpace(filter.ApplicationID); applicationID != "" {
+		query.WriteString(` AND application_id = ?`)
+		args = append(args, applicationID)
 	}
 	if releaseID := strings.TrimSpace(filter.ReleaseID); releaseID != "" {
 		query.WriteString(` AND release_id = ?`)
@@ -393,7 +401,7 @@ func (s *SQLiteStore) ListExternalResultImports(filter ExternalResultImportFilte
 		query.WriteString(` AND provider = ?`)
 		args = append(args, provider)
 	}
-	query.WriteString(` ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+	query.WriteString(` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := s.db.Query(query.String(), args...)
 	if err != nil {
@@ -415,16 +423,19 @@ func scanExternalResultImport(row scanner) (*ExternalResultImport, error) {
 	var result ExternalResultImport
 	var summaryJSON string
 	var rawJSON string
+	var archiveRecordJSON string
 	if err := row.Scan(
 		&result.ID,
 		&result.Provider,
 		&result.Name,
 		&result.ProjectID,
+		&result.ApplicationID,
 		&result.ReleaseID,
 		&result.ScenarioID,
 		&result.Source,
 		&summaryJSON,
 		&rawJSON,
+		&archiveRecordJSON,
 		&result.CreatedAt,
 	); err != nil {
 		return nil, err
@@ -437,6 +448,11 @@ func scanExternalResultImport(row scanner) (*ExternalResultImport, error) {
 	}
 	if strings.TrimSpace(rawJSON) != "" && strings.TrimSpace(rawJSON) != "null" {
 		if err := json.Unmarshal([]byte(rawJSON), &result.RawResult); err != nil {
+			return nil, err
+		}
+	}
+	if strings.TrimSpace(archiveRecordJSON) != "" && strings.TrimSpace(archiveRecordJSON) != "null" {
+		if err := json.Unmarshal([]byte(archiveRecordJSON), &result.ArchiveRecord); err != nil {
 			return nil, err
 		}
 	}

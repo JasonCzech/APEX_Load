@@ -5,12 +5,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CommandCenterPrototype, {
-  buildScenarioRunRows,
   buildSelectedGroupChartHistoryFromTransactions,
   historicalGroupSummaryQuery,
   selectedGroupLoadImpactData,
-  type CommandGroup,
 } from './CommandCenterPrototype'
+import { buildScenarioRunRows, type CommandGroup } from './commandCenterScenarioRows'
+import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
+import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
 import type { MetricsHistoryPoint, TestSummary, TransactionEvent, TxMetrics } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -40,6 +41,10 @@ describe('CommandCenterPrototype', () => {
       sample_limit: 5000,
       groups: ['Checkout', 'Search'],
     })
+  })
+
+  it('qualifies live evidence cache entries by run and signature', () => {
+    expect(liveEvidenceCacheKey('run-a', 'HTTP 500')).not.toBe(liveEvidenceCacheKey('run-b', 'HTTP 500'))
   })
 
   it('keeps unfiltered graph data when selected group fields are absent', () => {
@@ -197,7 +202,7 @@ describe('CommandCenterPrototype', () => {
 
   it('auto-selects the only live run when opened without a testId', async () => {
     const liveRun = buildLiveVuserTest()
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const url = requestUrl(input)
       if (url.includes('/tests/live-vuser-1/')) return Promise.resolve(jsonResponse({}))
       if (url.includes('/tests/live-vuser-1')) return Promise.resolve(jsonResponse(liveRun))
@@ -213,6 +218,14 @@ describe('CommandCenterPrototype', () => {
     expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
     expect(container.textContent).toContain('Live VUser Checkout')
     expect(container.querySelector('[aria-label="Command center run controls"]')).not.toBeNull()
+    const discoveryURL = fetchMock.mock.calls
+      .map(([input]) => requestUrl(input))
+      .find(url => url.includes('/tests?'))
+    expect(discoveryURL).toContain('project_id=project-1')
+    expect(discoveryURL).toContain('summary=true')
+    expect(discoveryURL).toContain('active_only=true')
+    expect(discoveryURL).toContain('limit=200')
+    expect(discoveryURL).toContain('offset=0')
   })
 
   it('opens the Test Notes dialog from the run controls', async () => {
@@ -357,6 +370,141 @@ describe('CommandCenterPrototype', () => {
     expect(discoveryCalls).toBeGreaterThanOrEqual(2)
     expect(container.textContent).toContain('Replacement Run')
     expect(container.textContent).not.toContain('Finishing Run')
+  })
+
+  it('continues polling an explicitly routed terminal run until its archive appears', async () => {
+    vi.useFakeTimers()
+    const onOpenArchive = vi.fn()
+    const terminalRun: TestSummary = {
+      id: 'late-archive',
+      name: 'Late Archive Run',
+      status: 'FAILED',
+      total_vusers: 5,
+      duration: '1m',
+      created_at: '2026-06-08T13:00:00Z',
+      ended_at: '2026-06-08T13:01:00Z',
+      groups: [{
+        name: 'Checkout',
+        protocol: 'http',
+        script_id: 'script-1',
+        script_name: 'Checkout',
+        vusers: 5,
+      }],
+    }
+    let testPollCalls = 0
+    let archiveReady = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/late-archive') {
+        testPollCalls += 1
+        return jsonResponse(!archiveReady ? terminalRun : {
+          ...terminalRun,
+          archive: {
+            test_id: 'late-archive',
+            schema_version: '1.0',
+            archive_path: '/archives/late-archive',
+            manifest_path: '/archives/late-archive/manifest.json',
+            transaction_count: 0,
+            resource_sample_count: 0,
+            interval_summary_count: 0,
+            created_at: '2026-06-08T13:01:00Z',
+            completed_at: '2026-06-08T13:01:02Z',
+          },
+        })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="late-archive" onOpenArchive={onOpenArchive} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flush()
+
+    const initialTestPollCalls = testPollCalls
+    expect(initialTestPollCalls).toBeGreaterThanOrEqual(1)
+    expect(container.textContent).not.toContain('Open Results Archive')
+
+    archiveReady = true
+    await act(async () => {
+      vi.advanceTimersByTime(2000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(testPollCalls).toBeGreaterThan(initialTestPollCalls)
+    expect(container.textContent).toContain('Open Results Archive')
+
+    const completedTestPollCalls = testPollCalls
+
+    await act(async () => {
+      vi.advanceTimersByTime(4000)
+      await Promise.resolve()
+    })
+    expect(testPollCalls).toBe(completedTestPollCalls)
+  })
+
+  it('offers an in-place archive check after terminal polling times out', async () => {
+    vi.useFakeTimers()
+    const terminalRun: TestSummary = {
+      id: 'late-archive-retry',
+      name: 'Late Archive Retry Run',
+      status: 'FAILED',
+      total_vusers: 5,
+      duration: '1m',
+      created_at: '2026-06-08T13:00:00Z',
+      ended_at: '2026-06-08T13:01:00Z',
+      groups: [],
+    }
+    let archiveReady = false
+    let testPollCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = new URL(requestUrl(input), 'http://localhost')
+      if (url.pathname === '/api/v1/tests/late-archive-retry') {
+        testPollCalls += 1
+        return jsonResponse(archiveReady ? {
+          ...terminalRun,
+          archive: {
+            test_id: terminalRun.id,
+            schema_version: '1.0',
+            archive_path: '/archives/late-archive-retry',
+            manifest_path: '/archives/late-archive-retry/manifest.json',
+            transaction_count: 0,
+            resource_sample_count: 0,
+            interval_summary_count: 0,
+            created_at: '2026-06-08T13:01:00Z',
+            completed_at: '2026-06-08T13:03:01Z',
+          },
+        } : terminalRun)
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={terminalRun.id} onOpenArchive={vi.fn()} />)
+    })
+    await flush()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS)
+    })
+
+    expect(container.textContent).toContain('Archive publication is taking longer than expected')
+    const callsAtTimeout = testPollCalls
+    archiveReady = true
+    const checkAgain = buttonNamed('Check again')
+    await act(async () => {
+      checkAgain.click()
+      checkAgain.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(testPollCalls).toBe(callsAtTimeout + 1)
+    expect(container.textContent).toContain('Open Results Archive')
+    expect(container.textContent).not.toContain('Check again')
   })
 
   it('switches between the OPS View and Graph Wall variants from the sidebar', async () => {
@@ -1031,6 +1179,147 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('Live Checkout')
     expect(container.textContent).toContain('HTTP 500 checkout spike')
     expect(container.textContent).not.toContain('In-flight Run Command Center')
+  })
+
+  it('never reuses same-signature evidence across routed runs', async () => {
+    const withEvidencePattern = (id: string, name: string): TestSummary => ({
+      ...buildLiveVuserTest(),
+      id,
+      name,
+      live_metrics: {
+        ...buildLiveVuserTest().live_metrics!,
+        error_patterns: [{
+          signature: 'HTTP 500 shared signature',
+          sample: 'shared failure',
+          count: 1,
+          first_seen: '2026-06-08T13:09:00Z',
+          latest_seen: '2026-06-08T13:10:00Z',
+          actions: ['POST /checkout'],
+          affected_groups: ['Live Checkout'],
+          evidence_count: 1,
+        }],
+      },
+    })
+    let resolveRunB: ((response: Response) => void) | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/run-a/errors/evidence')) {
+        return Promise.resolve(jsonResponse({ evidence: [{
+          id: 'evidence-a',
+          signature: 'HTTP 500 shared signature',
+          action: 'RUN A EVIDENCE',
+          group: 'Live Checkout',
+          timestamp: '2026-06-08T13:10:00Z',
+          duration_ms: 100,
+          status: 'failed',
+          status_code: 500,
+        }] }))
+      }
+      if (url.includes('/tests/run-b/errors/evidence')) {
+        return new Promise<Response>(resolve => { resolveRunB = resolve })
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="run-a" initialTest={withEvidencePattern('run-a', 'Run A')} history={[]} />)
+    })
+    await click(tabNamed('Error Details'))
+    await flush()
+    expect(container.textContent).toContain('RUN A EVIDENCE')
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="run-b" initialTest={withEvidencePattern('run-b', 'Run B')} history={[]} />)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('RUN A EVIDENCE')
+    expect(container.textContent).toContain('Loading live evidence')
+
+    await act(async () => {
+      resolveRunB?.(jsonResponse({ evidence: [{
+        id: 'evidence-b',
+        signature: 'HTTP 500 shared signature',
+        action: 'RUN B EVIDENCE',
+        group: 'Live Checkout',
+        timestamp: '2026-06-08T13:11:00Z',
+        duration_ms: 120,
+        status: 'failed',
+        status_code: 500,
+      }] }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('RUN B EVIDENCE')
+    expect(container.textContent).not.toContain('RUN A EVIDENCE')
+  })
+
+  it('refreshes same-signature evidence only when its count or latest evidence changes', async () => {
+    const withEvidenceFreshness = (evidenceCount: number, latestEvidenceId: string): TestSummary => ({
+      ...buildLiveVuserTest(),
+      live_metrics: {
+        ...buildLiveVuserTest().live_metrics!,
+        error_patterns: [{
+          signature: 'HTTP 500 evolving signature',
+          sample: 'evolving failure',
+          count: evidenceCount,
+          first_seen: '2026-06-08T13:09:00Z',
+          latest_seen: '2026-06-08T13:10:00Z',
+          actions: ['POST /checkout'],
+          affected_groups: ['Live Checkout'],
+          evidence_count: evidenceCount,
+          latest_evidence_id: latestEvidenceId,
+        }],
+      },
+    })
+    let evidenceCalls = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/live-vuser-1/errors/evidence')) {
+        evidenceCalls += 1
+        return Promise.resolve(jsonResponse({ evidence: [{
+          id: `evidence-${evidenceCalls}`,
+          signature: 'HTTP 500 evolving signature',
+          action: `EVIDENCE VERSION ${evidenceCalls}`,
+          group: 'Live Checkout',
+          timestamp: '2026-06-08T13:10:00Z',
+          duration_ms: 100,
+          status: 'failed',
+          status_code: 500,
+        }] }))
+      }
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    const firstSnapshot = withEvidenceFreshness(1, 'evidence-1')
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={firstSnapshot} history={[]} />)
+    })
+    await click(tabNamed('Error Details'))
+    await flush()
+    expect(evidenceCalls).toBe(1)
+    expect(container.textContent).toContain('EVIDENCE VERSION 1')
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={firstSnapshot} history={[]} />)
+    })
+    await flush()
+    expect(evidenceCalls).toBe(1)
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={withEvidenceFreshness(2, 'evidence-1')} history={[]} />)
+    })
+    await flush()
+    expect(evidenceCalls).toBe(2)
+    expect(container.textContent).toContain('EVIDENCE VERSION 2')
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={withEvidenceFreshness(2, 'evidence-2')} history={[]} />)
+    })
+    await flush()
+    expect(evidenceCalls).toBe(3)
+    expect(container.textContent).toContain('EVIDENCE VERSION 3')
   })
 
   it('starts a reserved run from the command center', async () => {

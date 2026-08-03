@@ -311,7 +311,7 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
 
-    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 500, project_id: 'project-1', summary: true })
+    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
     expect(container.textContent).not.toContain('API Guide')
     expect(container.textContent).not.toContain('Customize Cards')
 
@@ -411,6 +411,47 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Aggregate TPS (active tests)')
     expect(onNavigate).toHaveBeenCalledWith('tests')
+  })
+
+  it('loads every bounded application-run page before computing dashboard counts and trends', async () => {
+    const newest = scopedTest('test-newest', 'Newest Run', 'app-1', 'rel-1')
+    const oldest = { ...scopedTest('test-oldest', 'Oldest Run', 'app-1', 'rel-1'), created_at: '2026-05-01T20:00:00Z' }
+    apiMock.listTests.mockImplementation(({ offset = 0 }: { offset?: number }) => Promise.resolve({
+      tests: offset === 0 ? [newest] : [oldest],
+      count: 1,
+      total: 2,
+      limit: 1000,
+      offset,
+    }))
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    expect(apiMock.listTests).toHaveBeenNthCalledWith(1, { application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
+    expect(apiMock.listTests).toHaveBeenNthCalledWith(2, { application_id: 'app-1', limit: 1000, offset: 1, project_id: 'project-1', summary: true })
+    expect(getTabByText('Recent Activity').textContent).toContain('2')
+    expect(container.textContent).toContain('Newest Run')
+    expect(container.textContent).toContain('Oldest Run')
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flushDashboard()
+
+    expect(apiMock.listTests).toHaveBeenCalledTimes(3)
+    expect(apiMock.listTests).toHaveBeenNthCalledWith(3, { application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
   })
 
   it('blocks the all-releases fallback when release scope fails and offers a retry', async () => {
@@ -1082,7 +1123,7 @@ describe('DashboardPage', () => {
       })
 
       expect(apiMock.listTests).toHaveBeenCalledTimes(1)
-      expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 500, project_id: 'project-1', summary: true })
+      expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
       expect(apiMock.getHealth).toHaveBeenCalledTimes(1)
       expect(apiMock.getSystemInventory).not.toHaveBeenCalled()
     } finally {
@@ -1109,7 +1150,7 @@ describe('DashboardPage', () => {
         />,
       )
     })
-    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 500, project_id: 'project-1', summary: true })
+    expect(apiMock.listTests).toHaveBeenCalledWith({ application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
 
     projectState.activeProject = { id: 'project-2', name: 'Catalog', created_at: '', updated_at: '' }
     applicationState.activeApplication = { id: 'app-2', name: 'Catalog', created_at: '', updated_at: '' }

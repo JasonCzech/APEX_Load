@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 
 import {
   formatLoadImpactCellTitle,
@@ -8,6 +7,7 @@ import {
   loadImpactCellKey,
 } from './loadImpactModel'
 import type { LoadImpactCell, LoadImpactModel } from './loadImpactModel'
+import { LoadImpactOrbitControls } from './loadImpactOrbitControls'
 
 interface Props {
   model: LoadImpactModel
@@ -168,7 +168,7 @@ export default function LoadImpact3DHeatmap({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const sceneRef = useRef<THREE.Scene | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
-  const controlsRef = useRef<OrbitControls | null>(null)
+  const controlsRef = useRef<LoadImpactOrbitControls | null>(null)
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
   const meshesRef = useRef<THREE.Mesh[]>([])
   const labelsRef = useRef<LabelSprite[]>([])
@@ -211,7 +211,7 @@ export default function LoadImpact3DHeatmap({
     cameraRef.current = camera
     camera.lookAt(0, 0.45, 0)
 
-    const controls = new OrbitControls(camera, renderer.domElement)
+    const controls = new LoadImpactOrbitControls(camera, renderer.domElement)
     controlsRef.current = controls
     controls.enableDamping = true
     controls.autoRotate = true

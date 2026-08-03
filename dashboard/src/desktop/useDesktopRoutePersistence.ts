@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { getDesktopBridge } from './desktopBridge'
 import { DESKTOP_OPEN_ACTIVATION_EVENT } from './useDesktopShellEvents'
@@ -15,8 +15,20 @@ type DesktopRoutePersistenceOptions = {
 export function useDesktopRoutePersistence({ enabled, route, restoreRoute }: DesktopRoutePersistenceOptions): void {
   const restoreStarted = useRef(false)
   const explicitActivation = useRef(false)
+  const routeChangedDuringRestore = useRef(false)
+  const observedRoute = useRef(route)
   const persistenceQueue = useRef<Promise<void>>(Promise.resolve())
   const [restoreFinished, setRestoreFinished] = useState(false)
+
+  // A saved-route promise can settle immediately after a navigation commit but
+  // before passive effects run. Observe committed route changes in the layout
+  // phase so its continuation cannot restore stale state over that navigation.
+  useLayoutEffect(() => {
+    if (restoreStarted.current && observedRoute.current !== route) {
+      routeChangedDuringRestore.current = true
+    }
+    observedRoute.current = route
+  }, [route])
 
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return
@@ -42,7 +54,9 @@ export function useDesktopRoutePersistence({ enabled, route, restoreRoute }: Des
 
     void bridge.GetLastRoute()
       .then(savedRoute => {
-        if (savedRoute && !explicitActivation.current) restoreRoute(savedRoute)
+        if (savedRoute && !explicitActivation.current && !routeChangedDuringRestore.current) {
+          restoreRoute(savedRoute)
+        }
       })
       .catch(() => undefined)
       .finally(() => setRestoreFinished(true))

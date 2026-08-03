@@ -93,6 +93,12 @@ func TestGetTestManifestBuildsLiveConfigurationAndRuntimeChanges(t *testing.T) {
 	if manifest.InitialConfiguration.TotalVUsers != 10 {
 		t.Fatalf("initial total vusers = %d, want 10", manifest.InitialConfiguration.TotalVUsers)
 	}
+	if manifest.InitialConfigurationProvenance.Source != testRunManifestInitialConfigurationStoredTestRecord || manifest.InitialConfigurationProvenance.Immutable {
+		t.Fatalf("initial configuration provenance = %#v, want mutable stored test record", manifest.InitialConfigurationProvenance)
+	}
+	if !containsWarning(manifest.Warnings, "stored test record is mutable") {
+		t.Fatalf("warnings = %#v, want mutable stored-record warning", manifest.Warnings)
+	}
 	if manifest.CurrentConfiguration.TotalVUsers != 25 || manifest.CurrentConfiguration.ActiveVUsers != 22 {
 		t.Fatalf("current config = %#v, want total 25 active 22", manifest.CurrentConfiguration)
 	}
@@ -110,6 +116,44 @@ func TestGetTestManifestBuildsLiveConfigurationAndRuntimeChanges(t *testing.T) {
 	}
 	if _, leaked := manifest.RuntimeChanges[1].Details["api_key"]; leaked {
 		t.Fatalf("unsafe audit detail leaked into manifest: %#v", manifest.RuntimeChanges[1].Details)
+	}
+}
+
+func TestGetTestManifestMarksRetainedStateFallbackMutable(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	test := &ManagedTest{
+		ID:          "test-retained-manifest",
+		Name:        "Retained Run",
+		Status:      "QUEUED",
+		ProjectID:   "project-1",
+		TotalVUsers: 17,
+		Duration:    3 * time.Minute,
+		DurationStr: "3m0s",
+		CreatedAt:   time.Date(2026, 6, 7, 14, 0, 0, 0, time.UTC),
+		Groups: []TestGroup{{
+			Name:       "buyers",
+			ScriptID:   "script-1",
+			ScriptName: "Checkout Flow",
+			Protocol:   "http",
+			VUsers:     17,
+		}},
+	}
+	runner.mu.Lock()
+	runner.tests[test.ID] = test
+	runner.mu.Unlock()
+
+	manifest, err := runner.GetTestManifest(test.ID)
+	if err != nil {
+		t.Fatalf("GetTestManifest returned error: %v", err)
+	}
+	if manifest.InitialConfigurationProvenance.Source != testRunManifestInitialConfigurationRetainedRunState || manifest.InitialConfigurationProvenance.Immutable {
+		t.Fatalf("initial configuration provenance = %#v, want mutable retained run state", manifest.InitialConfigurationProvenance)
+	}
+	if manifest.InitialConfiguration.TotalVUsers != 17 || len(manifest.InitialConfiguration.Groups) != 1 {
+		t.Fatalf("initial configuration = %#v, want retained run values", manifest.InitialConfiguration)
+	}
+	if !containsWarning(manifest.Warnings, "initial configuration mirrors current retained run state") {
+		t.Fatalf("warnings = %#v, want retained-state warning", manifest.Warnings)
 	}
 }
 
@@ -162,6 +206,16 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newRunArchiveWriter returned error: %v", err)
 	}
+	// Runtime controls mutate the retained ManagedTest and the final enriched
+	// archive provenance. The separately captured initial provenance must remain
+	// the configuration that recording started with.
+	runner.mu.Lock()
+	test.TotalVUsers = 45
+	test.Duration = 12 * time.Minute
+	test.DurationStr = "12m0s"
+	test.Groups[0].VUsers = 45
+	runner.mu.Unlock()
+	writer.RefreshProvenance(buildRunArchiveProvenance(runner, test))
 	record, err := writer.Finalize("COMPLETE", completedAt, "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
@@ -207,6 +261,15 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 	}
 	if persisted.Source != "archive" {
 		t.Fatalf("persisted manifest source = %q, want archive", persisted.Source)
+	}
+	if persisted.InitialConfigurationProvenance.Source != testRunManifestInitialConfigurationArchiveProvenance || !persisted.InitialConfigurationProvenance.Immutable {
+		t.Fatalf("persisted initial configuration provenance = %#v, want immutable archive provenance", persisted.InitialConfigurationProvenance)
+	}
+	if persisted.InitialConfiguration.TotalVUsers != 20 || persisted.InitialConfiguration.Duration != "5m0s" || len(persisted.InitialConfiguration.Groups) != 1 || persisted.InitialConfiguration.Groups[0].VUsers != 20 {
+		t.Fatalf("persisted initial configuration = %#v, want pre-runtime values", persisted.InitialConfiguration)
+	}
+	if persisted.CurrentConfiguration.TotalVUsers != 45 || persisted.CurrentConfiguration.Duration != "12m0s" || len(persisted.CurrentConfiguration.Groups) != 1 || persisted.CurrentConfiguration.Groups[0].VUsers != 45 {
+		t.Fatalf("persisted current configuration = %#v, want runtime-adjusted values", persisted.CurrentConfiguration)
 	}
 	if persisted.Archive == nil || persisted.Archive.TestManifestFile != testRunManifestFileName {
 		t.Fatalf("persisted archive info = %#v, want test manifest file", persisted.Archive)
@@ -263,8 +326,14 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 	if fallback.Source != "archive_fallback" {
 		t.Fatalf("fallback source = %q, want archive_fallback", fallback.Source)
 	}
+	if fallback.InitialConfigurationProvenance.Source != testRunManifestInitialConfigurationArchiveProvenance || fallback.InitialConfigurationProvenance.Immutable {
+		t.Fatalf("fallback initial configuration provenance = %#v, want mutable legacy archive provenance", fallback.InitialConfigurationProvenance)
+	}
 	if !containsWarning(fallback.Warnings, "archive does not contain a persisted test_manifest.json") {
 		t.Fatalf("fallback warnings = %#v, want old archive warning", fallback.Warnings)
+	}
+	if !containsWarning(fallback.Warnings, "archive predates immutable initial provenance") {
+		t.Fatalf("fallback warnings = %#v, want legacy provenance warning", fallback.Warnings)
 	}
 }
 

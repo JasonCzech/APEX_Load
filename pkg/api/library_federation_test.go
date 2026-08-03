@@ -304,12 +304,14 @@ func TestLibraryRemoteStatePersistsThroughSettingsStore(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store, LibraryCredentials: creds})
 
 	body := marshalLibraryTestJSON(t, LibraryRemoteRequest{
-		Name:             "Team Host",
-		BaseURL:          "https://host.example.test",
-		DefaultProjectID: "team-project",
-		ProjectMappings:  map[string]string{"local-team": "team-project"},
-		AuthMethod:       "service_account",
-		APIKey:           "secret-token",
+		Name:                "Team Host",
+		BaseURL:             "https://host.example.test",
+		DefaultProjectID:    "team-project",
+		ProjectMappings:     map[string]string{"local-team": "team-project"},
+		ApplicationMappings: map[string]string{" local-storefront ": " remote-storefront "},
+		ReleaseMappings:     map[string]string{" local-sprint-24 ": " remote-sprint-24 "},
+		AuthMethod:          "service_account",
+		APIKey:              "secret-token",
 	})
 	createResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes", bytes.NewReader(body)))
@@ -353,8 +355,42 @@ func TestLibraryRemoteStatePersistsThroughSettingsStore(t *testing.T) {
 	if listed.Remotes[0].ProjectMappings["local-team"] != "team-project" {
 		t.Fatalf("listed project mappings = %#v, want persisted local-team mapping", listed.Remotes[0].ProjectMappings)
 	}
+	if listed.Remotes[0].ApplicationMappings["local-storefront"] != "remote-storefront" {
+		t.Fatalf("listed application mappings = %#v, want persisted local-storefront mapping", listed.Remotes[0].ApplicationMappings)
+	}
+	if listed.Remotes[0].ReleaseMappings["local-sprint-24"] != "remote-sprint-24" {
+		t.Fatalf("listed release mappings = %#v, want persisted local-sprint-24 mapping", listed.Remotes[0].ReleaseMappings)
+	}
 	if listed.Remotes[0].APIKey != "" || listed.Remotes[0].CredentialRef != "" {
 		t.Fatalf("remote list response leaked credential material: %#v", listed.Remotes[0])
+	}
+
+	updateBody := marshalLibraryTestJSON(t, LibraryRemoteRequest{
+		ApplicationMappings: map[string]string{"local-storefront": "remote-storefront-v2"},
+		ReleaseMappings:     map[string]string{"local-sprint-24": "remote-sprint-24-v2"},
+	})
+	updateResp := httptest.NewRecorder()
+	reopened.mux.ServeHTTP(updateResp, httptest.NewRequest(http.MethodPut, "/api/v1/library/remotes/"+created.ID, bytes.NewReader(updateBody)))
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update remote status = %d body=%s", updateResp.Code, updateResp.Body.String())
+	}
+	var updated LibraryRemote
+	if err := json.NewDecoder(updateResp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode updated remote: %v", err)
+	}
+	if updated.ApplicationMappings["local-storefront"] != "remote-storefront-v2" || updated.ReleaseMappings["local-sprint-24"] != "remote-sprint-24-v2" || updated.ProjectMappings["local-team"] != "team-project" {
+		t.Fatalf("updated mappings = applications %#v releases %#v projects %#v", updated.ApplicationMappings, updated.ReleaseMappings, updated.ProjectMappings)
+	}
+
+	reopenedAfterUpdate := NewServer(ServerConfig{Store: store, LibraryCredentials: creds})
+	updatedListResp := httptest.NewRecorder()
+	reopenedAfterUpdate.mux.ServeHTTP(updatedListResp, httptest.NewRequest(http.MethodGet, "/api/v1/library/remotes", nil))
+	var updatedList LibraryRemoteListResponse
+	if err := json.NewDecoder(updatedListResp.Body).Decode(&updatedList); err != nil {
+		t.Fatalf("decode updated remote list: %v", err)
+	}
+	if len(updatedList.Remotes) != 1 || updatedList.Remotes[0].ApplicationMappings["local-storefront"] != "remote-storefront-v2" || updatedList.Remotes[0].ReleaseMappings["local-sprint-24"] != "remote-sprint-24-v2" {
+		t.Fatalf("persisted updated application/release mappings = %#v", updatedList.Remotes)
 	}
 }
 
@@ -363,10 +399,11 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	target := NewServer(ServerConfig{})
 	script := host.runner.StoreScript(libraryTestScript("archive-script", "Archive Script", "team-project", "/archive"))
 	testRun, err := host.runner.CreateTest(CreateTestRequest{
-		Name:      "Archive Result",
-		Duration:  "1m",
-		ProjectID: "team-project",
-		ReleaseID: "release-archive",
+		Name:          "Archive Result",
+		Duration:      "1m",
+		ProjectID:     "team-project",
+		ApplicationID: "application-archive",
+		ReleaseID:     "release-archive",
 		Groups: []CreateGroupEntry{{
 			Name:     "archive",
 			ScriptID: script.ID,
@@ -438,6 +475,9 @@ func TestLibraryResultArchiveStreamsAndImportsMultipart(t *testing.T) {
 	}
 	if len(catalog.Items) != 1 || catalog.Items[0].ReleaseID != "release-archive" {
 		t.Fatalf("catalog items = %#v, want result release metadata", catalog.Items)
+	}
+	if catalog.Items[0].ApplicationID != "application-archive" {
+		t.Fatalf("catalog application_id = %q, want application-archive", catalog.Items[0].ApplicationID)
 	}
 	if catalog.Items[0].ContentHash != bundle.Items[0].ContentHash {
 		t.Fatalf("catalog result hash = %q, export hash = %q", catalog.Items[0].ContentHash, bundle.Items[0].ContentHash)
@@ -582,6 +622,41 @@ func TestLibraryCatalogTreatsEqualCurrentScenarioHashesAsSyncedAfterHashMigratio
 	}
 }
 
+func TestLibraryRemoteCatalogAnnotatesLinksWithLocalMappedProjectID(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	t.Setenv("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP", "1")
+	host := NewServer(ServerConfig{})
+	local := NewServer(ServerConfig{})
+	hostScript := host.runner.StoreScript(libraryTestScript("host-mapped-script", "Mapped Script", "remote-project", "/mapped"))
+	localScript := local.runner.StoreScript(libraryTestScript("local-mapped-script", "Mapped Script", "local-project", "/mapped"))
+	hostHTTP := httptest.NewServer(host.mux)
+	defer hostHTTP.Close()
+
+	remote := createMappedLibraryRemoteForTest(t, local, hostHTTP.URL, "local-project", "remote-project", nil, nil)
+	localHash := hashLibraryScript(localScript.Script)
+	remoteHash := hashLibraryScript(hostScript.Script)
+	if err := local.rememberLibraryLink(remote.ID, "local-project", "script", host.controllerID, hostScript.ID, localScript.ID, hostScript.ID, localHash, remoteHash); err != nil {
+		t.Fatalf("remember local-project link: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	local.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/v1/library/remotes/"+remote.ID+"/catalog?kind=script&project_id=local-project", nil))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("remote catalog status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var catalogResponse LibraryRemoteCatalogResponse
+	if err := json.NewDecoder(resp.Body).Decode(&catalogResponse); err != nil {
+		t.Fatalf("decode remote catalog: %v", err)
+	}
+	if len(catalogResponse.Catalog.Items) != 1 {
+		t.Fatalf("catalog items = %#v, want one", catalogResponse.Catalog.Items)
+	}
+	item := catalogResponse.Catalog.Items[0]
+	if item.LocalItemID != localScript.ID || item.RemoteItemID != hostScript.ID || item.SyncStatus != "synced" {
+		t.Fatalf("annotated mapped-project item = %#v, want local link and synced status", item)
+	}
+}
+
 func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) {
 	// Federation targets are loopback httptest servers; opt past the SSRF guard.
 	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
@@ -590,9 +665,11 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 
 	hostScript := host.runner.StoreScript(libraryTestScript("host-archive-script", "Host Archive Script", "team-project", "/host-archive"))
 	hostTest, err := host.runner.CreateTest(CreateTestRequest{
-		Name:      "Hosted Archive Result",
-		Duration:  "1m",
-		ProjectID: "team-project",
+		Name:          "Hosted Archive Result",
+		Duration:      "1m",
+		ProjectID:     "team-project",
+		ApplicationID: "remote-application",
+		ReleaseID:     "remote-release",
 		Groups: []CreateGroupEntry{{
 			Name:     "host",
 			ScriptID: hostScript.ID,
@@ -606,9 +683,20 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 
 	hostHTTP := httptest.NewServer(host.mux)
 	defer hostHTTP.Close()
-	remote := createLibraryRemoteForTest(t, local, hostHTTP.URL, "team-project")
+	remote := createMappedLibraryRemoteForTest(
+		t,
+		local,
+		hostHTTP.URL,
+		"team-project",
+		"team-project",
+		map[string]string{"local-application": "remote-application"},
+		map[string]string{"local-release": "remote-release"},
+	)
 
-	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: hostTest.ID, ProjectID: "team-project"})
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{
+		Kind: "result", ID: hostTest.ID, ProjectID: "team-project",
+		ApplicationID: "local-application", ReleaseID: "local-release",
+	})
 	pullResp := httptest.NewRecorder()
 	local.mux.ServeHTTP(pullResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/pull", bytes.NewReader(pullBody)))
 	if pullResp.Code != http.StatusCreated {
@@ -625,9 +713,11 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 
 	localScript := local.runner.StoreScript(libraryTestScript("local-archive-script", "Local Archive Script", "team-project", "/local-archive"))
 	localTest, err := local.runner.CreateTest(CreateTestRequest{
-		Name:      "Desktop Archive Result",
-		Duration:  "1m",
-		ProjectID: "team-project",
+		Name:          "Desktop Archive Result",
+		Duration:      "1m",
+		ProjectID:     "team-project",
+		ApplicationID: "local-application",
+		ReleaseID:     "local-release",
 		Groups: []CreateGroupEntry{{
 			Name:     "local",
 			ScriptID: localScript.ID,
@@ -658,17 +748,256 @@ func TestLibraryRemotePullAndPushResultArchivesBetweenControllers(t *testing.T) 
 	assertLibraryArchiveImport(t, host, "team-project", pushed.Bundle.Items[0].Result.ArchiveManifestHash, 1)
 }
 
+func TestLibraryRemotePushMapsResultDestinationIdentity(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	host := NewServer(ServerConfig{})
+	local := NewServer(ServerConfig{})
+
+	localScript := local.runner.StoreScript(libraryTestScript("mapped-push-script", "Mapped Push Script", "local-project", "/mapped-push"))
+	localTest, err := local.runner.CreateTest(CreateTestRequest{
+		Name:          "Mapped Push Result",
+		Duration:      "1m",
+		ProjectID:     "local-project",
+		ApplicationID: "local-application",
+		ReleaseID:     "local-release",
+		Groups: []CreateGroupEntry{{
+			Name:     "local",
+			ScriptID: localScript.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest local: %v", err)
+	}
+	attachLibraryArchiveFixture(t, local, localTest)
+
+	hostHTTP := httptest.NewServer(host.mux)
+	defer hostHTTP.Close()
+	remote := createMappedLibraryRemoteForTest(
+		t,
+		local,
+		hostHTTP.URL,
+		"local-project",
+		"remote-project",
+		map[string]string{"local-application": "remote-application"},
+		map[string]string{"local-release": "remote-release"},
+	)
+
+	pushBody := marshalLibraryTestJSON(t, LibraryTransferRequest{Kind: "result", ID: localTest.ID})
+	pushResp := httptest.NewRecorder()
+	local.mux.ServeHTTP(pushResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/push", bytes.NewReader(pushBody)))
+	if pushResp.Code != http.StatusOK {
+		t.Fatalf("push result status = %d body=%s", pushResp.Code, pushResp.Body.String())
+	}
+
+	imports, err := host.listExternalResultImports(storage.ExternalResultImportFilter{ProjectID: "remote-project", Provider: "apexload"})
+	if err != nil {
+		t.Fatalf("list pushed results: %v", err)
+	}
+	if len(imports) != 1 {
+		t.Fatalf("pushed result imports = %d, want 1", len(imports))
+	}
+	if imports[0].ApplicationID != "remote-application" || imports[0].ReleaseID != "remote-release" {
+		t.Fatalf("pushed result destination identity = application %q release %q", imports[0].ApplicationID, imports[0].ReleaseID)
+	}
+}
+
+func TestLibraryResultPushDestinationRejectsIncompleteMappings(t *testing.T) {
+	tests := []struct {
+		name          string
+		remote        LibraryRemote
+		applicationID string
+		releaseID     string
+		wantError     string
+	}{
+		{
+			name:          "missing application mapping",
+			remote:        LibraryRemote{ReleaseMappings: map[string]string{"local-release": "remote-release"}},
+			applicationID: "local-application",
+			releaseID:     "local-release",
+			wantError:     "has no mapping",
+		},
+		{
+			name:          "missing release mapping",
+			remote:        LibraryRemote{ApplicationMappings: map[string]string{"local-application": "remote-application"}},
+			applicationID: "local-application",
+			releaseID:     "local-release",
+			wantError:     "has no mapping",
+		},
+		{
+			name:          "partial result identity",
+			remote:        LibraryRemote{},
+			applicationID: "local-application",
+			wantError:     "required together",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bundle := &LibraryBundle{Items: []LibraryBundleItem{{
+				Kind: "result",
+				Result: &LibraryResultPayload{Test: &ManagedTest{
+					ApplicationID: tt.applicationID,
+					ReleaseID:     tt.releaseID,
+				}},
+			}}}
+			_, _, err := libraryResultPushDestination(tt.remote, bundle)
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("libraryResultPushDestination() error = %v, want containing %q", err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestPulledResultRetainsDestinationIdentityArchiveAndHashAfterRemoteDisconnect(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	now := time.Now().UTC()
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.SaveProject(&storage.Project{ID: "local-project", Name: "Local", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	if err := store.SaveApplication(&storage.Application{ID: "local-application", ProjectID: "local-project", Name: "Storefront", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveApplication: %v", err)
+	}
+	if err := store.SaveRelease(&storage.Release{ID: "local-release", ApplicationID: "local-application", ProjectID: "local-project", Name: "Sprint 24", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveRelease: %v", err)
+	}
+
+	host := NewServer(ServerConfig{})
+	local := NewServer(ServerConfig{Store: store})
+	hostScript := host.runner.StoreScript(libraryTestScript("host-durable-script", "Host Durable Script", "remote-project", "/durable"))
+	hostTest, err := host.runner.CreateTest(CreateTestRequest{
+		Name:          "Durable Remote Evidence",
+		Duration:      "1m",
+		ProjectID:     "remote-project",
+		ApplicationID: "remote-application",
+		ReleaseID:     "remote-release-a",
+		Groups: []CreateGroupEntry{{
+			Name:     "host",
+			ScriptID: hostScript.ID,
+			VUsers:   1,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest host: %v", err)
+	}
+	attachLibraryArchiveFixture(t, host, hostTest)
+	hostHTTP := httptest.NewServer(host.mux)
+	defer hostHTTP.Close()
+	remote := createMappedLibraryRemoteForTest(
+		t,
+		local,
+		hostHTTP.URL,
+		"local-project",
+		"remote-project",
+		map[string]string{"local-application": "remote-application"},
+		map[string]string{
+			"local-release":           "remote-release-a",
+			"local-duplicate-release": "remote-release-b",
+		},
+	)
+
+	pullBody := marshalLibraryTestJSON(t, LibraryTransferRequest{
+		Kind:          "result",
+		ID:            hostTest.ID,
+		ProjectID:     "local-project",
+		ApplicationID: "local-application",
+		ReleaseID:     "local-release",
+	})
+	pullResp := httptest.NewRecorder()
+	local.mux.ServeHTTP(pullResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/pull", bytes.NewReader(pullBody)))
+	if pullResp.Code != http.StatusCreated {
+		t.Fatalf("pull result status = %d body=%s", pullResp.Code, pullResp.Body.String())
+	}
+	var pulled LibraryRemoteTransferResponse
+	if err := json.NewDecoder(pullResp.Body).Decode(&pulled); err != nil {
+		t.Fatalf("decode pull response: %v", err)
+	}
+	if pulled.Import == nil || len(pulled.Import.Items) != 1 {
+		t.Fatalf("pull import = %#v, want one item", pulled.Import)
+	}
+	importID := pulled.Import.Items[0].LocalItemID
+	imported, err := store.GetExternalResultImport(importID)
+	if err != nil {
+		t.Fatalf("GetExternalResultImport: %v", err)
+	}
+	if imported.ProjectID != "local-project" || imported.ApplicationID != "local-application" || imported.ReleaseID != "local-release" {
+		t.Fatalf("import destination identity = %#v", imported)
+	}
+
+	diffBody := marshalLibraryTestJSON(t, LibraryTransferRequest{
+		Kind:      "result",
+		LocalID:   importID,
+		RemoteID:  hostTest.ID,
+		ProjectID: "local-project",
+	})
+	diffResp := httptest.NewRecorder()
+	local.mux.ServeHTTP(diffResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes/"+remote.ID+"/diff", bytes.NewReader(diffBody)))
+	if diffResp.Code != http.StatusOK {
+		t.Fatalf("diff imported result status = %d body=%s", diffResp.Code, diffResp.Body.String())
+	}
+	var diff struct {
+		LocalHash  string `json:"local_hash"`
+		RemoteHash string `json:"remote_hash"`
+		Status     string `json:"status"`
+	}
+	if err := json.NewDecoder(diffResp.Body).Decode(&diff); err != nil {
+		t.Fatalf("decode diff: %v", err)
+	}
+	if diff.Status != "synced" || diff.LocalHash == "" || diff.LocalHash != diff.RemoteHash {
+		t.Fatalf("imported result diff = %#v, want matching durable hashes", diff)
+	}
+
+	deleteResp := httptest.NewRecorder()
+	local.mux.ServeHTTP(deleteResp, httptest.NewRequest(http.MethodDelete, "/api/v1/library/remotes/"+remote.ID, nil))
+	if deleteResp.Code != http.StatusNoContent {
+		t.Fatalf("delete remote status = %d body=%s", deleteResp.Code, deleteResp.Body.String())
+	}
+	reopened := NewServer(ServerConfig{Store: store})
+	listResp := httptest.NewRecorder()
+	reopened.mux.ServeHTTP(listResp, httptest.NewRequest(http.MethodGet, "/api/v1/results/imports?project_id=local-project&release_id=local-release", nil))
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list durable imports status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	var listed struct {
+		Imports []storage.ExternalResultImport `json:"imports"`
+	}
+	if err := json.NewDecoder(listResp.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode durable imports: %v", err)
+	}
+	if len(listed.Imports) != 1 || listed.Imports[0].ID != importID || listed.Imports[0].ApplicationID != "local-application" || !listed.Imports[0].HasArchive || listed.Imports[0].ContentHash == "" {
+		t.Fatalf("durable import list = %#v", listed.Imports)
+	}
+
+	archiveResp := httptest.NewRecorder()
+	reopened.mux.ServeHTTP(archiveResp, httptest.NewRequest(http.MethodGet, "/api/v1/library/results/"+importID+"/archive", nil))
+	if archiveResp.Code != http.StatusOK || archiveResp.Header().Get("Content-Type") != "application/zip" || archiveResp.Body.Len() == 0 {
+		t.Fatalf("durable archive status=%d content-type=%q bytes=%d body=%s", archiveResp.Code, archiveResp.Header().Get("Content-Type"), archiveResp.Body.Len(), archiveResp.Body.String())
+	}
+}
+
 func createLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, projectID string) LibraryRemote {
+	return createMappedLibraryRemoteForTest(t, server, baseURL, projectID, projectID, nil, nil)
+}
+
+func createMappedLibraryRemoteForTest(t *testing.T, server *Server, baseURL string, localProjectID string, remoteProjectID string, applicationMappings map[string]string, releaseMappings map[string]string) LibraryRemote {
 	t.Helper()
 	t.Setenv("APEXLOAD_LIBRARY_ALLOW_INSECURE_HTTP", "1")
 	server.libraryCreds = NewMemoryLibraryCredentialStore()
 	body := marshalLibraryTestJSON(t, LibraryRemoteRequest{
-		Name:             "K8s Host",
-		BaseURL:          baseURL,
-		DefaultProjectID: projectID,
-		ProjectMappings:  map[string]string{projectID: projectID},
-		AuthMethod:       "service_account",
-		APIKey:           "test-key",
+		Name:                "K8s Host",
+		BaseURL:             baseURL,
+		DefaultProjectID:    remoteProjectID,
+		ProjectMappings:     map[string]string{localProjectID: remoteProjectID},
+		ApplicationMappings: applicationMappings,
+		ReleaseMappings:     releaseMappings,
+		AuthMethod:          "service_account",
+		APIKey:              "test-key",
 	})
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/v1/library/remotes", bytes.NewReader(body)))

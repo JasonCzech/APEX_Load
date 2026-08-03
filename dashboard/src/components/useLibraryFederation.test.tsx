@@ -29,6 +29,9 @@ function FederationHarness({ projectId }: { projectId?: string }) {
       <span data-testid="mapping">{federation.projectMapping}</span>
       <span data-testid="effective-project">{federation.effectiveProjectID}</span>
       <span data-testid="local-items">{federation.localItems.map(item => item.name).join(',')}</span>
+      <span data-testid="remote-items">{federation.remoteItems.map(item => item.name).join(',')}</span>
+      <span data-testid="action-error">{federation.actionError}</span>
+      <span data-testid="loading">{String(federation.loading)}</span>
       <button type="button" onClick={() => federation.setProjectMapping('custom-project')}>Use custom mapping</button>
       <button
         type="button"
@@ -78,15 +81,19 @@ describe('useLibraryFederation', () => {
     })
     await flushPromises()
 
-    expect(libraryApiMock.localCatalog).toHaveBeenCalledWith('script', 'project-1')
-    expect(libraryApiMock.remoteCatalog).toHaveBeenCalledWith('remote-1', 'script', 'project-1')
+    expect(libraryApiMock.localCatalog).toHaveBeenCalledWith('script', 'project-1', expect.objectContaining({ limit: 100, offset: 0 }))
+    expect(libraryApiMock.remoteCatalog).toHaveBeenCalledWith('remote-1', 'script', 'project-1', expect.objectContaining({ limit: 100, offset: 0 }))
     expect(container.querySelector('[data-testid="mapping"]')?.textContent).toBe('project-1')
   })
 
   it('updates the mapping and ignores an older project catalog response', async () => {
     const projectACatalog = deferred<{ items: LibraryCatalogItem[]; count: number }>()
-    libraryApiMock.localCatalog.mockImplementation((_kind: string, projectId: string) => {
-      if (projectId === 'project-a') return projectACatalog.promise
+    let projectASignal: AbortSignal | undefined
+    libraryApiMock.localCatalog.mockImplementation((_kind: string, projectId: string, page?: { signal?: AbortSignal }) => {
+      if (projectId === 'project-a') {
+        projectASignal = page?.signal
+        return projectACatalog.promise
+      }
       return Promise.resolve({
         items: [{ kind: 'script', id: 'script-b', name: 'Project B script' }],
         count: 1,
@@ -98,13 +105,14 @@ describe('useLibraryFederation', () => {
     })
     await flushPromises()
 
-    expect(libraryApiMock.localCatalog).toHaveBeenCalledWith('script', 'project-a')
+    expect(libraryApiMock.localCatalog).toHaveBeenCalledWith('script', 'project-a', expect.objectContaining({ limit: 100, offset: 0 }))
 
     await act(async () => {
       root.render(<FederationHarness projectId="project-b" />)
     })
     await flushPromises()
 
+    expect(projectASignal?.aborted).toBe(true)
     expect(container.querySelector('[data-testid="mapping"]')?.textContent).toBe('project-b')
     expect(container.querySelector('[data-testid="local-items"]')?.textContent).toBe('Project B script')
 
@@ -119,6 +127,69 @@ describe('useLibraryFederation', () => {
 
     expect(container.querySelector('[data-testid="local-items"]')?.textContent).toBe('Project B script')
     expect(container.textContent).not.toContain('Project A script')
+  })
+
+  it('loads every local catalog page and deduplicates overlapping rows', async () => {
+    libraryApiMock.localCatalog.mockImplementation(async (_kind: string, _projectId: string, page?: { offset?: number }) => {
+      if (page?.offset === 0) {
+        return {
+          items: [
+            { kind: 'script', id: 'script-1', name: 'First script' },
+            { kind: 'script', id: 'script-overlap', name: 'Overlap (older)' },
+          ],
+          count: 2,
+          total: 4,
+          limit: 100,
+          offset: 0,
+          has_more: true,
+        }
+      }
+      return {
+        items: [
+          { kind: 'script', id: 'script-overlap', name: 'Overlap (newer)' },
+          { kind: 'script', id: 'script-late', name: 'Late script' },
+        ],
+        count: 2,
+        total: 4,
+        limit: 100,
+        offset: 2,
+        has_more: false,
+      }
+    })
+
+    await act(async () => {
+      root.render(<FederationHarness projectId="project-1" />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="local-items"]')?.textContent).toBe('First script,Overlap (newer),Late script')
+    expect(libraryApiMock.localCatalog).toHaveBeenCalledWith('script', 'project-1', expect.objectContaining({ offset: 2, limit: 100 }))
+  })
+
+  it('does not publish a partial catalog when a later page fails', async () => {
+    libraryApiMock.localCatalog.mockImplementation(async (_kind: string, _projectId: string, page?: { offset?: number }) => {
+      if (page?.offset === 0) {
+        return {
+          items: [{ kind: 'script', id: 'script-1', name: 'Partial script' }],
+          count: 1,
+          total: 2,
+          offset: 0,
+          has_more: true,
+        }
+      }
+      throw new Error('second catalog page failed')
+    })
+
+    await act(async () => {
+      root.render(<FederationHarness projectId="project-1" />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="local-items"]')?.textContent).toBe('')
+    expect(container.querySelector('[data-testid="action-error"]')?.textContent).toContain('second catalog page failed')
+    expect(container.querySelector('[data-testid="loading"]')?.textContent).toBe('false')
   })
 
   it('resets a manual mapping before transferring from a newly selected project', async () => {
@@ -177,12 +248,12 @@ function remoteFixture() {
     name: 'Team Remote',
     base_url: 'https://remote.example.test',
     default_project_id: 'remote-default',
-	project_mappings: {
-		'project-1': 'remote-project-1',
-		'project-a': 'remote-project-a',
-		'project-b': 'remote-project-b',
-		'custom-project': 'remote-custom-project',
-	},
+    project_mappings: {
+      'project-1': 'remote-project-1',
+      'project-a': 'remote-project-a',
+      'project-b': 'remote-project-b',
+      'custom-project': 'remote-custom-project',
+    },
     auth_method: 'none',
     credential_configured: false,
     status: 'healthy',

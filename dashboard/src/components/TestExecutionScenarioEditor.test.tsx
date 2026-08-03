@@ -67,6 +67,7 @@ describe('TestExecutionScenarioEditor', () => {
             id: 'test-1',
             name: 'Queued Checkout Run',
             status: 'QUEUED',
+            project_id: 'project-2',
             total_vusers: 10,
             duration: '5m',
             created_at: '2026-05-12T20:00:00Z',
@@ -89,9 +90,9 @@ describe('TestExecutionScenarioEditor', () => {
     await flushPromises()
 
     expect(apiMock.listScripts).toHaveBeenCalledTimes(1)
-    expect(apiMock.listScripts).toHaveBeenCalledWith('project-1')
+    expect(apiMock.listScripts).toHaveBeenCalledWith('project-2')
     expect(container.textContent).toContain('mode:revise-queued-run')
-    expect(container.textContent).toContain('project:project-1')
+    expect(container.textContent).toContain('project:project-2')
     expect(container.textContent).toContain('scripts:1')
     expect(container.textContent).toContain('scenario:Queued Checkout Run')
 

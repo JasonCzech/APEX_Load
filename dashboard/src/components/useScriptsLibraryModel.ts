@@ -1,7 +1,9 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { StoredScript, TestSummary } from '../types'
+import { getErrorMessage } from '../utils/errorUtils'
+import { loadAllTestSummaries } from './testCatalogPagination'
 
 type SortValue = string | number
 
@@ -21,8 +23,10 @@ interface ScriptsLibraryModel {
   onSort: (field: ScriptLibrarySortField) => void
   expandedScriptId: string | null
   scriptRuns: Record<string, TestSummary[]>
+  scriptRunErrors: Record<string, string>
   loadingRunsFor: string | null
   onToggleScriptRuns: (script: StoredScript) => Promise<void>
+  onRetryScriptRuns: (script: StoredScript) => Promise<void>
   innerSortField: ScriptRunSortField
   innerSortDirection: 'asc' | 'desc'
   onInnerSort: (field: ScriptRunSortField) => void
@@ -60,9 +64,21 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [expandedScriptId, setExpandedScriptId] = useState<string | null>(null)
   const [scriptRuns, setScriptRuns] = useState<Record<string, TestSummary[]>>({})
+  const [scriptRunErrors, setScriptRunErrors] = useState<Record<string, string>>({})
   const [loadingRunsFor, setLoadingRunsFor] = useState<string | null>(null)
   const [innerSortField, setInnerSortField] = useState<ScriptRunSortField>('start_time')
   const [innerSortDirection, setInnerSortDirection] = useState<'asc' | 'desc'>('desc')
+  const currentProjectIDRef = useRef(projectId)
+  const projectScopeGenerationRef = useRef(0)
+  currentProjectIDRef.current = projectId
+
+  useEffect(() => {
+    projectScopeGenerationRef.current += 1
+    setExpandedScriptId(null)
+    setScriptRuns({})
+    setScriptRunErrors({})
+    setLoadingRunsFor(null)
+  }, [projectId])
 
   const sortedScripts = useMemo(() => {
     return [...scripts].sort((a, b) => {
@@ -84,20 +100,19 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
     setSortDirection('asc')
   }, [sortField])
 
-  const onToggleScriptRuns = useCallback(async (script: StoredScript) => {
-    if (expandedScriptId === script.id) {
-      setExpandedScriptId(null)
-      return
-    }
-
-    setExpandedScriptId(script.id)
-    if (scriptRuns[script.id]) {
-      return
-    }
-
+  const loadScriptRuns = useCallback(async (script: StoredScript) => {
+    if (loadingRunsFor === script.id) return
+    const requestProjectID = projectId
+    const requestScopeGeneration = projectScopeGenerationRef.current
+    const isCurrentProjectScope = () => (
+      currentProjectIDRef.current === requestProjectID
+      && projectScopeGenerationRef.current === requestScopeGeneration
+    )
     setLoadingRunsFor(script.id)
+    setScriptRunErrors(prev => ({ ...prev, [script.id]: '' }))
     try {
-      const res = await api.listTests(projectId ? { project_id: projectId } : undefined)
+      const res = await loadAllTestSummaries(api.listTests, projectId ? { project_id: projectId, summary: true } : { summary: true })
+      if (!isCurrentProjectScope()) return
       const linkedRuns = (res.tests || [])
         .filter((test: TestSummary) => !!test.scenario_id && (test.groups || []).some((group) => group.script_id === script.id))
         .sort((a: TestSummary, b: TestSummary) => {
@@ -106,12 +121,32 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
           return bTime - aTime
         })
       setScriptRuns((prev) => ({ ...prev, [script.id]: linkedRuns }))
-    } catch {
-      setScriptRuns((prev) => ({ ...prev, [script.id]: [] }))
+    } catch (error) {
+      if (!isCurrentProjectScope()) return
+      setScriptRunErrors(prev => ({
+        ...prev,
+        [script.id]: getErrorMessage(error, 'Unable to load linked scenario runs'),
+      }))
     } finally {
-      setLoadingRunsFor(null)
+      if (isCurrentProjectScope()) setLoadingRunsFor(null)
     }
-  }, [api, expandedScriptId, projectId, scriptRuns])
+  }, [api.listTests, loadingRunsFor, projectId])
+
+  const onToggleScriptRuns = useCallback(async (script: StoredScript) => {
+    if (expandedScriptId === script.id) {
+      setExpandedScriptId(null)
+      return
+    }
+
+    setExpandedScriptId(script.id)
+    if (scriptRuns[script.id] || scriptRunErrors[script.id]) return
+    await loadScriptRuns(script)
+  }, [expandedScriptId, loadScriptRuns, scriptRunErrors, scriptRuns])
+
+  const onRetryScriptRuns = useCallback(async (script: StoredScript) => {
+    setExpandedScriptId(script.id)
+    await loadScriptRuns(script)
+  }, [loadScriptRuns])
 
   const onInnerSort = useCallback((field: ScriptRunSortField) => {
     if (innerSortField === field) {
@@ -140,8 +175,10 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
     onSort,
     expandedScriptId,
     scriptRuns,
+    scriptRunErrors,
     loadingRunsFor,
     onToggleScriptRuns,
+    onRetryScriptRuns,
     innerSortField,
     innerSortDirection,
     onInnerSort,

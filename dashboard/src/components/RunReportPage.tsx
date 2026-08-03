@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isReportLens, type ReportLens } from '../appRouting'
 import { useApi } from '../hooks/useApi'
@@ -9,6 +9,7 @@ import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 import { useExecutionArchiveResourceHistory } from './useExecutionArchiveResourceHistory'
 import { useExecutionArchiveSummaryHistory } from './useExecutionArchiveSummaryHistory'
 import { useExecutionTestPolling } from './useExecutionTestPolling'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
 import RunReportExportActions from './runReport/RunReportExportActions'
@@ -24,6 +25,7 @@ import {
   alignBaselineTimeline,
   buildBaselineOverviewDiff,
   buildReportKpis,
+  effectiveReportVerdict,
   mergeTimelineHistory,
   slaRowsForReport,
 } from './runReport/runReportModel'
@@ -44,6 +46,19 @@ function archiveReadyTest(test: TestSummary | null, status: string): TestSummary
   return { ...test, status: status as TestSummary['status'] }
 }
 
+type VerdictDraft = { status: string; explanation: string }
+
+function verdictDraftFrom(report: RunArchiveReport | null, annotations: ReportAnnotations | null): VerdictDraft {
+  const verdict = effectiveReportVerdict(report, annotations)
+  return { status: verdict.status, explanation: verdict.explanation }
+}
+
+function httpStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const status = (error as { status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
+}
+
 export default function RunReportPage({
   testId,
   initialLens,
@@ -54,6 +69,7 @@ export default function RunReportPage({
   onNavigateReport,
 }: Props) {
   const api = useApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const [activeLens, setActiveLens] = useState<ReportLens>(initialLens || 'executive')
   const [compareId, setCompareId] = useState(initialCompare || '')
   const { test, setTest, error: testError } = useExecutionTestPolling(testId, { stopOnTerminal: true })
@@ -68,6 +84,26 @@ export default function RunReportPage({
   const [annotationsLoading, setAnnotationsLoading] = useState(false)
   const [annotationsError, setAnnotationsError] = useState('')
   const [savingAnnotations, setSavingAnnotations] = useState(false)
+  const [verdictDraft, setVerdictDraft] = useState<VerdictDraft>({ status: 'Conditional Pass', explanation: '' })
+  const [verdictBaseline, setVerdictBaseline] = useState<VerdictDraft>({ status: 'Conditional Pass', explanation: '' })
+  const verdictDraftRef = useRef(verdictDraft)
+  const verdictBaselineRef = useRef(verdictBaseline)
+  const verdictDirtyRef = useRef(false)
+  const verdictRevisionRef = useRef(0)
+  const annotationRequestGenerationRef = useRef(0)
+  const annotationSaveGenerationRef = useRef(0)
+  const verdictSaveTailRef = useRef<Promise<void>>(Promise.resolve())
+  const activeVerdictSaveRef = useRef<{ key: string; promise: Promise<boolean> } | null>(null)
+  const activeLensRef = useRef(activeLens)
+  const testIDRef = useRef(testId)
+  const archiveReportRef = useRef(archiveModel.archiveReport)
+  activeLensRef.current = activeLens
+  testIDRef.current = testId
+  archiveReportRef.current = archiveModel.archiveReport
+  verdictDraftRef.current = verdictDraft
+  verdictBaselineRef.current = verdictBaseline
+  const verdictDirty = verdictDraft.status !== verdictBaseline.status || verdictDraft.explanation !== verdictBaseline.explanation
+  verdictDirtyRef.current = verdictDirty
   const [baselineTest, setBaselineTest] = useState<TestSummary | null>(null)
   const [baselineReport, setBaselineReport] = useState<RunArchiveReport | null>(null)
   const [baselineError, setBaselineError] = useState('')
@@ -80,6 +116,22 @@ export default function RunReportPage({
   const effectiveCompareId = compareId || suggestedCompareId
   const baselineReadyTest = useMemo(() => baselineTest && isCompletedTestStatus(baselineTest.status) ? baselineTest : null, [baselineTest])
   const { archiveSummaryHistory: baselineSummaryHistory, archiveSummariesLoading: baselineSummaryLoading } = useExecutionArchiveSummaryHistory(baselineReadyTest)
+
+  useEffect(() => {
+    verdictRevisionRef.current += 1
+    const next = verdictDraftFrom(archiveReportRef.current, null)
+    setAnnotations(null)
+    setVerdictBaseline(next)
+    setVerdictDraft(next)
+  }, [activeLens, testId])
+
+  useEffect(() => {
+    const next = verdictDraftFrom(archiveModel.archiveReport, annotations)
+    setVerdictBaseline(current => current.status === next.status && current.explanation === next.explanation ? current : next)
+    if (!verdictDirtyRef.current) {
+      setVerdictDraft(current => current.status === next.status && current.explanation === next.explanation ? current : next)
+    }
+  }, [annotations, archiveModel.archiveReport])
 
   useEffect(() => {
     if (initialLens && isReportLens(initialLens)) setActiveLens(initialLens)
@@ -97,24 +149,31 @@ export default function RunReportPage({
   }, [completed, onOpenCommandCenter, test, testId])
 
   useEffect(() => {
+    const requestGeneration = ++annotationRequestGenerationRef.current
     let cancelled = false
     setAnnotationsLoading(true)
     setAnnotationsError('')
+    setAnnotations(null)
     api.getTestReportAnnotations(testId, activeLens)
       .then(response => {
-        if (!cancelled) setAnnotations(response.annotations)
+        if (!cancelled && requestGeneration === annotationRequestGenerationRef.current) {
+          setAnnotations(response.annotations)
+        }
       })
       .catch(error => {
-        if (!cancelled) {
+        if (!cancelled && requestGeneration === annotationRequestGenerationRef.current) {
           setAnnotations(null)
           setAnnotationsError(getErrorMessage(error, 'Unable to load report annotations'))
         }
       })
       .finally(() => {
-        if (!cancelled) setAnnotationsLoading(false)
+        if (!cancelled && requestGeneration === annotationRequestGenerationRef.current) setAnnotationsLoading(false)
       })
     return () => {
       cancelled = true
+      if (annotationRequestGenerationRef.current === requestGeneration) {
+        annotationRequestGenerationRef.current += 1
+      }
     }
   }, [activeLens, api, testId])
 
@@ -195,43 +254,113 @@ export default function RunReportPage({
   const goalConfig = archiveModel.archiveReport?.manifest?.provenance?.goal_config
 
   const setLens = (lens: ReportLens) => {
-    setActiveLens(lens)
-    onNavigateReport({ lens, compare: compareId || undefined })
+    if (lens === activeLens) return
+    runGuarded(() => {
+      setActiveLens(lens)
+      onNavigateReport({ lens, compare: compareId || undefined })
+    })
   }
 
   const setCompare = (id: string) => {
     const normalized = id.trim()
-    setCompareId(normalized)
-    onNavigateReport({ lens: activeLens, compare: normalized || undefined })
+    if (normalized === compareId) return
+    runGuarded(() => {
+      setCompareId(normalized)
+      onNavigateReport({ lens: activeLens, compare: normalized || undefined })
+    })
   }
 
-  const saveOverride = async (status: string, explanation: string): Promise<boolean> => {
+  const saveOverride = useCallback((status: string, explanation: string): Promise<boolean> => {
     const current = annotations
-    if (!current) return false
+    if (!current) return Promise.resolve(false)
+    const requestLens = activeLens
+    const requestTestID = testId
+    const requestRevision = verdictRevisionRef.current
+    const saveKey = JSON.stringify([requestTestID, requestLens, status, explanation, current.updated_at || ''])
+    if (activeVerdictSaveRef.current?.key === saveKey) {
+      return activeVerdictSaveRef.current.promise
+    }
+    const requestGeneration = ++annotationSaveGenerationRef.current
+    const requestIsCurrent = () => requestGeneration === annotationSaveGenerationRef.current
+      && activeLensRef.current === requestLens
+      && testIDRef.current === requestTestID
     setSavingAnnotations(true)
     setAnnotationsError('')
-    try {
-      const response = await api.saveTestReportAnnotations(testId, activeLens, {
-        title: current.title,
-        prepared_by: current.prepared_by,
-        executive_narrative: current.executive_narrative,
-        section_comments: current.section_comments || {},
-        verdict_override: status,
-        verdict_explanation: explanation,
-        findings: current.findings || [],
-      })
-      setAnnotations(response.annotations)
-      return true
-    } catch (error: unknown) {
-      // Never let a rejected save go unhandled and silently succeed: an
-      // audit-relevant verdict override must surface its failure so the analyst
-      // does not navigate away believing it was recorded.
-      setAnnotationsError(getErrorMessage(error, 'Unable to save the verdict override'))
-      return false
-    } finally {
-      setSavingAnnotations(false)
+    const performSave = async (): Promise<boolean> => {
+      try {
+        let latest = current
+        let response: Awaited<ReturnType<typeof api.saveTestReportAnnotations>> | null = null
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            response = await api.saveTestReportAnnotations(requestTestID, requestLens, {
+              expected_updated_at: latest.updated_at,
+              title: latest.title,
+              prepared_by: latest.prepared_by,
+              executive_narrative: latest.executive_narrative,
+              section_comments: latest.section_comments || {},
+              verdict_override: status,
+              verdict_explanation: explanation,
+              findings: latest.findings || [],
+            })
+            break
+          } catch (error: unknown) {
+            if (httpStatus(error) !== 409 || attempt === 2) throw error
+            latest = (await api.getTestReportAnnotations(requestTestID, requestLens)).annotations
+          }
+        }
+        if (!response) return false
+        if (requestIsCurrent()) {
+          const savedDraft = verdictDraftFrom(archiveModel.archiveReport, response.annotations)
+          setAnnotations(response.annotations)
+          setVerdictBaseline(savedDraft)
+          if (verdictRevisionRef.current === requestRevision) setVerdictDraft(savedDraft)
+        }
+        return true
+      } catch (error: unknown) {
+        // Never let a rejected save go unhandled and silently succeed: an
+        // audit-relevant verdict override must surface its failure so the analyst
+        // does not navigate away believing it was recorded.
+        if (requestIsCurrent()) setAnnotationsError(getErrorMessage(error, 'Unable to save the verdict override'))
+        return false
+      } finally {
+        if (requestGeneration === annotationSaveGenerationRef.current) setSavingAnnotations(false)
+      }
     }
-  }
+
+    const savePromise = verdictSaveTailRef.current.then(performSave, performSave)
+    verdictSaveTailRef.current = savePromise.then(() => undefined, () => undefined)
+    activeVerdictSaveRef.current = { key: saveKey, promise: savePromise }
+    void savePromise.finally(() => {
+      if (activeVerdictSaveRef.current?.promise === savePromise) activeVerdictSaveRef.current = null
+    })
+    return savePromise
+  }, [activeLens, annotations, api, archiveModel.archiveReport, testId])
+
+  const updateVerdictStatus = useCallback((status: string) => {
+    verdictRevisionRef.current += 1
+    setVerdictDraft(current => ({ ...current, status }))
+  }, [])
+
+  const updateVerdictExplanation = useCallback((explanation: string) => {
+    verdictRevisionRef.current += 1
+    setVerdictDraft(current => ({ ...current, explanation }))
+  }, [])
+
+  const discardVerdictDraft = useCallback(() => {
+    verdictRevisionRef.current += 1
+    setVerdictDraft(verdictBaselineRef.current)
+  }, [])
+
+  const saveVerdictDraftRef = useRef<() => Promise<boolean>>(async () => false)
+  saveVerdictDraftRef.current = () => saveOverride(verdictDraftRef.current.status, verdictDraftRef.current.explanation)
+  const verdictNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: `run-report-verdict-${testId}`,
+    label: 'Run report verdict override',
+    isDirty: () => verdictDirtyRef.current,
+    save: () => saveVerdictDraftRef.current(),
+    discard: discardVerdictDraft,
+  }), [discardVerdictDraft, testId])
+  useNavigationGuard(verdictNavigationGuard, verdictDirty)
 
   const pinBaseline = async () => {
     if (!effectiveCompareId) return
@@ -285,7 +414,11 @@ export default function RunReportPage({
         <RunReportVerdictBanner
           report={archiveModel.archiveReport}
           annotations={annotations}
+          status={verdictDraft.status}
+          explanation={verdictDraft.explanation}
           saving={savingAnnotations || annotationsLoading}
+          onStatusChange={updateVerdictStatus}
+          onExplanationChange={updateVerdictExplanation}
           onSaveOverride={saveOverride}
         />
       )}

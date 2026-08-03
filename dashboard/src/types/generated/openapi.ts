@@ -842,6 +842,39 @@ export interface operations {
               "completed_at"?: string;
               "created_at"?: string;
               "error"?: string;
+              "initial_provenance"?: {
+                "application_id"?: string;
+                "assignment"?: Record<string, unknown>;
+                "baseline_pinned"?: boolean;
+                "baseline_pinned_at"?: string;
+                "controller_env"?: Record<string, string>;
+                "created_by_display_name"?: string;
+                "created_by_subject"?: string;
+                "duration"?: string;
+                "execution_settings"?: Record<string, unknown>;
+                "generator_inventory"?: Array<Record<string, unknown>>;
+                "generator_shards"?: Array<Record<string, unknown>>;
+                "goal_config"?: Record<string, unknown>;
+                "governance"?: Record<string, unknown>;
+                "groups"?: Array<Record<string, unknown>>;
+                "project_id"?: string;
+                "release_id"?: string;
+                "requested_at"?: string;
+                "resource_baseline"?: boolean;
+                "runtime_settings"?: Record<string, unknown>;
+                "runtime_settings_review"?: Record<string, unknown>;
+                "scenario_id"?: string;
+                "scenario_mode"?: string;
+                "scheduled_start_at"?: string;
+                "script_shakeout"?: boolean;
+                "start_delay"?: string;
+                "started_at"?: string;
+                "started_by_display_name"?: string;
+                "started_by_subject"?: string;
+                "stopped_by_display_name"?: string;
+                "stopped_by_subject"?: string;
+                "total_vusers"?: number;
+              };
               "interval_summaries_file"?: string;
               "interval_summaries_parquet_file"?: string;
               "interval_summary_count"?: number;
@@ -4427,6 +4460,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -4995,6 +5033,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -5013,6 +5052,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -13568,6 +13608,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -13586,6 +13627,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -14709,6 +14751,308 @@ export interface operations {
             "completed_at"?: string;
             "created_at": string;
             "error"?: string;
+            "initial_provenance"?: {
+              "application_id"?: string;
+              "assignment"?: {
+                "load_zone_weights"?: Record<string, number>;
+                "mode"?: string;
+                "pool_id"?: string;
+                "region_weights"?: Record<string, number>;
+                "required_labels"?: Record<string, string>;
+                "selected_targets"?: Array<string>;
+                "shard_strategy"?: string;
+                "tolerate_generator_loss"?: boolean;
+              };
+              "baseline_pinned"?: boolean;
+              "baseline_pinned_at"?: string;
+              "controller_env"?: Record<string, string>;
+              "created_by_display_name"?: string;
+              "created_by_subject"?: string;
+              "duration"?: string;
+              "execution_settings": {
+                "capacity_planning": {
+                  "availability": Record<string, unknown>;
+                  "generator": Record<string, unknown>;
+                  "headroom_pct": number;
+                  "reservations"?: Array<Record<string, unknown>>;
+                };
+                "general": {
+                  "api_endpoint": string;
+                  "max_concurrent_tests": number;
+                  "metrics_interval_seconds": number;
+                  "usage_snapshot_interval_seconds"?: number;
+                };
+                "thresholds": {
+                  "fleet_constrained_available_slots"?: number;
+                  "fleet_saturated_available_slots"?: number;
+                  "max_avg_server_processing_ms"?: number;
+                  "max_avg_transfer_ms"?: number;
+                  "max_error_rate_pct"?: number;
+                  "max_p99_latency_ms"?: number;
+                  "max_telemetry_browser_render_lag_ms"?: number;
+                  "max_telemetry_controller_fanout_ms"?: number;
+                  "max_telemetry_generator_lag_ms"?: number;
+                  "max_telemetry_sample_age_ms"?: number;
+                  "max_telemetry_transport_lag_ms"?: number;
+                  "p99_latency_stop_consecutive_samples"?: number;
+                };
+              };
+              "generator_inventory"?: Array<{
+                "active_vusers": number;
+                "available_capacity": number;
+                "capacity_state": string;
+                "compatibility_issues"?: Array<string>;
+                "compatibility_state"?: string;
+                "compatible_features"?: Array<string>;
+                "container_cpu_throttled_periods_delta"?: number;
+                "container_cpu_throttled_seconds_rate"?: number;
+                "container_cpu_usage_pct"?: number;
+                "container_memory_fail_count_delta"?: number;
+                "container_memory_usage_pct"?: number;
+                "container_memory_working_set_mb"?: number;
+                "container_oom_kill_count_delta"?: number;
+                "cordoned"?: boolean;
+                "cpu_iowait_pct"?: number;
+                "cpu_limit_cores": number;
+                "cpu_percent": number;
+                "cpu_steal_pct"?: number;
+                "cpu_system_pct"?: number;
+                "cpu_user_pct"?: number;
+                "disk_io_time_pct"?: number;
+                "drain_state": string;
+                "fleet_pool_id"?: string;
+                "gc_count_delta"?: number;
+                "gc_pause_ms"?: number;
+                "generator_id": string;
+                "goroutine_count": number;
+                "health_score": number;
+                "heap_alloc_mb"?: number;
+                "heap_in_use_mb"?: number;
+                "labels"?: Record<string, string>;
+                "max_vusers": number;
+                "memory_bytes": number;
+                "memory_limit_bytes": number;
+                "net_drop_in_per_sec"?: number;
+                "net_drop_out_per_sec"?: number;
+                "net_error_in_per_sec"?: number;
+                "net_error_out_per_sec"?: number;
+                "open_fd_count"?: number;
+                "pod_name"?: string;
+                "pool_name"?: string;
+                "region"?: string;
+                "restart_blocked_reason"?: string;
+                "restartable"?: boolean;
+                "runtime_capacities"?: Array<{
+                  "available": boolean;
+                  "available_vusers": number;
+                  "features"?: Array<string>;
+                  "max_vusers": number;
+                  "occupancy_mode"?: "idle" | "persistent" | "legacy";
+                  "protocol": string;
+                }>;
+                "status": string;
+                "supported_protocols"?: Array<string>;
+                "target": string;
+                "tcp_established"?: number;
+                "tcp_retransmits_per_sec"?: number;
+                "tcp_time_wait"?: number;
+                "thread_count"?: number;
+                "version"?: string;
+              }>;
+              "generator_shards"?: Array<{
+                "group": string;
+                "shard_count"?: number;
+                "shard_ordinal"?: number;
+                "shard_strategy"?: string;
+                "target": string;
+                "vuser_id_offset"?: number;
+                "vusers": number;
+              }>;
+              "goal_config"?: {
+                "max_avg_server_processing_ms"?: number;
+                "max_avg_transfer_ms"?: number;
+                "max_cls"?: number;
+                "max_dead_letter_rate_pct"?: number;
+                "max_end_to_end_latency_ms"?: number;
+                "max_error_count"?: number;
+                "max_error_pct"?: number;
+                "max_inp_ms"?: number;
+                "max_lcp_ms"?: number;
+                "max_partition_skew_pct"?: number;
+                "max_redelivery_rate_pct"?: number;
+                "max_throttled_requests"?: number;
+                "max_vusers"?: number;
+                "min_vusers"?: number;
+                "p95_latency_ms"?: number;
+                "sla_breach_window"?: string;
+                "stop_on_max_errors"?: boolean;
+                "stop_on_sla_breach"?: boolean;
+                "target_average_tps"?: number;
+              };
+              "governance"?: {
+                "capacity_reservation_id"?: string;
+                "capacity_reservation_ref"?: string;
+                "execution_plan_approval"?: {
+                  "approved_peak_vusers"?: number;
+                  "decision_reason"?: string;
+                  "id"?: string;
+                  "plan_content_hash"?: string;
+                  "plan_id"?: string;
+                  "policy"?: string;
+                  "requested_at"?: string;
+                  "requested_by"?: string;
+                  "required_role"?: string;
+                  "resolved_at"?: string;
+                  "resolved_by"?: string;
+                  "status"?: string;
+                };
+                "launch_preflight"?: {
+                  "conflicts"?: Array<string>;
+                  "decision"?: string;
+                  "status"?: string;
+                  "warnings"?: Array<string>;
+                };
+                "runtime_settings_review"?: {
+                  "blocking_findings"?: Array<Record<string, unknown>>;
+                  "findings"?: Array<Record<string, unknown>>;
+                  "status": string;
+                  "status_counts"?: Record<string, number>;
+                  "summary"?: string;
+                  "warnings"?: Array<string>;
+                };
+              };
+              "groups"?: Array<{
+                "assignment"?: {
+                  "load_zone_weights"?: Record<string, number>;
+                  "mode"?: string;
+                  "pool_id"?: string;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
+                  "selected_targets"?: Array<string>;
+                  "shard_strategy"?: string;
+                  "tolerate_generator_loss"?: boolean;
+                };
+                "initialization"?: string;
+                "iteration_override"?: number;
+                "iteration_override_known"?: boolean;
+                "iterations"?: number;
+                "name": string;
+                "protocol": string;
+                "ramp_down"?: string;
+                "ramp_up"?: string;
+                "role"?: string;
+                "run_logic_goals"?: {
+                  "global_iterations"?: number;
+                  "max_transactions"?: number;
+                };
+                "runtime_settings"?: {
+                  "auto_transactions"?: string;
+                  "base_url"?: string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
+                  "error_handling"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "log_level"?: string;
+                  "pacing"?: Record<string, unknown>;
+                  "redaction_rules"?: Array<Record<string, unknown>>;
+                  "run_logic"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                };
+                "script_id": string;
+                "script_name": string;
+                "stages"?: Array<Record<string, unknown>>;
+                "vusers": number;
+              }>;
+              "project_id"?: string;
+              "release_id"?: string;
+              "requested_at"?: string;
+              "resource_baseline"?: boolean;
+              "runtime_settings"?: {
+                "auto_transactions"?: string;
+                "base_url"?: string;
+                "browser"?: {
+                  "device_profile"?: string;
+                  "headless"?: boolean;
+                  "orientation"?: string;
+                  "touch_mode"?: boolean;
+                };
+                "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
+                "env"?: Record<string, string>;
+                "error_handling"?: Record<string, unknown>;
+                "http"?: Record<string, unknown>;
+                "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
+                "log"?: Record<string, unknown>;
+                "log_level"?: string;
+                "pacing"?: Record<string, unknown>;
+                "redaction_rules"?: Array<Record<string, unknown>>;
+                "run_logic"?: Record<string, unknown>;
+                "think_time"?: Record<string, unknown>;
+                "web_runtime"?: Record<string, unknown>;
+              };
+              "runtime_settings_review"?: {
+                "blocking_findings"?: Array<{
+                  "area"?: string;
+                  "concept"?: string;
+                  "evidence"?: Array<string>;
+                  "group"?: string;
+                  "id": string;
+                  "protocol"?: string;
+                  "recommended_action"?: string;
+                  "scope": string;
+                  "script_id"?: string;
+                  "script_name"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
+                }>;
+                "findings"?: Array<{
+                  "area"?: string;
+                  "concept"?: string;
+                  "evidence"?: Array<string>;
+                  "group"?: string;
+                  "id": string;
+                  "protocol"?: string;
+                  "recommended_action"?: string;
+                  "scope": string;
+                  "script_id"?: string;
+                  "script_name"?: string;
+                  "severity": string;
+                  "status": string;
+                  "summary": string;
+                }>;
+                "status": string;
+                "status_counts"?: Record<string, number>;
+                "summary"?: string;
+                "warnings"?: Array<string>;
+              };
+              "scenario_id"?: string;
+              "scenario_mode"?: string;
+              "scheduled_start_at"?: string;
+              "script_shakeout"?: boolean;
+              "start_delay"?: string;
+              "started_at"?: string;
+              "started_by_display_name"?: string;
+              "started_by_subject"?: string;
+              "stopped_by_display_name"?: string;
+              "stopped_by_subject"?: string;
+              "total_vusers"?: number;
+            };
             "interval_summaries_file": string;
             "interval_summaries_parquet_file"?: string;
             "interval_summary_count": number;
@@ -15304,6 +15648,189 @@ export interface operations {
               "completed_at"?: string;
               "created_at": string;
               "error"?: string;
+              "initial_provenance"?: {
+                "application_id"?: string;
+                "assignment"?: {
+                  "load_zone_weights"?: Record<string, number>;
+                  "mode"?: string;
+                  "pool_id"?: string;
+                  "region_weights"?: Record<string, number>;
+                  "required_labels"?: Record<string, string>;
+                  "selected_targets"?: Array<string>;
+                  "shard_strategy"?: string;
+                  "tolerate_generator_loss"?: boolean;
+                };
+                "baseline_pinned"?: boolean;
+                "baseline_pinned_at"?: string;
+                "controller_env"?: Record<string, string>;
+                "created_by_display_name"?: string;
+                "created_by_subject"?: string;
+                "duration"?: string;
+                "execution_settings": {
+                  "capacity_planning": Record<string, unknown>;
+                  "general": Record<string, unknown>;
+                  "thresholds": Record<string, unknown>;
+                };
+                "generator_inventory"?: Array<{
+                  "active_vusers": number;
+                  "available_capacity": number;
+                  "capacity_state": string;
+                  "compatibility_issues"?: Array<string>;
+                  "compatibility_state"?: string;
+                  "compatible_features"?: Array<string>;
+                  "container_cpu_throttled_periods_delta"?: number;
+                  "container_cpu_throttled_seconds_rate"?: number;
+                  "container_cpu_usage_pct"?: number;
+                  "container_memory_fail_count_delta"?: number;
+                  "container_memory_usage_pct"?: number;
+                  "container_memory_working_set_mb"?: number;
+                  "container_oom_kill_count_delta"?: number;
+                  "cordoned"?: boolean;
+                  "cpu_iowait_pct"?: number;
+                  "cpu_limit_cores": number;
+                  "cpu_percent": number;
+                  "cpu_steal_pct"?: number;
+                  "cpu_system_pct"?: number;
+                  "cpu_user_pct"?: number;
+                  "disk_io_time_pct"?: number;
+                  "drain_state": string;
+                  "fleet_pool_id"?: string;
+                  "gc_count_delta"?: number;
+                  "gc_pause_ms"?: number;
+                  "generator_id": string;
+                  "goroutine_count": number;
+                  "health_score": number;
+                  "heap_alloc_mb"?: number;
+                  "heap_in_use_mb"?: number;
+                  "labels"?: Record<string, string>;
+                  "max_vusers": number;
+                  "memory_bytes": number;
+                  "memory_limit_bytes": number;
+                  "net_drop_in_per_sec"?: number;
+                  "net_drop_out_per_sec"?: number;
+                  "net_error_in_per_sec"?: number;
+                  "net_error_out_per_sec"?: number;
+                  "open_fd_count"?: number;
+                  "pod_name"?: string;
+                  "pool_name"?: string;
+                  "region"?: string;
+                  "restart_blocked_reason"?: string;
+                  "restartable"?: boolean;
+                  "runtime_capacities"?: Array<{
+                    "available": boolean;
+                    "available_vusers": number;
+                    "features"?: Array<string>;
+                    "max_vusers": number;
+                    "occupancy_mode"?: "idle" | "persistent" | "legacy";
+                    "protocol": string;
+                  }>;
+                  "status": string;
+                  "supported_protocols"?: Array<string>;
+                  "target": string;
+                  "tcp_established"?: number;
+                  "tcp_retransmits_per_sec"?: number;
+                  "tcp_time_wait"?: number;
+                  "thread_count"?: number;
+                  "version"?: string;
+                }>;
+                "generator_shards"?: Array<{
+                  "group": string;
+                  "shard_count"?: number;
+                  "shard_ordinal"?: number;
+                  "shard_strategy"?: string;
+                  "target": string;
+                  "vuser_id_offset"?: number;
+                  "vusers": number;
+                }>;
+                "goal_config"?: {
+                  "max_avg_server_processing_ms"?: number;
+                  "max_avg_transfer_ms"?: number;
+                  "max_cls"?: number;
+                  "max_dead_letter_rate_pct"?: number;
+                  "max_end_to_end_latency_ms"?: number;
+                  "max_error_count"?: number;
+                  "max_error_pct"?: number;
+                  "max_inp_ms"?: number;
+                  "max_lcp_ms"?: number;
+                  "max_partition_skew_pct"?: number;
+                  "max_redelivery_rate_pct"?: number;
+                  "max_throttled_requests"?: number;
+                  "max_vusers"?: number;
+                  "min_vusers"?: number;
+                  "p95_latency_ms"?: number;
+                  "sla_breach_window"?: string;
+                  "stop_on_max_errors"?: boolean;
+                  "stop_on_sla_breach"?: boolean;
+                  "target_average_tps"?: number;
+                };
+                "governance"?: {
+                  "capacity_reservation_id"?: string;
+                  "capacity_reservation_ref"?: string;
+                  "execution_plan_approval"?: Record<string, unknown>;
+                  "launch_preflight"?: Record<string, unknown>;
+                  "runtime_settings_review"?: Record<string, unknown>;
+                };
+                "groups"?: Array<{
+                  "assignment"?: Record<string, unknown>;
+                  "initialization"?: string;
+                  "iteration_override"?: number;
+                  "iteration_override_known"?: boolean;
+                  "iterations"?: number;
+                  "name": string;
+                  "protocol": string;
+                  "ramp_down"?: string;
+                  "ramp_up"?: string;
+                  "role"?: string;
+                  "run_logic_goals"?: Record<string, unknown>;
+                  "runtime_settings"?: Record<string, unknown>;
+                  "script_id": string;
+                  "script_name": string;
+                  "stages"?: Array<Record<string, unknown>>;
+                  "vusers": number;
+                }>;
+                "project_id"?: string;
+                "release_id"?: string;
+                "requested_at"?: string;
+                "resource_baseline"?: boolean;
+                "runtime_settings"?: {
+                  "auto_transactions"?: string;
+                  "base_url"?: string;
+                  "browser"?: Record<string, unknown>;
+                  "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
+                  "env"?: Record<string, string>;
+                  "error_handling"?: Record<string, unknown>;
+                  "http"?: Record<string, unknown>;
+                  "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
+                  "log"?: Record<string, unknown>;
+                  "log_level"?: string;
+                  "pacing"?: Record<string, unknown>;
+                  "redaction_rules"?: Array<Record<string, unknown>>;
+                  "run_logic"?: Record<string, unknown>;
+                  "think_time"?: Record<string, unknown>;
+                  "web_runtime"?: Record<string, unknown>;
+                };
+                "runtime_settings_review"?: {
+                  "blocking_findings"?: Array<Record<string, unknown>>;
+                  "findings"?: Array<Record<string, unknown>>;
+                  "status": string;
+                  "status_counts"?: Record<string, number>;
+                  "summary"?: string;
+                  "warnings"?: Array<string>;
+                };
+                "scenario_id"?: string;
+                "scenario_mode"?: string;
+                "scheduled_start_at"?: string;
+                "script_shakeout"?: boolean;
+                "start_delay"?: string;
+                "started_at"?: string;
+                "started_by_display_name"?: string;
+                "started_by_subject"?: string;
+                "stopped_by_display_name"?: string;
+                "stopped_by_subject"?: string;
+                "total_vusers"?: number;
+              };
               "interval_summaries_file": string;
               "interval_summaries_parquet_file"?: string;
               "interval_summary_count": number;
@@ -19063,6 +19590,10 @@ export interface operations {
                 "target_vusers": number;
               }>;
             };
+            "initial_configuration_provenance": {
+              "immutable": boolean;
+              "source": string;
+            };
             "load_generators": {
               "assignment"?: {
                 "load_zone_weights"?: Record<string, number>;
@@ -20439,6 +20970,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "name"?: string;
           "project_id"?: string;
           "provider"?: string;
@@ -21397,6 +21929,7 @@ export interface operations {
             "has_more": boolean;
             "instance_id": string;
             "items": Array<{
+              "application_id"?: string;
               "content_hash": string;
               "dependencies"?: Array<{
                 "content_hash"?: string;
@@ -21456,12 +21989,14 @@ export interface operations {
       content: {
         "application/json": {
           "api_key"?: string;
+          "application_mappings"?: Record<string, string>;
           "auth_method"?: string;
           "base_url"?: string;
           "credential_ref"?: string;
           "default_project_id"?: string;
           "name"?: string;
           "project_mappings"?: Record<string, string>;
+          "release_mappings"?: Record<string, string>;
         };
       };
     };
@@ -21469,6 +22004,7 @@ export interface operations {
       "201": {
         content: {
           "application/json": {
+            "application_mappings"?: Record<string, string>;
             "auth_method": string;
             "base_url": string;
             "capabilities"?: {
@@ -21487,6 +22023,7 @@ export interface operations {
             "last_health_check"?: string;
             "name": string;
             "project_mappings"?: Record<string, string>;
+            "release_mappings"?: Record<string, string>;
             "status"?: string;
             "updated_at": string;
           };
@@ -21568,11 +22105,13 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "id"?: string;
           "include_dependencies"?: boolean;
           "kind"?: string;
           "local_id"?: string;
           "project_id"?: string;
+          "release_id"?: string;
           "remote_id"?: string;
           "remote_project_id"?: string;
         };
@@ -21720,6 +22259,7 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "bundle"?: {
             "bundle_id"?: string;
             "created_at"?: string;
@@ -21758,6 +22298,7 @@ export interface operations {
           };
           "mode"?: string;
           "project_id"?: string;
+          "release_id"?: string;
         };
       };
     };
@@ -21833,6 +22374,7 @@ export interface operations {
           "application/json": {
             "count": number;
             "remotes": Array<{
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -21851,6 +22393,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             }>;
@@ -21933,6 +22476,7 @@ export interface operations {
               "has_more": boolean;
               "instance_id": string;
               "items": Array<{
+                "application_id"?: string;
                 "content_hash": string;
                 "dependencies"?: Array<Record<string, unknown>>;
                 "execution_run_date"?: string;
@@ -21959,6 +22503,7 @@ export interface operations {
               "total": number;
             };
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -21977,6 +22522,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -22022,11 +22568,13 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "id"?: string;
           "include_dependencies"?: boolean;
           "kind"?: string;
           "local_id"?: string;
           "project_id"?: string;
+          "release_id"?: string;
           "remote_id"?: string;
           "remote_project_id"?: string;
         };
@@ -22077,11 +22625,13 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "id"?: string;
           "include_dependencies"?: boolean;
           "kind"?: string;
           "local_id"?: string;
           "project_id"?: string;
+          "release_id"?: string;
           "remote_id"?: string;
           "remote_project_id"?: string;
         };
@@ -22132,11 +22682,13 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
           "id"?: string;
           "include_dependencies"?: boolean;
           "kind"?: string;
           "local_id"?: string;
           "project_id"?: string;
+          "release_id"?: string;
           "remote_id"?: string;
           "remote_project_id"?: string;
         };
@@ -22227,12 +22779,14 @@ export interface operations {
       content: {
         "application/json": {
           "api_key"?: string;
+          "application_mappings"?: Record<string, string>;
           "auth_method"?: string;
           "base_url"?: string;
           "credential_ref"?: string;
           "default_project_id"?: string;
           "name"?: string;
           "project_mappings"?: Record<string, string>;
+          "release_mappings"?: Record<string, string>;
         };
       };
     };
@@ -22240,6 +22794,7 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "application_mappings"?: Record<string, string>;
             "auth_method": string;
             "base_url": string;
             "capabilities"?: {
@@ -22258,6 +22813,7 @@ export interface operations {
             "last_health_check"?: string;
             "name": string;
             "project_mappings"?: Record<string, string>;
+            "release_mappings"?: Record<string, string>;
             "status"?: string;
             "updated_at": string;
           };
@@ -23087,6 +23643,7 @@ export interface operations {
   "handleListExternalResultImports": {
     parameters: {
       "query"?: {
+        "application_id"?: string;
         "limit"?: number;
         "offset"?: number;
         "project_id"?: string;
@@ -24715,6 +25272,7 @@ export interface operations {
         "application/json": {
           "bind_script"?: boolean;
           "name"?: string;
+          "project_id"?: string;
           "script_id"?: string;
         };
       };
@@ -28343,6 +28901,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -28361,6 +28920,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -29198,6 +29758,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -29216,6 +29777,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -30053,6 +30615,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -30071,6 +30634,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -30908,6 +31472,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -30926,6 +31491,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -31763,6 +32329,7 @@ export interface operations {
               "source_item_id": string;
             }>;
             "remote": {
+              "application_mappings"?: Record<string, string>;
               "auth_method": string;
               "base_url": string;
               "capabilities"?: {
@@ -31781,6 +32348,7 @@ export interface operations {
               "last_health_check"?: string;
               "name": string;
               "project_mappings"?: Record<string, string>;
+              "release_mappings"?: Record<string, string>;
               "status"?: string;
               "updated_at": string;
             };
@@ -33964,6 +34532,7 @@ export interface operations {
       content: {
         "application/json": {
           "executive_narrative"?: string;
+          "expected_updated_at"?: string;
           "findings"?: Array<{
             "evidence"?: string;
             "id"?: string;
@@ -34029,6 +34598,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

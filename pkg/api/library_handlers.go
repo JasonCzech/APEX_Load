@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,9 +149,11 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 	defer cancelPrep()
 	id := strings.TrimSpace(r.PathValue("id"))
 	var (
-		testName  string
-		projectID string
-		record    *storage.RunArchiveRecord
+		testName               string
+		projectID              string
+		expectedManifestTestID string
+		importedEvidence       bool
+		record                 *storage.RunArchiveRecord
 	)
 	if s.store != nil {
 		// The route resolver authorizes against the durable test row. Read the
@@ -158,38 +161,64 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		// in-memory test/archive cache: another replica may have deleted and
 		// recreated the ID in a different project while this process still holds
 		// the prior project's archive pointer.
-		durableTest, err := s.store.GetTest(id)
-		if err != nil || durableTest == nil {
-			writeError(w, http.StatusNotFound, "result not found")
-			return
+		durableTest, testErr := s.store.GetTest(id)
+		if testErr == nil && durableTest != nil {
+			projectID = normalizeProjectID(durableTest.ProjectID)
+			testName = durableTest.Name
+			expectedManifestTestID = id
+			if !requireAuthorizedProjectMatch(w, r, projectID) {
+				return
+			}
+			durableArchive, err := s.store.GetRunArchive(id)
+			if err != nil || durableArchive == nil {
+				writeError(w, http.StatusNotFound, "archive not found")
+				return
+			}
+			record = cloneRunArchiveRecord(durableArchive)
+		} else {
+			imported, importedRecord, sourceTestID, err := s.importedLibraryResultArchive(id)
+			if err != nil || imported == nil || importedRecord == nil {
+				writeError(w, http.StatusNotFound, "result archive not found")
+				return
+			}
+			projectID = normalizeProjectID(imported.ProjectID)
+			testName = imported.Name
+			expectedManifestTestID = sourceTestID
+			importedEvidence = true
+			if !requireAuthorizedProjectMatch(w, r, projectID) {
+				return
+			}
+			record = importedRecord
 		}
-		projectID = normalizeProjectID(durableTest.ProjectID)
-		if !requireAuthorizedProjectMatch(w, r, projectID) {
-			return
-		}
-		testName = durableTest.Name
-		durableArchive, err := s.store.GetRunArchive(id)
-		if err != nil || durableArchive == nil {
-			writeError(w, http.StatusNotFound, "archive not found")
-			return
-		}
-		record = cloneRunArchiveRecord(durableArchive)
 	} else {
 		test, ok := s.runner.GetTest(id)
-		if !ok || test == nil {
-			writeError(w, http.StatusNotFound, "result not found")
-			return
-		}
-		projectID = normalizeProjectID(test.ProjectID)
-		if !requireAuthorizedProjectMatch(w, r, projectID) {
-			return
-		}
-		testName = test.Name
-		var archiveOK bool
-		record, archiveOK = s.runner.GetRunArchiveContext(r.Context(), id)
-		if !archiveOK || record == nil {
-			writeError(w, http.StatusNotFound, "archive not found")
-			return
+		if ok && test != nil {
+			projectID = normalizeProjectID(test.ProjectID)
+			testName = test.Name
+			expectedManifestTestID = id
+			if !requireAuthorizedProjectMatch(w, r, projectID) {
+				return
+			}
+			var archiveOK bool
+			record, archiveOK = s.runner.GetRunArchiveContext(r.Context(), id)
+			if !archiveOK || record == nil {
+				writeError(w, http.StatusNotFound, "archive not found")
+				return
+			}
+		} else {
+			imported, importedRecord, sourceTestID, err := s.importedLibraryResultArchive(id)
+			if err != nil || imported == nil || importedRecord == nil {
+				writeError(w, http.StatusNotFound, "result archive not found")
+				return
+			}
+			projectID = normalizeProjectID(imported.ProjectID)
+			testName = imported.Name
+			expectedManifestTestID = sourceTestID
+			importedEvidence = true
+			if !requireAuthorizedProjectMatch(w, r, projectID) {
+				return
+			}
+			record = importedRecord
 		}
 	}
 	lease, err := acquireArchiveMaterialized(prepCtx, record)
@@ -203,11 +232,11 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	if manifest.TestID != id {
+	if manifest.TestID != expectedManifestTestID {
 		writeError(w, http.StatusNotFound, "archive does not belong to result")
 		return
 	}
-	if manifestProjectID := strings.TrimSpace(manifest.Provenance.ProjectID); manifestProjectID != "" && normalizeProjectID(manifestProjectID) != projectID {
+	if manifestProjectID := strings.TrimSpace(manifest.Provenance.ProjectID); !importedEvidence && manifestProjectID != "" && normalizeProjectID(manifestProjectID) != projectID {
 		writeError(w, http.StatusNotFound, "archive does not belong to result project")
 		return
 	}
@@ -224,6 +253,55 @@ func (s *Server) handleLibraryResultArchive(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
+}
+
+func (s *Server) importedLibraryResultArchive(id string) (*storage.ExternalResultImport, *storage.RunArchiveRecord, string, error) {
+	imported, ok, err := s.getExternalResultImport(id)
+	if err != nil || !ok || imported == nil {
+		return nil, nil, "", err
+	}
+	if !strings.EqualFold(strings.TrimSpace(imported.Provider), "apexload") {
+		return nil, nil, "", fmt.Errorf("result is not an APEX Load library import")
+	}
+	sourceTestID, _ := imported.RawResult["source_item_id"].(string)
+	sourceTestID = strings.TrimSpace(sourceTestID)
+	if sourceTestID == "" {
+		return nil, nil, "", fmt.Errorf("imported archive source identity does not match its evidence row")
+	}
+	if imported.ArchiveRecord != nil {
+		record := *imported.ArchiveRecord
+		if record.TestID != sourceTestID {
+			return nil, nil, "", fmt.Errorf("imported archive source identity does not match its evidence row")
+		}
+		return imported, &record, sourceTestID, nil
+	}
+
+	// Backward compatibility for filesystem imports created before archive
+	// backend metadata was persisted alongside the evidence row.
+	archiveDir := libraryImportedArchiveDir(imported.ID)
+	manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+	manifest, err := loadRunArchiveManifest(manifestPath)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	if manifest.TestID != sourceTestID {
+		return nil, nil, "", fmt.Errorf("imported archive source identity does not match its evidence row")
+	}
+	manifestHash, _ := imported.RawResult["imported_archive_manifest_hash"].(string)
+	record := &storage.RunArchiveRecord{
+		TestID:               sourceTestID,
+		SchemaVersion:        manifest.SchemaVersion,
+		ArchiveBackend:       archiveBackendFilesystem,
+		ArchivePath:          archiveDir,
+		ManifestPath:         manifestPath,
+		ManifestSHA256:       strings.TrimPrefix(strings.TrimSpace(manifestHash), "sha256:"),
+		TransactionCount:     manifest.TransactionCount,
+		ResourceSampleCount:  manifest.ResourceSampleCount,
+		IntervalSummaryCount: manifest.IntervalSummaryCount,
+		CreatedAt:            manifest.CreatedAt,
+		CompletedAt:          manifest.CompletedAt,
+	}
+	return imported, record, sourceTestID, nil
 }
 
 func (s *Server) handleLibraryListRemotes(w http.ResponseWriter, r *http.Request) {
@@ -295,6 +373,8 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 	}
 	previous := *remote
 	previous.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+	previous.ApplicationMappings = cloneLibraryRemoteApplicationMappings(remote.ApplicationMappings)
+	previous.ReleaseMappings = cloneLibraryRemoteReleaseMappings(remote.ReleaseMappings)
 	updated := previous
 	s.libraryMu.Unlock()
 	if strings.TrimSpace(req.BaseURL) != "" || strings.TrimSpace(req.AuthMethod) != "" || strings.TrimSpace(req.CredentialRef) != "" || strings.TrimSpace(req.APIKey) != "" {
@@ -332,6 +412,22 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		updated.ProjectMappings = projectMappings
+	}
+	if req.ApplicationMappings != nil {
+		applicationMappings, err := normalizeLibraryRemoteApplicationMappings(req.ApplicationMappings)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		updated.ApplicationMappings = applicationMappings
+	}
+	if req.ReleaseMappings != nil {
+		releaseMappings, err := normalizeLibraryRemoteReleaseMappings(req.ReleaseMappings)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		updated.ReleaseMappings = releaseMappings
 	}
 	updated.UpdatedAt = time.Now().UTC()
 	if err := validateLibraryRemoteTransport(updated); err != nil {
@@ -381,6 +477,8 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 	}
 	previousRemote := *remote
 	previousRemote.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+	previousRemote.ApplicationMappings = cloneLibraryRemoteApplicationMappings(remote.ApplicationMappings)
+	previousRemote.ReleaseMappings = cloneLibraryRemoteReleaseMappings(remote.ReleaseMappings)
 	pending, pendingErr := s.hasPendingRemoteRunCleanup(id)
 	if pendingErr != nil {
 		s.libraryMu.Unlock()
@@ -503,7 +601,9 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	for i := range catalog.Items {
-		catalog.Items[i] = s.annotateRemoteCatalogItem(remote.ID, projectID, catalog.Items[i])
+		// Synchronization links are owned by the local destination project. The
+		// remote project ID is only the outbound catalog scope and may differ.
+		catalog.Items[i] = s.annotateRemoteCatalogItem(remote.ID, localProjectID, catalog.Items[i])
 	}
 	writeJSON(w, http.StatusOK, LibraryRemoteCatalogResponse{Remote: s.sanitizeLibraryRemote(&remote), Catalog: *catalog})
 }
@@ -540,6 +640,10 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadGateway, "remote library returned a cross-project bundle")
 		return
 	}
+	if err := s.validateLibraryResultPullDestination(remote, req, bundle); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if !requireServiceAccountLibraryBundleScopes(w, r, bundle) {
 		return
 	}
@@ -555,7 +659,13 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
-	imported, err := s.importLibraryBundleWithArchive(LibraryImportRequest{Bundle: *bundle, ProjectID: req.ProjectID, Mode: "pull"}, remote.ID, archiveImport)
+	imported, err := s.importLibraryBundleWithArchive(LibraryImportRequest{
+		Bundle:        *bundle,
+		ProjectID:     req.ProjectID,
+		ApplicationID: req.ApplicationID,
+		ReleaseID:     req.ReleaseID,
+		Mode:          "pull",
+	}, remote.ID, archiveImport)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -573,6 +683,45 @@ func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request)
 		"conflicts":      len(imported.Conflicts),
 	})
 	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: s.sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
+}
+
+func (s *Server) validateLibraryResultPullDestination(remote LibraryRemote, req LibraryTransferRequest, bundle *LibraryBundle) error {
+	if normalizeLibraryKind(req.Kind) != "result" || bundle == nil {
+		return nil
+	}
+	localApplicationID := strings.TrimSpace(req.ApplicationID)
+	localReleaseID := strings.TrimSpace(req.ReleaseID)
+	for _, item := range bundle.Items {
+		if normalizeLibraryKind(item.Kind) != "result" || item.Result == nil || item.Result.Test == nil {
+			continue
+		}
+		remoteApplicationID := strings.TrimSpace(item.Result.Test.ApplicationID)
+		remoteReleaseID := strings.TrimSpace(item.Result.Test.ReleaseID)
+		// Legacy project-only results have no application/release identity. Keep
+		// them importable, but never infer a destination from display names.
+		if remoteApplicationID == "" && remoteReleaseID == "" && localApplicationID == "" && localReleaseID == "" {
+			continue
+		}
+		if localApplicationID == "" || localReleaseID == "" {
+			return fmt.Errorf("application_id and release_id are required for an application-scoped result pull")
+		}
+		if strings.TrimSpace(remote.ApplicationMappings[localApplicationID]) != remoteApplicationID {
+			return fmt.Errorf("application_id is not mapped to the remote result application")
+		}
+		if strings.TrimSpace(remote.ReleaseMappings[localReleaseID]) != remoteReleaseID {
+			return fmt.Errorf("release_id is not mapped to the remote result release")
+		}
+		if s.store != nil {
+			projectID, _, releaseApplicationID, err := s.releaseContext(localReleaseID)
+			if err != nil {
+				return err
+			}
+			if normalizeProjectID(projectID) != normalizeProjectID(req.ProjectID) || strings.TrimSpace(releaseApplicationID) != localApplicationID {
+				return fmt.Errorf("release_id does not belong to the destination application and project")
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request) {
@@ -603,14 +752,26 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	remoteApplicationID, remoteReleaseID, err := libraryResultPushDestination(remote, bundle)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if !requireServiceAccountLibraryBundleScopes(w, r, bundle) {
 		return
 	}
+	remoteImport := LibraryImportRequest{
+		Bundle:        *bundle,
+		ProjectID:     remoteProjectID,
+		ApplicationID: remoteApplicationID,
+		ReleaseID:     remoteReleaseID,
+		Mode:          "push",
+	}
 	var imported *LibraryImportResponse
 	if normalizeLibraryKind(req.Kind) == "result" && libraryBundleHasStreamedArchive(bundle) {
-		imported, err = s.remoteLibraryImportArchive(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: remoteProjectID, Mode: "push"}, req.ID)
+		imported, err = s.remoteLibraryImportArchive(r.Context(), remote, remoteImport, req.ID)
 	} else {
-		imported, err = s.remoteLibraryImport(r.Context(), remote, LibraryImportRequest{Bundle: *bundle, ProjectID: remoteProjectID, Mode: "push"})
+		imported, err = s.remoteLibraryImport(r.Context(), remote, remoteImport)
 	}
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
@@ -630,6 +791,41 @@ func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request)
 		"conflicts":      len(imported.Conflicts),
 	})
 	writeJSON(w, status, LibraryRemoteTransferResponse{Remote: s.sanitizeLibraryRemote(&remote), Bundle: bundle, Import: imported})
+}
+
+func libraryResultPushDestination(remote LibraryRemote, bundle *LibraryBundle) (string, string, error) {
+	if bundle == nil {
+		return "", "", nil
+	}
+	remoteApplicationID := ""
+	remoteReleaseID := ""
+	for _, item := range bundle.Items {
+		if normalizeLibraryKind(item.Kind) != "result" || item.Result == nil || item.Result.Test == nil {
+			continue
+		}
+		localApplicationID := strings.TrimSpace(item.Result.Test.ApplicationID)
+		localReleaseID := strings.TrimSpace(item.Result.Test.ReleaseID)
+		if localApplicationID == "" && localReleaseID == "" {
+			continue
+		}
+		if localApplicationID == "" || localReleaseID == "" {
+			return "", "", fmt.Errorf("application_id and release_id are required together for an application-scoped result push")
+		}
+		mappedApplicationID := strings.TrimSpace(remote.ApplicationMappings[localApplicationID])
+		if mappedApplicationID == "" {
+			return "", "", fmt.Errorf("local result application %q has no mapping for this remote workspace", localApplicationID)
+		}
+		mappedReleaseID := strings.TrimSpace(remote.ReleaseMappings[localReleaseID])
+		if mappedReleaseID == "" {
+			return "", "", fmt.Errorf("local result release %q has no mapping for this remote workspace", localReleaseID)
+		}
+		if (remoteApplicationID != "" && remoteApplicationID != mappedApplicationID) || (remoteReleaseID != "" && remoteReleaseID != mappedReleaseID) {
+			return "", "", fmt.Errorf("result push bundle maps to multiple destination applications or releases")
+		}
+		remoteApplicationID = mappedApplicationID
+		remoteReleaseID = mappedReleaseID
+	}
+	return remoteApplicationID, remoteReleaseID, nil
 }
 
 func requireServiceAccountLibraryBundleScopes(w http.ResponseWriter, r *http.Request, bundle *LibraryBundle) bool {
@@ -673,12 +869,16 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	req.ProjectID = localProjectID
-	localBundle, err := s.buildLibraryBundle(req.Kind, localID, localProjectID, false)
+	// Validate and hash the local side before any outbound request. Live assets
+	// go through bundle construction so a stale replica cache cannot escape the
+	// durable project identity resolved above. Imported results are immutable
+	// evidence rows rather than runnable tests, so their already-validated
+	// portable hash is read from the destination-scoped durable record.
+	localBundle, localHash, err := s.localLibraryDiffEvidence(req.Kind, localID, localProjectID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	localHash := libraryBundleItemHash(localBundle, req.Kind, localID)
 	if localHash == "" {
 		writeError(w, http.StatusBadRequest, "local library item hash is unavailable")
 		return
@@ -729,6 +929,37 @@ func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request)
 		"remote_hash": remoteHash,
 		"status":      status,
 	})
+}
+
+func (s *Server) localLibraryDiffEvidence(kind, id, projectID string) (*LibraryBundle, string, error) {
+	kind = normalizeLibraryKind(kind)
+	id = strings.TrimSpace(id)
+	projectID = normalizeProjectID(projectID)
+	if kind == "result" {
+		if _, live := s.runner.GetTest(id); !live {
+			imported, found, err := s.getExternalResultImport(id)
+			if err != nil {
+				return nil, "", err
+			}
+			if !found || imported == nil {
+				return nil, "", fmt.Errorf("result not found")
+			}
+			if normalizeProjectID(imported.ProjectID) != projectID {
+				return nil, "", fmt.Errorf("result belongs to project %s, not authorized request project %s", normalizeProjectID(imported.ProjectID), projectID)
+			}
+			contentHash, _ := imported.RawResult["content_hash"].(string)
+			contentHash = strings.TrimSpace(contentHash)
+			if contentHash == "" {
+				return nil, "", fmt.Errorf("imported result content hash is missing")
+			}
+			return nil, contentHash, nil
+		}
+	}
+	bundle, err := s.buildLibraryBundle(kind, id, projectID, false)
+	if err != nil {
+		return nil, "", err
+	}
+	return bundle, libraryBundleItemHash(bundle, kind, id), nil
 }
 
 func (s *Server) resolveLibraryTransferHandlerProject(req LibraryTransferRequest, path string) (string, int, string) {
@@ -832,6 +1063,72 @@ func cloneLibraryRemoteProjectMappings(mappings map[string]string) map[string]st
 	cloned := make(map[string]string, len(mappings))
 	for localProjectID, remoteProjectID := range mappings {
 		cloned[localProjectID] = remoteProjectID
+	}
+	return cloned
+}
+
+func normalizeLibraryRemoteApplicationMappings(mappings map[string]string) (map[string]string, error) {
+	if mappings == nil {
+		return nil, nil
+	}
+	if len(mappings) > 1000 {
+		return nil, fmt.Errorf("application_mappings exceeds the 1000-entry limit")
+	}
+	normalized := make(map[string]string, len(mappings))
+	for localApplicationID, remoteApplicationID := range mappings {
+		localApplicationID = strings.TrimSpace(localApplicationID)
+		remoteApplicationID = strings.TrimSpace(remoteApplicationID)
+		if localApplicationID == "" || remoteApplicationID == "" {
+			return nil, fmt.Errorf("application_mappings keys and values must be non-empty")
+		}
+		if existing, ok := normalized[localApplicationID]; ok && existing != remoteApplicationID {
+			return nil, fmt.Errorf("application_mappings contains conflicting normalized local application %q", localApplicationID)
+		}
+		normalized[localApplicationID] = remoteApplicationID
+	}
+	return normalized, nil
+}
+
+func cloneLibraryRemoteApplicationMappings(mappings map[string]string) map[string]string {
+	if mappings == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(mappings))
+	for localApplicationID, remoteApplicationID := range mappings {
+		cloned[localApplicationID] = remoteApplicationID
+	}
+	return cloned
+}
+
+func normalizeLibraryRemoteReleaseMappings(mappings map[string]string) (map[string]string, error) {
+	if mappings == nil {
+		return nil, nil
+	}
+	if len(mappings) > 1000 {
+		return nil, fmt.Errorf("release_mappings exceeds the 1000-entry limit")
+	}
+	normalized := make(map[string]string, len(mappings))
+	for localReleaseID, remoteReleaseID := range mappings {
+		localReleaseID = strings.TrimSpace(localReleaseID)
+		remoteReleaseID = strings.TrimSpace(remoteReleaseID)
+		if localReleaseID == "" || remoteReleaseID == "" {
+			return nil, fmt.Errorf("release_mappings keys and values must be non-empty")
+		}
+		if existing, ok := normalized[localReleaseID]; ok && existing != remoteReleaseID {
+			return nil, fmt.Errorf("release_mappings contains conflicting normalized local release %q", localReleaseID)
+		}
+		normalized[localReleaseID] = remoteReleaseID
+	}
+	return normalized, nil
+}
+
+func cloneLibraryRemoteReleaseMappings(mappings map[string]string) map[string]string {
+	if mappings == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(mappings))
+	for localReleaseID, remoteReleaseID := range mappings {
+		cloned[localReleaseID] = remoteReleaseID
 	}
 	return cloned
 }

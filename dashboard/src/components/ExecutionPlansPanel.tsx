@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useExecutionPlansApi } from '../hooks/api/useExecutionPlansApi'
 import { ApiError } from '../hooks/apiClient'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import {
   ExecutionPlan,
@@ -14,6 +15,7 @@ import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import ExecutionPlanApprovalsModal from './ExecutionPlanApprovalsModal'
 import ExecutionPlanSchedulesModal from './ExecutionPlanSchedulesModal'
 import { dialogBackdropProps } from './dialogBackdropProps'
+import { listAllExecutionPlans } from './schedulingCatalogModel'
 import './parityPanels.css'
 
 interface Props {
@@ -43,6 +45,19 @@ type PlanDraft = {
   name: string
   run_mode: string
   entries: EntryDraft[]
+	baseline: string
+}
+
+type PlanDraftFields = Omit<PlanDraft, 'baseline'>
+
+function planDraftSnapshot(draft: PlanDraftFields | PlanDraft): string {
+	const fields = { ...draft } as Partial<PlanDraft>
+	delete fields.baseline
+	return JSON.stringify(fields)
+}
+
+function withPlanDraftBaseline(fields: PlanDraftFields, baseline: PlanDraftFields | PlanDraft = fields): PlanDraft {
+	return { ...fields, baseline: planDraftSnapshot(baseline) }
 }
 
 const emptyEntry: EntryDraft = {
@@ -55,7 +70,7 @@ const emptyEntry: EntryDraft = {
 }
 
 function emptyDraft(): PlanDraft {
-  return { name: '', run_mode: 'parallel', entries: [{ ...emptyEntry }] }
+	return withPlanDraftBaseline({ name: '', run_mode: 'parallel', entries: [{ ...emptyEntry }] })
 }
 
 const RUN_TERMINAL = ['completed', 'halted', 'failed']
@@ -101,6 +116,7 @@ function runStatusPill(status: string): string {
 
 export default function ExecutionPlansPanel({ projectId, canManage = false, canAdmin = false, scenarioOptions, onOpenTest, seedScenarioId, onSeedConsumed }: Props) {
   const api = useExecutionPlansApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const [plans, setPlans] = useState<ExecutionPlan[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -111,34 +127,63 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const [schedulesTarget, setSchedulesTarget] = useState<ExecutionPlan | null>(null)
   const [approvalsTarget, setApprovalsTarget] = useState<ExecutionPlan | null>(null)
   const [busy, setBusy] = useState(false)
+  const scopeRef = useRef({ projectId, generation: 0 })
+  const loadGenerationRef = useRef(0)
+  if (scopeRef.current.projectId !== projectId) {
+    scopeRef.current = { projectId, generation: scopeRef.current.generation + 1 }
+  }
+  const isCurrentScope = useCallback((scope: { projectId?: string; generation: number }) => (
+    scopeRef.current.projectId === scope.projectId && scopeRef.current.generation === scope.generation
+  ), [])
   const draftDialogRef = useRef<HTMLDivElement>(null)
   const resultDialogRef = useRef<HTMLDivElement>(null)
   const progressDialogRef = useRef<HTMLDivElement>(null)
-  const closeDraft = useCallback(() => setDraft(null), [])
+	const discardDraft = useCallback(() => {
+		setDraft(null)
+		setError(null)
+	}, [])
+	const closeDraft = useCallback(() => runGuarded(discardDraft), [discardDraft, runGuarded])
   const closeRunResult = useCallback(() => setRunResult(null), [])
   const closePlanRun = useCallback(() => setPlanRun(null), [])
 
-  useModalDialog({ dialogRef: draftDialogRef, enabled: Boolean(draft), onClose: closeDraft })
+	useModalDialog({ dialogRef: draftDialogRef, enabled: Boolean(draft), onClose: busy ? undefined : closeDraft })
   useModalDialog({ dialogRef: resultDialogRef, enabled: Boolean(runResult), onClose: closeRunResult })
   useModalDialog({ dialogRef: progressDialogRef, enabled: Boolean(planRun), onClose: closePlanRun })
 
+  useLayoutEffect(() => {
+    loadGenerationRef.current += 1
+    setPlans([])
+    setLoading(false)
+    setError(null)
+    setDraft(null)
+    setDeleteTarget(null)
+    setRunResult(null)
+    setPlanRun(null)
+    setSchedulesTarget(null)
+    setApprovalsTarget(null)
+    setBusy(false)
+  }, [projectId])
+
   const load = useCallback(async () => {
+    const scope = { ...scopeRef.current }
+    const requestGeneration = ++loadGenerationRef.current
     if (!projectId) {
-      setPlans([])
+      if (isCurrentScope(scope)) setPlans([])
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listExecutionPlans({ project_id: projectId })
-      setPlans(res.execution_plans || [])
+      const nextPlans = await listAllExecutionPlans(api.listExecutionPlans, projectId)
+      if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
+      setPlans(nextPlans)
     } catch (err) {
+      if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load execution plans.')
-      setPlans([])
     } finally {
-      setLoading(false)
+      if (isCurrentScope(scope) && requestGeneration === loadGenerationRef.current) setLoading(false)
     }
-  }, [api, projectId])
+  }, [api, isCurrentScope, projectId])
 
   useEffect(() => {
     void load()
@@ -148,13 +193,14 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   useEffect(() => {
     if (!seedScenarioId || !canManage) return
     const opt = scenarioOptions?.find(s => s.id === seedScenarioId)
-    setDraft({
+		const seeded: PlanDraftFields = {
       name: opt?.name ? `${opt.name} plan` : '',
       run_mode: 'parallel',
       entries: [{ ...emptyEntry, scenario_id: seedScenarioId, scenario_name: opt?.name || '' }],
-    })
+		}
+		setDraft(withPlanDraftBaseline(seeded, emptyDraft()))
     onSeedConsumed?.()
-  }, [seedScenarioId, canManage, scenarioOptions, onSeedConsumed])
+  }, [seedScenarioId, canManage, scenarioOptions, onSeedConsumed, projectId])
 
   // Poll a running sequential plan-run so the gated progression is reflected live.
   useEffect(() => {
@@ -193,32 +239,40 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
         }
       })
 
-  const submitDraft = useCallback(async () => {
-    if (!draft) return
+	const submitDraft = useCallback(async (): Promise<boolean> => {
+		if (!draft || !projectId) return false
+    const scope = { ...scopeRef.current }
     const entries = draftToEntries(draft.entries)
     setBusy(true)
     setError(null)
     try {
+			let saved: ExecutionPlan
       if (draft.id) {
-        await api.updateExecutionPlan(draft.id, { name: draft.name.trim(), run_mode: draft.run_mode, entries })
+				saved = await api.updateExecutionPlan(draft.id, { name: draft.name.trim(), run_mode: draft.run_mode, entries })
       } else {
-        await api.createExecutionPlan({ project_id: projectId, name: draft.name.trim(), run_mode: draft.run_mode, entries })
+				saved = await api.createExecutionPlan({ project_id: projectId, name: draft.name.trim(), run_mode: draft.run_mode, entries })
       }
+			if (!isCurrentScope(scope)) return false
+			setPlans(current => [...current.filter(plan => plan.id !== saved.id), saved])
       setDraft(null)
       await load()
+			return true
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to save execution plan.')
+      if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to save execution plan.')
+			return false
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, draft, load, projectId])
+  }, [api, draft, isCurrentScope, load, projectId])
 
   const runPlan = useCallback(
     async (plan: ExecutionPlan) => {
+      const scope = { ...scopeRef.current }
       setBusy(true)
       setError(null)
       try {
         const res = await api.runExecutionPlan(plan.id)
+        if (!isCurrentScope(scope)) return
         if (res.run_id) {
           // Sequential: dependency-gated run — show live per-entry progress.
           const seeded: ExecutionPlanRun = {
@@ -240,7 +294,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
           setPlanRun({ planId: plan.id, planName: plan.name, run: seeded })
           try {
             const run = await api.getExecutionPlanRun(plan.id, res.run_id)
-            setPlanRun({ planId: plan.id, planName: plan.name, run })
+            if (isCurrentScope(scope)) setPlanRun({ planId: plan.id, planName: plan.name, run })
           } catch {
             /* keep the seeded snapshot if the run can't be re-read yet */
           }
@@ -249,6 +303,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
         }
         await load()
       } catch (err) {
+        if (!isCurrentScope(scope)) return
         // A run that exceeds the project VUser quota is blocked (HTTP 409) until
         // a project admin approves it. Open the approvals surface instead of
         // showing a bare error so the gate is actionable.
@@ -259,29 +314,32 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
           setError(err instanceof ApiError ? err.message : 'Failed to run execution plan.')
         }
       } finally {
-        setBusy(false)
+        if (isCurrentScope(scope)) setBusy(false)
       }
     },
-    [api, load],
+    [api, isCurrentScope, load],
   )
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return
+    const scope = { ...scopeRef.current }
     setBusy(true)
     setError(null)
     try {
       await api.deleteExecutionPlan(deleteTarget.id)
+      if (!isCurrentScope(scope)) return
+			setPlans(current => current.filter(plan => plan.id !== deleteTarget.id))
       setDeleteTarget(null)
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to delete execution plan.')
+      if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to delete execution plan.')
     } finally {
-      setBusy(false)
+      if (isCurrentScope(scope)) setBusy(false)
     }
-  }, [api, deleteTarget, load])
+  }, [api, deleteTarget, isCurrentScope, load])
 
   const startEdit = (plan: ExecutionPlan) => {
-    setDraft({
+		const fields: PlanDraftFields = {
       id: plan.id,
       name: plan.name,
       run_mode: plan.run_mode,
@@ -296,8 +354,23 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               data_pools: (e.data_pools || []).map(dp => ({ pool_id: dp.pool_id, alias: dp.alias })),
             }))
           : [{ ...emptyEntry }],
-    })
+		}
+		setDraft(withPlanDraftBaseline(fields))
   }
+
+	const draftDirty = Boolean(draft && planDraftSnapshot(draft) !== draft.baseline)
+	const draftDirtyRef = useRef(draftDirty)
+	draftDirtyRef.current = draftDirty
+	const submitDraftRef = useRef(submitDraft)
+	submitDraftRef.current = submitDraft
+	const draftGuard = useMemo<NavigationGuard>(() => ({
+		id: 'execution-plan-draft',
+		label: 'Execution plan editor',
+		isDirty: () => draftDirtyRef.current,
+		save: () => submitDraftRef.current(),
+		discard: discardDraft,
+	}), [discardDraft])
+	useNavigationGuard(draftGuard, draftDirty)
 
   const updateEntry = (index: number, patch: Partial<EntryDraft>) =>
     setDraft(d => (d ? { ...d, entries: d.entries.map((e, i) => (i === index ? { ...e, ...patch } : e)) } : d))
@@ -418,7 +491,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
           <div ref={draftDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="execution-plan-editor-title">
             <div className="pp-modal-header">
               <h3 id="execution-plan-editor-title">{draft.id ? 'Edit Execution Plan' : 'New Execution Plan'}</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>
+								<button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft} disabled={busy}>
                 Close
               </button>
             </div>
@@ -521,7 +594,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               </div>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={closeDraft}>
+								<button type="button" className="btn btn-secondary" onClick={closeDraft} disabled={busy}>
                 Cancel
               </button>
               <button type="button" className="btn btn-primary" disabled={!draftValid || busy} onClick={() => void submitDraft()}>

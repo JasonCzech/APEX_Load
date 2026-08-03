@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ExecutionPlansPanel from './ExecutionPlansPanel'
 import { ApiError } from '../hooks/apiClient'
 import { ExecutionPlan } from '../types'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -88,7 +89,7 @@ describe('ExecutionPlansPanel', () => {
       root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
     })
     await flush()
-    expect(plansApiMock.listExecutionPlans).toHaveBeenCalledWith({ project_id: 'proj-a' })
+    expect(plansApiMock.listExecutionPlans).toHaveBeenCalledWith({ project_id: 'proj-a', limit: 100, offset: 0 })
     expect(container.textContent).toContain('No execution plans yet')
     expect(container.textContent).toContain('New Execution Plan')
   })
@@ -382,4 +383,90 @@ describe('ExecutionPlansPanel', () => {
     expect(nameInput?.value).toContain('Checkout')
     expect(onSeedConsumed).toHaveBeenCalledTimes(1)
   })
+
+  it('ignores a late execution-plan response from the previous project', async () => {
+    let resolveProjectA: ((value: { execution_plans: ExecutionPlan[]; count: number }) => void) | undefined
+    plansApiMock.listExecutionPlans.mockImplementation(({ project_id }: { project_id: string }) => {
+      if (project_id === 'proj-a') return new Promise(resolve => { resolveProjectA = resolve })
+      return Promise.resolve({ execution_plans: [plan({ id: 'p-b', project_id: 'proj-b', name: 'project-b-plan' })], count: 1 })
+    })
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.textContent).toContain('project-b-plan')
+
+    await act(async () => {
+      resolveProjectA?.({ execution_plans: [plan({ name: 'stale-project-a-plan' })], count: 1 })
+    })
+    await flush()
+    expect(container.textContent).toContain('project-b-plan')
+    expect(container.textContent).not.toContain('stale-project-a-plan')
+  })
+
+  it('closes and clears an execution-plan draft when the project changes', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [], count: 0 })
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')?.click()
+    })
+    await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'project-a-draft'))
+
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-b" canManage />) })
+    await flush()
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')?.click()
+    })
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. nightly regression"]')?.value).toBe('')
+  })
+
+  it('keeps the last good execution-plan list when a same-project refresh fails', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValueOnce({ execution_plans: [plan({ name: 'retained-plan', run_mode: 'parallel' })], count: 1 })
+    plansApiMock.runExecutionPlan.mockResolvedValue({
+      execution_plan_id: 'p1',
+      run_mode: 'parallel',
+      status: 'completed',
+      results: [],
+      created_count: 0,
+      failed_count: 0,
+      materialized_at: '',
+    })
+    await act(async () => { root.render(<ExecutionPlansPanel projectId="proj-a" canManage />) })
+    await flush()
+    plansApiMock.listExecutionPlans.mockRejectedValueOnce(new ApiError('plan refresh unavailable', 503))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run')?.click()
+    })
+    await flush()
+    expect(container.textContent).toContain('retained-plan')
+    expect(container.textContent).toContain('plan refresh unavailable')
+  })
+
+	it('guards a dirty execution-plan draft before closing the editor', async () => {
+		plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [], count: 0 })
+		await act(async () => {
+			root.render(
+				<NavigationGuardProvider>
+					<ExecutionPlansPanel projectId="proj-a" canManage />
+				</NavigationGuardProvider>,
+			)
+		})
+		await flush()
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'New Execution Plan')?.click()
+		})
+		await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'unsaved plan'))
+		await act(async () => {
+			Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-modal-actions button')).find(button => button.textContent === 'Cancel')?.click()
+		})
+
+		expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+		expect(container.querySelector<HTMLInputElement>('input[placeholder="e.g. nightly regression"]')?.value).toBe('unsaved plan')
+		const discard = Array.from(document.querySelectorAll<HTMLButtonElement>('.unsaved-changes-modal button'))
+			.find(button => button.textContent === 'Discard changes')
+		await act(async () => discard?.click())
+		expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+		expect(container.querySelector('input[placeholder="e.g. nightly regression"]')).toBeNull()
+	})
 })

@@ -50,13 +50,20 @@ func (s *Server) handleGeneratorLifecycle(w http.ResponseWriter, r *http.Request
 		return
 	}
 	generatorID, target := s.resolveGeneratorIdentityFromPath(strings.TrimSpace(r.PathValue("id")))
+	previousState := s.currentGeneratorLifecycleState(generatorID, target)
 	generatorID, target, err := s.setGeneratorLifecycleState(generatorID, target, state)
 	if err != nil {
+		_ = s.restoreGeneratorLifecycleState(generatorID, target, previousState)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	cordoned := state != "active"
 	if err := s.syncGeneratorMetadataCordon(generatorID, target, cordoned); err != nil {
+		rollbackErr := s.restoreGeneratorLifecycleState(generatorID, target, previousState)
+		if rollbackErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata and restore the prior lifecycle state: "+errors.Join(err, rollbackErr).Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata: "+err.Error())
 		return
 	}
@@ -91,11 +98,18 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if !req.DryRun {
+		previousState := s.currentGeneratorLifecycleState(generatorID, target)
 		if _, _, err := s.setGeneratorLifecycleState(generatorID, target, "draining"); err != nil {
+			_ = s.restoreGeneratorLifecycleState(generatorID, target, previousState)
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		if err := s.syncGeneratorMetadataCordon(generatorID, target, true); err != nil {
+			rollbackErr := s.restoreGeneratorLifecycleState(generatorID, target, previousState)
+			if rollbackErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata and restore the prior lifecycle state: "+errors.Join(err, rollbackErr).Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata: "+err.Error())
 			return
 		}
@@ -233,6 +247,24 @@ func (s *Server) setGeneratorLifecycleState(generatorID string, target string, s
 	return generatorID, target, nil
 }
 
+func (s *Server) currentGeneratorLifecycleState(generatorID string, target string) string {
+	if s == nil || s.runner == nil {
+		return "active"
+	}
+	backend := s.runner.getExecutionBackend()
+	if reader, ok := backend.(drainStateReader); ok {
+		if id := strings.TrimSpace(firstNonEmpty(generatorID, target)); id != "" {
+			return firstNonEmpty(strings.TrimSpace(reader.GeneratorDrainStateByID(id)), "active")
+		}
+	}
+	return "active"
+}
+
+func (s *Server) restoreGeneratorLifecycleState(generatorID string, target string, state string) error {
+	_, _, err := s.setGeneratorLifecycleState(generatorID, target, firstNonEmpty(strings.TrimSpace(state), "active"))
+	return err
+}
+
 func (s *Server) syncGeneratorMetadataCordon(generatorID string, target string, cordoned bool) error {
 	if s == nil || s.store == nil {
 		return nil
@@ -253,6 +285,16 @@ func (s *Server) syncGeneratorMetadataCordon(generatorID string, target string, 
 		patch.Target = &target
 	}
 	_, err := patcher.PatchGeneratorMetadata(generatorID, patch)
+	if err == nil {
+		return nil
+	}
+	// A transport/store wrapper may lose the acknowledgement after the atomic
+	// upsert committed. Re-read the authoritative row before rolling back the live
+	// lifecycle state so a committed cordon is never reported as absent.
+	current, readErr := s.store.GetGeneratorMetadata(generatorID)
+	if readErr == nil && current != nil && current.Cordoned == cordoned && (target == "" || strings.TrimSpace(current.Target) == target) {
+		return nil
+	}
 	return err
 }
 

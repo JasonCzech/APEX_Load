@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useFleetApi, GeneratorMetadataPatch } from '../hooks/api/useFleetApi'
 import { ApiError } from '../hooks/apiClient'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { FleetGeneratorMetadata } from '../types'
+import { listAllGeneratorMetadata } from './fleetCatalogModel'
 import './parityPanels.css'
 
 interface Props {
@@ -14,11 +16,13 @@ interface Props {
 type MetaDraft = {
   generator_id: string
   isNew: boolean
+  target: string
   region: string
   fleet_pool_id: string
   provider_status: string
   cordoned: boolean
   tagsText: string
+  baseline: Omit<MetaDraft, 'generator_id' | 'isNew' | 'baseline'> | null
 }
 
 function formatTags(tags?: Record<string, string>) {
@@ -46,29 +50,123 @@ function parseTagsText(value: string): Record<string, string> {
   return tags
 }
 
+function draftFields(draft: MetaDraft) {
+  return {
+    target: draft.target.trim(),
+    region: draft.region.trim(),
+    fleet_pool_id: draft.fleet_pool_id.trim(),
+    provider_status: draft.provider_status.trim(),
+    cordoned: draft.cordoned,
+    tagsText: formatTags(parseTagsText(draft.tagsText)),
+  }
+}
+
+function draftIsDirty(draft: MetaDraft | null): boolean {
+  if (!draft) return false
+  const fields = draftFields(draft)
+  if (draft.isNew) {
+    return Boolean(
+      draft.generator_id.trim()
+      || fields.target
+      || fields.region
+      || fields.fleet_pool_id
+      || fields.provider_status
+      || fields.cordoned
+      || fields.tagsText,
+    )
+  }
+  return JSON.stringify(fields) !== JSON.stringify(draft.baseline)
+}
+
+function changedMetadataPatch(draft: MetaDraft): GeneratorMetadataPatch {
+  const fields = draftFields(draft)
+  const target = fields.target || (draft.isNew ? draft.generator_id.trim() : draft.baseline?.target || '')
+  if (draft.isNew || !draft.baseline) {
+    return {
+      target,
+      region: fields.region,
+      fleet_pool_id: fields.fleet_pool_id,
+      provider_status: fields.provider_status,
+      cordoned: fields.cordoned,
+      tags: parseTagsText(draft.tagsText),
+    }
+  }
+
+  const patch: GeneratorMetadataPatch = {}
+  if (target !== draft.baseline.target) patch.target = target
+  if (fields.region !== draft.baseline.region) patch.region = fields.region
+  if (fields.fleet_pool_id !== draft.baseline.fleet_pool_id) patch.fleet_pool_id = fields.fleet_pool_id
+  if (fields.provider_status !== draft.baseline.provider_status) patch.provider_status = fields.provider_status
+  if (fields.cordoned !== draft.baseline.cordoned) patch.cordoned = fields.cordoned
+  if (fields.tagsText !== draft.baseline.tagsText) patch.tags = parseTagsText(draft.tagsText)
+  return patch
+}
+
+function snapshotCaughtUp(
+  listed: { updated_at?: string },
+  committed: { updated_at?: string },
+): boolean {
+  if (JSON.stringify(listed) === JSON.stringify(committed)) return true
+  const listedTimestamp = Date.parse(listed.updated_at || '')
+  const committedTimestamp = Date.parse(committed.updated_at || '')
+  return Number.isFinite(listedTimestamp)
+    && Number.isFinite(committedTimestamp)
+    && listedTimestamp > committedTimestamp
+}
+
 export default function FleetGeneratorsCard({ canManage = false }: Props) {
   const api = useFleetApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const [generators, setGenerators] = useState<FleetGeneratorMetadata[]>([])
+  const generatorsRef = useRef(generators)
+  generatorsRef.current = generators
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<MetaDraft | null>(null)
   const [busy, setBusy] = useState(false)
+  const loadRequestRef = useRef(0)
+  const [loadError, setLoadError] = useState(false)
+  const committedGeneratorsRef = useRef(new Map<string, FleetGeneratorMetadata>())
+  const actionInFlightRef = useRef(false)
   const dialogRef = useRef<HTMLDivElement>(null)
-  const closeDraft = useCallback(() => setDraft(null), [])
+  const discardDraft = useCallback(() => {
+    if (!actionInFlightRef.current) setDraft(null)
+  }, [])
+  const closeDraft = useCallback(() => {
+    if (!actionInFlightRef.current) runGuarded(discardDraft)
+  }, [discardDraft, runGuarded])
 
-  useModalDialog({ dialogRef, enabled: Boolean(draft), onClose: closeDraft })
+  useModalDialog({ dialogRef, enabled: Boolean(draft), onClose: busy ? undefined : closeDraft })
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestRef.current
+    const requestIsCurrent = () => loadRequestRef.current === requestId
     setLoading(true)
     setError(null)
+    setLoadError(false)
     try {
-      const res = await api.listGeneratorMetadata()
-      setGenerators(res.generators || [])
+      const listed = await listAllGeneratorMetadata(api.listGeneratorMetadata)
+      if (!requestIsCurrent()) return false
+      const next = [...listed]
+      committedGeneratorsRef.current.forEach((generator, id) => {
+        const listed = next.find(candidate => candidate.generator_id === id)
+        if (listed && snapshotCaughtUp(listed, generator)) {
+          committedGeneratorsRef.current.delete(id)
+          return
+        }
+        const index = next.findIndex(candidate => candidate.generator_id === id)
+        if (index >= 0) next[index] = generator
+        else next.push(generator)
+      })
+      setGenerators(next.sort((left, right) => left.generator_id.localeCompare(right.generator_id)))
+      return true
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to load generator metadata.')
-      setGenerators([])
+      if (!requestIsCurrent()) return false
+      setError(err instanceof Error ? err.message : 'Failed to load generator metadata.')
+      setLoadError(true)
+      return false
     } finally {
-      setLoading(false)
+      if (requestIsCurrent()) setLoading(false)
     }
   }, [api])
 
@@ -77,15 +175,31 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
   }, [load])
 
   const patch = useCallback(
-    async (generatorId: string, body: GeneratorMetadataPatch) => {
+    async (generatorId: string, body: GeneratorMetadataPatch): Promise<boolean> => {
+      if (actionInFlightRef.current) return false
+      actionInFlightRef.current = true
       setBusy(true)
       setError(null)
+      setLoadError(false)
       try {
-        await api.patchGeneratorMetadata(generatorId, body)
+        const committed = await api.patchGeneratorMetadata(generatorId, body)
+        committedGeneratorsRef.current.set(committed.generator_id, committed)
+        setGenerators(current => [
+          ...current.filter(generator => generator.generator_id !== committed.generator_id),
+          committed,
+        ].sort((left, right) => left.generator_id.localeCompare(right.generator_id)))
         await load()
+        return true
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Failed to update generator metadata.')
+        const message = err instanceof ApiError ? err.message : 'Failed to update generator metadata.'
+        const refreshed = await load()
+        setError(refreshed
+          ? `${message} Current generator metadata was reloaded; verify the row before retrying.`
+          : `${message} Current generator metadata could not be reloaded; retry the catalog refresh before editing again.`)
+        setLoadError(!refreshed)
+        return false
       } finally {
+        actionInFlightRef.current = false
         setBusy(false)
       }
     },
@@ -94,18 +208,33 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
 
   const toggleCordon = useCallback(
     async (generatorId: string, cordoned: boolean) => {
+      if (actionInFlightRef.current) return
+      actionInFlightRef.current = true
       setBusy(true)
       setError(null)
+      setLoadError(false)
       try {
+        let result
         if (cordoned) {
-          await api.uncordonGenerator(generatorId)
+          result = await api.uncordonGenerator(generatorId)
         } else {
-          await api.cordonGenerator(generatorId)
+          result = await api.cordonGenerator(generatorId)
         }
+        const existing = generatorsRef.current.find(generator => generator.generator_id === generatorId)
+        if (existing) committedGeneratorsRef.current.set(generatorId, { ...existing, cordoned: result.cordoned })
+        setGenerators(current => current.map(generator => (
+          generator.generator_id === generatorId ? { ...generator, cordoned: result.cordoned } : generator
+        )))
         await load()
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'Failed to update generator lifecycle.')
+        const message = err instanceof ApiError ? err.message : 'Failed to update generator lifecycle.'
+        const refreshed = await load()
+        setError(refreshed
+          ? `${message} Current generator metadata was reloaded; verify the lifecycle state before retrying.`
+          : `${message} Current generator metadata could not be reloaded; retry the catalog refresh before acting again.`)
+        setLoadError(!refreshed)
       } finally {
+        actionInFlightRef.current = false
         setBusy(false)
       }
     },
@@ -113,16 +242,30 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
   )
 
   const submitDraft = useCallback(async () => {
-    if (!draft || !draft.generator_id.trim()) return
-    await patch(draft.generator_id.trim(), {
-      region: draft.region,
-      fleet_pool_id: draft.fleet_pool_id, // empty string clears membership (backend convention)
-      provider_status: draft.provider_status,
-      cordoned: draft.cordoned,
-      tags: parseTagsText(draft.tagsText),
-    })
-    setDraft(null)
+    if (!draft || !draft.generator_id.trim()) return false
+    const body = changedMetadataPatch(draft)
+    if (Object.keys(body).length === 0) {
+      setDraft(null)
+      return true
+    }
+    const saved = await patch(draft.generator_id.trim(), body)
+    if (saved) setDraft(null)
+    return saved
   }, [draft, patch])
+
+  const draftDirty = draftIsDirty(draft)
+  const draftDirtyRef = useRef(false)
+  draftDirtyRef.current = draftDirty
+  const submitDraftRef = useRef(submitDraft)
+  submitDraftRef.current = submitDraft
+  const draftGuard = useMemo<NavigationGuard>(() => ({
+    id: 'fleet-generator-metadata-draft',
+    label: 'Generator metadata editor',
+    isDirty: () => draftDirtyRef.current,
+    save: () => submitDraftRef.current(),
+    discard: discardDraft,
+  }), [discardDraft])
+  useNavigationGuard(draft ? draftGuard : null, draftDirty)
 
   return (
     <div className="monitor-body pp-panel">
@@ -134,14 +277,24 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            onClick={() => setDraft({ generator_id: '', isNew: true, region: '', fleet_pool_id: '', provider_status: '', cordoned: false, tagsText: '' })}
+            disabled={busy}
+            onClick={() => setDraft({ generator_id: '', isNew: true, target: '', region: '', fleet_pool_id: '', provider_status: '', cordoned: false, tagsText: '', baseline: null })}
           >
             Add Metadata
           </button>
         )}
       </div>
 
-      {error && <div className="pp-error" role="alert">{error}</div>}
+      {error && (
+        <div>
+          <div className="pp-error" role="alert">{error}</div>
+          {loadError && (
+            <button type="button" className="btn btn-secondary btn-sm" disabled={loading || busy} onClick={() => { void load() }}>
+              Retry generator metadata
+            </button>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="pp-empty">Loading generator metadata…</div>
@@ -158,6 +311,7 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                 </div>
                 <div className="pp-row-meta">
                   {gen.region ? <span>region: {gen.region}</span> : null}
+                  {gen.target ? <span>target: {gen.target}</span> : <span>target: not configured</span>}
                   {gen.fleet_pool_id ? <span>pool: {gen.fleet_pool_id}</span> : <span>pool: —</span>}
                   {gen.provider_status ? <span>{gen.provider_status}</span> : null}
                   {formatTags(gen.tags) ? <span>capabilities: {formatTags(gen.tags)}</span> : null}
@@ -176,11 +330,20 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
                       setDraft({
                         generator_id: gen.generator_id,
                         isNew: false,
+                        target: gen.target || '',
                         region: gen.region || '',
                         fleet_pool_id: gen.fleet_pool_id || '',
                         provider_status: gen.provider_status || '',
                         cordoned: Boolean(gen.cordoned),
                         tagsText: formatTags(gen.tags),
+                        baseline: {
+                          target: gen.target || '',
+                          region: (gen.region || '').trim(),
+                          fleet_pool_id: (gen.fleet_pool_id || '').trim(),
+                          provider_status: (gen.provider_status || '').trim(),
+                          cordoned: Boolean(gen.cordoned),
+                          tagsText: formatTags(gen.tags),
+                        },
                       })
                     }
                   >
@@ -204,37 +367,48 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
           >
             <div className="pp-modal-header">
               <h3 id="fleet-generator-dialog-title">{draft.isNew ? 'Add Generator Metadata' : 'Edit Generator Metadata'}</h3>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft}>Close</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={closeDraft} disabled={busy}>Close</button>
             </div>
             <div className="pp-modal-form">
               <label className="pp-field">
                 <span>Generator ID</span>
-                <input value={draft.generator_id} disabled={!draft.isNew} onChange={e => setDraft(d => (d ? { ...d, generator_id: e.target.value } : d))} placeholder="host:port or pod name" />
+                <input value={draft.generator_id} disabled={!draft.isNew || busy} onChange={e => setDraft(d => (d ? { ...d, generator_id: e.target.value } : d))} placeholder="stable generator identity" />
+              </label>
+              <label className="pp-field">
+                <span>Runtime target</span>
+                <input
+                  value={draft.target}
+                  disabled={busy}
+                  onChange={e => setDraft(d => (d ? { ...d, target: e.target.value } : d))}
+                  placeholder={draft.generator_id.trim() || 'host:port or pod DNS name'}
+                />
+                <small className="pp-muted">Required for pool placement. Blank defaults to the generator ID.</small>
               </label>
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Region</span>
-                  <input value={draft.region} onChange={e => setDraft(d => (d ? { ...d, region: e.target.value } : d))} placeholder="optional" />
+                  <input value={draft.region} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, region: e.target.value } : d))} placeholder="optional" />
                 </label>
                 <label className="pp-field">
                   <span>Fleet pool id</span>
-                  <input value={draft.fleet_pool_id} onChange={e => setDraft(d => (d ? { ...d, fleet_pool_id: e.target.value } : d))} placeholder="blank = none" />
+                  <input value={draft.fleet_pool_id} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, fleet_pool_id: e.target.value } : d))} placeholder="blank = none" />
                 </label>
               </div>
               <div className="pp-field-row">
                 <label className="pp-field">
                   <span>Provider status</span>
-                  <input value={draft.provider_status} onChange={e => setDraft(d => (d ? { ...d, provider_status: e.target.value } : d))} placeholder="optional" />
+                  <input value={draft.provider_status} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, provider_status: e.target.value } : d))} placeholder="optional" />
                 </label>
                 <label className="pp-field pp-entry-enabled" style={{ justifyContent: 'flex-start' }}>
                   <span>Cordoned</span>
-                  <input type="checkbox" checked={draft.cordoned} onChange={e => setDraft(d => (d ? { ...d, cordoned: e.target.checked } : d))} />
+                  <input type="checkbox" checked={draft.cordoned} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, cordoned: e.target.checked } : d))} />
                 </label>
               </div>
               <label className="pp-field">
                 <span>Capabilities / labels</span>
                 <textarea
                   value={draft.tagsText}
+                  disabled={busy}
                   onChange={e => setDraft(d => (d ? { ...d, tagsText: e.target.value } : d))}
                   placeholder="jvm=17, arch=amd64"
                   rows={3}
@@ -242,8 +416,13 @@ export default function FleetGeneratorsCard({ canManage = false }: Props) {
               </label>
             </div>
             <div className="pp-modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={closeDraft}>Cancel</button>
-              <button type="button" className="btn btn-primary" disabled={busy || !draft.generator_id.trim()} onClick={() => void submitDraft()}>
+              <button type="button" className="btn btn-secondary" onClick={closeDraft} disabled={busy}>Cancel</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy || !draft.generator_id.trim() || Boolean(draft.fleet_pool_id.trim() && !(draft.target.trim() || (draft.isNew && draft.generator_id.trim())))}
+                onClick={() => void submitDraft()}
+              >
                 {busy ? 'Saving…' : 'Save'}
               </button>
             </div>

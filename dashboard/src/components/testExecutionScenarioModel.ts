@@ -65,10 +65,10 @@ export interface QueuedScenarioPreview {
 export interface QueuedScenarioRow {
   group: ScenarioGroup
   detail?: ScenarioScriptDetail
-  actionCount: number
-  initCount: number
-  teardownCount: number
-  dataSourceCount: number
+  actionCount: number | null
+  initCount: number | null
+  teardownCount: number | null
+  dataSourceCount: number | null
 }
 
 export function buildQueuedScenarioPreview(test: TestSummary | null | undefined): QueuedScenarioPreview {
@@ -169,10 +169,10 @@ export function buildQueuedScenarioRows(
     return {
       group,
       detail,
-      actionCount: detail?.script?.actions?.length || 0,
-      initCount: detail?.script?.init?.length || 0,
-      teardownCount: detail?.script?.teardown?.length || 0,
-      dataSourceCount: detail?.script?.data_sources?.length || 0,
+      actionCount: detail ? detail.script?.actions?.length ?? 0 : null,
+      initCount: detail ? detail.script?.init?.length ?? 0 : null,
+      teardownCount: detail ? detail.script?.teardown?.length ?? 0 : null,
+      dataSourceCount: detail ? detail.script?.data_sources?.length ?? 0 : null,
     }
   })
 }

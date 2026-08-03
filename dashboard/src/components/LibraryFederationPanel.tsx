@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useLibraryApi } from '../hooks/api/useLibraryApi'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { LibraryRemote } from '../types/library'
 import { getErrorMessage } from '../utils/errorUtils'
 import {
@@ -10,6 +11,10 @@ import {
 
 type LibraryFederationPanelProps = {
   projectId?: string
+  applicationId?: string
+  applicationName?: string
+  releaseId?: string
+  releaseName?: string
 }
 
 type RemoteDraft = {
@@ -18,23 +23,41 @@ type RemoteDraft = {
   local_project_id: string
   default_project_id: string
   project_mappings: Record<string, string>
+  local_application_id: string
+  remote_application_id: string
+  application_mappings: Record<string, string>
+  local_release_id: string
+  remote_release_id: string
+  release_mappings: Record<string, string>
   auth_method: string
   credential_ref: string
   api_key: string
 }
 
-function remoteToDraft(remote?: LibraryRemote, projectId?: string): RemoteDraft {
+function remoteToDraft(remote?: LibraryRemote, projectId?: string, applicationId?: string, releaseId?: string): RemoteDraft {
   const mappings = remote?.project_mappings || {}
+  const applicationMappings = remote?.application_mappings || {}
+  const releaseMappings = remote?.release_mappings || {}
   const preferredLocalProject = projectId?.trim() || ''
   const localProject = (preferredLocalProject && mappings[preferredLocalProject]
     ? preferredLocalProject
     : Object.keys(mappings)[0]) || preferredLocalProject
+  const preferredLocalApplication = applicationId?.trim() || ''
+  const localApplication = preferredLocalApplication || Object.keys(applicationMappings)[0] || ''
+  const preferredLocalRelease = releaseId?.trim() || ''
+  const localRelease = preferredLocalRelease || Object.keys(releaseMappings)[0] || ''
   return {
     name: remote?.name || '',
     base_url: remote?.base_url || '',
     local_project_id: localProject,
     default_project_id: mappings[localProject] || remote?.default_project_id || '',
     project_mappings: { ...mappings },
+    local_application_id: localApplication,
+    remote_application_id: applicationMappings[localApplication] || '',
+    application_mappings: { ...applicationMappings },
+    local_release_id: localRelease,
+    remote_release_id: releaseMappings[localRelease] || '',
+    release_mappings: { ...releaseMappings },
     auth_method: remote?.auth_method || 'service_account',
     credential_ref: remote?.credential_ref || '',
     api_key: '',
@@ -47,29 +70,133 @@ function remoteCredentialLabel(remote: LibraryRemote) {
   return 'missing'
 }
 
-export default function LibraryFederationPanel({ projectId }: LibraryFederationPanelProps) {
+function sortedMappings(mappings?: Record<string, string>) {
+  return Object.entries(mappings || {}).sort(([left], [right]) => left.localeCompare(right))
+}
+
+function remoteDraftFingerprint(draft: RemoteDraft) {
+  return JSON.stringify({
+    ...draft,
+    project_mappings: sortedMappings(draft.project_mappings),
+    application_mappings: sortedMappings(draft.application_mappings),
+    release_mappings: sortedMappings(draft.release_mappings),
+  })
+}
+
+function remoteConfigFingerprint(remote: LibraryRemote) {
+  return JSON.stringify({
+    name: remote.name || '',
+    base_url: remote.base_url || '',
+    default_project_id: remote.default_project_id || '',
+    project_mappings: sortedMappings(remote.project_mappings),
+    application_mappings: sortedMappings(remote.application_mappings),
+    release_mappings: sortedMappings(remote.release_mappings),
+    auth_method: remote.auth_method || 'service_account',
+    credential_ref: remote.credential_ref || '',
+  })
+}
+
+export default function LibraryFederationPanel({ projectId, applicationId, applicationName, releaseId, releaseName }: LibraryFederationPanelProps) {
   const libraryApi = useLibraryApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const [remotes, setRemotes] = useState<LibraryRemote[]>([])
   const [selectedRemoteId, setSelectedRemoteId] = useState('')
-  const [draft, setDraft] = useState<RemoteDraft>(() => remoteToDraft(undefined, projectId))
-  const [loading, setLoading] = useState(false)
+  const [draft, setDraft] = useState<RemoteDraft>(() => remoteToDraft(undefined, projectId, applicationId, releaseId))
+  const [baselineDraft, setBaselineDraft] = useState<RemoteDraft>(() => remoteToDraft(undefined, projectId, applicationId, releaseId))
+  const [actionLoading, setActionLoading] = useState(false)
+  const [listLoading, setListLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
   const [actionError, setActionError] = useState('')
+  const remotesRef = useRef(remotes)
+  const selectedRemoteIdRef = useRef(selectedRemoteId)
+  const draftRef = useRef(draft)
+  const baselineDraftRef = useRef(baselineDraft)
+  const draftDirtyRef = useRef(false)
+  const listGenerationRef = useRef(0)
+  const savedRemoteOverridesRef = useRef(new Map<string, LibraryRemote>())
+  const deletedRemoteIdsRef = useRef(new Set<string>())
+  remotesRef.current = remotes
+  selectedRemoteIdRef.current = selectedRemoteId
+  draftRef.current = draft
+  baselineDraftRef.current = baselineDraft
+
+  const draftDirty = remoteDraftFingerprint(draft) !== remoteDraftFingerprint(baselineDraft)
+  draftDirtyRef.current = draftDirty
+  const loading = actionLoading || listLoading
+
+  const replaceDraft = useCallback((nextDraft: RemoteDraft) => {
+    draftRef.current = nextDraft
+    baselineDraftRef.current = nextDraft
+    draftDirtyRef.current = false
+    setDraft(nextDraft)
+    setBaselineDraft(nextDraft)
+  }, [])
+
+  const editDraft = useCallback((update: (current: RemoteDraft) => RemoteDraft) => {
+    setDraft(current => {
+      const next = update(current)
+      draftRef.current = next
+      return next
+    })
+  }, [])
+
+  const applyRemoteSelection = useCallback((remoteId: string, candidates: LibraryRemote[]) => {
+    const nextRemote = candidates.find(remote => remote.id === remoteId)
+    selectedRemoteIdRef.current = nextRemote?.id || ''
+    setSelectedRemoteId(nextRemote?.id || '')
+    replaceDraft(remoteToDraft(nextRemote, projectId, applicationId, releaseId))
+  }, [applicationId, projectId, releaseId, replaceDraft])
+
+  const reconcileRemoteSnapshot = useCallback((serverRemotes: LibraryRemote[]) => {
+    const serverById = new Map(serverRemotes.map(remote => [remote.id, remote]))
+    const deletedAtRequestCompletion = new Set(deletedRemoteIdsRef.current)
+    deletedAtRequestCompletion.forEach(remoteId => {
+      if (!serverById.has(remoteId)) deletedRemoteIdsRef.current.delete(remoteId)
+    })
+
+    const reconciledById = new Map(
+      serverRemotes
+        .filter(remote => !deletedAtRequestCompletion.has(remote.id))
+        .map(remote => [remote.id, remote]),
+    )
+    savedRemoteOverridesRef.current.forEach((savedRemote, remoteId) => {
+      const serverRemote = serverById.get(remoteId)
+      if (serverRemote && remoteConfigFingerprint(serverRemote) === remoteConfigFingerprint(savedRemote)) {
+        savedRemoteOverridesRef.current.delete(remoteId)
+        reconciledById.set(remoteId, serverRemote)
+      } else {
+        reconciledById.set(remoteId, savedRemote)
+      }
+    })
+    return Array.from(reconciledById.values())
+  }, [])
+
+  const loadRemotes = useCallback(async (options?: { preferredRemoteId?: string; resetDraft?: boolean }) => {
+    const generation = ++listGenerationRef.current
+    setListLoading(true)
+    try {
+      const response = await libraryApi.listRemotes()
+      if (generation !== listGenerationRef.current) return false
+      const nextRemotes = reconcileRemoteSnapshot(response.remotes || [])
+      remotesRef.current = nextRemotes
+      setRemotes(nextRemotes)
+
+      if (draftDirtyRef.current && !options?.resetDraft) return true
+      const preferredRemoteId = options?.preferredRemoteId || selectedRemoteIdRef.current
+      const nextRemoteId = nextRemotes.some(remote => remote.id === preferredRemoteId)
+        ? preferredRemoteId
+        : nextRemotes[0]?.id || ''
+      applyRemoteSelection(nextRemoteId, nextRemotes)
+      return true
+    } finally {
+      if (generation === listGenerationRef.current) setListLoading(false)
+    }
+  }, [applyRemoteSelection, libraryApi, reconcileRemoteSnapshot])
 
   const selectedRemote = useMemo(
     () => remotes.find(remote => remote.id === selectedRemoteId),
     [remotes, selectedRemoteId],
   )
-
-  const loadRemotes = useCallback(async () => {
-    const response = await libraryApi.listRemotes()
-    const nextRemotes = response.remotes || []
-    setRemotes(nextRemotes)
-    setSelectedRemoteId(current => {
-      if (current && nextRemotes.some(remote => remote.id === current)) return current
-      return nextRemotes[0]?.id || ''
-    })
-  }, [libraryApi])
 
   useEffect(() => {
     void loadRemotes().catch(error => {
@@ -77,53 +204,100 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
     })
   }, [loadRemotes])
 
+  const contextKey = `${projectId || ''}\u0000${applicationId || ''}\u0000${releaseId || ''}`
+  const contextKeyRef = useRef(contextKey)
   useEffect(() => {
-    setDraft(remoteToDraft(selectedRemote, projectId))
-  }, [projectId, selectedRemote])
+    if (contextKeyRef.current === contextKey) return
+    contextKeyRef.current = contextKey
+    replaceDraft(remoteToDraft(selectedRemote, projectId, applicationId, releaseId))
+  }, [applicationId, contextKey, projectId, releaseId, replaceDraft, selectedRemote])
 
-  async function saveRemote() {
+  async function saveRemote(): Promise<boolean> {
+    const pendingDraft = draftRef.current
+    const pendingRemoteId = selectedRemoteIdRef.current
+    const pendingRemote = remotesRef.current.find(remote => remote.id === pendingRemoteId)
+    if (!pendingDraft.name.trim() || !pendingDraft.base_url.trim() || !pendingDraft.local_project_id.trim() || !pendingDraft.default_project_id.trim()) {
+      setActionError('Remote name, base URL, local project, and remote project are required.')
+      return false
+    }
     setActionMessage('')
     setActionError('')
-    setLoading(true)
+    setActionLoading(true)
+    ++listGenerationRef.current
+    setListLoading(false)
+    let saved: LibraryRemote
     try {
-      const body = {
-        name: draft.name.trim(),
-        base_url: draft.base_url.trim(),
-        default_project_id: draft.default_project_id.trim(),
-        project_mappings: {
-          ...draft.project_mappings,
-          [draft.local_project_id.trim()]: draft.default_project_id.trim(),
-        },
-        auth_method: draft.auth_method,
-        credential_ref: draft.credential_ref.trim(),
-        api_key: draft.api_key.trim(),
+      const applicationMappings = { ...pendingDraft.application_mappings }
+      const localApplicationId = pendingDraft.local_application_id.trim()
+      const remoteApplicationId = pendingDraft.remote_application_id.trim()
+      if (localApplicationId) {
+        if (remoteApplicationId) applicationMappings[localApplicationId] = remoteApplicationId
+        else delete applicationMappings[localApplicationId]
       }
-      const saved = selectedRemote
-        ? await libraryApi.updateRemote(selectedRemote.id, body)
+      const releaseMappings = { ...pendingDraft.release_mappings }
+      const localReleaseId = pendingDraft.local_release_id.trim()
+      const remoteReleaseId = pendingDraft.remote_release_id.trim()
+      if (localReleaseId) {
+        if (remoteReleaseId) releaseMappings[localReleaseId] = remoteReleaseId
+        else delete releaseMappings[localReleaseId]
+      }
+      const body = {
+        name: pendingDraft.name.trim(),
+        base_url: pendingDraft.base_url.trim(),
+        default_project_id: pendingDraft.default_project_id.trim(),
+        project_mappings: {
+          ...pendingDraft.project_mappings,
+          [pendingDraft.local_project_id.trim()]: pendingDraft.default_project_id.trim(),
+        },
+        application_mappings: applicationMappings,
+        release_mappings: releaseMappings,
+        auth_method: pendingDraft.auth_method,
+        credential_ref: pendingDraft.credential_ref.trim(),
+        api_key: pendingDraft.api_key.trim(),
+      }
+      saved = pendingRemote
+        ? await libraryApi.updateRemote(pendingRemote.id, body)
         : await libraryApi.createRemote(body)
-      setActionMessage(`${selectedRemote ? 'Updated' : 'Added'} Remote Workspace "${saved.name}".`)
-      setDraft(remoteToDraft(saved, projectId))
-      await loadRemotes()
-      setSelectedRemoteId(saved.id)
     } catch (error) {
-      setActionError(getErrorMessage(error, selectedRemote ? 'Unable to update Remote Workspace' : 'Unable to add Remote Workspace'))
-    } finally {
-      setLoading(false)
+      setActionError(getErrorMessage(error, pendingRemote ? 'Unable to update Remote Workspace' : 'Unable to add Remote Workspace'))
+      setActionLoading(false)
+      return false
     }
+
+    deletedRemoteIdsRef.current.delete(saved.id)
+    savedRemoteOverridesRef.current.set(saved.id, saved)
+    const optimisticRemotes = [
+      ...remotesRef.current.filter(remote => remote.id !== saved.id),
+      saved,
+    ]
+    remotesRef.current = optimisticRemotes
+    setRemotes(optimisticRemotes)
+    applyRemoteSelection(saved.id, optimisticRemotes)
+    setActionMessage(`${pendingRemote ? 'Updated' : 'Added'} Remote Workspace "${saved.name}".`)
+    try {
+      await loadRemotes({ preferredRemoteId: saved.id, resetDraft: true })
+    } catch (error) {
+      setActionError(`Remote Workspace was saved, but the list could not be refreshed: ${getErrorMessage(error, 'refresh failed')}`)
+    } finally {
+      setActionLoading(false)
+    }
+    return true
   }
 
   async function probeRemote(remoteId: string) {
     setActionMessage('')
     setActionError('')
-    setLoading(true)
+    setActionLoading(true)
+    ++listGenerationRef.current
+    setListLoading(false)
     try {
       const response = await libraryApi.probeRemote(remoteId)
-      await loadRemotes()
+      await loadRemotes({ preferredRemoteId: remoteId, resetDraft: true })
       setActionMessage(response.status === 'healthy' ? 'Remote library is healthy.' : `Remote library is unreachable: ${response.error || 'probe failed'}`)
     } catch (error) {
       setActionError(getErrorMessage(error, 'Unable to probe Remote Workspace'))
     } finally {
-      setLoading(false)
+      setActionLoading(false)
     }
   }
 
@@ -131,28 +305,69 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
     if (!confirm(`Delete Remote Workspace "${remote.name}"? Sync links for this host will also be removed.`)) return
     setActionMessage('')
     setActionError('')
-    setLoading(true)
+    setActionLoading(true)
+    ++listGenerationRef.current
+    setListLoading(false)
     try {
       await libraryApi.deleteRemote(remote.id)
       setActionMessage(`Deleted Remote Workspace "${remote.name}".`)
-      setSelectedRemoteId('')
-      setDraft(remoteToDraft(undefined, projectId))
-      await loadRemotes()
     } catch (error) {
       setActionError(getErrorMessage(error, 'Unable to delete Remote Workspace'))
+      setActionLoading(false)
+      return
+    }
+
+    savedRemoteOverridesRef.current.delete(remote.id)
+    deletedRemoteIdsRef.current.add(remote.id)
+    const remaining = remotesRef.current.filter(candidate => candidate.id !== remote.id)
+    remotesRef.current = remaining
+    setRemotes(remaining)
+    applyRemoteSelection(remaining[0]?.id || '', remaining)
+    try {
+      await loadRemotes({ resetDraft: true })
+    } catch (error) {
+      setActionError(`Remote Workspace was deleted, but the list could not be refreshed: ${getErrorMessage(error, 'refresh failed')}`)
     } finally {
-      setLoading(false)
+      setActionLoading(false)
     }
   }
 
-  function startNewRemote() {
+  function applyNewRemote() {
+    selectedRemoteIdRef.current = ''
     setSelectedRemoteId('')
-    setDraft(remoteToDraft(undefined, projectId))
+    replaceDraft(remoteToDraft(undefined, projectId, applicationId, releaseId))
     setActionMessage('')
     setActionError('')
   }
 
-  const canSave = draft.name.trim() && draft.base_url.trim() && draft.local_project_id.trim() && draft.default_project_id.trim()
+  function requestRefresh() {
+    runGuarded(() => {
+      setActionMessage('')
+      setActionError('')
+      void loadRemotes({ resetDraft: true }).catch(error => {
+        setActionError(getErrorMessage(error, 'Unable to load Remote Workspaces'))
+      })
+    })
+  }
+
+  const saveRemoteRef = useRef(saveRemote)
+  saveRemoteRef.current = saveRemote
+  const discardDraftRef = useRef<() => void>(() => undefined)
+  discardDraftRef.current = () => {
+    replaceDraft(baselineDraftRef.current)
+    setActionMessage('')
+    setActionError('')
+  }
+  const navigationGuard = useMemo<NavigationGuard>(() => ({
+    id: `library-federation-draft-${projectId || 'unscoped'}`,
+    label: 'Remote workspace mapping and credential draft',
+    isDirty: () => draftDirtyRef.current,
+    save: () => saveRemoteRef.current(),
+    discard: () => discardDraftRef.current(),
+  }), [projectId])
+  useNavigationGuard(navigationGuard, draftDirty)
+
+  const canSave = Boolean(draft.name.trim() && draft.base_url.trim() && draft.local_project_id.trim() && draft.default_project_id.trim())
 
   return (
     <div className="settings-subsection library-federation-panel">
@@ -165,18 +380,27 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
       </div>
 
       <div className="settings-inline-actions">
-        <button className="btn btn-secondary" type="button" onClick={startNewRemote}>
+        <button className="btn btn-secondary" type="button" onClick={() => runGuarded(applyNewRemote)} disabled={loading}>
           New Remote
         </button>
-        <button className="btn btn-secondary" type="button" onClick={() => void loadRemotes()} disabled={loading}>
+        <button className="btn btn-secondary" type="button" onClick={requestRefresh} disabled={loading}>
           Refresh
         </button>
         {selectedRemote && (
           <>
-            <button className="btn btn-secondary" type="button" onClick={() => void probeRemote(selectedRemote.id)} disabled={loading}>
+            <button className="btn btn-secondary" type="button" onClick={() => runGuarded(() => { void probeRemote(selectedRemote.id) })} disabled={loading}>
               Probe Remote
             </button>
-            <button className="btn btn-ghost" type="button" onClick={() => void deleteRemote(selectedRemote)} disabled={loading} style={{ color: 'var(--danger)' }}>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => runGuarded(() => {
+                const currentRemote = remotesRef.current.find(remote => remote.id === selectedRemote.id)
+                if (currentRemote) void deleteRemote(currentRemote)
+              })}
+              disabled={loading}
+              style={{ color: 'var(--danger)' }}
+            >
               Delete
             </button>
           </>
@@ -190,13 +414,14 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
               key={remote.id}
               type="button"
               className={`settings-release-row ${remote.id === selectedRemoteId ? 'active' : ''}`}
-              onClick={() => setSelectedRemoteId(remote.id)}
+              onClick={() => runGuarded(() => applyRemoteSelection(remote.id, remotesRef.current))}
+              disabled={loading}
             >
               <div className="settings-release-main">
                 <span>{remote.name}</span>
                 <small>{remote.base_url}</small>
                 <small>
-                  Mappings {Object.entries(remote.project_mappings || {}).map(([local, target]) => `${local} → ${target}`).join(', ') || 'unmapped'} / checked {formatLibraryDateTime(remote.last_health_check)} / credentials {remoteCredentialLabel(remote)}
+                  Project mappings {Object.entries(remote.project_mappings || {}).map(([local, target]) => `${local} → ${target}`).join(', ') || 'unmapped'} / application mappings {Object.entries(remote.application_mappings || {}).map(([local, target]) => `${local} → ${target}`).join(', ') || 'unmapped'} / release mappings {Object.entries(remote.release_mappings || {}).map(([local, target]) => `${local} → ${target}`).join(', ') || 'unmapped'} / checked {formatLibraryDateTime(remote.last_health_check)} / credentials {remoteCredentialLabel(remote)}
                 </small>
                 {remote.last_error && <small>{remote.last_error}</small>}
               </div>
@@ -214,34 +439,50 @@ export default function LibraryFederationPanel({ projectId }: LibraryFederationP
       <div className="project-redaction-rule-grid">
         <label className="project-redaction-rule-field">
           <span>Remote Name</span>
-          <input className="settings-input" value={draft.name} onChange={event => setDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Team AKS" />
+          <input className="settings-input" value={draft.name} onChange={event => editDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Team AKS" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Base URL</span>
-          <input className="settings-input" value={draft.base_url} onChange={event => setDraft(prev => ({ ...prev, base_url: event.target.value }))} placeholder="https://apexload.example.com" />
+          <input className="settings-input" value={draft.base_url} onChange={event => editDraft(prev => ({ ...prev, base_url: event.target.value }))} placeholder="https://apexload.example.com" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Local Project</span>
-          <input className="settings-input" value={draft.local_project_id} onChange={event => setDraft(prev => ({ ...prev, local_project_id: event.target.value }))} placeholder="local-project-id" />
+          <input className="settings-input" value={draft.local_project_id} onChange={event => editDraft(prev => ({ ...prev, local_project_id: event.target.value }))} placeholder="local-project-id" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Remote Project</span>
-          <input className="settings-input" value={draft.default_project_id} onChange={event => setDraft(prev => ({ ...prev, default_project_id: event.target.value }))} placeholder="remote-project-id" />
+          <input className="settings-input" value={draft.default_project_id} onChange={event => editDraft(prev => ({ ...prev, default_project_id: event.target.value }))} placeholder="remote-project-id" disabled={loading} />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Local Application{applicationName ? ` (${applicationName})` : ''}</span>
+          <input className="settings-input" value={draft.local_application_id} onChange={event => editDraft(prev => ({ ...prev, local_application_id: event.target.value, remote_application_id: prev.application_mappings[event.target.value.trim()] || '' }))} placeholder="local-application-id" disabled={loading} />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Remote Application</span>
+          <input className="settings-input" value={draft.remote_application_id} onChange={event => editDraft(prev => ({ ...prev, remote_application_id: event.target.value }))} placeholder="remote-application-id" disabled={loading} />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Local Release{releaseName ? ` (${releaseName})` : ''}</span>
+          <input className="settings-input" value={draft.local_release_id} onChange={event => editDraft(prev => ({ ...prev, local_release_id: event.target.value, remote_release_id: prev.release_mappings[event.target.value.trim()] || '' }))} placeholder="local-release-id" disabled={loading} />
+        </label>
+        <label className="project-redaction-rule-field">
+          <span>Remote Release</span>
+          <input className="settings-input" value={draft.remote_release_id} onChange={event => editDraft(prev => ({ ...prev, remote_release_id: event.target.value }))} placeholder="remote-release-id" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Auth Method</span>
-          <select className="settings-select" value={draft.auth_method} onChange={event => setDraft(prev => ({ ...prev, auth_method: event.target.value }))}>
+          <select className="settings-select" value={draft.auth_method} onChange={event => editDraft(prev => ({ ...prev, auth_method: event.target.value }))} disabled={loading}>
             <option value="service_account">Service Account</option>
             <option value="none">None</option>
           </select>
         </label>
         <label className="project-redaction-rule-field">
           <span>Credential Ref</span>
-          <input className="settings-input" value={draft.credential_ref} onChange={event => setDraft(prev => ({ ...prev, credential_ref: event.target.value }))} placeholder="env:APEXLOAD_LIBRARY_REMOTE_TOKEN" />
+          <input className="settings-input" value={draft.credential_ref} onChange={event => editDraft(prev => ({ ...prev, credential_ref: event.target.value }))} placeholder="env:APEXLOAD_LIBRARY_REMOTE_TOKEN" disabled={loading} />
         </label>
         <label className="project-redaction-rule-field">
           <span>Rotate API Key</span>
-          <input className="settings-input" type="password" value={draft.api_key} onChange={event => setDraft(prev => ({ ...prev, api_key: event.target.value }))} placeholder="Paste once; never returned" />
+          <input className="settings-input" type="password" value={draft.api_key} onChange={event => editDraft(prev => ({ ...prev, api_key: event.target.value }))} placeholder="Paste once; never returned" disabled={loading} />
         </label>
       </div>
 

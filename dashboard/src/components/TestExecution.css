@@ -65,6 +65,42 @@
   gap: 12px;
 }
 
+.execution-archive-retry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+}
+
+.execution-archive-retry strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.execution-archive-retry p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.execution-archive-retry .execution-archive-retry-error {
+  color: var(--danger);
+}
+
+@media (max-width: 700px) {
+  .execution-archive-retry {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .goal-status-card {
   display: flex;
   flex-direction: column;

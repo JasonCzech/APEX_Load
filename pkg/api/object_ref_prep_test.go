@@ -53,7 +53,7 @@ func TestObjectRepositoryFromScriptBindsScript(t *testing.T) {
 		}},
 	})
 
-	body := `{"script_id":"` + stored.ID + `","bind_script":true}`
+	body := `{"project_id":"` + stored.ProjectID + `","script_id":"` + stored.ID + `","bind_script":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/object-repositories/from-script", strings.NewReader(body))
 	resp := httptest.NewRecorder()
 	server.handleObjectRepositoryFromScript(resp, req)

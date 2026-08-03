@@ -617,24 +617,32 @@ type ReleaseSLAWaiver struct {
 }
 
 type ExternalResultImportFilter struct {
-	ProjectID string
-	ReleaseID string
-	Provider  string
-	Limit     int
-	Offset    int
+	ProjectID     string
+	ApplicationID string
+	ReleaseID     string
+	Provider      string
+	Limit         int
+	Offset        int
 }
 
 type ExternalResultImport struct {
-	ID         string         `json:"id"`
-	Provider   string         `json:"provider"`
-	Name       string         `json:"name"`
-	ProjectID  string         `json:"project_id,omitempty"`
-	ReleaseID  string         `json:"release_id,omitempty"`
-	ScenarioID string         `json:"scenario_id,omitempty"`
-	Source     string         `json:"source,omitempty"`
-	Summary    map[string]any `json:"summary,omitempty"`
-	RawResult  map[string]any `json:"raw_result,omitempty"`
-	CreatedAt  time.Time      `json:"created_at"`
+	ID            string         `json:"id"`
+	Provider      string         `json:"provider"`
+	Name          string         `json:"name"`
+	ProjectID     string         `json:"project_id,omitempty"`
+	ApplicationID string         `json:"application_id,omitempty"`
+	ReleaseID     string         `json:"release_id,omitempty"`
+	ScenarioID    string         `json:"scenario_id,omitempty"`
+	Source        string         `json:"source,omitempty"`
+	Summary       map[string]any `json:"summary,omitempty"`
+	RawResult     map[string]any `json:"raw_result,omitempty"`
+	// ArchiveRecord is durable internal storage metadata for an imported APEX
+	// Load evidence bundle. It is intentionally omitted from API JSON so object
+	// backend bucket/container details and local cache paths are not exposed.
+	ArchiveRecord *RunArchiveRecord `json:"-"`
+	ContentHash   string            `json:"content_hash,omitempty"`
+	HasArchive    bool              `json:"has_archive,omitempty"`
+	CreatedAt     time.Time         `json:"created_at"`
 }
 
 type UsageAccountingSnapshot struct {

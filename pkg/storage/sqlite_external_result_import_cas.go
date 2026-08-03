@@ -14,7 +14,7 @@ import (
 // identity. Library evidence uses deterministic IDs, so an UPSERT here would
 // let a retry or another controller silently replace already-imported evidence.
 func (s *SQLiteStore) CreateExternalResultImportIfAbsent(result *ExternalResultImport) (bool, error) {
-	summaryJSON, rawJSON, err := prepareExternalResultImportInsert(result)
+	summaryJSON, rawJSON, archiveRecordJSON, err := prepareExternalResultImportInsert(result)
 	if err != nil {
 		return false, err
 	}
@@ -30,11 +30,11 @@ func (s *SQLiteStore) CreateExternalResultImportIfAbsent(result *ExternalResultI
 	if exists {
 		return false, nil
 	}
-	created, err := tx.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, release_id, scenario_id, source, summary_json, raw_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	created, err := tx.Exec(`INSERT INTO external_result_imports (id, provider, name, project_id, application_id, release_id, scenario_id, source, summary_json, raw_json, archive_record_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`,
-		result.ID, result.Provider, result.Name, result.ProjectID, result.ReleaseID, result.ScenarioID,
-		result.Source, summaryJSON, rawJSON, result.CreatedAt)
+		result.ID, result.Provider, result.Name, result.ProjectID, nullableString(result.ApplicationID), result.ReleaseID, result.ScenarioID,
+		result.Source, summaryJSON, rawJSON, archiveRecordJSON, result.CreatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -54,7 +54,7 @@ func (s *SQLiteStore) GetExternalResultImport(id string) (*ExternalResultImport,
 	if id == "" {
 		return nil, errors.New("external result import id is required")
 	}
-	return scanExternalResultImport(s.db.QueryRow(`SELECT id, provider, name, COALESCE(project_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(source, ''), COALESCE(summary_json, ''), COALESCE(raw_json, ''), created_at
+	return scanExternalResultImport(s.db.QueryRow(`SELECT id, provider, name, COALESCE(project_id, ''), COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(source, ''), COALESCE(summary_json, ''), COALESCE(raw_json, ''), COALESCE(archive_record_json, ''), created_at
 		FROM external_result_imports WHERE id = ?`, id))
 }
 
@@ -99,12 +99,12 @@ func (s *SQLiteStore) DeleteExternalResultImportIfUnchanged(expected *ExternalRe
 	if expected == nil || strings.TrimSpace(expected.ID) == "" {
 		return false, errors.New("expected external result import is required")
 	}
-	var provider, name, projectID, releaseID, scenarioID, source string
-	var summaryJSON, rawJSON, createdAtRaw string
+	var provider, name, projectID, applicationID, releaseID, scenarioID, source string
+	var summaryJSON, rawJSON, archiveRecordJSON, createdAtRaw string
 	var createdAt time.Time
-	if err := s.db.QueryRow(`SELECT provider, name, COALESCE(project_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(source, ''), COALESCE(summary_json, ''), COALESCE(raw_json, ''), created_at, CAST(created_at AS TEXT)
+	if err := s.db.QueryRow(`SELECT provider, name, COALESCE(project_id, ''), COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(source, ''), COALESCE(summary_json, ''), COALESCE(raw_json, ''), COALESCE(archive_record_json, ''), created_at, CAST(created_at AS TEXT)
 		FROM external_result_imports WHERE id = ?`, strings.TrimSpace(expected.ID)).Scan(
-		&provider, &name, &projectID, &releaseID, &scenarioID, &source, &summaryJSON, &rawJSON, &createdAt, &createdAtRaw,
+		&provider, &name, &projectID, &applicationID, &releaseID, &scenarioID, &source, &summaryJSON, &rawJSON, &archiveRecordJSON, &createdAt, &createdAtRaw,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
@@ -119,6 +119,10 @@ func (s *SQLiteStore) DeleteExternalResultImportIfUnchanged(expected *ExternalRe
 	if err != nil {
 		return false, fmt.Errorf("marshal expected external raw result: %w", err)
 	}
+	expectedArchiveRecordJSON, err := json.Marshal(expected.ArchiveRecord)
+	if err != nil {
+		return false, fmt.Errorf("marshal expected external archive record: %w", err)
+	}
 	summaryEqual, err := semanticJSONEqual([]byte(summaryJSON), expectedSummaryJSON)
 	if err != nil {
 		return false, fmt.Errorf("compare external result summary: %w", err)
@@ -127,20 +131,25 @@ func (s *SQLiteStore) DeleteExternalResultImportIfUnchanged(expected *ExternalRe
 	if err != nil {
 		return false, fmt.Errorf("compare external raw result: %w", err)
 	}
+	archiveRecordEqual, err := semanticJSONEqual([]byte(firstNonEmptyStorageJSON(archiveRecordJSON)), expectedArchiveRecordJSON)
+	if err != nil {
+		return false, fmt.Errorf("compare external archive record: %w", err)
+	}
 	if !strings.EqualFold(strings.TrimSpace(provider), strings.TrimSpace(expected.Provider)) ||
 		strings.TrimSpace(name) != strings.TrimSpace(expected.Name) ||
 		normalizeProjectID(projectID) != normalizeProjectID(expected.ProjectID) ||
+		strings.TrimSpace(applicationID) != strings.TrimSpace(expected.ApplicationID) ||
 		strings.TrimSpace(releaseID) != strings.TrimSpace(expected.ReleaseID) ||
 		strings.TrimSpace(scenarioID) != strings.TrimSpace(expected.ScenarioID) ||
 		strings.TrimSpace(source) != strings.TrimSpace(expected.Source) ||
-		!summaryEqual || !rawEqual || !createdAt.Equal(expected.CreatedAt) {
+		!summaryEqual || !rawEqual || !archiveRecordEqual || !createdAt.Equal(expected.CreatedAt) {
 		return false, nil
 	}
 	result, err := s.db.Exec(`DELETE FROM external_result_imports
 		WHERE id = ? AND provider = ? AND name = ? AND COALESCE(project_id, '') = ?
-		AND COALESCE(release_id, '') = ? AND COALESCE(scenario_id, '') = ? AND COALESCE(source, '') = ?
-		AND COALESCE(summary_json, '') = ? AND COALESCE(raw_json, '') = ? AND CAST(created_at AS TEXT) = ?`,
-		strings.TrimSpace(expected.ID), provider, name, projectID, releaseID, scenarioID, source, summaryJSON, rawJSON, createdAtRaw)
+		AND COALESCE(application_id, '') = ? AND COALESCE(release_id, '') = ? AND COALESCE(scenario_id, '') = ? AND COALESCE(source, '') = ?
+		AND COALESCE(summary_json, '') = ? AND COALESCE(raw_json, '') = ? AND COALESCE(archive_record_json, '') = ? AND CAST(created_at AS TEXT) = ?`,
+		strings.TrimSpace(expected.ID), provider, name, projectID, applicationID, releaseID, scenarioID, source, summaryJSON, rawJSON, archiveRecordJSON, createdAtRaw)
 	if err != nil {
 		return false, err
 	}
@@ -169,21 +178,22 @@ func semanticJSONEqual(left, right []byte) (bool, error) {
 	return bytes.Equal(leftCanonical, rightCanonical), nil
 }
 
-func prepareExternalResultImportInsert(result *ExternalResultImport) (string, string, error) {
+func prepareExternalResultImportInsert(result *ExternalResultImport) (string, string, string, error) {
 	if result == nil {
-		return "", "", errors.New("external result import is required")
+		return "", "", "", errors.New("external result import is required")
 	}
 	result.ID = strings.TrimSpace(result.ID)
 	result.Provider = strings.ToLower(strings.TrimSpace(result.Provider))
 	result.Name = strings.TrimSpace(result.Name)
+	result.ApplicationID = strings.TrimSpace(result.ApplicationID)
 	result.ReleaseID = strings.TrimSpace(result.ReleaseID)
 	result.ScenarioID = strings.TrimSpace(result.ScenarioID)
 	result.Source = strings.TrimSpace(result.Source)
 	if result.ID == "" {
-		return "", "", errors.New("external result import id is required")
+		return "", "", "", errors.New("external result import id is required")
 	}
 	if result.Provider == "" {
-		return "", "", errors.New("external result import provider is required")
+		return "", "", "", errors.New("external result import provider is required")
 	}
 	if result.Name == "" {
 		result.Name = result.Provider + " import"
@@ -194,13 +204,24 @@ func prepareExternalResultImportInsert(result *ExternalResultImport) (string, st
 	}
 	summaryJSON, err := json.Marshal(result.Summary)
 	if err != nil {
-		return "", "", fmt.Errorf("marshal external result summary: %w", err)
+		return "", "", "", fmt.Errorf("marshal external result summary: %w", err)
 	}
 	rawJSON, err := json.Marshal(result.RawResult)
 	if err != nil {
-		return "", "", fmt.Errorf("marshal external raw result: %w", err)
+		return "", "", "", fmt.Errorf("marshal external raw result: %w", err)
 	}
-	return string(summaryJSON), string(rawJSON), nil
+	archiveRecordJSON, err := json.Marshal(result.ArchiveRecord)
+	if err != nil {
+		return "", "", "", fmt.Errorf("marshal external archive record: %w", err)
+	}
+	return string(summaryJSON), string(rawJSON), string(archiveRecordJSON), nil
+}
+
+func firstNonEmptyStorageJSON(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "null"
+	}
+	return value
 }
 
 // validateExternalResultImportPlacement locks every tenant-bearing parent and
@@ -239,17 +260,33 @@ func validateExternalResultImportPlacement(executor testSaveExecutor, result *Ex
 		}
 	}
 
+	if result.ApplicationID != "" {
+		if err := lockRequiredPlacementParent(executor,
+			`UPDATE applications SET updated_at = updated_at WHERE id = ?`, result.ApplicationID, owner, "application"); err != nil {
+			return false, err
+		}
+		var applicationProjectID string
+		if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, result.ApplicationID).Scan(&applicationProjectID); err != nil {
+			return false, err
+		}
+		if normalizeProjectID(applicationProjectID) != result.ProjectID {
+			return false, fmt.Errorf("external result import application %q belongs to project %q, not %q", result.ApplicationID, normalizeProjectID(applicationProjectID), result.ProjectID)
+		}
+	}
 	if result.ReleaseID != "" {
 		if err := lockRequiredPlacementParent(executor,
 			`UPDATE releases SET updated_at = updated_at WHERE id = ?`, result.ReleaseID, owner, "release"); err != nil {
 			return false, err
 		}
-		var releaseProjectID string
-		if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM releases WHERE id = ?`, result.ReleaseID).Scan(&releaseProjectID); err != nil {
+		var releaseProjectID, releaseApplicationID string
+		if err := executor.QueryRow(`SELECT COALESCE(project_id, ''), COALESCE(application_id, '') FROM releases WHERE id = ?`, result.ReleaseID).Scan(&releaseProjectID, &releaseApplicationID); err != nil {
 			return false, err
 		}
 		if normalizeProjectID(releaseProjectID) != result.ProjectID {
 			return false, fmt.Errorf("external result import release %q belongs to project %q, not %q", result.ReleaseID, normalizeProjectID(releaseProjectID), result.ProjectID)
+		}
+		if result.ApplicationID != "" && strings.TrimSpace(releaseApplicationID) != result.ApplicationID {
+			return false, fmt.Errorf("external result import release %q belongs to application %q, not %q", result.ReleaseID, releaseApplicationID, result.ApplicationID)
 		}
 	}
 	if result.ScenarioID != "" {

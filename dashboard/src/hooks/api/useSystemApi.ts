@@ -178,8 +178,8 @@ export function useSystemApi() {
     [],
   )
   const listImportedDashboards = useCallback(
-    (params: { project_id?: string } = {}) =>
-      request<{ dashboards: ImportedDashboard[]; count: number }>(`/monitoring/dashboards${buildQuery(params)}`),
+		(params: { project_id?: string; limit?: number; offset?: number } = {}) =>
+			request<{ dashboards: ImportedDashboard[]; count: number; limit?: number; offset?: number }>(`/monitoring/dashboards${buildQuery(params)}`),
     [],
   )
   const importGrafanaDashboard = useCallback(
@@ -228,7 +228,7 @@ export function useSystemApi() {
       request(`/releases/${encodeURIComponent(releaseId)}/sla-governance/waivers`, { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
-  const listExternalResultImports = useCallback((params: { project_id?: string; release_id?: string; provider?: string } = {}) =>
+  const listExternalResultImports = useCallback((params: { project_id?: string; application_id?: string; release_id?: string; provider?: string; limit?: number; offset?: number } = {}) =>
     request<ExternalResultImportsResponse>(`/results/imports${buildQuery(params)}`),
   [])
   const importExternalResults = useCallback(

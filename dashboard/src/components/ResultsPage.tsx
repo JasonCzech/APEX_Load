@@ -4,10 +4,11 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 
 import { downloadBlob } from '../utils/fileUtils'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
-import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
+import { Application, BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserPlatformLiveMetrics, ExternalResultImport, IntervalSummaryRecord, Release, RunArchiveActionStats, RunArchiveReport, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
+import DesktopApiResourceLink from './DesktopApiResourceLink'
 import { SortHeader } from './SortHeader'
 import {
   BrowserBreakdown,
@@ -42,6 +43,8 @@ import { useSharedTestList } from '../hooks/useSharedTestList'
 import type { NavPage } from './Sidebar'
 import type { LibraryCatalogItem } from '../types/library'
 import { requestSettingsFocus } from './settingsSectionLayout'
+import { loadAllExternalResultImports } from './externalResultImportPagination'
+import { loadResultTestTail } from './resultTestPagination'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -59,6 +62,7 @@ type ArchiveFilter = 'all' | 'ready' | 'pending'
 type ComparisonBreakdown = BrowserBreakdown
 const MAX_COMPARISON_RUNS = 10
 const ALL_COMPARISON_ACTIONS = 'all'
+const EMPTY_EXTERNAL_IMPORTS: ExternalResultImport[] = []
 
 type ResultSourceRow = {
   rowKey: string
@@ -68,6 +72,7 @@ type ResultSourceRow = {
   status: string
   startedAt?: string
   duration?: string
+  applicationId?: string
   releaseId?: string
   releaseName?: string
   hasArchive: boolean
@@ -75,6 +80,7 @@ type ResultSourceRow = {
   totalVusers?: number
   groupCount?: number
   test?: TestSummary
+  externalImport?: ExternalResultImport
   item?: LibraryCatalogItem
 }
 
@@ -119,6 +125,7 @@ function catalogItemForTest(test: TestSummary): LibraryCatalogItem {
     id: test.id,
     name: test.name,
     project_id: test.project_id,
+    application_id: test.application_id,
     release_id: test.release_id,
     status: test.status,
     execution_run_date: test.start_time || test.started_at || test.created_at,
@@ -127,8 +134,15 @@ function catalogItemForTest(test: TestSummary): LibraryCatalogItem {
   }
 }
 
-function resultReleaseValue(row: ResultSourceRow) {
-  return row.releaseId || row.releaseName || '__unassigned__'
+function resultReleaseValue(row: ResultSourceRow, localReleaseByRemoteId?: Map<string, string>) {
+  if (row.source === 'Remote' && row.releaseId) {
+    return localReleaseByRemoteId?.get(row.releaseId) || '__unmapped__'
+  }
+  if (row.releaseId) return row.releaseId
+  if (row.releaseName && row.applicationId) {
+    return `application:${row.applicationId}:release-name:${normalizedReleaseKey(row.releaseName)}`
+  }
+  return row.releaseName ? `release-name:${normalizedReleaseKey(row.releaseName)}` : '__unassigned__'
 }
 
 function resultReleaseLabel(row: ResultSourceRow) {
@@ -139,13 +153,50 @@ function normalizedReleaseKey(value?: string) {
   return (value || '').trim().toLowerCase()
 }
 
-function rowMatchesReleaseFilter(row: ResultSourceRow, releaseFilter: string, activeRelease?: Release | null) {
-  if (releaseFilter === 'all') return true
-  if (resultReleaseValue(row) === releaseFilter || resultReleaseLabel(row) === releaseFilter) return true
-  if (releaseFilter === activeRelease?.id) {
-    return normalizedReleaseKey(row.releaseName) === normalizedReleaseKey(activeRelease.name)
+function rowMatchesActiveApplication(row: ResultSourceRow, activeRelease?: Release | null, activeApplication?: Application | null, mappedRemoteApplicationId?: string) {
+  const activeApplicationId = activeRelease?.application_id || activeApplication?.id
+  // Local results came from the already application-scoped list API (and are
+  // release-scoped there while the active release filter is selected);
+  // older local summaries may omit application_id without becoming ambiguous.
+  if (row.source === 'Local') {
+    if (row.externalImport) {
+      return Boolean(activeApplicationId && row.applicationId === activeApplicationId)
+    }
+    return !row.applicationId || Boolean(activeApplicationId && row.applicationId === activeApplicationId)
   }
-  return false
+  // Remote UUIDs live in a separate namespace. Only an administrator-saved
+  // mapping may correlate them; matching by mutable/non-unique display names
+  // would admit results from the wrong application.
+  return Boolean(mappedRemoteApplicationId && row.applicationId === mappedRemoteApplicationId)
+}
+
+function rowMatchesReleaseFilter(
+  row: ResultSourceRow,
+  releaseFilter: string,
+  activeRelease?: Release | null,
+  activeApplication?: Application | null,
+  mappedRemoteApplicationId?: string,
+  mappedRemoteReleaseId?: string,
+  localReleaseByRemoteId?: Map<string, string>,
+) {
+  if (releaseFilter === 'all') return true
+  if (releaseFilter === activeRelease?.id) {
+    const releaseMatches = row.source === 'Remote'
+      ? Boolean(mappedRemoteReleaseId && row.releaseId === mappedRemoteReleaseId)
+      : row.releaseId === activeRelease.id
+    return releaseMatches && rowMatchesActiveApplication(row, activeRelease, activeApplication, mappedRemoteApplicationId)
+  }
+  return resultReleaseValue(row, localReleaseByRemoteId) === releaseFilter
+}
+
+function externalResultStatus(result: ExternalResultImport) {
+  const status = result.summary?.status
+  return typeof status === 'string' && status.trim() ? status : 'imported'
+}
+
+function externalResultNumber(result: ExternalResultImport, key: string) {
+  const value = result.summary?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function formatBrowserMetric(value?: number, suffix = '', digits = 1) {
@@ -353,25 +404,204 @@ function comparisonTableDeltaClass(delta: number | undefined, metric: Comparison
 
 function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTestArchive, onNavigate, activeApplication, activeRelease }: Props) {
   const api = useApi()
-  const testListParams = useMemo(() => activeApplication?.id && activeRelease?.id ? {
+  const [releaseFilter, setReleaseFilter] = useState(() => activeRelease?.id || 'all')
+  const testListParams = useMemo(() => activeApplication?.id ? {
     project_id: activeApplication.project_id,
     application_id: activeApplication.id,
-    release_id: activeRelease.id,
+    ...(activeRelease?.id && releaseFilter === activeRelease.id ? { release_id: activeRelease.id } : {}),
     summary: true,
     limit: 1000,
-  } : null, [activeApplication?.id, activeApplication?.project_id, activeRelease?.id])
+    offset: 0,
+  } : null, [activeApplication?.id, activeApplication?.project_id, activeRelease?.id, releaseFilter])
+  const listResultPage = useCallback(
+    (params: Parameters<typeof api.listTests>[0]) => api.listTests(params),
+    [api],
+  )
   const {
-    tests,
-    count: resultListCount,
+    tests: firstResultPage,
     total: resultListTotal,
-    offset: resultListOffset,
     error: listError,
     loading: resultsLoading,
     refreshing: resultsRefreshing,
+    updatedAt: resultListUpdatedAt,
     refresh,
-  } = useSharedTestList(testListParams, { loader: api.listTests, pollIntervalMs: 10000 })
-  const resultsTruncated = resultListOffset + resultListCount < resultListTotal
+  } = useSharedTestList(testListParams, { loader: listResultPage, pollIntervalMs: 10000 })
+  const resultCatalogScopeKey = useMemo(() => JSON.stringify(testListParams || {}), [testListParams])
+  const resultCatalogScopeKeyRef = useRef(resultCatalogScopeKey)
+  resultCatalogScopeKeyRef.current = resultCatalogScopeKey
+  const [resultCatalog, setResultCatalog] = useState<{
+    scopeKey: string
+    tests: TestSummary[]
+    total: number
+  }>({ scopeKey: '', tests: [], total: 0 })
+  const resultCatalogRef = useRef(resultCatalog)
+  const resultTailGenerationRef = useRef(0)
+  const resultTailScopeRef = useRef('')
+  const [resultTailLoading, setResultTailLoading] = useState(false)
+  const [resultTailError, setResultTailError] = useState('')
+  const commitResultCatalog = useCallback((next: typeof resultCatalog) => {
+    resultCatalogRef.current = next
+    setResultCatalog(next)
+  }, [])
+  const invalidateResultTailAfterDelete = useCallback((deletedIDs: string[]) => {
+    if (deletedIDs.length === 0) return
+    resultTailGenerationRef.current += 1
+    resultTailScopeRef.current = ''
+    setResultTailLoading(false)
+    setResultTailError('')
+
+    // The delete response is authoritative. Remove committed rows from the
+    // local catalog immediately and fence every older tail page so a response
+    // that was already in flight cannot merge a deleted result back in.
+    const deleted = new Set(deletedIDs)
+    const current = resultCatalogRef.current
+    const remaining = current.tests.filter(test => !deleted.has(test.id))
+    commitResultCatalog({
+      ...current,
+      tests: remaining,
+      total: Math.max(remaining.length, current.total - (current.tests.length - remaining.length)),
+    })
+  }, [commitResultCatalog])
+
+  useEffect(() => {
+    resultTailGenerationRef.current += 1
+    resultTailScopeRef.current = ''
+    commitResultCatalog({ scopeKey: resultCatalogScopeKey, tests: [], total: 0 })
+    setResultTailLoading(false)
+    setResultTailError('')
+  }, [commitResultCatalog, resultCatalogScopeKey])
+
+  useEffect(() => {
+    if (!testListParams || resultListUpdatedAt === null) return
+    const current = resultCatalogRef.current
+    const shouldReset = current.scopeKey !== resultCatalogScopeKey || resultListTotal < current.total
+    const testsByID = new Map<string, TestSummary>()
+    if (!shouldReset) current.tests.forEach(test => testsByID.set(test.id, test))
+    firstResultPage.forEach(test => testsByID.set(test.id, test))
+    if (testsByID.size > resultListTotal) {
+      testsByID.clear()
+      firstResultPage.forEach(test => testsByID.set(test.id, test))
+    }
+    const next = {
+      scopeKey: resultCatalogScopeKey,
+      tests: Array.from(testsByID.values()),
+      total: resultListTotal,
+    }
+    commitResultCatalog(next)
+    if (next.tests.length >= resultListTotal || resultTailScopeRef.current === resultCatalogScopeKey) {
+      if (next.tests.length >= resultListTotal) {
+        setResultTailLoading(false)
+        setResultTailError('')
+      }
+      return
+    }
+
+    const requestGeneration = ++resultTailGenerationRef.current
+    resultTailScopeRef.current = resultCatalogScopeKey
+    setResultTailLoading(true)
+    setResultTailError('')
+    void loadResultTestTail(listResultPage, testListParams, {
+      startOffset: firstResultPage.length,
+      total: resultListTotal,
+      onPage: (pageTests, nextTotal) => {
+        if (
+          requestGeneration !== resultTailGenerationRef.current
+          || resultTailScopeRef.current !== resultCatalogScopeKey
+        ) return
+        const latest = resultCatalogRef.current
+        const merged = new Map(latest.tests.map(test => [test.id, test]))
+        pageTests.forEach(test => {
+          if (!merged.has(test.id)) merged.set(test.id, test)
+        })
+        commitResultCatalog({
+          scopeKey: resultCatalogScopeKey,
+          tests: Array.from(merged.values()),
+          total: nextTotal,
+        })
+      },
+    }).catch(error => {
+      if (
+        requestGeneration === resultTailGenerationRef.current
+        && resultTailScopeRef.current === resultCatalogScopeKey
+      ) setResultTailError(getErrorMessage(error, 'Unable to load older results'))
+    }).finally(() => {
+      if (
+        requestGeneration === resultTailGenerationRef.current
+        && resultTailScopeRef.current === resultCatalogScopeKey
+      ) {
+        resultTailScopeRef.current = ''
+        setResultTailLoading(false)
+      }
+    })
+  }, [commitResultCatalog, firstResultPage, listResultPage, resultCatalogScopeKey, resultListTotal, resultListUpdatedAt, testListParams])
+
+  const tests = resultCatalog.scopeKey === resultCatalogScopeKey ? resultCatalog.tests : firstResultPage
+  const resultsTruncated = tests.length < resultListTotal
+  const externalImportsScopeKey = `${activeApplication?.project_id || activeRelease?.project_id || ''}\u0000${activeApplication?.id || ''}\u0000${releaseFilter}`
+  const externalImportsScopeKeyRef = useRef(externalImportsScopeKey)
+  externalImportsScopeKeyRef.current = externalImportsScopeKey
+  const externalImportsGenerationRef = useRef(0)
+  const externalImportsMountedRef = useRef(true)
+  const [externalImportsState, setExternalImportsState] = useState<{
+    scopeKey: string
+    imports: ExternalResultImport[]
+    error: string
+  }>({ scopeKey: '', imports: [], error: '' })
+  const [externalImportsLoadingScopeKey, setExternalImportsLoadingScopeKey] = useState('')
+  const externalImports = externalImportsState.scopeKey === externalImportsScopeKey ? externalImportsState.imports : EMPTY_EXTERNAL_IMPORTS
+  const externalImportsError = externalImportsState.scopeKey === externalImportsScopeKey ? externalImportsState.error : ''
+  const externalImportsLoading = externalImportsLoadingScopeKey === externalImportsScopeKey
+  const refreshExternalImports = useCallback(async () => {
+    const requestScopeKey = externalImportsScopeKey
+    const requestGeneration = ++externalImportsGenerationRef.current
+    if (!activeApplication?.id || !activeRelease?.id) {
+      setExternalImportsState({ scopeKey: requestScopeKey, imports: [], error: '' })
+      setExternalImportsLoadingScopeKey('')
+      return
+    }
+    setExternalImportsLoadingScopeKey(requestScopeKey)
+    const requestIsCurrent = () => externalImportsMountedRef.current
+      && requestGeneration === externalImportsGenerationRef.current
+      && externalImportsScopeKeyRef.current === requestScopeKey
+    try {
+      const imports = await loadAllExternalResultImports(params => api.listExternalResultImports(params), {
+        project_id: activeApplication.project_id || activeRelease.project_id,
+        application_id: activeApplication.id,
+        ...(releaseFilter === activeRelease.id ? { release_id: activeRelease.id } : {}),
+      }, {
+        isCurrent: requestIsCurrent,
+      })
+      if (imports === null || !requestIsCurrent()) return
+      setExternalImportsState({ scopeKey: requestScopeKey, imports, error: '' })
+    } catch (error) {
+      if (!requestIsCurrent()) return
+      setExternalImportsState({ scopeKey: requestScopeKey, imports: [], error: getErrorMessage(error, 'Unable to load imported results') })
+    } finally {
+      if (requestIsCurrent()) {
+        setExternalImportsLoadingScopeKey(current => current === requestScopeKey ? '' : current)
+      }
+    }
+  }, [activeApplication?.id, activeApplication?.project_id, activeRelease?.id, activeRelease?.project_id, api, externalImportsScopeKey, releaseFilter])
+
+  useEffect(() => {
+    externalImportsMountedRef.current = true
+    return () => {
+      externalImportsMountedRef.current = false
+      externalImportsGenerationRef.current += 1
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshExternalImports()
+  }, [refreshExternalImports])
+
+  const refreshLocalResults = useCallback(async () => {
+    await Promise.all([refresh(), refreshExternalImports()])
+  }, [refresh, refreshExternalImports])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deletedResultIds, setDeletedResultIds] = useState<Set<string>>(new Set())
+  const [deletingResultIds, setDeletingResultIds] = useState<Set<string>>(new Set())
+  const deletingResultIdsRef = useRef<Set<string>>(new Set())
   const [comparisonTestIds, setComparisonTestIds] = useState<string[]>([])
   const [comparisonTestSnapshots, setComparisonTestSnapshots] = useState<TestSummary[]>([])
   const [comparisonReports, setComparisonReports] = useState<Record<string, RunArchiveReport>>({})
@@ -387,44 +617,79 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
-  const [releaseFilter, setReleaseFilter] = useState('all')
-  const error = operationError || listError
+  const error = operationError || listError || resultTailError || externalImportsError
+  // Older local pages stream in behind the first page. Keep the usable first
+  // page visible while that background work continues.
+  const resultsSourcesLoading = resultsLoading || externalImportsLoading
   const openRemoteSettings = useCallback(() => {
     requestSettingsFocus('integrations')
     onNavigate?.('settings')
   }, [onNavigate])
 
   const libraryProjectId = activeRelease?.project_id || activeApplication?.project_id
-  const federation = useLibraryFederation({ kind: 'result', projectId: libraryProjectId, onRefreshLocal: () => refresh() })
+  const federation = useLibraryFederation({
+    kind: 'result',
+    projectId: libraryProjectId,
+    applicationId: activeApplication?.id,
+    releaseId: activeRelease?.id,
+    onRefreshLocal: refreshLocalResults,
+  })
   const {
     sourceFilter,
     localItems,
     remoteItems,
-    actionBlocked,
     actionBlockedReason,
+    transferBlockReasonForItem,
     pullRemoteItem,
     pushLocalItem,
     compareItems,
     hostItemForLocal,
     syncStatusForLocal,
     remoteItemHref,
+    selectedRemote,
   } = federation
+  const mappedRemoteApplicationId = activeApplication?.id
+    ? selectedRemote?.application_mappings?.[activeApplication.id]
+    : undefined
+  const mappedRemoteReleaseId = activeRelease?.id
+    ? selectedRemote?.release_mappings?.[activeRelease.id]
+    : undefined
+  const localReleaseByRemoteId = useMemo(() => {
+    const mapped = new Map<string, string>()
+    const ambiguous = new Set<string>()
+    Object.entries(selectedRemote?.release_mappings || {}).forEach(([localReleaseId, remoteReleaseId]) => {
+      const localID = localReleaseId.trim()
+      const remoteID = remoteReleaseId.trim()
+      if (!localID || !remoteID || ambiguous.has(remoteID)) return
+      const existing = mapped.get(remoteID)
+      if (existing && existing !== localID) {
+        mapped.delete(remoteID)
+        ambiguous.add(remoteID)
+        return
+      }
+      mapped.set(remoteID, localID)
+    })
+    return mapped
+  }, [selectedRemote?.release_mappings])
 
   useEffect(() => {
     setSelectedIds(new Set())
+    setDeletedResultIds(new Set())
+    setDeletingResultIds(new Set())
     setComparisonTestIds([])
     setComparisonTestSnapshots([])
     setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
     setReleaseFilter(activeRelease?.id || 'all')
-  }, [activeRelease?.id])
+  }, [activeApplication?.id, activeRelease?.id])
 
   const completed = useMemo(
     () =>
       tests.filter(test => {
+        if (deletedResultIds.has(test.id)) return false
         const status = resolveStatus(test, testStatuses)
         return isCompletedStatus(status)
       }),
-    [tests, testStatuses],
+    [deletedResultIds, tests, testStatuses],
   )
 
   const localCatalogById = useMemo(() => {
@@ -449,13 +714,45 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           status: resolveStatus(test, testStatuses),
           startedAt: test.start_time || test.started_at || test.created_at,
           duration: test.duration,
-          releaseId: test.release_id,
+          applicationId: item.application_id || test.application_id,
+          releaseId: test.release_id || item.release_id,
           releaseName: item.release_name || (test.release_id === activeRelease?.id ? activeRelease?.name : undefined),
           hasArchive: Boolean(test.archive),
           archiveCount: test.archive?.transaction_count,
           totalVusers: test.total_vusers,
           groupCount: test.groups?.length || 1,
           test,
+          item,
+        })
+      })
+      externalImports.forEach(imported => {
+        const item: LibraryCatalogItem = {
+          kind: 'result',
+          id: imported.id,
+          name: imported.name,
+          project_id: imported.project_id,
+          application_id: imported.application_id,
+          release_id: imported.release_id,
+          status: externalResultStatus(imported),
+          content_hash: imported.content_hash,
+          execution_run_date: imported.created_at,
+          updated_at: imported.created_at,
+          has_archive: imported.has_archive,
+        }
+        rows.push({
+          rowKey: `external:${imported.id}`,
+          source: 'Local',
+          syncStatus: syncStatusForLocal(imported.id),
+          name: imported.name,
+          status: externalResultStatus(imported),
+          startedAt: imported.created_at,
+          applicationId: imported.application_id,
+          releaseId: imported.release_id,
+          releaseName: imported.release_id === activeRelease?.id ? activeRelease?.name : undefined,
+          hasArchive: Boolean(imported.has_archive),
+          archiveCount: externalResultNumber(imported, 'transactions'),
+          totalVusers: externalResultNumber(imported, 'total_vusers'),
+          externalImport: imported,
           item,
         })
       })
@@ -472,6 +769,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
             name: item.name || item.id,
             status: item.status || 'Unknown',
             startedAt: item.execution_run_date || item.updated_at,
+            applicationId: item.application_id,
             releaseId: item.release_id,
             releaseName: item.release_name,
             hasArchive: Boolean(item.has_archive),
@@ -481,12 +779,20 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     }
 
     return rows
-  }, [activeRelease?.id, activeRelease?.name, completed, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+  }, [activeRelease?.id, activeRelease?.name, completed, externalImports, localCatalogById, remoteItems, sourceFilter, syncStatusForLocal, testStatuses])
+
+  const applicationQualifiedRows = useMemo(
+    () => sourceRows.filter(row => (
+      rowMatchesActiveApplication(row, activeRelease, activeApplication, mappedRemoteApplicationId)
+      && (row.source === 'Local' || Boolean(row.releaseId && localReleaseByRemoteId.has(row.releaseId)))
+    )),
+    [activeApplication, activeRelease, localReleaseByRemoteId, mappedRemoteApplicationId, sourceRows],
+  )
 
   const releaseOptions = useMemo(() => {
     const options = new Map<string, string>()
-    sourceRows.forEach(row => {
-      options.set(resultReleaseValue(row), resultReleaseLabel(row))
+    applicationQualifiedRows.forEach(row => {
+      options.set(resultReleaseValue(row, localReleaseByRemoteId), resultReleaseLabel(row))
     })
     if (activeRelease?.id) {
       options.set(activeRelease.id, activeRelease.name)
@@ -494,12 +800,12 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     return Array.from(options.entries())
       .map(([value, label]) => ({ value, label }))
       .sort((left, right) => left.label.localeCompare(right.label))
-  }, [activeRelease?.id, activeRelease?.name, sourceRows])
+  }, [activeRelease?.id, activeRelease?.name, applicationQualifiedRows, localReleaseByRemoteId])
 
   const filteredRows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase()
-    return sourceRows.filter(row => {
-      if (!rowMatchesReleaseFilter(row, releaseFilter, activeRelease)) return false
+    return applicationQualifiedRows.filter(row => {
+      if (!rowMatchesReleaseFilter(row, releaseFilter, activeRelease, activeApplication, mappedRemoteApplicationId, mappedRemoteReleaseId, localReleaseByRemoteId)) return false
       if (statusFilter !== 'all' && row.status.toLowerCase() !== statusFilter) return false
       if (archiveFilter === 'ready' && !row.hasArchive) return false
       if (archiveFilter === 'pending' && row.hasArchive) return false
@@ -527,7 +833,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         .toLowerCase()
       return haystack.includes(normalizedSearch)
     })
-  }, [activeRelease, archiveFilter, releaseFilter, search, sourceRows, statusFilter])
+  }, [activeApplication, activeRelease, applicationQualifiedRows, archiveFilter, localReleaseByRemoteId, mappedRemoteApplicationId, mappedRemoteReleaseId, releaseFilter, search, statusFilter])
 
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((a, b) => {
@@ -587,9 +893,22 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     ? Math.max(0, rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end)
     : 0
 
-  const selectedTests = useMemo(
-    () => sortedRows.flatMap(row => (row.test && selectedIds.has(row.test.id) ? [row.test] : [])),
+  const visibleSelectedIds = useMemo(
+    () => sortedRows.flatMap(row => row.test && selectedIds.has(row.test.id) ? [row.test.id] : []),
     [selectedIds, sortedRows],
+  )
+
+  useEffect(() => {
+    setSelectedIds(current => {
+      const visible = new Set(visibleSelectedIds)
+      if (current.size === visible.size && Array.from(current).every(id => visible.has(id))) return current
+      return visible
+    })
+  }, [visibleSelectedIds])
+
+  const selectedTests = useMemo(
+    () => sortedRows.flatMap(row => (row.test && visibleSelectedIds.includes(row.test.id) ? [row.test] : [])),
+    [sortedRows, visibleSelectedIds],
   )
 
   const selectedArchivedTests = useMemo(
@@ -883,36 +1202,85 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
   }
 
   const deleteResult = async (id: string) => {
+    if (deletingResultIdsRef.current.has(id)) return
     if (!confirm('Delete this scenario result?')) return
-    await api.deleteTest(id)
-    if (comparisonTestIds.includes(id)) {
-      setComparisonTestIds([])
-      setComparisonTestSnapshots([])
-      setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
+    const requestScopeKey = resultCatalogScopeKey
+    deletingResultIdsRef.current.add(id)
+    setDeletingResultIds(new Set(deletingResultIdsRef.current))
+    setError('')
+    try {
+      await api.deleteTest(id)
+      if (resultCatalogScopeKeyRef.current === requestScopeKey) {
+        invalidateResultTailAfterDelete([id])
+        setDeletedResultIds(current => new Set(current).add(id))
+        if (comparisonTestIds.includes(id)) {
+          setComparisonTestIds([])
+          setComparisonTestSnapshots([])
+          setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
+        }
+        setSelectedIds(prev => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }
+    } catch (error: unknown) {
+      if (resultCatalogScopeKeyRef.current === requestScopeKey) {
+        setError(getErrorMessage(error, 'Unable to delete the result'))
+      }
+    } finally {
+      deletingResultIdsRef.current.delete(id)
+      setDeletingResultIds(new Set(deletingResultIdsRef.current))
+      await refresh()
     }
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
-    await refresh()
   }
 
   const deleteSelected = async () => {
-    if (!confirm(`Delete ${selectedIds.size} selected results?`)) return
-    await Promise.all(Array.from(selectedIds).map(id => api.deleteTest(id)))
-    if (Array.from(selectedIds).some(id => comparisonTestIds.includes(id))) {
+    const ids = visibleSelectedIds.filter(id => !deletingResultIdsRef.current.has(id))
+    if (ids.length === 0 || !confirm(`Delete ${ids.length} selected results?`)) return
+    const requestScopeKey = resultCatalogScopeKey
+    ids.forEach(id => deletingResultIdsRef.current.add(id))
+    setDeletingResultIds(new Set(deletingResultIdsRef.current))
+    setError('')
+    const outcomes = await Promise.allSettled(ids.map(id => api.deleteTest(id)))
+    const deletedIDs = ids.filter((_, index) => outcomes[index]?.status === 'fulfilled')
+    const failed = outcomes.flatMap((outcome, index) => outcome.status === 'rejected'
+      ? [{ id: ids[index], reason: getErrorMessage(outcome.reason, 'delete failed') }]
+      : [])
+    if (deletedIDs.length > 0 && resultCatalogScopeKeyRef.current === requestScopeKey) {
+      invalidateResultTailAfterDelete(deletedIDs)
+      setDeletedResultIds(current => {
+        const next = new Set(current)
+        deletedIDs.forEach(id => next.add(id))
+        return next
+      })
+    }
+    if (resultCatalogScopeKeyRef.current === requestScopeKey && deletedIDs.some(id => comparisonTestIds.includes(id))) {
       setComparisonTestIds([])
       setComparisonTestSnapshots([])
       setComparisonActionFilter(ALL_COMPARISON_ACTIONS)
     }
-    setSelectedIds(new Set())
+    if (resultCatalogScopeKeyRef.current === requestScopeKey) {
+      setSelectedIds(current => {
+        const next = new Set(current)
+        deletedIDs.forEach(id => next.delete(id))
+        return next
+      })
+    }
+    ids.forEach(id => deletingResultIdsRef.current.delete(id))
+    setDeletingResultIds(new Set(deletingResultIdsRef.current))
     await refresh()
+    if (failed.length > 0 && resultCatalogScopeKeyRef.current === requestScopeKey) {
+      const failureSummary = failed.slice(0, 3).map(item => `${item.id}: ${item.reason}`).join('; ')
+      const suffix = failed.length > 3 ? `; ${failed.length - 3} more failed` : ''
+      setError(`Deleted ${deletedIDs.length} of ${ids.length} selected results. ${failureSummary}${suffix}`)
+    }
   }
 
-  const showResultsLoadStatus = resultsLoading || resultsRefreshing || comparisonCards.length >= 2
+  const showResultsLoadStatus = resultsSourcesLoading || resultTailLoading || resultsRefreshing || comparisonCards.length >= 2
   const showComparisonLoadedHint = comparisonCards.length >= 2
-  const showDeleteSelectedAction = selectedIds.size > 0
+  const showDeleteSelectedAction = visibleSelectedIds.length > 0
+  const selectedDeletePending = visibleSelectedIds.some(id => deletingResultIds.has(id))
   const showResultsActions = showResultsLoadStatus || showComparisonLoadedHint || showDeleteSelectedAction
 
   const toggleBaselinePin = useCallback(async (test: TestSummary, event: React.MouseEvent) => {
@@ -930,12 +1298,29 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
 
   const renderResultRow = (row: ResultSourceRow, measureElement?: (element: HTMLTableRowElement | null) => void, dataIndex?: number) => {
     const test = row.test
+    const externalImport = row.externalImport
     const item = row.item
-    const hostItem = test ? hostItemForLocal(test.id) : undefined
+    const hostItem = row.source === 'Local' && item ? hostItemForLocal(item.id) : undefined
     const href = row.source === 'Remote' && item ? remoteItemHref(item) : ''
+    const externalArchiveHref = externalImport?.has_archive
+      ? `/api/v1/library/results/${encodeURIComponent(externalImport.id)}/archive`
+      : ''
     const localItemID = item?.local_item_id
+    const resultDestination = row.source === 'Remote'
+      ? {
+          applicationId: activeApplication?.id,
+          releaseId: row.releaseId ? localReleaseByRemoteId.get(row.releaseId) : undefined,
+        }
+      : {
+          applicationId: row.applicationId || activeApplication?.id,
+          releaseId: row.releaseId || activeRelease?.id,
+        }
+    const rowActionBlockedReason = item
+      ? transferBlockReasonForItem(item, resultDestination)
+      : actionBlockedReason
+    const rowActionBlocked = Boolean(rowActionBlockedReason)
     const transferBlockedByConflict = row.syncStatus === 'conflict'
-    const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : actionBlockedReason
+    const transferBlockTitle = transferBlockedByConflict ? 'Compare this conflict before transferring.' : rowActionBlockedReason
     return (
       <tr
         key={row.rowKey}
@@ -988,7 +1373,9 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         <td className="cell-muted">{row.startedAt ? formatDate(row.startedAt) : '-'}</td>
         <td className="cell-muted">{row.duration || '-'}</td>
         <td className="cell-muted">
-          {test ? (test.archive ? `${test.archive.transaction_count} tx` : 'Pending') : (row.hasArchive ? 'Ready' : '-')}
+          {test
+            ? (test.archive ? `${test.archive.transaction_count} tx` : 'Pending')
+            : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
             <>
               <br />
@@ -1011,14 +1398,14 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                 <button className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); (onOpenCommandCenter ?? onSelectTest)(test.id) }}>
                   Run Dashboard
                 </button>
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)}>
-                  Delete
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={event => handleDelete(test.id, event)} disabled={deletingResultIds.has(test.id)}>
+                  {deletingResultIds.has(test.id) ? 'Deleting…' : 'Delete'}
                 </button>
                 <button
                   className="btn btn-sm btn-secondary"
                   type="button"
                   onClick={event => { event.stopPropagation(); void pushLocalItem(item ?? catalogItemForTest(test)) }}
-                  disabled={actionBlocked || transferBlockedByConflict}
+                  disabled={rowActionBlocked || transferBlockedByConflict}
                   title={transferBlockTitle}
                 >
                   Push
@@ -1029,13 +1416,32 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                   </button>
                 )}
               </>
+            ) : externalImport && item ? (
+              <>
+                {externalArchiveHref && (
+                  <DesktopApiResourceLink
+                    className="btn btn-sm btn-secondary"
+                    href={externalArchiveHref}
+                    filename={`${externalImport.name || externalImport.id}-${externalImport.id}.zip`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Archive
+                  </DesktopApiResourceLink>
+                )}
+                {hostItem?.local_item_id && (
+                  <button className="btn btn-sm btn-ghost" type="button" onClick={event => { event.stopPropagation(); void compareItems(externalImport.id, hostItem) }}>
+                    Compare
+                  </button>
+                )}
+              </>
             ) : item ? (
               <>
                 <button
                   className="btn btn-sm btn-secondary"
                   type="button"
-                  onClick={event => { event.stopPropagation(); void pullRemoteItem(item) }}
-                  disabled={actionBlocked || transferBlockedByConflict}
+                  onClick={event => { event.stopPropagation(); void pullRemoteItem(item, resultDestination) }}
+                  disabled={rowActionBlocked || transferBlockedByConflict}
                   title={transferBlockTitle}
                 >
                   Pull
@@ -1085,16 +1491,16 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         {showResultsActions && (
           <div className="results-actions">
             {showResultsLoadStatus && (
-              <span className={`results-load-status${resultsLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
-                {resultsLoading ? 'Loading results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
+              <span className={`results-load-status${resultsSourcesLoading || resultTailLoading || resultsRefreshing ? '' : ' idle'}`} aria-live="polite">
+                {resultsSourcesLoading ? 'Loading results...' : resultTailLoading ? 'Loading older results...' : resultsRefreshing ? 'Refreshing...' : 'Results refreshed'}
               </span>
             )}
             {showComparisonLoadedHint && (
               <span className="results-compare-hint">Comparison loaded</span>
             )}
             {showDeleteSelectedAction && (
-              <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected}>
-                Delete Selected ({selectedIds.size})
+              <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} onClick={deleteSelected} disabled={selectedDeletePending}>
+                Delete Selected ({visibleSelectedIds.length})
               </button>
             )}
           </div>
@@ -1475,30 +1881,30 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                 </label>
               </>
             )}
-            summaryText={resultsLoading
+            summaryText={resultsSourcesLoading
               ? 'Loading local and remote result sources...'
               : `${filteredRows.length} result source${filteredRows.length === 1 ? '' : 's'} for ${activeRelease.name}.`}
           />
           {resultsTruncated && (
             <p className="results-truncation-status" role="status" aria-live="polite">
-              Showing the newest {resultListCount.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Search and filters apply to this loaded set.
+              Loaded {tests.length.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Older results continue loading in the background.
             </p>
           )}
           <div className="results-table-selection-toolbar">
             <div className="results-table-selection-summary">
-              <span>{selectedIds.size} selected</span>
+              <span>{visibleSelectedIds.length} selected</span>
               <strong>{selectionState || `Select 2-${MAX_COMPARISON_RUNS} archived local results to compare`}</strong>
             </div>
             <div className="results-table-selection-actions">
               <button className="btn btn-secondary" onClick={runSelectedComparison} disabled={!canCompareSelected}>
                 Run Comparison
               </button>
-              <button className="btn btn-ghost" onClick={() => setSelectedIds(new Set())} disabled={selectedIds.size === 0}>
+              <button className="btn btn-ghost" onClick={() => setSelectedIds(new Set())} disabled={visibleSelectedIds.length === 0}>
                 Clear
               </button>
             </div>
           </div>
-          {resultsLoading ? (
+          {resultsSourcesLoading ? (
             <div className="empty-card results-loading-card" role="status" aria-live="polite" aria-busy="true">
               <span className="results-loading-spinner" aria-hidden="true" />
               <div>

@@ -28,6 +28,13 @@ function PollingHarness({ enabled = true, testId = 'test-1' }: { enabled?: boole
       <span data-testid="status">{model.test?.status || 'none'}</span>
       <span data-testid="archive">{model.test?.archive ? 'ready' : 'pending'}</span>
       <span data-testid="error">{model.error || 'none'}</span>
+      <span data-testid="archive-timeout">{model.archiveFinalizationTimedOut ? 'timed-out' : 'polling'}</span>
+      <span data-testid="archive-check-error">{model.archiveCheckError || 'none'}</span>
+      {model.archiveFinalizationTimedOut && (
+        <button type="button" onClick={() => { void model.checkArchiveAgain() }} disabled={model.archiveCheckPending}>
+          {model.archiveCheckPending ? 'Checking…' : 'Check again'}
+        </button>
+      )}
     </div>
   )
 }
@@ -150,11 +157,44 @@ describe('useExecutionTestPolling', () => {
     })
     const callsAtTimeout = apiMock.getTest.mock.calls.length
     expect(callsAtTimeout).toBeGreaterThan(1)
+    expect(readTestId('archive-timeout')).toBe('timed-out')
+    expect(container.textContent).toContain('Check again')
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(EXECUTION_POLL_INTERVAL_MS * 3)
     })
     expect(apiMock.getTest).toHaveBeenCalledTimes(callsAtTimeout)
+  })
+
+  it('checks once on demand after the polling window and discovers a late archive', async () => {
+    let archiveReady = false
+    apiMock.getTest.mockImplementation(async () => buildTest('FAILED', archiveReady))
+
+    await act(async () => {
+      root.render(<PollingHarness />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS)
+    })
+    expect(readTestId('archive-timeout')).toBe('timed-out')
+
+    const callsAtTimeout = apiMock.getTest.mock.calls.length
+    archiveReady = true
+    const checkAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Check again')
+    expect(checkAgain).toBeDefined()
+    await act(async () => {
+      checkAgain?.click()
+      checkAgain?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.getTest).toHaveBeenCalledTimes(callsAtTimeout + 1)
+    expect(readTestId('archive')).toBe('ready')
+    expect(readTestId('archive-timeout')).toBe('polling')
+    expect(container.textContent).not.toContain('Check again')
   })
 
   it('does not load when disabled', async () => {

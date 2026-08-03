@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, createRef } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import ProjectPoolQuotasCard from './ProjectPoolQuotasCard'
+import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
 import { Project } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -21,6 +21,10 @@ let container: HTMLElement
 let root: Root
 
 beforeEach(() => {
+  fleetApiMock.listFleetPools.mockResolvedValue({
+    fleet_pools: [{ id: 'pool-east', name: 'East', status: 'active' }],
+    count: 1,
+  })
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -49,6 +53,29 @@ function project(overrides: Partial<Project> = {}): Project {
 }
 
 describe('ProjectPoolQuotasCard', () => {
+  it('offers pools beyond the first 100 catalog records', async () => {
+    const pools = Array.from({ length: 101 }, (_, index) => ({
+      id: `pool-${index}`,
+      name: `Pool ${index}`,
+      status: 'active',
+    }))
+    fleetApiMock.listFleetPools.mockImplementation(async ({ limit = 100, offset = 0 } = {}) => ({
+      fleet_pools: pools.slice(offset, offset + limit),
+      count: pools.length,
+      limit,
+      offset,
+    }))
+
+    await act(async () => {
+      root.render(<ProjectPoolQuotasCard project={project()} canManage />)
+    })
+    await flush()
+
+    const options = Array.from(container.querySelectorAll<HTMLOptionElement>('select[aria-label="Add pool quota"] option'))
+    expect(options.some(option => option.value === 'pool-100')).toBe(true)
+    expect(fleetApiMock.listFleetPools).toHaveBeenNthCalledWith(2, { limit: 100, offset: 100 })
+  })
+
   it('adds a per-pool quota and saves it while preserving other settings', async () => {
     projectApiMock.updateProject.mockResolvedValue(project())
     await act(async () => {
@@ -96,5 +123,42 @@ describe('ProjectPoolQuotasCard', () => {
     expect(container.textContent).toContain('East')
     const concurrentInput = container.querySelectorAll<HTMLInputElement>('input[type="number"]')[1]
     expect(concurrentInput?.value).toBe('3')
+  })
+
+  it('reports, preserves, and discards an in-progress quota draft', async () => {
+    const controller = createRef<ProjectPoolQuotasDraftController>()
+    const onDirtyChange = vi.fn()
+    const initial = project({ settings: { pool_quotas: { 'pool-east': { max_vusers: 100 } } } } as Partial<Project>)
+    await act(async () => {
+      root.render(<ProjectPoolQuotasCard ref={controller} project={initial} canManage onDirtyChange={onDirtyChange} />)
+    })
+    await flush()
+
+    const input = container.querySelector<HTMLInputElement>('input[type="number"]')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(input, '250')
+      input?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flush()
+    expect(controller.current?.isDirty()).toBe(true)
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true)
+
+    // A background project refresh must not silently replace the draft.
+    await act(async () => {
+      root.render(
+        <ProjectPoolQuotasCard
+          ref={controller}
+          project={project({ settings: { pool_quotas: { 'pool-east': { max_vusers: 150 } } } } as Partial<Project>)}
+          canManage
+          onDirtyChange={onDirtyChange}
+        />,
+      )
+    })
+    expect(container.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe('250')
+
+    await act(async () => controller.current?.discard())
+    expect(controller.current?.isDirty()).toBe(false)
+    expect(container.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe('100')
   })
 })

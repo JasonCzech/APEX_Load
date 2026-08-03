@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AccessPage from './AccessPage'
 import { downloadBlob } from '../utils/fileUtils'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -21,6 +22,8 @@ const apiMock = {
   updateAuthUser: vi.fn(),
   enableAuthUser: vi.fn(),
   disableAuthUser: vi.fn(),
+  revokeAuthUserSessions: vi.fn(),
+  deleteAuthUser: vi.fn(),
   createAuthUserBinding: vi.fn(),
   deleteAuthUserBinding: vi.fn(),
   getAuthUserActivity: vi.fn(),
@@ -51,6 +54,16 @@ async function flushPromises() {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
 
 function findButton(container: HTMLElement, label: string): HTMLButtonElement | undefined {
@@ -244,12 +257,16 @@ describe('AccessPage', () => {
       email: 'alice.updated@example.com',
       display_name: 'Alice Updated',
       active: true,
-      bindings: [],
+      bindings: [
+        { id: 'binding-1', user_id: 'user-1', scope_type: 'project', scope_id: 'project-1', role: 'editor', created_at: '2026-05-16T00:00:00Z', updated_at: '2026-05-16T00:00:00Z' },
+      ],
       created_at: '2026-05-16T00:00:00Z',
       updated_at: '2026-05-16T05:00:00Z',
     })
     apiMock.enableAuthUser.mockResolvedValue({})
     apiMock.disableAuthUser.mockResolvedValue({})
+    apiMock.revokeAuthUserSessions.mockResolvedValue({})
+    apiMock.deleteAuthUser.mockResolvedValue({ deleted: 'user-1' })
     apiMock.createAuthUserBinding.mockResolvedValue({})
     apiMock.deleteAuthUserBinding.mockResolvedValue({ deleted: 'binding-1' })
     apiMock.getAuthUserActivity.mockResolvedValue({
@@ -556,6 +573,253 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('recent access denial')
   })
 
+  it('guards user onboarding and service-account creation drafts across workspace tabs', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    await clickButton(container, 'Onboard Users')
+    const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
+    expect(subjectInput).toBeDefined()
+    if (!subjectInput) return
+    changeInput(subjectInput, 'draft-user')
+
+    await clickButton(container, 'Service Accounts', true)
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('User onboarding form has unsaved changes')
+    await clickButton(container, 'Keep editing')
+    expect(inputByPlaceholder(container, 'oidc-subject-or-upstream-user')?.value).toBe('draft-user')
+
+    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Discard changes')
+    expect(container.querySelector('section[aria-label="Service accounts access workspace"]')).not.toBeNull()
+
+    await clickButton(container, 'Generate Key')
+    // The preset itself is the baseline and should not produce a false-positive guard.
+    await clickButton(container, 'Users', true)
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Generate Key')
+    const accountNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
+    expect(accountNameInput).toBeDefined()
+    if (!accountNameInput) return
+    changeInput(accountNameInput, 'Draft automation key')
+
+    await clickButton(container, 'Users', true)
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Service-account creation form has unsaved changes')
+    await clickButton(container, 'Save changes')
+    await flushPromises()
+    expect(apiMock.createAuthServiceAccount).toHaveBeenCalledWith(expect.objectContaining({ name: 'Draft automation key' }))
+    expect(container.querySelector('section[aria-label="Users access workspace"]')).not.toBeNull()
+  })
+
+  it('guards user and service-account edit drafts when switching rows', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    const userManagement = container.querySelector('.access-user-management') as HTMLElement | null
+    expect(userManagement).not.toBeNull()
+    if (!userManagement) return
+    await clickScopedButton(userManagement, 'Edit')
+    const editManagement = container.querySelector('.access-user-management') as HTMLElement | null
+    const profileInputs = editManagement?.querySelectorAll<HTMLInputElement>('.access-form-grid input')
+    expect(profileInputs?.length).toBe(3)
+    if (!profileInputs) return
+    changeInput(profileInputs[2], 'Alice Draft')
+
+    apiMock.listAuthUsers.mockResolvedValueOnce({
+      users: [{
+        id: 'user-2', subject: 'bob', email: 'bob@example.com', display_name: 'Bob Viewer', active: false,
+        bindings: [{ id: 'binding-2', user_id: 'user-2', scope_type: 'domain', scope_id: 'domain-1', role: 'viewer', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }],
+        created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z', disabled_at: '2026-05-16T00:00:00Z',
+      }],
+      count: 1,
+      total: 1,
+    })
+    const searchInput = inputByPlaceholder(container, 'name, email, role, scope')
+    expect(searchInput).toBeDefined()
+    if (!searchInput) return
+    changeInput(searchInput, 'bob')
+    await flushPromises()
+    expect(container.querySelectorAll<HTMLInputElement>('.access-user-management .access-form-grid input')[2]?.value).toBe('Alice Draft')
+
+    await clickButton(container, 'Bob Viewer')
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('User editor has unsaved changes')
+    await clickButton(container, 'Save changes')
+    await flushPromises()
+    expect(apiMock.updateAuthUser).toHaveBeenCalledWith('user-1', {
+      subject: 'alice',
+      email: 'alice@example.com',
+      display_name: 'Alice Draft',
+    })
+    expect(container.querySelector('aside[aria-label="Selected user details"]')?.textContent).toContain('Bob Viewer')
+
+    await clickButton(container, 'Service Accounts', true)
+    const accountInspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
+    expect(accountInspector).not.toBeNull()
+    if (!accountInspector) return
+    await clickScopedButton(accountInspector, 'Edit')
+    const accountEditName = container.querySelector('aside[aria-label="Edit service account"] input') as HTMLInputElement | null
+    expect(accountEditName).not.toBeNull()
+    if (!accountEditName) return
+    changeInput(accountEditName, 'Nightly CI Draft')
+
+    await clickButton(container, 'API Reporter')
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Service-account editor has unsaved changes')
+    await clickButton(container, 'Discard changes')
+    expect(container.querySelector('aside[aria-label="Selected service account details"]')?.textContent).toContain('API Reporter')
+  })
+
+  it('keeps a guard open when draft validation prevents saving', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await clickButton(container, 'Onboard Users')
+    const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
+    const emailInput = inputByPlaceholder(container, 'person@example.com')
+    expect(subjectInput).toBeDefined()
+    expect(emailInput).toBeDefined()
+    if (!subjectInput || !emailInput) return
+    changeInput(subjectInput, 'invalid-email-user')
+    changeInput(emailInput, 'not-an-email')
+
+    await clickButton(container, 'Service Accounts', true)
+    await clickButton(container, 'Save changes')
+    await flushPromises()
+
+    expect(apiMock.onboardAuthUser).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Save did not complete')
+    expect(container.querySelector('section[aria-label="Users access workspace"]')).not.toBeNull()
+  })
+
+  it('ignores out-of-order user-list and access-review responses', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+
+    const aliceRequest = deferred<{ users: Array<{ id: string; subject: string; email: string; display_name: string; active: boolean; bindings: never[]; created_at: string; updated_at: string }>; count: number; total: number }>()
+    const bobRequest = deferred<{ users: Array<{ id: string; subject: string; email: string; display_name: string; active: boolean; bindings: never[]; created_at: string; updated_at: string }>; count: number; total: number }>()
+    apiMock.listAuthUsers
+      .mockReturnValueOnce(aliceRequest.promise)
+      .mockReturnValueOnce(bobRequest.promise)
+    const searchInput = inputByPlaceholder(container, 'name, email, role, scope')
+    expect(searchInput).toBeDefined()
+    if (!searchInput) return
+    changeInput(searchInput, 'alice')
+    changeInput(searchInput, 'bob')
+    await act(async () => {
+      bobRequest.resolve({
+        users: [{ id: 'user-bob-new', subject: 'bob-new', email: 'bob.new@example.com', display_name: 'Bob New', active: true, bindings: [], created_at: '', updated_at: '2026-06-01T00:00:00Z' }],
+        count: 1,
+        total: 1,
+      })
+      await bobRequest.promise
+    })
+    await act(async () => {
+      aliceRequest.resolve({
+        users: [{ id: 'user-alice-old', subject: 'alice-old', email: 'alice.old@example.com', display_name: 'Alice Old', active: true, bindings: [], created_at: '', updated_at: '2026-05-01T00:00:00Z' }],
+        count: 1,
+        total: 1,
+      })
+      await aliceRequest.promise
+    })
+    await flushPromises()
+    expect(tablePrimaryTexts(container)).toEqual(['Bob New'])
+
+    const oldReview = deferred<{ generated_at: string; stale_after_days: number; expiring_within_days: number; users: never[]; service_accounts: never[]; summary: Record<string, number>; recent_denials: number; recent_denial_window_hours: number }>()
+    const newReview = deferred<{ generated_at: string; stale_after_days: number; expiring_within_days: number; users: never[]; service_accounts: never[]; summary: Record<string, number>; recent_denials: number; recent_denial_window_hours: number }>()
+    apiMock.getAccessReview
+      .mockReturnValueOnce(oldReview.promise)
+      .mockReturnValueOnce(newReview.promise)
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts={false} accessReviewRefreshSignal={1} />)
+    })
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity canManageServiceAccounts={false} accessReviewRefreshSignal={2} />)
+    })
+    await act(async () => {
+      newReview.resolve({ generated_at: '2026-06-02T00:00:00Z', stale_after_days: 90, expiring_within_days: 14, users: [], service_accounts: [], summary: {}, recent_denials: 2, recent_denial_window_hours: 24 })
+      await newReview.promise
+    })
+    await act(async () => {
+      oldReview.resolve({ generated_at: '2026-06-01T00:00:00Z', stale_after_days: 90, expiring_within_days: 14, users: [], service_accounts: [], summary: {}, recent_denials: 1, recent_denial_window_hours: 24 })
+      await oldReview.promise
+    })
+    await flushPromises()
+    expect(container.querySelector('.access-attention-badge')?.textContent).toBe('2')
+  })
+
+  it('does not let stale list refreshes revert or resurrect account mutations', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
+    })
+    await flushPromises()
+
+    apiMock.rotateAuthServiceAccount.mockResolvedValueOnce({
+      service_account: {
+        id: 'svc-1', name: 'Nightly CI Rotated', active: true, global_roles: ['viewer'], scopes: ['tests:run'],
+        created_at: '2026-05-16T00:00:00Z', updated_at: '2026-05-19T00:00:00Z',
+      },
+      api_key: 'srk_authoritative',
+    })
+    const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
+    expect(inspector).not.toBeNull()
+    if (!inspector) return
+    await clickScopedButton(inspector, 'Rotate Key')
+    await flushPromises()
+    expect(tablePrimaryTexts(container)).toContain('Nightly CI Rotated')
+
+    const rotatedInspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
+    expect(rotatedInspector).not.toBeNull()
+    if (!rotatedInspector) return
+    await clickScopedButton(rotatedInspector, 'Delete')
+    await flushPromises()
+    expect(tablePrimaryTexts(container)).not.toContain('Nightly CI')
+    expect(tablePrimaryTexts(container)).not.toContain('Nightly CI Rotated')
+    expect(tablePrimaryTexts(container)).toContain('API Reporter')
+  })
+
+  it('keeps an onboarded user visible while the users list is still stale', async () => {
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity={false} canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+    await clickButton(container, 'Onboard Users')
+    const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
+    const emailInput = inputByPlaceholder(container, 'person@example.com')
+    const nameInput = inputByPlaceholder(container, 'Jordan Lee')
+    expect(subjectInput).toBeDefined()
+    expect(emailInput).toBeDefined()
+    expect(nameInput).toBeDefined()
+    if (!subjectInput || !emailInput || !nameInput) return
+    changeInput(subjectInput, 'cara')
+    changeInput(emailInput, 'cara@example.com')
+    changeInput(nameInput, 'Cara QA')
+
+    await clickButton(container, 'Create User')
+    await flushPromises()
+
+    expect(tablePrimaryTexts(container)).toContain('Cara QA')
+    expect(container.textContent).toContain('3 users')
+  })
+
   it('sorts, filters, selects, and performs service-account lifecycle actions', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => {
@@ -601,6 +865,62 @@ describe('AccessPage', () => {
     await clickScopedButton(inspector, 'Delete')
     await flushPromises()
     expect(apiMock.deleteAuthServiceAccount).toHaveBeenCalledWith('svc-1')
+  })
+
+  it('runs lifecycle mutations single-flight and keeps the committed account when its refresh fails', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const rotation = deferred<{
+      service_account: {
+        id: string
+        name: string
+        active: boolean
+        global_roles: string[]
+        scopes: string[]
+        created_at: string
+        updated_at: string
+      }
+      api_key: string
+    }>()
+    apiMock.rotateAuthServiceAccount.mockReturnValueOnce(rotation.promise)
+
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
+    })
+    await flushPromises()
+
+    const inspector = container.querySelector('aside[aria-label="Selected service account details"]') as HTMLElement | null
+    const rotateButton = inspector ? findButton(inspector, 'Rotate Key') : undefined
+    expect(rotateButton).toBeDefined()
+    if (!rotateButton) return
+
+    act(() => {
+      rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      rotateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(apiMock.rotateAuthServiceAccount).toHaveBeenCalledTimes(1)
+    expect(window.confirm).toHaveBeenCalledTimes(1)
+
+    apiMock.listAuthServiceAccounts.mockRejectedValueOnce(new Error('account refresh failed'))
+    await act(async () => {
+      rotation.resolve({
+        service_account: {
+          id: 'svc-1',
+          name: 'Nightly CI Rotated',
+          active: true,
+          global_roles: ['viewer'],
+          scopes: ['tests:run'],
+          created_at: '2026-05-16T00:00:00Z',
+          updated_at: '2026-05-19T00:00:00Z',
+        },
+        api_key: 'srk_single_flight',
+      })
+      await rotation.promise
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Nightly CI Rotated')
+    expect(container.textContent).toContain('account refresh failed')
+    expect(findButton(container, 'Retry accounts')).toBeDefined()
   })
 
   it('onboards users with initial access and edits existing user access from the main panel', async () => {
@@ -812,6 +1132,77 @@ describe('AccessPage', () => {
       scope_id: 'project-2',
       role: 'viewer',
     })
+  })
+
+  it('reconciles a partially committed binding edit before a safe retry', async () => {
+    const aliceWithoutBindings = {
+      id: 'user-1',
+      subject: 'alice',
+      email: 'alice@example.com',
+      display_name: 'Alice Admin',
+      active: true,
+      bindings: [],
+      created_at: '2026-05-16T00:00:00Z',
+      updated_at: '2026-05-19T00:00:00Z',
+    }
+    const replacementBinding = {
+      id: 'binding-replacement',
+      user_id: 'user-1',
+      scope_type: 'project',
+      scope_id: 'project-2',
+      role: 'viewer',
+      created_at: '2026-05-19T00:00:00Z',
+      updated_at: '2026-05-19T00:00:00Z',
+    }
+    apiMock.createAuthUserBinding
+      .mockRejectedValueOnce(new Error('replacement failed'))
+      .mockResolvedValueOnce(replacementBinding)
+
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings canViewUserActivity={false} canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+
+    const editBinding = async () => {
+      const management = container.querySelector('.access-user-management') as HTMLElement | null
+      expect(management).not.toBeNull()
+      if (!management) return
+      await clickScopedButton(management, 'Edit')
+      const editor = container.querySelector('.access-user-management') as HTMLElement | null
+      expect(editor).not.toBeNull()
+      if (!editor) return
+      const existingRemove = findButton(editor, 'Remove')
+      if (existingRemove) await clickScopedButton(editor, 'Remove')
+      await clickScopedButton(editor, 'Add Project')
+      const projectRow = Array.from(editor.querySelectorAll<HTMLElement>('.access-binding-draft-row')).find(row => {
+        const scopeSelect = row.querySelector('select') as HTMLSelectElement | null
+        return scopeSelect?.value === 'project'
+      })
+      const projectSelect = projectRow?.querySelectorAll<HTMLSelectElement>('select')[1]
+      expect(projectSelect).toBeDefined()
+      if (!projectSelect) return
+      changeSelect(projectSelect, 'project-2')
+      await clickScopedButton(editor, 'Save Changes')
+      await flushPromises()
+    }
+
+    apiMock.listAuthUsers.mockResolvedValueOnce({ users: [aliceWithoutBindings], count: 1 })
+    await editBinding()
+
+    expect(apiMock.deleteAuthUserBinding).toHaveBeenCalledTimes(1)
+    expect(apiMock.createAuthUserBinding).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Some changes were already applied; current access was reconciled before retrying.')
+    expect(container.querySelector('.access-user-management')?.textContent).toContain('No role bindings assigned.')
+
+    apiMock.listAuthUsers.mockResolvedValueOnce({
+      users: [{ ...aliceWithoutBindings, bindings: [replacementBinding] }],
+      count: 1,
+    })
+    await editBinding()
+
+    expect(apiMock.deleteAuthUserBinding).toHaveBeenCalledTimes(1)
+    expect(apiMock.createAuthUserBinding).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('Some changes were already applied; current access was reconciled before retrying.')
   })
 
   it('filters, exports, sorts, and selects activity events and usage rows', async () => {

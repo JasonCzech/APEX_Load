@@ -119,6 +119,65 @@ func TestReportAnnotationsEndpointsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestReportAnnotationsRejectsStaleFullDocumentOverwrite(t *testing.T) {
+	server, testID := newReportAnnotationsTestServer(t)
+	path := "/api/v1/tests/" + testID + "/report/annotations?profile=executive"
+
+	firstBody, _ := json.Marshal(reportAnnotationsRequest{
+		Title:              "Initial",
+		ExecutiveNarrative: "first narrative",
+		SectionComments:    map[string]string{},
+	})
+	firstResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(firstResp, httptest.NewRequest(http.MethodPut, path, bytes.NewReader(firstBody)))
+	if firstResp.Code != http.StatusOK {
+		t.Fatalf("first PUT status = %d, body=%s", firstResp.Code, firstResp.Body.String())
+	}
+	var first reportAnnotationsResponse
+	if err := json.Unmarshal(firstResp.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first PUT: %v", err)
+	}
+
+	secondBody, _ := json.Marshal(reportAnnotationsRequest{
+		ExpectedUpdatedAt:  first.Annotations.UpdatedAt,
+		Title:              "Composer update",
+		ExecutiveNarrative: "newer composer narrative",
+		SectionComments:    map[string]string{},
+	})
+	secondResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(secondResp, httptest.NewRequest(http.MethodPut, path, bytes.NewReader(secondBody)))
+	if secondResp.Code != http.StatusOK {
+		t.Fatalf("second PUT status = %d, body=%s", secondResp.Code, secondResp.Body.String())
+	}
+
+	staleVerdictBody, _ := json.Marshal(reportAnnotationsRequest{
+		ExpectedUpdatedAt:  first.Annotations.UpdatedAt,
+		Title:              "Initial",
+		ExecutiveNarrative: "first narrative",
+		SectionComments:    map[string]string{},
+		VerdictOverride:    "Fail",
+		VerdictExplanation: "stale verdict writer",
+	})
+	staleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(staleResp, httptest.NewRequest(http.MethodPut, path, bytes.NewReader(staleVerdictBody)))
+	if staleResp.Code != http.StatusConflict {
+		t.Fatalf("stale PUT status = %d, want 409 (body=%s)", staleResp.Code, staleResp.Body.String())
+	}
+
+	getResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(getResp, httptest.NewRequest(http.MethodGet, path, nil))
+	var current reportAnnotationsResponse
+	if err := json.Unmarshal(getResp.Body.Bytes(), &current); err != nil {
+		t.Fatalf("decode final GET: %v", err)
+	}
+	if current.Annotations.ExecutiveNarrative != "newer composer narrative" {
+		t.Fatalf("narrative = %q, want newer composer narrative", current.Annotations.ExecutiveNarrative)
+	}
+	if current.Annotations.VerdictOverride != "" {
+		t.Fatalf("stale verdict overwrote current annotations: %#v", current.Annotations)
+	}
+}
+
 func TestReportAnnotationsPutUnknownTest(t *testing.T) {
 	server, _ := newReportAnnotationsTestServer(t)
 	body, _ := json.Marshal(reportAnnotationsRequest{Title: "x"})

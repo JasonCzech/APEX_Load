@@ -1,13 +1,14 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator } from '../types'
+import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { SortIndicator } from './SortIndicator'
 import {
   COMMON_TIMEZONES,
@@ -89,9 +90,16 @@ import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 import {
   SECONDS_INPUT_STEP,
-  parseSecondsInputAsMilliseconds,
 } from './runtimeTiming'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
+import { pacingConfigForSelection, pacingFromEdit, randomPacingDraft } from './pacingEditModel'
+import {
+  clearNewTestQueueAttempt,
+  fingerprintNewTestQueuePayload,
+  persistNewTestQueueAttempt,
+  readNewTestQueueAttempt,
+  type NewTestQueueAttempt,
+} from './newTestQueueAttempt'
 
 interface Props {
   activeApplication: Application | null
@@ -104,6 +112,42 @@ interface Props {
   onOpenCommandCenter?: (id: string) => void
   onCreateRelease: (name: string) => Promise<Release | null>
   onOpenScenarioBuilder?: () => void
+}
+
+function createRequestedTestID(): string {
+  const cryptoSource = globalThis.crypto
+  if (typeof cryptoSource?.randomUUID === 'function') return cryptoSource.randomUUID()
+
+  const bytes = new Uint8Array(16)
+  if (typeof cryptoSource?.getRandomValues === 'function') {
+    cryptoSource.getRandomValues(bytes)
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256)
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const value = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`
+}
+
+function queuedRunStillNeedsStart(test: TestSummary): boolean {
+  const status = String(test.status || '').toUpperCase()
+  return !status || status === 'QUEUED' || status === 'RESERVED'
+}
+
+type QueueRecoveryState = {
+  attempt: NewTestQueueAttempt
+  status: 'checking' | 'ready' | 'unavailable'
+  test?: TestSummary
+  message?: string
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const status = (error as { status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
 }
 
 type ScheduleWindowDraft = {
@@ -186,6 +230,24 @@ function totalScenarioVUsers(scenario?: StoredScenario | null) {
 
 function totalGroupVUsers(groups: ScenarioScriptGroup[]) {
   return groups.reduce((sum, script) => sum + (script.vusers || 0), 0)
+}
+
+function validateRunSetup(scenario: StoredScenario | undefined, effectiveGroups: ScenarioScriptGroup[]): string {
+  const rootAssignmentError = validateGeneratorAssignment(scenario?.assignment, 'scenario', 'Scenario assignment')
+  if (rootAssignmentError) return rootAssignmentError
+  const storedScenarioError = validateAggregateVUserDemand(scenario?.scripts || [], 'Scenario')
+  if (storedScenarioError) return storedScenarioError
+  const aggregateError = validateAggregateVUserDemand(effectiveGroups)
+  if (aggregateError) return aggregateError
+  for (let index = 0; index < effectiveGroups.length; index += 1) {
+    const group = effectiveGroups[index]
+    const label = group.name || group.script_name || `Group ${index + 1}`
+    const envelopeError = validateGroupExecutionEnvelope({ role: group.role, protocol: group.protocol, vusers: effectiveGroupVUsers(group), label })
+    if (envelopeError) return envelopeError
+    const assignmentError = validateGeneratorAssignment(group.assignment, 'group', label)
+    if (assignmentError) return assignmentError
+  }
+  return ''
 }
 
 function scenarioProtocolList(scenario?: StoredScenario | null) {
@@ -366,75 +428,6 @@ function normalizeDraftText(value?: string) {
   return String(value || '').trim()
 }
 
-const DEFAULT_RANDOM_PACING_BOUND_MS = 1000
-
-function finiteNonNegative(value: unknown, fallback: number): number {
-  const parsed = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
-}
-
-function randomPacingFromEdit(
-  type: 'random_delay' | 'random_interval',
-  baseline?: RuntimeSettingsOverride['pacing'],
-  amount = '',
-): NonNullable<RuntimeSettingsOverride['pacing']> {
-  const fixedSeed = type === 'random_delay'
-    ? baseline?.delay_ms
-    : baseline?.interval_ms
-  const parsedTypedSeed = parseSecondsInputAsMilliseconds(amount)
-  const typedSeed = typeof parsedTypedSeed === 'number' ? parsedTypedSeed : undefined
-  const seed = finiteNonNegative(fixedSeed ?? typedSeed, DEFAULT_RANDOM_PACING_BOUND_MS)
-  const lowerRaw = type === 'random_delay' ? baseline?.min_delay_ms : baseline?.min_interval_ms
-  const upperRaw = type === 'random_delay' ? baseline?.max_delay_ms : baseline?.max_interval_ms
-  const lower = finiteNonNegative(lowerRaw, seed)
-  const upper = finiteNonNegative(upperRaw, seed)
-  const min = Math.min(lower, upper)
-  const max = Math.max(lower, upper)
-  return type === 'random_delay'
-    ? { type, min_delay_ms: min, max_delay_ms: max }
-    : { type, min_interval_ms: min, max_interval_ms: max }
-}
-
-function randomPacingDraft(
-  type: 'random_delay' | 'random_interval',
-  baseline?: RuntimeSettingsOverride['pacing'],
-  amount = '',
-): NonNullable<RuntimeSettingsOverride['pacing']> {
-  return baseline?.type === type
-    ? { ...baseline, type }
-    : randomPacingFromEdit(type, baseline, amount)
-}
-
-function pacingConfigForSelection(
-  type: string,
-  baseline?: RuntimeSettingsOverride['pacing'],
-  amount = '',
-): RuntimeSettingsOverride['pacing'] | undefined {
-  if (type === 'random_delay' || type === 'random_interval') {
-    return randomPacingDraft(type, baseline, amount)
-  }
-  return type === baseline?.type ? { ...baseline } : undefined
-}
-
-export function pacingFromEdit(type: string, amount: string, baseline?: RuntimeSettingsOverride['pacing']): RuntimeSettingsOverride['pacing'] | undefined {
-  if (!type) return undefined
-  if (type === 'random_delay' || type === 'random_interval') {
-    return randomPacingFromEdit(type, baseline, amount)
-  }
-  if (type === baseline?.type) {
-    const next = { ...baseline }
-    if (type === 'fixed_delay') next.delay_ms = parseSecondsInputAsMilliseconds(amount) ?? 0
-    else if (type === 'fixed_interval') next.interval_ms = parseSecondsInputAsMilliseconds(amount) ?? 0
-    else if (type === 'tps') next.tps = amount ? Number(amount) : 0
-    return next
-  }
-  if (type === 'none') return { type: 'none' }
-  if (type === 'fixed_interval') return { type, interval_ms: parseSecondsInputAsMilliseconds(amount) ?? 0 }
-  if (type === 'tps') return { type, tps: amount ? Number(amount) : 0 }
-  if (type === 'fixed_delay') return { type, delay_ms: parseSecondsInputAsMilliseconds(amount) ?? 0 }
-  return { type }
-}
-
 function thinkTimeFromEdit(mean: string, ignore: boolean, baseline?: RuntimeSettingsOverride['think_time']): RuntimeSettingsOverride['think_time'] | undefined {
   if (!mean.trim() && !ignore && !baseline?.type) return undefined
   const type = baseline?.type || 'fixed'
@@ -568,6 +561,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
   const [scheduleDefaults, setScheduleDefaults] = useState<DashboardScheduleDefaultsSettings>(DEFAULT_SCHEDULE_DEFAULTS)
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
+  const [scheduleDraftBaseline, setScheduleDraftBaseline] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [schedulePreview, setSchedulePreview] = useState<{ occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
   const [runName, setRunName] = useState('')
   const [newReleaseName, setNewReleaseName] = useState('')
@@ -604,12 +598,31 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const bindableTimeslots = timeslotState.projectID === activeProjectID ? timeslotState.timeslots : EMPTY_BINDABLE_TIMESLOTS
   const [selectedTimeslotId, setSelectedTimeslotId] = useState('')
   const newTestDirtyRef = useRef(false)
+  const runDefaultOverridesRef = useRef(runDefaultOverrides)
+  const groupRunOverridesRef = useRef(groupRunOverrides)
   const createQueuedRunRef = useRef<() => Promise<boolean>>(async () => false)
+  const savePendingRunEditorsRef = useRef<() => boolean>(() => true)
   const resetRunSetupRef = useRef<() => void>(() => undefined)
+  const saveScheduleRef = useRef<() => Promise<boolean>>(async () => false)
+  const resetScheduleSetupRef = useRef<() => void>(() => undefined)
+  const scheduleDirtyRef = useRef(false)
+  // Session persistence keeps an unresolved Queue Now attempt recoverable after
+  // route changes and reloads. Recovery is keyed by stable workspace scope so a
+  // changed or reset form cannot accidentally create a second run.
+  const queueAttemptRef = useRef<NewTestQueueAttempt | null>(null)
+  const [queueRecovery, setQueueRecovery] = useState<QueueRecoveryState | null>(null)
+  const [queueRecoveryCheckGeneration, setQueueRecoveryCheckGeneration] = useState(0)
   const scenarioRequestGenerationRef = useRef(0)
   const timeslotRequestGenerationRef = useRef(0)
+  const scheduleRequestGenerationRef = useRef(0)
+  const scheduleOccurrenceRequestGenerationRef = useRef(0)
+  const scheduleScopeGenerationRef = useRef(0)
   const activeProjectIDRef = useRef(activeProjectID)
   activeProjectIDRef.current = activeProjectID
+  const activeScenarioIDRef = useRef(scenarioId)
+  activeScenarioIDRef.current = scenarioId
+  runDefaultOverridesRef.current = runDefaultOverrides
+  groupRunOverridesRef.current = groupRunOverrides
   const runDefaultDialogRef = useRef<HTMLDivElement>(null)
   const runGroupDialogRef = useRef<HTMLDivElement>(null)
   const deleteScheduleDialogRef = useRef<HTMLDivElement>(null)
@@ -637,7 +650,71 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setSelectedTimeslotId('')
     setEffectiveAuthAccessResources([])
     setError('')
+    scheduleRequestGenerationRef.current += 1
+    scheduleOccurrenceRequestGenerationRef.current += 1
+    scheduleScopeGenerationRef.current += 1
+    setSchedules([])
+    setScheduleLoading(false)
+    setScheduleSubmitting(false)
+    setEditingScheduleId(null)
+    setExpandedScheduleId(null)
+    setScheduleOccurrenceLoading(null)
+    setScheduleOccurrences({})
+    setConfirmDeleteScheduleId(null)
+    const nextScheduleDraft = buildDefaultScheduleDraft()
+    setScheduleDraft(nextScheduleDraft)
+    setScheduleDraftBaseline(nextScheduleDraft)
   }, [activeProjectID])
+
+  useEffect(() => {
+    const applicationId = activeApplication?.id || ''
+    if (!activeProjectID || !applicationId) {
+      queueAttemptRef.current = null
+      setQueueRecovery(null)
+      return
+    }
+    const attempt = readNewTestQueueAttempt({ projectId: activeProjectID, applicationId })
+    queueAttemptRef.current = attempt
+    if (!attempt) {
+      setQueueRecovery(null)
+      return
+    }
+
+    let cancelled = false
+    setQueueRecovery({ attempt, status: 'checking' })
+    void api.getTest(attempt.requestedTestId).then(test => {
+      if (cancelled) return
+      if (test.project_id !== attempt.projectId || test.application_id !== attempt.applicationId) {
+        setQueueRecovery({
+          attempt,
+          status: 'unavailable',
+          message: 'The preserved run no longer matches this project and application. Verify it before creating another run.',
+        })
+        return
+      }
+      if (!queuedRunStillNeedsStart(test)) {
+        clearNewTestQueueAttempt(attempt)
+        queueAttemptRef.current = null
+        setQueueRecovery(null)
+        return
+      }
+      setQueueRecovery({ attempt, status: 'ready', test })
+    }).catch((cause: unknown) => {
+      if (cancelled) return
+      if (errorStatus(cause) === 404) {
+        clearNewTestQueueAttempt(attempt)
+        queueAttemptRef.current = null
+        setQueueRecovery(null)
+        return
+      }
+      setQueueRecovery({
+        attempt,
+        status: 'unavailable',
+        message: getErrorMessage(cause, 'Unable to verify the preserved queued run'),
+      })
+    })
+    return () => { cancelled = true }
+  }, [activeApplication?.id, activeProjectID, api, queueRecoveryCheckGeneration])
 
   const refresh = useCallback(async () => {
     const projectID = activeProjectID
@@ -679,14 +756,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       return
     }
     try {
-      const res = await api.listTimeslots({ project_id: projectID })
+      const nextTimeslots = await listAllCapacityTimeslots(api.listTimeslots, projectID)
       if (
         timeslotRequestGenerationRef.current !== requestGeneration
         || activeProjectIDRef.current !== projectID
       ) return
       setTimeslotState({
         projectID,
-        timeslots: (res.timeslots || []).filter(slot => slot.approval_state === 'approved' && !slot.bound_test_id),
+        timeslots: nextTimeslots.filter(slot => slot.approval_state === 'approved' && !slot.bound_test_id),
       })
     } catch {
       if (
@@ -712,7 +789,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setRunName('')
   }, [initialScenarioId, scenarios])
   useEffect(() => {
-    setRunDefaultOverrides(buildEmptyRunDefaultOverrides())
+    const emptyDefaults = buildEmptyRunDefaultOverrides()
+    runDefaultOverridesRef.current = emptyDefaults
+    groupRunOverridesRef.current = {}
+    setRunDefaultOverrides(emptyDefaults)
     setGroupRunOverrides({})
     setEditingDefaultKey(null)
     setEditingGroupKey(null)
@@ -793,6 +873,30 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [api])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
+  const replaceScheduleDraft = useCallback((next: ScheduleDraft) => {
+    setScheduleDraft(next)
+    setScheduleDraftBaseline(next)
+  }, [])
+  const isCurrentScheduleScope = useCallback((scope: { projectID: string; scenarioID: string; generation: number }) => (
+    activeProjectIDRef.current === scope.projectID
+    && activeScenarioIDRef.current === scope.scenarioID
+    && scheduleScopeGenerationRef.current === scope.generation
+  ), [])
+
+  useLayoutEffect(() => {
+    scheduleRequestGenerationRef.current += 1
+    scheduleOccurrenceRequestGenerationRef.current += 1
+    scheduleScopeGenerationRef.current += 1
+    setSchedules([])
+    setScheduleLoading(false)
+    setScheduleSubmitting(false)
+    setEditingScheduleId(null)
+    setExpandedScheduleId(null)
+    setScheduleOccurrenceLoading(null)
+    setScheduleOccurrences({})
+    setConfirmDeleteScheduleId(null)
+    replaceScheduleDraft(buildDefaultScheduleDraft())
+  }, [activeProjectID, replaceScheduleDraft, scenarioId])
 
   // Live "next runs" preview: re-fetch (debounced) from the backend so the
   // shown fire times use the exact production cron evaluator (tz/DST/windows/
@@ -850,6 +954,16 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     () => runDefaultCards.find(card => card.key === editingDefaultKey),
     [editingDefaultKey, runDefaultCards],
   )
+  const defaultEditBaseline = useMemo(
+    () => editingDefaultKey && scenario
+      ? buildRunDefaultEditDraft(editingDefaultKey, scenario, runDefaultOverrides)
+      : null,
+    [editingDefaultKey, runDefaultOverrides, scenario],
+  )
+  const hasDefaultEditChanges = useMemo(
+    () => Boolean(defaultEditBaseline && JSON.stringify(defaultEditDraft) !== JSON.stringify(defaultEditBaseline)),
+    [defaultEditBaseline, defaultEditDraft],
+  )
   const editingGroup = useMemo(
     () => scenario?.scripts.find(group => groupOverrideKey(group) === editingGroupKey),
     [editingGroupKey, scenario],
@@ -859,8 +973,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     [editingGroup],
   )
   const groupEditBaseline = useMemo(
-    () => editingGroup && scenario ? buildGroupEditDraft(editingGroup, scenario, runDefaultOverrides) : emptyGroupEditDraft(),
-    [editingGroup, runDefaultOverrides, scenario],
+    () => editingGroup && scenario
+      ? buildGroupEditDraft(editingGroup, scenario, runDefaultOverrides, editingGroupKey ? groupRunOverrides[editingGroupKey] : undefined)
+      : emptyGroupEditDraft(),
+    [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario],
   )
   const groupEditChanges = useMemo(
     () => buildGroupEditChanges(groupEditDraft, groupEditBaseline),
@@ -939,20 +1055,32 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     })
   }, [filteredScenarios, scenarioSortDirection, scenarioSortField])
   const refreshSchedules = useCallback(async (currentScenarioId: string) => {
+    const projectID = activeProjectID
+    const scope = {
+      projectID,
+      scenarioID: currentScenarioId,
+      generation: scheduleScopeGenerationRef.current,
+    }
+    const requestGeneration = ++scheduleRequestGenerationRef.current
     if (!currentScenarioId) {
-      setSchedules([])
+      if (isCurrentScheduleScope(scope)) setSchedules([])
       return
     }
     setScheduleLoading(true)
     try {
       const res = await api.listScenarioSchedules(currentScenarioId)
+      if (!isCurrentScheduleScope(scope) || requestGeneration !== scheduleRequestGenerationRef.current) return
       setSchedules(res.schedules || [])
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Unable to load schedules'))
+      if (isCurrentScheduleScope(scope) && requestGeneration === scheduleRequestGenerationRef.current) {
+        setError(getErrorMessage(err, 'Unable to load schedules'))
+      }
     } finally {
-      setScheduleLoading(false)
+      if (isCurrentScheduleScope(scope) && requestGeneration === scheduleRequestGenerationRef.current) {
+        setScheduleLoading(false)
+      }
     }
-  }, [api])
+  }, [activeProjectID, api, isCurrentScheduleScope])
   const totalVUsers = useMemo(() => totalGroupVUsers(effectiveScenarioGroups), [effectiveScenarioGroups])
   const protocols = useMemo(() => groupProtocolList(effectiveScenarioGroups), [effectiveScenarioGroups])
   const groupOverridesCount = useMemo(() => groupOverrideCount(groupRunOverrides), [groupRunOverrides])
@@ -1012,41 +1140,36 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [activeApplication, release, scenario])
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
-  const runSetupValidationError = useMemo(() => {
-    const rootAssignmentError = validateGeneratorAssignment(scenario?.assignment, 'scenario', 'Scenario assignment')
-    if (rootAssignmentError) return rootAssignmentError
-    const storedScenarioError = validateAggregateVUserDemand(scenario?.scripts || [], 'Scenario')
-    if (storedScenarioError) return storedScenarioError
-    const aggregateError = validateAggregateVUserDemand(effectiveScenarioGroups)
-    if (aggregateError) return aggregateError
-    for (let index = 0; index < effectiveScenarioGroups.length; index += 1) {
-      const group = effectiveScenarioGroups[index]
-      const label = group.name || group.script_name || `Group ${index + 1}`
-      const envelopeError = validateGroupExecutionEnvelope({ role: group.role, protocol: group.protocol, vusers: effectiveGroupVUsers(group), label })
-      if (envelopeError) return envelopeError
-      const assignmentError = validateGeneratorAssignment(group.assignment, 'group', label)
-      if (assignmentError) return assignmentError
-    }
-    return ''
-  }, [effectiveScenarioGroups, scenario?.assignment, scenario?.scripts])
+  const runSetupValidationError = useMemo(
+    () => validateRunSetup(scenario, effectiveScenarioGroups),
+    [effectiveScenarioGroups, scenario],
+  )
   const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError
-  const runCreatePayload = useMemo(() => {
+  const buildCurrentRunCreatePayload = useCallback((
+    currentRunDefaults: RunDefaultOverrides,
+    currentGroupOverrides: Record<string, GroupRunOverride>,
+  ) => {
     if (!scenario || !activeApplication) return null
-    const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
-    const groupPayloads = buildGroupsForRunPayload(scenario, groupRunOverrides)
+    const runtimeSettings = buildRuntimeSettingsForRun(scenario, currentRunDefaults)
+    const groupPayloads = buildGroupsForRunPayload(scenario, currentGroupOverrides)
+    const duration = getEffectiveRunDuration(scenario, currentRunDefaults)
     return {
       name: runName.trim() || scenario.name,
-      duration: effectiveRunDuration,
+      duration,
       application_id: activeApplication.id,
       release_id: releaseId || undefined,
       scenario_id: scenario.id,
       project_id: activeProject?.id,
       ...(runtimeSettings !== undefined ? { runtime_settings: runtimeSettings } : {}),
       ...(groupPayloads ? { groups: groupPayloads } : {}),
-      ...(hasOwnKey(runDefaultOverrides, 'script_shakeout') ? { script_shakeout: Boolean(runDefaultOverrides.script_shakeout) } : {}),
-      ...(hasOwnKey(runDefaultOverrides, 'resource_baseline') ? { resource_baseline: Boolean(runDefaultOverrides.resource_baseline) } : {}),
+      ...(hasOwnKey(currentRunDefaults, 'script_shakeout') ? { script_shakeout: Boolean(currentRunDefaults.script_shakeout) } : {}),
+      ...(hasOwnKey(currentRunDefaults, 'resource_baseline') ? { resource_baseline: Boolean(currentRunDefaults.resource_baseline) } : {}),
     }
-  }, [activeApplication, activeProject?.id, effectiveRunDuration, groupRunOverrides, releaseId, runDefaultOverrides, runName, scenario])
+  }, [activeApplication, activeProject?.id, releaseId, runName, scenario])
+  const runCreatePayload = useMemo(
+    () => buildCurrentRunCreatePayload(runDefaultOverrides, groupRunOverrides),
+    [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
+  )
   const scheduledStartISO = useMemo(() => datetimeLocalToISO(scheduledStartLocal), [scheduledStartLocal])
 
   useEffect(() => {
@@ -1062,9 +1185,9 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [refreshSchedules, scenarioId])
   useEffect(() => {
     if (!editingScheduleId) {
-      setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+      replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
     }
-  }, [editingScheduleId, releaseId, scenario, scheduleDefaults])
+  }, [editingScheduleId, releaseId, replaceScheduleDraft, scenario, scheduleDefaults])
 
   useEffect(() => {
     if (!runCreatePayload) {
@@ -1141,9 +1264,15 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }
 
   const selectScenario = (nextScenarioId: string) => {
-    setScenarioId(nextScenarioId)
-    setExpandedScenarioId(prev => prev === nextScenarioId ? '' : nextScenarioId)
-    setRunName('')
+    if (nextScenarioId === scenarioId) {
+      setExpandedScenarioId(prev => prev === nextScenarioId ? '' : nextScenarioId)
+      return
+    }
+    runGuarded(() => {
+      setScenarioId(nextScenarioId)
+      setExpandedScenarioId(nextScenarioId)
+      setRunName('')
+    })
   }
 
   const sortScenarios = (field: ScenarioSortField) => {
@@ -1161,16 +1290,21 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
   const createRun = async (intent: 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
     const navigate = options.navigate ?? true
+    const currentRunDefaults = runDefaultOverridesRef.current
+    const currentGroupOverrides = groupRunOverridesRef.current
+    const currentRunCreatePayload = buildCurrentRunCreatePayload(currentRunDefaults, currentGroupOverrides)
+    const currentEffectiveGroups = buildEffectiveScenarioGroups(scenario, currentGroupOverrides)
+    const currentRunSetupValidationError = validateRunSetup(scenario, currentEffectiveGroups)
     if (!canManageTests) {
       setError('Current session cannot create, reserve, or start test runs for this project.')
       return false
     }
-    if (!scenario || !releaseId || !activeApplication || !runCreatePayload) {
+    if (!scenario || !releaseId || !activeApplication || !currentRunCreatePayload) {
       setError('Choose a release and scenario before creating a test.')
       return false
     }
-    if (runSetupValidationError) {
-      setError(runSetupValidationError)
+    if (currentRunSetupValidationError) {
+      setError(currentRunSetupValidationError)
       return false
     }
     if (intent === 'schedule' && !scheduledStartISO) {
@@ -1181,22 +1315,147 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setError('')
     try {
       const payload = intent === 'schedule'
-        ? { ...runCreatePayload, release_id: releaseId, scheduled_start_at: scheduledStartISO }
+        ? { ...currentRunCreatePayload, release_id: releaseId, scheduled_start_at: scheduledStartISO }
         : intent === 'reserve'
-          ? { ...runCreatePayload, release_id: releaseId, reserve_launch_window: true, scheduled_start_at: reservationStartISO(immediatePreflight) }
-          : { ...runCreatePayload, release_id: releaseId }
+          ? { ...currentRunCreatePayload, release_id: releaseId, reserve_launch_window: true, scheduled_start_at: reservationStartISO(immediatePreflight) }
+          : { ...currentRunCreatePayload, release_id: releaseId }
       // Bind the reserved timeslot atomically as part of creation (strict): if the
       // timeslot can't be bound the create fails, so a run is never left unprotected.
       const createPayload = selectedTimeslotId ? { ...payload, timeslot_id: selectedTimeslotId } : payload
-      const test = await api.createTest(createPayload)
-      if (selectedTimeslotId) {
+      let test: TestSummary | null = null
+      let queueAttempt: NewTestQueueAttempt | null = null
+      let recoverQueuedTest: (() => Promise<TestSummary | null>) | null = null
+      if (intent === 'queue') {
+        const payloadFingerprint = await fingerprintNewTestQueuePayload(createPayload)
+        const queueScope = { projectId: activeProjectID, applicationId: activeApplication.id }
+        const existingAttempt = queueAttemptRef.current || readNewTestQueueAttempt(queueScope)
+        if (existingAttempt) {
+          try {
+            const existingRun = await api.getTest(existingAttempt.requestedTestId)
+            const sameScope = existingRun.id === existingAttempt.requestedTestId
+              && existingRun.project_id === existingAttempt.projectId
+              && existingRun.application_id === existingAttempt.applicationId
+            if (!sameScope) {
+              setQueueRecovery({
+                attempt: existingAttempt,
+                status: 'unavailable',
+                message: 'The preserved run no longer matches this project and application. Verify it before creating another run.',
+              })
+              setError('A previous queued-run attempt must be resolved before another queued run can be created.')
+              return false
+            }
+            if (queuedRunStillNeedsStart(existingRun)) {
+              queueAttemptRef.current = existingAttempt
+              setQueueRecovery({ attempt: existingAttempt, status: 'ready', test: existingRun })
+              setError('A previous queued run is still waiting to start. Resume it or explicitly choose Create another run.')
+              return false
+            }
+            clearNewTestQueueAttempt(existingAttempt)
+            queueAttemptRef.current = null
+          } catch (recoveryError: unknown) {
+            if (errorStatus(recoveryError) !== 404) {
+              queueAttemptRef.current = existingAttempt
+              setQueueRecovery({
+                attempt: existingAttempt,
+                status: 'unavailable',
+                message: getErrorMessage(recoveryError, 'Unable to verify the preserved queued run'),
+              })
+              setError('The previous queued-run attempt could not be verified. Retry verification or explicitly choose Create another run.')
+              return false
+            }
+            clearNewTestQueueAttempt(existingAttempt)
+            queueAttemptRef.current = null
+          }
+        }
+        queueAttempt = queueAttemptRef.current
+        if (!queueAttempt) {
+          queueAttempt = persistNewTestQueueAttempt(
+            payloadFingerprint,
+            createRequestedTestID(),
+            queueScope,
+          )
+        }
+        queueAttemptRef.current = queueAttempt
+        const requestedTestID = queueAttempt.requestedTestId
+
+        const recoverCreatedTest = async () => {
+          const recovered = await api.getTest(requestedTestID)
+          const sameScope = recovered.id === requestedTestID
+            && (!createPayload.project_id || recovered.project_id === createPayload.project_id)
+            && (!createPayload.application_id || recovered.application_id === createPayload.application_id)
+            && (!createPayload.scenario_id || recovered.scenario_id === createPayload.scenario_id)
+            && (!createPayload.release_id || recovered.release_id === createPayload.release_id)
+          return sameScope ? recovered : null
+        }
+        recoverQueuedTest = recoverCreatedTest
+
+        try {
+          test = await api.createTest({ ...createPayload, requested_test_id: requestedTestID })
+        } catch (createError: unknown) {
+          // The create response may have been lost after the durable row was
+          // committed. Recover only the exact client-generated ID and verify its
+          // immutable scope before treating it as this attempt.
+          try {
+            test = await recoverCreatedTest()
+          } catch {
+            test = null
+          }
+          if (!test) throw createError
+        }
+      } else {
+        test = await api.createTest(createPayload)
+      }
+      if (!test) throw new Error('Unable to recover the created queued run')
+      const finishTimeslotBinding = () => {
+        if (!selectedTimeslotId) return
         setSelectedTimeslotId('')
         void refreshBindableTimeslots()
       }
+      if (intent !== 'queue') finishTimeslotBinding()
       if (intent === 'queue') {
-        await api.startTest(test.id)
+        if (!queueAttempt || !recoverQueuedTest) throw new Error('Unable to recover the queued-run attempt')
+        const resolvedQueueAttempt = queueAttempt
+        const resolveQueueAttempt = () => {
+          clearNewTestQueueAttempt(resolvedQueueAttempt)
+          if (queueAttemptRef.current?.requestedTestId === resolvedQueueAttempt.requestedTestId) {
+            queueAttemptRef.current = null
+          }
+          setQueueRecovery(null)
+          finishTimeslotBinding()
+        }
+        if (!queuedRunStillNeedsStart(test)) {
+          resolveQueueAttempt()
+          if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+          return true
+        }
+        try {
+          await api.startTest(test.id)
+        } catch (startError: unknown) {
+          let recoveredAfterStart: TestSummary | null = null
+          try {
+            recoveredAfterStart = await recoverQueuedTest()
+          } catch {
+            // The known created run remains the recovery anchor while its latest
+            // state cannot be read.
+          }
+          if (recoveredAfterStart && !queuedRunStillNeedsStart(recoveredAfterStart)) {
+            resolveQueueAttempt()
+            if (navigate) (onOpenCommandCenter || onSelectTest)(recoveredAfterStart.id)
+            return true
+          }
+          // Creation is already durable. Hand the known run to the execution
+          // workspace even if start was rejected or its acknowledgement was
+          // lost; retrying Queue Now must never create a second run.
+          setQueueRecovery({ attempt: resolvedQueueAttempt, status: 'ready', test: recoveredAfterStart || test })
+          setError(`${getErrorMessage(startError, 'Unable to start the created run')} The queued run was preserved for recovery.`)
+          if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+          return true
+        }
+        resolveQueueAttempt()
+        if (navigate) (onOpenCommandCenter || onSelectTest)(test.id)
+        return true
       }
-      if (navigate && (intent === 'reserve' || intent === 'queue')) {
+      if (navigate && intent === 'reserve') {
         ;(onOpenCommandCenter || onSelectTest)(test.id)
         return true
       }
@@ -1210,12 +1469,62 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     }
   }
 
+  const resolveRecoveredQueueAttempt = useCallback((attempt: NewTestQueueAttempt) => {
+    clearNewTestQueueAttempt(attempt)
+    if (queueAttemptRef.current?.requestedTestId === attempt.requestedTestId) {
+      queueAttemptRef.current = null
+    }
+    setQueueRecovery(null)
+    setSelectedTimeslotId('')
+    void refreshBindableTimeslots()
+  }, [refreshBindableTimeslots])
+
+  const resumeRecoveredQueuedRun = async () => {
+    const recovery = queueRecovery
+    if (!recovery?.test || recovery.status !== 'ready') return
+    setCreating(true)
+    setError('')
+    try {
+      await api.startTest(recovery.test.id)
+      resolveRecoveredQueueAttempt(recovery.attempt)
+      ;(onOpenCommandCenter || onSelectTest)(recovery.test.id)
+    } catch (startError: unknown) {
+      let latest: TestSummary | null = null
+      try {
+        latest = await api.getTest(recovery.test.id)
+      } catch {
+        // Preserve the known queued row and its recovery token when verification
+        // is temporarily unavailable.
+      }
+      if (latest && !queuedRunStillNeedsStart(latest)) {
+        resolveRecoveredQueueAttempt(recovery.attempt)
+        ;(onOpenCommandCenter || onSelectTest)(latest.id)
+        return
+      }
+      setQueueRecovery({ ...recovery, test: latest || recovery.test })
+      setError(`${getErrorMessage(startError, 'Unable to start the preserved queued run')} The same run remains available for recovery.`)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const createAnotherQueuedRun = () => {
+    const attempt = queueRecovery?.attempt || queueAttemptRef.current
+    if (attempt) clearNewTestQueueAttempt(attempt)
+    queueAttemptRef.current = null
+    setQueueRecovery(null)
+    setError('The recovery marker was cleared. The existing queued run was not deleted; review it in Results before submitting another run.')
+  }
+
   const resetRunSetup = useCallback(() => {
+    const emptyDefaults = buildEmptyRunDefaultOverrides()
+    runDefaultOverridesRef.current = emptyDefaults
+    groupRunOverridesRef.current = {}
     setRunName(scenario?.name || '')
     setReleaseId(defaultReleaseId)
     setNewReleaseName('')
     setShowNewRelease(false)
-    setRunDefaultOverrides(buildEmptyRunDefaultOverrides())
+    setRunDefaultOverrides(emptyDefaults)
     setGroupRunOverrides({})
     setEditingDefaultKey(null)
     setEditingGroupKey(null)
@@ -1226,8 +1535,16 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setScheduledStartLocal('')
   }, [defaultReleaseId, scenario?.name])
 
+  const resetScheduleSetup = useCallback(() => {
+    setEditingScheduleId(null)
+    setExpandedScheduleId(null)
+    setScheduleOccurrenceLoading(null)
+    replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+  }, [releaseId, replaceScheduleDraft, scenario, scheduleDefaults])
+
   const runNameDirty = Boolean(runName.trim() && runName.trim() !== (scenario?.name || '').trim())
   const releaseDirty = Boolean(releaseId && releaseId !== defaultReleaseId)
+  const pendingDefaultDirty = Boolean(editingDefaultKey && hasDefaultEditChanges)
   const pendingGroupDirty = Boolean(editingGroupKey && hasGroupEditChanges)
   const newTestDirty = pageMode === 'launch' && Boolean(
     runNameDirty
@@ -1236,23 +1553,32 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     || selectedTimeslotId
     || scheduledStartLocal
     || newReleaseName.trim()
+    || pendingDefaultDirty
     || pendingGroupDirty
   )
+  const scheduleDraftDirty = pageMode === 'schedules'
+    && JSON.stringify(scheduleDraft) !== JSON.stringify(scheduleDraftBaseline)
   createQueuedRunRef.current = async () => {
+    if (!savePendingRunEditorsRef.current()) return false
     const created = await createRun('queue', { navigate: false })
     if (created) resetRunSetup()
     return created
   }
   resetRunSetupRef.current = resetRunSetup
+  resetScheduleSetupRef.current = resetScheduleSetup
   newTestDirtyRef.current = newTestDirty
+  scheduleDirtyRef.current = scheduleDraftDirty
   const newTestGuard = useMemo<NavigationGuard>(() => ({
     id: 'new-test-run-setup',
-    label: 'New Test setup',
-    isDirty: () => newTestDirtyRef.current,
-    save: () => createQueuedRunRef.current(),
-    discard: () => resetRunSetupRef.current(),
+    label: 'New Test setup or schedule',
+    isDirty: () => newTestDirtyRef.current || scheduleDirtyRef.current,
+    save: () => scheduleDirtyRef.current ? saveScheduleRef.current() : createQueuedRunRef.current(),
+    discard: () => {
+      if (scheduleDirtyRef.current) resetScheduleSetupRef.current()
+      if (newTestDirtyRef.current) resetRunSetupRef.current()
+    },
   }), [])
-  useNavigationGuard(newTestGuard, newTestDirty)
+  useNavigationGuard(newTestGuard, newTestDirty || scheduleDraftDirty)
 
   const openRunDefaultEditor = (key: RunDefaultKey) => {
     if (!scenario) return
@@ -1260,49 +1586,49 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setEditingDefaultKey(key)
   }
 
-  const setRuntimeOverride = <K extends keyof RunRuntimeOverrideDraft>(field: K, value: RunRuntimeOverrideDraft[K]) => {
-    setRunDefaultOverrides(prev => ({
-      ...prev,
-      runtime_settings: {
-        ...prev.runtime_settings,
-        [field]: value,
-      },
-    }))
+  const commitRunDefaultOverrides = (next: RunDefaultOverrides) => {
+    runDefaultOverridesRef.current = next
+    setRunDefaultOverrides(next)
   }
 
   const clearRunDefaultOverride = () => {
     if (!editingDefaultKey || !editingDefaultCard) return
     const key = editingDefaultKey
-    setRunDefaultOverrides(prev => {
-      const next: RunDefaultOverrides = {
-        ...prev,
-        runtime_settings: { ...prev.runtime_settings },
-      }
-      if (key === 'duration') {
-        delete next.duration
-      } else if (key === 'script_shakeout') {
-        delete next.script_shakeout
-      } else if (key === 'resource_baseline') {
-        delete next.resource_baseline
-      } else {
-        delete next.runtime_settings[key]
-      }
-      return next
-    })
+    const next: RunDefaultOverrides = {
+      ...runDefaultOverridesRef.current,
+      runtime_settings: { ...runDefaultOverridesRef.current.runtime_settings },
+    }
+    if (key === 'duration') {
+      delete next.duration
+    } else if (key === 'script_shakeout') {
+      delete next.script_shakeout
+    } else if (key === 'resource_baseline') {
+      delete next.resource_baseline
+    } else {
+      delete next.runtime_settings[key]
+    }
+    commitRunDefaultOverrides(next)
     setDefaultSaveNotice(`${editingDefaultCard.label} now uses the scenario default. Scenario defaults were not changed.`)
     setEditingDefaultKey(null)
   }
 
-  const saveRunDefaultOverride = () => {
-    if (!editingDefaultKey || !editingDefaultCard) return
+  const saveRunDefaultOverride = (): boolean => {
+    if (!editingDefaultKey || !editingDefaultCard) return false
     const key = editingDefaultKey
+    const next: RunDefaultOverrides = {
+      ...runDefaultOverridesRef.current,
+      runtime_settings: { ...runDefaultOverridesRef.current.runtime_settings },
+    }
+    const setRuntimeOverride = <K extends keyof RunRuntimeOverrideDraft>(field: K, value: RunRuntimeOverrideDraft[K]) => {
+      next.runtime_settings[field] = value
+    }
     if (key === 'duration') {
       const duration = defaultEditDraft.value.trim()
       if (!duration) {
         setError('Duration is required for a run override.')
-        return
+        return false
       }
-      setRunDefaultOverrides(prev => ({ ...prev, duration }))
+      next.duration = duration
     } else if (key === 'iterations') {
       setRuntimeOverride('iterations', defaultEditDraft.value ? Number(defaultEditDraft.value) : null)
     } else if (key === 'log_level') {
@@ -1318,16 +1644,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     } else if (key === 'snapshot_on_error') {
       setRuntimeOverride('snapshot_on_error', defaultEditDraft.value === '' ? null : defaultEditDraft.value === 'true')
     } else if (key === 'script_shakeout') {
-      setRunDefaultOverrides(prev => ({ ...prev, script_shakeout: defaultEditDraft.value === 'true' }))
+      next.script_shakeout = defaultEditDraft.value === 'true'
     } else if (key === 'resource_baseline') {
-      setRunDefaultOverrides(prev => ({ ...prev, resource_baseline: defaultEditDraft.value === 'true' }))
+      next.resource_baseline = defaultEditDraft.value === 'true'
     }
+    commitRunDefaultOverrides(next)
     if (!GLOBAL_RUN_DEFAULT_KEYS.has(key)) {
       setShowAllRuntimeDefaults(true)
     }
     setError('')
     setDefaultSaveNotice(`Saved ${editingDefaultCard.label} for this run only. Scenario defaults were not changed.`)
     setEditingDefaultKey(null)
+    return true
   }
 
   const renderRunDefaultEditorControl = () => {
@@ -1587,19 +1915,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
   const clearGroupOverride = () => {
     if (!editingGroupKey || !editingGroup) return
-    setGroupRunOverrides(prev => {
-      const next = { ...prev }
-      delete next[editingGroupKey]
-      return next
-    })
+    const next = { ...groupRunOverridesRef.current }
+    delete next[editingGroupKey]
+    groupRunOverridesRef.current = next
+    setGroupRunOverrides(next)
     setGroupSaveNotice(`${editingGroup.name || editingGroup.script_name || 'Script group'} now uses scenario and run defaults. Scenario defaults were not changed.`)
     setEditingGroupKey(null)
   }
 
-  const saveGroupOverride = () => {
-    if (!editingGroupKey || !editingGroup || !scenario) return
-    if (!hasGroupEditChanges) return
-    const existingOverride = groupRunOverrides[editingGroupKey]
+  const saveGroupOverride = (): boolean => {
+    if (!editingGroupKey || !editingGroup || !scenario) return false
+    if (!hasGroupEditChanges) return true
+    const existingOverride = groupRunOverridesRef.current[editingGroupKey]
     const nextOverride: GroupRunOverride = existingOverride
       ? {
           ...existingOverride,
@@ -1609,7 +1936,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       : {}
     const stagedPeak = stagedGroupPeakVUsers(editingGroup)
     const vusers = stagedPeak ?? Number(groupEditDraft.vusers)
-    if (groupEditEnvelopeError) return
+    if (groupEditEnvelopeError) return false
     if (stagedPeak !== undefined) delete nextOverride.vusers
     else if (groupEditChanges.vusers) nextOverride.vusers = vusers
     const rampUp = groupEditDraft.ramp_up.trim()
@@ -1621,7 +1948,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     }
 
     const runtimeSettings = mergeRuntimeSettingsForRun(editingGroup.runtime_settings, existingOverride?.runtime_settings) || {}
-    const effectiveRootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
+    const effectiveRootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverridesRef.current)
       || cloneRuntimeSettingsForRun(scenario.runtime_settings)
       || {}
     let runtimeChanged = false
@@ -1629,7 +1956,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       const iterations = Number(groupEditDraft.iterations)
       if (!Number.isFinite(iterations) || iterations < 1) {
         setError('Iterations must be greater than 0 for a script group override.')
-        return
+        return false
       }
       if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic }
       setRuntimeIterations(runtimeSettings, iterations)
@@ -1688,7 +2015,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     const assignmentError = validateGeneratorAssignment(nextAssignment, 'group', editingGroup.name || editingGroup.script_name || 'Script group')
     if (assignmentError) {
       setError(assignmentError)
-      return
+      return false
     }
     if (groupEditChanges.assignment) {
       const changedAssignment = nextAssignment as GeneratorAssignmentSettings
@@ -1696,7 +2023,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         const selectedTargets = changedAssignment.selected_targets || []
         if (selectedTargets.length === 0) {
           setError('Select at least one load generator host for group placement.')
-          return
+          return false
         }
         const unavailableTargets = selectedTargets.filter(target => {
           const generator = generatorByTarget.get(target)
@@ -1704,38 +2031,49 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         })
         if (unavailableTargets.length > 0) {
           setError(`Selected generator is not eligible for this group: ${unavailableTargets.join(', ')}`)
-          return
+          return false
         }
       }
       if (groupEditDraft.assignmentMode === 'required_labels' && !normalizeRequiredLabels(groupEditDraft.requiredLabels)) {
         setError('Select at least one required generator capability for this group.')
-        return
+        return false
       }
       nextOverride.assignment = changedAssignment
     }
 
-    setGroupRunOverrides(prev => {
-      const next = { ...prev }
-      if (hasGroupOverrideValues(nextOverride)) {
-        next[editingGroupKey] = nextOverride
-      } else {
-        delete next[editingGroupKey]
-      }
-      return next
-    })
+    const next = { ...groupRunOverridesRef.current }
+    if (hasGroupOverrideValues(nextOverride)) {
+      next[editingGroupKey] = nextOverride
+    } else {
+      delete next[editingGroupKey]
+    }
+    groupRunOverridesRef.current = next
+    setGroupRunOverrides(next)
     setError('')
     setGroupSaveNotice('Saved script settings for this run only. Scenario defaults were not changed.')
     setEditingGroupKey(null)
+    return true
   }
 
-  const submitSchedule = async () => {
+  savePendingRunEditorsRef.current = () => {
+    if (editingDefaultKey && hasDefaultEditChanges && !saveRunDefaultOverride()) return false
+    if (editingGroupKey && hasGroupEditChanges && !saveGroupOverride()) return false
+    return true
+  }
+
+  const submitSchedule = async (): Promise<boolean> => {
 	if (!canManageTests) {
 	  setError('Current session cannot manage scenario schedules for this project.')
-	  return
+	  return false
 	}
 	if (!scenario) {
 	  setError('Choose a scenario before managing schedules.')
-	  return
+	  return false
+	}
+	const scope = {
+	  projectID: activeProjectID,
+	  scenarioID: scenario.id,
+	  generation: scheduleScopeGenerationRef.current,
 	}
 	setScheduleSubmitting(true)
 	setError('')
@@ -1762,35 +2100,41 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	  } else {
 	    await api.createScenarioSchedule(scenario.id, payload)
 	  }
+	  if (!isCurrentScheduleScope(scope)) return false
 	  setEditingScheduleId(null)
-	  setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+	  replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
 	  await refreshSchedules(scenario.id)
+	  return true
 	} catch (err: unknown) {
-	  setError(getErrorMessage(err, 'Unable to save schedule'))
+	  if (isCurrentScheduleScope(scope)) setError(getErrorMessage(err, 'Unable to save schedule'))
+	  return false
 	} finally {
-	  setScheduleSubmitting(false)
+	  if (isCurrentScheduleScope(scope)) setScheduleSubmitting(false)
 	}
   }
 
   const editSchedule = (schedule: ScenarioSchedule) => {
-	setEditingScheduleId(schedule.id)
-	setScheduleDraft({
-	  revision: schedule.revision,
-	  name: schedule.name,
-	  cron_expr: schedule.cron_expr,
-	  timezone: schedule.timezone || 'UTC',
-	  release_id: schedule.release_id || '',
-	  timeslot_id: schedule.timeslot_id || '',
-	  run_name_template: schedule.run_name_template || '',
-	  enabled: schedule.enabled,
-	  approval_policy: schedule.approval_policy || 'auto',
-	  missed_run_policy: schedule.missed_run_policy || 'skip',
-	  blackout_windows: scheduleWindowsToDraft(schedule.blackout_windows),
-	  maintenance_windows: scheduleWindowsToDraft(schedule.maintenance_windows),
-	  availability_windows: scheduleWindowsToDraft(schedule.availability_windows),
-	  disabled_from: schedule.disabled_from ? formatDatetimeLocalValue(new Date(schedule.disabled_from)) : '',
-	  disabled_until: schedule.disabled_until ? formatDatetimeLocalValue(new Date(schedule.disabled_until)) : '',
-	})
+    runGuarded(() => {
+      setEditingScheduleId(schedule.id)
+      const nextDraft: ScheduleDraft = {
+        revision: schedule.revision,
+        name: schedule.name,
+        cron_expr: schedule.cron_expr,
+        timezone: schedule.timezone || 'UTC',
+        release_id: schedule.release_id || '',
+        timeslot_id: schedule.timeslot_id || '',
+        run_name_template: schedule.run_name_template || '',
+        enabled: schedule.enabled,
+        approval_policy: schedule.approval_policy || 'auto',
+        missed_run_policy: schedule.missed_run_policy || 'skip',
+        blackout_windows: scheduleWindowsToDraft(schedule.blackout_windows),
+        maintenance_windows: scheduleWindowsToDraft(schedule.maintenance_windows),
+        availability_windows: scheduleWindowsToDraft(schedule.availability_windows),
+        disabled_from: schedule.disabled_from ? formatDatetimeLocalValue(new Date(schedule.disabled_from)) : '',
+        disabled_until: schedule.disabled_until ? formatDatetimeLocalValue(new Date(schedule.disabled_until)) : '',
+      }
+      replaceScheduleDraft(nextDraft)
+    })
   }
 
   const toggleSchedule = async (schedule: ScenarioSchedule) => {
@@ -1799,6 +2143,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	  return
 	}
 	if (!scenario) return
+	const scope = { projectID: activeProjectID, scenarioID: scenario.id, generation: scheduleScopeGenerationRef.current }
 	setError('')
 	try {
 	  await api.updateScenarioSchedule(scenario.id, schedule.id, {
@@ -1818,9 +2163,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	    disabled_until: schedule.disabled_until || undefined,
 	    expected_revision: schedule.revision,
 	  })
+	  if (!isCurrentScheduleScope(scope)) return
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
-	  setError(getErrorMessage(err, 'Unable to update schedule'))
+	  if (isCurrentScheduleScope(scope)) setError(getErrorMessage(err, 'Unable to update schedule'))
 	}
   }
 
@@ -1830,17 +2176,19 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	  return
 	}
 	if (!scenario) return
+	const scope = { projectID: activeProjectID, scenarioID: scenario.id, generation: scheduleScopeGenerationRef.current }
 	setConfirmDeleteScheduleId(null)
 	setError('')
 	try {
 	  await api.deleteScenarioSchedule(scenario.id, scheduleId)
+	  if (!isCurrentScheduleScope(scope)) return
 	  if (editingScheduleId === scheduleId) {
 	    setEditingScheduleId(null)
-	    setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+	    replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
 	  }
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
-	  setError(getErrorMessage(err, 'Unable to delete schedule'))
+	  if (isCurrentScheduleScope(scope)) setError(getErrorMessage(err, 'Unable to delete schedule'))
 	}
   }
 
@@ -1850,6 +2198,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       return
     }
     if (!scenario || !schedule.pending_approval_id) return
+    const scope = { projectID: activeProjectID, scenarioID: scenario.id, generation: scheduleScopeGenerationRef.current }
     setError('')
     try {
       if (approved) {
@@ -1857,9 +2206,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       } else {
         await api.rejectScenarioScheduleApproval(scenario.id, schedule.id, schedule.pending_approval_id, 'Rejected from schedule dashboard.')
       }
+      if (!isCurrentScheduleScope(scope)) return
       await refreshSchedules(scenario.id)
     } catch (err: unknown) {
-      setError(getErrorMessage(err, approved ? 'Unable to approve schedule' : 'Unable to reject schedule'))
+      if (isCurrentScheduleScope(scope)) setError(getErrorMessage(err, approved ? 'Unable to approve schedule' : 'Unable to reject schedule'))
     }
   }
 
@@ -1869,6 +2219,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       setExpandedScheduleId(null)
       return
     }
+    const scope = { projectID: activeProjectID, scenarioID: scenario.id, generation: scheduleScopeGenerationRef.current }
+    const requestGeneration = ++scheduleOccurrenceRequestGenerationRef.current
     setExpandedScheduleId(schedule.id)
     if (scheduleOccurrences[schedule.id]) {
       return
@@ -1877,17 +2229,23 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setError('')
     try {
       const response = await api.listScenarioScheduleOccurrences(scenario.id, schedule.id)
+      if (!isCurrentScheduleScope(scope) || requestGeneration !== scheduleOccurrenceRequestGenerationRef.current) return
       setScheduleOccurrences(prev => ({ ...prev, [schedule.id]: response.occurrences || [] }))
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Unable to load schedule occurrences'))
+      if (isCurrentScheduleScope(scope) && requestGeneration === scheduleOccurrenceRequestGenerationRef.current) {
+        setError(getErrorMessage(err, 'Unable to load schedule occurrences'))
+      }
     } finally {
-      setScheduleOccurrenceLoading(null)
+      if (isCurrentScheduleScope(scope) && requestGeneration === scheduleOccurrenceRequestGenerationRef.current) {
+        setScheduleOccurrenceLoading(null)
+      }
     }
   }
 
-	const resolveScheduleOccurrence = async (schedule: ScenarioSchedule, occurrence: ScenarioScheduleOccurrence, action: 'retry' | 'catch_up' | 'skip') => {
-	  if (!canManageProjects || !scenario || occurrence.reason_code === 'approval_required') return
-	  setScheduleSubmitting(true)
+		const resolveScheduleOccurrence = async (schedule: ScenarioSchedule, occurrence: ScenarioScheduleOccurrence, action: 'retry' | 'catch_up' | 'skip') => {
+		  if (!canManageProjects || !scenario || occurrence.reason_code === 'approval_required') return
+		  const scope = { projectID: activeProjectID, scenarioID: scenario.id, generation: scheduleScopeGenerationRef.current }
+		  setScheduleSubmitting(true)
 	  setError('')
 	  try {
 		await api.resolveScenarioScheduleOccurrence(
@@ -1896,17 +2254,21 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 		  occurrence.id,
 		  action,
 		  occurrence.revision,
-		  `Operator selected ${action.replace('_', ' ')} from the schedule dashboard.`,
-		)
-		const response = await api.listScenarioScheduleOccurrences(scenario.id, schedule.id)
-		setScheduleOccurrences(prev => ({ ...prev, [schedule.id]: response.occurrences || [] }))
+			  `Operator selected ${action.replace('_', ' ')} from the schedule dashboard.`,
+			)
+			if (!isCurrentScheduleScope(scope)) return
+			const response = await api.listScenarioScheduleOccurrences(scenario.id, schedule.id)
+			if (!isCurrentScheduleScope(scope)) return
+			setScheduleOccurrences(prev => ({ ...prev, [schedule.id]: response.occurrences || [] }))
 		await refreshSchedules(scenario.id)
-	  } catch (err: unknown) {
-		setError(getErrorMessage(err, 'Unable to resolve schedule occurrence'))
-	  } finally {
-		setScheduleSubmitting(false)
-	  }
-	}
+		  } catch (err: unknown) {
+			if (isCurrentScheduleScope(scope)) setError(getErrorMessage(err, 'Unable to resolve schedule occurrence'))
+		  } finally {
+			if (isCurrentScheduleScope(scope)) setScheduleSubmitting(false)
+		  }
+		}
+
+  saveScheduleRef.current = submitSchedule
 
   const showStartNow = true
   const startNowAllowed = immediatePreflight ? immediatePreflight.start_now_allowed : true
@@ -1952,6 +2314,41 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
       {!canManageTests && <div className="settings-error-inline page-error-banner" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
+      {queueRecovery && (
+        <div className="new-test-launch-feedback warning" role="status">
+          {queueRecovery.status === 'checking' ? (
+            <span>Checking the preserved queued-run attempt…</span>
+          ) : queueRecovery.status === 'ready' && queueRecovery.test ? (
+            <>
+              <span>
+                Preserved queued run <strong>{queueRecovery.test.name || queueRecovery.test.id}</strong> is still waiting to start.
+              </span>
+              <div className="inline-create-row">
+                <button className="btn btn-sm btn-primary" type="button" onClick={() => void resumeRecoveredQueuedRun()} disabled={creating}>
+                  Resume queued run
+                </button>
+                <button className="btn btn-sm btn-secondary" type="button" onClick={createAnotherQueuedRun} disabled={creating}>
+                  Create another run
+                </button>
+              </div>
+              <small>Create another run only clears this recovery marker; it does not delete the existing queued run.</small>
+            </>
+          ) : (
+            <>
+              <span>{queueRecovery.message || 'The preserved queued run could not be verified.'}</span>
+              <div className="inline-create-row">
+                <button className="btn btn-sm btn-secondary" type="button" onClick={() => setQueueRecoveryCheckGeneration(current => current + 1)} disabled={creating}>
+                  Retry verification
+                </button>
+                <button className="btn btn-sm btn-secondary" type="button" onClick={createAnotherQueuedRun} disabled={creating}>
+                  Create another run
+                </button>
+              </div>
+              <small>Create another run only clears this recovery marker; it does not delete any run that may already exist.</small>
+            </>
+          )}
+        </div>
+      )}
 
       {pageMode === 'schedules' ? (
         <div className="new-test-layout new-test-schedules-layout">
@@ -1970,7 +2367,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       className="btn btn-secondary"
                       onClick={() => {
                         setEditingScheduleId(null)
-                        setScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
+                        replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
                       }}
                     >
                       Cancel Edit
@@ -1987,7 +2384,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <span className="setting-label" id="schedule-scenario-label">Scenario</span>
                     <span className="setting-desc">Recurring runs always execute one stored scenario</span>
                   </div>
-                  <select className="settings-input" aria-labelledby="schedule-scenario-label" value={scenarioId} onChange={(event) => { setScenarioId(event.target.value); setEditingScheduleId(null) }}>
+                  <select className="settings-input" aria-labelledby="schedule-scenario-label" value={scenarioId} onChange={(event) => {
+                    const nextScenarioID = event.target.value
+                    runGuarded(() => {
+                      setScenarioId(nextScenarioID)
+                      setEditingScheduleId(null)
+                    })
+                  }}>
                     <option value="">Select scenario</option>
                     {scenarios.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
@@ -2779,7 +3182,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 <button className="btn btn-primary" onClick={() => createRun('reserve')} disabled={!canLaunch || immediatePreflightLoading || !startNowAllowed} title="Holds a launch window for this run to be started manually later. This is not a capacity timeslot reservation.">Hold for Manual Start</button>
               )}
               {showQueueRun && (
-                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading}>Create Queued Run</button>
+                <button className="btn btn-secondary" onClick={() => createRun('queue')} disabled={!canLaunch || immediatePreflightLoading || Boolean(queueRecovery)}>Create Queued Run</button>
               )}
               {immediateLaunchBlocked && (
                 <div className="new-test-launch-feedback warning" role="status">{formatLaunchConflict(immediatePreflight)}</div>

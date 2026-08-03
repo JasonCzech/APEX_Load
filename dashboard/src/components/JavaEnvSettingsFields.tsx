@@ -51,7 +51,10 @@ export function JavaEnvSettingsFields({
 }: JavaEnvSettingsFieldsProps) {
   const patch = (next: Partial<JavaEnvSettingsValue>) => onChange({ ...value, ...next })
   const selection = value.jdk_selection || 'internal'
-  const vmParameters = value.additional_vm_parameters ?? []
+  const vmParameters = useMemo(
+    () => value.additional_vm_parameters ?? [],
+    [value.additional_vm_parameters],
+  )
   const classpathAssets = value.classpath_assets ?? []
 
   const importCandidates = useMemo(() => {

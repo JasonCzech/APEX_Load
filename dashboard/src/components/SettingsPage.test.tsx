@@ -5,11 +5,13 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsPage from './SettingsPage'
+import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import type { WailsDesktopBridge } from '../desktop/desktopBridge'
-import type { DashboardAuthEffectiveAccessResource, Domain, ProjectSettings } from '../types'
+import type { DashboardAuthEffectiveAccessResource, Domain, Project, ProjectSettings } from '../types'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { ApiError } from '../hooks/apiClient'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -88,11 +90,15 @@ const repositoryApiMock = {
 
 const applicationContextMock = {
   applications: [],
+  applicationsLoading: false,
+  applicationsError: '',
   releases: [],
   activeApplication: null,
   activeRelease: null,
   setActiveApplication: vi.fn(),
   setActiveRelease: vi.fn(),
+  removeApplication: vi.fn(),
+  removeRelease: vi.fn(),
   refreshApplications: vi.fn(),
   refreshReleases: vi.fn(),
   createAndSelectApplication: vi.fn(),
@@ -100,7 +106,9 @@ const applicationContextMock = {
 
 const projectContextMock = {
   activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  setActiveProject: vi.fn(),
   createAndSelectProject: vi.fn(),
+  updateProject: vi.fn(),
 }
 
 const fleetApiMock = {
@@ -246,7 +254,20 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
     delete (window as BridgeWindow).go
     projectContextMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    projectContextMock.setActiveProject.mockReset()
     projectContextMock.createAndSelectProject.mockReset()
+    projectContextMock.updateProject.mockReset()
+    projectContextMock.updateProject.mockImplementation(
+      (projectID: string, project: unknown) => projectApiMock.updateProject(projectID, project),
+    )
+    Object.assign(applicationContextMock, {
+      applications: [],
+      applicationsLoading: false,
+      applicationsError: '',
+      releases: [],
+      activeApplication: null,
+      activeRelease: null,
+    })
     apiProviderState.current = apiMock
     fleetApiMock.listFleetPools.mockReset()
     fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [] })
@@ -1156,6 +1177,60 @@ describe('SettingsPage', () => {
     expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
   })
 
+  it('does not repeat a committed domain create when catalog reconciliation fails', async () => {
+    const paymentsDomain: Domain = {
+      id: 'domain-payments',
+      name: 'Payments',
+      description: 'Payment systems',
+      created_at: '2026-05-03T00:00:00Z',
+      updated_at: '2026-05-03T00:00:00Z',
+    }
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      resources: domainAccessResources(true),
+    })
+    repositoryApiMock.createDomain.mockResolvedValue({
+      domain: paymentsDomain,
+      application_repository: { id: 'repo-payments', domain_id: paymentsDomain.id, name: 'Application Repository', created_at: '', updated_at: '' },
+      default_category: { id: 'category-payments', domain_id: paymentsDomain.id, repository_id: 'repo-payments', name: 'Uncategorized', created_at: '', updated_at: '' },
+    })
+    repositoryApiMock.listDomains
+      .mockRejectedValueOnce(new Error('catalog unavailable'))
+      .mockResolvedValueOnce({ domains: [defaultDomain, paymentsDomain], count: 2 })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness initialDomains={[defaultDomain]} />)
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+
+    const domainSection = container.querySelector('#settings-section-domains')
+    expect(domainSection).toBeTruthy()
+    if (!domainSection) return
+    const inputs = Array.from(domainSection.querySelector('.inline-create-row')?.querySelectorAll('input') || []) as HTMLInputElement[]
+    await setFieldValue(inputs[0], 'Payments')
+    await setFieldValue(inputs[1], 'Payment systems')
+    const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement
+
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.createDomain).toHaveBeenCalledTimes(1)
+    expect(domainSection.textContent).toContain('The create succeeded—do not create it again.')
+    const retryButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Retry') as HTMLButtonElement
+    await act(async () => {
+      retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.createDomain).toHaveBeenCalledTimes(1)
+    expect(repositoryApiMock.listDomains).toHaveBeenCalledTimes(2)
+    expect(domainSection.textContent).not.toContain('The create succeeded—do not create it again.')
+  })
+
   it('renames and describes the selected domain from Settings', async () => {
     const updatedDomain: Domain = {
       ...retailDomain,
@@ -1503,6 +1578,35 @@ describe('SettingsPage', () => {
     expect(generalSection.textContent).toContain('Usage accounting export downloaded.')
   })
 
+  it('publishes a committed usage snapshot and retries only reconciliation', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    if (!generalSection) return
+    await selectGeneralSubnav(generalSection, 'Usage')
+    apiMock.listUsageAccountingSnapshots.mockRejectedValueOnce(new Error('snapshot list unavailable'))
+
+    const capture = Array.from(generalSection.querySelectorAll('button'))
+      .find(button => button.textContent?.includes('Capture Snapshot')) as HTMLButtonElement | undefined
+    await act(async () => capture?.click())
+    await flushPromises()
+
+    expect(apiMock.captureUsageAccountingSnapshot).toHaveBeenCalledTimes(1)
+    expect(generalSection.textContent).toContain('usage-snapshot-2')
+    expect(generalSection.textContent).toContain('The capture succeeded—do not capture again.')
+
+    const refresh = Array.from(generalSection.querySelectorAll('button'))
+      .find(button => button.textContent?.includes('Refresh Usage')) as HTMLButtonElement | undefined
+    await act(async () => refresh?.click())
+    await flushPromises()
+
+    expect(apiMock.captureUsageAccountingSnapshot).toHaveBeenCalledTimes(1)
+    expect(apiMock.listUsageAccountingSnapshots).toHaveBeenCalledTimes(3)
+  })
+
   it('surfaces production readiness checks and refreshes the backend payload', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
@@ -1844,6 +1948,10 @@ describe('SettingsPage', () => {
       },
     })
     expect(container.textContent).toContain('Saved project governance defaults for Customer Portal.')
+    expect(projectContextMock.updateProject).toHaveBeenCalledWith(
+      'project-1',
+      expect.objectContaining({ name: 'Customer Portal' }),
+    )
   })
 
   it('preserves an existing GitHub automation_identity when saving project governance defaults', async () => {
@@ -2003,7 +2111,7 @@ describe('SettingsPage', () => {
     })
     await flushPromises()
 
-    expect(projectContextMock.createAndSelectProject).toHaveBeenCalledWith({ name: 'New Project' })
+    expect(projectContextMock.createAndSelectProject).toHaveBeenCalledWith({ name: 'New Project', domain_id: undefined })
     expect(projectApiMock.createProject).not.toHaveBeenCalled()
     expect(projectSection?.textContent).toContain('2 projects')
     expect(projectSection?.textContent).toContain('New Project')
@@ -2071,6 +2179,194 @@ describe('SettingsPage', () => {
     expect(saveButton?.disabled).toBe(true)
     expect(projectApiMock.updateProject).not.toHaveBeenCalled()
   })
+
+  it('keeps a committed non-active project over a stale settings catalog read', () => {
+    const active = {
+      id: 'project-active',
+      name: 'Active Project',
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    } as Project
+    const stale = {
+      id: 'project-secondary',
+      name: 'Secondary Project',
+      settings: { max_vusers: 100 },
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    } as Project
+    const committed = {
+      ...stale,
+      name: 'Secondary Project Renamed',
+      settings: { max_vusers: 300 },
+      updated_at: '2026-05-16T00:00:00Z',
+    }
+    const committedById = new Map([[committed.id, committed]])
+
+    const reconciled = reconcileSettingsProjectSnapshots([active, stale], committedById)
+
+    expect(reconciled.find(project => project.id === committed.id)).toEqual(committed)
+    expect(committedById.get(committed.id)).toEqual(committed)
+  })
+
+  it('routes a non-active project governance save through the authoritative project context', async () => {
+    const active = {
+      id: 'project-active',
+      name: 'Active Project',
+      settings: {},
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    }
+    const secondary = {
+      id: 'project-secondary',
+      name: 'Secondary Project',
+      settings: { max_vusers: 100 },
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    }
+    const updated = {
+      ...secondary,
+      name: 'Secondary Project Renamed',
+      updated_at: '2026-05-16T00:00:00Z',
+    }
+    projectContextMock.activeProject = active
+    projectContextMock.updateProject.mockResolvedValue(updated)
+    projectApiMock.listProjects.mockResolvedValue({ projects: [active, secondary], count: 2 })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    if (!projectSection) return
+    const secondaryButton = Array.from(projectSection.querySelectorAll<HTMLButtonElement>('.settings-app-card'))
+      .find(button => button.textContent?.includes(secondary.name))
+    await act(async () => secondaryButton?.click())
+    await selectSettingsSubnav(projectSection, 'Limits')
+    const nameInput = findSettingInput(projectSection, 'Selected Project')
+    if (!nameInput) return
+    await setFieldValue(nameInput, updated.name)
+    await act(async () => findButton('Save Project Governance')?.click())
+    await flushPromises()
+
+    expect(projectContextMock.updateProject).toHaveBeenCalledWith(
+      secondary.id,
+      expect.objectContaining({ name: updated.name }),
+    )
+    expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+    expect(projectSection.textContent).toContain(updated.name)
+  })
+
+  it('commits an authoritative pool-quota response through the project context', async () => {
+    const active = {
+      id: 'project-active',
+      name: 'Active Project',
+      settings: {},
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    }
+    const original = {
+      id: 'project-pool',
+      name: 'Pooled Project',
+      settings: { pool_quotas: { 'pool-east': { max_vusers: 100 } } },
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    }
+    const updated = {
+      ...original,
+      settings: { pool_quotas: { 'pool-east': { max_vusers: 250 } } },
+      updated_at: '2026-05-16T00:00:00Z',
+    }
+    projectContextMock.activeProject = active
+    projectApiMock.listProjects.mockResolvedValue({ projects: [active, original], count: 2 })
+    projectApiMock.updateProject.mockResolvedValue(updated)
+    projectContextMock.updateProject.mockResolvedValue(updated)
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'pool-east', name: 'East', status: 'active' }], count: 1 })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    if (!projectSection) return
+    const pooledProject = Array.from(projectSection.querySelectorAll<HTMLButtonElement>('.settings-app-card'))
+      .find(button => button.textContent?.includes(original.name))
+    await act(async () => pooledProject?.click())
+    await selectSettingsSubnav(projectSection, 'Limits')
+
+    const quotaInput = projectSection.querySelector<HTMLInputElement>('.pp-row input[type="number"]')
+    expect(quotaInput).toBeTruthy()
+    if (!quotaInput) return
+    await setFieldValue(quotaInput, '250')
+    const saveQuota = Array.from(projectSection.querySelectorAll('button'))
+      .find(button => button.textContent === 'Save pool quotas') as HTMLButtonElement | undefined
+    await act(async () => saveQuota?.click())
+    await flushPromises()
+
+    expect(projectContextMock.updateProject).toHaveBeenCalledWith(
+      original.id,
+      expect.objectContaining({ settings: updated.settings }),
+    )
+    expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+  })
+
+	it('preserves project governance and pool-quota drafts when Save Changes commits both', async () => {
+		const original = {
+			id: 'project-pool',
+			name: 'Pooled Project',
+			settings: {
+				max_vusers: 100,
+				pool_quotas: { 'pool-east': { max_vusers: 100 } },
+			},
+			created_at: '2026-05-15T00:00:00Z',
+			updated_at: '2026-05-15T00:00:00Z',
+		}
+		projectContextMock.activeProject = original
+		projectApiMock.listProjects.mockResolvedValue({ projects: [original], count: 1 })
+		projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
+			...original,
+			id,
+			name: data.name,
+			settings: data.settings,
+			updated_at: '2026-05-16T00:00:00Z',
+		}))
+		fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'pool-east', name: 'East', status: 'active' }], count: 1 })
+
+		await act(async () => {
+			renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+		})
+		await flushPromises()
+		await flushPromises()
+		await selectTopLevelSettingsTab('Projects & Compliance')
+		const projectSection = container.querySelector('#settings-section-projects')
+		if (!projectSection) return
+		await selectSettingsSubnav(projectSection, 'Limits')
+
+		const governanceInputs = Array.from(projectSection.querySelectorAll<HTMLInputElement>('input'))
+			.filter(input => input.placeholder === 'Unlimited')
+		const quotaInput = projectSection.querySelector<HTMLInputElement>('.pp-row input[type="number"]')
+		expect(governanceInputs).toHaveLength(4)
+		expect(quotaInput).toBeTruthy()
+		if (governanceInputs.length !== 4 || !quotaInput) return
+		await setFieldValue(governanceInputs[1], '300')
+		await setFieldValue(quotaInput, '250')
+
+		const saveAll = findButton('Save Changes')
+		expect(saveAll?.disabled).toBe(false)
+		await act(async () => saveAll?.click())
+		await flushPromises()
+		await flushPromises()
+
+		expect(projectApiMock.updateProject).toHaveBeenCalledTimes(2)
+		const firstSettings = projectApiMock.updateProject.mock.calls[0][1].settings as ProjectSettings
+		const secondSettings = projectApiMock.updateProject.mock.calls[1][1].settings as ProjectSettings
+		expect(firstSettings.max_vusers).toBe(300)
+		expect(firstSettings.pool_quotas?.['pool-east']?.max_vusers).toBe(100)
+		expect(secondSettings.max_vusers).toBe(300)
+		expect(secondSettings.pool_quotas?.['pool-east']?.max_vusers).toBe(250)
+	})
 
   it('blocks saving project compliance when a rule is missing its regex pattern', async () => {
     await act(async () => {
@@ -3309,6 +3605,814 @@ describe('SettingsPage', () => {
       latest?.guard.discard()
     })
     expect(latest?.guard.isDirty()).toBe(false)
+  })
+
+  it('includes domain drafts in the page navigation guard and discards them to the saved value', async () => {
+    const registered: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const registrar = (guard: NavigationGuard, dirty: boolean) => {
+      registered.push({ guard, dirty })
+      return () => {}
+    }
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={registrar}>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPageDomainHarness />
+          </TopbarContributionProvider>
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    const selectedRow = Array.from(domainSection?.querySelectorAll('.setting-row') || []).find(row => row.textContent?.includes('Selected Domain'))
+    const nameInput = selectedRow?.querySelector('input') as HTMLInputElement | null
+    expect(nameInput).toBeTruthy()
+    if (!nameInput) return
+
+    await setFieldValue(nameInput, 'Unsaved Default Domain')
+    const latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    expect(latest?.dirty).toBe(true)
+    expect(latest?.guard.isDirty()).toBe(true)
+
+    await act(async () => {
+      latest?.guard.discard()
+    })
+    expect(nameInput.value).toBe(defaultDomain.name)
+    expect(latest?.guard.isDirty()).toBe(false)
+  })
+
+  it('guards creation drafts and commits them to the scope where editing began', async () => {
+    const registered: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const registrar = (guard: NavigationGuard, dirty: boolean) => {
+      registered.push({ guard, dirty })
+      return () => {}
+    }
+    const retailDomain: Domain = { id: 'retail', name: 'Retail', created_at: '', updated_at: '' }
+    const createdProject = { id: 'project-new', name: 'New Project', domain_id: defaultDomain.id, created_at: '', updated_at: '' }
+    applicationContextMock.createAndSelectApplication.mockResolvedValue({
+      id: 'app-new',
+      project_id: 'project-1',
+      name: 'New Application',
+      created_at: '',
+      updated_at: '',
+    })
+    projectContextMock.createAndSelectProject.mockResolvedValue(createdProject)
+    apiMock.createDataPool.mockResolvedValue({
+      id: 'pool-new',
+      project_id: 'project-1',
+      name: 'Customers',
+      description: '',
+      created_at: '',
+      updated_at: '',
+    })
+
+    const renderPage = (activeDomain: Domain) => root.render(
+      <NavigationGuardRegisterContext.Provider value={registrar}>
+        <TopbarContributionProvider>
+          <SettingsTopbarHarness />
+          <SettingsPage
+            theme="dark"
+            onThemeChange={vi.fn()}
+            domains={[defaultDomain, retailDomain]}
+            activeDomain={activeDomain}
+          />
+        </TopbarContributionProvider>
+      </NavigationGuardRegisterContext.Provider>,
+    )
+
+    await act(async () => renderPage(defaultDomain))
+    await flushPromises()
+    const applicationInput = container.querySelector<HTMLInputElement>('input[placeholder="Create application, e.g. ACC"]')
+    const projectInput = container.querySelector<HTMLInputElement>('input[placeholder="Create project, e.g. Customer Portal"]')
+    const poolInput = container.querySelector<HTMLInputElement>('input[placeholder="Pool name, e.g. Customer Accounts"]')
+    expect(applicationInput && projectInput && poolInput).toBeTruthy()
+    if (!applicationInput || !projectInput || !poolInput) return
+    await setFieldValue(applicationInput, 'New Application')
+    await setFieldValue(projectInput, 'New Project')
+    await setFieldValue(poolInput, 'Customers')
+
+    let latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    expect(latest?.dirty).toBe(true)
+    expect(latest?.guard.isDirty()).toBe(true)
+
+    projectContextMock.activeProject = { id: 'project-2', name: 'Retail Project', created_at: '', updated_at: '' }
+    await act(async () => renderPage(retailDomain))
+    await flushPromises()
+    latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    await act(async () => {
+      expect(await latest?.guard.save()).toBe(true)
+    })
+    await flushPromises()
+
+    expect(applicationContextMock.createAndSelectApplication).toHaveBeenCalledWith('New Application', 'project-1')
+    expect(apiMock.createDataPool).toHaveBeenCalledWith(expect.objectContaining({ name: 'Customers', project_id: 'project-1' }))
+    expect(projectContextMock.createAndSelectProject).toHaveBeenCalledWith({ name: 'New Project', domain_id: defaultDomain.id })
+    expect(latest?.guard.isDirty()).toBe(false)
+  })
+
+  it('guards a domain switch and applies the pending selection only after discard', async () => {
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPageDomainHarness />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+    const domainSection = container.querySelector('#settings-section-domains')
+    if (!domainSection) return
+    const retailButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Retail')) as HTMLButtonElement | undefined
+    const defaultButton = Array.from(domainSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes(defaultDomain.name)) as HTMLButtonElement | undefined
+    expect(retailButton && defaultButton).toBeTruthy()
+    if (!retailButton || !defaultButton) return
+    await act(async () => retailButton.click())
+
+    const selectedRow = Array.from(domainSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Selected Domain'))
+    const nameInput = selectedRow?.querySelector('input') as HTMLInputElement | null
+    if (!nameInput) return
+    await setFieldValue(nameInput, 'Retail draft')
+    await act(async () => defaultButton.click())
+
+    expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+    expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Retail')
+    const discard = Array.from(document.querySelectorAll('.unsaved-changes-modal button')).find(button => button.textContent === 'Discard changes') as HTMLButtonElement | undefined
+    await act(async () => discard?.click())
+    expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+    expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain(defaultDomain.name)
+    expect(nameInput.value).toBe(defaultDomain.name)
+  })
+
+  it('saves a project draft before completing a guarded project switch', async () => {
+    const secondProject = {
+      id: 'project-2',
+      name: 'Payments',
+      settings: { redaction_rules: [], max_vusers: 50 },
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T00:00:00Z',
+    }
+    projectApiMock.listProjects.mockResolvedValue({
+      projects: [
+        {
+          id: 'project-1',
+          name: 'Customer Portal',
+          settings: { redaction_rules: [], max_vusers: 250 },
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+        },
+        secondProject,
+      ],
+      count: 2,
+    })
+    projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
+      id,
+      name: data.name,
+      settings: data.settings,
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-16T00:00:00Z',
+    }))
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    if (!projectSection) return
+    await selectSettingsSubnav(projectSection, 'Limits')
+    const nameInput = findSettingInput(projectSection, 'Selected Project')
+    expect(nameInput).toBeTruthy()
+    if (!nameInput) return
+    await setFieldValue(nameInput, 'Customer Portal Renamed')
+
+    const paymentsButton = Array.from(projectSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Payments')) as HTMLButtonElement | undefined
+    await act(async () => paymentsButton?.click())
+    expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+    const save = Array.from(document.querySelectorAll('.unsaved-changes-modal button')).find(button => button.textContent === 'Save changes') as HTMLButtonElement | undefined
+    await act(async () => save?.click())
+    await flushPromises()
+
+    expect(projectApiMock.updateProject).toHaveBeenCalledWith('project-1', expect.objectContaining({ name: 'Customer Portal Renamed' }))
+    expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+    expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
+  })
+
+  it('guards an edited pool quota before switching the selected project', async () => {
+    const firstProject = {
+      id: 'project-1',
+      name: 'Customer Portal',
+      settings: { pool_quotas: { 'pool-east': { max_vusers: 100 } } },
+      created_at: '',
+      updated_at: '',
+    }
+    const secondProject = { id: 'project-2', name: 'Payments', settings: {}, created_at: '', updated_at: '' }
+    projectApiMock.listProjects.mockResolvedValue({ projects: [firstProject, secondProject], count: 2 })
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'pool-east', name: 'East', status: 'active' }], count: 1 })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    if (!projectSection) return
+    await selectSettingsSubnav(projectSection, 'Limits')
+    const quotaInput = projectSection.querySelector<HTMLInputElement>('.pp-row input[type="number"]')
+    if (!quotaInput) return
+    await setFieldValue(quotaInput, '250')
+
+    const payments = Array.from(projectSection.querySelectorAll('.settings-app-card'))
+      .find(button => button.textContent?.includes('Payments')) as HTMLButtonElement | undefined
+    await act(async () => payments?.click())
+    expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+    expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Customer Portal')
+
+    const discard = Array.from(document.querySelectorAll('.unsaved-changes-modal button'))
+      .find(button => button.textContent === 'Discard changes') as HTMLButtonElement | undefined
+    await act(async () => discard?.click())
+    expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+    expect(projectSection.querySelector('.settings-app-card.active')?.textContent).toContain('Payments')
+    expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+  })
+
+  it('saves a release rename in its originating application before completing a guarded application switch', async () => {
+    const applicationA = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const applicationB = { id: 'app-b', project_id: 'project-1', name: 'Payments', created_at: '', updated_at: '' }
+    const releaseA = { id: 'release-a', application_id: applicationA.id, name: '1.0', created_at: '', updated_at: '' }
+    const releaseB = { id: 'release-b', application_id: applicationB.id, name: '2.0', created_at: '', updated_at: '' }
+    const renamedReleaseA = { ...releaseA, name: '1.0 Renamed' }
+    let renameCommitted = false
+    Object.assign(applicationContextMock, {
+      applications: [applicationA, applicationB],
+      activeApplication: applicationA,
+      releases: [releaseA],
+      activeRelease: releaseA,
+    })
+    applicationApiMock.updateRelease.mockImplementation(async () => {
+      renameCommitted = true
+      return renamedReleaseA
+    })
+    applicationApiMock.listReleases.mockImplementation(async (applicationId: string) => ({
+      releases: applicationId === applicationA.id
+        ? [renameCommitted ? renamedReleaseA : releaseA]
+        : [releaseB],
+    }))
+
+    const renderPage = () => root.render(
+      <NavigationGuardProvider>
+        <TopbarContributionProvider>
+          <SettingsTopbarHarness />
+          <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+        </TopbarContributionProvider>
+      </NavigationGuardProvider>,
+    )
+    await act(async () => renderPage())
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const releaseRow = applicationSection?.querySelector('.settings-release-row')
+    const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    await act(async () => rename?.click())
+    const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
+    expect(renameInput).toBeTruthy()
+    if (!renameInput || !applicationSection) return
+    await setFieldValue(renameInput, renamedReleaseA.name)
+
+    const payments = Array.from(applicationSection.querySelectorAll('.settings-app-card'))
+      .find(button => button.textContent?.includes(applicationB.name)) as HTMLButtonElement | undefined
+    await act(async () => payments?.click())
+    expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+    expect(applicationContextMock.setActiveApplication).not.toHaveBeenCalled()
+
+    // Simulate another application-scope source changing while the guarded
+    // transition is pending. The hidden draft must remain bound to app A.
+    Object.assign(applicationContextMock, {
+      activeApplication: applicationB,
+      releases: [releaseB],
+      activeRelease: releaseB,
+    })
+    await act(async () => renderPage())
+    await flushPromises()
+    const save = Array.from(document.querySelectorAll('.unsaved-changes-modal button'))
+      .find(button => button.textContent === 'Save changes') as HTMLButtonElement | undefined
+    await act(async () => save?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(applicationApiMock.updateRelease).toHaveBeenCalledWith(releaseA.id, { name: renamedReleaseA.name })
+    expect(applicationContextMock.refreshReleases).toHaveBeenCalledWith(applicationA.id, { preserveRelease: renamedReleaseA })
+    expect(applicationApiMock.listReleases).toHaveBeenCalledWith(applicationA.id, true)
+    expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(applicationB)
+    expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+    expect(applicationSection.textContent).toContain(releaseB.name)
+    expect(applicationSection.textContent).not.toContain(renamedReleaseA.name)
+  })
+
+  it('discards a release rename before completing a guarded application switch', async () => {
+    const applicationA = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const applicationB = { id: 'app-b', project_id: 'project-1', name: 'Payments', created_at: '', updated_at: '' }
+    const releaseA = { id: 'release-a', application_id: applicationA.id, name: '1.0', created_at: '', updated_at: '' }
+    Object.assign(applicationContextMock, {
+      applications: [applicationA, applicationB],
+      activeApplication: applicationA,
+      releases: [releaseA],
+      activeRelease: releaseA,
+    })
+    applicationApiMock.listReleases.mockResolvedValue({ releases: [releaseA] })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const releaseRow = applicationSection?.querySelector('.settings-release-row')
+    const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    await act(async () => rename?.click())
+    const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
+    expect(renameInput).toBeTruthy()
+    if (!renameInput || !applicationSection) return
+    await setFieldValue(renameInput, '1.0 Draft')
+
+    const payments = Array.from(applicationSection.querySelectorAll('.settings-app-card'))
+      .find(button => button.textContent?.includes(applicationB.name)) as HTMLButtonElement | undefined
+    await act(async () => payments?.click())
+    expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+    expect(applicationContextMock.setActiveApplication).not.toHaveBeenCalled()
+    const discard = Array.from(document.querySelectorAll('.unsaved-changes-modal button'))
+      .find(button => button.textContent === 'Discard changes') as HTMLButtonElement | undefined
+    await act(async () => discard?.click())
+
+    expect(applicationApiMock.updateRelease).not.toHaveBeenCalled()
+    expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(applicationB)
+    expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+    expect(releaseRow?.querySelector('input')).toBeNull()
+    expect(releaseRow?.textContent).toContain(releaseA.name)
+  })
+
+  it('locks an application rename to the application that started the edit', async () => {
+    const applicationA = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const applicationB = { id: 'app-b', project_id: 'project-1', name: 'Payments', created_at: '', updated_at: '' }
+    const renamedA = { ...applicationA, name: 'Checkout Renamed' }
+    Object.assign(applicationContextMock, {
+      applications: [applicationA, applicationB],
+      activeApplication: applicationA,
+    })
+    applicationApiMock.updateApplication.mockResolvedValue(renamedA)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    if (!applicationSection) return
+    await act(async () => findButton('Rename')?.click())
+
+    const currentRow = Array.from(applicationSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Current Application'))
+    const renameInput = currentRow?.querySelector('input') as HTMLInputElement | null
+    expect(renameInput).toBeTruthy()
+    if (!renameInput) return
+    const paymentsButton = Array.from(applicationSection.querySelectorAll('.settings-app-card')).find(button => button.textContent?.includes('Payments')) as HTMLButtonElement | undefined
+    expect(paymentsButton?.disabled).toBe(true)
+
+    Object.assign(applicationContextMock, { activeApplication: applicationB })
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await setFieldValue(renameInput, 'Checkout Renamed')
+    const save = Array.from(currentRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Save') as HTMLButtonElement | undefined
+    await act(async () => save?.click())
+    await flushPromises()
+
+    expect(applicationApiMock.updateApplication).toHaveBeenCalledWith('app-a', { name: 'Checkout Renamed' })
+    expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(renamedA)
+  })
+
+  it('keeps a committed application rename successful when list reconciliation fails', async () => {
+    const original = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const updated = { ...original, name: 'Checkout Renamed' }
+    Object.assign(applicationContextMock, {
+      applications: [original],
+      activeApplication: original,
+    })
+    applicationApiMock.updateApplication.mockResolvedValue(updated)
+    applicationContextMock.refreshApplications.mockRejectedValueOnce(new Error('list unavailable'))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    expect(applicationSection).toBeTruthy()
+    if (!applicationSection) return
+
+    await act(async () => findButton('Rename')?.click())
+    const currentRow = Array.from(applicationSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Current Application'))
+    const renameInput = currentRow?.querySelector('input') as HTMLInputElement | null
+    expect(renameInput).toBeTruthy()
+    if (!renameInput) return
+    await setFieldValue(renameInput, 'Checkout Renamed')
+    const save = Array.from(currentRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Save') as HTMLButtonElement | undefined
+    await act(async () => save?.click())
+    await flushPromises()
+
+    expect(applicationApiMock.updateApplication).toHaveBeenCalledTimes(1)
+    expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(updated)
+    expect(currentRow?.querySelector('input')).toBeNull()
+    expect(applicationSection.textContent).toContain('Application "Checkout Renamed" was renamed, but the application list could not be refreshed.')
+    expect(applicationSection.textContent).not.toContain('Unable to rename application')
+
+    const retry = Array.from(applicationSection.querySelectorAll('button')).find(button => button.textContent === 'Retry') as HTMLButtonElement | undefined
+    await act(async () => retry?.click())
+    await flushPromises()
+
+    expect(applicationContextMock.refreshApplications).toHaveBeenCalledTimes(2)
+    expect(applicationApiMock.updateApplication).toHaveBeenCalledTimes(1)
+    expect(applicationSection.textContent).not.toContain('was renamed, but the application list could not be refreshed')
+  })
+
+  it('does not repeat a committed application delete when list reconciliation fails', async () => {
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+    })
+    applicationApiMock.deleteApplication.mockResolvedValue({ deleted: application.id })
+    applicationContextMock.refreshApplications.mockRejectedValueOnce(new Error('list unavailable'))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const currentRow = Array.from(applicationSection?.querySelectorAll('.setting-row') || []).find(row => row.textContent?.includes('Current Application'))
+    const deleteButton = Array.from(currentRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Delete') as HTMLButtonElement | undefined
+    expect(deleteButton).toBeTruthy()
+    if (!deleteButton || !applicationSection) return
+    await act(async () => deleteButton.click())
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button')).find(button => button.textContent === 'Delete Application') as HTMLButtonElement | undefined
+    expect(confirm).toBeTruthy()
+    await act(async () => confirm?.click())
+    await flushPromises()
+
+    expect(applicationApiMock.deleteApplication).toHaveBeenCalledTimes(1)
+    expect(applicationContextMock.removeApplication).toHaveBeenCalledWith(application.id)
+    expect(applicationSection.textContent).toContain('The delete succeeded—do not delete again.')
+    expect(applicationSection.textContent).not.toContain('Unable to delete application')
+
+    const retry = Array.from(applicationSection.querySelectorAll('button')).find(button => button.textContent === 'Retry') as HTMLButtonElement | undefined
+    await act(async () => retry?.click())
+    await flushPromises()
+
+    expect(applicationContextMock.refreshApplications).toHaveBeenCalledTimes(2)
+    expect(applicationApiMock.deleteApplication).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a committed release rename visible when release reconciliation fails', async () => {
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const original = { id: 'release-a', application_id: application.id, name: '1.0', created_at: '', updated_at: '' }
+    const updated = { ...original, name: '1.0 Renamed' }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+      releases: [original],
+      activeRelease: original,
+    })
+    applicationApiMock.listReleases.mockResolvedValue({ releases: [updated] })
+    applicationApiMock.updateRelease.mockResolvedValue(updated)
+    applicationContextMock.refreshReleases.mockRejectedValueOnce(new Error('release list unavailable'))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const releaseRow = applicationSection?.querySelector('.settings-release-row')
+    const renameButton = Array.from(releaseRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    expect(renameButton).toBeTruthy()
+    if (!renameButton || !releaseRow || !applicationSection) return
+    await act(async () => renameButton.click())
+    const renameInput = releaseRow.querySelector('input') as HTMLInputElement | null
+    expect(renameInput).toBeTruthy()
+    if (!renameInput) return
+    await setFieldValue(renameInput, updated.name)
+    const save = Array.from(releaseRow.querySelectorAll('button')).find(button => button.textContent === 'Save') as HTMLButtonElement | undefined
+    await act(async () => save?.click())
+    await flushPromises()
+
+    expect(applicationApiMock.updateRelease).toHaveBeenCalledTimes(1)
+    expect(releaseRow.querySelector('input')).toBeNull()
+    expect(releaseRow.textContent).toContain(updated.name)
+    expect(applicationSection.textContent).toContain('The rename succeeded—do not rename again.')
+    expect(applicationSection.textContent).not.toContain('Unable to rename release')
+
+    const retry = Array.from(applicationSection.querySelectorAll('button')).find(button => button.textContent === 'Retry') as HTMLButtonElement | undefined
+    await act(async () => retry?.click())
+    await flushPromises()
+
+    expect(applicationContextMock.refreshReleases).toHaveBeenCalledTimes(2)
+    expect(applicationApiMock.updateRelease).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a committed release rename through a stale successful catalog and accepts a newer snapshot', async () => {
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const original = { id: 'release-a', application_id: application.id, name: '1.0', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const committed = { ...original, name: '1.0 Renamed', updated_at: '2026-05-16T00:00:00Z' }
+    const newer = { ...original, name: '1.0 Final', updated_at: '2026-05-17T00:00:00Z' }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+      releases: [original],
+      activeRelease: original,
+    })
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [original] })
+      .mockResolvedValueOnce({ releases: [original] })
+      .mockResolvedValueOnce({ releases: [newer] })
+    applicationApiMock.updateRelease.mockResolvedValue(committed)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const releaseRow = applicationSection?.querySelector('.settings-release-row')
+    const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    await act(async () => rename?.click())
+    const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
+    expect(renameInput).toBeTruthy()
+    if (!renameInput || !releaseRow) return
+    await setFieldValue(renameInput, committed.name)
+    const save = Array.from(releaseRow.querySelectorAll('button'))
+      .find(button => button.textContent === 'Save') as HTMLButtonElement | undefined
+    await act(async () => save?.click())
+    await flushPromises()
+
+    expect(releaseRow.textContent).toContain(committed.name)
+
+    Object.assign(applicationContextMock, { releases: [newer], activeRelease: newer })
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    expect(applicationSection?.querySelector('.settings-release-row')?.textContent).toContain(newer.name)
+  })
+
+  it('keeps a deleted release tombstoned when successful reconciliation is stale', async () => {
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const original = { id: 'release-a', application_id: application.id, name: '1.0', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+      releases: [original],
+      activeRelease: original,
+    })
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [original] })
+      .mockResolvedValueOnce({ releases: [original] })
+    applicationApiMock.deleteRelease.mockResolvedValue({ deleted: original.id })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const deleteButton = Array.from(applicationSection?.querySelectorAll('.settings-release-row button') || [])
+      .find(button => button.textContent === 'Delete') as HTMLButtonElement | undefined
+    await act(async () => deleteButton?.click())
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
+      .find(button => button.textContent === 'Delete Release') as HTMLButtonElement | undefined
+    await act(async () => confirm?.click())
+    await flushPromises()
+
+    expect(applicationApiMock.deleteRelease).toHaveBeenCalledTimes(1)
+    expect(applicationContextMock.removeRelease).toHaveBeenCalledWith(original.id)
+    expect(applicationSection?.querySelector('.settings-release-row')).toBeNull()
+    expect(applicationSection?.textContent).toContain('No releases yet for this application.')
+  })
+
+  it('keeps a committed release archive visible when successful reconciliation is stale', async () => {
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const original = { id: 'release-a', application_id: application.id, name: '1.0', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const archived = {
+      ...original,
+      updated_at: '2026-05-16T00:00:00Z',
+      archived_at: '2026-05-16T00:00:00Z',
+    }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+      releases: [original],
+      activeRelease: original,
+    })
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [original] })
+      .mockResolvedValueOnce({ releases: [original] })
+    applicationApiMock.archiveRelease.mockResolvedValue(archived)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const archive = Array.from(applicationSection?.querySelectorAll('.settings-release-row button') || [])
+      .find(button => button.textContent === 'Archive') as HTMLButtonElement | undefined
+    await act(async () => archive?.click())
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
+      .find(button => button.textContent === 'Archive Release') as HTMLButtonElement | undefined
+    await act(async () => confirm?.click())
+    await flushPromises()
+
+    const releaseRow = applicationSection?.querySelector('.settings-release-row')
+    expect(applicationApiMock.archiveRelease).toHaveBeenCalledTimes(1)
+    expect(releaseRow?.textContent).toContain('Archived')
+    expect(Array.from(releaseRow?.querySelectorAll('button') || []).some(button => button.textContent === 'Archive')).toBe(false)
+  })
+
+  it('saves an application rename draft through the page navigation guard', async () => {
+    const registered: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const registrar = (guard: NavigationGuard, dirty: boolean) => {
+      registered.push({ guard, dirty })
+      return () => {}
+    }
+    const original = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const updated = { ...original, name: 'Checkout Renamed', updated_at: '2026-05-16T00:00:00Z' }
+    Object.assign(applicationContextMock, { applications: [original], activeApplication: original })
+    applicationApiMock.updateApplication.mockResolvedValue(updated)
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={registrar}>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const currentRow = Array.from(applicationSection?.querySelectorAll('.setting-row') || [])
+      .find(row => row.textContent?.includes('Current Application'))
+    const rename = Array.from(currentRow?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    await act(async () => rename?.click())
+    const input = currentRow?.querySelector('input') as HTMLInputElement | null
+    expect(input).toBeTruthy()
+    if (!input) return
+    await setFieldValue(input, updated.name)
+
+    const latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    expect(latest?.dirty).toBe(true)
+    expect(latest?.guard.isDirty()).toBe(true)
+    await act(async () => {
+      expect(await latest?.guard.save()).toBe(true)
+    })
+    await flushPromises()
+
+    expect(applicationApiMock.updateApplication).toHaveBeenCalledWith(original.id, { name: updated.name })
+    expect(applicationContextMock.setActiveApplication).toHaveBeenCalledWith(updated)
+    expect(currentRow?.querySelector('input')).toBeNull()
+    expect(latest?.guard.isDirty()).toBe(false)
+  })
+
+  it('discards a release rename draft through the page navigation guard', async () => {
+    const registered: Array<{ guard: NavigationGuard; dirty: boolean }> = []
+    const registrar = (guard: NavigationGuard, dirty: boolean) => {
+      registered.push({ guard, dirty })
+      return () => {}
+    }
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    const release = { id: 'release-a', application_id: application.id, name: '1.0', created_at: '2026-05-15T00:00:00Z', updated_at: '2026-05-15T00:00:00Z' }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+      releases: [release],
+      activeRelease: release,
+    })
+    applicationApiMock.listReleases.mockResolvedValue({ releases: [release] })
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={registrar}>
+          <TopbarContributionProvider>
+            <SettingsTopbarHarness />
+            <SettingsPage theme="dark" onThemeChange={vi.fn()} />
+          </TopbarContributionProvider>
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const releaseRow = applicationSection?.querySelector('.settings-release-row')
+    const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    await act(async () => rename?.click())
+    const input = releaseRow?.querySelector('input') as HTMLInputElement | null
+    expect(input).toBeTruthy()
+    if (!input) return
+    await setFieldValue(input, '1.0 Draft')
+
+    const latest = registered.filter(entry => entry.guard.id === 'system-settings').pop()
+    expect(latest?.dirty).toBe(true)
+    expect(latest?.guard.isDirty()).toBe(true)
+    await act(async () => latest?.guard.discard())
+
+    expect(applicationApiMock.updateRelease).not.toHaveBeenCalled()
+    expect(releaseRow?.querySelector('input')).toBeNull()
+    expect(releaseRow?.textContent).toContain(release.name)
+    expect(latest?.guard.isDirty()).toBe(false)
+  })
+
+  it('tombstones an archived release before failed list reconciliation', async () => {
+    const application = { id: 'app-a', project_id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    const original = { id: 'release-a', application_id: application.id, name: '1.0', created_at: '', updated_at: '' }
+    const archived = { ...original, archived_at: '2026-08-03T12:00:00Z' }
+    Object.assign(applicationContextMock, {
+      applications: [application],
+      activeApplication: application,
+      releases: [original],
+      activeRelease: original,
+    })
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [original] })
+      .mockResolvedValue({ releases: [archived] })
+    applicationApiMock.archiveRelease.mockResolvedValue(archived)
+    applicationContextMock.refreshReleases.mockRejectedValueOnce(new Error('release list unavailable'))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Applications & Releases')
+    const applicationSection = container.querySelector('#settings-section-applications')
+    const archive = Array.from(applicationSection?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Archive') as HTMLButtonElement | undefined
+    await act(async () => archive?.click())
+    const confirm = Array.from(container.querySelectorAll('[role="dialog"] button'))
+      .find(button => button.textContent === 'Archive Release') as HTMLButtonElement | undefined
+    await act(async () => confirm?.click())
+    await flushPromises()
+
+    expect(applicationApiMock.archiveRelease).toHaveBeenCalledTimes(1)
+    expect(applicationContextMock.removeRelease).toHaveBeenCalledWith(original.id)
+    expect(applicationSection?.textContent).toContain('The archive succeeded—do not archive again.')
+
+    const retry = Array.from(applicationSection?.querySelectorAll('button') || [])
+      .find(button => button.textContent === 'Retry') as HTMLButtonElement | undefined
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(applicationApiMock.archiveRelease).toHaveBeenCalledTimes(1)
   })
 
   it('restores a telemetry budget via Reset to default and accepts explicit 0 as disabled', async () => {

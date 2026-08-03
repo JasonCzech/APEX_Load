@@ -1,74 +1,73 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
-import { useApi } from '../hooks/useApi'
-import { TestSummary } from '../types'
-import { getErrorMessage } from '../utils/errorUtils'
-import { buildQueuedScenarioPreview, buildQueuedScenarioRows, QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
+import { TestRunManifest, TestSummary } from '../types'
+import { buildQueuedScenarioPreview, buildQueuedScenarioRows, QueuedScenarioPreview, QueuedScenarioRow } from './testExecutionScenarioModel'
+
+export type ScenarioSnapshotSource = 'immutable_manifest' | 'stored_manifest' | 'retained_manifest' | 'summary'
 
 interface ExecutionScenarioPreviewModel {
+  scenarioSnapshot: TestSummary | null
+  snapshotSource: ScenarioSnapshotSource
   queuedScenarioPreview: QueuedScenarioPreview
   queuedScenarioRows: QueuedScenarioRow[]
-  scriptDetailsLoading: boolean
-  scriptDetailsError: string
+  snapshotLoading: boolean
+  snapshotError: string
 }
 
-export function useExecutionScenarioPreviewModel(test: TestSummary | null): ExecutionScenarioPreviewModel {
-  const api = useApi()
-  const [scriptDetails, setScriptDetails] = useState<Record<string, ScenarioScriptDetail>>({})
-  const [scriptDetailsLoading, setScriptDetailsLoading] = useState(false)
-  const [scriptDetailsError, setScriptDetailsError] = useState('')
+export function buildScenarioSnapshot(test: TestSummary | null, manifest: TestRunManifest | null): TestSummary | null {
+  if (!test || !manifest) return test
 
-  const scriptIdsKey = useMemo(() => {
-    if (!test?.groups?.length) return ''
-    const ids = [...new Set(test.groups.map((group) => group.script_id).filter(Boolean))].sort()
-    return ids.join('|')
-  }, [test?.groups])
+  const initial = manifest.initial_configuration
+  return {
+    ...test,
+    name: manifest.test_name || test.name,
+    application_id: manifest.identity.application_id ?? test.application_id,
+    release_id: manifest.identity.release_id ?? test.release_id,
+    scenario_id: manifest.identity.scenario_id ?? test.scenario_id,
+    project_id: manifest.identity.project_id ?? test.project_id,
+    folder_id: manifest.identity.folder_id ?? test.folder_id,
+    created_at: manifest.identity.created_at || test.created_at,
+    duration: initial.duration ?? test.duration,
+    total_vusers: initial.total_vusers ?? test.total_vusers,
+    start_delay: initial.start_delay ?? test.start_delay,
+    scenario_mode: initial.scenario_mode ?? test.scenario_mode,
+    script_shakeout: initial.script_shakeout ?? test.script_shakeout,
+    resource_baseline: initial.resource_baseline ?? test.resource_baseline,
+    assignment: initial.assignment ?? test.assignment,
+    goal_config: initial.goal_config ?? test.goal_config,
+    runtime_settings: initial.runtime_settings ?? test.runtime_settings,
+    groups: initial.groups ?? test.groups,
+    // Operational state remains live so start blockers and queue status are
+    // accurate. Configuration comes from the manifest when available, while
+    // initial_configuration_provenance determines whether it is immutable.
+    status: test.status,
+  }
+}
 
-  useEffect(() => {
-    if (!scriptIdsKey) {
-      setScriptDetails({})
-      setScriptDetailsError('')
-      setScriptDetailsLoading(false)
-      return
-    }
+export function useExecutionScenarioPreviewModel(
+  test: TestSummary | null,
+  manifest: TestRunManifest | null,
+  manifestLoading: boolean,
+  manifestError: string,
+): ExecutionScenarioPreviewModel {
+  const scenarioSnapshot = useMemo(() => buildScenarioSnapshot(test, manifest), [manifest, test])
+  const queuedScenarioRows = useMemo(() => buildQueuedScenarioRows(scenarioSnapshot, {}), [scenarioSnapshot])
+  const queuedScenarioPreview = useMemo(() => buildQueuedScenarioPreview(scenarioSnapshot), [scenarioSnapshot])
 
-    const scriptIds = scriptIdsKey.split('|').filter(Boolean)
-    let cancelled = false
-
-    const loadScriptDetails = async () => {
-      setScriptDetailsLoading(true)
-      setScriptDetailsError('')
-      try {
-        const results = await Promise.all(scriptIds.map(async (scriptId) => {
-          const detail = await api.getScript(scriptId)
-          return [scriptId, detail as ScenarioScriptDetail] as const
-        }))
-        if (cancelled) return
-        setScriptDetails(Object.fromEntries(results))
-      } catch (error: unknown) {
-        if (cancelled) return
-        setScriptDetailsError(getErrorMessage(error, 'Unable to load script details'))
-      } finally {
-        if (!cancelled) {
-          setScriptDetailsLoading(false)
-        }
-      }
-    }
-
-    loadScriptDetails()
-
-    return () => {
-      cancelled = true
-    }
-  }, [api, scriptIdsKey])
-
-  const queuedScenarioRows = useMemo(() => buildQueuedScenarioRows(test, scriptDetails), [scriptDetails, test])
-  const queuedScenarioPreview = useMemo(() => buildQueuedScenarioPreview(test), [test])
+  const snapshotSource: ScenarioSnapshotSource = !manifest
+    ? 'summary'
+    : manifest.initial_configuration_provenance?.immutable === true
+      ? 'immutable_manifest'
+      : manifest.initial_configuration_provenance?.source === 'stored_test_record'
+        ? 'stored_manifest'
+        : 'retained_manifest'
 
   return {
+    scenarioSnapshot,
+    snapshotSource,
     queuedScenarioPreview,
     queuedScenarioRows,
-    scriptDetailsLoading,
-    scriptDetailsError,
+    snapshotLoading: manifestLoading,
+    snapshotError: manifestError,
   }
 }

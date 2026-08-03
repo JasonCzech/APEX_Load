@@ -134,6 +134,26 @@ describe('ScriptsLibraryTable federation', () => {
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Runtime parity has partial')
   })
 
+  it('shows linked-run load failures with Retry instead of an empty-catalog message', async () => {
+    const onRetryScriptRuns = vi.fn()
+    await act(async () => {
+      root.render(
+        <ScriptsLibraryTable
+          {...baseProps}
+          expandedScriptId="local-script"
+          scriptRunErrors={{ 'local-script': 'Controller unavailable' }}
+          onRetryScriptRuns={onRetryScriptRuns}
+        />,
+      )
+    })
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Controller unavailable')
+    expect(container.textContent).not.toContain('No linked scenario runs for this script yet.')
+
+    await act(async () => { findButton('Retry')?.click() })
+    expect(onRetryScriptRuns).toHaveBeenCalledWith(script)
+  })
+
   it('loads exact validation failures from a library blocker', async () => {
     const blockedScript = {
       ...script,

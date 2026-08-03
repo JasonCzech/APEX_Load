@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 
 import {
   DesktopStatusResponse,
+  LibraryCatalogPageOptions,
   LibraryCatalogResponse,
   LibraryDiffResponse,
   LibraryKind,
@@ -14,18 +15,30 @@ import {
 } from '../../types/library'
 import { apiFetch, request } from '../apiClient'
 
-function catalogPath(kind: LibraryKind, projectId?: string) {
+function catalogPath(kind: LibraryKind, projectId?: string, page?: LibraryCatalogPageOptions) {
   const params = new URLSearchParams({ kind })
   if (projectId?.trim()) {
     params.set('project_id', projectId.trim())
   }
+  if (page?.limit !== undefined) {
+    params.set('limit', String(page.limit))
+  }
+  if (page?.offset !== undefined) {
+    params.set('offset', String(page.offset))
+  }
   return `/library/catalog?${params.toString()}`
 }
 
-function remoteCatalogPath(remoteId: string, kind: LibraryKind, projectId?: string) {
+function remoteCatalogPath(remoteId: string, kind: LibraryKind, projectId?: string, page?: LibraryCatalogPageOptions) {
   const params = new URLSearchParams({ kind })
   if (projectId?.trim()) {
     params.set('project_id', projectId.trim())
+  }
+  if (page?.limit !== undefined) {
+    params.set('limit', String(page.limit))
+  }
+  if (page?.offset !== undefined) {
+    params.set('offset', String(page.offset))
   }
   return `/library/remotes/${encodeURIComponent(remoteId)}/catalog?${params.toString()}`
 }
@@ -74,13 +87,14 @@ export function useLibraryApi() {
   )
 
   const localCatalog = useCallback(
-    (kind: LibraryKind, projectId?: string) => request<LibraryCatalogResponse>(catalogPath(kind, projectId)),
+    (kind: LibraryKind, projectId?: string, page?: LibraryCatalogPageOptions) =>
+      request<LibraryCatalogResponse>(catalogPath(kind, projectId, page), { signal: page?.signal }),
     [],
   )
 
   const remoteCatalog = useCallback(
-    (remoteId: string, kind: LibraryKind, projectId?: string) =>
-      request<LibraryRemoteCatalogResponse>(remoteCatalogPath(remoteId, kind, projectId)),
+    (remoteId: string, kind: LibraryKind, projectId?: string, page?: LibraryCatalogPageOptions) =>
+      request<LibraryRemoteCatalogResponse>(remoteCatalogPath(remoteId, kind, projectId, page), { signal: page?.signal }),
     [],
   )
 

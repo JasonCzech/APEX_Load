@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,15 +37,16 @@ const (
 var errInMemoryExternalResultCapacity = errors.New("in-memory external result import capacity exceeded")
 
 type ExternalResultImportRequest struct {
-	Provider   string         `json:"provider"`
-	Name       string         `json:"name,omitempty"`
-	ProjectID  string         `json:"project_id,omitempty"`
-	ReleaseID  string         `json:"release_id,omitempty"`
-	ScenarioID string         `json:"scenario_id,omitempty"`
-	Source     string         `json:"source,omitempty"`
-	Summary    map[string]any `json:"summary,omitempty"`
-	Result     map[string]any `json:"result,omitempty"`
-	Results    map[string]any `json:"results,omitempty"`
+	Provider      string         `json:"provider"`
+	Name          string         `json:"name,omitempty"`
+	ProjectID     string         `json:"project_id,omitempty"`
+	ApplicationID string         `json:"application_id,omitempty"`
+	ReleaseID     string         `json:"release_id,omitempty"`
+	ScenarioID    string         `json:"scenario_id,omitempty"`
+	Source        string         `json:"source,omitempty"`
+	Summary       map[string]any `json:"summary,omitempty"`
+	Result        map[string]any `json:"result,omitempty"`
+	Results       map[string]any `json:"results,omitempty"`
 }
 
 func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Request) {
@@ -70,8 +73,9 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 	summary["provider"] = provider
 	explicitProject := strings.TrimSpace(req.ProjectID) != ""
 	projectID := authorizedProjectOr(r, normalizeProjectID(req.ProjectID))
+	applicationID := strings.TrimSpace(req.ApplicationID)
 	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" && s.store != nil {
-		resolvedProjectID, _, _, err := s.releaseContext(releaseID)
+		resolvedProjectID, _, resolvedApplicationID, err := s.releaseContext(releaseID)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "release not found")
 			return
@@ -83,18 +87,24 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusBadRequest, "release does not belong to the authorized project")
 			return
 		}
+		if applicationID != "" && applicationID != resolvedApplicationID {
+			writeError(w, http.StatusBadRequest, "release does not belong to the requested application")
+			return
+		}
+		applicationID = resolvedApplicationID
 	}
 	result := &storage.ExternalResultImport{
-		ID:         uuid.New().String(),
-		Provider:   provider,
-		Name:       firstNonEmpty(strings.TrimSpace(req.Name), provider+" import"),
-		ProjectID:  projectID,
-		ReleaseID:  strings.TrimSpace(req.ReleaseID),
-		ScenarioID: strings.TrimSpace(req.ScenarioID),
-		Source:     strings.TrimSpace(req.Source),
-		Summary:    summary,
-		RawResult:  raw,
-		CreatedAt:  time.Now().UTC(),
+		ID:            uuid.New().String(),
+		Provider:      provider,
+		Name:          firstNonEmpty(strings.TrimSpace(req.Name), provider+" import"),
+		ProjectID:     projectID,
+		ApplicationID: applicationID,
+		ReleaseID:     strings.TrimSpace(req.ReleaseID),
+		ScenarioID:    strings.TrimSpace(req.ScenarioID),
+		Source:        strings.TrimSpace(req.Source),
+		Summary:       summary,
+		RawResult:     raw,
+		CreatedAt:     time.Now().UTC(),
 	}
 	if err := s.saveExternalResultImport(result); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save external result import: "+err.Error())
@@ -112,23 +122,53 @@ func (s *Server) handleImportExternalResults(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleListExternalResultImports(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffsetQuery(r, 100)
 	filter := storage.ExternalResultImportFilter{
-		ProjectID: strings.TrimSpace(r.URL.Query().Get("project_id")),
-		ReleaseID: strings.TrimSpace(r.URL.Query().Get("release_id")),
-		Provider:  normalizeExternalResultProvider(r.URL.Query().Get("provider")),
-		Limit:     limit,
-		Offset:    offset,
+		ProjectID:     strings.TrimSpace(r.URL.Query().Get("project_id")),
+		ApplicationID: strings.TrimSpace(r.URL.Query().Get("application_id")),
+		ReleaseID:     strings.TrimSpace(r.URL.Query().Get("release_id")),
+		Provider:      normalizeExternalResultProvider(r.URL.Query().Get("provider")),
+		Limit:         limit + 1,
+		Offset:        offset,
 	}
 	imports, err := s.listExternalResultImports(filter)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list external result imports: "+err.Error())
 		return
 	}
+	hasMore := len(imports) > limit
+	if hasMore {
+		imports = imports[:limit]
+	}
+	for _, imported := range imports {
+		s.enrichExternalResultImportView(imported)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"imports": imports,
-		"count":   len(imports),
-		"limit":   limit,
-		"offset":  offset,
+		"imports":  imports,
+		"count":    len(imports),
+		"limit":    limit,
+		"offset":   offset,
+		"has_more": hasMore,
 	})
+}
+
+func (s *Server) enrichExternalResultImportView(result *storage.ExternalResultImport) {
+	if result == nil {
+		return
+	}
+	result.ContentHash, _ = result.RawResult["content_hash"].(string)
+	if strings.TrimSpace(result.ContentHash) == "" || !strings.EqualFold(strings.TrimSpace(result.Provider), "apexload") {
+		return
+	}
+	record := result.ArchiveRecord
+	if record != nil && archiveRecordBackend(record) != archiveBackendFilesystem {
+		result.HasArchive = strings.TrimSpace(record.ArchiveURI) != "" && strings.TrimSpace(record.ManifestURI) != ""
+		return
+	}
+	manifestPath := filepath.Join(libraryImportedArchiveDir(result.ID), runArchiveManifestFileName)
+	if record != nil && strings.TrimSpace(record.ManifestPath) != "" {
+		manifestPath = record.ManifestPath
+	}
+	_, err := os.Stat(manifestPath)
+	result.HasArchive = err == nil
 }
 
 func normalizeExternalResultProvider(provider string) string {
@@ -419,6 +459,11 @@ func externalResultImportWeight(result *storage.ExternalResultImport) (int64, er
 	if err := json.NewEncoder(writer).Encode(result); err != nil {
 		return 0, fmt.Errorf("measure external result import: %w", err)
 	}
+	if result.ArchiveRecord != nil {
+		if err := json.NewEncoder(writer).Encode(result.ArchiveRecord); err != nil {
+			return 0, fmt.Errorf("measure external archive record: %w", err)
+		}
+	}
 	return writer.bytes, nil
 }
 
@@ -474,6 +519,9 @@ func (s *Server) listExternalResultImports(filter storage.ExternalResultImportFi
 		if filter.ProjectID != "" && normalizeProjectID(result.ProjectID) != projectID {
 			continue
 		}
+		if filter.ApplicationID != "" && result.ApplicationID != filter.ApplicationID {
+			continue
+		}
 		if filter.ReleaseID != "" && result.ReleaseID != filter.ReleaseID {
 			continue
 		}
@@ -483,6 +531,9 @@ func (s *Server) listExternalResultImports(filter storage.ExternalResultImportFi
 		out = append(out, cloneExternalResultImport(result))
 	}
 	sort.SliceStable(out, func(left, right int) bool {
+		if out[left].CreatedAt.Equal(out[right].CreatedAt) {
+			return out[left].ID > out[right].ID
+		}
 		return out[left].CreatedAt.After(out[right].CreatedAt)
 	})
 	if filter.Offset > len(out) {

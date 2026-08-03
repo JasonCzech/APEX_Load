@@ -347,8 +347,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     onSort,
     expandedScriptId,
     scriptRuns,
+    scriptRunErrors,
     loadingRunsFor,
     onToggleScriptRuns,
+    onRetryScriptRuns,
     innerSortField,
     innerSortDirection,
     onInnerSort,
@@ -877,6 +879,8 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onToggleScriptRuns={(script) => { void onToggleScriptRuns(script) }}
             loadingRunsFor={loadingRunsFor}
             scriptRuns={scriptRuns}
+            scriptRunErrors={scriptRunErrors}
+            onRetryScriptRuns={(script) => { void onRetryScriptRuns(script) }}
             innerSortField={innerSortField}
             innerSortDirection={innerSortDirection}
             onInnerSort={onInnerSort}

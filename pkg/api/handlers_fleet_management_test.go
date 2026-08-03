@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +27,40 @@ type fakeFleetScaler struct {
 type blockingFleetScaler struct {
 	entered chan struct{}
 	release chan struct{}
+}
+
+type faultingGeneratorMetadataPatchStore struct {
+	storage.Store
+	delegate interface {
+		PatchGeneratorMetadata(string, storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
+	}
+	commitThenError bool
+}
+
+func (s *faultingGeneratorMetadataPatchStore) PatchGeneratorMetadata(generatorID string, patch storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error) {
+	if s.commitThenError {
+		if _, err := s.delegate.PatchGeneratorMetadata(generatorID, patch); err != nil {
+			return nil, err
+		}
+	}
+	return nil, errors.New("simulated generator metadata persistence failure")
+}
+
+func seedRuntimePoolTargets(t *testing.T, store storage.Store, poolID string, count int) {
+	t.Helper()
+	members := make([]*storage.FleetPoolMember, 0, count)
+	for i := 0; i < count; i++ {
+		members = append(members, &storage.FleetPoolMember{
+			ID:          fmt.Sprintf("member-%d", i),
+			PoolID:      poolID,
+			GeneratorID: fmt.Sprintf("generator-%d", i),
+			Target:      fmt.Sprintf("generator-%d:9090", i),
+			Status:      "ready",
+		})
+	}
+	if err := store.SaveFleetPoolMembers(poolID, members); err != nil {
+		t.Fatalf("SaveFleetPoolMembers: %v", err)
+	}
 }
 
 func (f *blockingFleetScaler) CanProvision() bool { return true }
@@ -58,13 +94,14 @@ func (f *fakeFleetScaler) ScalePool(_ context.Context, _ *storage.FleetPool, des
 }
 
 func TestProvisioningRequestWithKubernetesScaler(t *testing.T) {
-	server, _ := newTimeslotServer(t)
+	server, store := newTimeslotServer(t)
 	server.fleetScaler = &fakeFleetScaler{can: true, workload: "apexload-generator"}
 
 	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
 		map[string]any{"name": "eu", "cloud_provider": "kubernetes", "max_size": 50})
 	var pool storage.FleetPool
 	_ = json.Unmarshal(create.Body.Bytes(), &pool)
+	seedRuntimePoolTargets(t, store, pool.ID, 5)
 
 	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
 		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 5, "reason": "scale up"})
@@ -104,6 +141,58 @@ func TestProvisioningRequestWithKubernetesScaler(t *testing.T) {
 	}
 }
 
+func TestProvisioningRequestEnforcesPoolSizingBoundaries(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	scaler := &fakeFleetScaler{can: true, workload: "apexload-generator"}
+	server.fleetScaler = scaler
+
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "bounded", "cloud_provider": "kubernetes", "min_size": 2, "max_size": 4, "desired_size": 2})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create pool status = %d body=%s", create.Code, create.Body.String())
+	}
+	var pool storage.FleetPool
+	if err := json.Unmarshal(create.Body.Bytes(), &pool); err != nil {
+		t.Fatal(err)
+	}
+	seedRuntimePoolTargets(t, store, pool.ID, 4)
+
+	for _, tc := range []struct {
+		name    string
+		count   int
+		want    int
+		message string
+	}{
+		{name: "below minimum", count: 1, want: http.StatusBadRequest, message: "min_size 2"},
+		{name: "at minimum", count: 2, want: http.StatusCreated},
+		{name: "at maximum", count: 4, want: http.StatusCreated},
+		{name: "above maximum", count: 5, want: http.StatusBadRequest, message: "max_size 4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+				map[string]any{"fleet_pool_id": pool.ID, "desired_count": tc.count})
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d body=%s", rec.Code, tc.want, rec.Body.String())
+			}
+			if tc.message != "" && !strings.Contains(rec.Body.String(), tc.message) {
+				t.Fatalf("body=%s, want %q", rec.Body.String(), tc.message)
+			}
+			if tc.want == http.StatusCreated {
+				var request storage.ProvisioningRequest
+				if err := json.Unmarshal(rec.Body.Bytes(), &request); err != nil {
+					t.Fatal(err)
+				}
+				if request.DesiredCount != tc.count || scaler.lastN != tc.count {
+					t.Fatalf("request desired=%d scaler desired=%d, want effective count %d", request.DesiredCount, scaler.lastN, tc.count)
+				}
+			}
+		})
+	}
+	if scaler.calls != 2 {
+		t.Fatalf("scaler calls = %d, want only the two in-range boundary requests", scaler.calls)
+	}
+}
+
 func TestActiveProvisioningCannotBeCancelledOrLoseItsPool(t *testing.T) {
 	server, store := newTimeslotServer(t)
 	scaler := &blockingFleetScaler{entered: make(chan struct{}, 1), release: make(chan struct{})}
@@ -118,6 +207,7 @@ func TestActiveProvisioningCannotBeCancelledOrLoseItsPool(t *testing.T) {
 	if err := json.Unmarshal(createPool.Body.Bytes(), &pool); err != nil {
 		t.Fatal(err)
 	}
+	seedRuntimePoolTargets(t, store, pool.ID, 3)
 
 	created := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
@@ -164,6 +254,7 @@ func TestProvisioningRecoveryRunsWhileAdmissionIsClosed(t *testing.T) {
 	if err := store.SaveFleetPool(pool); err != nil {
 		t.Fatal(err)
 	}
+	seedRuntimePoolTargets(t, store, pool.ID, 3)
 	req := &storage.ProvisioningRequest{ID: "request-acquire", FleetPoolID: pool.ID, Status: "provisioning", DesiredCount: 3, ProjectID: storage.DefaultProjectID}
 	if err := store.SaveProvisioningRequest(req); err != nil {
 		t.Fatal(err)
@@ -191,18 +282,69 @@ func TestProvisioningRecoveryRunsWhileAdmissionIsClosed(t *testing.T) {
 }
 
 func TestProvisioningRequestScalerFailureRecordsFailed(t *testing.T) {
-	server, _ := newTimeslotServer(t)
+	server, store := newTimeslotServer(t)
 	server.fleetScaler = &fakeFleetScaler{can: true, err: errors.New("api server unreachable")}
 	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
 		map[string]any{"name": "x", "cloud_provider": "kubernetes"})
 	var pool storage.FleetPool
 	_ = json.Unmarshal(create.Body.Bytes(), &pool)
+	seedRuntimePoolTargets(t, store, pool.ID, 3)
 	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
 		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 3})
 	var req storage.ProvisioningRequest
 	_ = json.Unmarshal(rec.Body.Bytes(), &req)
 	if req.Status != "failed" {
 		t.Fatalf("status = %q, want failed", req.Status)
+	}
+}
+
+func TestProvisioningRequiresPreassociatedRuntimeTargets(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	scaler := &fakeFleetScaler{can: true}
+	server.fleetScaler = scaler
+	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools",
+		map[string]any{"name": "fresh", "cloud_provider": "kubernetes", "desired_size": 2})
+	var pool storage.FleetPool
+	if err := json.Unmarshal(create.Body.Bytes(), &pool); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 2})
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "associated runtime target") {
+		t.Fatalf("provision without membership = %d body=%s, want explanatory 409", rec.Code, rec.Body.String())
+	}
+	if scaler.calls != 0 {
+		t.Fatalf("scaler calls = %d, want 0 before membership is complete", scaler.calls)
+	}
+	requests, err := store.ListProvisioningRequests(pool.ID, 10, 0)
+	if err != nil || len(requests) != 0 {
+		t.Fatalf("provisioning requests = %d, %v; rejected request must not be persisted", len(requests), err)
+	}
+
+	// Explicit members and metadata bindings form one target-deduplicated union,
+	// matching runner assignment. The duplicate does not inflate capacity.
+	seedRuntimePoolTargets(t, store, pool.ID, 1)
+	poolID := pool.ID
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{
+		GeneratorID: "metadata-duplicate", Target: "generator-0:9090", FleetPoolID: &poolID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec = timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 2})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate target counted twice: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{
+		GeneratorID: "metadata-distinct", Target: "generator-1:9090", FleetPoolID: &poolID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec = timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests",
+		map[string]any{"fleet_pool_id": pool.ID, "desired_count": 2})
+	if rec.Code != http.StatusCreated || scaler.calls != 1 {
+		t.Fatalf("provision with complete membership = %d calls=%d body=%s", rec.Code, scaler.calls, rec.Body.String())
 	}
 }
 
@@ -243,6 +385,10 @@ func TestFleetPoolCRUD(t *testing.T) {
 		{"missing name", map[string]any{"cloud_provider": "kubernetes"}},
 		{"missing provider", map[string]any{"name": "p"}},
 		{"min over max", map[string]any{"name": "p", "cloud_provider": "kubernetes", "min_size": 5, "max_size": 2}},
+		{"negative min", map[string]any{"name": "p", "cloud_provider": "kubernetes", "min_size": -1}},
+		{"negative desired", map[string]any{"name": "p", "cloud_provider": "kubernetes", "desired_size": -1}},
+		{"desired below min", map[string]any{"name": "p", "cloud_provider": "kubernetes", "min_size": 2, "desired_size": 1}},
+		{"desired above max", map[string]any{"name": "p", "cloud_provider": "kubernetes", "max_size": 2, "desired_size": 3}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/pools", tc.body)
@@ -275,6 +421,16 @@ func TestFleetPoolCRUD(t *testing.T) {
 		t.Fatalf("list count = %d, want 1", listResp.Count)
 	}
 
+	invalidUpdate := timeslotRequest(t, server, http.MethodPut, "/api/v1/fleet/pools/"+pool.ID,
+		map[string]any{"name": "east-http", "cloud_provider": "kubernetes", "min_size": 4, "max_size": 5, "desired_size": 6})
+	if invalidUpdate.Code != http.StatusBadRequest {
+		t.Fatalf("invalid update status = %d body=%s, want 400", invalidUpdate.Code, invalidUpdate.Body.String())
+	}
+	unchanged, err := server.store.GetFleetPool(pool.ID)
+	if err != nil || unchanged.DesiredSize != 3 {
+		t.Fatalf("invalid update changed pool = %+v err=%v", unchanged, err)
+	}
+
 	upd := timeslotRequest(t, server, http.MethodPut, "/api/v1/fleet/pools/"+pool.ID,
 		map[string]any{"name": "east-http", "cloud_provider": "kubernetes", "status": "suspended", "desired_size": 6})
 	if upd.Code != http.StatusOK {
@@ -304,7 +460,7 @@ func TestGeneratorMetadataPatchLifecycle(t *testing.T) {
 
 	// PATCH on an untracked generator creates the record.
 	rec := timeslotRequest(t, server, http.MethodPatch, path,
-		map[string]any{"cordoned": true, "region": "eu", "fleet_pool_id": "pool-1", "tags": map[string]string{"role": "soak"}})
+		map[string]any{"target": "gen-1:9090", "cordoned": true, "region": "eu", "fleet_pool_id": "pool-1", "tags": map[string]string{"role": "soak"}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("patch status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -347,6 +503,20 @@ func TestGeneratorMetadataPatchRejectsDanglingPool(t *testing.T) {
 	}
 }
 
+func TestGeneratorMetadataPoolAssignmentRequiresRuntimeTarget(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-1", Name: "pool", CloudProvider: "kubernetes", Status: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-1", map[string]any{"fleet_pool_id": "pool-1"})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "runtime target") {
+		t.Fatalf("missing target assignment = %d body=%s, want explanatory 400", rec.Code, rec.Body.String())
+	}
+	if _, err := store.GetGeneratorMetadata("gen-1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("metadata created despite missing target: %v", err)
+	}
+}
+
 func TestGeneratorMetadataCordonUpdatesEnforcedDrainState(t *testing.T) {
 	server, _ := newTimeslotServer(t)
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
@@ -366,6 +536,77 @@ func TestGeneratorMetadataCordonUpdatesEnforcedDrainState(t *testing.T) {
 	}
 	if len(allowed) != 1 || allowed[0] != "gen-b:9090" {
 		t.Fatalf("allowed targets = %#v, want only gen-b", allowed)
+	}
+}
+
+func TestGeneratorMetadataPatchRestoresLiveCordonWhenPersistenceFails(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-a", Target: "gen-a:9090"}); err != nil {
+		t.Fatal(err)
+	}
+	server.store = &faultingGeneratorMetadataPatchStore{Store: store, delegate: store.(interface {
+		PatchGeneratorMetadata(string, storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
+	})}
+
+	rec := timeslotRequest(t, server, http.MethodPatch, "/api/v1/fleet/generators/gen-a", map[string]any{"cordoned": true})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("metadata failure status = %d body=%s, want 400", rec.Code, rec.Body.String())
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "active" {
+		t.Fatalf("live state = %q, want compensated active", got)
+	}
+	metadata, err := store.GetGeneratorMetadata("gen-a")
+	if err != nil || metadata.Cordoned {
+		t.Fatalf("metadata after failed patch = %+v err=%v, want unchanged", metadata, err)
+	}
+}
+
+func TestGeneratorLifecycleRestoresLiveStateWhenMetadataPersistenceFails(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-a", Target: "gen-a:9090"}); err != nil {
+		t.Fatal(err)
+	}
+	server.store = &faultingGeneratorMetadataPatchStore{Store: store, delegate: store.(interface {
+		PatchGeneratorMetadata(string, storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
+	})}
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/cordon", nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("lifecycle metadata failure status = %d body=%s, want 500", rec.Code, rec.Body.String())
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "active" {
+		t.Fatalf("live state = %q, want compensated active", got)
+	}
+}
+
+func TestGeneratorLifecycleReconcilesLostMetadataAcknowledgement(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	backend := newDistributedExecutionBackend([]string{"gen-a:9090"}, time.Second, nil)
+	backend.recordGeneratorIdentity("gen-a:9090", "gen-a")
+	server.runner.setExecutionBackend(backend)
+	if err := store.SaveGeneratorMetadata(&storage.GeneratorMetadata{GeneratorID: "gen-a", Target: "gen-a:9090"}); err != nil {
+		t.Fatal(err)
+	}
+	server.store = &faultingGeneratorMetadataPatchStore{Store: store, delegate: store.(interface {
+		PatchGeneratorMetadata(string, storage.GeneratorMetadataPatch) (*storage.GeneratorMetadata, error)
+	}), commitThenError: true}
+
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/generators/gen-a/cordon", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("lost acknowledgement status = %d body=%s, want reconciled 200", rec.Code, rec.Body.String())
+	}
+	if got := backend.generatorDrainState("gen-a:9090"); got != "cordoned" {
+		t.Fatalf("live state = %q, want cordoned", got)
+	}
+	metadata, err := store.GetGeneratorMetadata("gen-a")
+	if err != nil || !metadata.Cordoned {
+		t.Fatalf("metadata after lost acknowledgement = %+v err=%v, want committed cordon", metadata, err)
 	}
 }
 
@@ -600,6 +841,7 @@ func TestProvisioningRequestCancelAndRetryLifecycle(t *testing.T) {
 
 	scaler := &fakeFleetScaler{can: true, workload: "apexload-generator"}
 	server.fleetScaler = scaler
+	seedRuntimePoolTargets(t, store, pool.ID, 4)
 	retry := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/req-1/retry", nil)
 	if retry.Code != http.StatusOK {
 		t.Fatalf("retry status = %d body=%s", retry.Code, retry.Body.String())
@@ -627,6 +869,40 @@ func TestProvisioningRequestCancelAndRetryLifecycle(t *testing.T) {
 	cancelSucceeded := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/req-1/cancel", nil)
 	if cancelSucceeded.Code != http.StatusConflict {
 		t.Fatalf("cancel succeeded request status = %d, want 409", cancelSucceeded.Code)
+	}
+}
+
+func TestProvisioningRetryRejectsCountOutsideCurrentPoolBounds(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	pool := &storage.FleetPool{
+		ID: "pool-bounded", Name: "bounded", CloudProvider: "kubernetes", Status: "active",
+		MinSize: 2, MaxSize: 4, DesiredSize: 2, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.SaveFleetPool(pool); err != nil {
+		t.Fatalf("SaveFleetPool: %v", err)
+	}
+	request := &storage.ProvisioningRequest{
+		ID: "req-outside-bounds", FleetPoolID: pool.ID, Status: "failed", DesiredCount: 5,
+	}
+	if err := store.SaveProvisioningRequest(request); err != nil {
+		t.Fatalf("SaveProvisioningRequest: %v", err)
+	}
+	scaler := &fakeFleetScaler{can: true}
+	server.fleetScaler = scaler
+
+	retry := timeslotRequest(t, server, http.MethodPost, "/api/v1/fleet/provision-requests/req-outside-bounds/retry", nil)
+	if retry.Code != http.StatusConflict || !strings.Contains(retry.Body.String(), "max_size 4") {
+		t.Fatalf("retry status = %d body=%s, want explanatory 409", retry.Code, retry.Body.String())
+	}
+	if scaler.calls != 0 {
+		t.Fatalf("scaler calls = %d, want none for an out-of-bounds retry", scaler.calls)
+	}
+	stored, err := store.GetProvisioningRequest(request.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != "failed" {
+		t.Fatalf("stored status = %q, want original failed status", stored.Status)
 	}
 }
 

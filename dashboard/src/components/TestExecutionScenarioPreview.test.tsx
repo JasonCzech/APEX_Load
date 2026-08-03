@@ -137,8 +137,9 @@ describe('TestExecutionScenarioPreview', () => {
             teardownCount: 0,
             dataSourceCount: 0,
           }]}
-          scriptDetailsLoading={false}
-          scriptDetailsError=""
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
           expandedScenarioScript={expandedScenarioScript}
           onExpandedScenarioScriptChange={(value) => {
             onExpandedScenarioScriptChange(value)
@@ -155,7 +156,7 @@ describe('TestExecutionScenarioPreview', () => {
     })
 
     const summaryRow = container.querySelector('.scenario-script-summary')
-    const editButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Edit Script'))
+    const editButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Open Current Library Script'))
 
     expect(summaryRow?.getAttribute('role')).toBe('button')
     expect(editButton).toBeDefined()
@@ -182,6 +183,8 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
     expect(container.textContent).toContain('Continue On Error')
     expect(container.textContent).toContain('Enabled')
+    expect(container.textContent).toContain('immutable queued snapshot')
+    expect(container.textContent).toContain('Full script bodies are not included')
     expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
 
@@ -209,6 +212,58 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(onEditScript).toHaveBeenCalledWith('script-1')
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('discloses when the manifest preview was synthesized from retained run state', async () => {
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-retained',
+            name: 'Retained Scenario',
+            status: 'QUEUED',
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{
+            points: [{ second: 0, group0: 10, total: 10 }],
+            totalVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[]}
+          snapshotSource="retained_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript={null}
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('synthesized from retained controller state')
+    expect(container.textContent).toContain('may reflect later changes')
+    expect(container.textContent).not.toContain('Load shape and runtime values come from this run’s immutable queued snapshot')
   })
 
   it('shows pending queue metadata for queued starts waiting on capacity', async () => {
@@ -250,8 +305,9 @@ describe('TestExecutionScenarioPreview', () => {
             postBaselineSeconds: 0,
           }}
           queuedScenarioRows={[]}
-          scriptDetailsLoading={false}
-          scriptDetailsError=""
+          snapshotSource="summary"
+          snapshotLoading={false}
+          snapshotError="manifest not found"
           expandedScenarioScript={null}
           onExpandedScenarioScriptChange={vi.fn()}
           onEditScript={vi.fn()}
@@ -264,6 +320,7 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('Queue position #2')
     expect(container.textContent).toContain('waiting for project test slot')
     expect(container.textContent).toContain('Waiting since')
+    expect(container.textContent).toContain('immutable queued snapshot is unavailable')
   })
 
   it('shows script shakeout evidence and routes continue or cancel actions', async () => {
@@ -317,8 +374,9 @@ describe('TestExecutionScenarioPreview', () => {
             postBaselineSeconds: 0,
           }}
           queuedScenarioRows={[]}
-          scriptDetailsLoading={false}
-          scriptDetailsError=""
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
           expandedScenarioScript={null}
           onExpandedScenarioScriptChange={vi.fn()}
           onEditScript={vi.fn()}

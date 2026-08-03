@@ -1,56 +1,106 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import { useProjectApi } from '../hooks/api/useProjectApi'
 import { ApiError } from '../hooks/apiClient'
 import { FleetPool, PoolProjectQuota, Project } from '../types'
+import { listAllFleetPools } from './fleetCatalogModel'
 import './parityPanels.css'
 
 interface Props {
   project: Project
   canManage?: boolean
+  onUpdate?: (
+    projectID: string,
+    project: { name: string; settings: Project['settings'] },
+  ) => Promise<Project>
   onUpdated?: (project: Project) => void
+  onDirtyChange?: (dirty: boolean) => void
+}
+
+export interface ProjectPoolQuotasDraftController {
+  isDirty: () => boolean
+	// An authoritative base is supplied by Settings "Save All" when project
+	// governance was committed immediately before quotas. This prevents the
+	// quota write from spreading a stale project prop over that newer response.
+	save: (baseProject?: Project) => Promise<boolean>
+  discard: () => void
 }
 
 type QuotaRow = { pool_id: string; max_vusers: string; max_concurrent_tests: string }
 
 function rowsFromProject(project: Project): QuotaRow[] {
   const quotas = project.settings?.pool_quotas || {}
-  return Object.entries(quotas).map(([poolID, quota]) => ({
-    pool_id: poolID,
-    max_vusers: quota.max_vusers ? String(quota.max_vusers) : '',
-    max_concurrent_tests: quota.max_concurrent_tests ? String(quota.max_concurrent_tests) : '',
-  }))
+  return Object.entries(quotas)
+    .map(([poolID, quota]) => ({
+      pool_id: poolID,
+      max_vusers: quota.max_vusers ? String(quota.max_vusers) : '',
+      max_concurrent_tests: quota.max_concurrent_tests ? String(quota.max_concurrent_tests) : '',
+    }))
+    .sort((left, right) => left.pool_id.localeCompare(right.pool_id))
+}
+
+function rowsEqual(left: QuotaRow[], right: QuotaRow[]) {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 // Per-pool project quotas: cap this project's concurrent footprint (VUsers /
 // tests) on a specific fleet pool. Saves the FULL project settings (spreading the
 // existing ones) so no other governance field is dropped.
-export default function ProjectPoolQuotasCard({ project, canManage = false, onUpdated }: Props) {
+const ProjectPoolQuotasCard = forwardRef<ProjectPoolQuotasDraftController, Props>(function ProjectPoolQuotasCard({
+  project,
+  canManage = false,
+  onUpdate,
+  onUpdated,
+  onDirtyChange,
+}, ref) {
   const fleetApi = useFleetApi()
   const projectApi = useProjectApi()
+  const initialRows = rowsFromProject(project)
   const [pools, setPools] = useState<FleetPool[]>([])
-  const [rows, setRows] = useState<QuotaRow[]>(() => rowsFromProject(project))
+  const [rows, setRows] = useState<QuotaRow[]>(initialRows)
+  const [baselineRows, setBaselineRows] = useState<QuotaRow[]>(initialRows)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const rowsRef = useRef(rows)
+  const baselineRowsRef = useRef(baselineRows)
+  const baselineProjectIdRef = useRef(project.id)
+  rowsRef.current = rows
+  baselineRowsRef.current = baselineRows
 
   useEffect(() => {
     let cancelled = false
-    fleetApi.listFleetPools().then(res => {
-      if (!cancelled) setPools(res.fleet_pools || [])
+    listAllFleetPools(fleetApi.listFleetPools).then(nextPools => {
+      if (!cancelled) setPools(nextPools)
     }).catch(() => {
       if (!cancelled) setPools([])
     })
     return () => { cancelled = true }
   }, [fleetApi])
 
-  // Re-seed when the selected project changes (id) or its saved quotas change.
+  // Re-seed when the selected project changes, or when a fresh authoritative
+  // project response arrives while this editor is clean. Never overwrite an
+  // in-progress quota edit with a background project refresh.
   useEffect(() => {
-    setRows(rowsFromProject(project))
+    const next = rowsFromProject(project)
+    const projectChanged = baselineProjectIdRef.current !== project.id
+    if (projectChanged || rowsEqual(rowsRef.current, baselineRowsRef.current)) {
+      baselineProjectIdRef.current = project.id
+      baselineRowsRef.current = next
+      rowsRef.current = next
+      setBaselineRows(next)
+      setRows(next)
+    }
     setError(null)
     setMessage(null)
   }, [project])
+
+  const dirty = !rowsEqual(rows, baselineRows)
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+    return () => onDirtyChange?.(false)
+  }, [dirty, onDirtyChange])
 
   const usedPools = useMemo(() => new Set(rows.map(r => r.pool_id)), [rows])
   const availablePools = useMemo(() => pools.filter(p => !usedPools.has(p.id)), [pools, usedPools])
@@ -65,7 +115,7 @@ export default function ProjectPoolQuotasCard({ project, canManage = false, onUp
     setRows(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
   const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx))
 
-  const save = useCallback(async () => {
+	const save = useCallback(async (baseProject?: Project): Promise<boolean> => {
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -80,21 +130,45 @@ export default function ProjectPoolQuotasCard({ project, canManage = false, onUp
       if (quota.max_vusers || quota.max_concurrent_tests) quotas[row.pool_id] = quota
     }
     try {
-      const updated = await projectApi.updateProject(project.id, {
-        name: project.name,
+			const projectBase = baseProject?.id === project.id ? baseProject : project
+			const updateProject = onUpdate || projectApi.updateProject
+			const updated = await updateProject(projectBase.id, {
+				name: projectBase.name,
         settings: {
-          ...(project.settings || {}),
+					...(projectBase.settings || {}),
           pool_quotas: Object.keys(quotas).length > 0 ? quotas : undefined,
         },
       })
+      const savedRows = rowsFromProject(updated)
+      baselineProjectIdRef.current = updated.id
+      baselineRowsRef.current = savedRows
+      rowsRef.current = savedRows
+      setBaselineRows(savedRows)
+      setRows(savedRows)
       onUpdated?.(updated)
       setMessage('Pool quotas saved.')
+      return true
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to save pool quotas.')
+      return false
     } finally {
       setBusy(false)
     }
-  }, [project, projectApi, rows, onUpdated])
+	}, [onUpdate, onUpdated, project, projectApi.updateProject, rows])
+
+  const discard = useCallback(() => {
+    const next = baselineRowsRef.current
+    rowsRef.current = next
+    setRows(next)
+    setError(null)
+    setMessage(null)
+  }, [])
+
+  useImperativeHandle(ref, () => ({
+    isDirty: () => !rowsEqual(rowsRef.current, baselineRowsRef.current),
+    save,
+    discard,
+  }), [discard, save])
 
   return (
     <div className="settings-subsection">
@@ -178,4 +252,6 @@ export default function ProjectPoolQuotasCard({ project, canManage = false, onUp
       )}
     </div>
   )
-}
+})
+
+export default ProjectPoolQuotasCard

@@ -7,6 +7,7 @@ import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSu
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
+import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { formatHTTPVersion } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
@@ -22,8 +23,9 @@ interface Props {
   onCancelShakeoutRun: () => void
   queuedScenarioPreview: QueuedScenarioPreview
   queuedScenarioRows: QueuedScenarioRow[]
-  scriptDetailsLoading: boolean
-  scriptDetailsError: string
+  snapshotSource: ScenarioSnapshotSource
+  snapshotLoading: boolean
+  snapshotError: string
   expandedScenarioScript: string | null
   onExpandedScenarioScriptChange: (value: string | null) => void
   onEditScript: (scriptId: string) => void
@@ -72,27 +74,44 @@ function formatAvailabilityDetail(advisory?: CapacityAdvisory): string {
   return `${formatCapacityValue(advisory.configured_available_generators || advisory.available_generators)} configured`
 }
 
+function scenarioSnapshotSummary(source: ScenarioSnapshotSource, loading: boolean): string {
+  switch (source) {
+    case 'immutable_manifest':
+      return 'Load shape and runtime values come from this run’s immutable queued snapshot.'
+    case 'stored_manifest':
+      return 'An immutable queued snapshot is unavailable; this preview was reconstructed from the mutable stored run record and may include later changes.'
+    case 'retained_manifest':
+      return 'An immutable queued snapshot is unavailable; this preview was synthesized from retained controller state and may reflect later changes.'
+    default:
+      return loading
+        ? 'Loading the immutable queued snapshot; the retained run summary is shown temporarily.'
+        : 'The immutable queued snapshot is unavailable; this preview falls back to the retained run summary.'
+  }
+}
+
 function formatThinkTimeLabel(scriptDetail?: ScenarioScriptDetail): string {
+  if (!scriptDetail) return 'Not exposed by run snapshot'
   const thinkTime = scriptDetail?.script?.config?.think_time
-  if (!thinkTime) return 'Script default'
+  if (!thinkTime) return 'Not configured in captured script detail'
   if (thinkTime.ignore) return 'Disabled'
   if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
 function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
+  if (!scriptDetail) return 'Not exposed by run snapshot'
   const pacing = scriptDetail?.script?.config?.pacing
   return formatPacingTiming(pacing) || 'None'
 }
 
 function formatOverridePacing(test: TestSummary): string {
   const pacing = test.runtime_settings?.pacing
-  return formatPacingTiming(pacing) || 'Script default'
+  return formatPacingTiming(pacing) || 'Script-level value not exposed'
 }
 
 function formatOverrideThinkTime(test: TestSummary): string {
   const thinkTime = test.runtime_settings?.think_time
-  if (!thinkTime) return 'Script default'
+  if (!thinkTime) return 'Script-level value not exposed'
   if (thinkTime.ignore) return 'Disabled'
   if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
@@ -127,7 +146,7 @@ function formatEffectiveThinkTime(group: TestSummary['groups'][number], scriptDe
 
 function formatContinueOnError(test: TestSummary): string {
   const override = test.runtime_settings?.error_handling?.continue_on_error
-  if (override === undefined) return 'Script default'
+  if (override === undefined) return 'Script-level value not exposed'
   return override ? 'Enabled' : 'Disabled'
 }
 
@@ -137,6 +156,7 @@ function formatEffectiveIterations(group: TestSummary['groups'][number], scriptD
   const override = test.runtime_settings?.iterations
   if (override !== undefined) return `${override} (scenario override)`
   const iterations = scriptDetail?.script?.config?.run_logic?.iterations
+  if (!scriptDetail) return 'Not exposed by run snapshot'
   if (!iterations) return 'Duration driven'
   return `${iterations}`
 }
@@ -146,7 +166,8 @@ function formatEffectiveAutoTransactions(group: TestSummary['groups'][number], s
   if (groupOverride) return `${groupOverride} (group override)`
   const override = test.runtime_settings?.auto_transactions
   if (override) return `${override} (scenario override)`
-  return scriptDetail?.script?.config?.run_logic?.auto_transactions || 'none'
+  if (!scriptDetail) return 'Not exposed by run snapshot'
+  return scriptDetail.script?.config?.run_logic?.auto_transactions || 'none'
 }
 
 function formatEffectiveLogLevel(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
@@ -154,7 +175,8 @@ function formatEffectiveLogLevel(group: TestSummary['groups'][number], scriptDet
   if (groupOverride) return `${groupOverride} (group override)`
   const override = test.runtime_settings?.log_level
   if (override) return `${override} (scenario override)`
-  return scriptDetail?.script?.config?.log?.level || 'standard'
+  if (!scriptDetail) return 'Not exposed by run snapshot'
+  return scriptDetail.script?.config?.log?.level || 'standard'
 }
 
 function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
@@ -162,7 +184,8 @@ function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetai
   if (groupOverride !== undefined) return groupOverride ? 'Enabled (group override)' : 'Disabled (group override)'
   const override = test.runtime_settings?.error_handling?.snapshot_on_error
   if (override !== undefined) return override ? 'Enabled (scenario override)' : 'Disabled (scenario override)'
-  return scriptDetail?.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
+  if (!scriptDetail) return 'Not exposed by run snapshot'
+  return scriptDetail.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
 }
 
 function formatGoalNumber(value: number, suffix = ''): string {
@@ -180,8 +203,9 @@ export default function TestExecutionScenarioPreview({
   onCancelShakeoutRun,
   queuedScenarioPreview,
   queuedScenarioRows,
-  scriptDetailsLoading,
-  scriptDetailsError,
+  snapshotSource,
+  snapshotLoading,
+  snapshotError,
   expandedScenarioScript,
   onExpandedScenarioScriptChange,
   onEditScript,
@@ -191,6 +215,7 @@ export default function TestExecutionScenarioPreview({
     return null
   }
   const browserRuntimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+  const snapshotSummary = scenarioSnapshotSummary(snapshotSource, snapshotLoading)
   const shakeoutReviewRequired = test.status === 'SHAKEOUT_REVIEW' || Boolean(startShakeoutConflict)
   const shakeoutEvidence = startShakeoutConflict?.results?.filter(result => result.status === 'failed') || []
 
@@ -273,12 +298,18 @@ export default function TestExecutionScenarioPreview({
         </div>
       )}
 
+      {(snapshotSource !== 'immutable_manifest' || snapshotLoading || snapshotError) && (
+        <p className={`scenario-script-status ${snapshotError ? 'error' : ''}`} role="status">
+          {snapshotSummary}{snapshotError ? ` ${snapshotError}` : ''}
+        </p>
+      )}
+
       {queuedScenarioPreview.points.length > 0 && (
         <div className="scenario-preview-card">
           <div className="scenario-preview-header">
             <div>
               <h3 className="scenario-preview-title">Scenario Run Model</h3>
-              <p className="scenario-preview-subtitle">This is the saved load shape that will run when you start the scenario.</p>
+              <p className="scenario-preview-subtitle">{snapshotSummary}</p>
             </div>
             <div className="scenario-preview-stats">
               <div className="scenario-preview-stat">
@@ -467,15 +498,15 @@ export default function TestExecutionScenarioPreview({
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Iterations</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.iterations ?? 'Script default'}</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.iterations ?? 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Log Level</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.log_level || 'Script default'}</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.log_level || 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Auto Transactions</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script default'}</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Pacing</span>
@@ -487,7 +518,7 @@ export default function TestExecutionScenarioPreview({
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Browser Runtime</span>
-              <span className="scenario-setting-value">{browserRuntimeSummary || 'Script default'}</span>
+              <span className="scenario-setting-value">{browserRuntimeSummary || 'Script-level value not exposed'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Continue On Error</span>
@@ -495,7 +526,7 @@ export default function TestExecutionScenarioPreview({
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Snapshot On Error</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.error_handling?.snapshot_on_error ? 'Enabled' : 'Script default'}</span>
+              <span className="scenario-setting-value">{test.runtime_settings?.error_handling?.snapshot_on_error === undefined ? 'Script-level value not exposed' : test.runtime_settings.error_handling.snapshot_on_error ? 'Enabled' : 'Disabled'}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Script Shakeout</span>
@@ -559,12 +590,12 @@ export default function TestExecutionScenarioPreview({
             <div className="scenario-script-section-header">
               <div>
                 <h4 className="scenario-script-section-title">Scenario Scripts</h4>
-                <p className="scenario-script-section-subtitle">Each row is a script group in this scenario. Expand a row to inspect the effective script configuration that will run.</p>
+                <p className="scenario-script-section-subtitle">Group and runtime override values come from the run snapshot. Full script bodies are not included; open the current library script only as a separate reference.</p>
               </div>
             </div>
 
-            {scriptDetailsLoading && <p className="scenario-script-status">Loading script settings...</p>}
-            {scriptDetailsError && <p className="scenario-script-status error">{scriptDetailsError}</p>}
+            {snapshotLoading && <p className="scenario-script-status">Loading run configuration provenance...</p>}
+            {snapshotError && <p className="scenario-script-status error">Immutable run snapshot unavailable: {snapshotError}</p>}
 
             <div className="scenario-script-rows">
               {queuedScenarioRows.map(({ group, detail, actionCount, initCount, teardownCount, dataSourceCount }, index) => {
@@ -603,7 +634,7 @@ export default function TestExecutionScenarioPreview({
                             onEditScript(group.script_id)
                           }}
                         >
-                          Edit Script
+                          Open Current Library Script
                         </button>
                         <span className="scenario-script-toggle">{isExpanded ? 'Hide' : 'Inspect'}</span>
                       </span>
@@ -614,7 +645,7 @@ export default function TestExecutionScenarioPreview({
                         <div className="scenario-script-detail-grid">
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Base URL</span>
-                            <span className="scenario-script-detail-value">{detail?.script?.config?.base_url || 'Not configured'}</span>
+                            <span className="scenario-script-detail-value">{detail ? detail.script?.config?.base_url || 'Not configured' : 'Not exposed by run snapshot'}</span>
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">Think Time</span>
@@ -642,26 +673,26 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">HTTP Runtime</span>
-                            <span className="scenario-script-detail-value">{formatHTTPVersion(detail?.script?.config?.http?.version)} · {detail?.script?.config?.http?.max_conns_per_host || 100} conns/host</span>
+                            <span className="scenario-script-detail-value">{detail ? `${formatHTTPVersion(detail.script?.config?.http?.version)} · ${detail.script?.config?.http?.max_conns_per_host || 100} conns/host` : 'Not exposed by run snapshot'}</span>
                           </div>
                         </div>
 
                         <div className="scenario-script-asset-grid">
                           <div className="scenario-script-asset-card">
                             <span className="scenario-script-detail-label">Actions</span>
-                            <span className="scenario-script-detail-value">{actionCount}</span>
+                            <span className="scenario-script-detail-value">{actionCount ?? 'Not exposed'}</span>
                           </div>
                           <div className="scenario-script-asset-card">
                             <span className="scenario-script-detail-label">Init</span>
-                            <span className="scenario-script-detail-value">{initCount}</span>
+                            <span className="scenario-script-detail-value">{initCount ?? 'Not exposed'}</span>
                           </div>
                           <div className="scenario-script-asset-card">
                             <span className="scenario-script-detail-label">Teardown</span>
-                            <span className="scenario-script-detail-value">{teardownCount}</span>
+                            <span className="scenario-script-detail-value">{teardownCount ?? 'Not exposed'}</span>
                           </div>
                           <div className="scenario-script-asset-card">
                             <span className="scenario-script-detail-label">Data Sources</span>
-                            <span className="scenario-script-detail-value">{dataSourceCount}</span>
+                            <span className="scenario-script-detail-value">{dataSourceCount ?? 'Not exposed'}</span>
                           </div>
                         </div>
                       </div>

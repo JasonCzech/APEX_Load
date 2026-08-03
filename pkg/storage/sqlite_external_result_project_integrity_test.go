@@ -46,15 +46,16 @@ func newExternalResultPlacementStore(t *testing.T) *SQLiteStore {
 
 func externalResultForProject(id, suffix string) *ExternalResultImport {
 	return &ExternalResultImport{
-		ID:         id,
-		Provider:   "k6",
-		Name:       id,
-		ProjectID:  "external-result-project-" + suffix,
-		ReleaseID:  "external-result-release-" + suffix,
-		ScenarioID: "external-result-scenario-" + suffix,
-		Summary:    map[string]any{"status": "passed"},
-		RawResult:  map[string]any{"source": suffix},
-		CreatedAt:  time.Now().UTC(),
+		ID:            id,
+		Provider:      "k6",
+		Name:          id,
+		ProjectID:     "external-result-project-" + suffix,
+		ApplicationID: "external-result-application-" + suffix,
+		ReleaseID:     "external-result-release-" + suffix,
+		ScenarioID:    "external-result-scenario-" + suffix,
+		Summary:       map[string]any{"status": "passed"},
+		RawResult:     map[string]any{"source": suffix},
+		CreatedAt:     time.Now().UTC(),
 	}
 }
 
@@ -80,6 +81,7 @@ func TestExternalResultWritesRejectMissingAndCrossProjectParents(t *testing.T) {
 		wantErrSub string
 	}{
 		{name: "missing project", mutate: func(result *ExternalResultImport) { result.ProjectID = "missing-project" }, wantErrSub: "project not found"},
+		{name: "missing application", mutate: func(result *ExternalResultImport) { result.ApplicationID = "missing-application" }, wantErrSub: "application not found"},
 		{name: "missing release", mutate: func(result *ExternalResultImport) { result.ReleaseID = "missing-release" }, wantErrSub: "release not found"},
 		{name: "missing scenario", mutate: func(result *ExternalResultImport) { result.ScenarioID = "missing-scenario" }, wantErrSub: "scenario not found"},
 		{name: "foreign release", mutate: func(result *ExternalResultImport) { result.ReleaseID = "external-result-release-b" }, wantErrSub: "belongs to project"},
@@ -118,7 +120,7 @@ func TestSaveExternalResultImportRejectsProjectRelocation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetExternalResultImport: %v", err)
 	}
-	if stored.ProjectID != original.ProjectID || stored.ReleaseID != original.ReleaseID || stored.ScenarioID != original.ScenarioID {
+	if stored.ProjectID != original.ProjectID || stored.ApplicationID != original.ApplicationID || stored.ReleaseID != original.ReleaseID || stored.ScenarioID != original.ScenarioID {
 		t.Fatalf("relocation changed durable evidence: %#v", stored)
 	}
 }

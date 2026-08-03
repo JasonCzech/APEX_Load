@@ -844,6 +844,11 @@ export interface TestRunManifestConfiguration {
   ended_at?: string
 }
 
+export interface TestRunManifestConfigurationProvenance {
+  source: 'archive_provenance' | 'stored_test_record' | 'retained_run_state' | string
+  immutable: boolean
+}
+
 export interface TestRunManifestScript {
   group_name: string
   script_id?: string
@@ -916,6 +921,9 @@ export interface TestRunManifest {
   generated_at: string
   identity: TestRunManifestIdentity
   initial_configuration: TestRunManifestConfiguration
+  // Older persisted manifests predate this field. Missing provenance is
+  // intentionally treated as non-immutable by preview consumers.
+  initial_configuration_provenance?: TestRunManifestConfigurationProvenance
   current_configuration: TestRunManifestConfiguration
   scripts?: TestRunManifestScript[]
   load_generators: TestRunManifestLoadGenerators
@@ -1437,6 +1445,7 @@ export interface ReportAnnotationsResponse {
 }
 
 export interface ReportAnnotationsInput {
+  expected_updated_at: string
   title: string
   prepared_by: string
   executive_narrative: string
@@ -2287,10 +2296,13 @@ export interface ExternalResultImport {
   provider: 'k6' | 'jmeter' | 'gatling' | string
   name: string
   project_id?: string
+  application_id?: string
   release_id?: string
   scenario_id?: string
   source?: string
   summary?: Record<string, unknown>
+  content_hash?: string
+  has_archive?: boolean
   created_at: string
 }
 
@@ -2299,6 +2311,7 @@ export interface ExternalResultImportsResponse {
   count: number
   limit: number
   offset: number
+  has_more: boolean
 }
 
 export interface ArchivePruneCandidate {

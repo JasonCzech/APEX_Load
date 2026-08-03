@@ -130,6 +130,7 @@ type TestCreateGroupEntry = {
 }
 
 type TestCreateRequest = {
+  requested_test_id?: string
   name?: string
   duration: string
   application_id?: string

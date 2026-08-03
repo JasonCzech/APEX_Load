@@ -49,6 +49,8 @@ import {
   canonicalThinkTimeType,
 } from './thinkTimeConfig'
 import { requestSettingsFocus } from './settingsSectionLayout'
+import { loadAllTestSummaries } from './testCatalogPagination'
+import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -237,27 +239,6 @@ function scenarioFormWithGoalField<K extends keyof GoalConfig>(
 
 function maxStageVUsers(stages: LoadStageDraft[]) {
   return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
-}
-
-export function scenarioSeedFromTemplate(template: LoadModelTemplate): ScenarioSeed {
-  const runtime = template.scenario.runtime_settings
-  const goal = template.scenario.goal_config
-  return {
-    duration: template.scenario.duration,
-    scenario_mode: template.scenario.scenario_mode || 'vuser_driven',
-    script_shakeout: template.scenario.script_shakeout,
-    resource_baseline: template.scenario.resource_baseline,
-    groups: template.scenario.groups,
-    goal: goal ? { ...goal } : undefined,
-    pacing: runtime?.pacing ? { ...runtime.pacing } as ScenarioSeed['pacing'] : undefined,
-    think_time: runtime?.think_time ? { ...runtime.think_time } : undefined,
-    runtime_settings: runtime ? structuredClone(runtime) : undefined,
-    iterations: runtime?.run_logic?.iterations ?? runtime?.iterations,
-    log_level: runtime?.log?.level ?? runtime?.log_level,
-    auto_transactions: runtime?.run_logic?.auto_transactions ?? runtime?.auto_transactions,
-    continue_on_error: runtime?.error_handling?.continue_on_error,
-    snapshot_on_error: runtime?.error_handling?.snapshot_on_error,
-  }
 }
 
 function scenarioSeedFromPreset(preset: ScenarioShapePreset): ScenarioSeed {
@@ -1071,16 +1052,27 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setEffectiveAuthAccessResources([])
     setEffectiveAccessLoaded(false)
     setError('')
-    setForm(current => ({
-      ...current,
-      data_pool_id: undefined,
-      data_pool_alias: undefined,
-      // Bindings are project-scoped; carrying them across a project switch
-      // would make every save fail cross-project validation with no way to
-      // remove the invisible retained bindings from the wizard.
-      data_pools: [],
-      groups: current.groups.map(group => ({ ...group, script_id: '' })),
-    }))
+    // The builder's identity and every authored value belong to the project in
+    // which the draft was opened. An unchanged edit is intentionally not dirty,
+    // so the global navigation guard may allow a project switch without asking;
+    // reset the edit binding here so a subsequent save cannot update the prior
+    // project's scenario from the new project workspace.
+    setEditingId(null)
+    editingBaselineFormRef.current = ''
+    setForm(emptyScenarioForm())
+    setSelectedLoadModelTemplateId('')
+    setSelectedShapeId('')
+    setScenarioSourceMode('shape')
+    setScenarioStartChoice('')
+    setScenarioCloneQuery('')
+    setWizardStep('start')
+    setMaxVisitedWizardIndex(0)
+    setStageGroupIndex(0)
+    setRuntimeGroupIndex(0)
+    setRunSettingsTab('scenario')
+    setLoadModelValidation(null)
+    setLoadModelValidationError('')
+    setPlanSeedScenarioId(null)
   }, [activeProjectId])
   const resetGoalBaselineTableScroll = () => {
     if (goalBaselineTableRef.current) goalBaselineTableRef.current.scrollLeft = 0
@@ -1786,7 +1778,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     const scopeGeneration = goalSizingScopeGenerationRef.current
     const requestGeneration = ++goalBaselineSelectionGenerationRef.current
     try {
-      const response = await api.listTests({ project_id: projectId })
+      const response = await loadAllTestSummaries(api.listTests, { project_id: projectId, summary: true })
       if (
         currentProjectIdRef.current !== projectId
         || goalSizingScopeGenerationRef.current !== scopeGeneration

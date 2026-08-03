@@ -36,19 +36,28 @@ vi.mock('./useProject', () => ({
 function Probe() {
   const {
     applications,
+    applicationsLoading,
+    applicationsError,
     releases,
     releasesLoading,
     releasesError,
     activeApplication,
     activeRelease,
     setActiveApplication,
+    setActiveRelease,
+    removeApplication,
+    removeRelease,
+    refreshApplications,
     refreshReleases,
     createAndSelectApplication,
+    createAndSelectRelease,
   } = useApplication()
 
   return (
     <div>
       <span data-testid="application-count">{applications.length}</span>
+      <span data-testid="applications-loading">{String(applicationsLoading)}</span>
+      <span data-testid="applications-error">{applicationsError}</span>
       <span data-testid="active-application">{activeApplication?.name || ''}</span>
       <span data-testid="releases">{releases.map(release => release.name).join(',')}</span>
       <span data-testid="releases-loading">{String(releasesLoading)}</span>
@@ -60,6 +69,49 @@ function Probe() {
         </button>
       ))}
       <button type="button" onClick={() => createAndSelectApplication('New App')}>Create</button>
+      <button type="button" onClick={() => void createAndSelectRelease('New Release')}>Create release</button>
+      <button type="button" disabled={!activeApplication} onClick={() => activeApplication && removeApplication(activeApplication.id)}>Remove active application</button>
+      <button type="button" disabled={!activeRelease} onClick={() => activeRelease && removeRelease(activeRelease.id)}>Remove active release</button>
+      <button
+        type="button"
+        disabled={!activeApplication}
+        onClick={() => activeApplication && setActiveApplication({
+          ...activeApplication,
+          name: 'Renamed Application',
+          updated_at: '2026-05-16T00:00:00Z',
+        })}
+      >
+        Apply application response
+      </button>
+      <button
+        type="button"
+        disabled={!activeRelease}
+        onClick={() => activeRelease && setActiveRelease({
+          ...activeRelease,
+          name: 'Renamed Release',
+          updated_at: '2026-05-16T00:00:00Z',
+        })}
+      >
+        Apply release response
+      </button>
+      <button
+        type="button"
+        disabled={!activeApplication || !releases.some(release => release.id !== activeRelease?.id)}
+        onClick={() => {
+          const inactive = releases.find(release => release.id !== activeRelease?.id)
+          if (!inactive || !activeApplication) return
+          void refreshReleases(activeApplication.id, {
+            preserveRelease: {
+              ...inactive,
+              name: 'Renamed Inactive Release',
+              updated_at: '2026-05-16T00:00:00Z',
+            },
+          }).catch(() => undefined)
+        }}
+      >
+        Apply inactive release response
+      </button>
+      <button type="button" onClick={() => void refreshApplications().catch(() => undefined)}>Retry applications</button>
       <button type="button" onClick={() => void refreshReleases().catch(() => undefined)}>Retry releases</button>
     </div>
   )
@@ -96,6 +148,7 @@ describe('ApplicationProvider', () => {
       updated_at: '2026-05-15T00:00:00Z',
     })
     applicationApiMock.listReleases.mockResolvedValue({ releases: [], count: 0 })
+    applicationApiMock.createRelease.mockResolvedValue(release('release-new', 'app-1', 'New Release'))
   })
 
   afterEach(async () => {
@@ -130,6 +183,215 @@ describe('ApplicationProvider', () => {
     await flushPromises()
 
     expect(applicationApiMock.createApplication).toHaveBeenCalledWith({ name: 'New App', project_id: 'project-1' })
+  })
+
+  it('applies an authoritative release mutation to both selection and catalog', async () => {
+    applicationApiMock.listReleases.mockResolvedValue({
+      releases: [release('release-1', 'app-1', 'Original Release')],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const applyButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Apply release response')
+    await act(async () => {
+      applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="active-release"]')?.textContent).toBe('Renamed Release')
+    expect(container.querySelector('[data-testid="releases"]')?.textContent).toBe('Renamed Release')
+  })
+
+  it('keeps an authoritative application rename through a stale successful list and accepts a newer snapshot', async () => {
+    const original = application('app-1', 'project-1', 'Payments')
+    const newer = {
+      ...original,
+      name: 'Server Final Name',
+      updated_at: '2026-05-17T00:00:00Z',
+    }
+    applicationApiMock.listApplications
+      .mockResolvedValueOnce({ applications: [original], count: 1 })
+      .mockResolvedValueOnce({ applications: [original], count: 1 })
+      .mockResolvedValueOnce({ applications: [newer], count: 1 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+
+    const apply = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Apply application response')
+    const retry = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Retry applications')
+    await act(async () => apply?.click())
+    expect(readTestId('active-application')).toBe('Renamed Application')
+
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(readTestId('active-application')).toBe('Renamed Application')
+
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(readTestId('active-application')).toBe('Server Final Name')
+  })
+
+  it('keeps an authoritative release rename through a stale successful list and accepts a newer snapshot', async () => {
+    const original = release('release-1', 'app-1', 'Payments 1.0')
+    const newer = {
+      ...original,
+      name: 'Payments 1.0 Final',
+      updated_at: '2026-05-17T00:00:00Z',
+    }
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [original], count: 1 })
+      .mockResolvedValueOnce({ releases: [original], count: 1 })
+      .mockResolvedValueOnce({ releases: [newer], count: 1 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const apply = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Apply release response')
+    const retry = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Retry releases')
+    await act(async () => apply?.click())
+    expect(readTestId('active-release')).toBe('Renamed Release')
+
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(readTestId('active-release')).toBe('Renamed Release')
+
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(readTestId('active-release')).toBe('Payments 1.0 Final')
+  })
+
+  it('keeps an inactive release mutation in the shared catalog through stale reconciliation', async () => {
+    const active = release('release-1', 'app-1', 'Payments 1.0')
+    const inactive = release('release-2', 'app-1', 'Payments 2.0')
+    applicationApiMock.listReleases
+      .mockResolvedValueOnce({ releases: [active, inactive], count: 2 })
+      .mockResolvedValueOnce({ releases: [active, inactive], count: 2 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const apply = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent === 'Apply inactive release response')
+    await act(async () => apply?.click())
+    await flushPromises()
+
+    expect(readTestId('active-release')).toBe(active.name)
+    expect(readTestId('releases')).toBe(`${active.name},Renamed Inactive Release`)
+  })
+
+  it('keeps a created application selected when it supersedes an older list snapshot', async () => {
+    const staleList = deferred<Awaited<ReturnType<typeof applicationApiMock.listApplications>>>()
+    const existing = application('app-1', 'project-1', 'Payments')
+    const created = application('app-2', 'project-1', 'New App')
+    applicationApiMock.createApplication.mockResolvedValue(created)
+    applicationApiMock.listApplications
+      .mockImplementationOnce(() => staleList.promise)
+      // Model a read replica/eventual snapshot that has not observed the
+      // successful create yet. Reconciliation must still retain that row.
+      .mockResolvedValueOnce({ applications: [existing], count: 1 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+
+    const createButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create')
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(applicationApiMock.listApplications).toHaveBeenCalledTimes(2)
+    expect(readTestId('application-count')).toBe('2')
+    expect(readTestId('active-application')).toBe('New App')
+
+    await act(async () => {
+      staleList.resolve({ applications: [existing], count: 1 })
+    })
+    await flushPromises()
+
+    expect(readTestId('application-count')).toBe('2')
+    expect(readTestId('active-application')).toBe('New App')
+  })
+
+  it('does not synthesize an application when the server returns an empty hierarchy', async () => {
+    applicationApiMock.listApplications.mockResolvedValue({ applications: [], count: 0 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+
+    expect(readTestId('application-count')).toBe('0')
+    expect(readTestId('active-application')).toBe('')
+    expect(applicationApiMock.createApplication).not.toHaveBeenCalled()
+  })
+
+  it('surfaces application load failures, preserves valid state, and retries', async () => {
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    expect(readTestId('active-application')).toBe('Payments')
+
+    applicationApiMock.listApplications.mockRejectedValueOnce(new Error('application service unavailable'))
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry applications')
+    await act(async () => {
+      retry?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(readTestId('applications-loading')).toBe('false')
+    expect(readTestId('applications-error')).toBe('Unable to load applications: application service unavailable')
+    expect(readTestId('active-application')).toBe('Payments')
+    expect(readTestId('application-count')).toBe('1')
+
+    await act(async () => {
+      retry?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(readTestId('applications-error')).toBe('')
+    expect(readTestId('active-application')).toBe('Payments')
+  })
+
+  it('applies an application tombstone and fallback before stale reconciliation', async () => {
+    const payments = application('app-1', 'project-1', 'Payments')
+    const catalog = application('app-2', 'project-1', 'Catalog')
+    applicationApiMock.listApplications.mockResolvedValue({ applications: [payments, catalog], count: 2 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    expect(readTestId('active-application')).toBe('Payments')
+
+    const remove = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove active application')
+    await act(async () => remove?.click())
+    expect(readTestId('application-count')).toBe('1')
+    expect(readTestId('active-application')).toBe('Catalog')
+
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry applications')
+    await act(async () => retry?.click())
+    await flushPromises()
+
+    expect(readTestId('application-count')).toBe('1')
+    expect(readTestId('active-application')).toBe('Catalog')
   })
 
   it('clears the previous project immediately and ignores its late application response', async () => {
@@ -254,6 +516,62 @@ describe('ApplicationProvider', () => {
     expect(applicationApiMock.listReleases).toHaveBeenCalledTimes(2)
     expect(readTestId('releases-error')).toBe('')
     expect(readTestId('active-release')).toBe('Payments 1.0')
+  })
+
+  it('applies a release tombstone and selects a valid fallback before refresh', async () => {
+    const first = release('release-1', 'app-1', 'Payments 1.0')
+    const second = release('release-2', 'app-1', 'Payments 2.0')
+    applicationApiMock.listReleases.mockResolvedValue({ releases: [first, second], count: 2 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    await flushPromises()
+    expect(readTestId('active-release')).toBe('Payments 1.0')
+
+    const remove = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Remove active release')
+    await act(async () => remove?.click())
+    expect(readTestId('releases')).toBe('Payments 2.0')
+    expect(readTestId('active-release')).toBe('Payments 2.0')
+
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry releases')
+    await act(async () => retry?.click())
+    await flushPromises()
+    expect(readTestId('releases')).toBe('Payments 2.0')
+    expect(readTestId('active-release')).toBe('Payments 2.0')
+  })
+
+  it('reconciles all releases when creation supersedes an in-flight list', async () => {
+    const staleList = deferred<Awaited<ReturnType<typeof applicationApiMock.listReleases>>>()
+    const existing = release('release-existing', 'app-1', 'Existing Release')
+    const created = release('release-new', 'app-1', 'New Release')
+    applicationApiMock.createRelease.mockResolvedValue(created)
+    applicationApiMock.listReleases
+      .mockImplementationOnce(() => staleList.promise)
+      .mockResolvedValueOnce({ releases: [existing], count: 1 })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+
+    const createRelease = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Create release')
+    await act(async () => {
+      createRelease?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(applicationApiMock.listReleases).toHaveBeenCalledTimes(2)
+    expect(readTestId('releases')).toBe('Existing Release,New Release')
+    expect(readTestId('active-release')).toBe('New Release')
+
+    await act(async () => {
+      staleList.resolve({ releases: [existing], count: 1 })
+    })
+    await flushPromises()
+    expect(readTestId('releases')).toBe('Existing Release,New Release')
+    expect(readTestId('active-release')).toBe('New Release')
   })
 
   function readTestId(testId: string) {

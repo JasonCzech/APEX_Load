@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,170 @@ import (
 	"testing"
 	"time"
 )
+
+func TestSaveProjectAtomicallyProvisionsIdempotentLegacyHierarchy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "project-hierarchy.db")
+	project := &Project{ID: "project-hierarchy", Name: "Hierarchy", CreatedAt: time.Now().UTC()}
+
+	first, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(first): %v", err)
+	}
+	if err := first.CreateProjectWithLegacyHierarchy(project); err != nil {
+		first.Close()
+		t.Fatalf("SaveProject(create): %v", err)
+	}
+	if err := first.CreateProjectWithLegacyHierarchy(project); err != nil {
+		first.Close()
+		t.Fatalf("SaveProject(idempotent update): %v", err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatalf("Close(first): %v", err)
+	}
+
+	second, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(second): %v", err)
+	}
+	defer second.Close()
+	applicationID := legacyApplicationID(project.ID)
+	releaseID := legacyReleaseID(project.ID)
+	application, err := second.GetApplication(applicationID)
+	if err != nil || application.ProjectID != project.ID || application.Name != "Legacy" {
+		t.Fatalf("canonical application after restart = %#v, err=%v", application, err)
+	}
+	release, err := second.GetRelease(releaseID)
+	if err != nil || release.ProjectID != project.ID || release.ApplicationID != applicationID || release.Name != "Imported Legacy" {
+		t.Fatalf("canonical release after restart = %#v, err=%v", release, err)
+	}
+	if err := second.DeleteApplication(applicationID); err == nil {
+		t.Fatal("DeleteApplication removed a project-scoped canonical Legacy application")
+	}
+	if err := second.ArchiveRelease(releaseID); err == nil {
+		t.Fatal("ArchiveRelease archived a project-scoped canonical Legacy release")
+	}
+	if err := second.DeleteRelease(releaseID); err == nil {
+		t.Fatal("DeleteRelease removed a project-scoped canonical Legacy release")
+	}
+	applications, err := second.ListApplications()
+	if err != nil {
+		t.Fatalf("ListApplications: %v", err)
+	}
+	count := 0
+	for _, candidate := range applications {
+		if candidate.ProjectID == project.ID {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("project applications after restart = %d, want one canonical application", count)
+	}
+}
+
+func TestSaveProjectRollsBackWhenLegacyHierarchyCannotBeCreated(t *testing.T) {
+	store := newProjectEntityCASStore(t)
+	if _, err := store.db.Exec(`CREATE TRIGGER reject_atomic_project_hierarchy
+		BEFORE INSERT ON applications
+		WHEN NEW.project_id = 'atomic-project'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected hierarchy failure');
+		END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	err := store.CreateProjectWithLegacyHierarchy(&Project{ID: "atomic-project", Name: "Atomic", CreatedAt: time.Now().UTC()})
+	if err == nil || !strings.Contains(err.Error(), "injected hierarchy failure") {
+		t.Fatalf("SaveProject error = %v, want injected hierarchy failure", err)
+	}
+	if _, err := store.GetProject("atomic-project"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("project survived failed hierarchy transaction: %v", err)
+	}
+}
+
+func TestCreateProjectWithLegacyHierarchyRejectsConflictingCanonicalApplication(t *testing.T) {
+	store := newProjectEntityCASStore(t)
+	const projectID = "canonical-application-conflict"
+	applicationID := legacyApplicationID(projectID)
+	if err := store.SaveApplication(&Application{ID: applicationID, ProjectID: "project-a", Name: "Existing application"}); err != nil {
+		t.Fatalf("seed conflicting application: %v", err)
+	}
+
+	err := store.CreateProjectWithLegacyHierarchy(&Project{ID: projectID, Name: "Must roll back", CreatedAt: time.Now().UTC()})
+	if err == nil || !strings.Contains(err.Error(), "belongs to project") {
+		t.Fatalf("CreateProjectWithLegacyHierarchy error = %v, want application placement conflict", err)
+	}
+	if _, err := store.GetProject(projectID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("project survived conflicting application transaction: %v", err)
+	}
+	application, err := store.GetApplication(applicationID)
+	if err != nil || application.ProjectID != "project-a" || application.Name != "Existing application" {
+		t.Fatalf("conflicting application changed = %#v, err=%v", application, err)
+	}
+	if _, err := store.GetRelease(legacyReleaseID(projectID)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("release survived conflicting application transaction: %v", err)
+	}
+}
+
+func TestCreateProjectWithLegacyHierarchyRejectsConflictingCanonicalRelease(t *testing.T) {
+	store := newProjectEntityCASStore(t)
+	const projectID = "canonical-release-conflict"
+	owner := &Application{ID: "release-conflict-owner", ProjectID: "project-a", Name: "Existing application"}
+	if err := store.SaveApplication(owner); err != nil {
+		t.Fatalf("seed release owner: %v", err)
+	}
+	releaseID := legacyReleaseID(projectID)
+	if err := store.SaveRelease(&Release{ID: releaseID, ApplicationID: owner.ID, ProjectID: owner.ProjectID, Name: "Existing release"}); err != nil {
+		t.Fatalf("seed conflicting release: %v", err)
+	}
+
+	err := store.CreateProjectWithLegacyHierarchy(&Project{ID: projectID, Name: "Must roll back", CreatedAt: time.Now().UTC()})
+	if err == nil || !strings.Contains(err.Error(), "belongs to application") {
+		t.Fatalf("CreateProjectWithLegacyHierarchy error = %v, want release placement conflict", err)
+	}
+	if _, err := store.GetProject(projectID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("project survived conflicting release transaction: %v", err)
+	}
+	if _, err := store.GetApplication(legacyApplicationID(projectID)); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("canonical application survived conflicting release transaction: %v", err)
+	}
+	release, err := store.GetRelease(releaseID)
+	if err != nil || release.ApplicationID != owner.ID || release.ProjectID != owner.ProjectID || release.Name != "Existing release" {
+		t.Fatalf("conflicting release changed = %#v, err=%v", release, err)
+	}
+}
+
+func TestCreateProjectWithLegacyHierarchyRejectsArchivedCanonicalRelease(t *testing.T) {
+	store := newProjectEntityCASStore(t)
+	const projectID = "archived-canonical-release"
+	if err := store.SaveProject(&Project{ID: projectID, Name: "Original project"}); err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	application := &Application{ID: legacyApplicationID(projectID), ProjectID: projectID, Name: "Renamed legacy application"}
+	if err := store.SaveApplication(application); err != nil {
+		t.Fatalf("seed canonical application: %v", err)
+	}
+	release := &Release{ID: legacyReleaseID(projectID), ApplicationID: application.ID, ProjectID: projectID, Name: "Renamed legacy release"}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("seed canonical release: %v", err)
+	}
+	archivedAt := time.Now().UTC()
+	if _, err := store.db.Exec(`UPDATE releases SET archived_at = ? WHERE id = ?`, archivedAt, release.ID); err != nil {
+		t.Fatalf("archive canonical release fixture: %v", err)
+	}
+
+	err := store.CreateProjectWithLegacyHierarchy(&Project{ID: projectID, Name: "Updated project"})
+	if err == nil || !strings.Contains(err.Error(), "is archived") {
+		t.Fatalf("CreateProjectWithLegacyHierarchy error = %v, want archived release conflict", err)
+	}
+	project, err := store.GetProject(projectID)
+	if err != nil || project.Name != "Original project" {
+		t.Fatalf("project update was not rolled back = %#v, err=%v", project, err)
+	}
+	persisted, err := store.GetRelease(release.ID)
+	if err != nil || persisted.ArchivedAt == nil || persisted.Name != release.Name {
+		t.Fatalf("archived release changed = %#v, err=%v", persisted, err)
+	}
+}
 
 func TestApplicationAndReleaseWritesRequireImmutableDurableParents(t *testing.T) {
 	store := newProjectEntityCASStore(t)

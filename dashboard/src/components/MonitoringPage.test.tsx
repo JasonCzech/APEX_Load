@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
+import { NavigationGuardRunnerContext } from '../hooks/NavigationGuardProvider'
 import MonitoringPage from './MonitoringPage'
 
 const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
@@ -43,6 +44,7 @@ const capacityApiMock = {
 
 const fleetApiMock = {
   listFleetPools: vi.fn(),
+  listGeneratorMetadata: vi.fn(),
   getProvisioner: vi.fn(),
   listProvisionRequests: vi.fn(),
   createProvisionRequest: vi.fn(),
@@ -233,6 +235,7 @@ describe('MonitoringPage', () => {
     apiMock.listAuthAuditEvents.mockResolvedValue({ events: [], count: 0 })
     capacityApiMock.listTimeslots.mockResolvedValue({ timeslots: [], count: 0 })
     fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [], count: 0 })
+    fleetApiMock.listGeneratorMetadata.mockResolvedValue({ generators: [], count: 0 })
     fleetApiMock.getProvisioner.mockResolvedValue(null)
     fleetApiMock.listProvisionRequests.mockResolvedValue({ provisioning_requests: [], count: 0 })
     apiMock.getFleetCapacity.mockResolvedValue({
@@ -678,6 +681,26 @@ describe('MonitoringPage', () => {
     })
     expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'])
     expect(container.querySelector('.monitor-page-title')?.textContent).toContain('Telemetry')
+  })
+
+  it('runs category changes through the global navigation guard', async () => {
+    let pending: (() => void) | null = null
+    await act(async () => {
+      root.render(
+        <NavigationGuardRunnerContext.Provider value={{
+          hasDirtyGuard: () => true,
+          runGuarded: proceed => { pending = proceed },
+        }}>
+          <MonitoringPage connectionState="connected" />
+        </NavigationGuardRunnerContext.Provider>,
+      )
+    })
+
+    await clickMonitorTab('Telemetry')
+    expect(pending).not.toBeNull()
+    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    await act(async () => (pending as unknown as () => void)())
+    expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'])
   })
 
   it('traps focus in telemetry details, closes on Escape, and restores the trigger', async () => {
@@ -1513,7 +1536,7 @@ describe('MonitoringPage', () => {
     expect(reservationsPanel).toBeTruthy()
     expect(container.querySelector('.run-calendar-top-row')?.contains(reservationsPanel)).toBe(true)
     expect(reservationsPanel?.textContent).toContain('Capacity Reservations')
-    expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'project-1' })
+    expect(capacityApiMock.listTimeslots).toHaveBeenCalledWith({ project_id: 'project-1', limit: 100, offset: 0 })
     const periodLabel = container.querySelector('.run-calendar-period-label')
     expect(periodLabel?.textContent).toBe(new Date().toLocaleDateString([], { month: 'long', year: 'numeric' }))
     expect(container.querySelector('.run-calendar-nav')?.textContent).not.toBe('Today')

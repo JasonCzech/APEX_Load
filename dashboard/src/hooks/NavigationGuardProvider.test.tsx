@@ -99,14 +99,38 @@ describe('NavigationGuardProvider', () => {
     expect(proceed).not.toHaveBeenCalled()
   })
 
+  it('allows a resolved navigation to pass through a nested guarded owner', async () => {
+    const proceed = vi.fn()
+    const discard = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <NestedRunner proceed={proceed} />
+          <Publisher guard={makeGuard({ dirty: true, discard })} dirty />
+        </NavigationGuardProvider>,
+      )
+    })
+
+    await click('Navigate nested')
+    expect(container.textContent).toContain('Unsaved Changes')
+
+    await click('Discard changes')
+
+    expect(discard).toHaveBeenCalledTimes(1)
+    expect(proceed).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Unsaved Changes')
+  })
+
   it('prompts for the most recently registered dirty guard', async () => {
+    const proceed = vi.fn()
     const pageDiscard = vi.fn()
     const modalDiscard = vi.fn()
 
     await act(async () => {
       root.render(
         <NavigationGuardProvider>
-          <Runner proceed={vi.fn()} />
+          <Runner proceed={proceed} />
           <Publisher guard={makeGuard({ dirty: true, label: 'Page Builder', discard: pageDiscard })} dirty />
           <Publisher guard={makeGuard({ id: 'modal-guard', dirty: true, label: 'Inline Editor', discard: modalDiscard })} dirty />
         </NavigationGuardProvider>,
@@ -122,6 +146,14 @@ describe('NavigationGuardProvider', () => {
 
     expect(modalDiscard).toHaveBeenCalledTimes(1)
     expect(pageDiscard).not.toHaveBeenCalled()
+    expect(proceed).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Page Builder has unsaved changes')
+
+    await click('Discard changes')
+
+    expect(pageDiscard).toHaveBeenCalledTimes(1)
+    expect(proceed).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Unsaved Changes')
   })
 
   it('does not prompt after the guard unregisters', async () => {
@@ -234,6 +266,15 @@ function Runner({ proceed }: { proceed: () => void }) {
   return (
     <button type="button" onClick={() => runGuarded(proceed)}>
       Navigate
+    </button>
+  )
+}
+
+function NestedRunner({ proceed }: { proceed: () => void }) {
+  const { runGuarded } = useNavigationGuardRunner()
+  return (
+    <button type="button" onClick={() => runGuarded(() => runGuarded(proceed))}>
+      Navigate nested
     </button>
   )
 }

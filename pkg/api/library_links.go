@@ -386,10 +386,21 @@ func (s *Server) localLibraryItemHash(kind string, id string) (string, error) {
 		return hashLibraryScenario(scenario), nil
 	case "result":
 		test, ok := s.runner.GetTest(id)
-		if !ok {
+		if ok {
+			return hashLibraryResult(test), nil
+		}
+		imported, found, err := s.getExternalResultImport(id)
+		if err != nil {
+			return "", err
+		}
+		if !found || imported == nil {
 			return "", fmt.Errorf("result not found")
 		}
-		return hashLibraryResult(test), nil
+		contentHash, _ := imported.RawResult["content_hash"].(string)
+		if strings.TrimSpace(contentHash) == "" {
+			return "", fmt.Errorf("imported result content hash is missing")
+		}
+		return strings.TrimSpace(contentHash), nil
 	default:
 		return "", fmt.Errorf("kind must be one of script, scenario, or result")
 	}

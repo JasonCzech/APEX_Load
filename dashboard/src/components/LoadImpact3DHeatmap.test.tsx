@@ -136,20 +136,6 @@ vi.mock('three', () => {
   }
 })
 
-vi.mock('three/examples/jsm/controls/OrbitControls.js', () => ({
-  OrbitControls: class {
-    autoRotate = false
-    autoRotateSpeed = 0
-    dispose = vi.fn()
-    enableDamping = false
-    enablePan = false
-    maxDistance = 0
-    minDistance = 0
-    target = { set: vi.fn() }
-    update = vi.fn()
-  },
-}))
-
 describe('LoadImpact3DHeatmap', () => {
   let container: HTMLDivElement
   let root: Root

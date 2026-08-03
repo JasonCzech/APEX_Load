@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CorrelationRulesetPanel from './CorrelationRulesetPanel'
 import { CorrelationRuleset } from '../types'
+import { ApiError } from '../hooks/apiClient'
+import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -296,5 +298,169 @@ describe('CorrelationRulesetPanel', () => {
       })
       await Promise.resolve()
     })
+  })
+
+  it('keeps a discovered ruleset when the follow-up catalog refresh fails', async () => {
+    apiMock.listCorrelationRulesets
+      .mockResolvedValueOnce({ correlation_rulesets: [ruleset({})], count: 1 })
+      .mockRejectedValueOnce(new ApiError('ruleset refresh unavailable', 503))
+    apiMock.discoverCorrelationRulesetFromScript.mockResolvedValue(ruleset({ id: 'r2', name: 'Newly discovered' }))
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+
+    setInput('Discover from script id…', 's7')
+    await act(async () => findButton('Discover from script')?.click())
+    await flush()
+
+    expect(container.textContent).toContain('Checkout correlations')
+    expect(container.textContent).toContain('Newly discovered')
+    expect(container.textContent).toContain('ruleset refresh unavailable')
+    expect(container.textContent).toContain('Retry rulesets')
+    expect(apiMock.discoverCorrelationRulesetFromScript).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not resurrect a deleted ruleset from a stale catalog response', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.deleteCorrelationRuleset.mockResolvedValue({ deleted: 'r1' })
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+
+    await act(async () => findButton('Delete')?.click())
+    const reason = container.querySelector<HTMLInputElement>('input[placeholder="Operational reason"]')
+    const confirmation = container.querySelector<HTMLInputElement>('input[placeholder="Checkout correlations"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(reason, 'obsolete rules')
+      reason?.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(confirmation, 'Checkout correlations')
+      confirmation?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => findButton('Delete ruleset')?.click())
+    await flush()
+
+    expect(apiMock.deleteCorrelationRuleset).toHaveBeenCalledWith('r1')
+    expect(container.textContent).not.toContain('Checkout correlations')
+    expect(container.textContent).toContain('No correlation rulesets yet')
+  })
+
+  it('clears an old preview token when re-previewing fails', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.applyCorrelationRulesetToScript
+      .mockResolvedValueOnce({
+        ruleset_id: 'r1', script_id: 's9', matched_rules: 1, applied: false,
+        preview_token: 'preview-r1-s9', diffs: [{ kind: 'extractor_added', path: '/actions/0/extractors' }],
+      })
+      .mockRejectedValueOnce(new ApiError('preview unavailable', 503))
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+    const title = container.querySelector('.pp-row-title-button') as HTMLButtonElement
+    await act(async () => title.click())
+    setInput('Apply to script id…', 's9')
+    await act(async () => findButton('Preview')?.click())
+    await flush()
+    expect(findButton('Apply')?.disabled).toBe(false)
+
+    await act(async () => findButton('Preview')?.click())
+    await flush()
+    expect(container.textContent).toContain('preview unavailable')
+    expect(findButton('Apply')?.disabled).toBe(true)
+    expect(container.textContent).not.toContain('1 rule matched')
+  })
+
+  it('keeps destructive confirmation state when deletion fails', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [ruleset({})], count: 1 })
+    apiMock.deleteCorrelationRuleset.mockRejectedValue(new ApiError('delete rejected', 409))
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+    await act(async () => findButton('Delete')?.click())
+    const reason = container.querySelector<HTMLInputElement>('input[placeholder="Operational reason"]')
+    const confirmation = container.querySelector<HTMLInputElement>('input[placeholder="Checkout correlations"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    act(() => {
+      setter?.call(reason, 'obsolete rules')
+      reason?.dispatchEvent(new Event('input', { bubbles: true }))
+      setter?.call(confirmation, 'Checkout correlations')
+      confirmation?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => findButton('Delete ruleset')?.click())
+    await flush()
+
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(reason?.value).toBe('obsolete rules')
+    expect(confirmation?.value).toBe('Checkout correlations')
+    expect(container.textContent).toContain('delete rejected')
+  })
+
+  it('accepts a newer ruleset snapshot over an older mutation response', async () => {
+    apiMock.listCorrelationRulesets
+      .mockResolvedValueOnce({ correlation_rulesets: [ruleset({})], count: 1 })
+      .mockResolvedValueOnce({
+        correlation_rulesets: [
+          ruleset({}),
+          ruleset({ id: 'r2', name: 'Server-refined rules', updated_at: '2026-08-03T12:00:00Z' }),
+        ],
+        count: 2,
+      })
+    apiMock.discoverCorrelationRulesetFromScript.mockResolvedValue(
+      ruleset({ id: 'r2', name: 'Initial discovery', updated_at: '2026-08-03T11:00:00Z' }),
+    )
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+    setInput('Discover from script id…', 's7')
+    await act(async () => findButton('Discover from script')?.click())
+    await flush()
+
+    expect(container.textContent).toContain('Server-refined rules')
+    expect(container.textContent).not.toContain('Initial discovery')
+  })
+
+  it('loads every ruleset page instead of truncating the catalog at 100', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ruleset({ id: `r-${index}`, name: `Ruleset ${index}` }))
+    apiMock.listCorrelationRulesets
+      .mockResolvedValueOnce({ correlation_rulesets: firstPage, count: 100, limit: 100, offset: 0 })
+      .mockResolvedValueOnce({ correlation_rulesets: [ruleset({ id: 'r-100', name: 'Ruleset 100' })], count: 1, limit: 100, offset: 100 })
+
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+
+    expect(apiMock.listCorrelationRulesets).toHaveBeenNthCalledWith(1, { project_id: 'proj-a', limit: 100, offset: 0 })
+    expect(apiMock.listCorrelationRulesets).toHaveBeenNthCalledWith(2, { project_id: 'proj-a', limit: 100, offset: 100 })
+    expect(container.textContent).toContain('Ruleset 100')
+  })
+
+  it('does not add a discovered ruleset returned for another project', async () => {
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [], count: 0 })
+    apiMock.discoverCorrelationRulesetFromScript.mockResolvedValue(ruleset({ id: 'r-b', project_id: 'proj-b', name: 'Project B rules' }))
+    await act(async () => root.render(<CorrelationRulesetPanel projectId="proj-a" canManage />))
+    await flush()
+    setInput('Discover from script id…', 'script-b')
+    await act(async () => findButton('Discover from script')?.click())
+    await flush()
+
+    expect(container.textContent).toContain('different project')
+    expect(container.textContent).not.toContain('Project B rules')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Discover from script id…"]')?.value).toBe('script-b')
+  })
+
+  it('registers discovery and apply edits with the global navigation guard', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    apiMock.listCorrelationRulesets.mockResolvedValue({ correlation_rulesets: [], count: 0 })
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <CorrelationRulesetPanel projectId="proj-a" canManage />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flush()
+    setInput('Discover from script id…', 'script-draft')
+    await flush()
+    expect(registration?.dirty).toBe(true)
+
+    act(() => registration?.guard.discard())
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Discover from script id…"]')?.value).toBe('')
   })
 })

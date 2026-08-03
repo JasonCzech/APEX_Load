@@ -769,11 +769,13 @@ func schemaCreateTableStatements() []string {
 			provider TEXT NOT NULL,
 			name TEXT NOT NULL,
 			project_id TEXT,
+			application_id TEXT REFERENCES applications(id),
 			release_id TEXT,
 			scenario_id TEXT,
 			source TEXT,
 			summary_json TEXT,
 			raw_json TEXT,
+			archive_record_json TEXT,
 			created_at DATETIME NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS script_recordings (
@@ -1135,6 +1137,8 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.folder_id", query: `ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
 		{name: "tests.application_id", query: `ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`},
 		{name: "tests.release_id", query: `ALTER TABLE tests ADD COLUMN release_id TEXT REFERENCES releases(id)`},
+		{name: "external_result_imports.application_id", query: `ALTER TABLE external_result_imports ADD COLUMN application_id TEXT REFERENCES applications(id)`},
+		{name: "external_result_imports.archive_record_json", query: `ALTER TABLE external_result_imports ADD COLUMN archive_record_json TEXT`},
 		{name: "tests.scenario_id", query: `ALTER TABLE tests ADD COLUMN scenario_id TEXT REFERENCES scenarios(id)`},
 		{name: "tests.scheduled_start_at", query: `ALTER TABLE tests ADD COLUMN scheduled_start_at DATETIME`},
 		{name: "tests.pending_since", query: `ALTER TABLE tests ADD COLUMN pending_since DATETIME`},
@@ -1610,6 +1614,44 @@ func legacyReleaseID(projectID string) string {
 	return LegacyReleaseID + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
+// ensureLegacyProjectHierarchyTx provisions the deterministic compatibility
+// hierarchy for one project inside the caller's transaction. Keeping this in
+// the project write transaction means a newly-created project is never visible
+// without the application and release used by legacy/unscoped records.
+func ensureLegacyProjectHierarchyTx(tx *storeTx, projectID string, now time.Time) error {
+	projectID = normalizeProjectID(projectID)
+	applicationID := legacyApplicationID(projectID)
+	releaseID := legacyReleaseID(projectID)
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, applicationID, projectID, "Legacy", now, now); err != nil {
+		return fmt.Errorf("create legacy application for project %s: %w", projectID, err)
+	}
+	var applicationProjectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, applicationID).Scan(&applicationProjectID); err != nil {
+		return fmt.Errorf("validate legacy application %s for project %s: %w", applicationID, projectID, err)
+	}
+	applicationProjectID = normalizeProjectID(applicationProjectID)
+	if applicationProjectID != projectID {
+		return fmt.Errorf("legacy application %q belongs to project %q, not %q", applicationID, applicationProjectID, projectID)
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO releases (id, application_id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, releaseID, applicationID, projectID, "Imported Legacy", now, now); err != nil {
+		return fmt.Errorf("create legacy release for project %s: %w", projectID, err)
+	}
+	var releaseApplicationID, releaseProjectID string
+	var releaseArchivedAt *time.Time
+	if err := tx.QueryRow(`SELECT application_id, COALESCE(project_id, ''), archived_at FROM releases WHERE id = ?`, releaseID).
+		Scan(&releaseApplicationID, &releaseProjectID, &releaseArchivedAt); err != nil {
+		return fmt.Errorf("validate legacy release %s for project %s: %w", releaseID, projectID, err)
+	}
+	releaseProjectID = normalizeProjectID(releaseProjectID)
+	if releaseApplicationID != applicationID || releaseProjectID != projectID {
+		return fmt.Errorf("legacy release %q belongs to application %q in project %q, not application %q in project %q", releaseID, releaseApplicationID, releaseProjectID, applicationID, projectID)
+	}
+	if releaseArchivedAt != nil {
+		return fmt.Errorf("legacy release %q is archived", releaseID)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) ensureLegacyApplication() error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -1640,11 +1682,8 @@ func (s *SQLiteStore) ensureLegacyApplication() error {
 	for _, projectID := range projectIDs {
 		applicationID := legacyApplicationID(projectID)
 		releaseID := legacyReleaseID(projectID)
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO applications (id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, applicationID, projectID, "Legacy", now, now); err != nil {
-			return fmt.Errorf("create legacy application for project %s: %w", projectID, err)
-		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO releases (id, application_id, project_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, releaseID, applicationID, projectID, "Imported Legacy", now, now); err != nil {
-			return fmt.Errorf("create legacy release for project %s: %w", projectID, err)
+		if err := ensureLegacyProjectHierarchyTx(tx, projectID, now); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(`UPDATE tests SET application_id = ?
 			WHERE project_id = ? AND (application_id IS NULL OR application_id = '' OR (application_id = ? AND ? <> ?))`,

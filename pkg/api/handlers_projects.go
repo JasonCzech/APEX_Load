@@ -52,7 +52,14 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	project := &storage.Project{ID: uuid.New().String(), DomainID: domainID, CategoryID: categoryID, Name: strings.TrimSpace(req.Name), Settings: req.Settings, CreatedAt: now, UpdatedAt: now}
-	if err := s.store.SaveProject(project); err != nil {
+	projectCreator, supportsAtomicHierarchy := s.store.(interface {
+		CreateProjectWithLegacyHierarchy(project *storage.Project) error
+	})
+	if !supportsAtomicHierarchy {
+		writeError(w, http.StatusNotImplemented, "atomic project hierarchy creation is not supported by this storage backend")
+		return
+	}
+	if err := projectCreator.CreateProjectWithLegacyHierarchy(project); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -5,6 +5,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ProjectSecretsPanel from './ProjectSecretsPanel'
+import { ApiError } from '../hooks/apiClient'
+import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -418,6 +420,94 @@ describe('ProjectSecretsPanel', () => {
 
     expect(container.textContent).toContain('Request timed out after 15000ms')
     expect(container.textContent).toContain('Secret operation timed out. The request was canceled to avoid hanging on Creating....')
+    expect(container.textContent).toContain('Reconcile secret status')
+  })
+
+  it('adopts a durable create reported through a partial failure without inviting a retry', async () => {
+    apiMock.createProjectSecrets.mockRejectedValueOnce(new ApiError(
+      'project secret was created but its audit outcome could not be persisted; refresh secret status before retrying',
+      503,
+      {
+        partial: true,
+        created: [{
+          project_id: 'project-1',
+          name: 'AUDIT_CREATE',
+          provider: 'encrypted_database',
+          writable: true,
+          updated_at: '2026-07-03T12:00:00Z',
+        }],
+      },
+    ))
+
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />))
+    await flushPromises()
+    const inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(inputs[0], 'AUDIT_CREATE')
+      setInput(inputs[1], 'sensitive-value')
+    })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create Secret')
+    await act(async () => create?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('AUDIT_CREATE')
+    expect(container.textContent).toContain('audit persistence warning')
+    expect(inputs[0].value).toBe('')
+    expect(inputs[1].value).toBe('')
+    expect(container.textContent).not.toContain('Reconcile secret status')
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+  })
+
+  it('reconciles an ambiguous rotation from newer metadata and clears the write-only value', async () => {
+    const initial = await apiMock.listProjectSecrets()
+    apiMock.listProjectSecrets
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce({
+        ...initial,
+        secrets: initial.secrets.map((secret: { name: string }) => secret.name === 'EXISTING_TOKEN'
+          ? { ...secret, updated_at: '2026-07-04T12:00:00Z' }
+          : secret),
+      })
+    apiMock.rotateProjectSecret.mockRejectedValueOnce(new ApiError(
+      'project secret was rotated but its audit outcome could not be persisted; refresh secret status before retrying',
+      503,
+    ))
+
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />))
+    await flushPromises()
+    const rotate = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rotate')
+    await act(async () => rotate?.click())
+    const value = container.querySelector<HTMLInputElement>('#rotate-secret-EXISTING_TOKEN')!
+    act(() => setInput(value, 'replacement-value'))
+    const submit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rotate')
+    await act(async () => submit?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('operation may have committed')
+    expect(container.querySelector('#rotate-secret-EXISTING_TOKEN')).toBeNull()
+    expect(apiMock.rotateProjectSecret).toHaveBeenCalledTimes(1)
+  })
+
+  it('registers write-only drafts with the global navigation guard', async () => {
+    let registration: { guard: NavigationGuard; dirty: boolean } | undefined
+    await act(async () => {
+      root.render(
+        <NavigationGuardRegisterContext.Provider value={(guard, dirty) => {
+          registration = { guard, dirty }
+          return () => undefined
+        }}>
+          <ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />
+        </NavigationGuardRegisterContext.Provider>,
+      )
+    })
+    await flushPromises()
+    const inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => setInput(inputs[1], 'write-only-draft'))
+    await flushPromises()
+    expect(registration?.dirty).toBe(true)
+
+    act(() => registration?.guard.discard())
+    expect(inputs[1].value).toBe('')
   })
 
   it('clears write-only values and operation messages when the selected project changes', async () => {
@@ -491,5 +581,188 @@ describe('ProjectSecretsPanel', () => {
     expect(container.querySelector('.project-secret-rotate')).toBeNull()
     expect(container.textContent).not.toContain('TEMP_TOKEN was created')
     expect(apiMock.listProjectSecrets).toHaveBeenLastCalledWith('project-2')
+  })
+
+  it('keeps last-good metadata and the committed secret when reconciliation fails', async () => {
+    apiMock.listProjectSecrets
+      .mockResolvedValueOnce({
+        project_id: 'project-1',
+        capabilities: {
+          provider: 'encrypted_database',
+          writable: true,
+          create_supported: true,
+          replace_supported: true,
+          source_secret_migration_policy_enabled: false,
+        },
+        secrets: [{ name: 'EXISTING_TOKEN', provider: 'encrypted_database', writable: true }],
+        count: 1,
+      })
+      .mockRejectedValueOnce(new Error('metadata service unavailable'))
+    apiMock.createProjectSecrets.mockResolvedValueOnce({
+      project_id: 'project-1',
+      secrets: [{ name: 'NEW_TOKEN', provider: 'encrypted_database', writable: true }],
+      count: 2,
+    })
+
+    await act(async () => {
+      root.render(<ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />)
+    })
+    await flushPromises()
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(inputs[0], 'NEW_TOKEN')
+      setInput(inputs[1], 'secret-value')
+    })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Create Secret')
+    await act(async () => create?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('EXISTING_TOKEN')
+    expect(container.textContent).toContain('NEW_TOKEN')
+    expect(container.textContent).toContain('metadata service unavailable')
+    expect(container.textContent).toContain('Retry secret metadata')
+    expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a committed secret when the follow-up metadata response is stale', async () => {
+    const staleCatalog = {
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [{ name: 'EXISTING_TOKEN', provider: 'encrypted_database', writable: true, updated_at: '2026-07-01T00:00:00Z' }],
+      count: 1,
+    }
+    apiMock.listProjectSecrets.mockResolvedValue(staleCatalog)
+    apiMock.createProjectSecrets.mockResolvedValueOnce({
+      project_id: 'project-1',
+      secrets: [{ name: 'NEW_TOKEN', provider: 'encrypted_database', writable: true, updated_at: '2026-07-03T00:00:00Z' }],
+      count: 2,
+    })
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="Checkout" canCreate canRotate />))
+    await flushPromises()
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(inputs[0], 'NEW_TOKEN')
+      setInput(inputs[1], 'secret-value')
+    })
+    const create = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Create Secret')
+    await act(async () => create?.click())
+    await flushPromises()
+
+    expect(apiMock.listProjectSecrets).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('EXISTING_TOKEN')
+    expect(container.textContent).toContain('NEW_TOKEN')
+  })
+
+  it('ignores an old mutation completion after an A to B to A cycle', async () => {
+    let resolveOldCreate!: (value: unknown) => void
+    const oldCreate = new Promise(resolve => { resolveOldCreate = resolve })
+    apiMock.createProjectSecrets
+      .mockReturnValueOnce(oldCreate)
+      .mockRejectedValueOnce(new Error('new A write failed'))
+    apiMock.listProjectSecrets.mockImplementation(async (projectId: string) => ({
+      project_id: projectId,
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [{ name: 'EXISTING_TOKEN', provider: 'encrypted_database', writable: true }],
+      count: 1,
+    }))
+
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="A" canCreate canRotate />))
+    await flushPromises()
+    let inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(inputs[0], 'OLD_A')
+      setInput(inputs[1], 'old-value')
+    })
+    let create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create Secret')
+    act(() => create?.click())
+
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-2" projectName="B" canCreate canRotate />))
+    await flushPromises()
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="A" canCreate canRotate />))
+    await flushPromises()
+    inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(inputs[0], 'NEW_A')
+      setInput(inputs[1], 'new-value')
+    })
+    create = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Create Secret')
+    await act(async () => create?.click())
+    await flushPromises()
+    expect(container.textContent).toContain('new A write failed')
+
+    await act(async () => {
+      resolveOldCreate({
+        project_id: 'project-1',
+        secrets: [{ name: 'OLD_A', provider: 'encrypted_database', writable: true }],
+        count: 2,
+      })
+      await Promise.resolve()
+    })
+
+    inputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    expect(inputs[0].value).toBe('NEW_A')
+    expect(inputs[1].value).toBe('new-value')
+    expect(container.textContent).toContain('new A write failed')
+    expect(container.textContent).not.toContain('OLD_A was created')
+  })
+
+  it('rejects a stale A response after an A to B to A scope cycle', async () => {
+    let resolveFirstA!: (value: unknown) => void
+    const firstA = new Promise(resolve => { resolveFirstA = resolve })
+    let aCalls = 0
+    apiMock.listProjectSecrets.mockImplementation((projectId: string) => {
+      if (projectId === 'project-1') {
+        aCalls += 1
+        if (aCalls === 1) return firstA
+        return Promise.resolve({
+          project_id: projectId,
+          capabilities: { provider: 'latest-provider', writable: true, create_supported: true, replace_supported: true },
+          secrets: [{ name: 'LATEST_A', provider: 'latest-provider', writable: true }],
+          count: 1,
+        })
+      }
+      return Promise.resolve({
+        project_id: projectId,
+        capabilities: { provider: 'provider-b', writable: true, create_supported: true, replace_supported: true },
+        secrets: [{ name: 'PROJECT_B', provider: 'provider-b', writable: true }],
+        count: 1,
+      })
+    })
+
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="A" canCreate canRotate />))
+    await flushPromises()
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-2" projectName="B" canCreate canRotate />))
+    await flushPromises()
+    await act(async () => root.render(<ProjectSecretsPanel projectId="project-1" projectName="A" canCreate canRotate />))
+    await flushPromises()
+    expect(container.textContent).toContain('LATEST_A')
+
+    await act(async () => {
+      resolveFirstA({
+        project_id: 'project-1',
+        capabilities: { provider: 'stale-provider', writable: true, create_supported: true, replace_supported: true },
+        secrets: [{ name: 'STALE_A', provider: 'stale-provider', writable: true }],
+        count: 1,
+      })
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('LATEST_A')
+    expect(container.textContent).not.toContain('STALE_A')
   })
 })

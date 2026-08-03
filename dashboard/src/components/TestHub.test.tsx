@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { type LoadModelTemplate, type StoredScenario } from '../types'
-import TestHub, { scenarioSeedFromTemplate } from './TestHub'
+import TestHub from './TestHub'
+import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import {
   replaceScenarioRuntimeDefaults,
   reseedScenarioGroups,
@@ -1653,6 +1654,43 @@ describe('TestHub', () => {
 
     expect(container.textContent).toContain('Project B Scenario')
     expect(container.textContent).not.toContain('Project A Scenario')
+  })
+
+  it('resets a pristine scenario edit before authoring in a different project', async () => {
+    apiMock.listScenarios.mockImplementation((projectId?: string) => Promise.resolve({
+      scenarios: projectId === 'project-a'
+        ? [scenarioFixture('scenario-a', 'Project A Scenario')]
+        : [],
+      count: projectId === 'project-a' ? 1 : 0,
+    }))
+    projectState.activeProject = { id: 'project-a', name: 'Project A', created_at: '', updated_at: '' }
+    const renderHub = () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+
+    await act(async () => renderHub())
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click()
+    })
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Project A Scenario')
+
+    projectState.activeProject = { id: 'project-b', name: 'Project B', created_at: '', updated_at: '' }
+    await act(async () => renderHub())
+    await flushPromises()
+    expect(container.textContent).toContain('Start With A Model')
+    expect(container.textContent).not.toContain('Project A Scenario')
+
+    await clickWizardStep('Scripts')
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')
+    expect(nameInput?.value).toBe('')
+    if (!nameInput) return
+    await act(async () => setInputValue(nameInput, 'Project B Scenario'))
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Review')
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario).not.toHaveBeenCalled()
   })
 
   it('gives the delete confirmation dialog a trapped, dismissible focus lifecycle', async () => {

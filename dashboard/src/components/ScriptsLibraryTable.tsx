@@ -39,6 +39,8 @@ interface Props {
   onToggleScriptRuns: (script: StoredScript) => void
   loadingRunsFor: string | null
   scriptRuns: Record<string, TestSummary[]>
+  scriptRunErrors?: Record<string, string>
+  onRetryScriptRuns?: (script: StoredScript) => void
   innerSortField: ScriptRunSortField
   innerSortDirection: 'asc' | 'desc'
   onInnerSort: (field: ScriptRunSortField) => void
@@ -213,6 +215,8 @@ export default function ScriptsLibraryTable({
   onToggleScriptRuns,
   loadingRunsFor,
   scriptRuns,
+  scriptRunErrors = {},
+  onRetryScriptRuns,
   innerSortField,
   innerSortDirection,
   onInnerSort,
@@ -588,7 +592,19 @@ export default function ScriptsLibraryTable({
                             </div>
                           </div>
                         )}
-                        {(scriptRuns[scriptId] || []).length === 0 ? (
+                        {scriptRunErrors[scriptId] ? (
+                          <div className="script-health-detail" role="alert">
+                            <span className="results-compare-label">Linked Runs Unavailable</span>
+                            <div className="cell-muted">{scriptRunErrors[scriptId]}</div>
+                            {onRetryScriptRuns && (
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => onRetryScriptRuns(script)}>
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                        ) : loadingRunsFor === scriptId ? (
+                          <div className="cell-muted" role="status">Loading linked scenario runs…</div>
+                        ) : (scriptRuns[scriptId] || []).length === 0 ? (
                           <div className="cell-muted">No linked scenario runs for this script yet.</div>
                         ) : (
                           <div className="data-table">

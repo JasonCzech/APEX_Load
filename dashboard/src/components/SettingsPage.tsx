@@ -5,8 +5,9 @@ import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
+import type { ProjectMutation } from '../hooks/projectContext'
 import { useApi } from '../hooks/useApi'
-import { ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, SharedDataPool, SharedDataPoolRow, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
+import { Application, ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, Release, SharedDataPool, SharedDataPoolRow, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { readStoredString, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { getErrorMessage } from '../utils/errorUtils'
@@ -33,8 +34,9 @@ import {
 } from './settingsSectionLayout'
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
-import ProjectPoolQuotasCard from './ProjectPoolQuotasCard'
+import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
 import ProjectSecretsPanel from './ProjectSecretsPanel'
+import { listAllFleetPools } from './fleetCatalogModel'
 import {
   formatAccessOperation,
   formatAuditActor,
@@ -103,11 +105,12 @@ import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { useNavigationGuard, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { ApiError } from '../hooks/apiClient'
 import { useFleetApi } from '../hooks/api/useFleetApi'
 import type { FleetPool } from '../types/fleet'
 import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
+import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 
 const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
   general: 'General',
@@ -157,6 +160,54 @@ function settingsDraftFieldValue(settings: DashboardSystemSettings, field: strin
   }
   if (value === undefined || value === null) return undefined
   return String(value)
+}
+
+function releaseCatalogRowsMatch(left: Release, right: Release) {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)])
+  return Array.from(keys).every(key => Object.is(
+    (left as unknown as Record<string, unknown>)[key],
+    (right as unknown as Record<string, unknown>)[key],
+  ))
+}
+
+function releaseCatalogSnapshotCaughtUp(listed: Release, committed: Release) {
+  if (releaseCatalogRowsMatch(listed, committed)) return true
+  const listedUpdatedAt = Date.parse(listed.updated_at)
+  const committedUpdatedAt = Date.parse(committed.updated_at)
+  return Number.isFinite(listedUpdatedAt)
+    && Number.isFinite(committedUpdatedAt)
+    && listedUpdatedAt > committedUpdatedAt
+}
+
+function reconcileManagedReleaseSnapshots(
+  listed: Release[],
+  applicationId: string,
+  committedById: Map<string, Release>,
+  tombstones: Set<string>,
+) {
+  const listedIds = new Set<string>()
+  const reconciled = listed
+    .filter(release => !tombstones.has(release.id))
+    .map(release => {
+      listedIds.add(release.id)
+      const committed = committedById.get(release.id)
+      if (!committed) return release
+      if (releaseCatalogSnapshotCaughtUp(release, committed)) {
+        committedById.delete(release.id)
+        return release
+      }
+      return committed
+    })
+  committedById.forEach(committed => {
+    if (
+      committed.application_id === applicationId
+      && !tombstones.has(committed.id)
+      && !listedIds.has(committed.id)
+    ) {
+      reconciled.push(committed)
+    }
+  })
+  return reconciled
 }
 
 interface SettingsConfirmDialogProps {
@@ -229,7 +280,11 @@ interface SettingsPageProps {
   activeDomain?: Domain | null
   applicationRepository?: ApplicationRepository | null
   onDomainChange?: (domain: Domain) => void
-  onDomainsRefresh?: (preferredId?: string) => Promise<Domain[]>
+  onDomainsRefresh?: (
+    preferredId?: string,
+    reconciliation?: { preserveDomain?: Domain; removeDomainId?: string },
+  ) => Promise<Domain[]>
+  onProjectUpdate?: (projectID: string, project: ProjectMutation) => Promise<Project>
 }
 
 type SettingsSubsectionDefinition<SubsectionId extends string> = {
@@ -247,24 +302,35 @@ export default function SettingsPage({
   applicationRepository,
   onDomainChange,
   onDomainsRefresh,
+  onProjectUpdate,
 }: SettingsPageProps) {
   const desktopSurface = isDesktopSurface()
   const api = useApi()
   const applicationApi = useApplicationApi()
   const projectApi = useProjectApi()
   const repositoryApi = useRepositoryApi()
+  const { runGuarded } = useNavigationGuardRunner()
   const {
     applications,
+    applicationsLoading,
+    applicationsError,
     releases,
     activeApplication,
     activeRelease,
     setActiveApplication,
     setActiveRelease,
+    removeApplication,
+    removeRelease,
     refreshApplications,
     refreshReleases,
     createAndSelectApplication,
   } = useApplication()
-  const { activeProject, createAndSelectProject } = useProject()
+  const {
+    activeProject,
+    createAndSelectProject,
+    updateProject: updateProjectInContext,
+  } = useProject()
+  const updateProject = onProjectUpdate || updateProjectInContext
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -305,13 +371,29 @@ export default function SettingsPage({
   const [domainDraftDescription, setDomainDraftDescription] = useState('')
   const [domainActionError, setDomainActionError] = useState('')
   const [domainActionMessage, setDomainActionMessage] = useState('')
+  const [domainReconciliationWarning, setDomainReconciliationWarning] = useState<{
+    message: string
+    preferredId?: string
+    preserveDomain?: Domain
+    removeDomainId?: string
+  } | null>(null)
   const [confirmDeleteDomain, setConfirmDeleteDomain] = useState<Domain | null>(null)
   const [managedReleases, setManagedReleases] = useState(releases)
   const [newApplicationName, setNewApplicationName] = useState('')
+  const [newApplicationProjectId, setNewApplicationProjectId] = useState('')
   const [applicationActionError, setApplicationActionError] = useState('')
+  const [applicationReconciliationWarning, setApplicationReconciliationWarning] = useState<{
+    message: string
+    scope: 'applications' | 'releases'
+    applicationId?: string
+  } | null>(null)
+  const [renamingApplicationId, setRenamingApplicationId] = useState<string | null>(null)
   const [renamingApplicationName, setRenamingApplicationName] = useState<string | null>(null)
+  const [renamingApplicationOriginalName, setRenamingApplicationOriginalName] = useState<string | null>(null)
   const [renamingReleaseId, setRenamingReleaseId] = useState<string | null>(null)
   const [renamingReleaseName, setRenamingReleaseName] = useState('')
+  const [renamingReleaseOriginalName, setRenamingReleaseOriginalName] = useState<string | null>(null)
+  const [renamingReleaseApplicationId, setRenamingReleaseApplicationId] = useState<string | null>(null)
   const [confirmDeleteApp, setConfirmDeleteApp] = useState(false)
   const [confirmDeleteRelease, setConfirmDeleteRelease] = useState<{ id: string; name: string } | null>(null)
   const [confirmArchiveRelease, setConfirmArchiveRelease] = useState<{ id: string; name: string } | null>(null)
@@ -321,6 +403,7 @@ export default function SettingsPage({
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
+  const [newProjectDomainId, setNewProjectDomainId] = useState('')
   const [projectDraftName, setProjectDraftName] = useState('')
   const [projectDraftRules, setProjectDraftRules] = useState<DraftRedactionRule[]>([])
   const [projectDraftMaxConcurrentTests, setProjectDraftMaxConcurrentTests] = useState('')
@@ -362,6 +445,7 @@ export default function SettingsPage({
   const [dataPoolRows, setDataPoolRows] = useState<SharedDataPoolRow[]>([])
   const [dataPoolName, setDataPoolName] = useState('')
   const [dataPoolDescription, setDataPoolDescription] = useState('')
+  const [dataPoolProjectId, setDataPoolProjectId] = useState('')
   const [dataPoolRowJson, setDataPoolRowJson] = useState('{\n  "customer_id": "C-10001"\n}')
   const [editingDataPoolRowId, setEditingDataPoolRowId] = useState<string | null>(null)
   const [dataPoolActionError, setDataPoolActionError] = useState('')
@@ -391,7 +475,22 @@ export default function SettingsPage({
   const dataPoolLoadGenerationRef = useRef(0)
   const dataPoolRowsLoadGenerationRef = useRef(0)
   const activeDataPoolProjectIdRef = useRef(activeProject?.id)
+  const activeApplicationIdRef = useRef(activeApplication?.id)
+  const poolQuotaDraftRef = useRef<ProjectPoolQuotasDraftController | null>(null)
+  const committedManagedReleasesRef = useRef(new Map<string, Release>())
+  const managedReleaseTombstonesRef = useRef(new Set<string>())
+  const committedProjectsRef = useRef(new Map<string, Project>())
+  const [poolQuotaDraftDirty, setPoolQuotaDraftDirty] = useState(false)
   activeDataPoolProjectIdRef.current = activeProject?.id
+  activeApplicationIdRef.current = activeApplication?.id
+
+  const commitSettingsProject = useCallback((project: Project) => {
+    committedProjectsRef.current.set(project.id, project)
+    setProjects(previous => sortProjects([
+      ...previous.filter(candidate => candidate.id !== project.id),
+      project,
+    ]))
+  }, [])
 
   const loadProjectGitHubDraft = useCallback((policy?: GitHubProjectPolicy) => {
     setProjectDraftGitHubEnabled(Boolean(policy?.enabled))
@@ -496,9 +595,9 @@ export default function SettingsPage({
   const fleetApi = useFleetApi()
   useEffect(() => {
     let cancelled = false
-    fleetApi.listFleetPools()
-      .then(response => {
-        if (!cancelled) setFleetPools(response.fleet_pools || [])
+    listAllFleetPools(fleetApi.listFleetPools)
+      .then(nextPools => {
+        if (!cancelled) setFleetPools(nextPools)
       })
       .catch(() => {
         if (!cancelled) setFleetPools(null)
@@ -907,9 +1006,23 @@ export default function SettingsPage({
       }
       try {
         const response = await applicationApi.listReleases(activeApplication.id, true)
-        if (!cancelled) setManagedReleases(response.releases || [])
+        if (!cancelled) {
+          setManagedReleases(reconcileManagedReleaseSnapshots(
+            response.releases || [],
+            activeApplication.id,
+            committedManagedReleasesRef.current,
+            managedReleaseTombstonesRef.current,
+          ))
+        }
       } catch {
-        if (!cancelled) setManagedReleases(releases)
+        if (!cancelled) {
+          setManagedReleases(reconcileManagedReleaseSnapshots(
+            releases,
+            activeApplication.id,
+            committedManagedReleasesRef.current,
+            managedReleaseTombstonesRef.current,
+          ))
+        }
       }
     }
     loadManagedReleases()
@@ -927,7 +1040,10 @@ export default function SettingsPage({
           return
         }
 
-        const nextProjects = sortProjects(response.projects || [])
+        const nextProjects = reconcileSettingsProjectSnapshots(
+          response.projects || [],
+          committedProjectsRef.current,
+        )
         const requestedProjectId = consumeProjectSecretsSettingsProjectId()
         const requestedProject = requestedProjectId
           ? nextProjects.find(project => project.id === requestedProjectId) || null
@@ -1372,16 +1488,29 @@ export default function SettingsPage({
       setUsageActionMessage('')
       return
     }
+    let snapshot: UsageAccountingSnapshot
     try {
-      const snapshot = await api.captureUsageAccountingSnapshot(activeProject?.id)
-      const response = await api.listUsageAccountingSnapshots(activeProject?.id)
-      setUsageSnapshots(response.snapshots || [snapshot])
-      setUsageAccounting(snapshot.usage)
-      setUsageActionMessage(`Usage snapshot captured for ${snapshot.usage.totals.run_count} run${snapshot.usage.totals.run_count === 1 ? '' : 's'}.`)
-      setUsageActionError('')
+      snapshot = await api.captureUsageAccountingSnapshot(activeProject?.id)
     } catch (error: unknown) {
       setUsageActionError(getErrorMessage(error, 'Unable to capture usage snapshot'))
       setUsageActionMessage('')
+      return
+    }
+
+    // The POST response is authoritative. Publish it before reconciliation so
+    // a failed list request cannot make a committed capture look retryable.
+    setUsageSnapshots(previous => [snapshot, ...previous.filter(candidate => candidate.id !== snapshot.id)])
+    setUsageAccounting(snapshot.usage)
+    setUsageActionMessage(`Usage snapshot captured for ${snapshot.usage.totals.run_count} run${snapshot.usage.totals.run_count === 1 ? '' : 's'}.`)
+    setUsageActionError('')
+    try {
+      const response = await api.listUsageAccountingSnapshots(activeProject?.id)
+      const listed = response.snapshots || []
+      setUsageSnapshots(listed.some(candidate => candidate.id === snapshot.id)
+        ? listed
+        : [snapshot, ...listed])
+    } catch {
+      setUsageActionError('The usage snapshot was captured, but the snapshot list could not be refreshed. The capture succeeded—do not capture again. Use Refresh for GET-only synchronization.')
     }
   }
 
@@ -1536,21 +1665,6 @@ export default function SettingsPage({
     setSaveRecovery('')
   }, [savedSettings])
 
-  const hasUnsavedChangesRef = useRef(false)
-  hasUnsavedChangesRef.current = hasUnsavedChanges
-  const saveSettingsRef = useRef<() => Promise<boolean>>(async () => false)
-  saveSettingsRef.current = saveSettings
-  const discardChangesRef = useRef<() => void>(() => {})
-  discardChangesRef.current = discardChanges
-  const settingsNavigationGuard = useMemo<NavigationGuard>(() => ({
-    id: 'system-settings',
-    label: 'Settings',
-    isDirty: () => hasUnsavedChangesRef.current,
-    save: () => saveSettingsRef.current(),
-    discard: () => discardChangesRef.current(),
-  }), [])
-  useNavigationGuard(settingsNavigationGuard, hasUnsavedChanges)
-
   const applyGeneratorPreset = (preset: typeof GENERATOR_PRESETS[number]) => {
     setSettings(prev => ({
       ...prev,
@@ -1606,25 +1720,34 @@ export default function SettingsPage({
   const getSectionOrder = (id: SettingsSectionId) => orderedSectionIds.indexOf(id)
   const sectionClass = 'settings-card'
 
-  const createApplication = async () => {
+  const createApplication = async (): Promise<boolean> => {
     const name = newApplicationName.trim()
-    if (!name) return
+    if (!name) return true
+    const projectId = newApplicationProjectId || activeProject?.id
     try {
-      await createAndSelectApplication(name)
+      await createAndSelectApplication(name, projectId)
       setNewApplicationName('')
+      setNewApplicationProjectId('')
       setApplicationActionError('')
+      return true
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to create application'))
+      return false
     }
   }
 
-  const selectDomain = (domain: Domain) => {
+  const applyDomainSelection = (domain: Domain) => {
     setSelectedDomainId(domain.id)
     setDomainDraftName(domain.name)
     setDomainDraftDescription(domain.description || '')
     setDomainActionError('')
     setDomainActionMessage('')
     onDomainChange?.(domain)
+  }
+
+  const selectDomain = (domain: Domain) => {
+    if (selectedDomain?.id === domain.id) return
+    runGuarded(() => applyDomainSelection(domain))
   }
 
   const createDomain = async () => {
@@ -1635,54 +1758,79 @@ export default function SettingsPage({
     }
     const name = newDomainName.trim()
     if (!name) return
+    let created: Awaited<ReturnType<typeof repositoryApi.createDomain>>
     try {
-      const created = await repositoryApi.createDomain({
+      created = await repositoryApi.createDomain({
         name,
         description: newDomainDescription.trim(),
       })
-      setNewDomainName('')
-      setNewDomainDescription('')
-      setSelectedDomainId(created.domain.id)
-      setDomainDraftName(created.domain.name)
-      setDomainDraftDescription(created.domain.description || '')
-      onDomainChange?.(created.domain)
-      await onDomainsRefresh?.(created.domain.id)
-      setDomainActionMessage(`Domain "${created.domain.name}" created.`)
-      setDomainActionError('')
     } catch (error: unknown) {
       setDomainActionError(getErrorMessage(error, 'Unable to create domain'))
       setDomainActionMessage('')
+      return
+    }
+
+    setNewDomainName('')
+    setNewDomainDescription('')
+    setSelectedDomainId(created.domain.id)
+    setDomainDraftName(created.domain.name)
+    setDomainDraftDescription(created.domain.description || '')
+    onDomainChange?.(created.domain)
+    setDomainActionMessage(`Domain "${created.domain.name}" created.`)
+    setDomainActionError('')
+    try {
+      await onDomainsRefresh?.(created.domain.id, { preserveDomain: created.domain })
+      setDomainReconciliationWarning(null)
+    } catch {
+      setDomainReconciliationWarning({
+        message: `Domain "${created.domain.name}" was created, but the domain list could not be refreshed. The create succeeded—do not create it again. Retry synchronization below.`,
+        preferredId: created.domain.id,
+        preserveDomain: created.domain,
+      })
     }
   }
 
-  const saveDomain = async () => {
-    if (!selectedDomain) return
+  const saveDomain = async (): Promise<boolean> => {
+    if (!selectedDomain) return true
     if (!canManageDomains) {
       setDomainActionError('Current session cannot manage domains.')
       setDomainActionMessage('')
-      return
+      return false
     }
     if (domainDraftValidationError) {
       setDomainActionError(domainDraftValidationError)
       setDomainActionMessage('')
-      return
+      return false
     }
+    let updated: Domain
     try {
-      const updated = await repositoryApi.updateDomain(selectedDomain.id, {
+      updated = await repositoryApi.updateDomain(selectedDomain.id, {
         name: domainDraftName.trim(),
         description: domainDraftDescription.trim(),
       })
-      setSelectedDomainId(updated.id)
-      setDomainDraftName(updated.name)
-      setDomainDraftDescription(updated.description || '')
-      onDomainChange?.(updated)
-      await onDomainsRefresh?.(updated.id)
-      setDomainActionMessage(`Domain "${updated.name}" saved.`)
-      setDomainActionError('')
     } catch (error: unknown) {
       setDomainActionError(getErrorMessage(error, 'Unable to save domain'))
       setDomainActionMessage('')
+      return false
     }
+
+    setSelectedDomainId(updated.id)
+    setDomainDraftName(updated.name)
+    setDomainDraftDescription(updated.description || '')
+    onDomainChange?.(updated)
+    setDomainActionMessage(`Domain "${updated.name}" saved.`)
+    setDomainActionError('')
+    try {
+      await onDomainsRefresh?.(updated.id, { preserveDomain: updated })
+      setDomainReconciliationWarning(null)
+    } catch {
+      setDomainReconciliationWarning({
+        message: `Domain "${updated.name}" was saved, but the domain list could not be refreshed. The save succeeded—do not save it again. Retry synchronization below.`,
+        preferredId: updated.id,
+        preserveDomain: updated,
+      })
+    }
+    return true
   }
 
   const deleteDomain = async (domain: Domain) => {
@@ -1707,25 +1855,50 @@ export default function SettingsPage({
     }
     try {
       await repositoryApi.deleteDomain(domain.id)
-      const fallbackDomain = domains.find(candidate => candidate.id !== domain.id) || null
-      if (fallbackDomain) {
-        setSelectedDomainId(fallbackDomain.id)
-        onDomainChange?.(fallbackDomain)
-      } else {
-        setSelectedDomainId('')
-      }
-      await onDomainsRefresh?.(fallbackDomain?.id)
-      setDomainActionMessage(`Domain "${domain.name}" deleted.`)
-      setDomainActionError('')
-      setConfirmDeleteDomain(null)
     } catch (error: unknown) {
       setDomainActionError(getErrorMessage(error, 'Unable to delete domain'))
       setDomainActionMessage('')
       setConfirmDeleteDomain(null)
+      return
+    }
+
+    const fallbackDomain = domains.find(candidate => candidate.id !== domain.id) || null
+    if (fallbackDomain) {
+      setSelectedDomainId(fallbackDomain.id)
+      onDomainChange?.(fallbackDomain)
+    } else {
+      setSelectedDomainId('')
+    }
+    setDomainActionMessage(`Domain "${domain.name}" deleted.`)
+    setDomainActionError('')
+    setConfirmDeleteDomain(null)
+    try {
+      await onDomainsRefresh?.(fallbackDomain?.id, { removeDomainId: domain.id })
+      setDomainReconciliationWarning(null)
+    } catch {
+      setDomainReconciliationWarning({
+        message: `Domain "${domain.name}" was deleted, but the domain list could not be refreshed. The delete succeeded—do not delete it again. Retry synchronization below.`,
+        preferredId: fallbackDomain?.id,
+        removeDomainId: domain.id,
+      })
     }
   }
 
-  const selectProject = (project: Project | null) => {
+  const retryDomainReconciliation = async () => {
+    if (!domainReconciliationWarning) return
+    try {
+      await onDomainsRefresh?.(domainReconciliationWarning.preferredId, {
+        preserveDomain: domainReconciliationWarning.preserveDomain,
+        removeDomainId: domainReconciliationWarning.removeDomainId,
+      })
+      setDomainReconciliationWarning(null)
+    } catch {
+      // Keep the warning visible: this retry reconciles the catalog and must
+      // never replay the already-committed mutation.
+    }
+  }
+
+  const applyProjectSelection = (project: Project | null) => {
     setMissingRequestedProjectId('')
     setProjectSecretCount(0)
     setSelectedProjectId(project?.id || '')
@@ -1740,24 +1913,32 @@ export default function SettingsPage({
     setProjectActionMessage('')
   }
 
-  const createProject = async () => {
+  const selectProject = (project: Project | null) => {
+    if (selectedProject?.id === project?.id) return
+    runGuarded(() => applyProjectSelection(project))
+  }
+
+  const createProject = async (): Promise<boolean> => {
     if (!canManageProjects) {
       setProjectActionError('Current session cannot manage projects.')
       setProjectActionMessage('')
-      return
+      return false
     }
     const name = newProjectName.trim()
-    if (!name) return
+    if (!name) return true
+    const domainId = newProjectDomainId || selectedDomain?.id
     try {
-      const created = await createAndSelectProject({ name })
-      const nextProjects = sortProjects([...projects, created])
-      setProjects(nextProjects)
+      const created = await createAndSelectProject({ name, domain_id: domainId })
+      commitSettingsProject(created)
       setNewProjectName('')
-      selectProject(created)
+      setNewProjectDomainId('')
+      applyProjectSelection(created)
       setProjectActionMessage(`Project "${created.name}" created.`)
+      return true
     } catch (error: unknown) {
       setProjectActionError(getErrorMessage(error, 'Unable to create project'))
       setProjectActionMessage('')
+      return false
     }
   }
 
@@ -1779,88 +1960,279 @@ export default function SettingsPage({
     setProjectActionMessage('')
   }
 
-  const saveProjectCompliance = async () => {
-    if (!selectedProject) return
+	const saveProjectCompliance = async (): Promise<Project | null> => {
+		if (!selectedProject) return null
     if (!canManageProjects) {
       setProjectActionError('Current session cannot manage this project.')
       setProjectActionMessage('')
-      return
+			return null
     }
     if (projectDraftValidationError) {
       setProjectActionError(projectDraftValidationError)
       setProjectActionMessage('')
-      return
+			return null
     }
 
     try {
-      const updated = await projectApi.updateProject(selectedProject.id, {
+      const updated = await updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
         settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(), selectedProject?.settings?.pool_quotas),
       })
-      const nextProjects = sortProjects(projects.map(project => (project.id === updated.id ? updated : project)))
-      setProjects(nextProjects)
-      selectProject(updated)
+      commitSettingsProject(updated)
+      applyProjectSelection(updated)
       setProjectActionMessage(`Saved project governance defaults for ${updated.name}.`)
+			return updated
     } catch (error: unknown) {
       setProjectActionError(getErrorMessage(error, 'Unable to save project governance defaults'))
       setProjectActionMessage('')
+			return null
     }
+  }
+
+  const discardDomainChanges = () => {
+    setDomainDraftName(selectedDomain?.name || '')
+    setDomainDraftDescription(selectedDomain?.description || '')
+    setDomainActionError('')
+    setDomainActionMessage('')
+  }
+
+  const discardProjectChanges = () => {
+    setProjectDraftName(selectedProject?.name || '')
+    setProjectDraftRules(toDraftRedactionRules(selectedProject?.settings?.redaction_rules))
+    setProjectDraftMaxConcurrentTests(selectedProject?.settings?.max_concurrent_tests !== undefined ? String(selectedProject.settings.max_concurrent_tests) : '')
+    setProjectDraftMaxVUsers(selectedProject?.settings?.max_vusers !== undefined ? String(selectedProject.settings.max_vusers) : '')
+    setProjectDraftMaxVUsersPerTest(selectedProject?.settings?.max_vusers_per_test !== undefined ? String(selectedProject.settings.max_vusers_per_test) : '')
+    setProjectDraftMaxTestDurationMinutes(selectedProject?.settings?.max_test_duration_minutes !== undefined ? String(selectedProject.settings.max_test_duration_minutes) : '')
+    loadProjectGitHubDraft(selectedProject?.settings?.github)
+    setProjectActionError('')
+    setProjectActionMessage('')
+  }
+
+  const applicationCreateDraftDirty = Boolean(newApplicationName.trim())
+  const applicationRenameDraftDirty = renamingApplicationId !== null
+    && renamingApplicationName !== null
+    && renamingApplicationOriginalName !== null
+    && renamingApplicationName.trim() !== renamingApplicationOriginalName
+  const releaseRenameDraftDirty = renamingReleaseId !== null
+    && renamingReleaseApplicationId !== null
+    && renamingReleaseOriginalName !== null
+    && renamingReleaseName.trim() !== renamingReleaseOriginalName
+  const projectCreateDraftDirty = Boolean(newProjectName.trim())
+  const dataPoolCreateDraftDirty = Boolean(dataPoolName.trim() || dataPoolDescription.trim())
+  const hasAnyUnsavedChanges = hasUnsavedChanges
+    || domainHasUnsavedChanges
+    || projectHasUnsavedChanges
+    || applicationCreateDraftDirty
+    || applicationRenameDraftDirty
+    || releaseRenameDraftDirty
+    || projectCreateDraftDirty
+    || dataPoolCreateDraftDirty
+    || poolQuotaDraftDirty
+  const canSaveAllSettingsChanges = hasAnyUnsavedChanges
+    && (!hasUnsavedChanges || canSave)
+    && (!domainHasUnsavedChanges || (canManageDomains && !domainDraftValidationError))
+    && (!projectHasUnsavedChanges || (canManageProjects && !projectDraftValidationError))
+    && (!applicationRenameDraftDirty || Boolean(renamingApplicationName?.trim()))
+    && (!releaseRenameDraftDirty || Boolean(renamingReleaseName.trim()))
+    && (!projectCreateDraftDirty || canManageProjects)
+    && (!dataPoolCreateDraftDirty || Boolean(dataPoolName.trim()))
+    && (!poolQuotaDraftDirty || canManageProjects)
+  const saveAllSettingsChanges = async (): Promise<boolean> => {
+    if (hasUnsavedChanges && !(await saveSettings())) return false
+    if (domainHasUnsavedChanges && !(await saveDomain())) return false
+		let authoritativeProject: Project | undefined
+		if (projectHasUnsavedChanges) {
+			const savedProject = await saveProjectCompliance()
+			if (!savedProject) return false
+			authoritativeProject = savedProject
+		}
+		if (poolQuotaDraftDirty && !(await poolQuotaDraftRef.current?.save(authoritativeProject))) return false
+    if (applicationRenameDraftDirty && !(await confirmRenameApplication())) return false
+    if (releaseRenameDraftDirty && !(await confirmRenameRelease())) return false
+    if (applicationCreateDraftDirty && !(await createApplication())) return false
+    if (dataPoolCreateDraftDirty && !(await createDataPool())) return false
+    // Creating a project changes the global active-project scope, so commit it
+    // after drafts bound to the previous project have been saved.
+    if (projectCreateDraftDirty && !(await createProject())) return false
+    return true
+  }
+  const discardAllSettingsChanges = () => {
+    discardChanges()
+    discardDomainChanges()
+    discardProjectChanges()
+    poolQuotaDraftRef.current?.discard()
+    setNewApplicationName('')
+    setNewApplicationProjectId('')
+    setRenamingApplicationId(null)
+    setRenamingApplicationName(null)
+    setRenamingApplicationOriginalName(null)
+    setRenamingReleaseId(null)
+    setRenamingReleaseName('')
+    setRenamingReleaseOriginalName(null)
+    setRenamingReleaseApplicationId(null)
+    setNewProjectName('')
+    setNewProjectDomainId('')
+    setDataPoolName('')
+    setDataPoolDescription('')
+    setDataPoolProjectId('')
+  }
+  const hasAnyUnsavedChangesRef = useRef(false)
+  hasAnyUnsavedChangesRef.current = hasAnyUnsavedChanges
+  const saveAllSettingsChangesRef = useRef<() => Promise<boolean>>(async () => false)
+  saveAllSettingsChangesRef.current = saveAllSettingsChanges
+  const discardAllSettingsChangesRef = useRef<() => void>(() => {})
+  discardAllSettingsChangesRef.current = discardAllSettingsChanges
+  const settingsNavigationGuard = useMemo<NavigationGuard>(() => ({
+    id: 'system-settings',
+    label: 'Settings',
+    isDirty: () => hasAnyUnsavedChangesRef.current,
+    save: () => saveAllSettingsChangesRef.current(),
+    discard: () => discardAllSettingsChangesRef.current(),
+  }), [])
+  useNavigationGuard(settingsNavigationGuard, hasAnyUnsavedChanges)
+
+  const selectApplication = (application: Application) => {
+    if (activeApplication?.id === application.id) return
+    runGuarded(() => setActiveApplication(application))
+  }
+
+  const selectRelease = (release: Release) => {
+    if (release.archived_at || activeRelease?.id === release.id) return
+    runGuarded(() => setActiveRelease(release))
   }
 
   const startRenamingApplication = () => {
     if (!activeApplication) return
+    setRenamingApplicationId(activeApplication.id)
     setRenamingApplicationName(activeApplication.name)
+    setRenamingApplicationOriginalName(activeApplication.name)
   }
 
-  const confirmRenameApplication = async () => {
-    if (!activeApplication || renamingApplicationName === null) return
+  async function confirmRenameApplication(): Promise<boolean> {
+    if (!renamingApplicationId || renamingApplicationName === null) return false
     const name = renamingApplicationName.trim()
-    if (!name) return
+    if (!name) return false
+    let updated: Application
     try {
-      const updated = await applicationApi.updateApplication(activeApplication.id, { name })
-      await refreshApplications()
-      setActiveApplication(updated)
-      setApplicationActionError('')
-      setRenamingApplicationName(null)
+      updated = await applicationApi.updateApplication(renamingApplicationId, { name })
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to rename application'))
+      return false
+    }
+
+    // The mutation has committed. Reflect that authoritative response and exit
+    // edit mode before the best-effort list reconciliation so a failed GET is
+    // never presented as a failed (and therefore tempting to repeat) rename.
+    setActiveApplication(updated)
+    setApplicationActionError('')
+    setRenamingApplicationId(null)
+    setRenamingApplicationName(null)
+    setRenamingApplicationOriginalName(null)
+    try {
+      await refreshApplications({ preserveApplication: updated })
+      setApplicationReconciliationWarning(null)
+    } catch {
+      setApplicationReconciliationWarning({
+        message: `Application "${updated.name}" was renamed, but the application list could not be refreshed. The rename succeeded—do not rename again. Retry synchronization below.`,
+        scope: 'applications',
+      })
+    }
+    return true
+  }
+
+  const reconcileManagedReleaseCatalog = async (applicationId: string, preserveRelease?: Release) => {
+    await refreshReleases(applicationId, preserveRelease ? { preserveRelease } : undefined)
+    const response = await applicationApi.listReleases(applicationId, true)
+    if (activeApplicationIdRef.current !== applicationId) return
+    setManagedReleases(reconcileManagedReleaseSnapshots(
+      response.releases || [],
+      applicationId,
+      committedManagedReleasesRef.current,
+      managedReleaseTombstonesRef.current,
+    ))
+  }
+
+  const retryApplicationReconciliation = async () => {
+    try {
+      if (applicationReconciliationWarning?.scope === 'releases' && applicationReconciliationWarning.applicationId) {
+        await reconcileManagedReleaseCatalog(applicationReconciliationWarning.applicationId)
+      } else {
+        await refreshApplications()
+      }
+      setApplicationReconciliationWarning(null)
+    } catch {
+      // ApplicationProvider retains the last valid state and exposes the load
+      // error; keep the committed-mutation warning until a retry succeeds.
     }
   }
 
   const deleteApplication = async () => {
     if (!activeApplication) return
+    const deleted = activeApplication
     try {
-      await applicationApi.deleteApplication(activeApplication.id)
-      await refreshApplications()
-      setApplicationActionError('')
-      setConfirmDeleteApp(false)
+      await applicationApi.deleteApplication(deleted.id)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to delete application'))
       setConfirmDeleteApp(false)
+      return
+    }
+    removeApplication(deleted.id)
+    setApplicationActionError('')
+    setConfirmDeleteApp(false)
+    try {
+      await refreshApplications()
+      setApplicationReconciliationWarning(null)
+    } catch {
+      setApplicationReconciliationWarning({
+        message: `Application "${deleted.name}" was deleted, but the application list could not be refreshed. The delete succeeded—do not delete again. Retry synchronization below.`,
+        scope: 'applications',
+      })
     }
   }
 
-  const startRenamingRelease = (releaseId: string, currentName: string) => {
+  const startRenamingRelease = (releaseId: string, currentName: string, applicationId: string) => {
     setRenamingReleaseId(releaseId)
     setRenamingReleaseName(currentName)
+    setRenamingReleaseOriginalName(currentName)
+    setRenamingReleaseApplicationId(applicationId)
   }
 
-  const confirmRenameRelease = async () => {
-    if (!renamingReleaseId) return
+  async function confirmRenameRelease(): Promise<boolean> {
+    if (!renamingReleaseId || !renamingReleaseApplicationId) return false
     const name = renamingReleaseName.trim()
-    if (!name) return
+    if (!name) return false
+    const applicationId = renamingReleaseApplicationId
+    let updated: Release
     try {
-      const updated = await applicationApi.updateRelease(renamingReleaseId, { name })
-      await refreshReleases(activeApplication?.id)
-      const response = await applicationApi.listReleases(activeApplication?.id || '', true)
-      setManagedReleases(response.releases || [])
-      if (!updated.archived_at) setActiveRelease(updated)
-      setApplicationActionError('')
-      setRenamingReleaseId(null)
-      setRenamingReleaseName('')
+      updated = await applicationApi.updateRelease(renamingReleaseId, { name })
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to rename release'))
+      return false
     }
+    const releaseApplicationId = updated.application_id || applicationId
+    committedManagedReleasesRef.current.set(updated.id, updated)
+    if (activeApplicationIdRef.current === releaseApplicationId) {
+      setManagedReleases(prev => prev.some(release => release.id === updated.id)
+        ? prev.map(release => release.id === updated.id ? updated : release)
+        : [updated, ...prev])
+    }
+    if (!updated.archived_at && activeRelease?.id === updated.id) setActiveRelease(updated)
+    setApplicationActionError('')
+    setRenamingReleaseId(null)
+    setRenamingReleaseName('')
+    setRenamingReleaseOriginalName(null)
+    setRenamingReleaseApplicationId(null)
+    try {
+      await reconcileManagedReleaseCatalog(releaseApplicationId, updated)
+      setApplicationReconciliationWarning(null)
+    } catch {
+      setApplicationReconciliationWarning({
+        message: `Release "${updated.name}" was renamed, but the release list could not be refreshed. The rename succeeded—do not rename again. Retry synchronization below.`,
+        scope: 'releases',
+        applicationId: releaseApplicationId,
+      })
+    }
+    return true
   }
 
   const archiveRelease = async (releaseId: string, releaseName: string) => {
@@ -1870,16 +2242,35 @@ export default function SettingsPage({
       setConfirmArchiveRelease(null)
       return
     }
+    const applicationId = activeApplication?.id || ''
+    let archived: Release
     try {
-      await applicationApi.archiveRelease(releaseId)
-      await refreshReleases(activeApplication?.id)
-      const response = await applicationApi.listReleases(activeApplication?.id || '', true)
-      setManagedReleases(response.releases || [])
-      setApplicationActionError('')
-      setConfirmArchiveRelease(null)
+      archived = await applicationApi.archiveRelease(releaseId)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to archive release'))
       setConfirmArchiveRelease(null)
+      return
+    }
+    const releaseApplicationId = archived.application_id || applicationId
+    committedManagedReleasesRef.current.set(archived.id, archived)
+    setManagedReleases(prev => prev.some(release => release.id === archived.id)
+      ? prev.map(release => release.id === archived.id ? archived : release)
+      : [archived, ...prev])
+    // Shared release scope excludes archived rows. Apply that committed
+    // removal before the list GET so a failed reconciliation cannot leave the
+    // archived release selected elsewhere in the dashboard.
+    removeRelease(archived.id)
+    setApplicationActionError('')
+    setConfirmArchiveRelease(null)
+    try {
+      await reconcileManagedReleaseCatalog(releaseApplicationId)
+      setApplicationReconciliationWarning(null)
+    } catch {
+      setApplicationReconciliationWarning({
+        message: `Release "${releaseName}" was archived, but the release list could not be refreshed. The archive succeeded—do not archive again. Retry synchronization below.`,
+        scope: 'releases',
+        applicationId: releaseApplicationId,
+      })
     }
   }
 
@@ -1890,40 +2281,64 @@ export default function SettingsPage({
       setConfirmDeleteRelease(null)
       return
     }
+    const applicationId = activeApplication?.id || ''
     try {
       await applicationApi.deleteRelease(releaseId)
-      await refreshReleases(activeApplication?.id)
-      const response = await applicationApi.listReleases(activeApplication?.id || '', true)
-      setManagedReleases(response.releases || [])
-      setApplicationActionError('')
-      setConfirmDeleteRelease(null)
     } catch (error: unknown) {
       setApplicationActionError(getErrorMessage(error, 'Unable to delete release'))
       setConfirmDeleteRelease(null)
+      return
+    }
+    managedReleaseTombstonesRef.current.add(releaseId)
+    committedManagedReleasesRef.current.delete(releaseId)
+    setManagedReleases(prev => prev.filter(release => release.id !== releaseId))
+    removeRelease(releaseId)
+    setApplicationActionError('')
+    setConfirmDeleteRelease(null)
+    try {
+      await reconcileManagedReleaseCatalog(applicationId)
+      setApplicationReconciliationWarning(null)
+    } catch {
+      setApplicationReconciliationWarning({
+        message: `Release "${releaseName}" was deleted, but the release list could not be refreshed. The delete succeeded—do not delete again. Retry synchronization below.`,
+        scope: 'releases',
+        applicationId,
+      })
     }
   }
 
-  const createDataPool = async () => {
+  const createDataPool = async (): Promise<boolean> => {
     const name = dataPoolName.trim()
-    if (!name || dataPoolCatalogMutationBusyRef.current) return
+    if (!name) return false
+    if (dataPoolCatalogMutationBusyRef.current) return false
     dataPoolCatalogMutationBusyRef.current = true
     setDataPoolCatalogMutationBusy(true)
-    const projectId = activeProject?.id
+    const projectId = dataPoolProjectId || activeProject?.id
     setDataPoolActionNotice('')
     try {
       const pool = await api.createDataPool({ name, description: dataPoolDescription.trim(), project_id: projectId })
-      const reloaded = await loadDataPools(pool.id)
-      if (activeDataPoolProjectIdRef.current !== projectId) return
+      // Commit is complete. Clear the bound draft and publish the authoritative
+      // row before attempting the best-effort list reconciliation.
       setDataPoolName('')
       setDataPoolDescription('')
+      setDataPoolProjectId('')
+      if (activeDataPoolProjectIdRef.current === projectId) {
+        setDataPools(previous => [pool, ...previous.filter(candidate => candidate.id !== pool.id)])
+        selectedDataPoolIdRef.current = pool.id
+        setSelectedDataPoolId(pool.id)
+      }
+      const reloaded = await loadDataPools(pool.id)
+      if (activeDataPoolProjectIdRef.current !== projectId) return true
       setDataPoolActionError('')
       setDataPoolActionNotice(reloaded
         ? `Created data pool "${pool.name}".`
         : `Data pool "${pool.name}" was created, but the list could not be reloaded. The create succeeded—do not retry. Refresh the list to verify it.`)
+      return true
     } catch (error: unknown) {
       if (activeDataPoolProjectIdRef.current === projectId) {
         setDataPoolActionError(getErrorMessage(error, 'Unable to create data pool'))
       }
+      return false
     } finally {
       dataPoolCatalogMutationBusyRef.current = false
       setDataPoolCatalogMutationBusy(false)
@@ -2388,12 +2803,12 @@ export default function SettingsPage({
     primaryActions: [
       {
         id: 'save-settings',
-        label: hasUnsavedChanges ? 'Save Changes' : 'Saved',
-        compactLabel: hasUnsavedChanges ? 'Save' : 'Saved',
-        onClick: () => { void saveSettings() },
-        disabled: !canSave,
+        label: hasAnyUnsavedChanges ? 'Save Changes' : 'Saved',
+        compactLabel: hasAnyUnsavedChanges ? 'Save' : 'Saved',
+        onClick: () => { void saveAllSettingsChangesRef.current() },
+        disabled: !canSaveAllSettingsChanges,
         tone: 'primary' as const,
-        title: canSave ? 'Save settings changes' : 'Settings are already saved or cannot be saved',
+        title: canSaveAllSettingsChanges ? 'Save settings changes' : 'Settings are already saved or cannot be saved',
       },
     ],
     secondaryActions: [
@@ -2401,14 +2816,14 @@ export default function SettingsPage({
         id: 'discard-settings',
         label: 'Discard Changes',
         compactLabel: 'Discard',
-        onClick: discardChanges,
+        onClick: () => discardAllSettingsChangesRef.current(),
         disabled: settingsMutationBusy,
-        hidden: !hasUnsavedChanges,
+        hidden: !hasAnyUnsavedChanges,
         tone: 'secondary' as const,
       },
     ],
     priority: 20,
-  }), [activeSection, canSave, discardChanges, hasUnsavedChanges, issuesBySection, saveSettings, settingsMutationBusy])
+  }), [activeSection, canSaveAllSettingsChanges, hasAnyUnsavedChanges, issuesBySection, settingsMutationBusy])
 
   useTopbarContribution(settingsTopbarContribution)
 
@@ -4115,6 +4530,18 @@ export default function SettingsPage({
                 </div>
                 <strong>{domains.length}</strong>
               </div>
+              {domainReconciliationWarning && (
+                <div className="settings-inline-actions" role="alert">
+                  <span className="settings-error-inline">{domainReconciliationWarning.message}</span>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => void retryDomainReconciliation()}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
               {domains.length > 0 ? (
                 <div className="settings-app-grid">
                   {domains.map(domain => {
@@ -4271,18 +4698,31 @@ export default function SettingsPage({
                     key={application.id}
                     type="button"
                     className={`settings-app-card ${activeApplication?.id === application.id ? 'active' : ''}`}
-                    onClick={() => setActiveApplication(application)}
+                    onClick={() => selectApplication(application)}
+                    disabled={Boolean(renamingApplicationId && renamingApplicationId !== application.id)}
                   >
                   <span>{application.name}</span>
                   <small>{application.id === activeApplication?.id ? 'Current application' : 'Switch context'}</small>
                 </button>
               ))}
               </div>
+              {applicationsLoading && <p className="new-test-inline-note" role="status">Loading applications...</p>}
+              {(applicationReconciliationWarning || applicationsError) && (
+                <div className="settings-inline-actions" role="alert">
+                  <span className="settings-error-inline">{applicationReconciliationWarning?.message || applicationsError}</span>
+                  <button className="btn btn-secondary btn-sm" type="button" onClick={() => void retryApplicationReconciliation()}>Retry</button>
+                </div>
+              )}
               <div className="inline-create-row">
                 <input
                   className="settings-input"
                   value={newApplicationName}
-                  onChange={event => setNewApplicationName(event.target.value)}
+                  onChange={event => {
+                    const next = event.target.value
+                    if (!newApplicationName.trim() && next.trim()) setNewApplicationProjectId(activeProject?.id || '')
+                    if (!next.trim()) setNewApplicationProjectId('')
+                    setNewApplicationName(next)
+                  }}
                   placeholder="Create application, e.g. ACC"
                 />
                 <button className="btn btn-secondary" type="button" onClick={createApplication} disabled={!newApplicationName.trim()}>
@@ -4304,10 +4744,17 @@ export default function SettingsPage({
                       className="input"
                       value={renamingApplicationName}
                       onChange={e => setRenamingApplicationName(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') confirmRenameApplication(); if (e.key === 'Escape') setRenamingApplicationName(null); }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') confirmRenameApplication()
+                        if (e.key === 'Escape') {
+                          setRenamingApplicationId(null)
+                          setRenamingApplicationName(null)
+                          setRenamingApplicationOriginalName(null)
+                        }
+                      }}
                     />
                     <button className="btn btn-primary" type="button" onClick={confirmRenameApplication}>Save</button>
-                    <button className="btn btn-secondary" type="button" onClick={() => setRenamingApplicationName(null)}>Cancel</button>
+                    <button className="btn btn-secondary" type="button" onClick={() => { setRenamingApplicationId(null); setRenamingApplicationName(null); setRenamingApplicationOriginalName(null) }}>Cancel</button>
                   </>
                 ) : (
                   <>
@@ -4338,7 +4785,7 @@ export default function SettingsPage({
                       <button
                         type="button"
                         className="settings-release-main"
-                        onClick={() => !release.archived_at && setActiveRelease(release)}
+                        onClick={() => selectRelease(release)}
                         disabled={Boolean(release.archived_at)}
                       >
                         <span>{release.name}</span>
@@ -4358,14 +4805,14 @@ export default function SettingsPage({
                               className="input"
                               value={renamingReleaseName}
                               onChange={e => setRenamingReleaseName(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); } }}
+                              onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); } }}
                             />
                             <button className="btn btn-primary" type="button" onClick={confirmRenameRelease}>Save</button>
-                            <button className="btn btn-secondary" type="button" onClick={() => { setRenamingReleaseId(null); setRenamingReleaseName(''); }}>Cancel</button>
+                            <button className="btn btn-secondary" type="button" onClick={() => { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); }}>Cancel</button>
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-secondary" type="button" onClick={() => startRenamingRelease(release.id, release.name)}>
+                            <button className="btn btn-secondary" type="button" onClick={() => runGuarded(() => startRenamingRelease(release.id, release.name, release.application_id))}>
                               Rename
                             </button>
                             {!release.archived_at && (
@@ -4445,7 +4892,12 @@ export default function SettingsPage({
                 <input
                   className="settings-input"
                   value={newProjectName}
-                  onChange={event => setNewProjectName(event.target.value)}
+                  onChange={event => {
+                    const next = event.target.value
+                    if (!newProjectName.trim() && next.trim()) setNewProjectDomainId(selectedDomain?.id || '')
+                    if (!next.trim()) setNewProjectDomainId('')
+                    setNewProjectName(next)
+                  }}
                   placeholder="Create project, e.g. Customer Portal"
                 />
                 <button className="btn btn-secondary" type="button" onClick={createProject} disabled={!newProjectName.trim() || !canManageProjects}>
@@ -4566,11 +5018,13 @@ export default function SettingsPage({
 
                   {selectedProject && (
                     <ProjectPoolQuotasCard
+                      ref={poolQuotaDraftRef}
                       project={selectedProject}
                       canManage={canManageProjects}
+                      onUpdate={updateProject}
+                      onDirtyChange={setPoolQuotaDraftDirty}
                       onUpdated={updated => {
-                        setProjects(sortProjects(projects.map(project => (project.id === updated.id ? updated : project))))
-                        selectProject(updated)
+                        commitSettingsProject(updated)
                       }}
                     />
                   )}
@@ -4896,14 +5350,24 @@ export default function SettingsPage({
                   className="settings-input"
                   value={dataPoolName}
                   disabled={dataPoolCatalogMutationBusy}
-                  onChange={event => setDataPoolName(event.target.value)}
+                  onChange={event => {
+                    const next = event.target.value
+                    if (!dataPoolName.trim() && !dataPoolDescription.trim() && next.trim()) setDataPoolProjectId(activeProject?.id || '')
+                    if (!next.trim() && !dataPoolDescription.trim()) setDataPoolProjectId('')
+                    setDataPoolName(next)
+                  }}
                   placeholder="Pool name, e.g. Customer Accounts"
                 />
                 <input
                   className="settings-input"
                   value={dataPoolDescription}
                   disabled={dataPoolCatalogMutationBusy}
-                  onChange={event => setDataPoolDescription(event.target.value)}
+                  onChange={event => {
+                    const next = event.target.value
+                    if (!dataPoolName.trim() && !dataPoolDescription.trim() && next.trim()) setDataPoolProjectId(activeProject?.id || '')
+                    if (!next.trim() && !dataPoolName.trim()) setDataPoolProjectId('')
+                    setDataPoolDescription(next)
+                  }}
                   placeholder="Optional description"
                 />
                 <button className="btn btn-secondary btn-sm" type="button" onClick={createDataPool} disabled={!dataPoolName.trim() || dataPoolCatalogMutationBusy}>
@@ -5146,7 +5610,13 @@ export default function SettingsPage({
               hidden={activeIntegrationSubsection !== 'library'}
             >
               <div className="settings-group">
-            <LibraryFederationPanel projectId={activeProject?.id} />
+            <LibraryFederationPanel
+              projectId={activeProject?.id}
+              applicationId={activeApplication?.id}
+              applicationName={activeApplication?.name}
+              releaseId={activeRelease?.id}
+              releaseName={activeRelease?.name}
+            />
               </div>
             </section>
 

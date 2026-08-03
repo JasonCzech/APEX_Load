@@ -23,6 +23,8 @@ export type {
   DashboardWorkspaceTab,
 } from './dashboardWorkspaceModel'
 
+export type DashboardWorkspaceTabChangeSource = 'sync' | 'user'
+
 interface DashboardWorkspaceProps {
   activeStorageKey: string
   ariaLabel: string
@@ -32,6 +34,7 @@ interface DashboardWorkspaceProps {
   defaultCardInsertions?: DashboardWorkspaceDefaultCardInsertion[]
   defaultProfile: DashboardWorkspaceProfile
   initialActiveTabId?: string
+  onActiveTabChange?: (tabId: string, source: DashboardWorkspaceTabChangeSource) => void
   storageKey: string
 }
 
@@ -216,6 +219,7 @@ export default function DashboardWorkspace({
   defaultCardInsertions,
   defaultProfile,
   initialActiveTabId,
+  onActiveTabChange,
   storageKey,
 }: DashboardWorkspaceProps) {
   const workspaceShortcuts = useMemo(() => [
@@ -268,6 +272,7 @@ export default function DashboardWorkspace({
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
   const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const tabMenuItemRef = useRef<HTMLButtonElement | null>(null)
+  const pendingTabChangeSourceRef = useRef<DashboardWorkspaceTabChangeSource>('sync')
 
   useEffect(() => {
     const nextActiveTabOverride = initialActiveTabId || null
@@ -326,6 +331,15 @@ export default function DashboardWorkspace({
   const activeTab = (activeTabOverride ? selectedProfile.tabs.find(tab => tab.id === activeTabOverride) : undefined)
     || selectedProfile.tabs.find(tab => tab.id === selectedProfile.activeTabId)
     || selectedProfile.tabs[0]
+
+  useEffect(() => {
+    onActiveTabChange?.(activeTab.id, pendingTabChangeSourceRef.current)
+  }, [activeTab.id, onActiveTabChange])
+
+  useEffect(() => {
+    pendingTabChangeSourceRef.current = 'sync'
+  })
+
   const contextMenuTab = tabContextMenu
     ? selectedProfile.tabs.find(tab => tab.id === tabContextMenu.tabId)
     : null
@@ -345,10 +359,12 @@ export default function DashboardWorkspace({
   }
 
   const updateProfile = (profileId: string, updater: (profile: DashboardWorkspaceProfile) => DashboardWorkspaceProfile) => {
+    pendingTabChangeSourceRef.current = 'user'
     setProfiles(previous => previous.map(profile => (profile.id === profileId ? normalizeProfile(updater(profile), defaultProfile, cardIds) : profile)))
   }
 
   const selectProfile = (profileId: string) => {
+    pendingTabChangeSourceRef.current = 'user'
     setActiveTabOverride(null)
     setActiveState({ profileId, autoApply: false })
   }
@@ -359,6 +375,7 @@ export default function DashboardWorkspace({
   }
 
   const addProfile = () => {
+    pendingTabChangeSourceRef.current = 'user'
     const name = `Layout ${profiles.length + 1}`
     const next = createProfileCopy(defaultProfile, profiles.map(profile => profile.id), name)
     setProfiles(previous => [...previous, next])
@@ -367,6 +384,7 @@ export default function DashboardWorkspace({
   }
 
   const duplicateProfile = () => {
+    pendingTabChangeSourceRef.current = 'user'
     const name = `${selectedProfile.name} Copy`
     const next = createProfileCopy(selectedProfile, profiles.map(profile => profile.id), name)
     setProfiles(previous => [...previous, next])
@@ -376,6 +394,7 @@ export default function DashboardWorkspace({
 
   const deleteProfile = () => {
     if (profiles.length <= 1) return
+    pendingTabChangeSourceRef.current = 'user'
     const nextProfiles = profiles.filter(profile => profile.id !== selectedProfile.id)
     setProfiles(nextProfiles)
     setActiveTabOverride(null)
@@ -394,6 +413,7 @@ export default function DashboardWorkspace({
   }
 
   const restoreDefaults = () => {
+    pendingTabChangeSourceRef.current = 'user'
     const next = normalizeWorkspaceProfiles([defaultProfile], defaultProfile, cardIds)
     setProfiles(next)
     setActiveTabOverride(null)
@@ -646,7 +666,10 @@ export default function DashboardWorkspace({
             aria-label={`${ariaLabel} auto apply layouts`}
             type="checkbox"
             checked={activeState.autoApply}
-            onChange={event => setActiveState({ profileId: selectedProfile.id, autoApply: event.target.checked })}
+            onChange={event => {
+              pendingTabChangeSourceRef.current = 'user'
+              setActiveState({ profileId: selectedProfile.id, autoApply: event.target.checked })
+            }}
           />
           <span>Auto apply</span>
         </label>

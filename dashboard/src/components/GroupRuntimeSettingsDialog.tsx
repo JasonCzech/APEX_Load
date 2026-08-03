@@ -13,6 +13,11 @@ import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { buildRuntimeSettingsDraft } from './scenarioDraftUtils'
 import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
 import {
+  changedRuntimeFieldKeys,
+  EDITABLE_RUNTIME_FIELD_KEYS,
+  effectiveRuntimeFieldValue,
+} from './groupRuntimeSettingsModel'
+import {
   formatRuntimeDispositionLabel,
   summarizeImportedRuntimeDispositions,
   type ImportedRuntimeDispositions,
@@ -29,36 +34,7 @@ interface Props {
   onSaved: (result: TestGroupRuntimeSettingsUpdateResult) => void
 }
 
-/** Field keys the Command Center dialog may send, mirroring the backend set. */
-const EDITABLE_FIELD_KEYS = [
-  'iterations',
-  'pacing',
-  'think_time',
-  'error_handling',
-  'browser',
-  'log_level',
-  'auto_transactions',
-  'base_url',
-  'log',
-  'run_logic',
-  'http',
-  'web_runtime',
-  'browser_config',
-  'browser_emulation',
-  'java_vuser',
-] as const
-
-// Compile-time coverage guard: every RuntimeSettingsOverride field except the
-// deliberately non-editable env/redaction_rules must appear in
-// EDITABLE_FIELD_KEYS. Adding a new override section to the type without
-// widening the dialog's field list fails tsc here instead of silently never
-// flagging (or saving) edits to the new section.
-type NonEditableOverrideKey = 'env' | 'redaction_rules'
-type CoverageGap = Exclude<keyof RuntimeSettingsOverride, NonEditableOverrideKey | (typeof EDITABLE_FIELD_KEYS)[number]>
-const editableFieldCoverageCheck: CoverageGap extends never ? true : CoverageGap = true
-void editableFieldCoverageCheck
-
-const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_FIELD_KEYS)[number], string> = {
+const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_RUNTIME_FIELD_KEYS)[number], string> = {
   iterations: 'Iterations',
   pacing: 'Pacing',
   think_time: 'Think time',
@@ -74,42 +50,6 @@ const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_FIELD_KEYS)[number], string>
   browser_config: 'Browser config',
   browser_emulation: 'Browser emulation',
   java_vuser: 'Java Env',
-}
-
-/** Effective value of one override field, resolving legacy aliases the way
- *  execution does: when the canonical section is present it wins outright, even
- *  if its value for the aliased field is unset. Falling through to the alias in
- *  that case would report a value execution ignores. */
-export function effectiveRuntimeFieldValue(settings: RuntimeSettingsOverride | undefined, key: string): unknown {
-  if (!settings) return undefined
-  switch (key) {
-    case 'iterations':
-      return settings.run_logic !== undefined ? settings.run_logic.iterations : settings.iterations
-    case 'log_level':
-      return settings.log !== undefined ? (settings.log.level || undefined) : (settings.log_level || undefined)
-    case 'auto_transactions':
-      return settings.run_logic !== undefined
-        ? (settings.run_logic.auto_transactions || undefined)
-        : (settings.auto_transactions || undefined)
-    case 'browser':
-      return settings.browser_config ?? settings.browser
-    case 'base_url':
-      return settings.base_url || undefined
-    default:
-      return (settings as unknown as Record<string, unknown>)[key]
-  }
-}
-
-/** Field keys whose effective value differs between two override payloads. */
-export function changedRuntimeFieldKeys(
-  before: RuntimeSettingsOverride | undefined,
-  after: RuntimeSettingsOverride | undefined,
-): string[] {
-  return EDITABLE_FIELD_KEYS.filter(key => {
-    const fromValue = effectiveRuntimeFieldValue(before, key)
-    const toValue = effectiveRuntimeFieldValue(after, key)
-    return JSON.stringify(fromValue ?? null) !== JSON.stringify(toValue ?? null)
-  })
 }
 
 /** Rebuild a partial ScriptConfig from the masked base-script settings projection
@@ -473,7 +413,7 @@ export default function GroupRuntimeSettingsDialog({ testId, groupName, onClose,
                   </tr>
                 </thead>
                 <tbody>
-                  {EDITABLE_FIELD_KEYS.map(key => {
+                  {EDITABLE_RUNTIME_FIELD_KEYS.map(key => {
                     const effective = effectiveRuntimeFieldValue(view.effective_settings, key)
                     return (
                       <tr key={key} className="group-run-settings-summary-row">

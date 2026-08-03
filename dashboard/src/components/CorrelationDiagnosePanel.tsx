@@ -10,7 +10,11 @@ import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import { ApiError } from '../hooks/apiClient'
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
 import { duplicateCorrelationStepIds, HarToStepsLimitError, harToSteps, nestedCorrelationStepIds, replayEventsToSteps } from './correlationDiagnose'
-import type { CorrelationApplyResult, CorrelationExtractorRepair, CorrelationRepairLocation } from './scriptCorrelationRepair'
+import {
+  repairLocationsFromSuggestion,
+  type CorrelationApplyResult,
+  type CorrelationExtractorRepair,
+} from './scriptCorrelationRepair'
 
 export type RecordingStatusState = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -77,25 +81,6 @@ function boundedDiagnosisError(error: unknown, fallback: string): string {
   if (!(error instanceof ApiError)) return fallback
   const message = error.message.replace(/\s+/g, ' ').trim().slice(0, 240)
   return message ? `Diagnosis failed: ${message}` : fallback
-}
-
-export function repairLocationsFromSuggestion(
-  suggestion: CorrelationRepairSuggestion,
-  replay: CorrelationStep[],
-): CorrelationRepairLocation[] {
-  if (typeof suggestion.failing_step_id !== 'number' || !replay.some(candidate => candidate.id === suggestion.failing_step_id)) return []
-  const locations: CorrelationRepairLocation[] = []
-  for (const location of suggestion.repair_locations || []) {
-    const isRequestField = location.field === 'request_url' || location.field === 'request_body' || location.field.startsWith('request_headers.')
-    // A suggestion is one repair transaction. If even one requested location
-    // is unproven or malformed, do not apply a "safe" subset and leave another
-    // stale use behind.
-    if (location.editable_surface_exact !== true || !isRequestField || !Number.isInteger(location.start) || !Number.isInteger(location.end) || location.start < 0 || location.end <= location.start) return []
-    if (!locations.some(candidate => candidate.field === location.field && candidate.start === location.start && candidate.end === location.end)) {
-      locations.push({ field: location.field, start: location.start, end: location.end })
-    }
-  }
-  return locations
 }
 
 // Record-vs-replay correlation diagnosis: diff the current replay against the

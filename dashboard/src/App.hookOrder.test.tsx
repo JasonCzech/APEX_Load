@@ -33,6 +33,73 @@ vi.mock('./hooks/useAuthStatus', () => ({
   }),
 }))
 
+vi.mock('./components/TestExecution', async () => {
+  const { useEffect, useState } = await import('react')
+  const tabs = [
+    ['overview', 'Overview'],
+    ['control', 'Control'],
+    ['graphs', 'Graphs'],
+    ['diagnostics', 'Diagnostics'],
+    ['archive', 'Archive'],
+    ['action-summary', 'Action Summary'],
+    ['load-impact', 'Load Impact'],
+    ['transaction-drilldown', 'Transaction Drill-Down'],
+  ] as const
+
+  function persistedTab() {
+    try {
+      const profiles = JSON.parse(window.localStorage.getItem('apexload.execution.workspaceProfiles.v1') || '[]') as Array<{ activeTabId?: string }>
+      return profiles.find(profile => profile.activeTabId)?.activeTabId
+    } catch {
+      return undefined
+    }
+  }
+
+  function MockTestExecution({
+    initialWorkspaceTabId,
+    onBack,
+    onWorkspaceTabChange,
+  }: {
+    initialWorkspaceTabId?: string
+    onBack: () => void
+    onWorkspaceTabChange?: (tabId: typeof tabs[number][0], options: { replace: boolean }) => void
+  }) {
+    const desiredTab = initialWorkspaceTabId || persistedTab() || 'overview'
+    const [activeTab, setActiveTab] = useState(desiredTab)
+
+    useEffect(() => {
+      setActiveTab(desiredTab)
+      onWorkspaceTabChange?.(desiredTab as typeof tabs[number][0], { replace: true })
+    }, [desiredTab, onWorkspaceTabChange])
+
+    return (
+      <section aria-label="Mock test execution">
+        <button type="button" data-testid="mock-execution-back" onClick={onBack}>Back</button>
+        <div role="tablist" aria-label="Test execution workspace tabs">
+          {tabs.map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === id}
+              onClick={() => {
+                setActiveTab(id)
+                onWorkspaceTabChange?.(id, { replace: false })
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  return {
+    default: MockTestExecution,
+  }
+})
+
 const navigationGuardMock = vi.hoisted(() => {
   const state = {
     dirty: false,
@@ -101,9 +168,88 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response
 }
 
+let scopeFixturesEnabled = false
+let domainCatalogFails = false
+
+const scopeDomains = [
+  { id: 'domain-a', name: 'Domain A', created_at: '', updated_at: '' },
+  { id: 'domain-b', name: 'Domain B', created_at: '', updated_at: '' },
+]
+const scopeProjects = [
+  { id: 'project-a', domain_id: 'domain-a', name: 'Project A', created_at: '', updated_at: '' },
+  { id: 'project-b', domain_id: 'domain-a', name: 'Project B', created_at: '', updated_at: '' },
+  { id: 'project-c', domain_id: 'domain-b', name: 'Project C', created_at: '', updated_at: '' },
+  { id: 'project-orphan', domain_id: 'domain-missing', name: 'Orphan Project', created_at: '', updated_at: '' },
+]
+const projectAWorkspaceQuery = 'projectId=project-a&applicationId=project-a-app-a&releaseId=project-a-app-a-release-a'
+const projectBWorkspaceQuery = 'projectId=project-b&applicationId=project-b-app-b&releaseId=project-b-app-b-release-b'
+
 // Minimal, shape-correct payloads for the endpoints the shell touches on mount /
 // navigation. Anything else resolves to {} (callers all guard with `|| []` etc).
 function payloadForUrl(url: string): unknown {
+  if (scopeFixturesEnabled && url.includes('/domains')) {
+    return { domains: scopeDomains, count: scopeDomains.length }
+  }
+  if (scopeFixturesEnabled && /\/applications\?project_id=/.test(url)) {
+    const projectID = new URL(url, window.location.origin).searchParams.get('project_id') || 'project-a'
+    return {
+      applications: [
+        { id: `${projectID}-app-a`, project_id: projectID, name: 'Application A', created_at: '', updated_at: '' },
+        { id: `${projectID}-app-b`, project_id: projectID, name: 'Application B', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    }
+  }
+  if (scopeFixturesEnabled && /\/applications\/[^/]+\/releases/.test(url)) {
+    const applicationID = url.match(/\/applications\/([^/]+)\/releases/)?.[1] || ''
+    return {
+      releases: [
+        { id: `${applicationID}-release-a`, application_id: applicationID, name: 'Release A', created_at: '', updated_at: '' },
+        { id: `${applicationID}-release-b`, application_id: applicationID, name: 'Release B', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    }
+  }
+  if (scopeFixturesEnabled && url.includes('/projects')) {
+    return { projects: scopeProjects, count: scopeProjects.length }
+  }
+  if (scopeFixturesEnabled && url.includes('/scripts/script-b')) {
+    return {
+      id: 'script-b',
+      name: 'Script B',
+      protocol: 'http',
+      version: '1',
+      project_id: 'project-b',
+      created_at: '',
+      script: { name: 'Script B', protocol: 'http', actions: [] },
+    }
+  }
+  if (scopeFixturesEnabled && url.includes('/scenarios/scenario-b')) {
+    return {
+      id: 'scenario-b',
+      name: 'Scenario B',
+      project_id: 'project-b',
+      duration: '1m',
+      scripts: [],
+      created_at: '',
+      updated_at: '',
+      script_count: 0,
+    }
+  }
+  if (scopeFixturesEnabled && url.includes('/tests/run-b')) {
+    return {
+      id: 'run-b',
+      name: 'Run B',
+      project_id: 'project-b',
+      application_id: 'project-b-app-b',
+      release_id: 'project-b-app-b-release-b',
+      status: 'COMPLETED',
+      groups: [],
+      total_vusers: 0,
+      duration: '1m',
+      created_at: '',
+    }
+  }
   if (url.includes('/system/version')) {
     return {
       version: 'dev',
@@ -173,6 +319,8 @@ describe('AppShell hook-order stability across navigation', () => {
     hookOrderErrors.length = 0
     navigationGuardMock.state.dirty = false
     navigationGuardMock.state.pending = null
+    scopeFixturesEnabled = false
+    domainCatalogFails = false
     window.localStorage.clear()
     delete (window as DesktopWindow).go
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
@@ -196,6 +344,14 @@ describe('AppShell hook-order stability across navigation', () => {
 
     vi.stubGlobal('fetch', vi.fn(async (input: unknown) => {
       const url = typeof input === 'string' ? input : String((input as { url?: string })?.url ?? input)
+      if (domainCatalogFails && url.includes('/domains')) {
+        return {
+          ...jsonResponse({ error: 'domain catalog unavailable' }),
+          ok: false,
+          status: 503,
+          statusText: 'Service Unavailable',
+        } as Response
+      }
       return jsonResponse(payloadForUrl(url))
     }))
 
@@ -225,6 +381,8 @@ describe('AppShell hook-order stability across navigation', () => {
     vi.clearAllMocks()
     navigationGuardMock.state.dirty = false
     navigationGuardMock.state.pending = null
+    scopeFixturesEnabled = false
+    domainCatalogFails = false
   })
 
   it('does not change hook order navigating between top-level pages via the left nav', async () => {
@@ -259,6 +417,298 @@ describe('AppShell hook-order stability across navigation', () => {
     }
 
     expect(hookOrderErrors).toEqual([])
+  })
+
+  it('guards every sidebar workspace scope change before applying it', async () => {
+    scopeFixturesEnabled = true
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const selector = (prefix: string) => container.querySelector<HTMLButtonElement>(`button[aria-label^="${prefix}"]`)
+    const choose = async (selectorPrefix: string, option: string) => {
+      const trigger = selector(selectorPrefix)
+      expect(trigger).toBeTruthy()
+      await act(async () => trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      const choices = Array.from(container.querySelectorAll<HTMLButtonElement>('.project-menu-item'))
+      const choice = choices.find(button => button.textContent?.trim().endsWith(option))
+      expect(choice, `expected ${option}; available options: ${choices.map(button => button.textContent?.trim()).join(', ')}`).toBeTruthy()
+      navigationGuardMock.state.dirty = true
+      await act(async () => choice?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+      expect(navigationGuardMock.state.pending).not.toBeNull()
+    }
+    const discard = async () => {
+      const pending = navigationGuardMock.state.pending
+      navigationGuardMock.state.pending = null
+      navigationGuardMock.state.dirty = false
+      await act(async () => pending?.())
+      await flush()
+    }
+
+    expect(selector('Select project')?.getAttribute('aria-label')).toContain('Project A')
+    await choose('Select project', 'Project B')
+    expect(selector('Select project')?.getAttribute('aria-label')).toContain('Project A')
+    await discard()
+    expect(selector('Select project')?.getAttribute('aria-label')).toContain('Project B')
+
+    await choose('Select application and release', 'Release B')
+    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Release A')
+    await discard()
+    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Release B')
+
+    await choose('Select application and release', 'Application B')
+    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Application A')
+    await discard()
+    expect(selector('Select application and release')?.getAttribute('aria-label')).toContain('Application B')
+
+    await choose('Select domain', 'Domain B')
+    expect(selector('Select domain')?.getAttribute('aria-label')).toContain('Domain A')
+    await discard()
+    expect(selector('Select domain')?.getAttribute('aria-label')).toContain('Domain B')
+  })
+
+  it('corrects a stale project-scoped scenario link before mounting its asset page', async () => {
+    scopeFixturesEnabled = true
+    window.history.replaceState({}, '', '#/new-test?scenarioId=scenario-b&projectId=project-a')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(window.location.hash).toContain('projectId=project-b')
+    expect(window.location.hash).not.toContain('projectId=project-a')
+    expect(container.textContent).not.toContain('Project project-b is unavailable')
+
+    const scenarioRequests = vi.mocked(fetch).mock.calls
+      .map(([input]) => typeof input === 'string' ? input : String((input as { url?: string })?.url ?? input))
+      .filter(url => url.includes('/scenarios'))
+    expect(scenarioRequests.some(url => url.includes('project_id=project-b'))).toBe(true)
+    expect(scenarioRequests.some(url => url.includes('project_id=project-a'))).toBe(false)
+  })
+
+  it('corrects a stale project-scoped script link before mounting the editor', async () => {
+    scopeFixturesEnabled = true
+    window.history.replaceState({}, '', '#/scripts?mode=edit&scriptId=script-b&projectId=project-a')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(window.location.hash).toContain('projectId=project-b')
+    expect(window.location.hash).not.toContain('projectId=project-a')
+    const scriptRequests = vi.mocked(fetch).mock.calls
+      .map(([input]) => typeof input === 'string' ? input : String((input as { url?: string })?.url ?? input))
+      .filter(url => url.includes('/scripts'))
+    expect(scriptRequests.some(url => url.includes('/scripts/script-b'))).toBe(true)
+    expect(scriptRequests.some(url => url.includes('project_id=project-a'))).toBe(false)
+  })
+
+  it('reports an unavailable owning domain instead of leaving a scoped route pending forever', async () => {
+    scopeFixturesEnabled = true
+    window.history.replaceState({}, '', '#/new-test?projectId=project-orphan')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('owning domain domain-missing')
+    expect(alert?.textContent).toContain('project project-orphan')
+    expect(container.querySelector('[role="status"]')?.textContent).not.toContain('Loading project workspace')
+  })
+
+  it('reconciles a run deep link to its owning application and release before navigating to Results', async () => {
+    scopeFixturesEnabled = true
+    window.localStorage.setItem('apexload.activeApplicationId', 'project-b-app-a')
+    window.localStorage.setItem('apexload.activeReleaseId', 'project-b-app-a-release-a')
+    window.history.replaceState({}, '', '#/test/run-b?projectId=project-b')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    await clickNav('Results')
+
+    expect(currentPage()).toBe('page-results')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+  })
+
+  it('restores every workspace level from a fully scoped generic deep link before mounting the page', async () => {
+    scopeFixturesEnabled = true
+    window.localStorage.setItem('apexload.activeProjectId', 'project-a')
+    window.localStorage.setItem('apexload.activeApplicationId', 'project-a-app-a')
+    window.localStorage.setItem('apexload.activeReleaseId', 'project-a-app-a-release-a')
+    window.history.replaceState({}, '', `#/results?${projectBWorkspaceQuery}`)
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    expect(window.location.hash).toBe(`#/results?${projectBWorkspaceQuery}`)
+  })
+
+  it('restores the complete generic workspace when browser Back changes only route scope', async () => {
+    scopeFixturesEnabled = true
+    window.localStorage.setItem('apexload.activeProjectId', 'project-a')
+    window.localStorage.setItem('apexload.activeApplicationId', 'project-a-app-a')
+    window.localStorage.setItem('apexload.activeReleaseId', 'project-a-app-a-release-a')
+    window.history.replaceState(
+      withAppHistoryIndex({}, 0),
+      '',
+      `#/results?${projectAWorkspaceQuery}`,
+    )
+    window.history.pushState(
+      withAppHistoryIndex({}, 1),
+      '',
+      `#/results?${projectBWorkspaceQuery}`,
+    )
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = () => container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    const applicationSelector = () => container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    expect(projectSelector()?.getAttribute('aria-label')).toContain('Project B')
+    expect(applicationSelector()?.getAttribute('aria-label')).toContain('Application B')
+    expect(applicationSelector()?.getAttribute('aria-label')).toContain('Release B')
+
+    await act(async () => {
+      window.history.back()
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    await flush()
+
+    expect(window.location.hash).toBe(`#/results?${projectAWorkspaceQuery}`)
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+    expect(projectSelector()?.getAttribute('aria-label')).toContain('Project A')
+    expect(applicationSelector()?.getAttribute('aria-label')).toContain('Application A')
+    expect(applicationSelector()?.getAttribute('aria-label')).toContain('Release A')
+  })
+
+  it('preserves a legacy unscoped generic link while using the stored workspace', async () => {
+    scopeFixturesEnabled = true
+    window.localStorage.setItem('apexload.activeProjectId', 'project-b')
+    window.localStorage.setItem('apexload.activeApplicationId', 'project-b-app-b')
+    window.localStorage.setItem('apexload.activeReleaseId', 'project-b-app-b-release-b')
+    window.history.replaceState({}, '', '#/results')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
+    expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    expect(window.location.hash).toBe('#/results')
+  })
+
+  it('blocks a generic page whose child scope does not belong to its requested project', async () => {
+    scopeFixturesEnabled = true
+    const staleScope = 'projectId=project-b&applicationId=project-a-app-b&releaseId=project-a-app-b-release-b'
+    window.history.replaceState({}, '', `#/results?${staleScope}`)
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    const alerts = Array.from(container.querySelectorAll('[role="alert"]'))
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(alerts.some(alert => alert.textContent?.includes(
+      'Application project-a-app-b is unavailable in project project-b.',
+    ))).toBe(true)
+    expect(container.querySelector('main h2')?.textContent || '').not.toContain('Results Library')
+    expect(window.location.hash).toBe(`#/results?${staleScope}`)
+  })
+
+  it('surfaces a domain catalog failure without inventing a client-only default domain', async () => {
+    scopeFixturesEnabled = true
+    domainCatalogFails = true
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const alerts = Array.from(container.querySelectorAll('[role="alert"]'))
+    expect(alerts.some(alert => alert.textContent?.includes('Unable to load domains'))).toBe(true)
+    const domainSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select domain"]')
+    expect(domainSelector?.getAttribute('aria-label') || '').not.toContain('Default Domain')
+    expect(window.localStorage.getItem('apexload.activeDomainId')).not.toBe('default')
+  })
+
+  it.each([
+    ['script editor', '#/scripts?mode=edit&scriptId=script-b', false],
+    ['scenario launch', '#/new-test?scenarioId=scenario-b', false],
+    ['test workspace', '#/test/run-b', false],
+    ['command center', '#/command-center/run-b', false],
+    ['run report', '#/report/run-b', true],
+  ])('resolves the owning project before mounting a legacy unscoped %s bookmark', async (_label, hash, enableReport) => {
+    scopeFixturesEnabled = true
+    if (enableReport) window.localStorage.setItem('apexload.featureFlags.runReport', 'true')
+    window.history.replaceState({}, '', hash)
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const projectSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select project"]')
+    expect(projectSelector?.getAttribute('aria-label')).toContain('Project B')
+    expect(window.location.hash).toContain('projectId=project-b')
+    expect(container.textContent).not.toContain('does not include project scope')
+    if (hash.includes('run-b')) {
+      const applicationSelector = container.querySelector<HTMLButtonElement>('button[aria-label^="Select application and release"]')
+      expect(applicationSelector?.getAttribute('aria-label')).toContain('Application B')
+      expect(applicationSelector?.getAttribute('aria-label')).toContain('Release B')
+    }
+  })
+
+  it('shows a recovery action when a legacy bookmark owner cannot be determined', async () => {
+    scopeFixturesEnabled = true
+    window.history.replaceState({}, '', '#/scripts?mode=edit&scriptId=missing-script')
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const alert = container.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('does not include project scope')
+    const recovery = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open Script Library')
+    expect(recovery).toBeTruthy()
+
+    await act(async () => recovery?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flush()
+    expect(window.location.hash).toBe(`#/scripts?${projectAWorkspaceQuery}`)
   })
 
   it('refreshes app-wide effective access when the server reports an access review change', async () => {
@@ -312,6 +762,105 @@ describe('AppShell hook-order stability across navigation', () => {
     expect(openInBrowser).toHaveBeenCalledWith('admin', '')
     const alerts = Array.from(container.querySelectorAll('[role="alert"]'))
     expect(alerts.some(alert => alert.textContent?.includes('System browser launch was blocked'))).toBe(true)
+  })
+
+  it('keeps execution tab routes, sidebar ownership, and browser history in sync', async () => {
+    scopeFixturesEnabled = true
+    window.localStorage.setItem('apexload.activeApplicationId', 'project-b-app-b')
+    window.localStorage.setItem('apexload.activeReleaseId', 'project-b-app-b-release-b')
+    window.history.replaceState(
+      withAppHistoryIndex({}, 0),
+      '',
+      '#/test/run-b?tab=archive&projectId=project-b',
+    )
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const activeNavLabel = () => container.querySelector('.sidebar-nav [aria-current="page"]')?.textContent?.trim()
+    const workspaceTab = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(button => button.textContent?.includes(label))
+
+    expect(workspaceTab('Archive')?.getAttribute('aria-selected')).toBe('true')
+    expect(activeNavLabel()).toContain('Results')
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+
+    await act(async () => {
+      workspaceTab('Overview')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+
+    expect(window.location.hash).toBe(`#/test/run-b?tab=overview&${projectBWorkspaceQuery}`)
+    expect(activeNavLabel()).toContain('Command Center')
+    expect(readAppHistoryIndex(window.history.state)).toBe(1)
+
+    await act(async () => {
+      window.history.back()
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    await flush()
+
+    expect(window.location.hash).toBe(`#/test/run-b?tab=archive&${projectBWorkspaceQuery}`)
+    expect(workspaceTab('Archive')?.getAttribute('aria-selected')).toBe('true')
+    expect(activeNavLabel()).toContain('Results')
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+  })
+
+  it('replaces the current route when a persisted execution tab supplies the initial destination', async () => {
+    scopeFixturesEnabled = true
+    window.localStorage.setItem('apexload.execution.workspaceProfiles.v1', JSON.stringify([{
+      id: 'default',
+      name: 'Default Execution Layout',
+      activeTabId: 'load-impact',
+      tabs: [{ id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] }],
+      unassignedCardIds: [],
+    }]))
+    window.history.replaceState(
+      withAppHistoryIndex({}, 0),
+      '',
+      '#/test/run-b?projectId=project-b',
+    )
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const selectedTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
+    const activeNav = container.querySelector('.sidebar-nav [aria-current="page"]')
+    expect(selectedTab?.textContent).toContain('Load Impact')
+    expect(window.location.hash).toBe(`#/test/run-b?tab=load-impact&${projectBWorkspaceQuery}`)
+    expect(activeNav?.textContent).toContain('Results')
+    expect(readAppHistoryIndex(window.history.state)).toBe(0)
+  })
+
+  it.each([
+    ['archive-owned', 'action-summary', `#/results?${projectBWorkspaceQuery}`],
+    ['live-owned', 'diagnostics', `#/command-center?${projectBWorkspaceQuery}`],
+  ])('uses the owning top-level destination for first-entry Back from an %s test view', async (_label, tab, expectedHash) => {
+    scopeFixturesEnabled = true
+    window.history.replaceState(
+      withAppHistoryIndex({}, 0),
+      '',
+      `#/test/run-b?tab=${tab}&projectId=project-b`,
+    )
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="mock-execution-back"]')
+    expect(backButton).toBeTruthy()
+
+    await act(async () => {
+      backButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+
+    expect(window.location.hash).toBe(expectedHash)
   })
 
   it('applies one history-index transition when browsers emit popstate followed by hashchange', async () => {

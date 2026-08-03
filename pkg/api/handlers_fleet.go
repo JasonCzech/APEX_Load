@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -241,12 +242,19 @@ func (s *Server) handleSetGeneratorDrainState(w http.ResponseWriter, r *http.Req
 		req.DrainState = "active"
 	}
 
+	previousState := s.currentGeneratorLifecycleState(req.GeneratorID, req.Target)
 	generatorID, target, err := s.setGeneratorLifecycleState(req.GeneratorID, req.Target, req.DrainState)
 	if err != nil {
+		_ = s.restoreGeneratorLifecycleState(generatorID, target, previousState)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := s.syncGeneratorMetadataCordon(generatorID, target, req.DrainState != "active"); err != nil {
+		rollbackErr := s.restoreGeneratorLifecycleState(generatorID, target, previousState)
+		if rollbackErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata and restore the prior lifecycle state: "+errors.Join(err, rollbackErr).Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to persist generator cordon metadata: "+err.Error())
 		return
 	}

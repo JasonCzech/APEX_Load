@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 
 import {
   MetricsHistoryPoint,
   TestSummary,
 } from '../types'
+import { isTestWorkspaceTab, type TestWorkspaceTabID } from '../appRouting'
 import { topbarRunStatusLabel } from '../appTopbar'
 import { useTopbarContribution, type TopbarContribution, type TopbarMetaTone } from '../hooks/TopbarContributionProvider'
 import { formatTimeCompact, isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
@@ -36,6 +37,7 @@ import { buildExecutionStatusModel, describeGoalController } from './testExecuti
 import DashboardWorkspace, {
   type DashboardWorkspaceCard,
   type DashboardWorkspaceProfile,
+  type DashboardWorkspaceTabChangeSource,
 } from './DashboardWorkspace'
 import { buildWorkspaceContextTokens } from './dashboardWorkspaceModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
@@ -100,16 +102,37 @@ interface Props {
   initialWorkspaceTabId?: string
   onBack: () => void
   onEditScript: (scriptId: string) => void
+  onWorkspaceTabChange?: (tabId: TestWorkspaceTabID | undefined, options: { replace: boolean }) => void
   onSelectTest: (testId: string) => void
   onOpenCommandCenter?: (testId: string) => void
 }
 
-export default function TestExecution({ testId, history, initialWorkspaceTabId, onBack, onEditScript, onSelectTest, onOpenCommandCenter }: Props) {
-  const { test, setTest, error } = useExecutionTestPolling(testId)
+export default function TestExecution({
+  testId,
+  history,
+  initialWorkspaceTabId,
+  onBack,
+  onEditScript,
+  onWorkspaceTabChange,
+  onSelectTest,
+  onOpenCommandCenter,
+}: Props) {
+  const {
+    test,
+    setTest,
+    error,
+    archiveFinalizationTimedOut,
+    archiveCheckPending,
+    archiveCheckError,
+    checkArchiveAgain,
+  } = useExecutionTestPolling(testId)
   const [showScenarioEditor, setShowScenarioEditor] = useState(false)
   const [showGenerateReport, setShowGenerateReport] = useState(false)
   const [showTestNotes, setShowTestNotes] = useState(false)
   const [reportProfile, setReportProfile] = useState<ReportProfileId | null>(null)
+  const handleWorkspaceActiveTabChange = useCallback((tabId: string, source: DashboardWorkspaceTabChangeSource) => {
+    onWorkspaceTabChange?.(isTestWorkspaceTab(tabId) ? tabId : undefined, { replace: source === 'sync' })
+  }, [onWorkspaceTabChange])
   const {
     expandedChart,
     onExpandedChartChange,
@@ -118,11 +141,19 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
   } = useExecutionViewState()
 
   const {
+    manifest,
+    manifestError,
+    manifestLoading,
+    reloadManifest,
+  } = useExecutionTestManifest(test)
+  const {
+    scenarioSnapshot,
+    snapshotSource,
     queuedScenarioPreview,
     queuedScenarioRows,
-    scriptDetailsLoading,
-    scriptDetailsError,
-  } = useExecutionScenarioPreviewModel(test)
+    snapshotLoading,
+    snapshotError,
+  } = useExecutionScenarioPreviewModel(test, manifest, manifestLoading, manifestError)
   const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
   const {
     archiveResourceHistory,
@@ -242,13 +273,6 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     onDownloadBrowserDiagnostics,
     onDownloadArchiveArtifact,
   } = useExecutionArchiveModel(test)
-  const {
-    manifest,
-    manifestError,
-    manifestLoading,
-    reloadManifest,
-  } = useExecutionTestManifest(test)
-
   const topbarActionHandlers = useRef({
     onAbort,
     onBack,
@@ -670,7 +694,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
       defaultWidth: 'full',
       render: () => (
         <TestExecutionScenarioPreview
-          test={test}
+          test={scenarioSnapshot || test}
           startCapacityConflict={startCapacityConflict}
           startShakeoutConflict={startShakeoutConflict}
           startFeedback={startFeedback}
@@ -680,8 +704,9 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
           onCancelShakeoutRun={onAbort}
           queuedScenarioPreview={queuedScenarioPreview}
           queuedScenarioRows={queuedScenarioRows}
-          scriptDetailsLoading={scriptDetailsLoading}
-          scriptDetailsError={scriptDetailsError}
+          snapshotSource={snapshotSource}
+          snapshotLoading={snapshotLoading}
+          snapshotError={snapshotError}
           expandedScenarioScript={expandedScenarioScript}
           onExpandedScenarioScriptChange={onExpandedScenarioScriptChange}
           onEditScript={onEditScript}
@@ -913,6 +938,24 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         />
       )}
 
+      {archiveFinalizationTimedOut && !hasArchive && (
+        <section className="execution-archive-retry" aria-label="Archive publication status" role="status">
+          <div>
+            <strong>Archive publication is taking longer than expected</strong>
+            <p>The run is complete, but its saved archive is not available yet. Check again without leaving this run dashboard.</p>
+            {archiveCheckError && <p className="execution-archive-retry-error" role="alert">{archiveCheckError}</p>}
+          </div>
+          <button
+            className="btn btn-sm btn-secondary"
+            type="button"
+            onClick={() => { void checkArchiveAgain() }}
+            disabled={archiveCheckPending}
+          >
+            {archiveCheckPending ? 'Checking…' : 'Check again'}
+          </button>
+        </section>
+      )}
+
       {pinnedLiveControls && (
         <section className="execution-live-controls-anchor" aria-label="Live controls">
           {pinnedLiveControls}
@@ -920,6 +963,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
       )}
 
       <DashboardWorkspace
+        key={testId}
         ariaLabel="Test execution workspace"
         storageKey="apexload.execution.workspaceProfiles.v1"
         activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
@@ -929,6 +973,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         cards={executionWorkspaceCards}
         context={executionWorkspaceContext}
         initialActiveTabId={initialWorkspaceTabId}
+        onActiveTabChange={handleWorkspaceActiveTabChange}
       />
     </div>
   )

@@ -881,11 +881,18 @@ func (s *Server) recoverLibraryImportClaim(claim libraryImportClaim) error {
 			return err
 		}
 		archiveActivated := claim.ArchiveActivated
-		if !claim.Applied && claim.ArchiveExpected && !claim.ArchiveExisted && strings.TrimSpace(claim.ArchivePath) != "" {
-			if _, statErr := os.Stat(claim.ArchivePath); statErr == nil {
-				archiveActivated = hashArchiveManifestPath(filepath.Join(claim.ArchivePath, "manifest.json")) == claim.ArchiveManifest && archiveDirectorySize(claim.ArchivePath) == claim.ArchiveSize
-			} else if !os.IsNotExist(statErr) {
-				return statErr
+		if !claim.Applied && claim.ArchiveExpected && !claim.ArchiveExisted {
+			if current != nil && current.ArchiveRecord != nil && archiveRecordBackend(current.ArchiveRecord) != archiveBackendFilesystem {
+				// The immutable evidence row durably identifies the object namespace.
+				// Recovery removes that namespace if this claim still owns the row,
+				// including after a crash during a partial manifest-last upload.
+				archiveActivated = true
+			} else if strings.TrimSpace(claim.ArchivePath) != "" {
+				if _, statErr := os.Stat(claim.ArchivePath); statErr == nil {
+					archiveActivated = hashArchiveManifestPath(filepath.Join(claim.ArchivePath, "manifest.json")) == claim.ArchiveManifest && archiveDirectorySize(claim.ArchivePath) == claim.ArchiveSize
+				} else if !os.IsNotExist(statErr) {
+					return statErr
+				}
 			}
 		}
 		if !exists || current == nil {

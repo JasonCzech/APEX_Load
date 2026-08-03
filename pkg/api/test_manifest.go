@@ -15,22 +15,38 @@ import (
 
 const testRunManifestSchemaVersion = "apexload.test_manifest.v1"
 
+const (
+	testRunManifestInitialConfigurationArchiveProvenance = "archive_provenance"
+	testRunManifestInitialConfigurationStoredTestRecord  = "stored_test_record"
+	testRunManifestInitialConfigurationRetainedRunState  = "retained_run_state"
+)
+
 type TestRunManifest struct {
-	SchemaVersion        string                         `json:"schema_version"`
-	TestID               string                         `json:"test_id"`
-	RefKey               string                         `json:"ref_key,omitempty"`
-	TestName             string                         `json:"test_name"`
-	Status               string                         `json:"status"`
-	Source               string                         `json:"source"`
-	GeneratedAt          time.Time                      `json:"generated_at"`
-	Identity             TestRunManifestIdentity        `json:"identity"`
-	InitialConfiguration TestRunManifestConfiguration   `json:"initial_configuration"`
-	CurrentConfiguration TestRunManifestConfiguration   `json:"current_configuration"`
-	Scripts              []TestRunManifestScript        `json:"scripts,omitempty"`
-	LoadGenerators       TestRunManifestLoadGenerators  `json:"load_generators"`
-	RuntimeChanges       []TestRunManifestRuntimeChange `json:"runtime_changes,omitempty"`
-	Archive              *TestRunManifestArchive        `json:"archive,omitempty"`
-	Warnings             []string                       `json:"warnings,omitempty"`
+	SchemaVersion                  string                                 `json:"schema_version"`
+	TestID                         string                                 `json:"test_id"`
+	RefKey                         string                                 `json:"ref_key,omitempty"`
+	TestName                       string                                 `json:"test_name"`
+	Status                         string                                 `json:"status"`
+	Source                         string                                 `json:"source"`
+	GeneratedAt                    time.Time                              `json:"generated_at"`
+	Identity                       TestRunManifestIdentity                `json:"identity"`
+	InitialConfiguration           TestRunManifestConfiguration           `json:"initial_configuration"`
+	InitialConfigurationProvenance TestRunManifestConfigurationProvenance `json:"initial_configuration_provenance"`
+	CurrentConfiguration           TestRunManifestConfiguration           `json:"current_configuration"`
+	Scripts                        []TestRunManifestScript                `json:"scripts,omitempty"`
+	LoadGenerators                 TestRunManifestLoadGenerators          `json:"load_generators"`
+	RuntimeChanges                 []TestRunManifestRuntimeChange         `json:"runtime_changes,omitempty"`
+	Archive                        *TestRunManifestArchive                `json:"archive,omitempty"`
+	Warnings                       []string                               `json:"warnings,omitempty"`
+}
+
+// TestRunManifestConfigurationProvenance tells clients whether the initial
+// configuration is backed by a durable run snapshot or was reconstructed from
+// mutable retained process state. Clients must not describe the latter as an
+// immutable queued snapshot.
+type TestRunManifestConfigurationProvenance struct {
+	Source    string `json:"source"`
+	Immutable bool   `json:"immutable"`
 }
 
 type TestRunManifestIdentity struct {
@@ -241,7 +257,7 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 		warnings = removeWarningPrefix(warnings, "archive does not contain a persisted")
 	}
 
-	initial, initialWarnings := tr.initialManifestConfiguration(test, archiveManifest)
+	initial, initialProvenance, initialWarnings := tr.initialManifestConfiguration(test, archiveManifest)
 	warnings = append(warnings, initialWarnings...)
 	current := manifestConfigurationFromManagedTest(test)
 	current.Status = status
@@ -258,37 +274,57 @@ func (tr *TestRunner) buildTestManifestForManagedTest(test *ManagedTest, request
 	warnings = append(warnings, auditWarnings...)
 
 	manifest := &TestRunManifest{
-		SchemaVersion:        testRunManifestSchemaVersion,
-		TestID:               test.ID,
-		RefKey:               test.RefKey,
-		TestName:             test.Name,
-		Status:               status,
-		Source:               source,
-		GeneratedAt:          time.Now().UTC(),
-		Identity:             manifestIdentityFromTest(test, completedAt),
-		InitialConfiguration: initial,
-		CurrentConfiguration: current,
-		Scripts:              manifestScriptsFromGroups(current.Groups),
-		LoadGenerators:       manifestLoadGeneratorsFromProvenance(provenance),
-		RuntimeChanges:       runtimeChanges,
-		Archive:              manifestArchiveFromRecord(archiveRecord, archiveManifest),
-		Warnings:             uniqueStrings(warnings),
+		SchemaVersion:                  testRunManifestSchemaVersion,
+		TestID:                         test.ID,
+		RefKey:                         test.RefKey,
+		TestName:                       test.Name,
+		Status:                         status,
+		Source:                         source,
+		GeneratedAt:                    time.Now().UTC(),
+		Identity:                       manifestIdentityFromTest(test, completedAt),
+		InitialConfiguration:           initial,
+		InitialConfigurationProvenance: initialProvenance,
+		CurrentConfiguration:           current,
+		Scripts:                        manifestScriptsFromGroups(current.Groups),
+		LoadGenerators:                 manifestLoadGeneratorsFromProvenance(provenance),
+		RuntimeChanges:                 runtimeChanges,
+		Archive:                        manifestArchiveFromRecord(archiveRecord, archiveManifest),
+		Warnings:                       uniqueStrings(warnings),
 	}
 	return manifest, nil
 }
 
-func (tr *TestRunner) initialManifestConfiguration(test *ManagedTest, archiveManifest *RunArchiveManifest) (TestRunManifestConfiguration, []string) {
+func (tr *TestRunner) initialManifestConfiguration(test *ManagedTest, archiveManifest *RunArchiveManifest) (TestRunManifestConfiguration, TestRunManifestConfigurationProvenance, []string) {
 	if archiveManifest != nil {
-		return manifestConfigurationFromProvenance(archiveManifest.Provenance, archiveManifest.Status, archiveManifest.CompletedAt), nil
+		if archiveManifest.InitialProvenance != nil {
+			return manifestConfigurationFromProvenance(*archiveManifest.InitialProvenance, archiveManifest.Status, archiveManifest.CompletedAt), TestRunManifestConfigurationProvenance{
+				Source:    testRunManifestInitialConfigurationArchiveProvenance,
+				Immutable: true,
+			}, nil
+		}
+		// Older archives only carry the final refreshed provenance. Runtime scale
+		// and duration controls may already be reflected there, so fail closed
+		// instead of labelling it as the immutable queued configuration.
+		return manifestConfigurationFromProvenance(archiveManifest.Provenance, archiveManifest.Status, archiveManifest.CompletedAt), TestRunManifestConfigurationProvenance{
+			Source:    testRunManifestInitialConfigurationArchiveProvenance,
+			Immutable: false,
+		}, []string{"archive predates immutable initial provenance; initial configuration may reflect runtime changes"}
 	}
 	record, err := tr.storedTestRecord(test.ID)
 	if err == nil && record != nil {
-		return manifestConfigurationFromTestRecord(record), nil
+		return manifestConfigurationFromTestRecord(record), TestRunManifestConfigurationProvenance{
+			Source:    testRunManifestInitialConfigurationStoredTestRecord,
+			Immutable: false,
+		}, []string{"stored test record is mutable; initial configuration may reflect later runtime changes"}
+	}
+	provenance := TestRunManifestConfigurationProvenance{
+		Source:    testRunManifestInitialConfigurationRetainedRunState,
+		Immutable: false,
 	}
 	if err != nil {
-		return manifestConfigurationFromManagedTest(test), []string{"stored initial test record could not be loaded: " + err.Error()}
+		return manifestConfigurationFromManagedTest(test), provenance, []string{"stored initial test record could not be loaded: " + err.Error()}
 	}
-	return manifestConfigurationFromManagedTest(test), []string{"stored initial test record is unavailable; initial configuration mirrors current retained run state"}
+	return manifestConfigurationFromManagedTest(test), provenance, []string{"stored initial test record is unavailable; initial configuration mirrors current retained run state"}
 }
 
 func (tr *TestRunner) storedTestRecord(id string) (*storage.TestRecord, error) {

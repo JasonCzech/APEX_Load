@@ -102,6 +102,20 @@ func (s *Server) remoteLibraryImportArchive(ctx context.Context, remote LibraryR
 				return
 			}
 		}
+		if strings.TrimSpace(req.ApplicationID) != "" {
+			if err := multipartWriter.WriteField("application_id", req.ApplicationID); err != nil {
+				errCh <- err
+				_ = multipartWriter.Close()
+				return
+			}
+		}
+		if strings.TrimSpace(req.ReleaseID) != "" {
+			if err := multipartWriter.WriteField("release_id", req.ReleaseID); err != nil {
+				errCh <- err
+				_ = multipartWriter.Close()
+				return
+			}
+		}
 		archivePart, err := multipartWriter.CreateFormFile("archive", sanitizeFilename(firstNonEmpty(resultID, "result"))+".zip")
 		if err != nil {
 			errCh <- err
@@ -335,19 +349,29 @@ func buildLibraryRemote(req LibraryRemoteRequest) (*LibraryRemote, error) {
 	if err != nil {
 		return nil, err
 	}
+	applicationMappings, err := normalizeLibraryRemoteApplicationMappings(req.ApplicationMappings)
+	if err != nil {
+		return nil, err
+	}
+	releaseMappings, err := normalizeLibraryRemoteReleaseMappings(req.ReleaseMappings)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 	remote := &LibraryRemote{
-		ID:               uuid.New().String(),
-		Name:             name,
-		BaseURL:          baseURL,
-		DefaultProjectID: normalizeProjectID(req.DefaultProjectID),
-		ProjectMappings:  projectMappings,
-		AuthMethod:       authMethod,
-		CredentialRef:    strings.TrimSpace(req.CredentialRef),
-		Status:           "unknown",
-		APIKey:           strings.TrimSpace(req.APIKey),
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ID:                  uuid.New().String(),
+		Name:                name,
+		BaseURL:             baseURL,
+		DefaultProjectID:    normalizeProjectID(req.DefaultProjectID),
+		ProjectMappings:     projectMappings,
+		ApplicationMappings: applicationMappings,
+		ReleaseMappings:     releaseMappings,
+		AuthMethod:          authMethod,
+		CredentialRef:       strings.TrimSpace(req.CredentialRef),
+		Status:              "unknown",
+		APIKey:              strings.TrimSpace(req.APIKey),
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 	if err := validateLibraryRemoteTransport(*remote); err != nil {
 		return nil, err
@@ -399,6 +423,9 @@ func (s *Server) libraryRemote(id string) (LibraryRemote, bool) {
 		return LibraryRemote{}, false
 	}
 	copied := *remote
+	copied.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+	copied.ApplicationMappings = cloneLibraryRemoteApplicationMappings(remote.ApplicationMappings)
+	copied.ReleaseMappings = cloneLibraryRemoteReleaseMappings(remote.ReleaseMappings)
 	return copied, true
 }
 
@@ -502,6 +529,8 @@ func (s *Server) sanitizeLibraryRemote(remote *LibraryRemote) LibraryRemote {
 	// and are not needed once CredentialConfigured is reported.
 	copied.CredentialRef = ""
 	copied.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
+	copied.ApplicationMappings = cloneLibraryRemoteApplicationMappings(remote.ApplicationMappings)
+	copied.ReleaseMappings = cloneLibraryRemoteReleaseMappings(remote.ReleaseMappings)
 	copied.CredentialConfigured = s.remoteCredentialConfigured(*remote)
 	return copied
 }

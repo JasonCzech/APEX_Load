@@ -18,6 +18,7 @@ type reportAnnotationsResponse struct {
 // reportAnnotationsRequest is the editable subset an analyst may submit. Server
 // owns the test id, profile, and audit fields.
 type reportAnnotationsRequest struct {
+	ExpectedUpdatedAt  time.Time         `json:"expected_updated_at"`
 	Title              string            `json:"title"`
 	PreparedBy         string            `json:"prepared_by"`
 	ExecutiveNarrative string            `json:"executive_narrative"`
@@ -85,8 +86,13 @@ func (s *Server) handleSaveReportAnnotations(w http.ResponseWriter, r *http.Requ
 		UpdatedAt:          time.Now().UTC(),
 		UpdatedBy:          firstNonEmpty(actorDisplay, actorSubject),
 	}
-	if err := saveReportAnnotations(s.store, ann); err != nil {
+	updated, err := saveReportAnnotationsIfUnchanged(s.store, ann, req.ExpectedUpdatedAt)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save report commentary: "+err.Error())
+		return
+	}
+	if !updated {
+		writeError(w, http.StatusConflict, "report commentary changed since it was loaded; reload the latest revision before saving")
 		return
 	}
 

@@ -111,15 +111,20 @@ func TestIsActiveTestListStatus(t *testing.T) {
 	}
 }
 
-func TestSortTestListKeepsActiveRunsInsideBoundedResults(t *testing.T) {
+func TestSortTestListUsesDeterministicNewestFirstOrder(t *testing.T) {
 	olderActive := &ManagedTest{ID: "active", Status: "RUNNING", CreatedAt: time.Unix(1, 0)}
 	newerComplete := &ManagedTest{ID: "complete", Status: "COMPLETE", CreatedAt: time.Unix(2, 0)}
-	tests := []*ManagedTest{newerComplete, olderActive}
+	sameTimeLast := &ManagedTest{ID: "same-z", Status: "COMPLETE", CreatedAt: time.Unix(3, 0)}
+	sameTimeFirst := &ManagedTest{ID: "same-a", Status: "COMPLETE", CreatedAt: time.Unix(3, 0)}
+	tests := []*ManagedTest{olderActive, sameTimeLast, newerComplete, sameTimeFirst}
 
-	sortTestList(tests, true)
+	sortTestList(tests)
 
-	if tests[0] != olderActive {
-		t.Fatalf("bounded list placed %q before active run", tests[0].ID)
+	want := []string{"same-a", "same-z", "complete", "active"}
+	for index, id := range want {
+		if tests[index].ID != id {
+			t.Fatalf("tests[%d] = %q, want %q (order=%v)", index, tests[index].ID, id, []string{tests[0].ID, tests[1].ID, tests[2].ID, tests[3].ID})
+		}
 	}
 }
 
@@ -150,19 +155,52 @@ func TestListTestSummaryPageBuildsOnlyTheBoundedWindow(t *testing.T) {
 		},
 	}}
 
-	page, total := runner.listTestSummaryPage(testSummaryListQuery{releaseID: "release-1", limit: 1, prioritizeActive: true})
+	page, total := runner.listTestSummaryPage(testSummaryListQuery{releaseID: "release-1", limit: 1})
 
 	if total != 2 {
 		t.Fatalf("total = %d, want 2", total)
 	}
-	if len(page) != 1 || page[0].ID != "active" {
-		t.Fatalf("page = %#v, want the active run", page)
+	if len(page) != 1 || page[0].ID != "complete" {
+		t.Fatalf("page = %#v, want the newest run regardless of status", page)
 	}
 	if page[0].History != nil {
 		t.Fatal("summary page retained full history")
 	}
 	if len(page[0].Sparkline) == 0 {
 		t.Fatal("summary page omitted the bounded sparkline")
+	}
+}
+
+func TestHandleListTestsCombinesProjectAndContextFilters(t *testing.T) {
+	runner := &TestRunner{tests: map[string]*ManagedTest{
+		"matching": {
+			ID: "matching", ProjectID: "project-a", ApplicationID: "application-a", ReleaseID: "release-a", Status: "COMPLETE",
+		},
+		"other-project": {
+			ID: "other-project", ProjectID: "project-b", ApplicationID: "application-a", ReleaseID: "release-a", Status: "COMPLETE",
+		},
+		"other-application": {
+			ID: "other-application", ProjectID: "project-a", ApplicationID: "application-b", ReleaseID: "release-a", Status: "COMPLETE",
+		},
+		"other-release": {
+			ID: "other-release", ProjectID: "project-a", ApplicationID: "application-a", ReleaseID: "release-b", Status: "COMPLETE",
+		},
+	}}
+	server := &Server{runner: runner}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/v1/tests?project_id=project-a&application_id=application-a&release_id=release-a&limit=10", nil)
+
+	server.handleListTests(recorder, request)
+
+	var response struct {
+		Tests []*ManagedTest `json:"tests"`
+		Total int            `json:"total"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != 200 || response.Total != 1 || len(response.Tests) != 1 || response.Tests[0].ID != "matching" {
+		t.Fatalf("combined project/application/release filters returned status=%d response=%+v", recorder.Code, response)
 	}
 }
 
@@ -207,7 +245,7 @@ func TestHandleListTestsUsesBoundedSummarySnapshotsByDefault(t *testing.T) {
 
 func TestHandleListTestsReturnsBoundedSummaryMetadata(t *testing.T) {
 	runner := &TestRunner{tests: map[string]*ManagedTest{
-		"run-1": {ID: "run-1", Status: "COMPLETE", CreatedAt: time.Unix(1, 0), History: []*LiveMetrics{{TPS: 1}}},
+		"run-1": {ID: "run-1", Status: "RUNNING", CreatedAt: time.Unix(1, 0), History: []*LiveMetrics{{TPS: 1}}},
 		"run-2": {ID: "run-2", Status: "COMPLETE", CreatedAt: time.Unix(2, 0), History: []*LiveMetrics{{TPS: 2}}},
 	}}
 	server := &Server{runner: runner}

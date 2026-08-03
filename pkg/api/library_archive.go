@@ -82,6 +82,8 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 	req.ProjectID = strings.TrimSpace(r.URL.Query().Get("project_id"))
 	var bundleSeen bool
 	var projectSeen bool
+	var applicationSeen bool
+	var releaseSeen bool
 	var archiveSeen bool
 	var archivePath string
 	var archiveSize int64
@@ -139,6 +141,32 @@ func readLibraryArchiveImportRequest(r *http.Request) (LibraryImportRequest, *li
 				cleanup()
 				return LibraryImportRequest{}, nil, nil, fmt.Errorf("project_id form field %q does not match the authorized project_id query parameter %q", formProject, req.ProjectID)
 			}
+		case "application_id":
+			if applicationSeen {
+				_ = part.Close()
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("duplicate application_id part")
+			}
+			applicationSeen = true
+			data, err := io.ReadAll(io.LimitReader(part, 4096))
+			if err != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, err
+			}
+			req.ApplicationID = strings.TrimSpace(string(data))
+		case "release_id":
+			if releaseSeen {
+				_ = part.Close()
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, fmt.Errorf("duplicate release_id part")
+			}
+			releaseSeen = true
+			data, err := io.ReadAll(io.LimitReader(part, 4096))
+			if err != nil {
+				cleanup()
+				return LibraryImportRequest{}, nil, nil, err
+			}
+			req.ReleaseID = strings.TrimSpace(string(data))
 		case "archive":
 			if archiveSeen {
 				_ = part.Close()
@@ -346,6 +374,64 @@ func importLegacyArchiveZipB64(encoded string, destination string, maxBytes int6
 
 func libraryImportedArchiveDir(importID string) string {
 	return filepath.Join(resolveArchiveRoot(), "library-imports", strings.TrimSpace(importID))
+}
+
+// libraryImportedArchiveBackend gives every imported result its own object
+// namespace beneath the configured archive backend. The manifest retains the
+// source run ID, while the import ID in the prefix prevents two destinations
+// importing the same source ID from sharing or overwriting object bytes.
+func libraryImportedArchiveBackend(importID string) archiveBackendRuntime {
+	backend := currentArchiveBackend()
+	if backend.Backend == archiveBackendFilesystem {
+		return backend
+	}
+	importID = strings.TrimSpace(importID)
+	segments := strings.Split(strings.Trim(backend.Prefix, "/"), "/")
+	basePrefix := strings.Trim(backend.Prefix, "/")
+	if len(segments) >= 3 && segments[len(segments)-3] == archiveSourceSegment && segments[len(segments)-2] == archiveSourceSchema {
+		basePrefix = strings.Join(segments[:len(segments)-3], "/")
+	}
+	basePrefix = strings.Trim(joinArchiveURI(basePrefix, "library-imports", importID), "/")
+	backend.Prefix = joinArchiveURI(basePrefix, archiveSourceSegment, archiveSourceSchema, archiveObjectSourceIdentity(backend, basePrefix))
+	target := backend.Bucket
+	scheme := map[string]string{archiveBackendS3: "s3", archiveBackendAzureBlob: "azblob", archiveBackendGCS: "gs"}[backend.Backend]
+	if backend.Backend == archiveBackendAzureBlob {
+		target = backend.Container
+	}
+	backend.URIPrefix = joinArchiveURI(scheme+"://"+target, backend.Prefix)
+	backend.LocalRoot = archiveObjectNamespaceRoot(
+		objectArchiveStagingRoot(resolveFilesystemArchiveRoot(), backend.Backend),
+		backend,
+	)
+	return backend
+}
+
+func buildImportedLibraryArchiveRecord(importID string, archiveDir string, finalArchiveDir string, manifestHash string) (*storage.RunArchiveRecord, error) {
+	manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+	manifest, err := loadRunArchiveManifest(manifestPath)
+	if err != nil {
+		return nil, err
+	}
+	backend := libraryImportedArchiveBackend(importID)
+	record := &storage.RunArchiveRecord{
+		TestID:               manifest.TestID,
+		SchemaVersion:        manifest.SchemaVersion,
+		ArchiveBackend:       backend.Backend,
+		ManifestSHA256:       strings.TrimPrefix(strings.TrimSpace(manifestHash), "sha256:"),
+		TransactionCount:     manifest.TransactionCount,
+		ResourceSampleCount:  manifest.ResourceSampleCount,
+		IntervalSummaryCount: manifest.IntervalSummaryCount,
+		CreatedAt:            manifest.CreatedAt,
+		CompletedAt:          manifest.CompletedAt,
+	}
+	if backend.Backend == archiveBackendFilesystem {
+		record.ArchivePath = finalArchiveDir
+		record.ManifestPath = filepath.Join(finalArchiveDir, runArchiveManifestFileName)
+	} else {
+		record.ArchiveURI = backend.runURI(record.TestID)
+		record.ManifestURI = backend.manifestURI(record.TestID)
+	}
+	return record, nil
 }
 
 func archiveDirectorySize(dir string) int64 {

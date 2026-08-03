@@ -40,8 +40,9 @@ describe('desktopRecents', () => {
   it('serializes items to AddRecentItem and ignores incomplete ones', async () => {
     const add = vi.fn().mockResolvedValue(undefined)
     setBridge({ AddRecentItem: add })
-    await addRecent({ kind: 'script', id: 's1', name: 'Order', route: '#/scripts/s1' })
-    expect(add).toHaveBeenCalledWith(JSON.stringify({ kind: 'script', id: 's1', name: 'Order', route: '#/scripts/s1' }))
+    const scopedRoute = '#/scripts?mode=edit&scriptId=s1&projectId=project-b'
+    await addRecent({ kind: 'script', id: 's1', name: 'Order', route: scopedRoute })
+    expect(add).toHaveBeenCalledWith(JSON.stringify({ kind: 'script', id: 's1', name: 'Order', route: scopedRoute }))
 
     add.mockClear()
     await addRecent({ kind: '', id: '', name: '', route: '' })

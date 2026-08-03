@@ -9,6 +9,7 @@ import {
 } from './App'
 import {
   appendProjectTelemetryDiagnostic,
+  isCurrentCatalogRequest,
   isCurrentRepositoryRequest,
   isProjectScopedMessageCurrent,
   projectForActiveDomain,
@@ -60,13 +61,20 @@ describe('App project-scoped state', () => {
   it('provides descendants an empty project and application scope for an empty domain', async () => {
     const projectValue: ProjectContextValue = {
       projects: [],
+      projectsLoading: false,
+      projectsError: '',
       activeProject: null,
       setActiveProject: vi.fn(),
+			removeProject: vi.fn(),
       refreshProjects: vi.fn().mockResolvedValue(undefined),
       createAndSelectProject: vi.fn(),
+			updateProject: vi.fn(),
+			deleteProject: vi.fn(),
     }
     const applicationValue: ApplicationContextValue = {
       applications: [],
+      applicationsLoading: false,
+      applicationsError: '',
       releases: [],
       releasesLoading: false,
       releasesError: '',
@@ -74,6 +82,8 @@ describe('App project-scoped state', () => {
       activeRelease: null,
       setActiveApplication: vi.fn(),
       setActiveRelease: vi.fn(),
+      removeApplication: vi.fn(),
+      removeRelease: vi.fn(),
       refreshApplications: vi.fn().mockResolvedValue(undefined),
       refreshReleases: vi.fn().mockResolvedValue(undefined),
       createAndSelectApplication: vi.fn(),
@@ -109,6 +119,11 @@ describe('App project-scoped state', () => {
     expect(isCurrentRepositoryRequest(2, 'domain-b', 2, 'domain-b')).toBe(true)
     expect(isCurrentRepositoryRequest(1, 'domain-a', 2, 'domain-b')).toBe(false)
     expect(isCurrentRepositoryRequest(2, 'domain-a', 2, 'domain-b')).toBe(false)
+  })
+
+  it('rejects out-of-order global catalog responses', () => {
+    expect(isCurrentCatalogRequest(3, 3)).toBe(true)
+    expect(isCurrentCatalogRequest(2, 3)).toBe(false)
   })
 
   it('partitions telemetry diagnostics by project', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 
 import type { ReleaseTrend } from '../types'
 
@@ -59,21 +59,27 @@ export function ReleaseTrendPanel({ releaseId, getReleaseTrend }: ReleaseTrendPa
   const [error, setError] = useState('')
   const tableBounds = useBottomBoundedTable(`${loading}:${error}:${trend?.points.length ?? 0}`)
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false
     setLoading(true)
     setError('')
-    try {
-      setTrend(await getReleaseTrend(releaseId))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load release trend.')
-    } finally {
-      setLoading(false)
+    void getReleaseTrend(releaseId)
+      .then(response => {
+        if (!cancelled) setTrend(response)
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setTrend(null)
+          setError(err instanceof Error ? err.message : 'Failed to load release trend.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
   }, [getReleaseTrend, releaseId])
-
-  useEffect(() => {
-    void load()
-  }, [load])
 
   if (loading) {
     return <div className="release-trend-panel release-trend-note" data-testid="release-trend-panel">Loading release trend…</div>

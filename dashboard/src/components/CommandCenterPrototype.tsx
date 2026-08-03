@@ -25,6 +25,7 @@ import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
 import { usePrometheusGraphs } from './usePrometheusGraphs'
 import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
+import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS, EXECUTION_POLL_INTERVAL_MS } from './useExecutionTestPolling'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -34,6 +35,13 @@ import GroupParametersDialog from './GroupParametersDialog'
 import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
 import ThresholdAlertStrip from './ThresholdAlertStrip'
 import type { ThresholdAlertEntry } from '../thresholdAlerts'
+import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
+import { listAllCommandCenterActiveRuns } from './commandCenterRunDiscovery'
+import {
+  buildScenarioRunRows,
+  type CommandGroup,
+  type ScenarioRunRow,
+} from './commandCenterScenarioRows'
 import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
@@ -69,30 +77,6 @@ interface CommandCenterPrototypeProps {
   onOpenArchive?: (testId: string) => void
   onOpenResults?: () => void
   prototypeMode?: boolean
-}
-
-export interface CommandGroup {
-  key: string
-  name: string
-  protocol: string
-  current: number
-  target: number
-  targetVusers: number
-  targetMode: 'vusers' | 'tps'
-  targetTps?: number
-  throughputGapPct?: number
-  throughputTargetMissed?: boolean
-  suggestedVusers?: number
-  minVusers?: number
-  maxVusers?: number
-  activeVuserRamp?: VUserRampStatus
-  tps: number
-  art: number
-  errorPct: number
-  p99: number
-  transactions: number
-  errors: number
-  color: string
 }
 
 interface ErrorPattern {
@@ -966,19 +950,35 @@ export default function CommandCenterPrototype({
   const [graphWallGroupVisibility, setGraphWallGroupVisibility] = useState<Record<string, boolean>>({})
   const [activeTableTab, setActiveTableTab] = useState<CommandTableTab>('scenario')
   const [selectedEvidenceId, setSelectedEvidenceId] = useState('')
-  const [liveEvidenceBySignature, setLiveEvidenceBySignature] = useState<Record<string, LiveErrorEvidence[]>>({})
-  const [evidenceLoadingSignature, setEvidenceLoadingSignature] = useState('')
+  const [liveEvidenceByRunSignature, setLiveEvidenceByRunSignature] = useState<Record<string, LiveErrorEvidence[]>>({})
+  const [evidenceLoadingKey, setEvidenceLoadingKey] = useState('')
   const [evidenceError, setEvidenceError] = useState('')
+  const [archiveFinalizationTimedOut, setArchiveFinalizationTimedOut] = useState(false)
+  const [archiveCheckPending, setArchiveCheckPending] = useState(false)
+  const [archiveCheckError, setArchiveCheckError] = useState('')
   const [backendScopedChartData, setBackendScopedChartData] = useState<MetricsHistoryPoint[] | null>(null)
   const [backendScopedMetrics, setBackendScopedMetrics] = useState<LiveMetrics | undefined>()
   const [showNotes, setShowNotes] = useState(false)
   const [groupSettingsDialog, setGroupSettingsDialog] = useState<{ group: string; kind: GroupSettingsDialogKind } | null>(null)
+  const archiveCheckGenerationRef = useRef(0)
+  const archiveCheckInFlightRef = useRef(false)
+  const activeArchiveCheckTestIdRef = useRef(testId)
+  activeArchiveCheckTestIdRef.current = testId
 
   // An open group dialog is bound to the run it was opened for; a run switch
   // (explicit or via auto-discovery) must not silently repoint it, and a stale
   // entry must not reopen against the next discovered run.
   useEffect(() => {
+    archiveCheckGenerationRef.current += 1
+    archiveCheckInFlightRef.current = false
     setGroupSettingsDialog(null)
+    setLiveEvidenceByRunSignature({})
+    setSelectedEvidenceId('')
+    setEvidenceLoadingKey('')
+    setEvidenceError('')
+    setArchiveFinalizationTimedOut(false)
+    setArchiveCheckPending(false)
+    setArchiveCheckError('')
   }, [testId])
   const syncedTargetsRef = useRef<Record<string, number>>({})
   const syncedTargetTestIdRef = useRef<string | null>(null)
@@ -995,6 +995,7 @@ export default function CommandCenterPrototype({
     if (!testId) {
       setLiveTest(null)
       setLoadError('')
+      setArchiveFinalizationTimedOut(false)
       return undefined
     }
     if (initialTest && initialTest.id === testId) {
@@ -1007,9 +1008,12 @@ export default function CommandCenterPrototype({
     let inFlight = false
     let stopped = false
     let lastSignature = ''
+    let archiveFinalizationStartedAt: number | null = null
+    setArchiveFinalizationTimedOut(false)
+    setArchiveCheckError('')
     const interval = window.setInterval(() => {
       void load()
-    }, 2000)
+    }, EXECUTION_POLL_INTERVAL_MS)
     const load = async () => {
       if (stopped || inFlight) return
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -1026,12 +1030,26 @@ export default function CommandCenterPrototype({
           }
           setLoadError('')
           if (isCompletedTestStatus(next.status)) {
-            stopped = true
-            if (interval !== undefined) window.clearInterval(interval)
             if (!testIdProp && !initialTest) {
+              stopped = true
+              if (interval !== undefined) window.clearInterval(interval)
               setAutoSelection(current => current?.testId === testId ? null : current)
               setLiveTest(current => current?.id === testId ? null : current)
+            } else if (next.archive) {
+              setArchiveFinalizationTimedOut(false)
+              stopped = true
+              if (interval !== undefined) window.clearInterval(interval)
+            } else {
+              archiveFinalizationStartedAt ??= Date.now()
+              if (Date.now() - archiveFinalizationStartedAt >= EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS) {
+                setArchiveFinalizationTimedOut(true)
+                stopped = true
+                if (interval !== undefined) window.clearInterval(interval)
+              }
             }
+          } else {
+            setArchiveFinalizationTimedOut(false)
+            archiveFinalizationStartedAt = null
           }
         }
       } catch (error: unknown) {
@@ -1062,6 +1080,42 @@ export default function CommandCenterPrototype({
     }
   }, [api, initialTest, testId, testIdProp])
 
+  const checkCommandCenterArchiveAgain = useCallback(async () => {
+    if (!testId || archiveCheckInFlightRef.current) return
+
+    const requestedTestId = testId
+    const requestGeneration = archiveCheckGenerationRef.current
+    archiveCheckInFlightRef.current = true
+    setArchiveCheckPending(true)
+    setArchiveCheckError('')
+    try {
+      const next = await api.getTest(requestedTestId)
+      if (
+        archiveCheckGenerationRef.current !== requestGeneration
+        || activeArchiveCheckTestIdRef.current !== requestedTestId
+      ) return
+
+      setLiveTest(next)
+      setLoadError('')
+      setArchiveFinalizationTimedOut(isCompletedTestStatus(next.status) && !next.archive)
+    } catch (error: unknown) {
+      if (
+        archiveCheckGenerationRef.current === requestGeneration
+        && activeArchiveCheckTestIdRef.current === requestedTestId
+      ) {
+        setArchiveCheckError(getErrorMessage(error, 'Unable to check archive publication'))
+      }
+    } finally {
+      if (
+        archiveCheckGenerationRef.current === requestGeneration
+        && activeArchiveCheckTestIdRef.current === requestedTestId
+      ) {
+        archiveCheckInFlightRef.current = false
+        setArchiveCheckPending(false)
+      }
+    }
+  }, [api, testId])
+
   // Auto-discover live runs when the view is opened without a selected run.
   // A single live run is selected automatically; multiple live runs surface a
   // picker (see CommandCenterEmptyState). Skipped for the local prototype and
@@ -1087,9 +1141,12 @@ export default function CommandCenterPrototype({
         discovering: true,
       }))
       try {
-        const res = await api.listTests({ application_id: applicationId, project_id: projectId })
+        const discoveredRuns = await listAllCommandCenterActiveRuns(api.listTests, {
+          application_id: applicationId,
+          project_id: projectId,
+        })
         if (cancelled || discoveryGenerationRef.current !== requestGeneration) return
-        const liveRuns = (res.tests || []).filter(test => isCommandCenterDiscoverableStatus(test.status))
+        const liveRuns = discoveredRuns.filter(test => isCommandCenterDiscoverableStatus(test.status))
         if (liveRuns.length === 1) {
           setAutoSelectedTestId(liveRuns[0].id)
           setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
@@ -1180,42 +1237,47 @@ export default function CommandCenterPrototype({
     [displayTest.live_metrics, emptyMode, hasLiveRoute, liveMode],
   )
   const selectedError = errorPatterns.find(error => error.id === state.selectedErrorId) || errorPatterns[0]
+  const selectedEvidenceCacheKey = liveEvidenceCacheKey(testId || '', selectedError?.signature || '')
+  const selectedEvidenceFreshnessKey = liveMode
+    ? `${selectedError?.evidenceCount ?? ''}\u0000${selectedError?.latestEvidenceId ?? ''}`
+    : ''
   const selectedErrorEvidence = useMemo(() => {
     if (!selectedError) return []
     if (liveMode) {
-      return liveEvidenceBySignature[selectedError.signature] || []
+      return liveEvidenceByRunSignature[selectedEvidenceCacheKey] || []
     }
     return MOCK_ERROR_EVIDENCE[selectedError.id] || []
-  }, [liveEvidenceBySignature, liveMode, selectedError])
+  }, [liveEvidenceByRunSignature, liveMode, selectedError, selectedEvidenceCacheKey])
 
   useEffect(() => {
     if (!liveMode || !testId || activeTableTab !== 'errors' || !selectedError?.signature) {
-      setEvidenceLoadingSignature('')
+      setEvidenceLoadingKey('')
       setEvidenceError('')
       return undefined
     }
     const signature = selectedError.signature
+    const cacheKey = liveEvidenceCacheKey(testId, signature)
     let cancelled = false
-    setEvidenceLoadingSignature(signature)
+    setEvidenceLoadingKey(cacheKey)
     setEvidenceError('')
     void api.getTestErrorEvidence(testId, { signature, limit: 20 })
       .then(response => {
         if (cancelled) return
-        setLiveEvidenceBySignature(prev => ({
+        setLiveEvidenceByRunSignature(prev => ({
           ...prev,
-          [signature]: response.evidence || [],
+          [cacheKey]: response.evidence || [],
         }))
-        setEvidenceLoadingSignature('')
+        setEvidenceLoadingKey('')
       })
       .catch((error: unknown) => {
         if (cancelled) return
         setEvidenceError(getErrorMessage(error, 'Unable to load live error evidence'))
-        setEvidenceLoadingSignature('')
+        setEvidenceLoadingKey('')
       })
     return () => {
       cancelled = true
     }
-  }, [activeTableTab, api, liveMode, selectedError?.signature, testId])
+  }, [activeTableTab, api, liveMode, selectedError?.signature, selectedEvidenceFreshnessKey, testId])
 
   const chartFallbackHistory = useMemo(() => {
     if (!liveMode) return hasLiveRoute || emptyMode ? [] : HISTORY
@@ -1668,6 +1730,10 @@ export default function CommandCenterPrototype({
         <CommandCenterHistoricalBanner
           status={runStatus}
           archiveReady={Boolean(displayTest.archive)}
+          archiveFinalizationTimedOut={archiveFinalizationTimedOut}
+          archiveCheckPending={archiveCheckPending}
+          archiveCheckError={archiveCheckError}
+          onCheckArchive={() => { void checkCommandCenterArchiveAgain() }}
           onOpenArchive={testId && (onOpenArchive || onOpenExecution) ? () => (onOpenArchive || onOpenExecution)?.(testId) : undefined}
           onOpenResults={onOpenResults}
         />
@@ -1688,7 +1754,7 @@ export default function CommandCenterPrototype({
           onEvidenceSelect={setSelectedEvidenceId}
           activeTableTab={activeTableTab}
           onTableTabChange={setActiveTableTab}
-          evidenceLoading={Boolean(selectedError && evidenceLoadingSignature === selectedError.signature)}
+          evidenceLoading={Boolean(selectedError && evidenceLoadingKey === selectedEvidenceCacheKey)}
           evidenceError={evidenceError}
           runStatus={runStatus}
           totalDurationSeconds={totalDurationSeconds}
@@ -1924,11 +1990,19 @@ function NotesIcon() {
 function CommandCenterHistoricalBanner({
   status,
   archiveReady,
+  archiveFinalizationTimedOut,
+  archiveCheckPending,
+  archiveCheckError,
+  onCheckArchive,
   onOpenArchive,
   onOpenResults,
 }: {
   status: TestStatus
   archiveReady: boolean
+  archiveFinalizationTimedOut?: boolean
+  archiveCheckPending?: boolean
+  archiveCheckError?: string
+  onCheckArchive?: () => void
   onOpenArchive?: () => void
   onOpenResults?: () => void
 }) {
@@ -1940,13 +2014,21 @@ function CommandCenterHistoricalBanner({
           This run is {status.toLowerCase()}. Live pause, stop, abort, and scaling controls are unavailable.
           {archiveReady
             ? ' Open the results archive for saved evidence and reports.'
-            : ' Historical results can be opened from the Results folder when no Command Center snapshot is available.'}
+            : archiveFinalizationTimedOut
+              ? ' Archive publication is taking longer than expected. Check again to discover a late archive without leaving this page.'
+              : ' Historical results can be opened from the Results folder when no Command Center snapshot is available.'}
         </p>
+        {archiveCheckError && <p className="command-history-retry-error" role="alert">{archiveCheckError}</p>}
       </div>
       <div className="command-history-actions">
         {archiveReady && onOpenArchive && (
           <button type="button" className="btn btn-sm btn-primary command-open-archive-action" onClick={onOpenArchive}>
             Open Results Archive
+          </button>
+        )}
+        {!archiveReady && archiveFinalizationTimedOut && onCheckArchive && (
+          <button type="button" className="btn btn-sm btn-primary" onClick={onCheckArchive} disabled={archiveCheckPending}>
+            {archiveCheckPending ? 'Checking…' : 'Check again'}
           </button>
         )}
         {!archiveReady && onOpenResults && (
@@ -2294,27 +2376,6 @@ const COMMAND_TABLE_TABS: Array<{ id: CommandTableTab; label: string }> = [
 type CommandSortState = {
   key: string
   direction: SortDirection
-}
-
-interface ScenarioRunRow {
-  id: string
-  type: 'Group' | 'Transaction'
-  name: string
-  group: string
-  protocol: string
-  currentVusers?: number
-  targetVusers?: number
-  tps: number
-  targetTps?: number
-  throughputGap?: number
-  transactions: number
-  errors: number
-  errorPct: number
-  art: number
-  p50: number
-  p90: number
-  p95?: number
-  p99: number
 }
 
 interface InfrastructureRow {
@@ -2829,63 +2890,6 @@ function EmptyTableRow({ colSpan, message }: { colSpan: number; message: string 
   )
 }
 
-export function buildScenarioRunRows(groups: CommandGroup[], metrics?: LiveMetrics, transactionSnapshot?: Record<string, TxMetrics>): ScenarioRunRow[] {
-  const rows: ScenarioRunRow[] = groups.map(group => {
-    const groupMetrics = metrics?.groups?.[group.name]
-    const transactions = groupMetrics?.transactions ?? group.transactions
-    const errors = groupMetrics?.errors ?? group.errors
-    const tps = groupMetrics?.tps ?? group.tps
-    const targetTps = group.targetMode === 'tps'
-      ? group.targetTps ?? group.target
-      : groupMetrics?.target_tps ?? group.targetTps ?? group.tps * 1.12
-    return {
-      id: `group-${group.key}`,
-      type: 'Group',
-      name: group.name,
-      group: group.name,
-      protocol: group.protocol,
-      currentVusers: groupMetrics?.vusers ?? group.current,
-      targetVusers: group.targetVusers,
-      tps,
-      targetTps,
-      throughputGap: group.targetMode === 'tps' ? calculateThroughputGap(tps, targetTps) : groupMetrics?.throughput_gap_pct ?? calculateThroughputGap(tps, targetTps),
-      transactions,
-      errors,
-      errorPct: errorPctFromCounts(errors, transactions),
-      art: groupMetrics?.avg_response_ms ?? group.art,
-      p50: groupMetrics?.p50_ms ?? group.art * 0.72,
-      p90: groupMetrics?.p90_ms ?? group.art * 1.55,
-      p95: groupMetrics?.p95_ms ?? group.art * 1.95,
-      p99: groupMetrics?.p99_ms ?? group.p99,
-    }
-  })
-
-  const transactions = (metrics?.transactions && Object.keys(metrics.transactions).length > 0)
-    ? metrics.transactions
-    : transactionSnapshot
-  Object.entries(transactions || {}).forEach(([name, tx]) => {
-    if (!tx) return
-    rows.push({
-      id: `transaction-${name}`,
-      type: 'Transaction',
-      name,
-      group: 'All groups',
-      protocol: tx.dependency_type || 'transaction',
-      tps: tx.count,
-      transactions: tx.count,
-      errors: tx.errors,
-      errorPct: errorPctFromCounts(tx.errors, tx.count),
-      art: tx.avg_ms,
-      p50: tx.p50_ms,
-      p90: tx.p90_ms,
-      p95: tx.p95_ms,
-      p99: tx.p99_ms,
-    })
-  })
-
-  return rows
-}
-
 function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics): InfrastructureRow[] {
   const rows: InfrastructureRow[] = []
   Object.values(metrics?.generator_resources || {}).forEach(generator => {
@@ -3008,17 +3012,6 @@ function compareSortValues(left: unknown, right: unknown, direction: SortDirecti
     result = String(left ?? '').localeCompare(String(right ?? ''), undefined, { numeric: true, sensitivity: 'base' })
   }
   return direction === 'asc' ? result : -result
-}
-
-function errorPctFromCounts(errors: number, successes: number) {
-  const attempts = errors + successes
-  if (attempts <= 0) return 0
-  return errors / attempts * 100
-}
-
-function calculateThroughputGap(tps: number, targetTps?: number) {
-  if (!targetTps || targetTps <= 0) return 0
-  return (targetTps - tps) / targetTps * 100
 }
 
 function formatOptionalNumber(value?: number, digits = 0) {

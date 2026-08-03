@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImportedDashboard, ImportedDashboardImportReview, Project } from '../types'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -232,5 +233,64 @@ describe('ImportedDashboardsPanel', () => {
 		})
 		await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)) })
 		expect(container.textContent).toContain('credential environment variable is not set')
+	})
+
+	it('ignores an import review that resolves after the active project changes', async () => {
+		let resolveImport!: (value: ImportedDashboardImportReview) => void
+		importGrafanaDashboard.mockImplementation(() => new Promise(resolve => { resolveImport = resolve }))
+		await act(async () => {
+			root.render(<ImportedDashboardsPanel projects={[projectA, projectB]} defaultProjectId={projectA.id} prometheusConfigured />)
+			await Promise.resolve()
+		})
+		await act(async () => {
+			Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Choose fixture')?.click()
+			await Promise.resolve()
+		})
+
+		await act(async () => {
+			root.render(<ImportedDashboardsPanel projects={[projectA, projectB]} defaultProjectId={projectB.id} prometheusConfigured />)
+			await Promise.resolve()
+			await Promise.resolve()
+		})
+		await act(async () => {
+			resolveImport(review())
+			await Promise.resolve()
+		})
+
+		expect((container.querySelector('[aria-label="Dashboard import project"]') as HTMLSelectElement).value).toBe(projectB.id)
+		expect(container.textContent).not.toContain('Review import')
+		expect(commitGrafanaDashboardImport).not.toHaveBeenCalled()
+	})
+
+	it('guards a parsed import review before switching its project scope', async () => {
+		importGrafanaDashboard.mockResolvedValue(review())
+		await act(async () => {
+			root.render(
+				<NavigationGuardProvider>
+					<ImportedDashboardsPanel projects={[projectA, projectB]} defaultProjectId={projectA.id} prometheusConfigured />
+				</NavigationGuardProvider>,
+			)
+			await Promise.resolve()
+		})
+		await act(async () => {
+			Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Choose fixture')?.click()
+			await Promise.resolve()
+		})
+		expect(container.textContent).toContain('Review import: Infra')
+
+		const select = container.querySelector('[aria-label="Dashboard import project"]') as HTMLSelectElement
+		await act(async () => {
+			Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set?.call(select, projectB.id)
+			select.dispatchEvent(new Event('change', { bubbles: true }))
+		})
+		expect(document.querySelector('.unsaved-changes-modal')).toBeTruthy()
+		expect(select.value).toBe(projectA.id)
+
+		const discard = Array.from(document.querySelectorAll<HTMLButtonElement>('.unsaved-changes-modal button'))
+			.find(button => button.textContent === 'Discard changes')
+		await act(async () => discard?.click())
+		expect(document.querySelector('.unsaved-changes-modal')).toBeFalsy()
+		expect(select.value).toBe(projectB.id)
+		expect(container.textContent).not.toContain('Review import')
 	})
 })

@@ -528,15 +528,14 @@ func (tr *TestRunner) listOperationalTestSnapshots() []*ManagedTest {
 }
 
 type testSummaryListQuery struct {
-	projectID        string
-	folderID         *string
-	applicationID    string
-	releaseID        string
-	scenarioID       string
-	activeOnly       bool
-	limit            int
-	offset           int
-	prioritizeActive bool
+	projectID     string
+	folderID      *string
+	applicationID string
+	releaseID     string
+	scenarioID    string
+	activeOnly    bool
+	limit         int
+	offset        int
 }
 
 // listTestSummaryPage filters and orders the lightweight list while holding
@@ -548,12 +547,11 @@ func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*Manage
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 
-	contextFiltered := query.applicationID != "" || query.releaseID != "" || query.scenarioID != ""
 	resolvedScenarioID := query.scenarioID
 	if resolvedScenarioID != "" {
 		resolvedScenarioID = tr.resolveRefKeyLocked(resolvedScenarioID)
 	}
-	projectFiltered := !contextFiltered && (query.projectID != "" || query.folderID != nil)
+	projectFiltered := query.projectID != "" || query.folderID != nil
 	projectID := query.projectID
 	if projectFiltered {
 		projectID = normalizeProjectID(projectID)
@@ -564,17 +562,16 @@ func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*Manage
 		if test == nil {
 			continue
 		}
-		if contextFiltered {
-			if query.applicationID != "" && test.ApplicationID != query.applicationID {
-				continue
-			}
-			if query.releaseID != "" && test.ReleaseID != query.releaseID {
-				continue
-			}
-			if resolvedScenarioID != "" && test.ScenarioID != resolvedScenarioID {
-				continue
-			}
-		} else if projectFiltered {
+		if query.applicationID != "" && test.ApplicationID != query.applicationID {
+			continue
+		}
+		if query.releaseID != "" && test.ReleaseID != query.releaseID {
+			continue
+		}
+		if resolvedScenarioID != "" && test.ScenarioID != resolvedScenarioID {
+			continue
+		}
+		if projectFiltered {
 			if test.ProjectID != projectID {
 				continue
 			}
@@ -594,7 +591,7 @@ func (tr *TestRunner) listTestSummaryPage(query testSummaryListQuery) ([]*Manage
 		matches = append(matches, test)
 	}
 
-	sortTestList(matches, query.prioritizeActive)
+	sortTestList(matches)
 	total := len(matches)
 	start := min(query.offset, total)
 	end := total

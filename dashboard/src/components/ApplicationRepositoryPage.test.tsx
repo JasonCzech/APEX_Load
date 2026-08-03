@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useCallback, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { Domain } from '../types'
+import { useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
+import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { ProjectProvider } from '../hooks/ProjectProvider'
+import { useProject } from '../hooks/useProject'
 import ApplicationRepositoryPage from './ApplicationRepositoryPage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -21,6 +26,9 @@ vi.mock('../hooks/api/useRepositoryApi', () => ({
 }))
 
 const projectApiMock = {
+	listProjects: vi.fn(),
+	createProject: vi.fn(),
+	updateProject: vi.fn(),
   deleteProject: vi.fn(),
 }
 
@@ -57,6 +65,71 @@ const repository = { id: 'repo-1', domain_id: domain.id, name: 'Application Repo
 const category = { id: 'category-1', domain_id: domain.id, repository_id: repository.id, name: 'Checkout', created_at: '', updated_at: '' }
 const project = { id: 'project-1', domain_id: domain.id, category_id: category.id, name: 'Checkout API', created_at: '', updated_at: '' }
 const application = { id: 'app-1', project_id: project.id, name: 'ACC', created_at: '', updated_at: '' }
+const paymentsDomain = { id: 'domain-2', name: 'Payments', created_at: '', updated_at: '' }
+const paymentsRepository = { id: 'repo-2', domain_id: paymentsDomain.id, name: 'Application Repository', created_at: '', updated_at: '' }
+const paymentsCategory = { id: 'category-2', domain_id: paymentsDomain.id, repository_id: paymentsRepository.id, name: 'Payments', created_at: '', updated_at: '' }
+const paymentsProject = { id: 'project-2', domain_id: paymentsDomain.id, category_id: paymentsCategory.id, name: 'Payments API', created_at: '', updated_at: '' }
+
+function GuardedRepositoryHarness({
+  onDomainChange,
+  onRepositoryRefresh,
+}: {
+  onDomainChange: (next: Domain) => void
+  onRepositoryRefresh: () => Promise<void>
+}) {
+  const [selectedDomain, setSelectedDomain] = useState<Domain>(domain)
+  const { runGuarded } = useNavigationGuardRunner()
+  const handleDomainChange = useCallback((next: Domain) => {
+    runGuarded(() => {
+      setSelectedDomain(next)
+      onDomainChange(next)
+    })
+  }, [onDomainChange, runGuarded])
+  const inPaymentsDomain = selectedDomain.id === paymentsDomain.id
+
+  return (
+    <ApplicationRepositoryPage
+      domains={[domain, paymentsDomain]}
+      activeDomain={selectedDomain}
+      activeApplication={inPaymentsDomain ? null : application}
+      applicationRepository={inPaymentsDomain ? paymentsRepository : repository}
+      categories={inPaymentsDomain ? [paymentsCategory] : [category]}
+      projects={[project, paymentsProject]}
+      canManageRepository
+      canManageProjects
+      canManageReleases
+      onDomainChange={handleDomainChange}
+      onRepositoryRefresh={onRepositoryRefresh}
+      onProjectsRefresh={vi.fn()}
+      onProjectCreated={vi.fn()}
+    />
+  )
+}
+
+function ProjectProviderRepositoryHarness() {
+	const { projects, refreshProjects, createAndSelectProject, deleteProject } = useProject()
+	return (
+		<>
+			<button type="button" onClick={() => { void refreshProjects().catch(() => undefined) }}>Refresh project context</button>
+			<ApplicationRepositoryPage
+				domains={[domain]}
+				activeDomain={domain}
+				activeApplication={application}
+				applicationRepository={repository}
+				categories={[category]}
+				projects={projects}
+				canManageRepository
+				canManageProjects
+				canManageReleases
+				onDomainChange={vi.fn()}
+				onRepositoryRefresh={vi.fn()}
+				onProjectsRefresh={refreshProjects}
+				onProjectCreated={createAndSelectProject}
+				onProjectDelete={deleteProject}
+			/>
+		</>
+	)
+}
 
 async function flushPromises() {
   await act(async () => {
@@ -103,6 +176,9 @@ describe('ApplicationRepositoryPage', () => {
     repositoryApiMock.archiveRelease.mockResolvedValue({ id: 'release-1', application_id: 'app-1', project_id: project.id, name: '2026.05', archived_at: '2026-05-10T00:00:00Z', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' })
     repositoryApiMock.deleteRelease.mockResolvedValue({ deleted: 'release-1' })
     projectApiMock.deleteProject.mockResolvedValue({ deleted: project.id })
+		projectApiMock.listProjects.mockResolvedValue({ projects: [project], count: 1 })
+		projectApiMock.createProject.mockResolvedValue(project)
+		projectApiMock.updateProject.mockResolvedValue(project)
     scriptApiMock.listScripts.mockResolvedValue({
       scripts: [{
         id: 'script-1',
@@ -193,6 +269,7 @@ describe('ApplicationRepositoryPage', () => {
 
   it('renders catalog rows, filters by tab and search, and creates releases from Structure', async () => {
     const onOpenScript = vi.fn()
+    const onCreateTestFromScenario = vi.fn()
     await act(async () => {
       root.render(
         <ApplicationRepositoryPage
@@ -210,6 +287,7 @@ describe('ApplicationRepositoryPage', () => {
           onProjectsRefresh={vi.fn()}
           onProjectCreated={vi.fn()}
           onOpenScript={onOpenScript}
+          onCreateTestFromScenario={onCreateTestFromScenario}
         />,
       )
     })
@@ -253,7 +331,17 @@ describe('ApplicationRepositoryPage', () => {
     await act(async () => {
       editScript?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(onOpenScript).toHaveBeenCalledWith('script-1')
+    expect(onOpenScript).toHaveBeenCalledWith('script-1', project.id)
+
+    const scenariosTab = findButton(container, 'Scenarios', false)
+    await act(async () => {
+      scenariosTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const newTest = findButton(container, 'New Test')
+    await act(async () => {
+      newTest?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onCreateTestFromScenario).toHaveBeenCalledWith('scenario-1', project.id)
 
     const searchInput = container.querySelector('.repository-search input') as HTMLInputElement | null
     expect(searchInput).toBeDefined()
@@ -288,6 +376,71 @@ describe('ApplicationRepositoryPage', () => {
 
     expect(repositoryApiMock.createProjectRelease).toHaveBeenCalledWith(project.id, { name: '2026.06', application_id: application.id })
     expect(container.textContent).toContain('Release created.')
+  })
+
+  it('drains every bounded page of a project test catalog', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `test-page-1-${index}`,
+      name: `Paged Run ${index}`,
+      status: 'COMPLETE',
+      application_id: application.id,
+      project_id: project.id,
+      release_id: 'release-1',
+      scenario_id: 'scenario-1',
+      groups: [],
+      total_vusers: 1,
+      duration: '1m',
+      created_at: '2026-05-08T00:00:00Z',
+    }))
+    testApiMock.listTests.mockImplementation(async (params: { project_id?: string; limit?: number; offset?: number }) => {
+      if ((params.offset || 0) === 0) {
+        return { tests: firstPage, count: firstPage.length, total: 101, limit: params.limit, offset: 0 }
+      }
+      return {
+        tests: [{
+          id: 'test-page-2',
+          name: 'Late Page Run',
+          status: 'COMPLETE',
+          application_id: application.id,
+          project_id: project.id,
+          release_id: 'release-1',
+          scenario_id: 'scenario-1',
+          groups: [],
+          total_vusers: 1,
+          duration: '1m',
+          created_at: '2026-05-09T00:00:00Z',
+        }],
+        count: 1,
+        total: 101,
+        limit: params.limit,
+        offset: params.offset,
+      }
+    })
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(testApiMock.listTests).toHaveBeenNthCalledWith(1, { project_id: project.id, limit: 100, offset: 0 })
+    expect(testApiMock.listTests).toHaveBeenNthCalledWith(2, { project_id: project.id, limit: 100, offset: 100 })
+    expect(container.textContent).toContain('Late Page Run')
   })
 
   it('keeps repository test Open on archive navigation and adds Run Dashboard', async () => {
@@ -329,14 +482,14 @@ describe('ApplicationRepositoryPage', () => {
       openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(onOpenTest).toHaveBeenCalledWith('test-1')
+    expect(onOpenTest).toHaveBeenCalledWith('test-1', project.id)
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
 
     await act(async () => {
       runDashboardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-1')
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-1', project.id)
     expect(onOpenTest).toHaveBeenCalledTimes(1)
   })
 
@@ -601,6 +754,54 @@ describe('ApplicationRepositoryPage', () => {
     confirmSpy.mockRestore()
   })
 
+  it('prunes hidden selections and limits destructive actions to visible tab rows', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    await act(async () => {
+      findCheckbox(container, 'Select Checkout Smoke')?.click()
+      findCheckbox(container, 'Select Checkout Run')?.click()
+    })
+    expect(container.textContent).toContain('2 items selected')
+
+    await act(async () => findButton(container, 'Scripts', false)?.click())
+    await flushPromises()
+    expect(container.textContent).toContain('1 item selected')
+    expect(container.textContent).toContain('Delete selected (1)')
+
+    await act(async () => findButton(container, 'All', false)?.click())
+    await flushPromises()
+    expect(findCheckbox(container, 'Select Checkout Smoke')?.checked).toBe(true)
+    expect(findCheckbox(container, 'Select Checkout Run')?.checked).toBe(false)
+
+    await act(async () => findButton(container, 'Delete selected (1)')?.click())
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalledWith('Delete 1 selected item? This cannot be undone.')
+    expect(scriptApiMock.deleteScript).toHaveBeenCalledWith('script-1')
+    expect(testApiMock.deleteTest).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+
   it('awaits every bulk archive and preserves failed selections after partial success', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
     let resolveReleaseArchive: ((value: unknown) => void) | undefined
@@ -824,6 +1025,286 @@ describe('ApplicationRepositoryPage', () => {
     expect(projectCheckbox?.checked).toBe(false)
 
     confirmSpy.mockRestore()
+  })
+
+	it('removes a deleted project locally and tombstones it through failed and stale repository refreshes', async () => {
+		const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+		await act(async () => {
+			root.render(
+				<ProjectProvider>
+					<ProjectProviderRepositoryHarness />
+				</ProjectProvider>,
+			)
+		})
+		await flushPromises()
+		await flushPromises()
+
+		projectApiMock.listProjects.mockRejectedValueOnce(new Error('project reconciliation unavailable'))
+		await act(async () => findCheckbox(container, 'Select Checkout API')?.click())
+		await act(async () => findButton(container, 'Delete selected (1)')?.click())
+		await flushPromises()
+
+		expect(projectApiMock.deleteProject).toHaveBeenCalledWith(project.id)
+		expect(container.textContent).not.toContain('Checkout API')
+		expect(container.textContent).toContain('project reconciliation unavailable')
+
+		projectApiMock.listProjects.mockResolvedValueOnce({ projects: [project], count: 1 })
+		await act(async () => findButton(container, 'Refresh project context')?.click())
+		await flushPromises()
+
+		expect(container.textContent).not.toContain('Checkout API')
+		confirmSpy.mockRestore()
+	})
+
+  it('does not carry a discarded category draft into a newly selected domain', async () => {
+    const onDomainChange = vi.fn()
+    const onRepositoryRefresh = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <GuardedRepositoryHarness
+            onDomainChange={onDomainChange}
+            onRepositoryRefresh={onRepositoryRefresh}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const categoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
+    const domainSelect = container.querySelector<HTMLSelectElement>('.repository-domain-select select')
+    expect(categoryInput).toBeTruthy()
+    expect(domainSelect).toBeTruthy()
+    if (!categoryInput || !domainSelect) return
+
+    await act(async () => setInputValue(categoryInput, 'Retail Orders'))
+    await act(async () => setSelectValue(domainSelect, paymentsDomain.id))
+
+    expect(container.textContent).toContain('Repository creation form has unsaved changes.')
+    expect(onDomainChange).not.toHaveBeenCalled()
+    expect(domainSelect.value).toBe(domain.id)
+
+    await act(async () => findButton(container, 'Keep editing')?.click())
+    expect(categoryInput.value).toBe('Retail Orders')
+    expect(domainSelect.value).toBe(domain.id)
+
+    await act(async () => setSelectValue(domainSelect, paymentsDomain.id))
+    await act(async () => findButton(container, 'Discard changes')?.click())
+    await flushPromises()
+
+    const paymentsCategoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
+    expect(domainSelect.value).toBe(paymentsDomain.id)
+    expect(paymentsCategoryInput?.value).toBe('')
+    expect(repositoryApiMock.createRepositoryCategory).not.toHaveBeenCalled()
+
+    if (!paymentsCategoryInput) return
+    await act(async () => setInputValue(paymentsCategoryInput, 'Payment Operations'))
+    await act(async () => findButton(container, 'Add Category')?.click())
+    await flushPromises()
+
+    expect(repositoryApiMock.createRepositoryCategory).toHaveBeenCalledTimes(1)
+    expect(repositoryApiMock.createRepositoryCategory).toHaveBeenCalledWith(
+      paymentsDomain.id,
+      expect.objectContaining({ name: 'Payment Operations' }),
+    )
+  })
+
+  it('saves a category draft to its original domain before changing scope', async () => {
+    const onDomainChange = vi.fn()
+    const onRepositoryRefresh = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <GuardedRepositoryHarness
+            onDomainChange={onDomainChange}
+            onRepositoryRefresh={onRepositoryRefresh}
+          />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const categoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
+    const domainSelect = container.querySelector<HTMLSelectElement>('.repository-domain-select select')
+    expect(categoryInput).toBeTruthy()
+    expect(domainSelect).toBeTruthy()
+    if (!categoryInput || !domainSelect) return
+
+    await act(async () => setInputValue(categoryInput, 'Retail Orders'))
+    await act(async () => setSelectValue(domainSelect, paymentsDomain.id))
+    await act(async () => findButton(container, 'Save changes')?.click())
+    await flushPromises()
+
+    expect(repositoryApiMock.createRepositoryCategory).toHaveBeenCalledWith(
+      domain.id,
+      expect.objectContaining({ name: 'Retail Orders' }),
+    )
+    expect(onRepositoryRefresh).toHaveBeenCalledTimes(1)
+    expect(onDomainChange).toHaveBeenCalledWith(paymentsDomain)
+    expect(domainSelect.value).toBe(paymentsDomain.id)
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')?.value).toBe('')
+  })
+
+  it('commits category creation through the owner before a failed reconciliation read', async () => {
+    const created = {
+      id: 'category-created',
+      domain_id: domain.id,
+      repository_id: repository.id,
+      name: 'Retail Orders',
+      created_at: '2026-08-03T10:00:00Z',
+      updated_at: '2026-08-03T10:00:00Z',
+    }
+    const onRepositoryCategoryCreate = vi.fn().mockResolvedValue(created)
+    const onRepositoryRefresh = vi.fn().mockRejectedValue(new Error('category catalog unavailable'))
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={onRepositoryRefresh}
+          onRepositoryCategoryCreate={onRepositoryCategoryCreate}
+          onProjectsRefresh={vi.fn()}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const categoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
+    if (!categoryInput) return
+    await act(async () => setInputValue(categoryInput, created.name))
+    await act(async () => findButton(container, 'Add Category')?.click())
+    await flushPromises()
+
+    expect(onRepositoryCategoryCreate).toHaveBeenCalledWith(
+      domain.id,
+      expect.objectContaining({ name: created.name }),
+    )
+    expect(repositoryApiMock.createRepositoryCategory).not.toHaveBeenCalled()
+    expect(onRepositoryRefresh).toHaveBeenCalledTimes(1)
+    expect(categoryInput.value).toBe('')
+    expect(container.textContent).toContain('The mutation succeeded—do not save it again.')
+  })
+
+  it('does not replay a committed category when guarded reconciliation fails', async () => {
+    const onDomainChange = vi.fn()
+    const onRepositoryRefresh = vi.fn()
+      .mockRejectedValueOnce(new Error('repository list unavailable'))
+      .mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <GuardedRepositoryHarness onDomainChange={onDomainChange} onRepositoryRefresh={onRepositoryRefresh} />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const categoryInput = container.querySelector<HTMLInputElement>('input[placeholder="Payments, Claims, Search"]')
+    const domainSelect = container.querySelector<HTMLSelectElement>('.repository-domain-select select')
+    if (!categoryInput || !domainSelect) return
+
+    await act(async () => setInputValue(categoryInput, 'Retail Orders'))
+    await act(async () => setSelectValue(domainSelect, paymentsDomain.id))
+    await act(async () => findButton(container, 'Save changes')?.click())
+    await flushPromises()
+
+    expect(repositoryApiMock.createRepositoryCategory).toHaveBeenCalledTimes(1)
+    expect(onDomainChange).toHaveBeenCalledWith(paymentsDomain)
+    expect(container.textContent).toContain('The mutation succeeded—do not save it again.')
+
+    await act(async () => findButton(container, 'Retry repository synchronization')?.click())
+    await flushPromises()
+    expect(onRepositoryRefresh).toHaveBeenCalledTimes(2)
+    expect(repositoryApiMock.createRepositoryCategory).toHaveBeenCalledTimes(1)
+  })
+
+  it('guards and discards project and release creation drafts together', async () => {
+    const onDomainChange = vi.fn()
+    await act(async () => {
+      root.render(
+        <NavigationGuardProvider>
+          <GuardedRepositoryHarness onDomainChange={onDomainChange} onRepositoryRefresh={vi.fn()} />
+        </NavigationGuardProvider>,
+      )
+    })
+    await flushPromises()
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const projectInput = container.querySelector<HTMLInputElement>('input[placeholder="New project name"]')
+    const releaseInput = container.querySelector<HTMLInputElement>('input[placeholder="New release name"]')
+    const domainSelect = container.querySelector<HTMLSelectElement>('.repository-domain-select select')
+    if (!projectInput || !releaseInput || !domainSelect) return
+    await act(async () => setInputValue(projectInput, 'Orders API'))
+    await act(async () => setInputValue(releaseInput, '2026.08'))
+    await act(async () => setSelectValue(domainSelect, paymentsDomain.id))
+
+    expect(container.textContent).toContain('Repository creation form has unsaved changes.')
+    expect(onDomainChange).not.toHaveBeenCalled()
+    await act(async () => findButton(container, 'Discard changes')?.click())
+    await flushPromises()
+
+    expect(onDomainChange).toHaveBeenCalledWith(paymentsDomain)
+    expect(repositoryApiMock.createProjectRelease).not.toHaveBeenCalled()
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="New project name"]')?.value).toBe('')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="New release name"]')?.value).toBe('')
+  })
+
+  it('treats project creation as committed when its list refresh fails', async () => {
+    const onProjectCreated = vi.fn().mockResolvedValue({
+      id: 'project-created',
+      domain_id: domain.id,
+      category_id: category.id,
+      name: 'Orders API',
+      created_at: '',
+      updated_at: '',
+    })
+    const onProjectsRefresh = vi.fn()
+      .mockRejectedValueOnce(new Error('project list unavailable'))
+      .mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={onProjectsRefresh}
+          onProjectCreated={onProjectCreated}
+        />,
+      )
+    })
+    await flushPromises()
+    await act(async () => findButton(container, 'Structure', false)?.click())
+    const projectInput = container.querySelector<HTMLInputElement>('input[placeholder="New project name"]')
+    if (!projectInput) return
+    await act(async () => setInputValue(projectInput, 'Orders API'))
+    await act(async () => findButton(container, 'Create Project')?.click())
+    await flushPromises()
+
+    expect(onProjectCreated).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('The mutation succeeded—do not create the project again.')
+    await act(async () => findButton(container, 'Retry project synchronization')?.click())
+    await flushPromises()
+    expect(onProjectsRefresh).toHaveBeenCalledTimes(2)
+    expect(onProjectCreated).toHaveBeenCalledTimes(1)
   })
 
   it('does not let a late manual refresh from the previous domain replace the active catalog', async () => {

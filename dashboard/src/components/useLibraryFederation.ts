@@ -2,6 +2,8 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, us
 
 import { useLibraryApi } from '../hooks/api/useLibraryApi'
 import {
+  LibraryCatalogPageOptions,
+  LibraryCatalogResponse,
   LibraryCatalogItem,
   LibraryKind,
   LibraryRemote,
@@ -24,6 +26,78 @@ export const LIBRARY_SOURCE_OPTIONS: Array<{ value: LibrarySourceFilter; label: 
 ]
 
 const EMPTY_LIBRARY_CATALOG_ITEMS: LibraryCatalogItem[] = []
+const LIBRARY_CATALOG_PAGE_SIZE = 100
+const LIBRARY_CATALOG_MAX_OFFSET = 10_000
+const LIBRARY_CATALOG_MAX_ITEMS = LIBRARY_CATALOG_MAX_OFFSET + LIBRARY_CATALOG_PAGE_SIZE
+const LIBRARY_CATALOG_MAX_PAGES = 250
+
+type LibraryCatalogPageLoader = (page: LibraryCatalogPageOptions) => Promise<LibraryCatalogResponse>
+
+function catalogItemIdentity(item: LibraryCatalogItem) {
+  const sourceItemID = item.source_item_id?.trim() || item.remote_item_id?.trim() || item.id.trim()
+  return `${item.kind}\u0000${item.source_instance_id?.trim() || ''}\u0000${sourceItemID}`
+}
+
+function catalogLoadAborted(signal: AbortSignal) {
+  if (signal.aborted) throw new Error('Library catalog load was cancelled')
+}
+
+async function loadCompleteCatalog(loadPage: LibraryCatalogPageLoader, signal: AbortSignal) {
+  const itemsByIdentity = new Map<string, LibraryCatalogItem>()
+  let offset = 0
+  let expectedTotal: number | undefined
+
+  for (let pageNumber = 0; pageNumber < LIBRARY_CATALOG_MAX_PAGES; pageNumber += 1) {
+    catalogLoadAborted(signal)
+    if (offset > LIBRARY_CATALOG_MAX_OFFSET) {
+      throw new Error(`Library catalog exceeds the supported ${LIBRARY_CATALOG_MAX_ITEMS}-item window`)
+    }
+
+    const response = await loadPage({ limit: LIBRARY_CATALOG_PAGE_SIZE, offset, signal })
+    catalogLoadAborted(signal)
+    const items = response.items || []
+    const responseOffset = response.offset ?? offset
+    if (!Number.isInteger(responseOffset) || responseOffset !== offset) {
+      throw new Error(`Library catalog returned offset ${responseOffset}; expected ${offset}`)
+    }
+    if (response.count !== undefined && response.count !== items.length) {
+      throw new Error(`Library catalog returned ${items.length} items but reported count ${response.count}`)
+    }
+    if (response.total !== undefined) {
+      if (!Number.isInteger(response.total) || response.total < 0) {
+        throw new Error('Library catalog returned an invalid total')
+      }
+      if (response.total > LIBRARY_CATALOG_MAX_ITEMS) {
+        throw new Error(`Library catalog exceeds the supported ${LIBRARY_CATALOG_MAX_ITEMS}-item window`)
+      }
+      if (expectedTotal !== undefined && expectedTotal !== response.total) {
+        throw new Error(`Library catalog total changed from ${expectedTotal} to ${response.total} during pagination`)
+      }
+      expectedTotal = response.total
+    }
+
+    items.forEach(item => itemsByIdentity.set(catalogItemIdentity(item), item))
+    const nextOffset = responseOffset + items.length
+    if (expectedTotal !== undefined && nextOffset > expectedTotal) {
+      throw new Error(`Library catalog advanced to ${nextOffset} past its reported total ${expectedTotal}`)
+    }
+    const totalHasMore = expectedTotal === undefined ? undefined : nextOffset < expectedTotal
+    if (response.has_more !== undefined && totalHasMore !== undefined && response.has_more !== totalHasMore) {
+      throw new Error('Library catalog returned inconsistent pagination metadata')
+    }
+    const hasMore = response.has_more ?? totalHasMore ?? false
+    if (!hasMore) return Array.from(itemsByIdentity.values())
+    if (items.length === 0) {
+      throw new Error(`Library catalog pagination did not advance from offset ${offset}`)
+    }
+    if (nextOffset > LIBRARY_CATALOG_MAX_OFFSET) {
+      throw new Error(`Library catalog exceeds the supported ${LIBRARY_CATALOG_MAX_ITEMS}-item window`)
+    }
+    offset = nextOffset
+  }
+
+  throw new Error(`Library catalog exceeded the ${LIBRARY_CATALOG_MAX_PAGES}-page safety limit`)
+}
 
 function transferProjectMessage(projectMapping: string, remote?: LibraryRemote) {
   const localProjectID = projectMapping.trim()
@@ -35,13 +109,20 @@ function transferProjectMessage(projectMapping: string, remote?: LibraryRemote) 
 type UseLibraryFederationOptions = {
   kind: LibraryKind
   projectId?: string
+  applicationId?: string
+  releaseId?: string
   onRefreshLocal?: () => void | Promise<void>
   requireProjectScope?: boolean
 }
 
+export type LibraryResultDestination = {
+  applicationId?: string
+  releaseId?: string
+}
+
 export type UseLibraryFederationResult = ReturnType<typeof useLibraryFederation>
 
-export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireProjectScope = false }: UseLibraryFederationOptions) {
+export function useLibraryFederation({ kind, projectId, applicationId, releaseId, onRefreshLocal, requireProjectScope = false }: UseLibraryFederationOptions) {
   const libraryApi = useLibraryApi()
   const [remotes, setRemotes] = useState<LibraryRemote[]>([])
   const [selectedRemoteId, setSelectedRemoteId] = useState('')
@@ -60,6 +141,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
   const mountedRef = useRef(true)
   const remotesRequestGenerationRef = useRef(0)
   const catalogRequestGenerationRef = useRef(0)
+  const catalogAbortControllerRef = useRef<AbortController | null>(null)
 
   // A mapping entered by the user belongs to the project that was active when
   // it was entered. Deriving the next project's mapping during render avoids a
@@ -85,7 +167,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
   const effectiveProjectID = projectMapping.trim() || projectId?.trim() || ''
   const mappedRemoteProjectID = selectedRemote?.project_mappings?.[effectiveProjectID] || ''
   const catalogScopeReady = !requireProjectScope || Boolean(projectId?.trim() || projectMapping.trim())
-  const catalogScopeKey = `${kind}\u0000${catalogScopeReady ? 'ready' : 'pending'}\u0000${effectiveProjectID}\u0000${mappedRemoteProjectID}\u0000${selectedRemoteId}`
+  const catalogScopeKey = `${kind}\u0000${catalogScopeReady ? 'ready' : 'pending'}\u0000${effectiveProjectID}\u0000${mappedRemoteProjectID}\u0000${applicationId || ''}\u0000${releaseId || ''}\u0000${selectedRemoteId}`
   const catalogScopeKeyRef = useRef(catalogScopeKey)
   catalogScopeKeyRef.current = catalogScopeKey
   const localItems = catalogState.scopeKey === catalogScopeKey ? catalogState.localItems : EMPTY_LIBRARY_CATALOG_ITEMS
@@ -111,8 +193,12 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
   const refreshCatalogs = useCallback(async () => {
     const requestGeneration = ++catalogRequestGenerationRef.current
     const requestScopeKey = catalogScopeKey
+    catalogAbortControllerRef.current?.abort()
+    const abortController = new AbortController()
+    catalogAbortControllerRef.current = abortController
     setActionError('')
     if (!catalogScopeReady || (requireProjectScope && !effectiveProjectID)) {
+      catalogAbortControllerRef.current = null
       if (catalogScopeKeyRef.current === requestScopeKey) {
         setCatalogState({ scopeKey: requestScopeKey, localItems: [], remoteItems: [] })
         setLoadingScopeKey('')
@@ -121,28 +207,38 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
     }
     setLoadingScopeKey(requestScopeKey)
     try {
-      const [localResponse, remoteResponse] = await Promise.all([
-        libraryApi.localCatalog(kind, effectiveProjectID),
+      const [localItems, remoteItems] = await Promise.all([
+        loadCompleteCatalog(
+          page => libraryApi.localCatalog(kind, effectiveProjectID, page),
+          abortController.signal,
+        ),
         selectedRemoteId && mappedRemoteProjectID
-          ? libraryApi.remoteCatalog(selectedRemoteId, kind, effectiveProjectID)
-          : Promise.resolve(null),
+          ? loadCompleteCatalog(
+              async page => (await libraryApi.remoteCatalog(selectedRemoteId, kind, effectiveProjectID, page)).catalog,
+              abortController.signal,
+            )
+          : Promise.resolve([]),
       ])
       if (
         !mountedRef.current
+        || abortController.signal.aborted
         || requestGeneration !== catalogRequestGenerationRef.current
         || catalogScopeKeyRef.current !== requestScopeKey
       ) return
       setCatalogState({
         scopeKey: requestScopeKey,
-        localItems: localResponse.items || [],
-        remoteItems: remoteResponse?.catalog.items || [],
+        localItems,
+        remoteItems,
       })
     } catch (error) {
-      if (
+      const requestIsCurrent = (
         mountedRef.current
+        && !abortController.signal.aborted
         && requestGeneration === catalogRequestGenerationRef.current
         && catalogScopeKeyRef.current === requestScopeKey
-      ) {
+      )
+      if (requestIsCurrent) {
+        abortController.abort()
         setActionError(getErrorMessage(error, 'Unable to load library catalogs'))
       }
     } finally {
@@ -151,6 +247,9 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
         && requestGeneration === catalogRequestGenerationRef.current
         && catalogScopeKeyRef.current === requestScopeKey
       ) {
+        if (catalogAbortControllerRef.current === abortController) {
+          catalogAbortControllerRef.current = null
+        }
         setLoadingScopeKey(current => current === requestScopeKey ? '' : current)
       }
     }
@@ -162,10 +261,15 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
       mountedRef.current = false
       remotesRequestGenerationRef.current += 1
       catalogRequestGenerationRef.current += 1
+      catalogAbortControllerRef.current?.abort()
+      catalogAbortControllerRef.current = null
     }
   }, [])
 
   useEffect(() => {
+    catalogRequestGenerationRef.current += 1
+    catalogAbortControllerRef.current?.abort()
+    catalogAbortControllerRef.current = null
     setProjectMappingState(current => {
       const nextValue = projectId || ''
       return current.projectId === projectId && current.value === nextValue
@@ -216,12 +320,35 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
     return map
   }, [remoteItems])
 
-  const actionBlocked = !selectedRemoteId || !credentialsReady || Boolean(projectBlockMessage)
-  const actionBlockedReason = !selectedRemoteId
+  const baseActionBlockedReason = !selectedRemoteId
     ? 'Select a Remote Workspace first.'
     : !credentialsReady
       ? 'Configure remote credentials in Settings first.'
       : projectBlockMessage
+
+  const transferBlockReasonForItem = useCallback((item?: LibraryCatalogItem, destination?: LibraryResultDestination) => {
+    if (baseActionBlockedReason) return baseActionBlockedReason
+    if (kind !== 'result') return ''
+
+    const localApplicationID = destination?.applicationId?.trim()
+      || applicationId?.trim()
+      || item?.application_id?.trim()
+      || ''
+    const localReleaseID = destination?.releaseId?.trim()
+      || releaseId?.trim()
+      || item?.release_id?.trim()
+      || ''
+    if (localApplicationID && !selectedRemote?.application_mappings?.[localApplicationID]) {
+      return `Ask an administrator to map local application ${localApplicationID} for this Remote Workspace.`
+    }
+    if (localReleaseID && !selectedRemote?.release_mappings?.[localReleaseID]) {
+      return `Ask an administrator to map local release ${localReleaseID} for this Remote Workspace.`
+    }
+    return ''
+  }, [applicationId, baseActionBlockedReason, kind, releaseId, selectedRemote?.application_mappings, selectedRemote?.release_mappings])
+
+  const actionBlockedReason = transferBlockReasonForItem()
+  const actionBlocked = Boolean(actionBlockedReason)
 
   const refreshAfterTransfer = useCallback(async (actionScopeKey: string) => {
     await refreshCatalogs()
@@ -229,9 +356,10 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
     await onRefreshLocal?.()
   }, [onRefreshLocal, refreshCatalogs])
 
-  const pullRemoteItem = useCallback(async (item: LibraryCatalogItem) => {
-    if (actionBlocked) {
-      setActionError(actionBlockedReason)
+  const pullRemoteItem = useCallback(async (item: LibraryCatalogItem, destination?: LibraryResultDestination) => {
+    const transferBlockReason = transferBlockReasonForItem(item, destination)
+    if (transferBlockReason) {
+      setActionError(transferBlockReason)
       return
     }
     setActionMessage('')
@@ -244,6 +372,8 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
         id: item.remote_item_id || item.id,
         remote_id: item.remote_item_id || item.id,
         project_id: effectiveProjectID,
+        application_id: destination?.applicationId || applicationId,
+        release_id: destination?.releaseId || releaseId,
         include_dependencies: includeDependencies,
       })
       if (!mountedRef.current || catalogScopeKeyRef.current !== actionScopeKey) return
@@ -254,11 +384,15 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
         setActionError(getErrorMessage(error, 'Unable to pull remote item'))
       }
     }
-  }, [actionBlocked, actionBlockedReason, catalogScopeKey, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, selectedRemoteId])
+  }, [applicationId, catalogScopeKey, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, releaseId, selectedRemoteId, transferBlockReasonForItem])
 
   const pushLocalItem = useCallback(async (item: LibraryCatalogItem) => {
-    if (actionBlocked) {
-      setActionError(actionBlockedReason)
+    const transferBlockReason = transferBlockReasonForItem(item, {
+      applicationId: item.application_id || applicationId,
+      releaseId: item.release_id || releaseId,
+    })
+    if (transferBlockReason) {
+      setActionError(transferBlockReason)
       return
     }
     setActionMessage('')
@@ -281,7 +415,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
         setActionError(getErrorMessage(error, 'Unable to push local item'))
       }
     }
-  }, [actionBlocked, actionBlockedReason, catalogScopeKey, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, selectedRemoteId])
+  }, [applicationId, catalogScopeKey, effectiveProjectID, includeDependencies, libraryApi, refreshAfterTransfer, releaseId, selectedRemoteId, transferBlockReasonForItem])
 
   const compareItems = useCallback(async (localItemID: string, remoteItem: LibraryCatalogItem) => {
     if (!selectedRemoteId) return
@@ -342,6 +476,7 @@ export function useLibraryFederation({ kind, projectId, onRefreshLocal, requireP
     effectiveProjectID,
     actionBlocked,
     actionBlockedReason,
+    transferBlockReasonForItem,
     refreshCatalogs,
     pullRemoteItem,
     pushLocalItem,

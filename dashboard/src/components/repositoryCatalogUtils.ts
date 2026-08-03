@@ -36,7 +36,7 @@ export interface RepositoryAssetRow {
   kind: RepositoryAssetKind
   kindLabel: string
   name: string
-  projectId?: string
+  projectId: string
   projectName?: string
   categoryId?: string
   categoryName?: string

@@ -4,10 +4,11 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import GroupRuntimeSettingsDialog, {
+import GroupRuntimeSettingsDialog from './GroupRuntimeSettingsDialog'
+import {
   changedRuntimeFieldKeys,
   effectiveRuntimeFieldValue,
-} from './GroupRuntimeSettingsDialog'
+} from './groupRuntimeSettingsModel'
 import type { RuntimeSettingsOverride } from '../types/runtimeSettings'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

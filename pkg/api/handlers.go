@@ -96,7 +96,6 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limitExplicit := strings.TrimSpace(r.URL.Query().Get("limit")) != ""
 	applicationID := r.URL.Query().Get("application_id")
 	releaseID := r.URL.Query().Get("release_id")
 	scenarioID := r.URL.Query().Get("scenario_id")
@@ -113,15 +112,14 @@ func (s *Server) handleListTests(w http.ResponseWriter, r *http.Request) {
 	// per retained run only to discard them immediately. The bounded default also
 	// prevents an omitted limit from materializing every retained run at once.
 	tests, total := s.runner.listTestSummaryPage(testSummaryListQuery{
-		projectID:        projectID,
-		folderID:         folderID,
-		applicationID:    applicationID,
-		releaseID:        releaseID,
-		scenarioID:       scenarioID,
-		activeOnly:       activeOnly,
-		limit:            limit,
-		offset:           offset,
-		prioritizeActive: limitExplicit,
+		projectID:     projectID,
+		folderID:      folderID,
+		applicationID: applicationID,
+		releaseID:     releaseID,
+		scenarioID:    scenarioID,
+		activeOnly:    activeOnly,
+		limit:         limit,
+		offset:        offset,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tests":   maskManagedTests(tests),
@@ -179,7 +177,7 @@ func isActiveTestListStatus(status string) bool {
 	}
 }
 
-func sortTestList(tests []*ManagedTest, activeFirst bool) {
+func sortTestList(tests []*ManagedTest) {
 	sort.SliceStable(tests, func(i, j int) bool {
 		if tests[i] == nil {
 			return false
@@ -187,12 +185,8 @@ func sortTestList(tests []*ManagedTest, activeFirst bool) {
 		if tests[j] == nil {
 			return true
 		}
-		if activeFirst {
-			leftActive := isActiveTestListStatus(tests[i].Status)
-			rightActive := isActiveTestListStatus(tests[j].Status)
-			if leftActive != rightActive {
-				return leftActive
-			}
+		if tests[i].CreatedAt.Equal(tests[j].CreatedAt) {
+			return tests[i].ID < tests[j].ID
 		}
 		return tests[i].CreatedAt.After(tests[j].CreatedAt)
 	})
