@@ -154,7 +154,7 @@ export default function ApiGuidePage({
             <div>
               <span className="api-guide-kicker">Base URL</span>
               <h3 id="api-guide-base-url">http://&lt;controller-host&gt;:8080/api/v1</h3>
-              <p>Local dashboard development proxies <code>/api</code> from <code>localhost:3000</code>; direct clients should call the controller origin.</p>
+              <p>Local dashboard development proxies <code>/api</code> from <code>localhost:4000</code>; direct clients should call the controller origin.</p>
             </div>
             <div className="api-guide-meta-grid">
               <div><span>Auth</span><strong>Dev, OIDC/trusted headers, local users, service accounts</strong></div>

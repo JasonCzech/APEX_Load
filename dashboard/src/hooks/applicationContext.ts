@@ -5,6 +5,8 @@ import { Application, Release } from '../types'
 export interface ApplicationContextValue {
   applications: Application[]
   releases: Release[]
+  releasesLoading: boolean
+  releasesError: string
   activeApplication: Application | null
   activeRelease: Release | null
   setActiveApplication: (application: Application) => void

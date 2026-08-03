@@ -686,6 +686,12 @@ function AppShell({
         : [],
     [activeApplication, outerApplicationContext.releases],
   );
+  const releasesLoading = activeApplication
+    ? outerApplicationContext.releasesLoading
+    : false;
+  const releasesError = activeApplication
+    ? outerApplicationContext.releasesError
+    : "";
   const activeRelease =
     activeApplication &&
     outerApplicationContext.activeRelease &&
@@ -775,6 +781,8 @@ function AppShell({
     () => ({
       applications,
       releases,
+      releasesLoading,
+      releasesError,
       activeApplication,
       activeRelease,
       setActiveApplication,
@@ -793,6 +801,8 @@ function AppShell({
       refreshApplications,
       refreshReleases,
       releases,
+      releasesError,
+      releasesLoading,
       setActiveApplication,
       setActiveRelease,
     ],
@@ -1629,6 +1639,7 @@ function AppShell({
     activeDomain?.id,
     applicationRepository?.id,
     authStatus?.mode,
+    accessReviewSignal,
     devViewMode,
     getAuthEffectiveAccess,
   ]);

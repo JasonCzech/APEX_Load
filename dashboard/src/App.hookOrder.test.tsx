@@ -63,6 +63,7 @@ vi.mock('./hooks/NavigationGuardRoot', () => ({
 }))
 
 class StubWebSocket {
+  static instances: StubWebSocket[] = []
   static readonly CONNECTING = 0
   static readonly OPEN = 1
   static readonly CLOSING = 2
@@ -72,7 +73,12 @@ class StubWebSocket {
   onerror: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   readyState = StubWebSocket.OPEN
-  constructor(public url: string) {}
+  constructor(public url: string) {
+    StubWebSocket.instances.push(this)
+  }
+  emit(message: unknown) {
+    this.onmessage?.({ data: JSON.stringify(message) })
+  }
   send() {}
   close() {}
   addEventListener() {}
@@ -163,6 +169,7 @@ describe('AppShell hook-order stability across navigation', () => {
   }
 
   beforeEach(() => {
+    StubWebSocket.instances = []
     hookOrderErrors.length = 0
     navigationGuardMock.state.dirty = false
     navigationGuardMock.state.pending = null
@@ -252,6 +259,32 @@ describe('AppShell hook-order stability across navigation', () => {
     }
 
     expect(hookOrderErrors).toEqual([])
+  })
+
+  it('refreshes app-wide effective access when the server reports an access review change', async () => {
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    const accessRequestCount = () => vi.mocked(fetch).mock.calls.filter(([input]) => {
+      const url = typeof input === 'string' ? input : String((input as { url?: string })?.url ?? input)
+      return url.includes('/auth/effective-access')
+    }).length
+    const beforeEvent = accessRequestCount()
+    expect(beforeEvent).toBeGreaterThan(0)
+
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    const socket = StubWebSocket.instances[StubWebSocket.instances.length - 1]
+    expect(socket).toBeDefined()
+    await act(async () => {
+      socket?.emit({ type: 'access_review_changed' })
+    })
+    await flush()
+
+    expect(accessRequestCount()).toBeGreaterThan(beforeEvent)
   })
 
   it('replays an early Help browser action and surfaces a native launch failure', async () => {

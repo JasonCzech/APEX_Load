@@ -28,7 +28,10 @@ const applicationState = {
   activeApplication: { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' },
   activeRelease: { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' },
   releases: [] as Array<{ id: string; application_id: string; name: string; created_at: string; updated_at: string; archived_at?: string }>,
+  releasesLoading: false,
+  releasesError: '',
   setActiveRelease: vi.fn(),
+  refreshReleases: vi.fn(),
 }
 
 const projectState = {
@@ -65,6 +68,8 @@ describe('DashboardPage', () => {
     projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeApplication = { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeRelease = { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-02T00:00:00Z' }
+    applicationState.releasesLoading = false
+    applicationState.releasesError = ''
     applicationState.releases = [
       { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '2026-05-02T00:00:00Z', updated_at: '2026-05-10T00:00:00Z' },
       { id: 'rel-2', application_id: 'app-1', name: 'Sprint 23', created_at: '2026-04-02T00:00:00Z', updated_at: '2026-05-09T00:00:00Z' },
@@ -76,6 +81,7 @@ describe('DashboardPage', () => {
       { id: 'rel-archived', application_id: 'app-1', name: 'Archived Sprint', created_at: '2025-10-02T00:00:00Z', updated_at: '2026-05-03T00:00:00Z', archived_at: '2026-05-04T00:00:00Z' },
     ]
     applicationState.setActiveRelease = vi.fn()
+    applicationState.refreshReleases = vi.fn().mockResolvedValue(undefined)
     apiMock.getHealth.mockResolvedValue({
       status: 'healthy',
       version: 'dev',
@@ -405,6 +411,35 @@ describe('DashboardPage', () => {
 
     clickButtonByText('Aggregate TPS (active tests)')
     expect(onNavigate).toHaveBeenCalledWith('tests')
+  })
+
+  it('blocks the all-releases fallback when release scope fails and offers a retry', async () => {
+    applicationState.activeRelease = null as never
+    applicationState.releases = []
+    applicationState.releasesError = 'Unable to load releases: release service unavailable'
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('release service unavailable')
+    expect(container.textContent).not.toContain('All releases')
+    expect(container.textContent).not.toContain('Checkout Load')
+    expect(apiMock.listTests).not.toHaveBeenCalled()
+
+    await act(async () => {
+      getButtonByText('Retry release load').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applicationState.refreshReleases).toHaveBeenCalledWith('app-1')
   })
 
   it('collapses and restores the release snapshot panel', async () => {

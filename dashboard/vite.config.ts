@@ -35,7 +35,7 @@ export default defineConfig({
   },
   test: {
     exclude: [...configDefaults.exclude, 'e2e/**'],
-    setupFiles: ['./src/test/codemirrorJsdomPolyfill.ts'],
+    setupFiles: ['./src/test/vitestSetup.ts'],
   },
   build: {
     // The largest lazy chunks are the editor and Three.js visualization. Their

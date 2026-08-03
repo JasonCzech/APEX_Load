@@ -15,6 +15,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   const activeProjectId = activeProject?.id
   const [applications, setApplications] = useState<Application[]>([])
   const [releases, setReleases] = useState<Release[]>([])
+  const [releasesLoading, setReleasesLoading] = useState(false)
+  const [releasesError, setReleasesError] = useState('')
   const [activeApplication, setActiveApplicationState] = useState<Application | null>(null)
   const [activeRelease, setActiveReleaseState] = useState<Release | null>(null)
   const [stateProjectId, setStateProjectId] = useState(activeProjectId)
@@ -34,12 +36,16 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
   }
 
   const setActiveApplication = useCallback((application: Application) => {
+    const applicationChanged = activeApplicationIdRef.current !== application.id
     activeApplicationIdRef.current = application.id
-    releasesRequestGenerationRef.current += 1
     setActiveApplicationState(application)
-    setReleases([])
-    setActiveReleaseState(null)
     writeStoredString(STORAGE_KEY, application.id)
+    if (!applicationChanged) return
+    releasesRequestGenerationRef.current += 1
+    setReleases([])
+    setReleasesLoading(false)
+    setReleasesError('')
+    setActiveReleaseState(null)
   }, [])
 
   const setActiveRelease = useCallback((release: Release) => {
@@ -53,24 +59,38 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     const requestGeneration = ++releasesRequestGenerationRef.current
     if (!appId) {
       setReleases([])
+      setReleasesLoading(false)
+      setReleasesError('')
       setActiveReleaseState(null)
       return
     }
-    const res = await api.listReleases(appId)
-    if (
-      projectScopeRef.current.id !== scope.id
-      || projectScopeRef.current.generation !== scope.generation
-      || releasesRequestGenerationRef.current !== requestGeneration
-      || activeApplicationIdRef.current !== appId
-    ) {
-      return
+    const requestIsCurrent = () => (
+      projectScopeRef.current.id === scope.id
+      && projectScopeRef.current.generation === scope.generation
+      && releasesRequestGenerationRef.current === requestGeneration
+      && activeApplicationIdRef.current === appId
+    )
+    setReleasesLoading(true)
+    setReleasesError('')
+    try {
+      const res = await api.listReleases(appId)
+      if (!requestIsCurrent()) return
+      const next = res.releases || []
+      setReleases(next)
+      const storedId = readStoredString(RELEASE_STORAGE_KEY)
+      const selected = next.find(release => release.id === storedId) || next[0] || null
+      setActiveReleaseState(selected)
+      if (selected) writeStoredString(RELEASE_STORAGE_KEY, selected.id)
+    } catch (cause: unknown) {
+      if (requestIsCurrent()) {
+        setReleasesError(cause instanceof Error && cause.message
+          ? `Unable to load releases: ${cause.message}`
+          : 'Unable to load releases.')
+      }
+      throw cause
+    } finally {
+      if (requestIsCurrent()) setReleasesLoading(false)
     }
-    const next = res.releases || []
-    setReleases(next)
-    const storedId = readStoredString(RELEASE_STORAGE_KEY)
-    const selected = next.find(release => release.id === storedId) || next[0] || null
-    setActiveReleaseState(selected)
-    if (selected) writeStoredString(RELEASE_STORAGE_KEY, selected.id)
   }, [api])
 
   const refreshApplications = useCallback(async () => {
@@ -82,6 +102,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       setActiveApplicationState(null)
       activeApplicationIdRef.current = null
       setReleases([])
+      setReleasesLoading(false)
+      setReleasesError('')
       setActiveReleaseState(null)
       return
     }
@@ -118,6 +140,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       if (applicationChanged) {
         releasesRequestGenerationRef.current += 1
         setReleases([])
+        setReleasesLoading(false)
+        setReleasesError('')
         setActiveReleaseState(null)
       }
       return
@@ -125,6 +149,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     activeApplicationIdRef.current = null
     setActiveApplicationState(null)
     setReleases([])
+    setReleasesLoading(false)
+    setReleasesError('')
     setActiveReleaseState(null)
   }, [activeProjectId, api])
 
@@ -174,6 +200,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     setApplications([])
     setActiveApplicationState(null)
     setReleases([])
+    setReleasesLoading(false)
+    setReleasesError('')
     setActiveReleaseState(null)
 
     if (!projectId) {
@@ -202,6 +230,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       setApplications([fallback])
       setActiveApplicationState(fallback)
       setReleases([])
+      setReleasesLoading(false)
+      setReleasesError('')
       setActiveReleaseState(null)
     })
     return () => {
@@ -217,6 +247,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       }
     }
     setReleases([])
+    setReleasesLoading(false)
+    setReleasesError('')
     setActiveReleaseState(null)
   }, [activeApplication?.id, refreshReleases])
 
@@ -225,6 +257,8 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
     () => ({
       applications: scopeIsCurrent ? applications : [],
       releases: scopeIsCurrent ? releases : [],
+      releasesLoading: scopeIsCurrent ? releasesLoading : false,
+      releasesError: scopeIsCurrent ? releasesError : '',
       activeApplication: scopeIsCurrent ? activeApplication : null,
       activeRelease: scopeIsCurrent ? activeRelease : null,
       setActiveApplication,
@@ -234,7 +268,7 @@ export function ApplicationProvider({ children }: { children: ReactNode }) {
       createAndSelectApplication,
       createAndSelectRelease,
     }),
-    [scopeIsCurrent, applications, releases, activeApplication, activeRelease, setActiveApplication, setActiveRelease, refreshApplications, refreshReleases, createAndSelectApplication, createAndSelectRelease],
+    [scopeIsCurrent, applications, releases, releasesLoading, releasesError, activeApplication, activeRelease, setActiveApplication, setActiveRelease, refreshApplications, refreshReleases, createAndSelectApplication, createAndSelectRelease],
   )
 
   return <ApplicationContext.Provider value={value}>{children}</ApplicationContext.Provider>

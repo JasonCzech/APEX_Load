@@ -122,6 +122,8 @@ describe('ApiGuidePage', () => {
     await renderApiGuidePage({ effectiveAccessResources: allGuideOperations })
 
     expect(container.textContent).toContain('API Guide')
+    expect(container.textContent).toContain('localhost:4000')
+    expect(container.textContent).not.toContain('localhost:3000')
     expect(topbarText()).toContain('API Guide')
     expect(topbarText()).toContain('General')
     expect(topbarText()).toContain('MCP Server')

@@ -68,6 +68,8 @@ describe('App project-scoped state', () => {
     const applicationValue: ApplicationContextValue = {
       applications: [],
       releases: [],
+      releasesLoading: false,
+      releasesError: '',
       activeApplication: null,
       activeRelease: null,
       setActiveApplication: vi.fn(),

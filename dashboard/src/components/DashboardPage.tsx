@@ -597,11 +597,19 @@ function ReleaseSnapshotPanel({
 
 export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenTestArchive, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
   const api = useApi()
-  const { activeApplication, activeRelease, releases, setActiveRelease } = useApplication()
+  const {
+    activeApplication,
+    activeRelease,
+    releases,
+    releasesLoading,
+    releasesError,
+    setActiveRelease,
+    refreshReleases,
+  } = useApplication()
   const { activeProject } = useProject()
   const activeApplicationId = activeApplication?.id
   const activeProjectId = activeProject?.id
-  const dashboardScopeReady = Boolean(activeProjectId && activeApplicationId)
+  const dashboardScopeReady = Boolean(activeProjectId && activeApplicationId && !releasesLoading && !releasesError)
   const testListParams = useMemo(() => dashboardScopeReady ? {
     project_id: activeProjectId,
     application_id: activeApplicationId,
@@ -1221,6 +1229,36 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       .sort((left, right) => (left.timestampMs ?? 0) - (right.timestampMs ?? 0))
       .slice(-60)
   }, [activeTestIds, metricsHistory])
+
+  if (activeApplicationId && (releasesLoading || releasesError)) {
+    return (
+      <div className="page dash">
+        <div className="page-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p className="page-subtitle">{activeApplication?.name || 'Application'} / Release scope unavailable</p>
+          </div>
+        </div>
+        {releasesLoading ? (
+          <div className="empty-card" role="status">
+            <p>Loading release scope...</p>
+            <p className="empty-hint">Dashboard data will appear after the selected release is confirmed.</p>
+          </div>
+        ) : (
+          <div className="settings-error-inline" role="alert">
+            <span>{releasesError}</span>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => void refreshReleases(activeApplicationId).catch(() => undefined)}
+            >
+              Retry release load
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="page dash">

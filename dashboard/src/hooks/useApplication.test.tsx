@@ -34,13 +34,25 @@ vi.mock('./useProject', () => ({
 }))
 
 function Probe() {
-  const { applications, releases, activeApplication, activeRelease, setActiveApplication, createAndSelectApplication } = useApplication()
+  const {
+    applications,
+    releases,
+    releasesLoading,
+    releasesError,
+    activeApplication,
+    activeRelease,
+    setActiveApplication,
+    refreshReleases,
+    createAndSelectApplication,
+  } = useApplication()
 
   return (
     <div>
       <span data-testid="application-count">{applications.length}</span>
       <span data-testid="active-application">{activeApplication?.name || ''}</span>
       <span data-testid="releases">{releases.map(release => release.name).join(',')}</span>
+      <span data-testid="releases-loading">{String(releasesLoading)}</span>
+      <span data-testid="releases-error">{releasesError}</span>
       <span data-testid="active-release">{activeRelease?.name || ''}</span>
       {applications.map(application => (
         <button key={application.id} type="button" onClick={() => setActiveApplication(application)}>
@@ -48,6 +60,7 @@ function Probe() {
         </button>
       ))}
       <button type="button" onClick={() => createAndSelectApplication('New App')}>Create</button>
+      <button type="button" onClick={() => void refreshReleases().catch(() => undefined)}>Retry releases</button>
     </div>
   )
 }
@@ -191,6 +204,56 @@ describe('ApplicationProvider', () => {
     expect(readTestId('active-application')).toBe('Catalog')
     expect(readTestId('releases')).toBe('Catalog 1.0')
     expect(readTestId('active-release')).toBe('Catalog 1.0')
+  })
+
+  it('keeps the selected release when the active application is selected again', async () => {
+    applicationApiMock.listReleases.mockResolvedValue({
+      releases: [release('release-1', 'app-1', 'Payments 1.0')],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+    expect(readTestId('active-release')).toBe('Payments 1.0')
+
+    const selectPayments = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Select Payments')
+    await act(async () => {
+      selectPayments?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(applicationApiMock.listReleases).toHaveBeenCalledTimes(1)
+    expect(readTestId('active-release')).toBe('Payments 1.0')
+  })
+
+  it('surfaces a release load failure and recovers through the shared retry path', async () => {
+    applicationApiMock.listReleases
+      .mockRejectedValueOnce(new Error('release service unavailable'))
+      .mockResolvedValueOnce({
+        releases: [release('release-1', 'app-1', 'Payments 1.0')],
+        count: 1,
+      })
+
+    await act(async () => {
+      root.render(<ApplicationProvider><Probe /></ApplicationProvider>)
+    })
+    await flushPromises()
+
+    expect(readTestId('releases-loading')).toBe('false')
+    expect(readTestId('releases-error')).toBe('Unable to load releases: release service unavailable')
+    expect(readTestId('active-release')).toBe('')
+
+    const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry releases')
+    await act(async () => {
+      retry?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(applicationApiMock.listReleases).toHaveBeenCalledTimes(2)
+    expect(readTestId('releases-error')).toBe('')
+    expect(readTestId('active-release')).toBe('Payments 1.0')
   })
 
   function readTestId(testId: string) {
