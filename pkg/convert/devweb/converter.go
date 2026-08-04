@@ -72,11 +72,12 @@ func standingAssumptions() []string {
 }
 
 type parsedStep struct {
-	Protocol  string
-	Action    dsl.Action
-	Function  string
-	StartLine int
-	EndLine   int
+	Protocol     string
+	Action       dsl.Action
+	Function     string
+	StartLine    int
+	EndLine      int
+	SourceOffset int
 }
 
 type convertContext struct {
@@ -106,6 +107,7 @@ var (
 	correlationPattern      = regexp.MustCompile(`(?i)\b(?:load\.)?(?:correlat\w*|extract\w*|web_reg_save_param|web\.regSaveParam)\b`)
 	textCheckPattern        = regexp.MustCompile("(?s)([A-Za-z_$][\\w$]*)\\.textCheck\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]\\s*\\)")
 	transactionNewPattern   = regexp.MustCompile("(?s)(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*new\\s+load\\.Transaction\\s*\\(\\s*[\"'`]([^\"'`]+)[\"'`]\\s*\\)")
+	transactionEventPattern = regexp.MustCompile(`(?s)([A-Za-z_$][\w$]*)\s*\.\s*(start|stop)\s*\(`)
 	reviewOnlyPatterns      = []devwebReviewPattern{
 		{
 			Element:   "DevWeb dynamic JavaScript",
@@ -191,17 +193,16 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 			GeneratedFrom: "devweb",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{
-				BaseURL: opts.BaseURL,
-				ThinkTime: dsl.ThinkTimeConfig{
-					Type:   "fixed",
-					MeanMs: float64(firstPositive(opts.DefaultThinkTimeMs, 1000)),
-				},
+				BaseURL:       opts.BaseURL,
 				Pacing:        dsl.PacingConfig{Type: "none"},
 				RunLogic:      dsl.RunLogicConfig{Iterations: 0, AutoTransactions: "none"},
 				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: false},
 				Log:           dsl.LogConfig{Level: "standard"},
 			},
 		},
+	}
+	if opts.DefaultThinkTimeMs > 0 {
+		result.Script.Config.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: float64(opts.DefaultThinkTimeMs)}
 	}
 	var diagnostics diag.Collector
 	sourceMappings := make([]sourceview.Mapping, 0)
@@ -471,7 +472,7 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 		}
 		stats.Extractors += len(action.Extractors)
 		stats.HTTPRequests++
-		steps = append(steps, parsedStep{Protocol: "http", Action: action, Function: "load.WebRequest", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1])})
+		steps = append(steps, parsedStep{Protocol: "http", Action: action, Function: "load.WebRequest", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 		if requestVar != "" {
 			requestVars[requestVar] = len(steps) - 1
 		}
@@ -534,33 +535,38 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 	diagnoseReviewOnlyJavaScript(block, stats, diagnostics, &steps, ctx)
 
 	socketVars := map[string]string{}
-	for _, match := range webSocketNewPattern.FindAllStringSubmatch(block.Body, -1) {
+	for _, match := range webSocketNewPattern.FindAllStringSubmatchIndex(block.Body, -1) {
 		stats.TotalSteps++
-		name := strings.TrimSpace(match[1])
+		name := ""
+		if match[2] >= 0 {
+			name = strings.TrimSpace(block.Body[match[2]:match[3]])
+		}
 		if name == "" {
 			name = "ws"
 		}
-		target := jsString(match[2])
+		target := jsString(block.Body[match[4]:match[5]])
 		socketVars[name] = target
 		stats.WebSocketActions++
 		steps = append(steps, parsedStep{Protocol: "websocket", Action: dsl.Action{
 			Name:   actionName(block.Name, "connect"),
 			Type:   "ws_connect",
 			Target: target,
-		}, Function: "load.WebSocket", StartLine: block.StartLine, EndLine: block.StartLine})
+		}, Function: "load.WebSocket", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 	}
-	for _, match := range webSocketOpenPattern.FindAllStringSubmatch(block.Body, -1) {
-		if _, exists := socketVars[match[1]]; exists {
+	for _, match := range webSocketOpenPattern.FindAllStringSubmatchIndex(block.Body, -1) {
+		name := block.Body[match[2]:match[3]]
+		if _, exists := socketVars[name]; exists {
 			continue
 		}
 		stats.TotalSteps++
 		stats.Skipped++
-		stats.UnsupportedCalls = append(stats.UnsupportedCalls, match[1]+".open")
-		*warnings = append(*warnings, "skipped WebSocket open without constructor URL for "+match[1])
-		diagnostics.Add(diag.Warning, "DevWeb WebSocket open", block.Name, "WebSocket open without constructor URL for "+match[1]+" was skipped")
+		stats.UnsupportedCalls = append(stats.UnsupportedCalls, name+".open")
+		*warnings = append(*warnings, "skipped WebSocket open without constructor URL for "+name)
+		diagnostics.Add(diag.Warning, "DevWeb WebSocket open", devwebLocation(block, match[0]), "WebSocket open without constructor URL for "+name+" was skipped")
 	}
-	for _, match := range webSocketSendPattern.FindAllStringSubmatch(block.Body, -1) {
-		if _, exists := socketVars[match[1]]; !exists {
+	for _, match := range webSocketSendPattern.FindAllStringSubmatchIndex(block.Body, -1) {
+		name := block.Body[match[2]:match[3]]
+		if _, exists := socketVars[name]; !exists {
 			continue
 		}
 		stats.TotalSteps++
@@ -568,11 +574,12 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 		steps = append(steps, parsedStep{Protocol: "websocket", Action: dsl.Action{
 			Name: actionName(block.Name, "send"),
 			Type: "ws_send",
-			Body: jsString(match[2]),
-		}, Function: "WebSocket.send", StartLine: block.StartLine, EndLine: block.StartLine})
+			Body: jsString(block.Body[match[4]:match[5]]),
+		}, Function: "WebSocket.send", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 	}
-	for _, match := range webSocketRecvPattern.FindAllStringSubmatch(block.Body, -1) {
-		if _, exists := socketVars[match[1]]; !exists {
+	for _, match := range webSocketRecvPattern.FindAllStringSubmatchIndex(block.Body, -1) {
+		name := block.Body[match[2]:match[3]]
+		if _, exists := socketVars[name]; !exists {
 			continue
 		}
 		stats.TotalSteps++
@@ -581,10 +588,11 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			Name:   actionName(block.Name, "receive"),
 			Type:   "ws_receive",
 			Params: map[string]any{"timeout_ms": 30000},
-		}, Function: "WebSocket.receive", StartLine: block.StartLine, EndLine: block.StartLine})
+		}, Function: "WebSocket.receive", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 	}
-	for _, match := range webSocketClosePattern.FindAllStringSubmatch(block.Body, -1) {
-		if _, exists := socketVars[match[1]]; !exists {
+	for _, match := range webSocketClosePattern.FindAllStringSubmatchIndex(block.Body, -1) {
+		name := block.Body[match[2]:match[3]]
+		if _, exists := socketVars[name]; !exists {
 			continue
 		}
 		stats.TotalSteps++
@@ -592,15 +600,16 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 		steps = append(steps, parsedStep{Protocol: "websocket", Action: dsl.Action{
 			Name: actionName(block.Name, "close"),
 			Type: "ws_close",
-		}, Function: "WebSocket.close", StartLine: block.StartLine, EndLine: block.StartLine})
+		}, Function: "WebSocket.close", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 	}
-	for _, match := range grpcInvokePattern.FindAllStringSubmatch(block.Body, -1) {
+	for _, match := range grpcInvokePattern.FindAllStringSubmatchIndex(block.Body, -1) {
 		stats.TotalSteps++
-		args := splitArgs(match[2])
+		name := block.Body[match[2]:match[3]]
+		args := splitArgs(block.Body[match[4]:match[5]])
 		if len(args) < 2 {
 			stats.Skipped++
-			stats.UnsupportedCalls = append(stats.UnsupportedCalls, match[1]+".invoke")
-			diagnostics.Add(diag.Warning, "DevWeb gRPC invoke", block.Name, "gRPC invoke without service/method arguments was skipped")
+			stats.UnsupportedCalls = append(stats.UnsupportedCalls, name+".invoke")
+			diagnostics.Add(diag.Warning, "DevWeb gRPC invoke", devwebLocation(block, match[0]), "gRPC invoke without service/method arguments was skipped")
 			continue
 		}
 		target := grpcTarget(args)
@@ -615,15 +624,26 @@ func parseBlock(block namedBlock, stats *ConvertStats, warnings *[]string, diagn
 			Type:   "grpc_unary",
 			Target: target,
 			Body:   body,
-		}, Function: "grpc.invoke", StartLine: block.StartLine, EndLine: block.StartLine})
+		}, Function: "grpc.invoke", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 	}
-	for _, match := range thinkTimePattern.FindAllStringSubmatch(block.Body, -1) {
+	sortParsedSteps(steps)
+	for _, match := range thinkTimePattern.FindAllStringSubmatchIndex(block.Body, -1) {
 		stats.TotalSteps++
 		stats.ThinkTimes++
-		if len(steps) > 0 {
-			ms := secondsToMilliseconds(match[1])
-			steps[len(steps)-1].Action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: ms}
-			steps[len(steps)-1].Action.ThinkTimeAfter = true
+		predecessor := -1
+		for i := range steps {
+			if steps[i].SourceOffset >= match[0] {
+				break
+			}
+			predecessor = i
+		}
+		if predecessor >= 0 {
+			ms := secondsToMilliseconds(block.Body[match[2]:match[3]])
+			if steps[predecessor].Action.ThinkTimeAfter && steps[predecessor].Action.ThinkTime.Type == "fixed" {
+				ms += steps[predecessor].Action.ThinkTime.MeanMs
+			}
+			steps[predecessor].Action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: ms}
+			steps[predecessor].Action.ThinkTimeAfter = true
 		}
 	}
 	// Sort steps by start line to maintain source execution order across different protocols/patterns

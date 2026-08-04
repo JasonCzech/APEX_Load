@@ -24,8 +24,14 @@ import (
 
 type jmeterImportRequest struct {
 	Data      []byte
+	Documents []jmeterImportDocument
 	ProjectID string
 	Opts      jmeter.ConvertOptions
+}
+
+type jmeterImportDocument struct {
+	Data     []byte
+	FileName string
 }
 
 type enterpriseArchiveImportRequest struct {

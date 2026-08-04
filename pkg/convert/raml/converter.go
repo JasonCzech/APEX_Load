@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -135,7 +137,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	resources := sortedResourceKeys(doc)
 	for _, resource := range resources {
 		node, _ := doc[resource].(map[string]any)
-		walkResource(resource, node, result, script, apply)
+		walkResource(resource, node, result, script, apply, nil)
 	}
 	if len(script.Actions) == 0 {
 		return nil, fmt.Errorf("RAML document did not contain HTTP resources or methods")
@@ -145,12 +147,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
-func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, apply applyOptions) {
+func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, apply applyOptions, inheritedURIParameters map[string]any) {
 	if node == nil {
 		return
 	}
 	result.Stats.TotalResources++
 	result.Summary.Resources = append(result.Summary.Resources, resourcePath)
+	uriParameters := mergeRAMLURIParameters(inheritedURIParameters, mapValue(node["uriParameters"]))
 	keys := sortedMapKeys(node)
 	for _, key := range keys {
 		lower := strings.ToLower(key)
@@ -167,8 +170,10 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			Headers: map[string]string{
 				"Accept": "application/json",
 			},
-			Assertions: []dsl.Assertion{{Type: "status_code", Expected: 200}},
+			Assertions: ramlResponseAssertions(child),
 		}
+		methodURIParameters := mergeRAMLURIParameters(uriParameters, mapValue(child["uriParameters"]))
+		bindRAMLURIParameters(&action, script, methodURIParameters, result)
 		if apply.oauth {
 			action.Headers["Authorization"] = "Bearer {{var.access_token}}"
 		}
@@ -188,8 +193,90 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			continue
 		}
 		child, _ := node[key].(map[string]any)
-		walkResource(joinRAMLPath(resourcePath, key), child, result, script, apply)
+		walkResource(joinRAMLPath(resourcePath, key), child, result, script, apply, uriParameters)
 	}
+}
+
+var ramlURIParameterPattern = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_.-]*)\}`)
+
+func mergeRAMLURIParameters(parent, local map[string]any) map[string]any {
+	if len(parent) == 0 && len(local) == 0 {
+		return nil
+	}
+	merged := make(map[string]any, len(parent)+len(local))
+	for name, value := range parent {
+		merged[name] = value
+	}
+	for name, value := range local {
+		merged[name] = value
+	}
+	return merged
+}
+
+func bindRAMLURIParameters(action *dsl.Action, script *dsl.Script, declarations map[string]any, result *ConvertResult) {
+	if action == nil || script == nil {
+		return
+	}
+	matches := ramlURIParameterPattern.FindAllStringSubmatch(action.Target, -1)
+	for _, match := range matches {
+		name := match[1]
+		declaration := mapValue(declarations[name])
+		value := convertutil.FirstNonEmpty(stringValue(declaration["example"]), stringValue(declaration["default"]))
+		if value == "" {
+			if values, ok := declaration["enum"].([]any); ok && len(values) > 0 {
+				value = fmt.Sprint(values[0])
+			}
+		}
+		if value == "" {
+			if action.Metadata == nil {
+				action.Metadata = make(map[string]any)
+			}
+			action.Metadata["execution_blocker"] = "import_review_required"
+			action.Metadata["unresolved_path_parameter"] = name
+			result.Unsupported = append(result.Unsupported, diag.Diagnostic{
+				Severity: diag.Warning, Element: "RAML path parameter", Location: action.Target,
+				Detail: fmt.Sprintf("path parameter %q has no example/default binding and requires review", name),
+			})
+			continue
+		}
+		found := false
+		for _, parameter := range script.Parameters {
+			found = found || parameter.Name == name
+		}
+		if !found {
+			script.Parameters = append(script.Parameters, dsl.Parameter{Name: name, Type: "list", Update: "once", Values: []string{value}})
+		}
+		action.Target = strings.ReplaceAll(action.Target, match[0], "{{param."+name+"}}")
+	}
+}
+
+func ramlResponseAssertions(method map[string]any) []dsl.Assertion {
+	responses := mapValue(method["responses"])
+	for _, raw := range sortedMapKeys(responses) {
+		status := strings.ToUpper(strings.TrimSpace(raw))
+		if status == "2XX" {
+			return []dsl.Assertion{{Type: "status_code_range", Min: 200, Max: 299}}
+		}
+		code, err := strconv.Atoi(status)
+		if err == nil && code >= 200 && code <= 299 {
+			return []dsl.Assertion{{Type: "status_code", Expected: code}}
+		}
+	}
+	return []dsl.Assertion{{Type: "status_code", Expected: 200}}
+}
+
+func mapValue(value any) map[string]any {
+	if mapped, ok := value.(map[string]any); ok {
+		return mapped
+	}
+	if mapped, ok := value.(map[any]any); ok {
+		converted := make(map[string]any, len(mapped))
+		for key, item := range mapped {
+			converted[fmt.Sprint(key)] = item
+		}
+		return converted
+	}
+	return nil
 }
 
 func ramlMethodBody(method map[string]any) (string, string, bool) {

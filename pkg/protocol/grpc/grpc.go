@@ -391,11 +391,9 @@ func (g *GRPC) invokeBidiStream(ctx context.Context, action *protocol.Action, re
 func (g *GRPC) applyResponseChecks(action *protocol.Action, result *protocol.Result, responseBody []byte) error {
 	for _, extractor := range action.Extractors {
 		value, err := extract(extractor, responseBody)
-		if err == nil {
-			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
-				result.Extractions = nil
-				return fmt.Errorf("grpc extractor %q output rejected: %w", extractor.Name, err)
-			}
+		if err := protocol.ApplyExtraction(result, extractor, value, err); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("grpc extraction failed: %w", err)
 		}
 	}
 	for _, assertion := range action.Assertions {

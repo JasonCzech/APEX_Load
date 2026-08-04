@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -9,7 +10,7 @@ import (
 
 func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Request) {
 	releaseID := r.PathValue("id")
-	runs, err := s.collectReleaseTrendRuns(releaseID)
+	runs, err := s.collectReleaseTrendRuns(releaseID, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -26,7 +27,7 @@ func (s *Server) handleGetReleaseTrendExport(w http.ResponseWriter, r *http.Requ
 // flags, and a first→last trajectory summary.
 func (s *Server) handleGetReleaseTrend(w http.ResponseWriter, r *http.Request) {
 	releaseID := r.PathValue("id")
-	runs, err := s.collectReleaseTrendRuns(releaseID)
+	runs, err := s.collectReleaseTrendRuns(releaseID, false)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -36,7 +37,7 @@ func (s *Server) handleGetReleaseTrend(w http.ResponseWriter, r *http.Request) {
 
 // collectReleaseTrendRuns gathers archived runs for a release and builds their
 // reports — shared by the CSV export and the JSON trend analysis.
-func (s *Server) collectReleaseTrendRuns(releaseID string) ([]releaseTrendRun, error) {
+func (s *Server) collectReleaseTrendRuns(releaseID string, requireReport bool) ([]releaseTrendRun, error) {
 	tests := s.runner.ListTestSummariesByContext("", releaseID, "")
 	runs := make([]releaseTrendRun, 0, len(tests))
 	for _, test := range tests {
@@ -44,11 +45,28 @@ func (s *Server) collectReleaseTrendRuns(releaseID string) ([]releaseTrendRun, e
 		if !ok {
 			continue
 		}
+		if !requireReport && strings.TrimSpace(record.TrendPointJSON) != "" {
+			var point ReleaseTrendPoint
+			if err := json.Unmarshal([]byte(record.TrendPointJSON), &point); err == nil && point.RunID == test.ID {
+				runs = append(runs, releaseTrendRun{Test: test, Point: &point})
+				continue
+			}
+		}
 		report, err := cachedRunArchiveReport(record)
 		if err != nil {
 			// One corrupt/unreadable archive must not fail the whole trend; skip it.
 			slog.Warn("release trend: archive report unavailable", "test", test.ID, "err", err)
 			continue
+		}
+		if strings.TrimSpace(record.TrendPointJSON) == "" {
+			point := trendPointFromRun(releaseTrendRun{Test: test, Report: report})
+			if encoded, encodeErr := json.Marshal(point); encodeErr == nil {
+				updated := *record
+				updated.TrendPointJSON = string(encoded)
+				if saveErr := s.runner.saveRunArchiveRecord(&updated); saveErr != nil {
+					slog.Warn("release trend: compact trend point could not be cached", "test", test.ID, "err", saveErr)
+				}
+			}
 		}
 		runs = append(runs, releaseTrendRun{Test: test, Report: report})
 	}
@@ -73,7 +91,7 @@ func (s *Server) attachReleaseTrend(report *RunArchiveReport) {
 	if releaseID == "" {
 		return
 	}
-	runs, err := s.collectReleaseTrendRuns(releaseID)
+	runs, err := s.collectReleaseTrendRuns(releaseID, false)
 	if err != nil {
 		slog.Warn("archive report: release trend unavailable",
 			"release", releaseID, "test", report.Manifest.TestID, "err", err)

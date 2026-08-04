@@ -85,7 +85,7 @@ var knownSidecarCodes = map[string]struct{}{
 	"owner_claim_failed":  {}, "owner_claim_in_progress": {}, "owner_fenced": {},
 	"owner_id_invalid": {}, "owner_not_claimed": {},
 	"shared_classpath_unavailable": {}, "startup_timeout_out_of_range": {},
-	"target_class_invalid": {}, "target_method_invalid": {}, "target_validation_failed": {},
+	"target_class_invalid": {}, "target_method_invalid": {}, "target_validation_failed": {}, "validation_timeout": {},
 	"timeout_out_of_range": {}, "work_dir_unavailable": {},
 	javasidecar.WarningModernXBootClasspathFallback:            {},
 	protocol.FeatureJavaVuserPhaseLifecycleV1:                  {},

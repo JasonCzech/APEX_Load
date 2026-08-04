@@ -26,7 +26,7 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := jmeter.ConvertJMX(importReq.Data, importReq.Opts)
+	result, err := convertJMeterImportRequest(importReq)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
@@ -49,7 +49,7 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 	}
 
 	importReq.Opts.ScenarioDraft = r.FormValue("scenario_draft") == "true"
-	result, err := jmeter.ConvertJMX(importReq.Data, importReq.Opts)
+	result, err := convertJMeterImportRequest(importReq)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "validation failed: "+err.Error())
 		return
@@ -119,14 +119,22 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		return nil, false
 	}
 	if isJMeterZipUpload(fileName, contentType) {
-		jmxData, jmxFileName, zipSidecars, err := readJMeterZipImport(data)
+		documents, zipSidecars, err := readJMeterZipImportAll(data)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, "failed to read JMeter ZIP: "+err.Error())
 			return nil, false
 		}
-		data = jmxData
-		fileName = jmxFileName
+		data = documents[0].Data
+		fileName = documents[0].FileName
 		sidecarFiles = mergeJMeterSidecarFiles(sidecarFiles, zipSidecars)
+		return &jmeterImportRequest{
+			Data: data, Documents: documents, ProjectID: authorizedImportProjectID(r),
+			Opts: jmeter.ConvertOptions{
+				ScriptName: r.FormValue("name"), BaseURL: r.FormValue("base_url"),
+				IncludeAssertions: r.FormValue("include_assertions") == "true",
+				ScenarioDraft:     r.FormValue("scenario_draft") == "true", FileName: fileName, SidecarFiles: sidecarFiles,
+			},
+		}, true
 	}
 
 	return &jmeterImportRequest{
@@ -150,6 +158,14 @@ func isJMeterZipUpload(fileName string, contentType string) bool {
 }
 
 func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error) {
+	documents, sidecars, err := readJMeterZipImportAll(data)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return documents[0].Data, documents[0].FileName, sidecars, nil
+}
+
+func readJMeterZipImportAll(data []byte) ([]jmeterImportDocument, map[string][]byte, error) {
 	const (
 		maxJMeterZipEntries    = 1_000
 		maxJMeterZipEntryBytes = 32 << 20
@@ -167,7 +183,7 @@ func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error)
 		},
 	})
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("reading JMeter archive: %w", err)
+		return nil, nil, fmt.Errorf("reading JMeter archive: %w", err)
 	}
 	jmxFiles := map[string][]byte{}
 	sidecars := map[string][]byte{}
@@ -181,15 +197,100 @@ func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error)
 		}
 	}
 	if len(jmxFiles) == 0 {
-		return nil, "", nil, fmt.Errorf("no .jmx file found")
+		return nil, nil, fmt.Errorf("no .jmx file found")
 	}
 	names := make([]string, 0, len(jmxFiles))
 	for name := range jmxFiles {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	selected := names[0]
-	return jmxFiles[selected], selected, sidecars, nil
+	documents := make([]jmeterImportDocument, 0, len(names))
+	for _, name := range names {
+		documents = append(documents, jmeterImportDocument{Data: jmxFiles[name], FileName: name})
+	}
+	return documents, sidecars, nil
+}
+
+func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertResult, error) {
+	if request == nil {
+		return nil, fmt.Errorf("JMeter import request is required")
+	}
+	documents := request.Documents
+	if len(documents) == 0 {
+		documents = []jmeterImportDocument{{Data: request.Data, FileName: request.Opts.FileName}}
+	}
+	combined := &jmeter.ConvertResult{}
+	for _, document := range documents {
+		opts := request.Opts
+		opts.FileName = document.FileName
+		if len(documents) > 1 && strings.TrimSpace(opts.ScriptName) != "" {
+			opts.ScriptName = fmt.Sprintf("%s — %s", strings.TrimSpace(opts.ScriptName), strings.TrimSuffix(path.Base(document.FileName), path.Ext(document.FileName)))
+		}
+		converted, err := jmeter.ConvertJMX(document.Data, opts)
+		if err != nil {
+			return nil, fmt.Errorf("convert JMeter ZIP entry %q: %w", document.FileName, err)
+		}
+		attachSourceReviewToScripts(converted.Scripts, "jmeter", document.FileName, converted.SourceReview)
+		for _, script := range converted.Scripts {
+			if script.Metadata == nil {
+				script.Metadata = &dsl.ScriptMetadata{}
+			}
+			if script.Metadata.Import == nil {
+				script.Metadata.Import = &dsl.ImportMetadata{}
+			}
+			if script.Metadata.Import.Preserved == nil {
+				script.Metadata.Import.Preserved = make(map[string]any)
+			}
+			script.Metadata.Import.Preserved["source_zip_entry"] = document.FileName
+		}
+		combined.Scripts = append(combined.Scripts, converted.Scripts...)
+		if combined.Script == nil {
+			combined.Script = converted.Script
+			if len(documents) == 1 {
+				combined.SourceReview = converted.SourceReview
+			}
+		}
+		combined.Warnings = append(combined.Warnings, converted.Warnings...)
+		combined.UnsupportedElements = append(combined.UnsupportedElements, converted.UnsupportedElements...)
+		combined.Unsupported = append(combined.Unsupported, converted.Unsupported...)
+		combined.Assumptions = append(combined.Assumptions, converted.Assumptions...)
+		combined.Findings = append(combined.Findings, converted.Findings...)
+		combined.SecretRequirements = append(combined.SecretRequirements, converted.SecretRequirements...)
+		combined.Stats.ThreadGroups += converted.Stats.ThreadGroups
+		combined.Stats.Samplers += converted.Stats.Samplers
+		combined.Stats.TotalSamplers += converted.Stats.TotalSamplers
+		combined.Stats.SkippedSamplers += converted.Stats.SkippedSamplers
+		combined.Stats.ConvertedActions += converted.Stats.ConvertedActions
+		combined.Stats.Headers += converted.Stats.Headers
+		combined.Stats.Variables += converted.Stats.Variables
+		combined.Stats.CSVSources += converted.Stats.CSVSources
+		combined.Stats.Assertions += converted.Stats.Assertions
+		combined.Stats.Timers += converted.Stats.Timers
+		combined.Stats.Unsupported += converted.Stats.Unsupported
+		combined.Stats.Mapped += converted.Stats.Mapped
+		combined.Stats.ReviewRequired += converted.Stats.ReviewRequired
+		combined.Stats.AdapterRequired += converted.Stats.AdapterRequired
+		combined.Summary.ThreadGroupCount += converted.Summary.ThreadGroupCount
+		combined.Summary.SamplerCount += converted.Summary.SamplerCount
+		combined.Summary.VariablesDiscovered = append(combined.Summary.VariablesDiscovered, converted.Summary.VariablesDiscovered...)
+		combined.Summary.CSVSourcesDiscovered = append(combined.Summary.CSVSourcesDiscovered, converted.Summary.CSVSourcesDiscovered...)
+		if converted.ScenarioDraft != nil {
+			if combined.ScenarioDraft == nil {
+				copy := *converted.ScenarioDraft
+				copy.Groups = nil
+				combined.ScenarioDraft = &copy
+			}
+			combined.ScenarioDraft.Groups = append(combined.ScenarioDraft.Groups, converted.ScenarioDraft.Groups...)
+		}
+	}
+	if len(documents) == 1 {
+		combined.Summary.FileName = documents[0].FileName
+	} else {
+		combined.Summary.FileName = fmt.Sprintf("%d JMX files", len(documents))
+	}
+	combined.Summary.VariablesDiscovered = uniqueSortedStrings(combined.Summary.VariablesDiscovered)
+	combined.Summary.CSVSourcesDiscovered = uniqueSortedStrings(combined.Summary.CSVSourcesDiscovered)
+	return combined, nil
 }
 
 func mergeJMeterSidecarFiles(first map[string][]byte, second map[string][]byte) map[string][]byte {

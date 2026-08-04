@@ -60,6 +60,23 @@ func TestRecorderNativeMetadataWarningsAndPauseHistoryAreBounded(t *testing.T) {
 	}
 }
 
+func TestRecorderCapHitsAreRetainedInArtifact(t *testing.T) {
+	r := New(Options{StartURL: "https://example.test/", CaptureWSPayloads: true})
+	r.session.WebSockets = []WebSocketSummary{{URL: "wss://example.test/socket"}}
+	r.wsFrames = maxBrowserWSFrames
+
+	r.recordWSFrame(0, "received", []byte("payload"))
+	r.recordWSFrame(0, "received", []byte("payload"))
+	snapshot := r.Snapshot()
+
+	if snapshot.CapHits["websocket_frames"] != 2 {
+		t.Fatalf("cap hits = %#v", snapshot.CapHits)
+	}
+	if len(snapshot.Warnings) != 1 || !strings.Contains(snapshot.Warnings[0], "WebSocket-frame limit") {
+		t.Fatalf("warnings = %#v", snapshot.Warnings)
+	}
+}
+
 func TestRecorderInteractiveOperationsRejectConcurrentFanout(t *testing.T) {
 	r := New(Options{StartURL: "https://example.test/"})
 	r.navigationSlots <- struct{}{}

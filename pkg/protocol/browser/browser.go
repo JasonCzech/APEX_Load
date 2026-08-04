@@ -89,6 +89,7 @@ type Browser struct {
 	pwContext            playwright.BrowserContext
 	pwPage               playwright.Page
 	pwCDP                playwright.CDPSession
+	pwCDPPage            playwright.Page
 	currentFrameSelector string
 
 	mu             sync.Mutex

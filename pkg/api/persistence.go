@@ -1720,7 +1720,27 @@ func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) err
 	if tr.archiveStore == nil || record == nil {
 		return nil
 	}
+	tr.populateRunArchiveTrendPoint(record)
 	return tr.archiveStore.SaveRunArchive(record)
+}
+
+func (tr *TestRunner) populateRunArchiveTrendPoint(record *storage.RunArchiveRecord) {
+	if record == nil || strings.TrimSpace(record.TrendPointJSON) != "" {
+		return
+	}
+	test, ok := tr.GetTest(record.TestID)
+	if !ok || test == nil {
+		return
+	}
+	report, err := cachedRunArchiveReport(record)
+	if err != nil {
+		slog.Warn("archive trend point could not be generated", "test_id", record.TestID, "err", err)
+		return
+	}
+	encoded, err := json.Marshal(trendPointFromRun(releaseTrendRun{Test: test, Report: report}))
+	if err == nil {
+		record.TrendPointJSON = string(encoded)
+	}
 }
 
 func (tr *TestRunner) captureUsageSnapshotForTerminalRun(testID string, projectID string) {

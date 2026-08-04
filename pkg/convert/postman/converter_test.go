@@ -9,9 +9,43 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestRawURLPreservesStructuredPortAndHash(t *testing.T) {
+	got := rawURL(postmanURL{
+		Protocol: "http",
+		Host:     []string{"localhost"},
+		Port:     "8080",
+		Path:     []string{"api", "v1"},
+		Hash:     "results",
+	})
+	if got != "http://localhost:8080/api/v1#results" {
+		t.Fatalf("rawURL = %q, want structured port and hash", got)
+	}
+}
+
+func TestPostmanLiteralAssignmentsApplyAtTheirSourcePosition(t *testing.T) {
+	vars := map[string]string{"stage": "initial"}
+	request := requestItem{
+		Name: "one",
+		Events: []event{
+			{Listen: "prerequest", Script: eventScript{Exec: []string{`pm.environment.set("stage", "before")`}}},
+			{Listen: "test", Script: eventScript{Exec: []string{`pm.collectionVariables.set("stage", "after")`}}},
+		},
+	}
+	var diagnostics diag.Collector
+	applyPostmanEventVariablesForListen(vars, request, "prerequest", &diagnostics)
+	if vars["stage"] != "before" {
+		t.Fatalf("pre-request value = %q", vars["stage"])
+	}
+	applyPostmanEventVariablesForListen(vars, request, "test", &diagnostics)
+	if vars["stage"] != "after" {
+		t.Fatalf("post-response value = %q", vars["stage"])
+	}
+}
 
 func TestConvertPostmanCollection(t *testing.T) {
 	result, err := Convert(ImportRequest{

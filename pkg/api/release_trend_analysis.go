@@ -64,7 +64,7 @@ type ReleaseTrendSummary struct {
 func buildReleaseTrend(releaseID string, runs []releaseTrendRun) ReleaseTrend {
 	ordered := make([]releaseTrendRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Test == nil || run.Report == nil {
+		if run.Test == nil || (run.Report == nil && run.Point == nil) {
 			continue
 		}
 		ordered = append(ordered, run)
@@ -106,6 +106,12 @@ func buildReleaseTrend(releaseID string, runs []releaseTrendRun) ReleaseTrend {
 }
 
 func trendPointFromRun(run releaseTrendRun) ReleaseTrendPoint {
+	if run.Point != nil {
+		point := *run.Point
+		point.Deltas = nil
+		point.Regressions = nil
+		return point
+	}
 	report := run.Report
 	point := ReleaseTrendPoint{
 		RunID:            run.Test.ID,

@@ -624,14 +624,13 @@ func runNetworkExtractors(extractors []protocol.Extractor, result *protocol.Resu
 	}
 	for _, extractor := range extractors {
 		value, err := extractNetworkValue(extractor, payload, []byte(result.ResponseBody), result)
-		if err != nil {
-			return err.Error()
-		}
 		if extractor.Name != "" {
-			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
+			if err := protocol.ApplyExtraction(result, extractor, value, err); err != nil {
 				result.Extractions = nil
-				return fmt.Sprintf("network extractor %q output rejected: %v", extractor.Name, err)
+				return fmt.Sprintf("network extraction failed: %v", err)
 			}
+		} else if err != nil {
+			return err.Error()
 		}
 	}
 	return ""

@@ -5,6 +5,7 @@ package devweb
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -118,11 +119,12 @@ func newDevWebReviewStep(
 	}
 	applyDevWebReviewFinding(&action, block, offset, construct, reasonCode, detail)
 	return parsedStep{
-		Protocol:  "http",
-		Action:    action,
-		Function:  construct,
-		StartLine: line,
-		EndLine:   line,
+		Protocol:     "http",
+		Action:       action,
+		Function:     construct,
+		StartLine:    line,
+		EndLine:      line,
+		SourceOffset: offset,
 	}
 }
 
@@ -220,7 +222,8 @@ func extractLine(content string, offset int) string {
 func sortParsedSteps(steps []parsedStep) {
 	for i := 0; i < len(steps); i++ {
 		for j := i + 1; j < len(steps); j++ {
-			if steps[i].StartLine > steps[j].StartLine {
+			if steps[i].SourceOffset > steps[j].SourceOffset ||
+				(steps[i].SourceOffset == steps[j].SourceOffset && steps[i].StartLine > steps[j].StartLine) {
 				steps[i], steps[j] = steps[j], steps[i]
 			}
 		}
@@ -255,25 +258,46 @@ func isDevWebNativeExtractorAt(content string, offset int) bool {
 }
 
 func activeDevWebTransaction(prefix string) string {
-	matches := transactionNewPattern.FindAllStringSubmatch(prefix, -1)
-	if len(matches) == 0 {
-		return ""
+	type transactionEvent struct {
+		offset int
+		kind   string
+		name   string
+		value  string
 	}
-	var activeVar, activeName string
-	for _, match := range matches {
-		if len(match) < 3 {
-			continue
+	events := make([]transactionEvent, 0)
+	for _, match := range transactionNewPattern.FindAllStringSubmatchIndex(prefix, -1) {
+		if len(match) >= 6 && match[2] >= 0 && match[4] >= 0 {
+			events = append(events, transactionEvent{offset: match[0], kind: "declare", name: prefix[match[2]:match[3]], value: prefix[match[4]:match[5]]})
 		}
-		activeVar = match[1]
-		activeName = match[2]
 	}
-	if activeVar == "" || activeName == "" {
-		return ""
+	for _, match := range transactionEventPattern.FindAllStringSubmatchIndex(prefix, -1) {
+		if len(match) >= 6 && match[2] >= 0 && match[4] >= 0 {
+			events = append(events, transactionEvent{offset: match[0], kind: prefix[match[4]:match[5]], name: prefix[match[2]:match[3]]})
+		}
 	}
-	start := strings.LastIndex(prefix, activeVar+".start(")
-	stop := strings.LastIndex(prefix, activeVar+".stop(")
-	if start >= 0 && start > stop {
-		return activeName
+	sort.SliceStable(events, func(i, j int) bool { return events[i].offset < events[j].offset })
+	names := make(map[string]string)
+	active := make(map[string]int)
+	for _, event := range events {
+		switch event.kind {
+		case "declare":
+			names[event.name] = event.value
+			delete(active, event.name)
+		case "start":
+			if names[event.name] != "" {
+				active[event.name] = event.offset
+			}
+		case "stop":
+			delete(active, event.name)
+		}
 	}
-	return ""
+	latestOffset := -1
+	latestName := ""
+	for variable, offset := range active {
+		if offset > latestOffset {
+			latestOffset = offset
+			latestName = names[variable]
+		}
+	}
+	return latestName
 }

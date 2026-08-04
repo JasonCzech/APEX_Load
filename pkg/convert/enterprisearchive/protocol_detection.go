@@ -318,7 +318,7 @@ func profileFromContent(files map[string]string, actions []*ParsedAction, projec
 			profile := externalProfile("oracle_nca", "Oracle NCA", "Oracle Enterprise Business Protocol Bundle", "nca_* function calls require a client runner bridge.")
 			return &profile, []string{"nca_* function calls"}
 		}
-		if containsFunctionPrefix(counts, "lrd_") || containsFunctionPrefix(counts, "lr_db") || containsFunctionPrefix(counts, "sql") {
+		if containsFunctionPrefix(counts, "lrd_") || containsFunctionPrefix(counts, "lr_db") {
 			profile := databaseProfile()
 			return &profile, []string{"database function calls"}
 		}

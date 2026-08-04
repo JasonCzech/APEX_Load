@@ -705,6 +705,16 @@ func TestExtractRegex(t *testing.T) {
 	}
 }
 
+func TestExtractRegexWithoutCaptureReturnsFullMatch(t *testing.T) {
+	got, err := extractRegex(`token-\d+`, []byte(`before token-42 after`))
+	if err != nil {
+		t.Fatalf("extractRegex: %v", err)
+	}
+	if got != "token-42" {
+		t.Fatalf("extractRegex = %q, want full match", got)
+	}
+}
+
 func TestExtractRegex_NoMatch(t *testing.T) {
 	_, err := extractRegex(`xyz=([^&]+)`, []byte(`token=abc`))
 	if err == nil {

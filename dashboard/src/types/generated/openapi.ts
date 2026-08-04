@@ -1893,15 +1893,24 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "at_step_seq"?: number;
+          "name"?: string;
+          "text"?: string;
+        };
       };
     };
     responses: {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -10511,15 +10520,24 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "at_step_seq"?: number;
+          "name"?: string;
+          "text"?: string;
+        };
       };
     };
     responses: {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -11796,6 +11814,11 @@ export interface operations {
             }>;
             "scope": string;
             "selected_key"?: string;
+            "skipped_runs"?: Array<{
+              "reason": string;
+              "test_id": string;
+            }>;
+            "warnings"?: Array<string>;
           };
         };
       };
@@ -22116,6 +22139,11 @@ export interface operations {
         };
       };
       "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -35926,15 +35954,24 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "at_step_seq"?: number;
+          "name"?: string;
+          "text"?: string;
+        };
       };
     };
     responses: {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {

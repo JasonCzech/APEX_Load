@@ -21,6 +21,13 @@ type LoadComparisonResponse struct {
 	Options       []LoadComparisonOption        `json:"options"`
 	LoadLevels    []LoadComparisonLoadLevel     `json:"load_levels"`
 	Releases      []LoadComparisonReleaseSeries `json:"releases"`
+	SkippedRuns   []LoadComparisonSkippedRun    `json:"skipped_runs,omitempty"`
+	Warnings      []string                      `json:"warnings,omitempty"`
+}
+
+type LoadComparisonSkippedRun struct {
+	TestID string `json:"test_id"`
+	Reason string `json:"reason"`
 }
 
 type LoadComparisonOption struct {
@@ -69,7 +76,14 @@ type loadComparisonRun struct {
 	ReleaseName      string
 	ReleaseCreatedAt time.Time
 	Transactions     []TransactionEvent
+	TransactionStats map[string]*loadComparisonTransactionAggregate
 	Summaries        []IntervalSummaryRecord
+}
+
+type loadComparisonTransactionAggregate struct {
+	SourceKind       string
+	TransactionCount int64
+	Intervals        map[transactionIntervalLoadKey]*transactionIntervalAccumulator
 }
 
 type loadComparisonOptionTracker struct {
@@ -211,6 +225,19 @@ func collectGroupLoadComparisonOptions(trackers map[string]*loadComparisonOption
 }
 
 func collectTransactionLoadComparisonOptions(trackers map[string]*loadComparisonOptionTracker, run loadComparisonRun) {
+	if run.TransactionStats != nil {
+		for key, aggregate := range run.TransactionStats {
+			if aggregate == nil || aggregate.TransactionCount <= 0 {
+				continue
+			}
+			tracker := loadComparisonOptionTrackerFor(trackers, key, key, LoadComparisonScopeTransaction, aggregate.SourceKind)
+			tracker.ReleaseIDs[run.ReleaseID] = struct{}{}
+			tracker.RunIDs[run.Test.ID] = struct{}{}
+			tracker.TransactionCount += aggregate.TransactionCount
+			tracker.SampleCount += int(aggregate.TransactionCount)
+		}
+		return
+	}
 	for _, tx := range run.Transactions {
 		key, sourceKind := loadComparisonTransactionIdentity(tx)
 		if key == "" {
@@ -355,6 +382,14 @@ func accumulateTransactionLoadComparison(release *loadComparisonReleaseAccumulat
 	if len(run.Summaries) == 0 {
 		return
 	}
+	if run.TransactionStats != nil {
+		aggregate := run.TransactionStats[selectedKey]
+		if aggregate == nil {
+			return
+		}
+		accumulateTransactionIntervals(release, loadSamples, run, aggregate.Intervals)
+		return
+	}
 	intervals := make(map[transactionIntervalLoadKey]*transactionIntervalAccumulator)
 	for _, tx := range run.Transactions {
 		key, _ := loadComparisonTransactionIdentity(tx)
@@ -382,6 +417,10 @@ func accumulateTransactionLoadComparison(release *loadComparisonReleaseAccumulat
 		}
 	}
 
+	accumulateTransactionIntervals(release, loadSamples, run, intervals)
+}
+
+func accumulateTransactionIntervals(release *loadComparisonReleaseAccumulator, loadSamples map[int]int, run loadComparisonRun, intervals map[transactionIntervalLoadKey]*transactionIntervalAccumulator) {
 	for intervalKey, interval := range intervals {
 		if interval.Transactions == 0 {
 			continue

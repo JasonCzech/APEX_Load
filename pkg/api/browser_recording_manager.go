@@ -905,6 +905,7 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 	} else {
 		session.Status = BrowserRecordingStopped
 		session.final = final
+		reconcileBrowserRecordingArtifactCountsLocked(session, final)
 	}
 	session.mu.Unlock()
 	m.clearActive(session.ID)
@@ -935,12 +936,26 @@ func (m *BrowserRecordingManager) forceStopSession(session *BrowserRecordingSess
 	session.OpenTransactions = nil
 	if artifact != nil {
 		session.final = artifact
+		reconcileBrowserRecordingArtifactCountsLocked(session, artifact)
 	}
 	session.mu.Unlock()
 	m.clearActive(session.ID)
 	session.forceStopBackend()
 	m.broadcast("browser_recording_force_stopped", session, nil)
 	return session.fullSnapshot()
+}
+
+func reconcileBrowserRecordingArtifactCountsLocked(session *BrowserRecordingSession, artifact *recbrowser.Session) {
+	if session == nil || artifact == nil {
+		return
+	}
+	session.StepCount = countVisibleSteps(artifact.Steps)
+	session.NavigationCount = len(artifact.NavEvents)
+	session.NetworkRequestCount = len(artifact.NetworkEvents)
+	session.WebSocketCount = len(artifact.WebSockets)
+	session.WarningCount = len(artifact.Warnings)
+	session.MarkerCount = len(artifact.Markers)
+	session.AnnotationCount = len(artifact.Annotations)
 }
 
 func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *recbrowser.Session {
@@ -1017,6 +1032,16 @@ func (m *BrowserRecordingManager) handleEvent(session *BrowserRecordingSession, 
 		session.CurrentURL = event.Nav.URL
 		session.mu.Unlock()
 		m.broadcast("browser_recording_navigation", session, map[string]any{"url": event.Nav.URL})
+	case recbrowser.EventNetworkRequest:
+		session.mu.Lock()
+		session.NetworkRequestCount++
+		session.mu.Unlock()
+		m.broadcast("browser_recording_network_request", session, nil)
+	case recbrowser.EventWebSocket:
+		session.mu.Lock()
+		session.WebSocketCount++
+		session.mu.Unlock()
+		m.broadcast("browser_recording_websocket", session, nil)
 	case recbrowser.EventWarning:
 		session.mu.Lock()
 		session.WarningCount++

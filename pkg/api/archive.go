@@ -658,11 +658,15 @@ type RunArchiveResourcePeaks struct {
 }
 
 type BrowserDiagnosticsBundle struct {
-	SchemaVersion string                     `json:"schema_version"`
-	GeneratedAt   time.Time                  `json:"generated_at"`
-	Manifest      *RunArchiveManifest        `json:"manifest"`
-	Overview      BrowserDiagnosticsOverview `json:"overview"`
-	Events        []BrowserDiagnosticsEvent  `json:"events"`
+	SchemaVersion  string                     `json:"schema_version"`
+	GeneratedAt    time.Time                  `json:"generated_at"`
+	Manifest       *RunArchiveManifest        `json:"manifest"`
+	Overview       BrowserDiagnosticsOverview `json:"overview"`
+	Events         []BrowserDiagnosticsEvent  `json:"events"`
+	TotalEvents    int64                      `json:"total_events"`
+	RetainedEvents int64                      `json:"retained_events"`
+	DroppedEvents  int64                      `json:"dropped_events"`
+	Truncated      bool                       `json:"truncated"`
 }
 
 type BrowserDiagnosticsOverview struct {

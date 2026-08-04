@@ -346,3 +346,15 @@ func TestMetadataKeyIsProvenanceExcludesImporterFieldsFromWireHeaders(t *testing
 		t.Fatal("source_profile import provenance leaked into Kafka headers")
 	}
 }
+
+func TestKafkaPoisonedTransactionStillFinalizesEvidence(t *testing.T) {
+	kafka := newMockKafka(t, nil)
+	kafka.txPoisoned = true
+	result, err := kafka.Execute(context.Background(), &protocol.Action{Name: "after-poison", Type: "kafka_produce", Target: "orders"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success || result.Duration <= 0 || result.ServerTelemetry == nil || len(result.ProtocolEvidence) == 0 {
+		t.Fatalf("poisoned result was not finalized: %+v", result)
+	}
+}

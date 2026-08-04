@@ -49,11 +49,9 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 		if !archiveTransactionHasBrowserDiagnostics(*tx) {
 			return nil
 		}
-		if len(bundle.Events) >= maxBrowserDiagnosticEvents {
-			return fmt.Errorf("browser diagnostics exceed bounded event limit of %d", maxBrowserDiagnosticEvents)
-		}
+		bundle.TotalEvents++
 		event := BrowserDiagnosticsEvent{
-			Index:         len(bundle.Events) + 1,
+			Index:         int(bundle.TotalEvents),
 			Timestamp:     tx.Timestamp,
 			Group:         tx.Group,
 			ActionName:    tx.ActionName,
@@ -118,15 +116,33 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 			bundle.Overview.DOMSnapshots++
 		}
 		bundle.Overview.BrowserTransactions++
-		payloadBytes += browserDiagnosticEventPayloadBytes(&event)
-		if payloadBytes > maxBrowserDiagnosticPayloadBytes {
-			return fmt.Errorf("browser diagnostics exceed bounded payload limit of %d bytes", maxBrowserDiagnosticPayloadBytes)
+		eventBytes := browserDiagnosticEventPayloadBytes(&event)
+		if len(bundle.Events) < maxBrowserDiagnosticEvents && payloadBytes+eventBytes <= maxBrowserDiagnosticPayloadBytes {
+			payloadBytes += eventBytes
+			bundle.Events = append(bundle.Events, event)
+			return nil
 		}
-		bundle.Events = append(bundle.Events, event)
+		// Once bounded, prefer failure evidence over an earlier success. This
+		// keeps the export useful for triage without materializing all events.
+		if !event.Success {
+			for index := range bundle.Events {
+				if bundle.Events[index].Success {
+					previousBytes := browserDiagnosticEventPayloadBytes(&bundle.Events[index])
+					if payloadBytes-previousBytes+eventBytes <= maxBrowserDiagnosticPayloadBytes {
+						bundle.Events[index] = event
+						payloadBytes = payloadBytes - previousBytes + eventBytes
+					}
+					break
+				}
+			}
+		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+	bundle.RetainedEvents = int64(len(bundle.Events))
+	bundle.DroppedEvents = bundle.TotalEvents - bundle.RetainedEvents
+	bundle.Truncated = bundle.DroppedEvents > 0
 	return bundle, nil
 }
 

@@ -8,6 +8,7 @@ package scrub
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 )
@@ -1472,9 +1475,7 @@ func (cp compiledPolicy) scrubHAREntry(entry map[string]any) {
 			request["url"] = cp.valueURL(rawURL)
 		}
 		if postData, ok := request["postData"].(map[string]any); ok {
-			if text, ok := postData["text"].(string); ok {
-				postData["text"] = cp.value(text)
-			}
+			cp.scrubHARBody(entry, postData)
 			cp.scrubNameValueList(postData, "params")
 		}
 	}
@@ -1482,13 +1483,64 @@ func (cp compiledPolicy) scrubHAREntry(entry map[string]any) {
 		cp.scrubNameValueList(response, "headers")
 		cp.scrubNameValueList(response, "cookies")
 		if content, ok := response["content"].(map[string]any); ok {
-			if text, ok := content["text"].(string); ok {
-				content["text"] = cp.value(text)
-			}
+			cp.scrubHARBody(entry, content)
 		}
 	}
 	cp.scrubWebSocketMessages(entry, "_webSocketMessages")
 	cp.scrubWebSocketMessages(entry, "websocket_messages")
+}
+
+func (cp compiledPolicy) scrubHARBody(entry, container map[string]any) {
+	text, ok := container["text"].(string)
+	if !ok {
+		return
+	}
+	encoding, _ := container["encoding"].(string)
+	if !strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+		container["text"] = cp.value(text)
+		return
+	}
+	decoded, err := base64.StdEncoding.DecodeString(text)
+	if err != nil {
+		// Malformed base64 is retained unless its visible representation itself
+		// matches a sensitive pattern. In that case retain a valid encoded marker
+		// and an explicit artifact diagnostic instead of malformed secret bytes.
+		if cp.value(text) != text {
+			container["text"] = base64.StdEncoding.EncodeToString([]byte(Redacted))
+			container["encoding"] = "base64"
+			appendHARScrubDiagnostic(entry, "malformed base64 body containing sensitive content was replaced")
+		}
+		return
+	}
+	if !isTextualHARBody(decoded) {
+		return
+	}
+	scrubbed := cp.value(string(decoded))
+	container["text"] = base64.StdEncoding.EncodeToString([]byte(scrubbed))
+	container["encoding"] = "base64"
+}
+
+func isTextualHARBody(data []byte) bool {
+	if len(data) == 0 || !utf8.Valid(data) {
+		return len(data) == 0
+	}
+	printable := 0
+	total := 0
+	for _, value := range string(data) {
+		total++
+		if unicode.IsPrint(value) || value == '\n' || value == '\r' || value == '\t' {
+			printable++
+		}
+	}
+	return total == 0 || printable*100/total >= 90
+}
+
+func appendHARScrubDiagnostic(entry map[string]any, message string) {
+	if entry == nil || message == "" {
+		return
+	}
+	values, _ := entry["_apexloadScrubDiagnostics"].([]any)
+	entry["_apexloadScrubDiagnostics"] = append(values, message)
 }
 
 // scrubNameValueList handles HAR's [{name, value}] collections. Cookie

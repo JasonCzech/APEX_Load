@@ -167,6 +167,7 @@ func archiveJSONWeight[T any](value *T) int64 {
 
 var runArchiveReportCache = newWeightedBoundedArchiveCache(runArchiveReportCacheEntries, runArchiveReportCacheBytes, archiveJSONWeight[RunArchiveReport])
 var runArchiveManifestCache = newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, archiveJSONWeight[RunArchiveManifest])
+var runArchiveSanitizedPlanCache = newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, sanitizedArchivePlanWeight)
 
 // boundedCache is the small untyped LRU shared by lightweight process caches
 // whose callers need explicit Load, Store, and Delete operations.
@@ -301,4 +302,5 @@ func cloneRunArchiveManifest(manifest *RunArchiveManifest) (*RunArchiveManifest,
 func forgetRunArchiveCache(testID string) {
 	runArchiveReportCache.deleteTest(testID)
 	runArchiveManifestCache.deleteTest(testID)
+	runArchiveSanitizedPlanCache.deleteTest(testID)
 }

@@ -693,8 +693,8 @@ func (b *Browser) trySwitchWindow(action *protocol.Action) error {
 }
 
 func (b *Browser) contextPages() []playwright.Page {
-	if b.pwContext != nil {
-		return b.pwContext.Pages()
+	if context := b.currentBrowserContext(); context != nil {
+		return context.Pages()
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()

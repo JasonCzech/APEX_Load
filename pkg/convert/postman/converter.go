@@ -232,8 +232,10 @@ type postmanURL struct {
 	Raw      string          `json:"raw"`
 	Protocol string          `json:"protocol"`
 	Host     []string        `json:"host"`
+	Port     string          `json:"port"`
 	Path     []string        `json:"path"`
 	Query    []keyValueEntry `json:"query"`
+	Hash     string          `json:"hash"`
 	Variable []keyValueEntry `json:"variable"`
 }
 
@@ -316,7 +318,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	for key, value := range envVars {
 		sourceVars[key] = value
 	}
-	applyPostmanEventVariables(sourceVars, requests, &diagnostics)
 	variableBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
 	vars := variableBindings.Lookup
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
@@ -391,6 +392,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceLineIndex := sourceview.NewLineIndex(content)
 	eventSourceRedacted := false
 	for index, item := range requests {
+		applyPostmanEventVariablesForListen(sourceVars, item, "prerequest", &diagnostics)
+		currentBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
+		vars = currentBindings.Lookup
+		requestPipeline.updateSourceVariables(currentBindings.SourceValues, currentBindings.Dependencies)
 		reportPostmanEvents(item, &diagnostics)
 		preservePostmanEventSources(result.Script, item)
 
@@ -453,10 +458,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, sourceLineIndex, item, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Postman request was converted into a generated APEX Load action."))
 		result.Summary.Requests = append(result.Summary.Requests, action.Method+" "+action.Target)
 		result.Stats.ConvertedActions++
+		applyPostmanEventVariablesForListen(sourceVars, item, "test", &diagnostics)
 	}
 	if len(result.Script.Actions) == 0 {
 		return nil, errors.New("Postman collection contains no supported requests")
 	}
+	// Retain deterministic literal assignments as authoring parameters after
+	// applying them in source order. This preserves the existing review surface
+	// without leaking a later assignment backward into earlier requests.
+	finalBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
+	result.Script.Parameters = mergeParameters(result.Script.Parameters, buildParameters(finalBindings.RuntimeValues, baseURL))
 	// Turn pm.<scope>.set("var", pm.response...) test-script assignments into
 	// response extractors on the producing action so later {{var.X}} references
 	// resolve at replay (Postman's response→request chaining idiom).
@@ -807,20 +818,27 @@ var postmanSetPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariabl
 
 func applyPostmanEventVariables(vars map[string]string, requests []requestItem, diagnostics *diag.Collector) {
 	for _, req := range requests {
-		location := postmanItemLocation(req)
-		for _, ev := range req.Events {
-			for _, line := range ev.Script.Exec {
-				for _, match := range postmanSetPattern.FindAllStringSubmatch(line, -1) {
-					if len(match) < 3 {
-						continue
-					}
-					key := strings.TrimSpace(match[1])
-					if key == "" {
-						continue
-					}
-					vars[key] = match[2]
-					diagnostics.Add(diag.Info, "Postman script variable", location, "translated deterministic pm variable assignment for "+key)
+		applyPostmanEventVariablesForListen(vars, req, "", diagnostics)
+	}
+}
+
+func applyPostmanEventVariablesForListen(vars map[string]string, req requestItem, listen string, diagnostics *diag.Collector) {
+	location := postmanItemLocation(req)
+	for _, ev := range req.Events {
+		if listen != "" && !strings.EqualFold(strings.TrimSpace(ev.Listen), listen) {
+			continue
+		}
+		for _, line := range ev.Script.Exec {
+			for _, match := range postmanSetPattern.FindAllStringSubmatch(line, -1) {
+				if len(match) < 3 {
+					continue
 				}
+				key := strings.TrimSpace(match[1])
+				if key == "" {
+					continue
+				}
+				vars[key] = match[2]
+				diagnostics.Add(diag.Info, "Postman script variable", location, "translated deterministic pm variable assignment for "+key)
 			}
 		}
 	}
@@ -1163,11 +1181,17 @@ func rawURL(u postmanURL) string {
 		prefix = u.Protocol + "://"
 	}
 	raw := prefix + host
+	if port := strings.TrimSpace(u.Port); port != "" && host != "" {
+		raw += ":" + port
+	}
 	if path != "" {
 		raw += "/" + path
 	}
 	if encoded := postmanQueryString(u.Query); encoded != "" {
 		raw += "?" + encoded
+	}
+	if hash := strings.TrimPrefix(strings.TrimSpace(u.Hash), "#"); hash != "" {
+		raw += "#" + hash
 	}
 	return raw
 }

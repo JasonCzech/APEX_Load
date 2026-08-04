@@ -474,6 +474,24 @@ func TestHandleRunCalendarClampsRetentionAndFutureRange(t *testing.T) {
 	}
 }
 
+func TestRunCalendarTopKKeepsEarliestEventsAcrossSourceOrder(t *testing.T) {
+	base := time.Date(2026, time.August, 3, 12, 0, 0, 0, time.UTC)
+	collector := runCalendarTopK{limit: 2}
+	collector.add(RunCalendarEvent{ID: "late", Title: "Late", StartAt: base.Add(3 * time.Hour)})
+	collector.add(RunCalendarEvent{ID: "middle", Title: "Middle", StartAt: base.Add(2 * time.Hour)})
+	collector.add(RunCalendarEvent{ID: "early", Title: "Early", StartAt: base.Add(time.Hour)})
+	if !collector.truncated || len(collector.events) != 2 {
+		t.Fatalf("collector = %#v", collector)
+	}
+	ids := map[string]bool{}
+	for _, event := range collector.events {
+		ids[event.ID] = true
+	}
+	if !ids["early"] || !ids["middle"] || ids["late"] {
+		t.Fatalf("retained event IDs = %#v, want earliest two", ids)
+	}
+}
+
 func findRunCalendarEvent(events []RunCalendarEvent, match func(RunCalendarEvent) bool) *RunCalendarEvent {
 	for i := range events {
 		if match(events[i]) {

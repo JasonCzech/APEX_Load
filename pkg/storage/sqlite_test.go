@@ -1306,6 +1306,7 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 		ManifestPath:     "/tmp/apexload/archive/manifest.json",
 		ManifestSHA256:   "abc123",
 		TransactionCount: 10,
+		TrendPointJSON:   `{"run_id":"compact"}`,
 		CreatedAt:        time.Now(),
 		CompletedAt:      time.Now(),
 	}
@@ -1321,6 +1322,9 @@ func TestSQLiteStoreApplicationsReleasesScenariosAndContext(t *testing.T) {
 	}
 	if roundArchive.ManifestSHA256 != archive.ManifestSHA256 {
 		t.Fatalf("archive manifest hash = %q, want %q", roundArchive.ManifestSHA256, archive.ManifestSHA256)
+	}
+	if roundArchive.TrendPointJSON != archive.TrendPointJSON {
+		t.Fatalf("archive trend point = %q, want %q", roundArchive.TrendPointJSON, archive.TrendPointJSON)
 	}
 	filtered, err := store.ListTestsByContext(app.ID, release.ID, scenario.ID)
 	if err != nil {

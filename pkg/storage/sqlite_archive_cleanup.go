@@ -115,7 +115,7 @@ func getRunArchiveTx(tx *storeTx, testID string) (*RunArchiveRecord, error) {
 	err := tx.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version,
 		COALESCE(archive_backend, ''), archive_path, manifest_path,
 		COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''),
-		transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at
+		transaction_count, resource_sample_count, interval_summary_count, COALESCE(trend_point_json, ''), created_at, completed_at
 		FROM run_archives WHERE test_id = ?`, testID).Scan(
 		&record.TestID,
 		&record.RefKey,
@@ -129,6 +129,7 @@ func getRunArchiveTx(tx *storeTx, testID string) (*RunArchiveRecord, error) {
 		&record.TransactionCount,
 		&record.ResourceSampleCount,
 		&record.IntervalSummaryCount,
+		&record.TrendPointJSON,
 		&record.CreatedAt,
 		&record.CompletedAt,
 	)
@@ -143,7 +144,7 @@ func listProjectRunArchivesTx(tx *storeTx, projectID string) ([]*RunArchiveRecor
 	rows, err := tx.Query(`SELECT ra.test_id, COALESCE(ra.ref_key, ''), ra.schema_version,
 		COALESCE(ra.archive_backend, ''), ra.archive_path, ra.manifest_path,
 		COALESCE(ra.manifest_sha256, ''), COALESCE(ra.archive_uri, ''), COALESCE(ra.manifest_uri, ''),
-		ra.transaction_count, ra.resource_sample_count, ra.interval_summary_count, ra.created_at, ra.completed_at
+		ra.transaction_count, ra.resource_sample_count, ra.interval_summary_count, COALESCE(ra.trend_point_json, ''), ra.created_at, ra.completed_at
 		FROM run_archives ra JOIN tests t ON t.id = ra.test_id WHERE t.project_id = ?`, projectID)
 	if err != nil {
 		return nil, err
@@ -165,6 +166,7 @@ func listProjectRunArchivesTx(tx *storeTx, projectID string) ([]*RunArchiveRecor
 			&record.TransactionCount,
 			&record.ResourceSampleCount,
 			&record.IntervalSummaryCount,
+			&record.TrendPointJSON,
 			&record.CreatedAt,
 			&record.CompletedAt,
 		); err != nil {

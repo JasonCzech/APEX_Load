@@ -76,6 +76,15 @@ func TestBuildReleaseTrendDeltasAndRegressions(t *testing.T) {
 	}
 }
 
+func TestBuildReleaseTrendUsesCompactPointsWithoutReports(t *testing.T) {
+	completed := time.Date(2026, time.May, 21, 12, 0, 0, 0, time.UTC)
+	point := &ReleaseTrendPoint{RunID: "compact-run", RunName: "Compact", Status: "COMPLETE", CompletedAt: completed, Transactions: 42, AvgResponseMs: 123}
+	trend := buildReleaseTrend("rel-compact", []releaseTrendRun{{Test: &ManagedTest{ID: "compact-run"}, Point: point}})
+	if trend.RunCount != 1 || trend.Points[0].Transactions != 42 || trend.Points[0].AvgResponseMs != 123 {
+		t.Fatalf("trend = %#v", trend)
+	}
+}
+
 func TestBuildReleaseTrendNoRegression(t *testing.T) {
 	base := time.Date(2026, time.May, 20, 12, 0, 0, 0, time.UTC)
 	a := trendRunFixture("run-a", base, 1.0, 100, 100, false)

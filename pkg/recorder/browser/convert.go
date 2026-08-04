@@ -745,7 +745,7 @@ func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
 	}
 	params["direction"] = "received"
 	payload := strings.TrimSpace(entry.wsFrame.Payload)
-	if payload != "" {
+	if payload != "" && !containsRedactedWebSocketValue(payload) {
 		params["match"] = truncateString(webSocketPayloadMatchHint(payload), 160)
 		params["match_mode"] = "contains"
 	}
@@ -753,6 +753,10 @@ func websocketWaitAction(entry timelineEntry) (dsl.Action, bool) {
 		name = "Wait for WebSocket frame " + entry.wsURL
 	}
 	return dsl.Action{Name: name, Type: "browser_ws_wait", Params: params}, true
+}
+
+func containsRedactedWebSocketValue(payload string) bool {
+	return strings.Contains(strings.ToUpper(payload), "[REDACTED")
 }
 
 func truncateString(value string, limit int) string {

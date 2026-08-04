@@ -364,6 +364,12 @@ func (b *Browser) currentPage() playwright.Page {
 	return b.pwPage
 }
 
+func (b *Browser) currentBrowserContext() playwright.BrowserContext {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.pwContext
+}
+
 func (b *Browser) registerPage(page playwright.Page, activate bool) {
 	if page == nil {
 		return
@@ -393,7 +399,7 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 		page.OnClose(func(closed playwright.Page) { b.removePage(closed) })
 	}
 	if activate {
-		b.installCDPSession(b.pwContext, page)
+		b.installCDPSession(b.currentBrowserContext(), page)
 	}
 }
 
@@ -618,6 +624,12 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 	if !b.supportsCDP() || (b.cpuThrottleRate <= 1.0 && !b.clientMetricsEnabled && !b.browserNetworkSimulationActive()) {
 		return
 	}
+	b.mu.Lock()
+	if b.pwCDP != nil && b.pwCDPPage == page {
+		b.mu.Unlock()
+		return
+	}
+	b.mu.Unlock()
 	cdp, err := browserContext.NewCDPSession(page)
 	if err != nil {
 		return
@@ -626,8 +638,13 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 	// registerPage runs this on Playwright's OnPage dispatch goroutine, so guard
 	// the write with b.mu (registerPage already released b.mu before calling here).
 	b.mu.Lock()
+	previous := b.pwCDP
 	b.pwCDP = cdp
+	b.pwCDPPage = page
 	b.mu.Unlock()
+	if previous != nil && previous != cdp {
+		_ = previous.Detach()
+	}
 	if b.cpuThrottleRate > 1.0 {
 		_, _ = cdp.Send("Emulation.setCPUThrottlingRate", map[string]any{"rate": b.cpuThrottleRate})
 	}

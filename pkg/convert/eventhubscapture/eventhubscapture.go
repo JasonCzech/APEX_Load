@@ -125,7 +125,9 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 			action.Params = map[string]any{"partition_key": partitionKey}
 			partitionKeys++
 		}
-		action.Assertions = []dsl.Assertion{{Type: "message_received"}}
+		if len(body) > 0 {
+			action.Assertions = []dsl.Assertion{{Type: "message_received"}}
+		}
 		actions = append(actions, action)
 	}
 

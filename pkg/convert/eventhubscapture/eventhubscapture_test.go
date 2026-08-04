@@ -192,6 +192,9 @@ func TestConvertCaptureEmptyBodyWarns(t *testing.T) {
 	if !hasWarningContaining(res.Warnings, "empty body") {
 		t.Fatalf("expected an empty-body warning, got %v", res.Warnings)
 	}
+	if got := res.Script.Actions[0].Assertions; len(got) != 0 {
+		t.Fatalf("empty captured event has deterministically failing assertions: %+v", got)
+	}
 }
 
 func TestConvertCaptureRejectsNonAvro(t *testing.T) {

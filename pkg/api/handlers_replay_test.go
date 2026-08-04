@@ -47,6 +47,19 @@ func registerReplayAPIProtocol(t *testing.T, execute func(action *protocol.Actio
 	return name
 }
 
+func TestHandleClassicReplayHonorsRequestCancellation(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	response := httptest.NewRecorder()
+
+	server.handleReplayRequestContext(ctx, response, "script", &dsl.Script{}, ReplayScriptRequest{})
+
+	if response.Code != http.StatusRequestTimeout {
+		t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusRequestTimeout, response.Body.String())
+	}
+}
+
 func TestHandleReplayScriptReturnsStructuredReport(t *testing.T) {
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		switch action.Name {

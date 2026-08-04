@@ -11,6 +11,7 @@ import (
 type releaseTrendRun struct {
 	Test   *ManagedTest
 	Report *RunArchiveReport
+	Point  *ReleaseTrendPoint
 }
 
 func writeReleaseTrendCSV(writer io.Writer, runs []releaseTrendRun) error {
@@ -102,6 +103,9 @@ func releaseTrendCSVRow(run releaseTrendRun) []string {
 }
 
 func releaseTrendRunCompletedAt(run releaseTrendRun) time.Time {
+	if run.Point != nil && !run.Point.CompletedAt.IsZero() {
+		return run.Point.CompletedAt
+	}
 	if run.Report != nil && run.Report.Manifest != nil && !run.Report.Manifest.CompletedAt.IsZero() {
 		return run.Report.Manifest.CompletedAt
 	}

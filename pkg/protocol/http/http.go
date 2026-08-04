@@ -409,6 +409,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	client := *h.client
 	if action.TimeoutMs > 0 {
 		client.Timeout = time.Duration(action.TimeoutMs) * time.Millisecond
+	} else if sseRequestedByParams(action.Params) {
+		streamTimeout, err := protocol.BoundedMilliseconds(action.Params["stream_timeout_ms"], defaultSSEStreamTimeout, MaxConfiguredTimeout)
+		if err != nil {
+			result.ErrorMessage = fmt.Sprintf("stream_timeout_ms %v", err)
+			return result, nil
+		}
+		if streamTimeout > 0 {
+			// readSSEResponse owns the authored collection window. The transport
+			// timeout must not preempt that window; retain a small allowance for
+			// response headers and orderly body shutdown.
+			client.Timeout = streamTimeout + 5*time.Second
+		} else {
+			client.Timeout = 0
+		}
 	}
 	if action.MaxRedirects != nil {
 		client.CheckRedirect = nil

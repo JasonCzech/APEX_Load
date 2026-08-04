@@ -2545,6 +2545,32 @@ func inspectBrunoJSON(t *testing.T, server *Server, source []byte, syncScriptID 
 	return inspected
 }
 
+func TestBrunoInspectReturnsRetryable429WhenInspectionSlotIsBusy(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	brunoInspectConcurrency <- struct{}{}
+	defer func() { <-brunoInspectConcurrency }()
+
+	payload, err := json.Marshal(brunoInspectJSONRequest{
+		ProjectID: brunoImportTestProject,
+		Filename:  "request.yml",
+		Content:   "info: {name: Request, type: http}\nhttp: {method: GET, url: https://example.test}\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/bruno/inspect", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Retry-After") == "" {
+		t.Fatal("429 response is missing Retry-After")
+	}
+}
+
 func TestBrunoInspectRejectsQueryBodyProjectMismatch(t *testing.T) {
 	server, _, artifactDir := newBrunoImportAPITestServer(t)
 	payload, err := json.Marshal(brunoInspectJSONRequest{

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -88,6 +90,73 @@ func TestBuildLoadComparisonTransactionScopeAggregatesByIntervalAndPrefersSource
 	point := comparison.Releases[0].Points[0]
 	if point.Transactions != 2 || point.Errors != 1 || point.TPS != 2 || point.AvgResponseMs != 120 || point.ErrorPct != 50 {
 		t.Fatalf("transaction point = %#v, want 2 tx, 1 error, TPS 2, ART 120, error 50%%", point)
+	}
+}
+
+func TestBuildLoadComparisonConsumesStreamingTransactionAggregates(t *testing.T) {
+	base := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+	run := loadComparisonRunFixture("run-stream", "rel-a", "Sprint 1", base, nil, []IntervalSummaryRecord{
+		loadComparisonSummary(base, 25, map[string]*GroupLiveMetrics{"Buyers": {Name: "Buyers", VUsers: 25}}),
+	})
+	run.TransactionStats = map[string]*loadComparisonTransactionAggregate{
+		"Checkout Flow": {
+			SourceKind:       "source_transaction",
+			TransactionCount: 2,
+			Intervals: map[transactionIntervalLoadKey]*transactionIntervalAccumulator{
+				{Index: 0, Load: 25}: {Transactions: 2, Errors: 1, DurationTotal: 240},
+			},
+		},
+	}
+
+	comparison := buildLoadComparison("app-1", LoadComparisonScopeTransaction, "", []loadComparisonRun{run})
+	if len(comparison.Options) != 1 || comparison.Options[0].TransactionCount != 2 || comparison.SelectedKey != "Checkout Flow" {
+		t.Fatalf("options = %#v selected=%q", comparison.Options, comparison.SelectedKey)
+	}
+	point := comparison.Releases[0].Points[0]
+	if point.Transactions != 2 || point.Errors != 1 || point.TPS != 2 || point.AvgResponseMs != 120 || point.ErrorPct != 50 {
+		t.Fatalf("streaming point = %#v", point)
+	}
+}
+
+func TestLoadComparisonStreamsBeyondLegacyRecordLimit(t *testing.T) {
+	const transactionCount = maxArchiveAnalysisRecords + 1
+	archiveDir := t.TempDir()
+	manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "large-comparison", TransactionsFile: "transactions.jsonl"}
+	manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Create(filepath.Join(archiveDir, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := bufio.NewWriterSize(file, 1<<20)
+	for index := 0; index < transactionCount; index++ {
+		if _, err := writer.WriteString("{\"action_name\":\"Search\",\"success\":true}\n"); err != nil {
+			file.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Flush(); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	aggregates, err := streamLoadComparisonTransactionAggregates(context.Background(), &storage.RunArchiveRecord{
+		TestID: "large-comparison", ArchivePath: archiveDir, ManifestPath: manifestPath,
+	}, nil)
+	if err != nil {
+		t.Fatalf("streamLoadComparisonTransactionAggregates: %v", err)
+	}
+	if aggregate := aggregates["Search"]; aggregate == nil || aggregate.TransactionCount != transactionCount {
+		t.Fatalf("Search aggregate = %#v, want %d transactions", aggregate, transactionCount)
 	}
 }
 

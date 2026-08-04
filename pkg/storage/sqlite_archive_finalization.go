@@ -469,8 +469,8 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 			return false, err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	if _, err := tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, trend_point_json, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
 			ref_key=excluded.ref_key,
 			schema_version=excluded.schema_version,
@@ -483,11 +483,12 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 			transaction_count=excluded.transaction_count,
 			resource_sample_count=excluded.resource_sample_count,
 			interval_summary_count=excluded.interval_summary_count,
+			trend_point_json=excluded.trend_point_json,
 			created_at=excluded.created_at,
 			completed_at=excluded.completed_at`, record.TestID, record.RefKey, record.SchemaVersion,
 		record.ArchiveBackend, record.ArchivePath, record.ManifestPath, record.ManifestSHA256,
 		record.ArchiveURI, record.ManifestURI, record.TransactionCount, record.ResourceSampleCount,
-		record.IntervalSummaryCount, record.CreatedAt, record.CompletedAt); err != nil {
+		record.IntervalSummaryCount, record.TrendPointJSON, record.CreatedAt, record.CompletedAt); err != nil {
 		return false, err
 	}
 	result, err := tx.Exec(`DELETE FROM archive_finalization_jobs WHERE test_id = ? AND intent_token = ?`, testID, intentToken)

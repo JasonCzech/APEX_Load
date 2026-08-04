@@ -47,19 +47,28 @@ func TestMemoryCacheBackendIdempotencyAndRateLimit(t *testing.T) {
 	cache := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "test", FanoutChannel: "events"})
 	ctx := context.Background()
 
-	reserved, err := cache.ReserveIdempotencyKey(ctx, "create-run", time.Minute)
+	reserved, err := cache.ReserveIdempotencyKey(ctx, "create-run", "owner-1", time.Minute)
 	if err != nil {
 		t.Fatalf("reserve idempotency key: %v", err)
 	}
 	if !reserved {
 		t.Fatal("expected first idempotency reservation to succeed")
 	}
-	reserved, err = cache.ReserveIdempotencyKey(ctx, "create-run", time.Minute)
+	reserved, err = cache.ReserveIdempotencyKey(ctx, "create-run", "owner-2", time.Minute)
 	if err != nil {
 		t.Fatalf("reserve duplicate idempotency key: %v", err)
 	}
 	if reserved {
 		t.Fatal("expected duplicate idempotency reservation to be rejected")
+	}
+	if released, err := cache.ReleaseIdempotencyKey(ctx, "create-run", "owner-2"); err != nil || released {
+		t.Fatalf("non-owner release = %v, %v", released, err)
+	}
+	if released, err := cache.ReleaseIdempotencyKey(ctx, "create-run", "owner-1"); err != nil || !released {
+		t.Fatalf("owner release = %v, %v", released, err)
+	}
+	if reserved, err = cache.ReserveIdempotencyKey(ctx, "create-run", "owner-3", time.Minute); err != nil || !reserved {
+		t.Fatalf("reserve after release = %v, %v", reserved, err)
 	}
 
 	allowed, remaining, err := cache.AllowRateLimit(ctx, "api-key", 2, time.Minute)
@@ -126,6 +135,33 @@ func TestRedisCacheBackendAtomicLoadOrStoreAcrossClients(t *testing.T) {
 	actual, loaded, err = caches[1].LoadOrStoreValue(context.Background(), "ttl", []byte("new"), time.Minute)
 	if err != nil || loaded || string(actual) != "new" {
 		t.Fatalf("post-expiry Redis value = %q loaded=%v err=%v", actual, loaded, err)
+	}
+}
+
+func TestRedisRateLimitAtomicallyInstallsAndRepairsTTL(t *testing.T) {
+	server := miniredis.RunT(t)
+	cache, err := newRedisCacheBackend(cacheRuntimeConfig{
+		Backend: cacheBackendRedis, RedisURL: "redis://" + server.Addr() + "/0", KeyPrefix: "rate-test",
+		Timeout: time.Second, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+
+	if allowed, _, err := cache.AllowRateLimit(context.Background(), "actor", 2, time.Minute); err != nil || !allowed {
+		t.Fatalf("first rate limit = allowed %v err %v", allowed, err)
+	}
+	key := cache.key("rate-limit", "actor")
+	if ttl := server.TTL(key); ttl <= 0 {
+		t.Fatalf("initial TTL = %v", ttl)
+	}
+	server.SetTTL(key, 0)
+	if _, _, err := cache.AllowRateLimit(context.Background(), "actor", 2, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if ttl := server.TTL(key); ttl <= 0 {
+		t.Fatalf("repaired TTL = %v", ttl)
 	}
 }
 
@@ -291,7 +327,7 @@ func TestMemoryCacheSweepsExpiredUniqueKeys(t *testing.T) {
 	}
 	cache.writes = 255
 	cache.mu.Unlock()
-	if _, err := cache.ReserveIdempotencyKey(context.Background(), "fresh", time.Minute); err != nil {
+	if _, err := cache.ReserveIdempotencyKey(context.Background(), "fresh", "owner", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	cache.mu.Lock()

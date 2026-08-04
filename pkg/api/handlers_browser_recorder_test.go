@@ -1301,6 +1301,11 @@ func TestHandleBrowserRecordingTransactionsAndNotes(t *testing.T) {
 	server := newBrowserRecorderTestServer(t, fake)
 	id := startBrowserRecordingViaAPI(t, server)
 
+	malformed := postBrowserRecorderControl(t, server, id, "notes", `{"text":"missing brace"`)
+	if malformed.Code != http.StatusBadRequest || !strings.Contains(malformed.Body.String(), "invalid JSON") {
+		t.Fatalf("malformed marker status = %d body=%s, want JSON syntax error", malformed.Code, malformed.Body.String())
+	}
+
 	start := postBrowserRecorderControl(t, server, id, "transactions/start", `{"name":"Checkout"}`)
 	if start.Code != http.StatusOK {
 		t.Fatalf("transaction start status = %d body=%s", start.Code, start.Body.String())

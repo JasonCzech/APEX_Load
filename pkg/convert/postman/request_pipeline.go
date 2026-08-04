@@ -84,6 +84,15 @@ func newPostmanRequestPipeline(
 	return pipeline
 }
 
+func (pipeline *postmanRequestPipeline) updateSourceVariables(variables map[string]string, dependencies map[string][]string) {
+	if pipeline == nil {
+		return
+	}
+	updated := newPostmanRequestPipeline(variables, pipeline.sanitizeSensitive, dependencies)
+	pipeline.sourceVariables = updated.sourceVariables
+	pipeline.sourceDependencies = updated.sourceDependencies
+}
+
 func (pipeline *postmanRequestPipeline) FinalizeAction(
 	index int,
 	item requestItem,

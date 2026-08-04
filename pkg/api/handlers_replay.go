@@ -20,6 +20,7 @@ const (
 	maxReplaySessionReservationsPerProject = 100
 	defaultReplaySessionLeaseTTL           = 30 * time.Second
 	defaultReplaySessionLeaseTimeout       = 5 * time.Second
+	classicReplayRequestTimeout            = 5 * time.Minute
 )
 
 var (
@@ -73,7 +74,7 @@ func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.handleReplayRequest(w, "", req.Script, req)
+	s.handleReplayRequestContext(r.Context(), w, "", req.Script, req)
 }
 
 func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
@@ -115,10 +116,23 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.handleReplayRequest(w, id, script, req)
+	s.handleReplayRequestContext(r.Context(), w, id, script, req)
 }
 
 func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
+	s.handleReplayRequestContext(context.Background(), w, id, script, req)
+}
+
+func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
+	if requestCtx == nil {
+		requestCtx = context.Background()
+	}
+	requestCtx, cancelRequest := context.WithTimeout(requestCtx, classicReplayRequestTimeout)
+	defer cancelRequest()
+	if err := requestCtx.Err(); err != nil {
+		writeError(w, http.StatusRequestTimeout, "classic replay request was canceled")
+		return
+	}
 	if !s.requireExecutionLeader(w) {
 		return
 	}
@@ -153,7 +167,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	if req.IgnoreThinkTime != nil {
 		ignoreThinkTime = *req.IgnoreThinkTime
 	}
-	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())
+	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(requestCtx)
 	defer releaseExecutionCtx()
 	replaySessionID, releaseReplaySessionID, leaseSignal, err := s.reserveReplaySessionIDContext(executionCtx, req.ReplaySessionID, script.ProjectID)
 	if err != nil {
@@ -188,6 +202,16 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 			s.broadcastReplayProgress(replaySessionID, id, normalizeProjectID(script.ProjectID), event)
 		},
 	}, req.trustedPreservedImport)
+	if requestErr := requestCtx.Err(); requestErr != nil {
+		status := http.StatusRequestTimeout
+		message := "classic replay request was canceled"
+		if errors.Is(requestErr, context.DeadlineExceeded) {
+			status = http.StatusGatewayTimeout
+			message = "classic replay exceeded its request deadline"
+		}
+		writeError(w, status, message)
+		return
+	}
 	if fenceErr := replayExecutionFenceError(executionCtx, leaseFailure); fenceErr != nil {
 		writeError(w, http.StatusServiceUnavailable, fenceErr.Error())
 		return

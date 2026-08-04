@@ -643,6 +643,31 @@ func TestConvertArchiveUsesRunLogicReferencesOnly(t *testing.T) {
 	}
 }
 
+func TestConvertArchiveEmitsNestedCalledActionOnce(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="top" action="TopStep">
+    <step type="block" action="Run Block" actionName="Run">
+      <step type="control" action="Call Action" arguments="{&quot;Action Name&quot;:{&quot;value&quot;:&quot;Outer&quot;}}" />
+    </step>
+    <step type="block" action="action" actionName="Outer">
+      <step type="control" action="Call Action" arguments="{&quot;Action Name&quot;:{&quot;value&quot;:&quot;Inner&quot;}}" />
+    </step>
+    <step type="block" action="action" actionName="Inner">
+      <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://m.example.com/once\&quot;&quot;}}" />
+    </step>
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "Nested Action Flow"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Target != "https://m.example.com/once" {
+		t.Fatalf("actions = %#v, want called Inner action exactly once", result.Script.Actions)
+	}
+}
+
 func TestConvertArchiveMapsDirectClickAndTypeSteps(t *testing.T) {
 	result, err := ConvertArchive(map[string]string{
 		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>

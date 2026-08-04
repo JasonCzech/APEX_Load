@@ -3,6 +3,7 @@ package openapi
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/url"
@@ -1786,6 +1787,10 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 	sensitiveNames := openAPISchemaCredentialNames(media.Schema, res, location)
 	encodingReviewCodes := openAPIEncodingReviewCodes(preferred, media.Encoding)
 	if media.Example != nil {
+		if strings.Contains(strings.ToLower(preferred), "xml") {
+			rendered, reviewCodes := renderStructuredXMLExample(media.Example, media.Schema)
+			return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+		}
 		if strings.Contains(strings.ToLower(preferred), "multipart/") {
 			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(media.Example, preferred, media.Schema, res, location)
 			return rendered, contentType, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
@@ -1798,6 +1803,11 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 		if !present {
 			return "", preferred, nil, append(exampleReviewCodes, encodingReviewCodes...), sensitiveNames
 		}
+		if strings.Contains(strings.ToLower(preferred), "xml") {
+			rendered, reviewCodes := renderStructuredXMLExample(example, media.Schema)
+			reviewCodes = append(reviewCodes, exampleReviewCodes...)
+			return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+		}
 		if strings.Contains(strings.ToLower(preferred), "multipart/") {
 			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(example, preferred, media.Schema, res, location)
 			reviewCodes = append(reviewCodes, exampleReviewCodes...)
@@ -1808,6 +1818,10 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 		return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 	}
 	if media.Schema.Example != nil {
+		if strings.Contains(strings.ToLower(preferred), "xml") {
+			rendered, reviewCodes := renderStructuredXMLExample(media.Schema.Example, media.Schema)
+			return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+		}
 		if strings.Contains(strings.ToLower(preferred), "multipart/") {
 			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(media.Schema.Example, preferred, media.Schema, res, location)
 			return rendered, contentType, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
@@ -1844,6 +1858,77 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 	}
 	reviewCodes := append(sensitiveNonStringSchemaCodes(media.Schema, res, location), encodingReviewCodes...)
 	return expandRawJSONTemplates(string(encoded)), preferred, cols, reviewCodes, sensitiveNames
+}
+
+var openAPISafeXMLName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
+
+func renderStructuredXMLExample(value any, root schema) (string, []string) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	name := "root"
+	namespace := ""
+	prefix := ""
+	if root.XML != nil {
+		name = convertutil.FirstNonEmpty(strings.TrimSpace(root.XML.Name), name)
+		namespace = strings.TrimSpace(root.XML.Namespace)
+		prefix = strings.TrimSpace(root.XML.Prefix)
+	}
+	var output strings.Builder
+	if err := writeOpenAPIStructuredXML(&output, name, prefix, namespace, value, true); err != nil {
+		return "", []string{"unsupported_structured_xml_example"}
+	}
+	return output.String(), nil
+}
+
+func writeOpenAPIStructuredXML(output *strings.Builder, name, prefix, namespace string, value any, root bool) error {
+	if !openAPISafeXMLName.MatchString(name) || (prefix != "" && !openAPISafeXMLName.MatchString(prefix)) {
+		return fmt.Errorf("invalid XML name")
+	}
+	qualified := name
+	if prefix != "" {
+		qualified = prefix + ":" + name
+	}
+	output.WriteByte('<')
+	output.WriteString(qualified)
+	if root && namespace != "" {
+		if prefix == "" {
+			output.WriteString(` xmlns="`)
+		} else {
+			output.WriteString(` xmlns:` + prefix + `="`)
+		}
+		if err := xml.EscapeText(output, []byte(namespace)); err != nil {
+			return err
+		}
+		output.WriteByte('"')
+	}
+	output.WriteByte('>')
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, childName := range sortedMapKeys(typed) {
+			child := typed[childName]
+			if values, ok := child.([]any); ok {
+				for _, item := range values {
+					if err := writeOpenAPIStructuredXML(output, childName, "", "", item, false); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+			if err := writeOpenAPIStructuredXML(output, childName, "", "", child, false); err != nil {
+				return err
+			}
+		}
+	case nil:
+	default:
+		if err := xml.EscapeText(output, []byte(fmt.Sprint(typed))); err != nil {
+			return err
+		}
+	}
+	output.WriteString("</")
+	output.WriteString(qualified)
+	output.WriteByte('>')
+	return nil
 }
 
 func openAPIEncodingReviewCodes(contentType string, encoding map[string]any) []string {

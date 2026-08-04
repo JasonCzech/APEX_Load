@@ -270,11 +270,9 @@ func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result
 	}
 	for _, extractor := range action.Extractors {
 		value, err := extract(extractor, []byte(result.ResponseBody))
-		if err == nil {
-			if err := protocol.StoreExtraction(result, extractor.Name, value); err != nil {
-				result.Extractions = nil
-				return fmt.Errorf("websocket extractor %q output rejected: %w", extractor.Name, err)
-			}
+		if err := protocol.ApplyExtraction(result, extractor, value, err); err != nil {
+			result.Extractions = nil
+			return fmt.Errorf("websocket extraction failed: %w", err)
 		}
 	}
 	for _, assertion := range action.Assertions {

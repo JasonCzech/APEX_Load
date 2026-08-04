@@ -1,6 +1,7 @@
 package api
 
 import (
+	"container/heap"
 	"fmt"
 	"net/http"
 	"sort"
@@ -92,6 +93,58 @@ type RunCalendarEvent struct {
 	Workload         RunCalendarWorkload `json:"workload"`
 	User             RunCalendarUser     `json:"user"`
 	Topology         RunCalendarTopology `json:"topology"`
+}
+
+type runCalendarEventMaxHeap []RunCalendarEvent
+
+func (events runCalendarEventMaxHeap) Len() int { return len(events) }
+func (events runCalendarEventMaxHeap) Less(i, j int) bool {
+	return runCalendarEventLess(events[j], events[i])
+}
+func (events runCalendarEventMaxHeap) Swap(i, j int) { events[i], events[j] = events[j], events[i] }
+func (events *runCalendarEventMaxHeap) Push(value any) {
+	*events = append(*events, value.(RunCalendarEvent))
+}
+func (events *runCalendarEventMaxHeap) Pop() any {
+	old := *events
+	last := old[len(old)-1]
+	*events = old[:len(old)-1]
+	return last
+}
+
+type runCalendarTopK struct {
+	limit     int
+	events    runCalendarEventMaxHeap
+	truncated bool
+}
+
+func (collector *runCalendarTopK) add(event RunCalendarEvent) {
+	if collector.limit <= 0 {
+		collector.truncated = true
+		return
+	}
+	if len(collector.events) < collector.limit {
+		heap.Push(&collector.events, event)
+		return
+	}
+	collector.truncated = true
+	if runCalendarEventLess(event, collector.events[0]) {
+		heap.Pop(&collector.events)
+		heap.Push(&collector.events, event)
+	}
+}
+
+func runCalendarEventLess(left, right RunCalendarEvent) bool {
+	if !left.StartAt.Equal(right.StartAt) {
+		return left.StartAt.Before(right.StartAt)
+	}
+	if left.Title != right.Title {
+		return left.Title < right.Title
+	}
+	if left.ID != right.ID {
+		return left.ID < right.ID
+	}
+	return left.Source < right.Source
 }
 
 type RunCalendarWorkload struct {
@@ -263,18 +316,14 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 	}
 	occurrenceByScheduleAt := map[string]struct{}{}
 	scheduledTestIDs := map[string]struct{}{}
-	events := make([]RunCalendarEvent, 0)
+	collector := runCalendarTopK{limit: maxEvents, events: make(runCalendarEventMaxHeap, 0, maxEvents)}
 	truncated := false
 
 	appendEvent := func(event RunCalendarEvent) {
 		if !runCalendarEventOverlaps(event.StartAt, event.EndAt, from, to) {
 			return
 		}
-		if len(events) >= maxEvents {
-			truncated = true
-			return
-		}
-		events = append(events, event)
+		collector.add(event)
 	}
 
 	for _, occurrence := range snapshot.Occurrences {
@@ -348,12 +397,9 @@ func (tr *TestRunner) BuildRunCalendar(from time.Time, to time.Time, projectID s
 		}
 	}
 
-	sort.SliceStable(events, func(i, j int) bool {
-		if events[i].StartAt.Equal(events[j].StartAt) {
-			return events[i].Title < events[j].Title
-		}
-		return events[i].StartAt.Before(events[j].StartAt)
-	})
+	events := []RunCalendarEvent(collector.events)
+	sort.Slice(events, func(i, j int) bool { return runCalendarEventLess(events[i], events[j]) })
+	truncated = truncated || collector.truncated
 	statusCounts := map[string]int{}
 	sourceCounts := map[string]int{}
 	for _, event := range events {

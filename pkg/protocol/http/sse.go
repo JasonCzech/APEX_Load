@@ -62,6 +62,16 @@ func shouldReadSSE(contentType string, params map[string]any) bool {
 	return false
 }
 
+func sseRequestedByParams(params map[string]any) bool {
+	if params == nil {
+		return false
+	}
+	if _, present := params["stream_timeout_ms"]; present {
+		return true
+	}
+	return shouldReadSSE("", params)
+}
+
 func isSSEContentType(value string) bool {
 	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value))
 	if err != nil {

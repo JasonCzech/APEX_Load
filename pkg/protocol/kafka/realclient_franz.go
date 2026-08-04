@@ -84,10 +84,11 @@ const (
 )
 
 type pendingReply struct {
-	record     kafkaRecord
-	receivedAt time.Time
-	bytes      int64
-	generation uint64
+	record        kafkaRecord
+	highWatermark int64
+	receivedAt    time.Time
+	bytes         int64
+	generation    uint64
 }
 
 type trackedConsumedRecord struct {
@@ -437,7 +438,7 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 				rewindKafkaRecord(cl, record)
 				return kafkaRecord{}, 0, err
 			}
-			return record, 0, nil
+			return record, pendingConsumerLag(pending), nil
 		}
 		i++
 	}
@@ -449,6 +450,13 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 	defer cancel()
 	for {
 		fetches := cl.PollRecords(cctx, 1)
+		highWatermarks := make(map[string]map[int32]int64)
+		fetches.EachPartition(func(partition kgo.FetchTopicPartition) {
+			if highWatermarks[partition.Topic] == nil {
+				highWatermarks[partition.Topic] = make(map[int32]int64)
+			}
+			highWatermarks[partition.Topic][partition.Partition] = partition.HighWatermark
+		})
 		var rec *kgo.Record
 		for _, candidate := range fetches.Records() {
 			if rec == nil && candidate.Topic == topic {
@@ -457,7 +465,7 @@ func (c *franzClient) Consume(ctx context.Context, topic string, group string, t
 			}
 			pendingRecord := fromKgoRecord(candidate)
 			c.pendingMu.Lock()
-			pendingErr := c.addPendingLocked(pendingRecord)
+			pendingErr := c.addPendingLocked(pendingRecord, highWatermarks[candidate.Topic][candidate.Partition])
 			c.pendingMu.Unlock()
 			if pendingErr != nil {
 				rewindKafkaRecord(cl, pendingRecord)
@@ -811,7 +819,7 @@ func (c *franzClient) primeReplyConsumer(ctx context.Context, cl *kgo.Client, re
 	}
 }
 
-func (c *franzClient) addPendingLocked(record kafkaRecord) error {
+func (c *franzClient) addPendingLocked(record kafkaRecord, highWatermarks ...int64) error {
 	bytes := pendingReplyBytes(record)
 	generation, owned := c.ownershipGeneration(record.Topic, record.Partition)
 	if !owned {
@@ -823,9 +831,20 @@ func (c *franzClient) addPendingLocked(record kafkaRecord) error {
 	if !globalKafkaPending.reserve(bytes) {
 		return fmt.Errorf("kafka generator-wide pending capacity exceeded (%d records, %d bytes)", maxGlobalPendingRecords, maxGlobalPendingBytes)
 	}
-	c.pending = append(c.pending, pendingReply{record: record, receivedAt: time.Now(), bytes: bytes, generation: generation})
+	highWatermark := int64(-1)
+	if len(highWatermarks) > 0 {
+		highWatermark = highWatermarks[0]
+	}
+	c.pending = append(c.pending, pendingReply{record: record, highWatermark: highWatermark, receivedAt: time.Now(), bytes: bytes, generation: generation})
 	c.pendingBytes += bytes
 	return nil
+}
+
+func pendingConsumerLag(pending pendingReply) int64 {
+	if pending.highWatermark > pending.record.Offset+1 {
+		return pending.highWatermark - pending.record.Offset - 1
+	}
+	return 0
 }
 
 func (c *franzClient) removePendingLocked(index int) {

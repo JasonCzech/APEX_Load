@@ -12,11 +12,12 @@ import (
 )
 
 type sanitizedRunArchivePlan struct {
-	manifest     *RunArchiveManifest
-	replacements map[string][]byte
-	stream       map[string]func(io.Writer) error
-	sizes        map[string]int64
-	omit         map[string]struct{}
+	manifest         *RunArchiveManifest
+	replacements     map[string][]byte
+	stream           map[string]func(io.Writer) error
+	sizes            map[string]int64
+	omit             map[string]struct{}
+	transactionStats sanitizedTransactionStats
 }
 
 // buildSanitizedRunArchivePlan prepares disclosure-safe representations for
@@ -24,6 +25,20 @@ type sanitizedRunArchivePlan struct {
 // intentionally used at read time so archives produced by older controllers
 // receive the same protection as new writes.
 func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*sanitizedRunArchivePlan, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	key := sanitizedArchivePlanCacheKey(record)
+	prepared, err := runArchiveSanitizedPlanCache.getOrLoad(key, func() (*sanitizedRunArchivePlan, error) {
+		return prepareSanitizedRunArchivePlan(ctx, record, manifest)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sanitizedArchivePlanForRequest(ctx, record, manifest, prepared), nil
+}
+
+func prepareSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest) (*sanitizedRunArchivePlan, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -68,21 +83,12 @@ func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiv
 
 	transactionName := strings.TrimSpace(manifest.TransactionsFile)
 	plan := &sanitizedRunArchivePlan{
-		manifest:     maskedManifest,
-		replacements: make(map[string][]byte, 2),
-		stream:       make(map[string]func(io.Writer) error, 1),
-		sizes:        map[string]int64{transactionName: stats.SizeBytes},
-		omit:         make(map[string]struct{}, 1),
-	}
-	plan.stream[transactionName] = func(destination io.Writer) error {
-		written, err := writeSanitizedArchiveTransactions(ctx, record, manifest, destination)
-		if err != nil {
-			return err
-		}
-		if written != stats {
-			return fmt.Errorf("transaction archive changed while preparing sanitized export")
-		}
-		return nil
+		manifest:         maskedManifest,
+		replacements:     make(map[string][]byte, 2),
+		stream:           nil,
+		sizes:            map[string]int64{transactionName: stats.SizeBytes},
+		omit:             make(map[string]struct{}, 1),
+		transactionStats: stats,
 	}
 	if parquetName := strings.TrimSpace(manifest.TransactionsParquetFile); parquetName != "" {
 		// Legacy parquet embeds extractions/snapshots and cannot be safely patched
@@ -128,6 +134,61 @@ func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiv
 	}
 	plan.replacements[runArchiveManifestFileName] = manifestData
 	return plan, nil
+}
+
+func sanitizedArchivePlanCacheKey(record *storage.RunArchiveRecord) string {
+	if record == nil {
+		return ""
+	}
+	testID := strings.TrimSpace(record.TestID)
+	hash := strings.TrimSpace(record.ManifestSHA256)
+	if testID == "" || hash == "" {
+		return ""
+	}
+	return testID + "|sanitized|" + strings.ToLower(hash)
+}
+
+func sanitizedArchivePlanWeight(plan *sanitizedRunArchivePlan) int64 {
+	if plan == nil {
+		return 0
+	}
+	var size int64
+	for name, data := range plan.replacements {
+		size += int64(len(name) + len(data))
+	}
+	for name := range plan.sizes {
+		size += int64(len(name) + 16)
+	}
+	for name := range plan.omit {
+		size += int64(len(name))
+	}
+	return size
+}
+
+func sanitizedArchivePlanForRequest(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, prepared *sanitizedRunArchivePlan) *sanitizedRunArchivePlan {
+	if prepared == nil {
+		return nil
+	}
+	plan := &sanitizedRunArchivePlan{
+		manifest:         prepared.manifest,
+		replacements:     prepared.replacements,
+		sizes:            prepared.sizes,
+		omit:             prepared.omit,
+		stream:           make(map[string]func(io.Writer) error, 1),
+		transactionStats: prepared.transactionStats,
+	}
+	transactionName := strings.TrimSpace(manifest.TransactionsFile)
+	plan.stream[transactionName] = func(destination io.Writer) error {
+		written, err := writeSanitizedArchiveTransactions(ctx, record, manifest, destination)
+		if err != nil {
+			return err
+		}
+		if written != prepared.transactionStats {
+			return fmt.Errorf("transaction archive changed while preparing sanitized export")
+		}
+		return nil
+	}
+	return plan
 }
 
 func zipSanitizedRunArchiveContext(ctx context.Context, record *storage.RunArchiveRecord, manifest *RunArchiveManifest, dst io.Writer) error {

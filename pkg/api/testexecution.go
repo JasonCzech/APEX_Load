@@ -2657,9 +2657,10 @@ func (tr *TestRunner) PauseTest(id string) error {
 		}
 		replaceLiveMetricsLocked(test, updated)
 	}
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 
-	tr.broadcastEvent("test_paused", test)
+	tr.broadcastEvent("test_paused", eventSnapshot)
 
 	return nil
 }
@@ -2811,9 +2812,10 @@ func (tr *TestRunner) ResumeTest(id string) error {
 		}
 		replaceLiveMetricsLocked(test, updated)
 	}
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 
-	tr.broadcastEvent("test_resumed", test)
+	tr.broadcastEvent("test_resumed", eventSnapshot)
 
 	return nil
 }
@@ -3235,12 +3237,13 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) error
 	test.EndedAt = &now
 	test.cancel = nil
 	test.executionCtx = nil
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, "FAILED")
 	if releaseErr != nil && test.TimeslotID != nil {
 		tr.enqueueCapacityReservationReleaseRetry(test.ID, strings.TrimSpace(*test.TimeslotID))
 	}
-	tr.broadcastEvent("test_failed", test)
+	tr.broadcastEvent("test_failed", eventSnapshot)
 	tr.promotePendingTests()
 	if err := tr.advanceExecutionPlanForTest(test, "FAILED"); err != nil {
 		slog.Error("failed to durably advance execution plan after pre-run failure", "test_id", test.ID, "error", err)
@@ -3320,6 +3323,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 		tr.archives[test.ID] = archiveRecord
 	}
 	terminalSnapshot := buildRunLiveStateSnapshotLocked(test, endTime)
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 	if finalStatus == "FAILED" {
 		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {
@@ -3333,7 +3337,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	}
 	tr.captureUsageSnapshotForTerminalRun(test.ID, test.ProjectID)
 	if finalStatus == "FAILED" {
-		tr.broadcastEvent("test_failed", test)
+		tr.broadcastEvent("test_failed", eventSnapshot)
 		if promotePending {
 			tr.promotePendingTests()
 		}
@@ -3344,9 +3348,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 		return releaseErr
 	}
 	if finalStatus == "ABORTED" {
-		tr.broadcastEvent("test_aborted", test)
+		tr.broadcastEvent("test_aborted", eventSnapshot)
 	} else {
-		tr.broadcastEvent("test_complete", test)
+		tr.broadcastEvent("test_complete", eventSnapshot)
 	}
 	if promotePending {
 		tr.promotePendingTests()

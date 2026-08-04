@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -228,6 +229,34 @@ func TestTrustedHeaderAuthReservesIdempotencyKeysForMutations(t *testing.T) {
 	}
 	if !strings.Contains(secondResp.Body.String(), "duplicate idempotency key") {
 		t.Fatalf("duplicate body = %s, want idempotency message", secondResp.Body.String())
+	}
+}
+
+func TestFailedMutationReleasesOnlyItsOwnedIdempotencyReservation(t *testing.T) {
+	cache := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "idempotency-test"})
+	request := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil)
+		req.Header.Set("Idempotency-Key", "retry-after-validation")
+		return req
+	}
+	resolution := authResolution{User: &AuthenticatedUser{Subject: "alice"}}
+
+	firstResponse := httptest.NewRecorder()
+	reservation, ok := enforceIdempotencyKey(firstResponse, request(), cache, resolution)
+	if !ok || reservation == nil {
+		t.Fatalf("first reservation failed: status=%d body=%s", firstResponse.Code, firstResponse.Body.String())
+	}
+	serveReservedMutation(firstResponse, request(), cache, reservation, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusBadRequest, "invalid request")
+	}))
+
+	retryResponse := httptest.NewRecorder()
+	retry, ok := enforceIdempotencyKey(retryResponse, request(), cache, resolution)
+	if !ok || retry == nil {
+		t.Fatalf("failed mutation retained reservation: status=%d body=%s", retryResponse.Code, retryResponse.Body.String())
+	}
+	if released, err := cache.ReleaseIdempotencyKey(context.Background(), retry.key, "different-owner"); err != nil || released {
+		t.Fatalf("different owner released retry reservation: released=%v err=%v", released, err)
 	}
 }
 

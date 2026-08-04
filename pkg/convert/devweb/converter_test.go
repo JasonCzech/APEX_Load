@@ -57,6 +57,67 @@ load.action("Create Order", async function() {
 	}
 }
 
+func TestConvertAttachesThinkTimeToSourcePredecessor(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+load.action("Ordered waits", async function() {
+  new load.WebRequest({ url: "https://api.example.test/first" }).send();
+  load.thinkTime(0.1);
+  new load.WebRequest({ url: "https://api.example.test/second" }).send();
+  load.thinkTime(0.2);
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	for i, want := range []float64{100, 200} {
+		action := result.Script.Actions[i]
+		if !action.ThinkTimeAfter || action.ThinkTime.Type != "fixed" || action.ThinkTime.MeanMs != want {
+			t.Fatalf("action %d think time = %#v after=%v, want %.0fms after", i, action.ThinkTime, action.ThinkTimeAfter, want)
+		}
+	}
+}
+
+func TestConvertDoesNotInventDefaultThinkTime(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `
+load.action("No wait", async function() {
+  new load.WebRequest({ url: "https://api.example.test/ping" }).send();
+});`})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Script.Config.ThinkTime.Type != "" || result.Script.Config.ThinkTime.MeanMs != 0 {
+		t.Fatalf("script think time = %#v, want unset", result.Script.Config.ThinkTime)
+	}
+	if result.Script.Actions[0].ThinkTimeAfter {
+		t.Fatal("action unexpectedly has think time")
+	}
+}
+
+func TestConvertTracksActiveTransactionAcrossLaterDeclarations(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `
+load.action("Transactions", async function() {
+  const outer = new load.Transaction("Outer");
+  outer.start();
+  const neverStarted = new load.Transaction("Not active");
+  new load.WebRequest({ url: "https://api.example.test/in-outer" }).send();
+  outer.stop();
+  new load.WebRequest({ url: "https://api.example.test/outside" }).send();
+});`})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if got := result.Script.Actions[0].Metadata["source_transaction"]; got != "Outer" {
+		t.Fatalf("first source transaction = %#v, want Outer", got)
+	}
+	if got := result.Script.Actions[1].Metadata["source_transaction"]; got != nil {
+		t.Fatalf("second source transaction = %#v, want none", got)
+	}
+}
+
 func TestConvertWebSocketDevWebScript(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `

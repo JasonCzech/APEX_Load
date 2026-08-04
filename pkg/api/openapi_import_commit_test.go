@@ -1,6 +1,7 @@
 package api
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -141,6 +142,28 @@ func TestMergeOpenAPIImportScriptPreservesUserCustomizations(t *testing.T) {
 		if !strings.Contains(inline, want) {
 			t.Fatalf("merged data source lost %q: %q", want, inline)
 		}
+	}
+}
+
+func TestMergeCSVDataSourcePreservesExistingExternalAssetConfiguration(t *testing.T) {
+	existing := dsl.DataSource{
+		Name: "users", Type: "csv", Path: "/operator/users.tsv", StorageRef: "asset://users-v2",
+		Strategy: "unique", Delimiter: "tab", FirstRowHeader: true, Columns: []string{"id", "name"},
+	}
+	imported := dsl.DataSource{
+		Name: "users", Type: "csv", Strategy: "sequential", Delimiter: "comma",
+		InlineData: "id,email\n1,a@example.test\n", Columns: []string{"id", "email"},
+	}
+
+	merged, added := mergeCSVDataSource(existing, imported)
+	if merged.Path != existing.Path || merged.StorageRef != existing.StorageRef || merged.Strategy != "unique" || merged.Delimiter != "tab" || !merged.FirstRowHeader {
+		t.Fatalf("external source configuration was replaced: %#v", merged)
+	}
+	if merged.InlineData != "" {
+		t.Fatalf("external source received imported inline data: %q", merged.InlineData)
+	}
+	if !slices.Equal(merged.Columns, []string{"id", "name", "email"}) || !slices.Equal(added, []string{"email"}) {
+		t.Fatalf("columns = %#v added=%#v", merged.Columns, added)
 	}
 }
 

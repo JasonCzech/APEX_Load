@@ -7,6 +7,19 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+func TestOrderReplayOpsIsTotalAndProducePrecedesConsume(t *testing.T) {
+	ordered := orderReplayOps([]kafkaOp{
+		{name: "consume-x", kind: "consume", targetProtocol: targetKafka, topic: "x"},
+		{name: "produce-y", kind: "produce", targetProtocol: targetKafka, topic: "y"},
+		{name: "produce-x", kind: "produce", targetProtocol: targetKafka, topic: "x"},
+	})
+	got := []string{ordered[0].name, ordered[1].name, ordered[2].name}
+	want := []string{"produce-x", "consume-x", "produce-y"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ordered operations = %v, want %v", got, want)
+	}
+}
+
 const asyncAPI3 = `
 asyncapi: 3.0.0
 info:

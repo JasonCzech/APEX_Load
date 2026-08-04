@@ -511,13 +511,22 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		command := ActionCommand{ClassName: target.ClassName, Method: target.Method}
 		outcome := s.runHarness(ctx, prepared, command, "validate-"+strconv.Itoa(index), true)
 		if !outcome.success {
-			response.Issues = append(response.Issues, ValidationIssue{
-				Code: "target_validation_failed", Index: intPointer(index),
-			})
+			response.Issues = append(response.Issues, validationIssueForOutcome(ctx, index))
+			if ctx.Err() != nil {
+				break
+			}
 		}
 	}
 	response.Valid = len(response.Issues) == 0
 	writeJSON(w, http.StatusOK, response)
+}
+
+func validationIssueForOutcome(ctx context.Context, index int) ValidationIssue {
+	code := "target_validation_failed"
+	if ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		code = "validation_timeout"
+	}
+	return ValidationIssue{Code: code, Index: intPointer(index)}
 }
 
 func (s *Server) handleExecution(w http.ResponseWriter, r *http.Request) {

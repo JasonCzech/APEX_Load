@@ -522,6 +522,7 @@ func schemaCreateTableStatements() []string {
 			transaction_count INTEGER,
 			resource_sample_count INTEGER,
 			interval_summary_count INTEGER,
+			trend_point_json TEXT,
 			created_at DATETIME,
 			completed_at DATETIME,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
@@ -1213,6 +1214,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.archive_uri", query: `ALTER TABLE run_archives ADD COLUMN archive_uri TEXT`},
 		{name: "run_archives.manifest_uri", query: `ALTER TABLE run_archives ADD COLUMN manifest_uri TEXT`},
 		{name: "run_archives.manifest_sha256", query: `ALTER TABLE run_archives ADD COLUMN manifest_sha256 TEXT`},
+		{name: "run_archives.trend_point_json", query: `ALTER TABLE run_archives ADD COLUMN trend_point_json TEXT`},
 		{name: "archive_finalization_jobs.generation", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`},
 		{name: "archive_finalization_jobs.intent_token", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN intent_token TEXT NOT NULL DEFAULT ''`},
 		{name: "archive_finalization_jobs.refresh_token", query: `ALTER TABLE archive_finalization_jobs ADD COLUMN refresh_token TEXT NOT NULL DEFAULT ''`},

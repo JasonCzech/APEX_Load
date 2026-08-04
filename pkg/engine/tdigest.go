@@ -244,7 +244,10 @@ func (td *TDigest) compress() {
 	result := make([]centroid, 0, len(td.centroids))
 	result = append(result, td.centroids[0])
 
-	cumWeight := td.centroids[0].weight
+	// cumWeight is always the weight strictly before the current result
+	// centroid. Keeping that invariant makes q the true midpoint of the
+	// proposed merged centroid.
+	cumWeight := 0.0
 
 	for i := 1; i < len(td.centroids); i++ {
 		c := td.centroids[i]
@@ -252,7 +255,7 @@ func (td *TDigest) compress() {
 
 		// Compute the quantile position of the proposed merged centroid
 		proposedWeight := last.weight + c.weight
-		q := (cumWeight - last.weight/2 + proposedWeight/2) / td.totalWeight
+		q := (cumWeight + proposedWeight/2) / td.totalWeight
 
 		// Scale function: k1 limit based on quantile position
 		limit := td.maxWeight(q)

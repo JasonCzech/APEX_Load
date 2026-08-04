@@ -301,6 +301,25 @@ func TestConvertExpandedBrowserCaptureActions(t *testing.T) {
 	}
 }
 
+func TestWebSocketWaitOmitsUnreplayableScrubbedMatch(t *testing.T) {
+	action, ok := websocketWaitAction(timelineEntry{
+		wsURL: "wss://example.test/live",
+		wsFrame: &WebSocketFrame{
+			Direction: "received",
+			Payload:   `{"type":"ready","access_token":"[REDACTED]"}`,
+		},
+	})
+	if !ok {
+		t.Fatal("websocketWaitAction did not emit an action")
+	}
+	if _, exists := action.Params["match"]; exists {
+		t.Fatalf("scrubbed payload produced an unreplayable match hint: %+v", action.Params)
+	}
+	if action.Params["direction"] != "received" || action.Params["count"] != 1 {
+		t.Fatalf("fallback wait lost replay-equivalent constraints: %+v", action.Params)
+	}
+}
+
 func TestConvertMaskedFillEmitsEnvPlaceholder(t *testing.T) {
 	passwordInput := &selector.ElementMetadata{Tag: "input", Name: "user_password", Type: "password", CSSPath: "form > input"}
 	session := &Session{ID: "rec_pw", StartURL: "https://shop.example/login", StartedAt: ts(0)}

@@ -37,6 +37,34 @@ func TestBrowserRecordingSessionSnapshotsRedactCredentialURLs(t *testing.T) {
 	}
 }
 
+func TestBrowserRecordingManagerTracksLiveNetworkAndWebSocketEvents(t *testing.T) {
+	manager := &BrowserRecordingManager{}
+	session := &BrowserRecordingSession{}
+
+	manager.handleEvent(session, recbrowser.Event{Type: recbrowser.EventNetworkRequest})
+	manager.handleEvent(session, recbrowser.Event{Type: recbrowser.EventNetworkRequest})
+	manager.handleEvent(session, recbrowser.Event{Type: recbrowser.EventWebSocket})
+
+	snapshot := session.summary()
+	if snapshot.NetworkRequestCount != 2 || snapshot.WebSocketCount != 1 {
+		t.Fatalf("live counters = network %d websocket %d", snapshot.NetworkRequestCount, snapshot.WebSocketCount)
+	}
+}
+
+func TestReconcileBrowserRecordingArtifactCountsUsesFinalArtifact(t *testing.T) {
+	session := &BrowserRecordingSession{NetworkRequestCount: 99, WebSocketCount: 99}
+	artifact := &recbrowser.Session{
+		Steps:         []recbrowser.Step{{Seq: 1}},
+		NetworkEvents: []time.Time{time.Now(), time.Now()},
+		WebSockets:    []recbrowser.WebSocketSummary{{URL: "wss://example.test"}},
+		Warnings:      []string{"bounded"},
+	}
+	reconcileBrowserRecordingArtifactCountsLocked(session, artifact)
+	if session.StepCount != 1 || session.NetworkRequestCount != 2 || session.WebSocketCount != 1 || session.WarningCount != 1 {
+		t.Fatalf("reconciled counters = %#v", session)
+	}
+}
+
 func TestBrowserRecordingBroadcastScrubsSensitiveStepAndCarriesScope(t *testing.T) {
 	hub := NewHub()
 	manager := NewBrowserRecordingManager(hub)

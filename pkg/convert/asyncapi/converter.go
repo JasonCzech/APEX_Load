@@ -636,6 +636,13 @@ func serializationForSchemaFormat(format string) string {
 
 func orderReplayOps(ops []kafkaOp) []kafkaOp {
 	out := append([]kafkaOp(nil), ops...)
+	topicOrder := make(map[string]int, len(out))
+	for index, op := range out {
+		key := string(op.targetProtocol) + "\x00" + op.topic
+		if _, exists := topicOrder[key]; !exists {
+			topicOrder[key] = index
+		}
+	}
 	kindRank := func(kind string) int {
 		switch kind {
 		case "produce", "request_reply":
@@ -651,13 +658,12 @@ func orderReplayOps(ops []kafkaOp) []kafkaOp {
 		if a.targetProtocol != b.targetProtocol {
 			return a.targetProtocol < b.targetProtocol
 		}
-		// The importer can only infer replay dependency for the same messaging
-		// destination. Cross-topic request/reply choreography remains in source
-		// order because AsyncAPI does not generally declare a causal graph.
-		if a.topic == b.topic {
-			return kindRank(a.kind) < kindRank(b.kind)
+		aOrder := topicOrder[string(a.targetProtocol)+"\x00"+a.topic]
+		bOrder := topicOrder[string(b.targetProtocol)+"\x00"+b.topic]
+		if aOrder != bOrder {
+			return aOrder < bOrder
 		}
-		return false
+		return kindRank(a.kind) < kindRank(b.kind)
 	})
 	return out
 }

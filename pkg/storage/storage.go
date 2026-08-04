@@ -1095,6 +1095,7 @@ type RunArchiveRecord struct {
 	TransactionCount     int64     `json:"transaction_count"`
 	ResourceSampleCount  int64     `json:"resource_sample_count"`
 	IntervalSummaryCount int64     `json:"interval_summary_count"`
+	TrendPointJSON       string    `json:"trend_point_json,omitempty"`
 	CreatedAt            time.Time `json:"created_at"`
 	CompletedAt          time.Time `json:"completed_at"`
 }

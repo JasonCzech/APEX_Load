@@ -1,6 +1,7 @@
 package scrub
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -846,6 +847,44 @@ func TestValueAppliesCustomRulesAcrossEmbeddedHTTPURLs(t *testing.T) {
 	}}})
 	if got != "custom-redaction" {
 		t.Fatalf("custom whole-context rule was bypassed by URL protection: %q", got)
+	}
+}
+
+func TestHARBase64BodiesScrubTextAndPreserveBinary(t *testing.T) {
+	textBody := base64.StdEncoding.EncodeToString([]byte(`{"access_token":"secret-token-value"}`))
+	binaryBody := base64.StdEncoding.EncodeToString([]byte{0, 0xff, 0x10, 0x80})
+	input := fmt.Sprintf(`{"log":{"entries":[
+		{"request":{"url":"https://example.test","postData":{"text":%q,"encoding":"base64"}},"response":{"content":{"text":%q,"encoding":"base64"}}},
+		{"request":{"url":"https://example.test"},"response":{"content":{"text":"access_token=visible-secret%%%%","encoding":"base64"}}}
+	]}}`, textBody, binaryBody)
+
+	scrubbed, err := HAR([]byte(input), Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(scrubbed, &doc); err != nil {
+		t.Fatal(err)
+	}
+	entries := doc["log"].(map[string]any)["entries"].([]any)
+	first := entries[0].(map[string]any)
+	post := first["request"].(map[string]any)["postData"].(map[string]any)
+	decodedText, err := base64.StdEncoding.DecodeString(post["text"].(string))
+	if err != nil || strings.Contains(string(decodedText), "secret-token-value") || !strings.Contains(string(decodedText), Redacted) {
+		t.Fatalf("textual base64 body = %q err=%v", decodedText, err)
+	}
+	content := first["response"].(map[string]any)["content"].(map[string]any)
+	if content["text"] != binaryBody {
+		t.Fatalf("binary base64 body changed: %q", content["text"])
+	}
+	second := entries[1].(map[string]any)
+	malformed := second["response"].(map[string]any)["content"].(map[string]any)["text"].(string)
+	decodedMarker, err := base64.StdEncoding.DecodeString(malformed)
+	if err != nil || string(decodedMarker) != Redacted {
+		t.Fatalf("malformed sensitive base64 replacement = %q decoded=%q err=%v", malformed, decodedMarker, err)
+	}
+	if len(second["_apexloadScrubDiagnostics"].([]any)) != 1 {
+		t.Fatalf("missing malformed-body diagnostic: %#v", second)
 	}
 }
 

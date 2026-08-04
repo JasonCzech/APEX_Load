@@ -355,12 +355,6 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 	actionCtx, actionCancel := context.WithTimeout(ctx, k.timeout(action))
 	defer actionCancel()
 	ctx = actionCtx
-	if k.txPoisoned {
-		result.Success = false
-		result.StatusCode = 500
-		result.ErrorMessage = "kafka client transaction state is unresolved; recreate the VUser"
-		return result, nil
-	}
 
 	var err error
 	var requestRec kafkaRecord
@@ -368,44 +362,48 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 	hasRequest := false
 	hasResponse := false
 
-	switch strings.ToLower(action.Type) {
-	case "kafka_produce":
-		requestRec, err = k.produce(ctx, action, result)
-		hasRequest = err == nil
-	case "kafka_consume":
-		responseRec, err = k.consume(ctx, action, result)
-		hasResponse = err == nil
-	case "kafka_request_reply":
-		requestRec, responseRec, err = k.requestReply(ctx, action, result)
-		hasRequest = err == nil
-		hasResponse = err == nil
-	case "kafka_commit":
-		// Synchronously commit consumer offsets on the broker, then record the
-		// commit on the shared session for unified accounting. The mock Commit is a
-		// no-op; the real adapter flushes + commits offsets and surfaces failures.
-		if cerr := k.client.Commit(ctx); cerr != nil {
-			err = cerr
-		} else {
-			k.session.Commit()
-			result.Extractions["kafka_operation"] = "kafka_commit"
-			result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+	if k.txPoisoned {
+		err = fmt.Errorf("kafka client transaction state is unresolved; recreate the VUser")
+	} else {
+		switch strings.ToLower(action.Type) {
+		case "kafka_produce":
+			requestRec, err = k.produce(ctx, action, result)
+			hasRequest = err == nil
+		case "kafka_consume":
+			responseRec, err = k.consume(ctx, action, result)
+			hasResponse = err == nil
+		case "kafka_request_reply":
+			requestRec, responseRec, err = k.requestReply(ctx, action, result)
+			hasRequest = err == nil
+			hasResponse = err == nil
+		case "kafka_commit":
+			// Synchronously commit consumer offsets on the broker, then record the
+			// commit on the shared session for unified accounting. The mock Commit is a
+			// no-op; the real adapter flushes + commits offsets and surfaces failures.
+			if cerr := k.client.Commit(ctx); cerr != nil {
+				err = cerr
+			} else {
+				k.session.Commit()
+				result.Extractions["kafka_operation"] = "kafka_commit"
+				result.ServerTelemetry = &protocol.ServerTelemetry{CommitCount: 1}
+			}
+		case "kafka_seek":
+			target := seekTarget(action.Params)
+			if seekErr := k.client.Seek(ctx, k.topic(action), k.consumerGroup(action), target); seekErr != nil {
+				err = seekErr
+			} else {
+				result.Extractions["kafka_operation"] = "kafka_seek"
+				result.Extractions["kafka_seek_offset"] = target
+			}
+		case "kafka_begin_transaction":
+			err = k.beginTransaction(ctx, result)
+		case "kafka_commit_transaction":
+			err = k.commitTransaction(ctx, result)
+		case "kafka_abort_transaction":
+			err = k.abortTransaction(ctx, result)
+		default:
+			err = fmt.Errorf("unsupported kafka action type %q", action.Type)
 		}
-	case "kafka_seek":
-		target := seekTarget(action.Params)
-		if seekErr := k.client.Seek(ctx, k.topic(action), k.consumerGroup(action), target); seekErr != nil {
-			err = seekErr
-		} else {
-			result.Extractions["kafka_operation"] = "kafka_seek"
-			result.Extractions["kafka_seek_offset"] = target
-		}
-	case "kafka_begin_transaction":
-		err = k.beginTransaction(ctx, result)
-	case "kafka_commit_transaction":
-		err = k.commitTransaction(ctx, result)
-	case "kafka_abort_transaction":
-		err = k.abortTransaction(ctx, result)
-	default:
-		err = fmt.Errorf("unsupported kafka action type %q", action.Type)
 	}
 
 	result.Duration = time.Since(start)

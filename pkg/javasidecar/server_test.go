@@ -1354,6 +1354,19 @@ func TestValidateLoadsTargetsWithoutExecutingThem(t *testing.T) {
 	}
 }
 
+func TestValidationIssueDistinguishesBatchTimeoutFromTargetRejection(t *testing.T) {
+	active := validationIssueForOutcome(context.Background(), 2)
+	if active.Code != "target_validation_failed" || active.Index == nil || *active.Index != 2 {
+		t.Fatalf("active validation issue = %#v", active)
+	}
+	canceled, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	cancel()
+	timedOut := validationIssueForOutcome(canceled, 3)
+	if timedOut.Code != "validation_timeout" || timedOut.Index == nil || *timedOut.Index != 3 {
+		t.Fatalf("timed-out validation issue = %#v", timedOut)
+	}
+}
+
 func TestServerRejectsUnknownOperatorFieldsAndOversizedRequests(t *testing.T) {
 	fixture := makeSidecarFixture(t, "")
 	server := httptest.NewServer(fixture.server(1))

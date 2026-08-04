@@ -130,11 +130,13 @@ func (s Step) skipForConvert() bool { return s.Excluded || s.Deleted }
 
 // Event types delivered to Options.OnEvent observers.
 const (
-	EventStep       = "step"
-	EventNavigation = "navigation"
-	EventWarning    = "warning"
-	EventPauseState = "pause_state"
-	EventMarker     = "marker"
+	EventStep           = "step"
+	EventNavigation     = "navigation"
+	EventNetworkRequest = "network_request"
+	EventWebSocket      = "websocket"
+	EventWarning        = "warning"
+	EventPauseState     = "pause_state"
+	EventMarker         = "marker"
 	// EventPickState reports the in-page element-picker (assert) mode toggling.
 	EventPickState = "pick_state"
 	// EventAnnotation reports a console error or failed request captured live.
@@ -273,8 +275,9 @@ type Session struct {
 	HAR           []byte `json:"-"`
 	// StorageState is the Playwright storage state (cookies/localStorage)
 	// exported at stop, available for login reuse on a later recording.
-	StorageState        []byte   `json:"-"`
-	Warnings            []string `json:"warnings,omitempty"`
+	StorageState        []byte           `json:"-"`
+	Warnings            []string         `json:"warnings,omitempty"`
+	CapHits             map[string]int64 `json:"cap_hits,omitempty"`
 	retainedMarkerBytes int
 }
 
@@ -506,6 +509,10 @@ func (s *Session) clone() *Session {
 	clone.PauseIntervals = append([]PauseInterval(nil), s.PauseIntervals...)
 	clone.Annotations = append([]Annotation(nil), s.Annotations...)
 	clone.Warnings = append([]string(nil), s.Warnings...)
+	clone.CapHits = make(map[string]int64, len(s.CapHits))
+	for name, count := range s.CapHits {
+		clone.CapHits[name] = count
+	}
 	if len(s.HAR) > 0 {
 		clone.HAR = append([]byte(nil), s.HAR...)
 	}

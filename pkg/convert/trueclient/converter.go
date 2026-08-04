@@ -192,6 +192,12 @@ func collectActionSequence(steps []truXMLStep) []string {
 	sequence := make([]string, 0)
 	var visit func(step truXMLStep)
 	visit = func(step truXMLStep) {
+		// Calls inside action definitions are expanded when their owning action is
+		// flattened. Treating them as top-level run-logic references executes the
+		// called action a second time.
+		if strings.EqualFold(strings.TrimSpace(step.Action), "action") {
+			return
+		}
 		if strings.EqualFold(strings.TrimSpace(step.Action), "Call Action") {
 			actionName, err := parseArgumentValue(step.Arguments, "Action Name")
 			if err == nil {

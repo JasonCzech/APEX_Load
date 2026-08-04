@@ -1,6 +1,9 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Extraction limits protect the VUser variable store. Extracted values persist
 // across iterations, so accepting response-sized values or data-driven key
@@ -46,6 +49,23 @@ func StoreExtraction(result *Result, key, value string) error {
 	}
 	result.Extractions[key] = value
 	return nil
+}
+
+// ApplyExtraction gives non-HTTP adapters the same on_miss contract as HTTP:
+// ignore leaves the variable unset, empty publishes an empty value, and fail
+// turns the extraction miss into an action error.
+func ApplyExtraction(result *Result, extractor Extractor, value string, extractionErr error) error {
+	if extractionErr == nil {
+		return StoreExtraction(result, extractor.Name, value)
+	}
+	switch strings.ToLower(strings.TrimSpace(extractor.OnMiss)) {
+	case "fail":
+		return fmt.Errorf("extractor %q found no match: %w", extractor.Name, extractionErr)
+	case "empty":
+		return StoreExtraction(result, extractor.Name, "")
+	default:
+		return nil
+	}
 }
 
 // ValidateExtractions applies the same checks to adapter results that were

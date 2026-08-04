@@ -218,6 +218,18 @@ func (r *Recorder) appendWarningLocked(warning string) {
 	r.warningBytes += int64(len(warning))
 }
 
+func (r *Recorder) recordCapHitLocked(name, warning string) string {
+	if r.session.CapHits == nil {
+		r.session.CapHits = make(map[string]int64)
+	}
+	r.session.CapHits[name]++
+	if r.session.CapHits[name] != 1 {
+		return ""
+	}
+	r.appendWarningLocked(warning)
+	return warning
+}
+
 // controlKindRequiresTrust reports whether a control kind mutates or terminates
 // the live recording and therefore must prove it came from the recorder's own
 // sidebar (via the closure nonce) rather than arbitrary recorded-page script.
@@ -573,21 +585,41 @@ func (r *Recorder) registerPage(page playwright.Page) {
 	})
 	page.OnRequest(func(playwright.Request) {
 		r.mu.Lock()
+		retained := false
+		warning := ""
 		if !r.paused && !r.stopped && len(r.session.NetworkEvents) < maxBrowserNetworkEvents {
 			r.session.NetworkEvents = append(r.session.NetworkEvents, time.Now())
+			retained = true
+		} else if !r.paused && !r.stopped {
+			warning = r.recordCapHitLocked("network_events", "recording network-event limit reached; subsequent request events were dropped")
 		}
 		r.mu.Unlock()
+		if retained {
+			r.emit(Event{Type: EventNetworkRequest})
+		}
+		if warning != "" {
+			r.emit(Event{Type: EventWarning, Warning: warning})
+		}
 	})
 	page.OnWebSocket(func(ws playwright.WebSocket) {
 		r.mu.Lock()
-		if r.paused || r.stopped || len(r.session.WebSockets) >= maxBrowserWebSockets {
+		if r.paused || r.stopped {
 			r.mu.Unlock()
+			return
+		}
+		if len(r.session.WebSockets) >= maxBrowserWebSockets {
+			warning := r.recordCapHitLocked("websockets", "recording WebSocket limit reached; subsequent sockets were dropped")
+			r.mu.Unlock()
+			if warning != "" {
+				r.emit(Event{Type: EventWarning, Warning: warning})
+			}
 			return
 		}
 		wsURL := r.retainNativeStringLocked(ws.URL(), maxBrowserNativeURLBytes)
 		r.session.WebSockets = append(r.session.WebSockets, WebSocketSummary{URL: wsURL, OpenedAt: time.Now()})
 		index := len(r.session.WebSockets) - 1
 		r.mu.Unlock()
+		r.emit(Event{Type: EventWebSocket})
 		ws.OnFrameSent(func(payload []byte) { r.recordWSFrame(index, "sent", payload) })
 		ws.OnFrameReceived(func(payload []byte) { r.recordWSFrame(index, "received", payload) })
 	})
@@ -702,8 +734,16 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		return nil
 	}
 	r.mu.Lock()
-	if r.paused || r.stopped || len(r.session.Steps) >= maxBrowserSteps {
+	if r.paused || r.stopped {
 		r.mu.Unlock()
+		return nil
+	}
+	if len(r.session.Steps) >= maxBrowserSteps {
+		warning := r.recordCapHitLocked("steps", "recording step limit reached; subsequent capture events were dropped")
+		r.mu.Unlock()
+		if warning != "" {
+			r.emit(Event{Type: EventWarning, Warning: warning})
+		}
 		return nil
 	}
 	if r.bindingBytes+int64(len(payload)) > maxBrowserBindingTotalBytes {
@@ -1738,8 +1778,16 @@ func (r *Recorder) SetStepMark(seq int, secret, param bool) (*Step, error) {
 // step, dropping it while paused.
 func (r *Recorder) recordAnnotation(annotation Annotation) {
 	r.mu.Lock()
-	if r.paused || r.stopped || len(r.session.Annotations) >= maxBrowserAnnotations {
+	if r.paused || r.stopped {
 		r.mu.Unlock()
+		return
+	}
+	if len(r.session.Annotations) >= maxBrowserAnnotations {
+		warning := r.recordCapHitLocked("annotations", "recording annotation limit reached; subsequent diagnostics were dropped")
+		r.mu.Unlock()
+		if warning != "" {
+			r.emit(Event{Type: EventWarning, Warning: warning})
+		}
 		return
 	}
 	annotation.Timestamp = time.Now()
@@ -1771,6 +1819,7 @@ func (r *Recorder) recordWSFrame(index int, direction string, payload []byte) {
 		return
 	}
 	if r.wsFrames >= maxBrowserWSFrames || r.wsBytes >= maxBrowserWSBytes {
+		r.recordCapHitLocked("websocket_frames", "recording WebSocket-frame limit reached; subsequent frame payloads were dropped")
 		return
 	}
 	limit := r.opts.WSPayloadLimitBytes

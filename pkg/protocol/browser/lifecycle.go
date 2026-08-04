@@ -9,6 +9,7 @@ func (b *Browser) close() {
 	b.requestPolicyStop = nil
 	cdp := b.pwCDP
 	b.pwCDP = nil
+	b.pwCDPPage = nil
 	page := b.pwPage
 	b.pwPage = nil
 	b.mu.Unlock()

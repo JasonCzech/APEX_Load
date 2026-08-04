@@ -75,7 +75,8 @@ type LiveStateStore interface {
 }
 
 type IdempotencyStore interface {
-	ReserveIdempotencyKey(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	ReserveIdempotencyKey(ctx context.Context, key, ownerToken string, ttl time.Duration) (bool, error)
+	ReleaseIdempotencyKey(ctx context.Context, key, ownerToken string) (bool, error)
 }
 
 // AtomicValueStore provides a cross-controller load-or-store operation. The
@@ -343,9 +344,12 @@ func (m *memoryCacheBackend) GetGeneratorInventory(ctx context.Context) ([]Gener
 	return generators, nil
 }
 
-func (m *memoryCacheBackend) ReserveIdempotencyKey(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+func (m *memoryCacheBackend) ReserveIdempotencyKey(ctx context.Context, key, ownerToken string, ttl time.Duration) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
+	}
+	if strings.TrimSpace(ownerToken) == "" {
+		return false, errors.New("idempotency reservation requires an owner token")
 	}
 	key = m.key("idempotency", key)
 	now := time.Now()
@@ -355,7 +359,22 @@ func (m *memoryCacheBackend) ReserveIdempotencyKey(ctx context.Context, key stri
 	if entry, ok := m.entries[key]; ok && (entry.expiresAt.IsZero() || entry.expiresAt.After(now)) {
 		return false, nil
 	}
-	m.entries[key] = memoryCacheEntry{payload: []byte("reserved"), expiresAt: expiryForTTL(now, ttl)}
+	m.entries[key] = memoryCacheEntry{payload: []byte(ownerToken), expiresAt: expiryForTTL(now, ttl)}
+	return true, nil
+}
+
+func (m *memoryCacheBackend) ReleaseIdempotencyKey(ctx context.Context, key, ownerToken string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	key = m.key("idempotency", key)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry, ok := m.entries[key]
+	if !ok || string(entry.payload) != ownerToken {
+		return false, nil
+	}
+	delete(m.entries, key)
 	return true, nil
 }
 
@@ -619,11 +638,26 @@ func (r *redisCacheBackend) GetGeneratorInventory(ctx context.Context) ([]Genera
 	return generators, nil
 }
 
-func (r *redisCacheBackend) ReserveIdempotencyKey(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+func (r *redisCacheBackend) ReserveIdempotencyKey(ctx context.Context, key, ownerToken string, ttl time.Duration) (bool, error) {
+	if strings.TrimSpace(ownerToken) == "" {
+		return false, errors.New("idempotency reservation requires an owner token")
+	}
 	if ttl <= 0 {
 		ttl = time.Minute
 	}
-	return r.client.SetNX(ctx, r.key("idempotency", key), "reserved", ttl).Result()
+	return r.client.SetNX(ctx, r.key("idempotency", key), ownerToken, ttl).Result()
+}
+
+var redisReleaseIdempotencyScript = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0
+`)
+
+func (r *redisCacheBackend) ReleaseIdempotencyKey(ctx context.Context, key, ownerToken string) (bool, error) {
+	released, err := redisReleaseIdempotencyScript.Run(ctx, r.client, []string{r.key("idempotency", key)}, ownerToken).Int64()
+	return released == 1, err
 }
 
 var redisLoadOrStoreValueScript = redis.NewScript(`
@@ -661,6 +695,15 @@ func (r *redisCacheBackend) LoadOrStoreValue(ctx context.Context, key string, va
 	return actual, loaded, nil
 }
 
+var redisRateLimitScript = redis.NewScript(`
+local count = redis.call("INCR", KEYS[1])
+local ttl = redis.call("PTTL", KEYS[1])
+if ttl <= 0 then
+  redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+return count
+`)
+
 func (r *redisCacheBackend) AllowRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, int, error) {
 	if limit <= 0 {
 		return true, 0, nil
@@ -669,14 +712,13 @@ func (r *redisCacheBackend) AllowRateLimit(ctx context.Context, key string, limi
 		window = time.Minute
 	}
 	cacheKey := r.key("rate-limit", key)
-	count, err := r.client.Incr(ctx, cacheKey).Result()
+	windowMillis := window / time.Millisecond
+	if window%time.Millisecond != 0 {
+		windowMillis++
+	}
+	count, err := redisRateLimitScript.Run(ctx, r.client, []string{cacheKey}, windowMillis).Int64()
 	if err != nil {
 		return false, 0, err
-	}
-	if count == 1 {
-		if err := r.client.Expire(ctx, cacheKey, window).Err(); err != nil {
-			return false, 0, err
-		}
 	}
 	remaining := limit - int(count)
 	if remaining < 0 {
@@ -786,7 +828,11 @@ func (u *unavailableCacheBackend) GetGeneratorInventory(context.Context) ([]Gene
 	return nil, u.err
 }
 
-func (u *unavailableCacheBackend) ReserveIdempotencyKey(context.Context, string, time.Duration) (bool, error) {
+func (u *unavailableCacheBackend) ReserveIdempotencyKey(context.Context, string, string, time.Duration) (bool, error) {
+	return false, u.err
+}
+
+func (u *unavailableCacheBackend) ReleaseIdempotencyKey(context.Context, string, string) (bool, error) {
 	return false, u.err
 }
 

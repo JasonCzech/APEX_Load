@@ -5091,6 +5091,22 @@ paths:
                     type: string
                   selected_key:
                     type: string
+                  skipped_runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reason:
+                          type: string
+                        test_id:
+                          type: string
+                      required:
+                        - reason
+                        - test_id
+                  warnings:
+                    type: array
+                    items:
+                      type: string
                 required:
                   - application_id
                   - load_levels
@@ -9250,13 +9266,18 @@ paths:
       description: '**Access Control:** Requires Authentication'
       operationId: handleAddBrowserRecordingNote
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               type: object
-              description: Handler-defined JSON request object.
-              additionalProperties: true
+              properties:
+                at_step_seq:
+                  type: integer
+                  format: int64
+                name:
+                  type: string
+                text:
+                  type: string
       responses:
         "200":
           description: OK
@@ -9265,6 +9286,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -9646,13 +9673,18 @@ paths:
       description: '**Access Control:** Requires Authentication'
       operationId: handleEndBrowserRecordingTransaction
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               type: object
-              description: Handler-defined JSON request object.
-              additionalProperties: true
+              properties:
+                at_step_seq:
+                  type: integer
+                  format: int64
+                name:
+                  type: string
+                text:
+                  type: string
       responses:
         "200":
           description: OK
@@ -9661,6 +9693,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -9697,13 +9735,18 @@ paths:
       description: '**Access Control:** Requires Authentication'
       operationId: handleStartBrowserRecordingTransaction
       requestBody:
-        required: true
         content:
           application/json:
             schema:
               type: object
-              description: Handler-defined JSON request object.
-              additionalProperties: true
+              properties:
+                at_step_seq:
+                  type: integer
+                  format: int64
+                name:
+                  type: string
+                text:
+                  type: string
       responses:
         "200":
           description: OK
@@ -9712,6 +9755,12 @@ paths:
               schema:
                 type: object
                 additionalProperties: {}
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -60138,6 +60187,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
           content:
             application/json:
               schema:

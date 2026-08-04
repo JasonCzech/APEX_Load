@@ -2494,6 +2494,31 @@ func TestHTTPExecuteServerSentEvents(t *testing.T) {
 	}
 }
 
+func TestHTTPExecuteSSEStreamTimeoutOutlivesDefaultClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		time.Sleep(50 * time.Millisecond)
+		_, _ = w.Write([]byte("event: done\ndata: complete\n\n"))
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	h := initHTTP(t, map[string]any{"request_timeout_ms": float64(20)})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "longer-stream-window",
+		Type:   "GET",
+		Target: server.URL,
+		Params: map[string]any{"stream": true, "stop_on_event": "done", "stream_timeout_ms": float64(200)},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("SSE stream was preempted by default client timeout: %s", result.ErrorMessage)
+	}
+}
+
 func TestHTTP_Execute_BoundsResponseBodySize(t *testing.T) {
 	big := bytes.Repeat([]byte("a"), 256*1024) // 256 KiB
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

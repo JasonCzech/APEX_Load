@@ -242,6 +242,7 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 64*1024), maxEnterpriseArchiveEntryBytes)
 	lineNum := 0
 	var currentBlock strings.Builder
 	var rawBlock strings.Builder
@@ -297,7 +298,7 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 			// Lines are concatenated with separators, so the terminator cannot
 			// straddle line boundaries; checking the current line avoids an
 			// accumulated-block rescan for large multiline bodies.
-			if strings.Contains(trimmed, ");") {
+			if containsCFunctionTerminator(trimmed) {
 				blockStr := currentBlock.String()
 				fn, err := parseFunctionBlock(blockStr, filename, blockStartLine, lineNum, rawBlock.String())
 				if err == nil {
@@ -310,8 +311,42 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 			}
 		}
 	}
-
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan action source %s: %w", filename, err)
+	}
 	return parsed, nil
+}
+
+func containsCFunctionTerminator(line string) bool {
+	inString := false
+	quote := byte(0)
+	escaped := false
+	for index := 0; index < len(line); index++ {
+		ch := line[index]
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				inString = false
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inString = true
+			quote = ch
+			continue
+		}
+		if ch == ')' && index+1 < len(line) && line[index+1] == ';' {
+			return true
+		}
+	}
+	return false
 }
 
 func stripCComments(line string, inComment *bool) string {

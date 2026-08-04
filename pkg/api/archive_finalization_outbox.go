@@ -275,6 +275,7 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 		}
 	}
 	if outbox != nil {
+		tr.populateRunArchiveTrendPoint(record)
 		current, err := outbox.UpdateArchiveFinalizationRecordIfToken(job.TestID, job.IntentToken, record)
 		if err != nil {
 			return fmt.Errorf("persist archive publication version: %w", err)

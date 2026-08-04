@@ -151,6 +151,18 @@ func TestDetectProtocolContentFallbackAndConflicts(t *testing.T) {
 	}
 }
 
+func TestDetectProtocolDoesNotTreatArbitrarySQLPrefixedHelperAsDatabase(t *testing.T) {
+	parsed := mustParseActionFile(t, `Action()
+{
+    sqlFormatLabel("orders");
+    web_url("Home", "URL=https://example.test/", LAST);
+}`)
+	detected := DetectProtocol(nil, nil, []*ParsedAction{parsed})
+	if detected.APEXLoadProtocol != "http" || detected.CanonicalSourceProtocol == "database" {
+		t.Fatalf("detected = %#v, arbitrary sql* helper must not override HTTP evidence", detected)
+	}
+}
+
 func TestDetectProtocolKeepsMixedSOAPAndHTTPExecutableHTTP(t *testing.T) {
 	parsed := mustParseActionFile(t, `Action()
 {

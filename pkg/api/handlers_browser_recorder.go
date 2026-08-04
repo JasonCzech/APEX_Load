@@ -534,7 +534,9 @@ func (s *Server) handleBrowserRecordingMarker(w http.ResponseWriter, r *http.Req
 		Text      string `json:"text,omitempty"`
 		AtStepSeq int    `json:"at_step_seq,omitempty"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
 
 	session, marker, ok, err := s.browserRecording.AddMarker(r.PathValue("id"), kind, req.Name, req.Text, req.AtStepSeq)
 	if !ok {

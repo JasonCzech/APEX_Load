@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -201,13 +202,14 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				return
 			}
 			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
-				if !enforceIdempotencyKey(w, r, coordination, resolution) {
+				reservation, ok := enforceIdempotencyKey(w, r, coordination, resolution)
+				if !ok {
 					return
 				}
 				if options.recorder != nil && current.Mode == authModeTrustedHeaders {
 					options.recorder.recordAuthLogin(r, resolution)
 				}
-				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+				serveReservedMutation(w, withAuthenticatedContext(r, resolution), coordination, reservation, next)
 				return
 			}
 			// authorizeAccessRequirement already wrote the response; mirror its
@@ -266,10 +268,11 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				return
 			}
 			if authorizeAccessRequirement(w, r, store, resolution, requirement) {
-				if !enforceIdempotencyKey(w, r, coordination, resolution) {
+				reservation, ok := enforceIdempotencyKey(w, r, coordination, resolution)
+				if !ok {
 					return
 				}
-				next.ServeHTTP(w, withAuthenticatedContext(r, resolution))
+				serveReservedMutation(w, withAuthenticatedContext(r, resolution), coordination, reservation, next)
 			} else {
 				deniedStatus := http.StatusForbidden
 				if resolution.User == nil {
@@ -304,9 +307,14 @@ func enforceServiceAccountRateLimit(w http.ResponseWriter, r *http.Request, stor
 	return true
 }
 
-func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store IdempotencyStore, resolution authResolution) bool {
+type idempotencyReservation struct {
+	key        string
+	ownerToken string
+}
+
+func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store IdempotencyStore, resolution authResolution) (*idempotencyReservation, bool) {
 	if store == nil || !isMutatingMethod(r.Method) {
-		return true
+		return nil, true
 	}
 	// These creates own durable idempotency contracts: the same key returns the
 	// committed resource rather than the generic mutation layer's duplicate-key
@@ -315,11 +323,11 @@ func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store Idempot
 		r.URL.Path == "/api/v1/scripts/import/jmeter/save" ||
 		(strings.HasPrefix(r.URL.Path, "/api/v1/browser-recorder/sessions/") &&
 			strings.HasSuffix(r.URL.Path, "/convert"))) {
-		return true
+		return nil, true
 	}
 	rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if rawKey == "" {
-		return true
+		return nil, true
 	}
 	actor := "anonymous"
 	if resolution.ServiceAccount != nil {
@@ -328,17 +336,36 @@ func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store Idempot
 		actor = "user:" + strings.TrimSpace(resolution.User.Subject)
 	}
 	scope := strings.Join([]string{actor, r.Method, r.URL.Path, rawKey}, "|")
-	reserved, err := store.ReserveIdempotencyKey(r.Context(), scope, configuredIdempotencyKeyTTL())
+	ownerToken := uuid.NewString()
+	reserved, err := store.ReserveIdempotencyKey(r.Context(), scope, ownerToken, configuredIdempotencyKeyTTL())
 	if err != nil {
 		slog.Warn("idempotency-key reservation failed", "actor", actor, "path", r.URL.Path, "err", err)
 		writeError(w, http.StatusServiceUnavailable, "idempotency store unavailable")
-		return false
+		return nil, false
 	}
 	if !reserved {
 		writeError(w, http.StatusConflict, "duplicate idempotency key")
-		return false
+		return nil, false
 	}
-	return true
+	return &idempotencyReservation{key: scope, ownerToken: ownerToken}, true
+}
+
+func serveReservedMutation(w http.ResponseWriter, r *http.Request, store IdempotencyStore, reservation *idempotencyReservation, next http.Handler) {
+	if reservation == nil {
+		next.ServeHTTP(w, r)
+		return
+	}
+	rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+	next.ServeHTTP(rw, r)
+	if rw.status < http.StatusBadRequest {
+		return
+	}
+	released, err := store.ReleaseIdempotencyKey(r.Context(), reservation.key, reservation.ownerToken)
+	if err != nil {
+		slog.Warn("idempotency-key release failed", "path", r.URL.Path, "status", rw.status, "err", err)
+	} else if !released {
+		slog.Warn("idempotency-key reservation ownership changed before release", "path", r.URL.Path, "status", rw.status)
+	}
 }
 
 func isMutatingMethod(method string) bool {

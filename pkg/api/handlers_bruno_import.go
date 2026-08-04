@@ -229,17 +229,20 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusServiceUnavailable, "Bruno importing is disabled by operator policy")
 		return
 	}
-	select {
-	case brunoInspectConcurrency <- struct{}{}:
-		defer func() { <-brunoInspectConcurrency }()
-	case <-r.Context().Done():
-		writeError(w, http.StatusRequestTimeout, "Bruno import upload was canceled")
-		return
-	}
 	r.Body = http.MaxBytesReader(w, r.Body, brunoImportMaxBodyBytes)
 	input, syncScriptID, err := readBrunoInspectInput(r)
 	if err != nil {
 		writeError(w, importErrorStatus(err), err.Error())
+		return
+	}
+	// Decode and bound the upload before occupying the scarce inspection slot.
+	// Slow clients must not prevent an already-spooled request from progressing.
+	select {
+	case brunoInspectConcurrency <- struct{}{}:
+		defer func() { <-brunoInspectConcurrency }()
+	default:
+		w.Header().Set("Retry-After", "2")
+		writeError(w, http.StatusTooManyRequests, "Bruno import inspection capacity is currently exhausted")
 		return
 	}
 	projectID, status, message := reconcileImportProjectID(r.URL.Query().Get("project_id"), input.ProjectID, "request body")

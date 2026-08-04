@@ -3,8 +3,32 @@ package engine
 import (
 	"math"
 	"math/rand"
+	"sort"
 	"testing"
 )
+
+func TestTDigestHeavyTailPercentileErrorAgainstExactSamples(t *testing.T) {
+	rng := rand.New(rand.NewSource(99))
+	samples := make([]float64, 100000)
+	digest := NewTDigest(200)
+	for index := range samples {
+		value := math.Exp(rng.NormFloat64()*1.4 + 4)
+		if index%997 == 0 {
+			value *= 50
+		}
+		samples[index] = value
+		digest.Add(value)
+	}
+	sort.Float64s(samples)
+	for _, quantile := range []float64{0.50, 0.90, 0.95, 0.99} {
+		exact := samples[int(quantile*float64(len(samples)-1))]
+		approximate := digest.Quantile(quantile)
+		relativeError := math.Abs(approximate-exact) / exact
+		if relativeError > 0.05 {
+			t.Errorf("q%.2f relative error = %.3f (approx=%f exact=%f), want <= 0.05", quantile, relativeError, approximate, exact)
+		}
+	}
+}
 
 func TestTDigest_Empty(t *testing.T) {
 	td := NewTDigest(100)

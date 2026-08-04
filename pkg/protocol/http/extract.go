@@ -1062,13 +1062,17 @@ func extractRegex(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
 	matches := re.FindSubmatch(body)
-	if len(matches) < 2 {
+	if len(matches) == 0 {
 		return "", fmt.Errorf("no match for regex %q", expr)
 	}
-	if len(matches[1]) > maxExtractorTransformInputBytes {
+	matched := matches[0]
+	if len(matches) > 1 {
+		matched = matches[1]
+	}
+	if len(matched) > maxExtractorTransformInputBytes {
 		return "", fmt.Errorf("%w: regex capture exceeds %d bytes", errExtractorResourceLimit, maxExtractorTransformInputBytes)
 	}
-	return string(matches[1]), nil
+	return string(matched), nil
 }
 
 func extractRegexCount(expr string, body []byte) (string, error) {

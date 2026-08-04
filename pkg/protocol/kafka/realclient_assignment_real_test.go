@@ -97,6 +97,13 @@ func TestExplicitCommitBookkeepingExcludesUndeliveredPendingTopic(t *testing.T) 
 	}
 }
 
+func TestPendingConsumerLagRetainsFetchHighWatermark(t *testing.T) {
+	pending := pendingReply{record: kafkaRecord{Offset: 12}, highWatermark: 20}
+	if got := pendingConsumerLag(pending); got != 7 {
+		t.Fatalf("pending consumer lag = %d, want 7", got)
+	}
+}
+
 func TestRevocationFencesPendingDeliveryAndExplicitCommit(t *testing.T) {
 	client := &franzClient{
 		cfg:             config{ConsumerGroup: "shared"},

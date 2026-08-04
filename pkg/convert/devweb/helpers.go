@@ -186,7 +186,7 @@ func convertedDevWebHelperInvocationActions(block namedBlock, stats *ConvertStat
 		if diagnostics != nil {
 			diagnostics.Add(diag.Info, "DevWeb helper module request", devwebLocation(block, match[0]), fmt.Sprintf("%s.%s was mapped to a native HTTP action", objectName, functionName))
 		}
-		steps = append(steps, parsedStep{Protocol: "http", Action: action, Function: "load.WebRequest(helper)", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1])})
+		steps = append(steps, parsedStep{Protocol: "http", Action: action, Function: "load.WebRequest(helper)", StartLine: devwebLine(block, match[0]), EndLine: devwebLine(block, match[1]), SourceOffset: match[0]})
 	}
 	return steps
 }

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 )
 
 // TestImportRoutesAttachReplayPreflight is the coverage guard for replay
@@ -298,4 +300,39 @@ func TestAPIArchiveReadersRejectTraversalEntries(t *testing.T) {
 			t.Fatalf("benign \"./\" entry was rejected: %v", err)
 		}
 	})
+}
+
+func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
+	const jmx = `<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan" enabled="true"/><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree><HTTPSamplerProxy testname="Home" enabled="true"><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`
+	archive := buildPreflightCoverageArchive(t, map[string]string{
+		"z/second.jmx":   jmx,
+		"a/first.jmx":    jmx,
+		"data/users.csv": "id\n1\n",
+	})
+	documents, sidecars, err := readJMeterZipImportAll(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(documents) != 2 || documents[0].FileName != "a/first.jmx" || documents[1].FileName != "z/second.jmx" {
+		t.Fatalf("documents = %#v", documents)
+	}
+	result, err := convertJMeterImportRequest(&jmeterImportRequest{
+		Documents: documents,
+		Opts:      jmeter.ConvertOptions{SidecarFiles: sidecars},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	for index, wantEntry := range []string{"a/first.jmx", "z/second.jmx"} {
+		metadata := result.Scripts[index].Metadata
+		if metadata == nil || metadata.Import == nil {
+			t.Fatalf("script %d has no import metadata", index)
+		}
+		if got := metadata.Import.Preserved["source_zip_entry"]; got != wantEntry {
+			t.Fatalf("script %d source entry = %v, want %q", index, got, wantEntry)
+		}
+	}
 }

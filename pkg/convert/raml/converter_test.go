@@ -73,6 +73,48 @@ func TestConvertRAMLRejectsEmptyResources(t *testing.T) {
 	}
 }
 
+func TestConvertRAMLBindsPathParametersAndUsesDeclaredStatus(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Orders
+baseUri: https://example.test
+/orders:
+  /{orderId}:
+    uriParameters:
+      orderId:
+        type: string
+        example: ORD-7
+    post:
+      responses:
+        201:
+          description: created
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := result.Script.Actions[0]
+	if action.Target != "/orders/{{param.orderId}}" || len(result.Script.Parameters) != 1 || result.Script.Parameters[0].Values[0] != "ORD-7" {
+		t.Fatalf("path binding = action %#v parameters %#v", action, result.Script.Parameters)
+	}
+	if len(action.Assertions) != 1 || action.Assertions[0].Expected != 201 {
+		t.Fatalf("assertions = %#v", action.Assertions)
+	}
+}
+
+func TestConvertRAMLReviewGatesUnboundPathParameter(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Orders
+/orders/{orderId}:
+  get:
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := result.Script.Actions[0]
+	if action.Metadata["execution_blocker"] != "import_review_required" || len(result.Unsupported) == 0 {
+		t.Fatalf("unbound action = %#v diagnostics=%#v", action, result.Unsupported)
+	}
+}
+
 func TestConvertRAMLClientIDEnforcement(t *testing.T) {
 	content := `#%RAML 1.0
 title: Secured API

@@ -270,7 +270,32 @@ func mergeCSVDataSource(existing, imported dsl.DataSource) (dsl.DataSource, []st
 	}
 	existingHeader, existingRows := parseCSVInline(existing.InlineData)
 	if len(existingHeader) == 0 {
-		return imported, imported.Columns
+		existingHeader = append([]string(nil), existing.Columns...)
+		importedHeader, _ := parseCSVInline(imported.InlineData)
+		if len(importedHeader) == 0 {
+			importedHeader = imported.Columns
+		}
+		result := existing
+		have := make(map[string]struct{}, len(existingHeader))
+		for _, column := range existingHeader {
+			have[column] = struct{}{}
+		}
+		var added []string
+		for _, column := range importedHeader {
+			if _, ok := have[column]; ok {
+				continue
+			}
+			have[column] = struct{}{}
+			existingHeader = append(existingHeader, column)
+			added = append(added, column)
+		}
+		result.Columns = existingHeader
+		// A configured external asset is authoritative. Only seed imported inline
+		// data when the existing source has no path or governed storage identity.
+		if strings.TrimSpace(result.Path) == "" && strings.TrimSpace(result.StorageRef) == "" && strings.TrimSpace(result.StagedAsset) == "" {
+			result.InlineData = imported.InlineData
+		}
+		return result, added
 	}
 	importedHeader, importedRows := parseCSVInline(imported.InlineData)
 	have := make(map[string]struct{}, len(existingHeader))

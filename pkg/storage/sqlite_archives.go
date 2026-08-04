@@ -40,8 +40,8 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	if cleanupExists != 0 {
 		return ErrArchiveCleanupPending
 	}
-	_, err = tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err = tx.Exec(`INSERT INTO run_archives (test_id, ref_key, schema_version, archive_backend, archive_path, manifest_path, manifest_sha256, archive_uri, manifest_uri, transaction_count, resource_sample_count, interval_summary_count, trend_point_json, created_at, completed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(test_id) DO UPDATE SET
 		ref_key=CASE WHEN TRIM(COALESCE(excluded.ref_key, '')) = '' THEN run_archives.ref_key ELSE excluded.ref_key END,
 		schema_version=excluded.schema_version,
@@ -54,6 +54,7 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		transaction_count=excluded.transaction_count,
 		resource_sample_count=excluded.resource_sample_count,
 		interval_summary_count=excluded.interval_summary_count,
+		trend_point_json=CASE WHEN TRIM(COALESCE(excluded.trend_point_json, '')) = '' THEN run_archives.trend_point_json ELSE excluded.trend_point_json END,
 		created_at=excluded.created_at,
 		completed_at=excluded.completed_at`,
 		record.TestID,
@@ -68,6 +69,7 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 		record.TransactionCount,
 		record.ResourceSampleCount,
 		record.IntervalSummaryCount,
+		record.TrendPointJSON,
 		record.CreatedAt,
 		record.CompletedAt,
 	)
@@ -79,7 +81,7 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	var record RunArchiveRecord
-	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
+	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, COALESCE(trend_point_json, ''), created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
 		&record.TestID,
 		&record.RefKey,
 		&record.SchemaVersion,
@@ -92,6 +94,7 @@ func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 		&record.TransactionCount,
 		&record.ResourceSampleCount,
 		&record.IntervalSummaryCount,
+		&record.TrendPointJSON,
 		&record.CreatedAt,
 		&record.CompletedAt,
 	)
@@ -133,6 +136,7 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 		  AND transaction_count = ?
 		  AND resource_sample_count = ?
 		  AND interval_summary_count = ?
+		  AND COALESCE(trend_point_json, '') = ?
 		  AND created_at = ?
 		  AND completed_at = ?`,
 		expected.TestID,
@@ -147,6 +151,7 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 		expected.TransactionCount,
 		expected.ResourceSampleCount,
 		expected.IntervalSummaryCount,
+		expected.TrendPointJSON,
 		expected.CreatedAt,
 		expected.CompletedAt,
 	)

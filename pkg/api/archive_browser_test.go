@@ -323,6 +323,9 @@ func TestBuildRunArchiveBrowserDiagnosticsExportsEvidence(t *testing.T) {
 	if len(bundle.Events) != 1 {
 		t.Fatalf("events = %d, want 1", len(bundle.Events))
 	}
+	if bundle.TotalEvents != 1 || bundle.RetainedEvents != 1 || bundle.DroppedEvents != 0 || bundle.Truncated {
+		t.Fatalf("unexpected retention metadata: %#v", bundle)
+	}
 	if bundle.Events[0].Snapshot == nil || bundle.Events[0].Snapshot.RequestURL != "https://example.test/home" {
 		t.Fatalf("unexpected snapshot %#v", bundle.Events[0].Snapshot)
 	}
@@ -366,6 +369,56 @@ func TestBuildRunArchiveBrowserDiagnosticsExportsEvidence(t *testing.T) {
 	}
 	if indexed.Events[0].Artifacts.HTMLFile != "html/001-browser_navigate.html" {
 		t.Fatalf("unexpected html reference %#v", indexed.Events[0].Artifacts)
+	}
+}
+
+func TestBuildRunArchiveBrowserDiagnosticsTruncatesAndPrefersFailures(t *testing.T) {
+	tempDir := t.TempDir()
+	manifest := RunArchiveManifest{
+		SchemaVersion: archiveSchemaVersion, TestID: "bounded-browser-diagnostics", TestName: "Bounded",
+		CreatedAt: time.Now().UTC(), TransactionsFile: "transactions.jsonl",
+	}
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifestBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var payload bytes.Buffer
+	encoder := json.NewEncoder(&payload)
+	for index := 0; index < 5_001; index++ {
+		success := index != 5_000
+		tx := TransactionEvent{
+			Timestamp: manifest.CreatedAt.Add(time.Duration(index) * time.Millisecond),
+			TestID:    manifest.TestID, ActionName: "browser_navigate", Success: success,
+			ClientMetrics: &protocol.ClientMetrics{FCPMs: float64(index + 1)},
+		}
+		if !success {
+			tx.ErrorMessage = "last failure"
+		}
+		if err := encoder.Encode(tx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, manifest.TransactionsFile), payload.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle, err := buildRunArchiveBrowserDiagnostics(&storage.RunArchiveRecord{ArchivePath: tempDir, ManifestPath: manifestPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.TotalEvents != 5_001 || bundle.RetainedEvents != 5_000 || bundle.DroppedEvents != 1 || !bundle.Truncated {
+		t.Fatalf("retention metadata = total %d retained %d dropped %d truncated %v", bundle.TotalEvents, bundle.RetainedEvents, bundle.DroppedEvents, bundle.Truncated)
+	}
+	foundFailure := false
+	for _, event := range bundle.Events {
+		foundFailure = foundFailure || (!event.Success && event.ErrorMessage == "last failure")
+	}
+	if !foundFailure {
+		t.Fatal("bounded diagnostics did not retain failure evidence")
 	}
 }
 
