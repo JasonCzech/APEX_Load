@@ -246,10 +246,10 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name        string            `json:"name"`
-		Description string            `json:"description"`
-		Schema      map[string]string `json:"schema"`
-		UpdatedAt   time.Time         `json:"updated_at"`
+		Name        string          `json:"name"`
+		Description json.RawMessage `json:"description"`
+		Schema      json.RawMessage `json:"schema"`
+		UpdatedAt   time.Time       `json:"updated_at"`
 		// Raw so absent (keep current) is distinguishable from null (restore)
 		// and a timestamp (archive): archiving is a governance transition and
 		// must never flip as a side effect of a rename that omits the field.
@@ -260,8 +260,22 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 	}
 	wasArchived := existing.ArchivedAt != nil
 	existing.Name = strings.TrimSpace(req.Name)
-	existing.Description = req.Description
-	existing.Schema = req.Schema
+	if len(req.Description) > 0 {
+		if strings.TrimSpace(string(req.Description)) == "null" {
+			existing.Description = ""
+		} else if err := json.Unmarshal(req.Description, &existing.Description); err != nil {
+			writeError(w, http.StatusBadRequest, "description must be a string or null")
+			return
+		}
+	}
+	if len(req.Schema) > 0 {
+		if strings.TrimSpace(string(req.Schema)) == "null" {
+			existing.Schema = nil
+		} else if err := json.Unmarshal(req.Schema, &existing.Schema); err != nil {
+			writeError(w, http.StatusBadRequest, "schema must be an object or null")
+			return
+		}
+	}
 	if len(req.ArchivedAt) > 0 {
 		if strings.TrimSpace(string(req.ArchivedAt)) == "null" {
 			existing.ArchivedAt = nil

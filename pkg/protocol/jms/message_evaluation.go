@@ -56,8 +56,11 @@ func extract(ext protocol.Extractor, msg message) (string, error) {
 				return "", fmt.Errorf("invalid regex: %w", err)
 			}
 			matches := re.FindSubmatch(msg.Body)
-			if len(matches) < 2 {
+			if len(matches) == 0 {
 				return "", fmt.Errorf("no match for regex %q", ext.Expression)
+			}
+			if len(matches) == 1 {
+				return string(matches[0]), nil
 			}
 			return string(matches[1]), nil
 		case "jsonpath":

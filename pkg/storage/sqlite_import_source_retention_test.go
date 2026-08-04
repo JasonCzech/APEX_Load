@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,29 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+type importSourceParentRowStub struct {
+	id  string
+	err error
+}
+
+func (row importSourceParentRowStub) Scan(dest ...any) error {
+	if row.err != nil {
+		return row.err
+	}
+	*(dest[0].(*string)) = row.id
+	return nil
+}
+
+func TestImportSourceParentRevisionLookupErrors(t *testing.T) {
+	if id, err := importSourceParentRevisionID(importSourceParentRowStub{err: sql.ErrNoRows}); err != nil || id != "" {
+		t.Fatalf("missing parent = %q, %v", id, err)
+	}
+	wantErr := errors.New("database unavailable")
+	if _, err := importSourceParentRevisionID(importSourceParentRowStub{err: wantErr}); !errors.Is(err, wantErr) {
+		t.Fatalf("lookup error = %v, want wrapped database error", err)
+	}
+}
 
 func retentionTestStore(t *testing.T) *SQLiteStore {
 	t.Helper()

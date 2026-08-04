@@ -68,16 +68,41 @@ func TestBrunoArtifactDirFromEnv(t *testing.T) {
 	}
 }
 
+func TestImportAssetDirFromEnv(t *testing.T) {
+	t.Run("explicit", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv("APEXLOAD_IMPORT_ASSET_DIR", " /mnt/apexload/import-assets ")
+		got, err := importAssetDirFromEnv()
+		if err != nil || got != "/mnt/apexload/import-assets" {
+			t.Fatalf("dir = %q, err = %v", got, err)
+		}
+	})
+	t.Run("production requires durable configuration", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "production")
+		t.Setenv("APEXLOAD_IMPORT_ASSET_DIR", "")
+		if _, err := importAssetDirFromEnv(); err == nil {
+			t.Fatal("expected production import storage error")
+		}
+	})
+	t.Run("local keeps API default", func(t *testing.T) {
+		t.Setenv("APEXLOAD_ENV", "development")
+		t.Setenv("APEXLOAD_IMPORT_ASSET_DIR", "")
+		if got, err := importAssetDirFromEnv(); err != nil || got != "" {
+			t.Fatalf("dir = %q, err = %v", got, err)
+		}
+	})
+}
+
 func TestActiveEndpointPublisherFromEnv(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
-		if publisher, err := activeEndpointPublisherFromEnv(true); err != nil || publisher != nil {
+		if publisher, err := activeEndpointPublisherFromEnv(true, ":8080"); err != nil || publisher != nil {
 			t.Fatalf("publisher = %#v, err = %v; want disabled", publisher, err)
 		}
 	})
 
 	t.Run("requires HA", func(t *testing.T) {
 		t.Setenv("APEXLOAD_ACTIVE_ENDPOINT_SLICE", "apexload-controller-active")
-		if _, err := activeEndpointPublisherFromEnv(false); err == nil {
+		if _, err := activeEndpointPublisherFromEnv(false, ":8080"); err == nil {
 			t.Fatal("configured active endpoint without HA should fail")
 		}
 	})
@@ -90,7 +115,7 @@ func TestActiveEndpointPublisherFromEnv(t *testing.T) {
 		t.Setenv("APEXLOAD_POD_IP", "10.0.0.12")
 		t.Setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
 		t.Setenv("KUBERNETES_SERVICE_PORT", "443")
-		publisher, err := activeEndpointPublisherFromEnv(true)
+		publisher, err := activeEndpointPublisherFromEnv(true, "0.0.0.0:8181")
 		if err != nil {
 			t.Fatalf("activeEndpointPublisherFromEnv: %v", err)
 		}
@@ -98,6 +123,24 @@ func TestActiveEndpointPublisherFromEnv(t *testing.T) {
 			t.Fatal("active endpoint publisher is nil")
 		}
 	})
+}
+
+func TestControllerEndpointPort(t *testing.T) {
+	for _, test := range []struct {
+		address string
+		want    int32
+		ok      bool
+	}{
+		{address: ":8080", want: 8080, ok: true},
+		{address: "0.0.0.0:8181", want: 8181, ok: true},
+		{address: "[::]:9090", want: 9090, ok: true},
+		{address: "8080", ok: false},
+	} {
+		got, err := controllerEndpointPort(test.address)
+		if (err == nil) != test.ok || got != test.want {
+			t.Errorf("controllerEndpointPort(%q) = %d, %v", test.address, got, err)
+		}
+	}
 }
 
 func TestWaitForControllerListener(t *testing.T) {

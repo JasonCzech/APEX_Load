@@ -186,7 +186,6 @@ func TestResolvedImportedCredentialRegistersURLUsernameBeforeTransport(t *testin
 	}
 	script := credentialPreservingRuntimeScript(action)
 	probe := &resolvedCredentialProbeProtocol{expected: []string{
-		username,
 		password,
 		username + ":" + password,
 	}}

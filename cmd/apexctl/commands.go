@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 // ctlArgs holds the flags shared by the status/wait subcommands, which operate
 // on an already-created test by ID against a running controller.
 type ctlArgs struct {
+	err         error
 	api         string
 	apiKey      string
 	bearerToken string
@@ -26,53 +29,34 @@ func parseCtlArgs(args []string) ctlArgs {
 		apiKey:      strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY")),
 		bearerToken: strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")),
 		format:      "text",
-		timeout:     30 * time.Minute,
+		timeout:     0,
 	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--api":
-			if i+1 < len(args) {
-				i++
-				c.api = args[i]
-			}
-		case "--api-key":
-			if i+1 < len(args) {
-				i++
-				c.apiKey = args[i]
-			}
-		case "--bearer-token":
-			if i+1 < len(args) {
-				i++
-				c.bearerToken = args[i]
-			}
-		case "--test", "--test-id", "-t":
-			if i+1 < len(args) {
-				i++
-				c.test = args[i]
-			}
-		case "--format":
-			if i+1 < len(args) {
-				i++
-				c.format = args[i]
-			}
-		case "--junit":
-			if i+1 < len(args) {
-				i++
-				c.junit = args[i]
-			}
-		case "--timeout":
-			if i+1 < len(args) {
-				i++
-				if d, err := time.ParseDuration(args[i]); err == nil {
-					c.timeout = d
-				}
-			}
-		}
+	flags := flag.NewFlagSet("apexctl control", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&c.api, "api", c.api, "controller URL")
+	flags.StringVar(&c.apiKey, "api-key", c.apiKey, "API key")
+	flags.StringVar(&c.bearerToken, "bearer-token", c.bearerToken, "bearer token")
+	flags.StringVar(&c.test, "test", "", "test ID")
+	flags.StringVar(&c.test, "test-id", "", "test ID")
+	flags.StringVar(&c.test, "t", "", "test ID")
+	flags.StringVar(&c.format, "format", c.format, "output format")
+	flags.StringVar(&c.junit, "junit", "", "JUnit output")
+	flags.DurationVar(&c.timeout, "timeout", 0, "wait timeout")
+	if err := flags.Parse(args); err != nil {
+		c.err = err
+	} else if flags.NArg() != 0 {
+		c.err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	} else if c.timeout < 0 {
+		c.err = fmt.Errorf("--timeout cannot be negative")
 	}
 	return c
 }
 
 func requireCtlTarget(c ctlArgs) {
+	if c.err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", c.err)
+		os.Exit(2)
+	}
 	if c.api == "" {
 		fmt.Fprintln(os.Stderr, "error: --api is required (e.g. http://localhost:8080)")
 		os.Exit(2)
@@ -231,7 +215,7 @@ Wait Flags (apexctl wait):
   --api-key API key for secured controllers (or APEXLOAD_API_KEY)
   --bearer-token Bearer token for secured controllers (or APEXLOAD_BEARER_TOKEN)
   --test    Test ID to wait on                                  [required]
-  --timeout Max time to wait for terminal state                 [default: 30m]
+  --timeout Max time to wait for terminal state                 [default: test duration + 30m]
   --format  Output format (text, json)                          [default: text]
   --junit   Write a JUnit XML report to this path`)
 }

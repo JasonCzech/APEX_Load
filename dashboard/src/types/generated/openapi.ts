@@ -10439,6 +10439,8 @@ export interface operations {
               "dependency_targets"?: Array<string>;
               "event_properties"?: Record<string, string>;
               "event_type"?: string;
+              "evidence_incomplete"?: boolean;
+              "evidence_note"?: string;
               "generated_at": string;
               "project_id"?: string;
               "release_id"?: string;
@@ -39098,6 +39100,7 @@ export interface operations {
       content: {
         "application/json": {
           "name"?: string;
+          "updated_at": string;
         };
       };
     };
@@ -39454,9 +39457,9 @@ export interface operations {
       content: {
         "application/json": {
           "archived_at"?: (string) | null;
-          "description"?: string;
+          "description"?: unknown;
           "name": string;
-          "schema"?: Record<string, string>;
+          "schema"?: unknown;
           "updated_at": string;
         };
       };
@@ -40186,6 +40189,7 @@ export interface operations {
       content: {
         "application/json": {
           "name"?: string;
+          "updated_at": string;
         };
       };
     };

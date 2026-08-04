@@ -157,11 +157,32 @@ func (vu *VUser) replaceRuntimeCredentialScopes(updates map[string][]string) err
 			prospective[name] = normalized
 		}
 	}
+	if runtimeCredentialScopesEqual(vu.runtimeCredentialScopes, prospective) {
+		return nil
+	}
 	if err := vu.publishRuntimeCredentialRedaction(vu.runtimeCredentialValues, prospective); err != nil {
 		return err
 	}
 	vu.runtimeCredentialScopes = prospective
 	return nil
+}
+
+func runtimeCredentialScopesEqual(left, right map[string][]string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for name, leftValues := range left {
+		rightValues, ok := right[name]
+		if !ok || len(leftValues) != len(rightValues) {
+			return false
+		}
+		for index := range leftValues {
+			if leftValues[index] != rightValues[index] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (vu *VUser) publishRuntimeCredentialRedaction(

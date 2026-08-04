@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ type ApiClient struct {
 	Client      *http.Client
 	APIKey      string
 	BearerToken string
+	PollTimeout time.Duration
 }
 
 func NewApiClient(baseURL string) *ApiClient {
@@ -103,6 +105,52 @@ func (c *ApiClient) doContextWithHeaders(ctx context.Context, method string, pat
 		return nil
 	}
 	return clientCopy.Do(req)
+}
+
+func (c *ApiClient) doStatusRead(path string) (*http.Response, error) {
+	const maxAttempts = 4
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		response, err := c.do(http.MethodGet, path, nil, "")
+		if err == nil && !retryableHTTPStatus(response.StatusCode) {
+			return response, nil
+		}
+		if err == nil && attempt == maxAttempts-1 {
+			return response, nil
+		}
+		if err != nil {
+			lastErr = err
+			if attempt == maxAttempts-1 {
+				return nil, err
+			}
+		} else {
+			lastErr = fmt.Errorf("retryable controller response: %s", response.Status)
+		}
+		delay := retryDelay(attempt, response)
+		if response != nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+			_ = response.Body.Close()
+		}
+		time.Sleep(delay)
+	}
+	return nil, lastErr
+}
+
+func retryableHTTPStatus(status int) bool {
+	return status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
+}
+
+func retryDelay(attempt int, response *http.Response) time.Duration {
+	if response != nil {
+		raw := strings.TrimSpace(response.Header.Get("Retry-After"))
+		if seconds, err := strconv.Atoi(raw); err == nil && seconds >= 0 {
+			return min(time.Duration(seconds)*time.Second, 5*time.Second)
+		}
+		if at, err := http.ParseTime(raw); err == nil {
+			return min(max(time.Until(at), 0), 5*time.Second)
+		}
+	}
+	return min(250*time.Millisecond*time.Duration(1<<attempt), 2*time.Second)
 }
 
 func sameHTTPOrigin(a, b *url.URL) bool {
@@ -268,8 +316,15 @@ const maxPollErrors = 5
 
 func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*ApiTestResult, error) {
 	start := time.Now()
+	var deadline time.Time
+	if c.PollTimeout > 0 {
+		deadline = start.Add(c.PollTimeout)
+	}
 	consecutiveErrors := 0
 	for {
+		if !deadline.IsZero() && time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out after %s waiting for test %s", c.PollTimeout, testID)
+		}
 		time.Sleep(2 * time.Second)
 
 		// GetTestStatus validates the status code (404 -> "not found", other
@@ -333,7 +388,7 @@ func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*Api
 
 // GetTestStatus fetches the current managed-test record (status + live metrics).
 func (c *ApiClient) GetTestStatus(testID string) (*api.ManagedTest, error) {
-	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID, nil, "")
+	resp, err := c.doStatusRead("/api/v1/tests/" + testID)
 	if err != nil {
 		return nil, err
 	}
@@ -367,6 +422,13 @@ func (c *ApiClient) WaitForTest(testID, format string, timeout time.Duration) (*
 		}
 		if format != "json" {
 			fmt.Printf("... Status: %s\n", test.Status)
+		}
+		if deadline.IsZero() {
+			timeout = test.Duration + 30*time.Minute
+			if timeout <= 0 {
+				timeout = 30 * time.Minute
+			}
+			deadline = start.Add(timeout)
 		}
 		if isTerminalStatus(test.Status) {
 			return c.resolveTestResult(testID, test, time.Since(start))
@@ -443,7 +505,7 @@ func (c *ApiClient) VerifyArchive(testID string) (*api.RunArchiveIntegrityReport
 }
 
 func (c *ApiClient) GetSLAStatus(testID string) (*api.SLABreachReport, error) {
-	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID+"/sla-status", nil, "")
+	resp, err := c.doStatusRead("/api/v1/tests/" + testID + "/sla-status")
 	if err != nil {
 		return nil, err
 	}

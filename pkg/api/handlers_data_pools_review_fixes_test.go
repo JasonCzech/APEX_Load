@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -939,6 +940,8 @@ func TestUpdateDataPoolArchivedAtPresenceSemantics(t *testing.T) {
 	}
 	archivedAt := time.Now().UTC()
 	loaded.ArchivedAt = &archivedAt
+	loaded.Description = "retained description"
+	loaded.Schema = map[string]string{"id": "string"}
 	if err := store.SaveDataPool(loaded); err != nil {
 		t.Fatalf("SaveDataPool(archive): %v", err)
 	}
@@ -977,6 +980,9 @@ func TestUpdateDataPoolArchivedAtPresenceSemantics(t *testing.T) {
 	if afterRename.ArchivedAt == nil {
 		t.Fatalf("rename with absent archived_at un-archived the pool")
 	}
+	if afterRename.Description != "retained description" || afterRename.Schema["id"] != "string" {
+		t.Fatalf("rename with absent metadata cleared fields: %#v", afterRename)
+	}
 
 	// Explicit null restores.
 	resp, _ = put("Restored", nil, renamed.UpdatedAt)
@@ -989,6 +995,26 @@ func TestUpdateDataPoolArchivedAtPresenceSemantics(t *testing.T) {
 	}
 	if afterRestore.ArchivedAt != nil {
 		t.Fatalf("explicit null did not restore the pool")
+	}
+	clearPayload, err := json.Marshal(map[string]any{
+		"name": "Cleared metadata", "description": nil, "schema": nil, "updated_at": afterRestore.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clearReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, bytes.NewReader(clearPayload))
+	clearReq.Header.Set("Content-Type", "application/json")
+	clearResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(clearResp, clearReq)
+	if clearResp.Code != http.StatusOK {
+		t.Fatalf("clear metadata status = %d body=%s", clearResp.Code, clearResp.Body.String())
+	}
+	cleared, err := store.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Description != "" || cleared.Schema != nil {
+		t.Fatalf("explicit null metadata was not cleared: %#v", cleared)
 	}
 }
 

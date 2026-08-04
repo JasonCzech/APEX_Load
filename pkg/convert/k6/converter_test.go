@@ -46,6 +46,9 @@ export default function () {
 	if result.Stats.Checks != 1 || result.Stats.Sleeps != 1 || result.Stats.Thresholds != 1 {
 		t.Fatalf("stats = %#v, want checks/sleeps/thresholds", result.Stats)
 	}
+	if result.Script.Config.ThinkTime.MeanMs != 0 {
+		t.Fatalf("untranslated sleep installed a global think time: %#v", result.Script.Config.ThinkTime)
+	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) != 2 {
 		t.Fatalf("source review = %#v, want mappings", result.SourceReview)
 	}

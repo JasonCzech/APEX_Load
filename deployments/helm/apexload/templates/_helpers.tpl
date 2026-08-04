@@ -50,3 +50,7 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{- define "apexload.wrappingMasterKey" -}}
 {{- coalesce .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey -}}
 {{- end -}}
+
+{{- define "apexload.importAssetsClaimName" -}}
+{{- default "apexload-controller-import-assets" .Values.importAssets.persistence.existingClaim -}}
+{{- end -}}

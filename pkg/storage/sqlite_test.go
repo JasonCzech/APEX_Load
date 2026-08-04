@@ -999,6 +999,7 @@ func TestSQLiteStorePersistsScheduledStartAt(t *testing.T) {
 	defer store.Close()
 
 	scheduledAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
+	startedAt := scheduledAt.Add(17 * time.Second)
 	record := &TestRecord{
 		ID:               "test-scheduled",
 		Name:             "Scheduled Checkout",
@@ -1008,6 +1009,7 @@ func TestSQLiteStorePersistsScheduledStartAt(t *testing.T) {
 		Duration:         int64(30 * time.Second),
 		StartTime:        time.Now().UTC(),
 		ScheduledStartAt: &scheduledAt,
+		StartedAt:        &startedAt,
 		Groups: []map[string]any{{
 			"name": "Checkout",
 		}},
@@ -1022,6 +1024,9 @@ func TestSQLiteStorePersistsScheduledStartAt(t *testing.T) {
 	}
 	if roundTrip.ScheduledStartAt == nil || !roundTrip.ScheduledStartAt.Equal(scheduledAt) {
 		t.Fatalf("scheduled_start_at = %v, want %v", roundTrip.ScheduledStartAt, scheduledAt)
+	}
+	if roundTrip.StartedAt == nil || !roundTrip.StartedAt.Equal(startedAt) {
+		t.Fatalf("started_at = %v, want %v", roundTrip.StartedAt, startedAt)
 	}
 }
 

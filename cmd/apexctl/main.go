@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -72,6 +74,10 @@ func loadLocalDotEnv() {
 
 func runTest() {
 	args := parseRunArgs(os.Args[2:])
+	if args.err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", args.err)
+		os.Exit(2)
+	}
 
 	if args.script == "" {
 		fmt.Fprintln(os.Stderr, "error: --script is required")
@@ -97,6 +103,7 @@ func runTest() {
 			os.Exit(1)
 		}
 		client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
+		client.PollTimeout = args.timeout
 		apiResult, runErr = client.RunPreparedTest(args.script, scriptBody, args.vusers, args.duration.String(), args.rampUp.String(), args.format, goalConfig)
 		if apiResult != nil {
 			slaSummary = apiResult.SLASummary
@@ -232,6 +239,7 @@ func runTest() {
 }
 
 type runArgs struct {
+	err                      error
 	script                   string
 	api                      string
 	apiKey                   string
@@ -242,12 +250,26 @@ type runArgs struct {
 	vusers                   int
 	duration                 time.Duration
 	rampUp                   time.Duration
+	timeout                  time.Duration
 	env                      map[string]string
 	p95LatencyMs             *float64
 	maxErrorPct              *float64
 	maxAvgServerProcessingMs *float64
 	maxAvgTransferMs         *float64
 	maxErrorCount            *int
+}
+
+type envAssignments map[string]string
+
+func (values envAssignments) String() string { return "key=value" }
+
+func (values envAssignments) Set(raw string) error {
+	key, value, ok := parseEnvAssignment(raw)
+	if !ok {
+		return fmt.Errorf("invalid environment assignment %q; expected key=value", raw)
+	}
+	values[key] = value
+	return nil
 }
 
 func parseRunArgs(args []string) runArgs {
@@ -260,103 +282,63 @@ func parseRunArgs(args []string) runArgs {
 		format:      "text",
 		env:         make(map[string]string),
 	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--script", "-s":
-			if i+1 < len(args) {
-				i++
-				r.script = args[i]
-			}
-		case "--api":
-			if i+1 < len(args) {
-				i++
-				r.api = args[i]
-			}
-		case "--api-key":
-			if i+1 < len(args) {
-				i++
-				r.apiKey = args[i]
-			}
-		case "--bearer-token":
-			if i+1 < len(args) {
-				i++
-				r.bearerToken = args[i]
-			}
-		case "--base-url":
-			if i+1 < len(args) {
-				i++
-				r.baseURL = args[i]
-			}
-		case "--env", "-env":
-			if i+1 < len(args) {
-				i++
-				if key, value, ok := parseEnvAssignment(args[i]); ok {
-					r.env[key] = value
-				}
-			}
-		case "--format":
-			if i+1 < len(args) {
-				i++
-				r.format = args[i]
-			}
-		case "--junit":
-			if i+1 < len(args) {
-				i++
-				r.junit = args[i]
-			}
-		case "--vusers", "-v":
-			if i+1 < len(args) {
-				i++
-				fmt.Sscanf(args[i], "%d", &r.vusers)
-			}
-		case "--duration", "-d":
-			if i+1 < len(args) {
-				i++
-				r.duration, _ = time.ParseDuration(args[i])
-			}
-		case "--ramp-up", "-r":
-			if i+1 < len(args) {
-				i++
-				r.rampUp, _ = time.ParseDuration(args[i])
-			}
-		case "--p95-latency-ms":
-			if i+1 < len(args) {
-				i++
-				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
-					r.p95LatencyMs = &value
-				}
-			}
-		case "--max-error-pct":
-			if i+1 < len(args) {
-				i++
-				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
-					r.maxErrorPct = &value
-				}
-			}
-		case "--max-avg-server-processing-ms":
-			if i+1 < len(args) {
-				i++
-				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
-					r.maxAvgServerProcessingMs = &value
-				}
-			}
-		case "--max-avg-transfer-ms":
-			if i+1 < len(args) {
-				i++
-				if value, err := strconv.ParseFloat(args[i], 64); err == nil {
-					r.maxAvgTransferMs = &value
-				}
-			}
-		case "--max-error-count":
-			if i+1 < len(args) {
-				i++
-				if value, err := strconv.Atoi(args[i]); err == nil {
-					r.maxErrorCount = &value
-				}
-			}
+	flags := flag.NewFlagSet("apexctl run", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.StringVar(&r.script, "script", "", "script path")
+	flags.StringVar(&r.script, "s", "", "script path")
+	flags.StringVar(&r.api, "api", r.api, "controller URL")
+	flags.StringVar(&r.apiKey, "api-key", r.apiKey, "API key")
+	flags.StringVar(&r.bearerToken, "bearer-token", r.bearerToken, "bearer token")
+	flags.StringVar(&r.baseURL, "base-url", "", "base URL")
+	flags.Var(envAssignments(r.env), "env", "environment key=value")
+	flags.StringVar(&r.format, "format", r.format, "output format")
+	flags.StringVar(&r.junit, "junit", "", "JUnit output")
+	flags.IntVar(&r.vusers, "vusers", r.vusers, "virtual users")
+	flags.IntVar(&r.vusers, "v", r.vusers, "virtual users")
+	flags.DurationVar(&r.duration, "duration", r.duration, "duration")
+	flags.DurationVar(&r.duration, "d", r.duration, "duration")
+	flags.DurationVar(&r.rampUp, "ramp-up", 0, "ramp up")
+	flags.DurationVar(&r.rampUp, "r", 0, "ramp up")
+	flags.DurationVar(&r.timeout, "timeout", 0, "controller wait timeout")
+	floatPointerFlag(flags, "p95-latency-ms", &r.p95LatencyMs)
+	floatPointerFlag(flags, "max-error-pct", &r.maxErrorPct)
+	floatPointerFlag(flags, "max-avg-server-processing-ms", &r.maxAvgServerProcessingMs)
+	floatPointerFlag(flags, "max-avg-transfer-ms", &r.maxAvgTransferMs)
+	flags.Func("max-error-count", "maximum error count", func(raw string) error {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			return err
 		}
+		r.maxErrorCount = &value
+		return nil
+	})
+	if err := flags.Parse(args); err != nil {
+		r.err = err
+	} else if flags.NArg() != 0 {
+		r.err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	} else if r.vusers <= 0 {
+		r.err = fmt.Errorf("--vusers must be greater than zero")
+	} else if r.duration <= 0 {
+		r.err = fmt.Errorf("--duration must be greater than zero")
+	} else if r.rampUp < 0 {
+		r.err = fmt.Errorf("--ramp-up cannot be negative")
+	} else if r.timeout < 0 {
+		r.err = fmt.Errorf("--timeout cannot be negative")
+	} else if r.timeout == 0 {
+		r.timeout = r.duration + 30*time.Minute
 	}
 	return r
+}
+
+func floatPointerFlag(flags *flag.FlagSet, name string, target **float64) {
+	flags.Func(name, name, func(raw string) error {
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return err
+		}
+		*target = &value
+		return nil
+	})
 }
 
 func printUsage() {
@@ -384,6 +366,7 @@ Run Flags:
   --vusers, -v    Number of virtual users             [default: 10]
   --duration, -d  Test duration (e.g. 5m, 1h)         [default: 1m]
   --ramp-up, -r   Ramp-up period (e.g. 30s, 2m)       [default: 0s]
+	--timeout        API run wait timeout                 [default: duration + 30m]
   --env, -env     Runtime variable override (k=v)     [repeatable]
   --base-url      Override scenario base URL at run time
   --api           Run via API instead of locally (e.g. http://localhost:8080)

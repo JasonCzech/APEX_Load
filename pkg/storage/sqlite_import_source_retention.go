@@ -145,9 +145,15 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 	revision.SanitizedArtifactID = artifact.ID
 	revision.SanitizedAvailable = false
 
-	var previousActiveID string
-	if err := tx.QueryRow(`SELECT id FROM bruno_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
-		scriptID, projectID).Scan(&previousActiveID); err == nil {
+	previousActiveID, err := importSourceParentRevisionID(tx.QueryRow(
+		`SELECT id FROM bruno_source_revisions WHERE script_id = ? AND project_id = ? AND active_flag = 1`,
+		scriptID,
+		projectID,
+	))
+	if err != nil {
+		return nil, err
+	}
+	if previousActiveID != "" {
 		revision.ParentRevisionID = previousActiveID
 	}
 	if _, err := tx.Exec(`UPDATE bruno_source_revisions SET active_flag = 0 WHERE script_id = ? AND project_id = ?`,
@@ -176,6 +182,17 @@ func (s *SQLiteStore) RetainImportSource(retention *ImportSourceRetention) (*Bru
 		return nil, err
 	}
 	return cloneBrunoRevision(&revision), nil
+}
+
+func importSourceParentRevisionID(row rowScanner) (string, error) {
+	var id string
+	if err := row.Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("load active import source parent revision: %w", err)
+	}
+	return id, nil
 }
 
 // ImportSourceScriptFingerprint returns the stable content identity used to

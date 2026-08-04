@@ -62,6 +62,18 @@ Configure `generator.statePersistence.storageClassName` when the cluster has no
 default StorageClass, and size it with `generator.statePersistence.size` (the
 default is `10Gi`).
 
+Generic import assets also use persistent storage by default. For a single
+controller, configure `importAssets.persistence` or its StorageClass. HA
+controllers must supply an RWX claim through
+`importAssets.persistence.existingClaim`; copy pre-upgrade assets from
+`/var/lib/apexload/bruno-artifacts` (legacy Helm import-only installs) into the
+new claim before rollout. The generated generator discovery target uses the
+Helm release namespace unless `dataPlatform.generators` is set explicitly.
+
+Generator pods no longer assume a dedicated node pool. Clusters that used the
+old defaults must set `generator.nodeSelector` and `generator.tolerations`
+explicitly before upgrading if those scheduling constraints remain required.
+
 Project Secrets are writable by default through the encrypted database
 provider. Set `projectSecrets.provider=database` and supply one stable wrapping
 key through `dataPlatform.secretName`. When `dataPlatform.createSecret=true`,

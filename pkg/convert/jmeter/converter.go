@@ -120,6 +120,7 @@ type convertContext struct {
 	provenVariables  map[string]struct{}
 	csvSources       []dsl.DataSource
 	timerMs          int
+	oneShotTimer     bool
 	assertions       []dsl.Assertion
 	auths            []jmeterAuth
 	defaultAuthSeen  bool
@@ -446,6 +447,22 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		return
 	}
 	for _, child := range node.Children {
+		if child == nil || child.Element == nil {
+			continue
+		}
+		if !jmeterElementEnabled(child.Element) {
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(
+				sourceFileName,
+				child.Element,
+				child.Element.Name,
+				"",
+				jmeterElementLocation(child.Element),
+				"disabled",
+				"ignored",
+				"Disabled JMeter element and its subtree were intentionally omitted.",
+			))
+			continue
+		}
 		switch child.Element.Name {
 		case "ConfigTestElement":
 			applyHTTPDefaults(child.Element, ctx)
@@ -464,6 +481,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "TestAction":
 			if pauseMs := parseTestActionPauseMs(child); pauseMs > 0 {
 				ctx.timerMs = pauseMs
+				ctx.oneShotTimer = true
 				result.Stats.Timers++
 				setJMeterRuntimeParity(script, "testActionPause", "executed")
 				diagnostics.Add(diag.Info, "JMeter TestAction", jmeterElementLocation(child.Element), "pause action was mapped to think time on the next converted sampler")
@@ -504,6 +522,10 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				csvNames[ds.Name] = struct{}{}
 				result.Stats.CSVSources++
 			}
+			if shareMode := strings.TrimSpace(prop(child.Element, "shareMode")); shareMode != "" &&
+				!strings.EqualFold(shareMode, "shareMode.all") && !strings.EqualFold(shareMode, "all") {
+				diagnostics.Add(diag.Warning, "JMeter CSVDataSet", jmeterElementLocation(child.Element), "CSV shareMode has no equivalent and requires review")
+			}
 		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
 			ctx.timerMs = parseTimerMs(child.Element, child.Element.Name)
 			if isThroughputTimer(child.Element.Name) {
@@ -522,11 +544,20 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			// the headers were silently dropped and the imported request went out
 			// without them, auth headers included.
 			samplerCtx := ctx
-			if scoped := jmeterSamplerScopedHeaders(child); len(scoped) > 0 {
+			scopedHeaders, scopedTimerMs, scopedAssertions := jmeterSamplerScope(child, diagnostics)
+			if len(scopedHeaders) > 0 || scopedTimerMs > 0 || len(scopedAssertions) > 0 {
 				next := *ctx
-				next.headers = append(append(dsl.HeaderList(nil), ctx.headers...), scoped...)
+				next.headers = overlayJMeterHeaders(ctx.headers, scopedHeaders)
+				if scopedTimerMs > 0 {
+					next.timerMs = scopedTimerMs
+				}
+				next.assertions = append(append([]dsl.Assertion(nil), ctx.assertions...), scopedAssertions...)
 				samplerCtx = &next
-				result.Stats.Headers += len(scoped)
+				result.Stats.Headers += len(scopedHeaders)
+				result.Stats.Assertions += len(scopedAssertions)
+				if scopedTimerMs > 0 {
+					result.Stats.Timers++
+				}
 			}
 			action, warnings, convertErr := convertHTTPSampler(child, samplerCtx, opts, diagnostics)
 			if convertErr != nil {
@@ -542,6 +573,10 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				script.Actions = append(script.Actions, *action)
 				appendJMeterActionSourceMappings(sourceMappings, sourceFileName, child, actionIndex, action)
 				result.Stats.ConvertedActions++
+			}
+			if ctx.oneShotTimer {
+				ctx.timerMs = 0
+				ctx.oneShotTimer = false
 			}
 			diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
 		case "ThreadGroup", "TestPlan":
@@ -810,4 +845,48 @@ func jmeterSamplerScopedHeaders(sampler *treeNode) dsl.HeaderList {
 		headers = append(headers, parseHeaders(child.Element)...)
 	}
 	return headers
+}
+
+func jmeterSamplerScope(sampler *treeNode, diagnostics *diag.Collector) (dsl.HeaderList, int, []dsl.Assertion) {
+	if sampler == nil {
+		return nil, 0, nil
+	}
+	var headers dsl.HeaderList
+	var timerMs int
+	var assertions []dsl.Assertion
+	for _, child := range sampler.Children {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
+		switch child.Element.Name {
+		case "HeaderManager":
+			headers = append(headers, parseHeaders(child.Element)...)
+		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
+			timerMs = parseTimerMs(child.Element, child.Element.Name)
+		case "ResponseAssertion":
+			assertions = append(assertions, parseResponseAssertions(child.Element, diagnostics)...)
+		}
+	}
+	return headers, timerMs, assertions
+}
+
+func overlayJMeterHeaders(inherited, local dsl.HeaderList) dsl.HeaderList {
+	result := append(dsl.HeaderList(nil), inherited...)
+	for _, header := range local {
+		filtered := result[:0]
+		for _, existing := range result {
+			if !strings.EqualFold(strings.TrimSpace(existing.Name), strings.TrimSpace(header.Name)) {
+				filtered = append(filtered, existing)
+			}
+		}
+		result = append(filtered, header)
+	}
+	return result
+}
+
+func jmeterElementEnabled(element *xmlNode) bool {
+	if element == nil {
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(element.Attrs["enabled"]), "false")
 }

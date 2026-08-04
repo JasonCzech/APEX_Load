@@ -675,8 +675,11 @@ func extractRegex(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid regex: %w", err)
 	}
 	found := matches.FindSubmatch(body)
-	if len(found) < 2 {
+	if len(found) == 0 {
 		return "", fmt.Errorf("no match for regex %q", expr)
+	}
+	if len(found) == 1 {
+		return string(found[0]), nil
 	}
 	return string(found[1]), nil
 }

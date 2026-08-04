@@ -61,7 +61,11 @@ func TestHandleApplicationAndReleaseWritesAuditEvents(t *testing.T) {
 		t.Fatalf("json.Unmarshal application returned error: %v", err)
 	}
 
-	updateAppReq := httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+application.ID, bytes.NewBufferString(`{"name":"Checkout App Renamed"}`))
+	updateAppBody, err := json.Marshal(map[string]any{"name": "Checkout App Renamed", "updated_at": application.UpdatedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateAppReq := httptest.NewRequest(http.MethodPut, "/api/v1/applications/"+application.ID, bytes.NewReader(updateAppBody))
 	updateAppReq.Header.Set("Content-Type", "application/json")
 	updateAppResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateAppResp, updateAppReq)
@@ -82,7 +86,11 @@ func TestHandleApplicationAndReleaseWritesAuditEvents(t *testing.T) {
 		t.Fatalf("json.Unmarshal release returned error: %v", err)
 	}
 
-	updateReleaseReq := httptest.NewRequest(http.MethodPut, "/api/v1/releases/"+release.ID, bytes.NewBufferString(`{"name":"2026.06"}`))
+	updateReleaseBody, err := json.Marshal(map[string]any{"name": "2026.06", "updated_at": release.UpdatedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updateReleaseReq := httptest.NewRequest(http.MethodPut, "/api/v1/releases/"+release.ID, bytes.NewReader(updateReleaseBody))
 	updateReleaseReq.Header.Set("Content-Type", "application/json")
 	updateReleaseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateReleaseResp, updateReleaseReq)

@@ -46,6 +46,9 @@ func SanitizeBodySecrets(body string) string {
 		}
 		return match[1] + `"{{secret.redacted}}"` + match[4]
 	})
+	if bodyLooksJSON(trimmed) {
+		return result
+	}
 	result = formSecretPattern.ReplaceAllStringFunc(result, func(segment string) string {
 		match := formSecretPattern.FindStringSubmatch(segment)
 		if len(match) < 4 || isWholeSecretTemplate(match[3]) {
@@ -138,6 +141,9 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 			ReplaceText: match[1] + `"` + replacement + `"` + match[4],
 		}, replacement)
 	}
+	if bodyLooksJSON(strings.TrimSpace(action.Body)) {
+		return nil
+	}
 	formMatches, err := budget.findAllSubmatches(formSecretPattern, action.Body)
 	if err != nil {
 		return err
@@ -158,6 +164,14 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 		}, "{{env."+envKey+"}}")
 	}
 	return nil
+}
+
+// bodyLooksJSON intentionally uses the leading token instead of requiring a
+// successful unmarshal. Import-time secret handling must fail closed for a
+// partially-authored JSON document too: treating malformed JSON as a form body
+// can consume quotes, commas, and closing braces as credential bytes.
+func bodyLooksJSON(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
 }
 
 // collectFillSecrets flags browser fill actions targeting password-like inputs.

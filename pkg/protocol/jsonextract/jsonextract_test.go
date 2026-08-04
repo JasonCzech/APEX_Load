@@ -34,6 +34,11 @@ func TestJSONPathErrors(t *testing.T) {
 	if _, err := JSONPath("$.x", []byte("not json")); err == nil {
 		t.Fatalf("JSONPath on invalid JSON expected error")
 	}
+	for _, expr := range []string{"$.items[abc]", "$.items[]", "$.items[1", "$.items[1]suffix"} {
+		if _, err := JSONPath(expr, []byte(`{"items":["a","b"]}`)); err == nil {
+			t.Fatalf("JSONPath(%q) accepted malformed index", expr)
+		}
+	}
 }
 
 func TestJMESPath(t *testing.T) {

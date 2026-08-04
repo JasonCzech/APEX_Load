@@ -27,14 +27,11 @@ func expandRawJSONTemplates(value string) string {
 	return rawJSONTemplatePattern.ReplaceAllString(value, "{{data.openapi.$1}}")
 }
 
-func successResponseSchema(responses map[string]any, status int, res resolver, location string) (*schema, *responseObject) {
-	if len(responses) == 0 || status == 0 {
+func successResponseSchema(responses map[string]any, responseKey string, res resolver, location string) (*schema, *responseObject) {
+	if len(responses) == 0 || responseKey == "" {
 		return nil, nil
 	}
-	raw, ok := responses[fmt.Sprintf("%d", status)]
-	if !ok {
-		raw, ok = responses["default"]
-	}
+	raw, ok := responses[responseKey]
 	if !ok || raw == nil {
 		return nil, nil
 	}

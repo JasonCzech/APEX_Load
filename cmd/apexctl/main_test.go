@@ -77,6 +77,28 @@ func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	}
 }
 
+func TestParseRunArgsUsesFlagContracts(t *testing.T) {
+	parsed := parseRunArgs([]string{
+		"--script=example.json", "--vusers=25", "--duration=2m", "--timeout=3h",
+		"--env=one=1", "--env", "two=2",
+	})
+	if parsed.err != nil || parsed.script != "example.json" || parsed.vusers != 25 || parsed.duration != 2*time.Minute || parsed.timeout != 3*time.Hour {
+		t.Fatalf("equals/repeated run flags = %#v", parsed)
+	}
+	if parsed.env["one"] != "1" || parsed.env["two"] != "2" {
+		t.Fatalf("environment overrides = %#v", parsed.env)
+	}
+	for _, args := range [][]string{{"--unknown"}, {"--script"}, {"--duration=soon"}, {"--env=missing-delimiter"}, {"extra"}} {
+		if got := parseRunArgs(args); got.err == nil {
+			t.Fatalf("parseRunArgs(%q) accepted invalid input", args)
+		}
+	}
+	derived := parseRunArgs([]string{"--duration=2m"})
+	if derived.timeout != 32*time.Minute {
+		t.Fatalf("derived API timeout = %s, want 32m", derived.timeout)
+	}
+}
+
 func TestCommandArgsUseCredentialEnvironmentDefaults(t *testing.T) {
 	t.Setenv("APEXLOAD_API", "https://controller.example")
 	t.Setenv("APEXLOAD_API_KEY", "env-key")

@@ -158,6 +158,11 @@ func TestSanitizeBodySecrets(t *testing.T) {
 			want: `{"password":"{{secret.redacted}}","safe":"ok"}`,
 		},
 		{
+			name: "json secret does not consume trailing object as form data",
+			body: `{"password":"hunter2","profile":{"enabled":true},"safe":"kept"}`,
+			want: `{"password":"{{secret.redacted}}","profile":{"enabled":true},"safe":"kept"}`,
+		},
+		{
 			name: "json numeric passcode redacted",
 			body: `{"passcode":123456,"safe":1}`,
 			want: `{"passcode":"{{secret.redacted}}","safe":1}`,

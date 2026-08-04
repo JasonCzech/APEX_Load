@@ -84,9 +84,14 @@ func (s *Server) handleUpdateApplication(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name      string    `json:"name"`
+		UpdatedAt time.Time `json:"updated_at"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if req.UpdatedAt.IsZero() {
+		writeError(w, http.StatusBadRequest, "updated_at is required")
 		return
 	}
 	if strings.TrimSpace(req.Name) != "" {
@@ -99,7 +104,7 @@ func (s *Server) handleUpdateApplication(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotImplemented, "optimistic application updates are not supported by this storage backend")
 		return
 	}
-	updated, err := updater.UpdateApplicationIfUnchanged(application, application.UpdatedAt)
+	updated, err := updater.UpdateApplicationIfUnchanged(application, req.UpdatedAt)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -304,9 +309,14 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name string `json:"name"`
+		Name      string    `json:"name"`
+		UpdatedAt time.Time `json:"updated_at"`
 	}
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if req.UpdatedAt.IsZero() {
+		writeError(w, http.StatusBadRequest, "updated_at is required")
 		return
 	}
 	if strings.TrimSpace(req.Name) != "" {
@@ -319,7 +329,7 @@ func (s *Server) handleUpdateRelease(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "optimistic release updates are not supported by this storage backend")
 		return
 	}
-	updated, err := updater.UpdateReleaseIfUnchanged(release, release.UpdatedAt)
+	updated, err := updater.UpdateReleaseIfUnchanged(release, req.UpdatedAt)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -798,7 +798,7 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 	}
 	dockerfile := string(content)
 	for _, required := range []string{
-		"node:26.5.0-alpine3.23@sha256:",
+		"node:22.22.0-alpine3.23",
 		"golang:1.26.5-alpine3.24@sha256:",
 		"FROM alpine:3.24@sha256:",
 		"AS dashboard-builder",

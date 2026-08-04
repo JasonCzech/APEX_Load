@@ -467,6 +467,27 @@ func TestWebSocketWildcardRejectsAmbientCredentials(t *testing.T) {
 	}
 }
 
+func TestWebSocketSameOriginHonorsForwardedHTTPSOnlyFromTrustedProxy(t *testing.T) {
+	hub := NewHub()
+	hub.SetOriginAuthProvider(func() AuthSettings {
+		return AuthSettings{TrustedProxyCIDRs: []string{"10.0.0.0/8"}}
+	})
+	request := func(remote string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "http://api.example.test/api/v1/ws", nil)
+		req.Host = "api.example.test"
+		req.RemoteAddr = remote
+		req.Header.Set("Origin", "https://api.example.test")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		return req
+	}
+	if !hub.upgrader().CheckOrigin(request("10.1.2.3:443")) {
+		t.Fatal("trusted proxy HTTPS origin was rejected")
+	}
+	if hub.upgrader().CheckOrigin(request("203.0.113.7:443")) {
+		t.Fatal("untrusted forwarded HTTPS origin was accepted")
+	}
+}
+
 func TestCORSMiddlewareRejectsDisallowedMutationOrigins(t *testing.T) {
 	const (
 		apiHost       = "api.example.test"

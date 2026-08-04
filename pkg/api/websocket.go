@@ -21,30 +21,40 @@ const (
 )
 
 type Hub struct {
-	clients           map[*Client]bool
-	clientsMu         sync.RWMutex
-	broadcast         chan hubBroadcast
-	register          chan *Client
-	unregister        chan *Client
-	done              chan struct{}
-	stopOnce          sync.Once
-	clientSlots       chan struct{}
-	droppedBroadcasts atomic.Int64
-	droppedClientMsgs atomic.Int64
-	rejectedClients   atomic.Int64
-	fanoutMu          sync.RWMutex
-	fanout            FanoutBus
-	fanoutChannel     string
-	fanoutOrigin      string
-	fanoutCtx         context.Context
-	fanoutCancel      context.CancelFunc
-	fanoutLifecycleMu sync.Mutex
-	fanoutStopping    bool
-	fanoutWG          sync.WaitGroup
-	fanoutSlots       chan struct{}
-	droppedFanout     atomic.Int64
-	allowedOriginsMu  sync.RWMutex
-	allowedOrigins    []string
+	clients            map[*Client]bool
+	clientsMu          sync.RWMutex
+	broadcast          chan hubBroadcast
+	register           chan *Client
+	unregister         chan *Client
+	done               chan struct{}
+	stopOnce           sync.Once
+	clientSlots        chan struct{}
+	droppedBroadcasts  atomic.Int64
+	droppedClientMsgs  atomic.Int64
+	rejectedClients    atomic.Int64
+	fanoutMu           sync.RWMutex
+	fanout             FanoutBus
+	fanoutChannel      string
+	fanoutOrigin       string
+	fanoutCtx          context.Context
+	fanoutCancel       context.CancelFunc
+	fanoutLifecycleMu  sync.Mutex
+	fanoutStopping     bool
+	fanoutWG           sync.WaitGroup
+	fanoutSlots        chan struct{}
+	droppedFanout      atomic.Int64
+	allowedOriginsMu   sync.RWMutex
+	allowedOrigins     []string
+	originAuthProvider func() AuthSettings
+}
+
+func (h *Hub) SetOriginAuthProvider(provider func() AuthSettings) {
+	if h == nil {
+		return
+	}
+	h.allowedOriginsMu.Lock()
+	defer h.allowedOriginsMu.Unlock()
+	h.originAuthProvider = provider
 }
 
 // SetAllowedOrigins configures the Origin allow-list enforced during the
@@ -66,8 +76,14 @@ func (h *Hub) upgrader() websocket.Upgrader {
 		CheckOrigin: func(r *http.Request) bool {
 			h.allowedOriginsMu.RLock()
 			allowedOrigins := append([]string(nil), h.allowedOrigins...)
+			authProvider := h.originAuthProvider
 			h.allowedOriginsMu.RUnlock()
-			decision := evaluateOriginPolicy(allowedOrigins, r)
+			var auth *AuthSettings
+			if authProvider != nil {
+				settings := authProvider()
+				auth = &settings
+			}
+			decision := evaluateOriginPolicyWithAuth(allowedOrigins, r, auth)
 			// As with HTTP CORS, a wildcard must not authorize ambient browser
 			// credentials. Otherwise any site could open a cross-origin WebSocket
 			// carrying the user's session cookie.

@@ -897,6 +897,8 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"PUT /api/v1/execution-plans/{id}":                                                              {"name", "revision"},
 		"POST /api/v1/auth/users":                                                                       {"subject"},
 		"POST /api/v1/auth/service-accounts":                                                            {"name"},
+		"PUT /api/v1/applications/{id}":                                                                 {"updated_at"},
+		"PUT /api/v1/releases/{id}":                                                                     {"updated_at"},
 		"POST /api/v1/data-pools":                                                                       {"name"},
 		"PUT /api/v1/data-pools/{id}":                                                                   {"name", "updated_at"},
 		"POST /api/v1/data-pools/{id}/rows":                                                             {"data"},

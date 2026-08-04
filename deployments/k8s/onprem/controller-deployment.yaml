@@ -70,6 +70,10 @@ spec:
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
+            - name: APEXLOAD_IMPORT_ASSET_DIR
+              value: /var/lib/apexload-import-assets
+            - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
+              value: /var/lib/apexload-import-assets/.bruno-artifacts
             # Required even when Bruno execution is disabled: the same stable
             # key wraps encrypted database-backed Project Secrets.
             - name: APEXLOAD_WRAPPING_MASTER_KEY
@@ -87,6 +91,8 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /var/lib/apexload
+            - name: import-assets
+              mountPath: /var/lib/apexload-import-assets
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
@@ -119,6 +125,9 @@ spec:
         - name: data
           emptyDir:
             sizeLimit: 10Gi
+        - name: import-assets
+          persistentVolumeClaim:
+            claimName: apexload-controller-import-assets
         # Client certificate + CA for mTLS to generators. See
         # certificates.example.yaml for cert-manager issuance.
         - name: grpc-tls

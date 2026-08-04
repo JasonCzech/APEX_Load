@@ -105,16 +105,16 @@ func firstNonZeroInt32(values ...int32) int32 {
 
 func mergeGeneratorStats(left GeneratorStats, right GeneratorStats) GeneratorStats {
 	left.ActiveVUsers += right.ActiveVUsers
-	left.CPUPercent += right.CPUPercent
-	left.MemoryBytes += right.MemoryBytes
-	left.GoroutineCount += right.GoroutineCount
-	left.ThreadCount += right.ThreadCount
-	left.OpenFDCount += right.OpenFDCount
-	left.GCCountDelta += right.GCCountDelta
-	left.ContainerCPUThrottledPeriodsDelta += right.ContainerCPUThrottledPeriodsDelta
-	left.ContainerMemoryFailCountDelta += right.ContainerMemoryFailCountDelta
-	left.ContainerOOMKillCountDelta += right.ContainerOOMKillCountDelta
-	left.DiskInProgress += right.DiskInProgress
+	left.CPUPercent = maxFloat64(left.CPUPercent, right.CPUPercent)
+	left.MemoryBytes = maxInt64(left.MemoryBytes, right.MemoryBytes)
+	left.GoroutineCount = maxInt32(left.GoroutineCount, right.GoroutineCount)
+	left.ThreadCount = maxInt32(left.ThreadCount, right.ThreadCount)
+	left.OpenFDCount = maxInt32(left.OpenFDCount, right.OpenFDCount)
+	left.GCCountDelta = maxUint32(left.GCCountDelta, right.GCCountDelta)
+	left.ContainerCPUThrottledPeriodsDelta = maxUint64(left.ContainerCPUThrottledPeriodsDelta, right.ContainerCPUThrottledPeriodsDelta)
+	left.ContainerMemoryFailCountDelta = maxUint64(left.ContainerMemoryFailCountDelta, right.ContainerMemoryFailCountDelta)
+	left.ContainerOOMKillCountDelta = maxUint64(left.ContainerOOMKillCountDelta, right.ContainerOOMKillCountDelta)
+	left.DiskInProgress = maxUint64(left.DiskInProgress, right.DiskInProgress)
 	left.CPUUserPct = maxFloat64(left.CPUUserPct, right.CPUUserPct)
 	left.CPUSystemPct = maxFloat64(left.CPUSystemPct, right.CPUSystemPct)
 	left.CPUIOWaitPct = maxFloat64(left.CPUIOWaitPct, right.CPUIOWaitPct)
@@ -122,25 +122,46 @@ func mergeGeneratorStats(left GeneratorStats, right GeneratorStats) GeneratorSta
 	left.Load1 = maxFloat64(left.Load1, right.Load1)
 	left.Load5 = maxFloat64(left.Load5, right.Load5)
 	left.Load15 = maxFloat64(left.Load15, right.Load15)
-	left.HeapAllocMB += right.HeapAllocMB
-	left.HeapInUseMB += right.HeapInUseMB
-	left.GCPauseMs += right.GCPauseMs
-	left.ContainerCPULimitCores += right.ContainerCPULimitCores
+	left.HeapAllocMB = maxFloat64(left.HeapAllocMB, right.HeapAllocMB)
+	left.HeapInUseMB = maxFloat64(left.HeapInUseMB, right.HeapInUseMB)
+	left.GCPauseMs = maxFloat64(left.GCPauseMs, right.GCPauseMs)
+	left.ContainerCPULimitCores = maxFloat64(left.ContainerCPULimitCores, right.ContainerCPULimitCores)
 	left.ContainerCPUUsagePct = maxFloat64(left.ContainerCPUUsagePct, right.ContainerCPUUsagePct)
-	left.ContainerCPUThrottledSecondsRate += right.ContainerCPUThrottledSecondsRate
-	left.ContainerMemoryWorkingSetMB += right.ContainerMemoryWorkingSetMB
-	left.ContainerMemoryLimitMB += right.ContainerMemoryLimitMB
+	left.ContainerCPUThrottledSecondsRate = maxFloat64(left.ContainerCPUThrottledSecondsRate, right.ContainerCPUThrottledSecondsRate)
+	left.ContainerMemoryWorkingSetMB = maxFloat64(left.ContainerMemoryWorkingSetMB, right.ContainerMemoryWorkingSetMB)
+	left.ContainerMemoryLimitMB = maxFloat64(left.ContainerMemoryLimitMB, right.ContainerMemoryLimitMB)
 	left.ContainerMemoryUsagePct = maxFloat64(left.ContainerMemoryUsagePct, right.ContainerMemoryUsagePct)
-	left.NetDropInPerSec += right.NetDropInPerSec
-	left.NetDropOutPerSec += right.NetDropOutPerSec
-	left.NetErrorInPerSec += right.NetErrorInPerSec
-	left.NetErrorOutPerSec += right.NetErrorOutPerSec
-	left.TCPRetransmitsPerSec += right.TCPRetransmitsPerSec
-	left.TCPEstablished += right.TCPEstablished
-	left.TCPTimeWait += right.TCPTimeWait
+	left.NetDropInPerSec = maxFloat64(left.NetDropInPerSec, right.NetDropInPerSec)
+	left.NetDropOutPerSec = maxFloat64(left.NetDropOutPerSec, right.NetDropOutPerSec)
+	left.NetErrorInPerSec = maxFloat64(left.NetErrorInPerSec, right.NetErrorInPerSec)
+	left.NetErrorOutPerSec = maxFloat64(left.NetErrorOutPerSec, right.NetErrorOutPerSec)
+	left.TCPRetransmitsPerSec = maxFloat64(left.TCPRetransmitsPerSec, right.TCPRetransmitsPerSec)
+	left.TCPEstablished = maxInt32(left.TCPEstablished, right.TCPEstablished)
+	left.TCPTimeWait = maxInt32(left.TCPTimeWait, right.TCPTimeWait)
 	left.EphemeralPortUtilizationPct = maxFloat64(left.EphemeralPortUtilizationPct, right.EphemeralPortUtilizationPct)
 	left.DiskIOTimePct = maxFloat64(left.DiskIOTimePct, right.DiskIOTimePct)
 	left.DiskWeightedIOTimePct = maxFloat64(left.DiskWeightedIOTimePct, right.DiskWeightedIOTimePct)
+	return left
+}
+
+func maxInt32(left, right int32) int32 {
+	if right > left {
+		return right
+	}
+	return left
+}
+
+func maxUint64(left, right uint64) uint64 {
+	if right > left {
+		return right
+	}
+	return left
+}
+
+func maxUint32(left, right uint32) uint32 {
+	if right > left {
+		return right
+	}
 	return left
 }
 

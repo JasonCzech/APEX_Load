@@ -477,6 +477,7 @@ func NewServer(cfg ServerConfig) *Server {
 		tracing:                 cfg.TracingStatus,
 	}
 	s.configureReplaySessionReservations()
+	hub.SetOriginAuthProvider(func() AuthSettings { return s.runner.GetSystemSettings().Auth })
 	if leadership != nil {
 		leadership.setOnLoss(func() {
 			s.clearActiveExecutionEndpoint()

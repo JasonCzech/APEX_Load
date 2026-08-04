@@ -316,12 +316,8 @@ func (collector *importedCredentialCollector) collectResolvedAuth(auth *protocol
 	if auth == nil {
 		return
 	}
-	collector.add(auth.Username)
 	collector.add(auth.Password)
 	collector.add(auth.Token)
-	if auth.Domain != "" && auth.Username != "" {
-		collector.add(auth.Domain + `\` + auth.Username)
-	}
 	if auth.Username == "" && auth.Password == "" {
 		return
 	}

@@ -6,11 +6,51 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
 )
+
+func TestApiClientRetriesTransientStatusesAndFailsFastOnPermanent4xx(t *testing.T) {
+	var transientCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/transient":
+			call := transientCalls.Add(1)
+			if call < 3 {
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/permanent":
+			w.WriteHeader(http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewApiClient(server.URL)
+	response, err := client.doStatusRead("/transient")
+	if err != nil {
+		t.Fatalf("transient request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK || transientCalls.Load() != 3 {
+		t.Fatalf("transient status/calls = %d/%d, want 200/3", response.StatusCode, transientCalls.Load())
+	}
+	response, err = client.doStatusRead("/permanent")
+	if err != nil {
+		t.Fatalf("permanent request: %v", err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("permanent status = %d, want 400", response.StatusCode)
+	}
+}
 
 // TestPollTestFailsFastOn404 locks in that pollTest surfaces a 404 (test deleted)
 // instead of looping forever with an empty status.

@@ -104,6 +104,12 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	prepared.RedactedTarget = action.RedactedTarget
 	prepared.RedactedHeaders = cloneHeaders(action.RedactedHeaders)
 	prepared.RedactedSOAP = action.RedactedSOAP
+	// SOAP fault handling is an application-layer concern. Keep successful
+	// response bytes through the HTTP adapter so a 2xx SOAP Fault cannot be
+	// mistaken for a passing sample, then re-apply the caller's retention policy
+	// after fault detection and protocol evidence have been built.
+	discardSuccessfulBody := prepared.DiscardResponseBodyOnSuccess
+	prepared.DiscardResponseBodyOnSuccess = false
 	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
 	prepared.Body = preparedBody
 	prepared.Body = s.applySecurity(prepared.Body)
@@ -189,6 +195,9 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ErrorMessage = "soap fault response"
 	}
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(&prepared, result)
+	if discardSuccessfulBody && result.Success {
+		result.ResponseBody = ""
+	}
 
 	return result, nil
 }
@@ -752,7 +761,9 @@ func applySOAPDefaults(action *protocol.Action, version, charset string) {
 		soapAction = strings.TrimSpace(action.SOAP.Action)
 	}
 
-	setHeaderCanonical(action.Headers, "Content-Type", defaultSOAPContentType(version, charset, soapAction))
+	if _, authored := getHeaderValue(action.Headers, "Content-Type"); !authored {
+		setHeaderCanonical(action.Headers, "Content-Type", defaultSOAPContentType(version, charset, soapAction))
+	}
 	if version == "1.1" {
 		if soapAction == "" {
 			if existing, ok := getHeaderValue(action.Headers, "SOAPAction"); ok {

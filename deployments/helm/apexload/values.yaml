@@ -1,6 +1,7 @@
 namespace:
   create: true
-  name: apexload
+  # Empty uses the Helm release namespace.
+  name: ""
 
 image:
   registry: changeme.azurecr.io
@@ -45,7 +46,8 @@ dataPlatform:
   # config.eventhubs.connection_string_secret. The native eventhubs adapter needs
   # images built with -tags eventhubs_real (image.tag); the default image
   # fail-closes on non-mock Event Hubs scripts.
-  generators: dns://apexload-generator.apexload.svc.cluster.local:9090
+  # Empty derives the headless-service target from the Helm release namespace.
+  generators: ""
   generatorDiscoveryInterval: 15s
   generatorTimeout: 10s
   metricsAddr: ":9091"
@@ -99,18 +101,23 @@ controller:
     tmpSizeLimit: 2Gi
     dataSizeLimit: 10Gi
 
+importAssets:
+  root: /var/lib/apexload-import-assets
+  persistence:
+    enabled: true
+    existingClaim: ""
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: ""
+    size: 10Gi
+
 generator:
   replicas: 2
   serviceAccountName: apexload-generator
   grpcTlsSecretName: apexload-generator-grpc-tls
   maxVUsers: 10000
-  nodeSelector:
-    apexload.io/node-pool: generators
-  tolerations:
-    - key: apexload.io/dedicated
-      operator: Equal
-      value: generators
-      effect: NoSchedule
+  nodeSelector: {}
+  tolerations: []
   resources:
     requests:
       cpu: "1"

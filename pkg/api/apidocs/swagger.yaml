@@ -4878,6 +4878,11 @@ paths:
               properties:
                 name:
                   type: string
+                updated_at:
+                  type: string
+                  format: date-time
+              required:
+                - updated_at
       responses:
         "200":
           description: OK
@@ -13058,14 +13063,10 @@ paths:
                   format: date-time
                   description: Archive timestamp, or null to restore the data pool. Omit to preserve the current archive state.
                   nullable: true
-                description:
-                  type: string
+                description: {}
                 name:
                   type: string
-                schema:
-                  type: object
-                  additionalProperties:
-                    type: string
+                schema: {}
                 updated_at:
                   type: string
                   format: date-time
@@ -17656,6 +17657,10 @@ paths:
                         additionalProperties:
                           type: string
                       event_type:
+                        type: string
+                      evidence_incomplete:
+                        type: boolean
+                      evidence_note:
                         type: string
                       generated_at:
                         type: string
@@ -24990,6 +24995,11 @@ paths:
               properties:
                 name:
                   type: string
+                updated_at:
+                  type: string
+                  format: date-time
+              required:
+                - updated_at
       responses:
         "200":
           description: OK

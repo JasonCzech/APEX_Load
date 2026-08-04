@@ -408,7 +408,7 @@ func manifestConfigurationFromTestRecord(record *storage.TestRecord) TestRunMani
 		Groups:           maskTestGroupsRuntimeSettings(decodeStoredGroups(record.Groups)),
 		BaselinePinned:   record.BaselinePinned,
 		BaselinePinnedAt: cloneTimePtr(record.BaselinePinnedAt),
-		StartedAt:        cloneTimePtr(record.ScheduledStartAt),
+		StartedAt:        cloneTimePtr(record.StartedAt),
 		EndedAt:          cloneTimePtr(record.EndTime),
 	}
 }

@@ -174,6 +174,7 @@ func (s *Server) handleDeleteMonitoringCollector(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusConflict, "monitoring collector changed concurrently")
 		return
 	}
+	s.collectorMetrics.delete(collector.ID)
 	s.recordAuditEvent(r, "monitoring.collector.delete", "success", "monitoring_collector", collector.ID, collector.ProjectID, nil)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": collector.ID})
 }

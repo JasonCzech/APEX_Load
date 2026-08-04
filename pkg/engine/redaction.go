@@ -97,11 +97,9 @@ var payloadRedactionPatterns = []payloadReplacement{
 		re:   regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`),
 		repl: redactedPayloadValue,
 	},
-	{
-		re:   regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`),
-		repl: redactedPayloadValue,
-	},
 }
+
+var jwtCandidatePattern = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
 
 type payloadReplacement struct {
 	re   *regexp.Regexp
@@ -906,6 +904,7 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	for _, pattern := range payloadRedactionPatterns {
 		redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
 	}
+	redacted = scrubStructurallyValidJWTs(redacted)
 	if config != nil {
 		for _, pattern := range config.compiled {
 			redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
@@ -919,6 +918,26 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	return scrub.Value(redacted, scrub.Policy{})
 }
 
+func scrubStructurallyValidJWTs(value string) string {
+	return jwtCandidatePattern.ReplaceAllStringFunc(value, func(candidate string) string {
+		segments := strings.Split(candidate, ".")
+		if len(segments) != 3 {
+			return candidate
+		}
+		for _, segment := range segments[:2] {
+			decoded, err := base64.RawURLEncoding.DecodeString(segment)
+			if err != nil {
+				return candidate
+			}
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal(decoded, &object); err != nil || object == nil {
+				return candidate
+			}
+		}
+		return redactedPayloadValue
+	})
+}
+
 func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 	if value == "" || !hasRuntimeSecretReplacers(config) {
 		return value
@@ -929,7 +948,7 @@ func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 	// matching (or vice versa), so union their same-width placeholder spans
 	// before exposing the public marker.
 	original := value
-	masked := []byte(value)
+	matchedOffsets := make([]bool, len(value))
 	matched := false
 	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
 		for _, replacer := range config.secretReplacers {
@@ -941,11 +960,31 @@ func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 				continue
 			}
 			for index := range candidate {
-				if candidate[index] != 0 {
+				if candidate[index] != 0 || original[index] == 0 {
 					continue
 				}
-				masked[index] = 0
+				matchedOffsets[index] = true
 				matched = true
+			}
+		}
+		// A same-width zero placeholder cannot distinguish an authored NUL from
+		// a NUL inside the matched secret. Resolve only those unusual variants by
+		// exact offsets; ordinary evidence NULs remain untouched.
+		for variant := range config.runtimeSecretVariants {
+			if !strings.ContainsRune(variant, '\x00') {
+				continue
+			}
+			for offset := 0; offset <= len(original)-len(variant); {
+				index := strings.Index(original[offset:], variant)
+				if index < 0 {
+					break
+				}
+				index += offset
+				for matchIndex := index; matchIndex < index+len(variant); matchIndex++ {
+					matchedOffsets[matchIndex] = true
+				}
+				matched = true
+				offset = index + 1
 			}
 		}
 		config = config.runtimeParent
@@ -953,13 +992,10 @@ func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 	if !matched {
 		return value
 	}
-	return expandRuntimeSecretPlaceholders(string(masked))
+	return expandRuntimeSecretMatches(original, matchedOffsets)
 }
 
-func expandRuntimeSecretPlaceholders(value string) string {
-	if !strings.ContainsRune(value, '\x00') {
-		return value
-	}
+func expandRuntimeSecretMatches(value string, matched []bool) string {
 	// Preserve the public [REDACTED] contract for ordinary matches, but cap
 	// growth to one marker beyond the original evidence size. Once that budget
 	// would be exceeded, a same-width opaque run remains fail-closed without
@@ -968,15 +1004,17 @@ func expandRuntimeSecretPlaceholders(value string) string {
 	var out strings.Builder
 	out.Grow(min(maxOutput, len(value)+len(redactedPayloadValue)))
 	for offset := 0; offset < len(value); {
-		index := strings.IndexByte(value[offset:], 0)
-		if index < 0 {
+		index := offset
+		for index < len(value) && !matched[index] {
+			index++
+		}
+		if index == len(value) {
 			out.WriteString(value[offset:])
 			break
 		}
-		index += offset
 		out.WriteString(value[offset:index])
 		end := index + 1
-		for end < len(value) && value[end] == 0 {
+		for end < len(value) && matched[end] {
 			end++
 		}
 		remaining := len(value) - end

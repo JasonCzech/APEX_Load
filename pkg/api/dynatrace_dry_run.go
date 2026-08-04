@@ -1,10 +1,16 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const dynatraceCorrelationManifestSchemaVersion = "apexload.dynatrace_correlation.v1"
@@ -34,21 +40,23 @@ type DynatraceDryRunResponse struct {
 }
 
 type DynatraceCorrelationManifest struct {
-	SchemaVersion     string            `json:"schema_version"`
-	GeneratedAt       time.Time         `json:"generated_at"`
-	TestID            string            `json:"test_id,omitempty"`
-	TestName          string            `json:"test_name,omitempty"`
-	ProjectID         string            `json:"project_id,omitempty"`
-	ReleaseID         string            `json:"release_id,omitempty"`
-	ScenarioID        string            `json:"scenario_id,omitempty"`
-	Status            string            `json:"status,omitempty"`
-	EventType         string            `json:"event_type,omitempty"`
-	EventProperties   map[string]string `json:"event_properties,omitempty"`
-	TraceIDs          []string          `json:"trace_ids,omitempty"`
-	SpanIDs           []string          `json:"span_ids,omitempty"`
-	DependencyTargets []string          `json:"dependency_targets,omitempty"`
-	ArchiveReportPath string            `json:"archive_report_path,omitempty"`
-	ArchiveRootCause  string            `json:"archive_root_cause_path,omitempty"`
+	SchemaVersion      string            `json:"schema_version"`
+	GeneratedAt        time.Time         `json:"generated_at"`
+	TestID             string            `json:"test_id,omitempty"`
+	TestName           string            `json:"test_name,omitempty"`
+	ProjectID          string            `json:"project_id,omitempty"`
+	ReleaseID          string            `json:"release_id,omitempty"`
+	ScenarioID         string            `json:"scenario_id,omitempty"`
+	Status             string            `json:"status,omitempty"`
+	EventType          string            `json:"event_type,omitempty"`
+	EventProperties    map[string]string `json:"event_properties,omitempty"`
+	TraceIDs           []string          `json:"trace_ids,omitempty"`
+	SpanIDs            []string          `json:"span_ids,omitempty"`
+	DependencyTargets  []string          `json:"dependency_targets,omitempty"`
+	ArchiveReportPath  string            `json:"archive_report_path,omitempty"`
+	ArchiveRootCause   string            `json:"archive_root_cause_path,omitempty"`
+	EvidenceIncomplete bool              `json:"evidence_incomplete,omitempty"`
+	EvidenceNote       string            `json:"evidence_note,omitempty"`
 }
 
 func (s *Server) handleDynatraceDryRun(w http.ResponseWriter, r *http.Request) {
@@ -198,13 +206,96 @@ func (s *Server) buildDynatraceCorrelationManifest(event NotificationEvent, prop
 	if record, ok := s.runner.GetRunArchive(manifest.TestID); ok && record != nil {
 		manifest.ArchiveReportPath = "/api/v1/tests/" + manifest.TestID + "/archive/report"
 		manifest.ArchiveRootCause = "/api/v1/tests/" + manifest.TestID + "/archive/root-cause"
-		if transactions, err := readAllArchiveTransactions(record); err == nil {
-			manifest.TraceIDs = firstSortedSetValues(traceIDSet(transactions), 100)
-			manifest.SpanIDs = firstSortedSetValues(spanIDSet(transactions), 100)
-			manifest.DependencyTargets = firstSortedSetValues(dependencyTargetSet(transactions), 100)
+		traceIDs, spanIDs, dependencies, err := streamDynatraceArchiveIdentity(record, 100)
+		if err != nil {
+			manifest.EvidenceIncomplete = true
+			manifest.EvidenceNote = "Archive correlation evidence could not be read completely: " + err.Error()
+		} else {
+			manifest.TraceIDs = traceIDs
+			manifest.SpanIDs = spanIDs
+			manifest.DependencyTargets = dependencies
 		}
 	}
 	return manifest
+}
+
+func streamDynatraceArchiveIdentity(record *storage.RunArchiveRecord, limit int) ([]string, []string, []string, error) {
+	lease, err := acquireArchiveMaterialized(context.Background(), record)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer lease.Release()
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	file, _, err := openArchiveArtifactForRead(record.ArchivePath, manifest.TransactionsFile)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer file.Close()
+
+	traces := newBoundedSortedStringSet(limit)
+	spans := newBoundedSortedStringSet(limit)
+	dependencies := newBoundedSortedStringSet(limit)
+	scanner := newArchiveJSONLScanner(file)
+	budget := newArchiveScanBudget(context.Background(), maxArchiveQueryRecords, maxArchiveQueryBytes)
+	for scanner.Scan() {
+		if err := budget.Observe(scanner.Bytes()); err != nil {
+			return traces.Values(), spans.Values(), dependencies.Values(), err
+		}
+		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
+			continue
+		}
+		var event TransactionEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return traces.Values(), spans.Values(), dependencies.Values(), fmt.Errorf("decode archived transaction: %w", err)
+		}
+		traces.Add(event.TraceID)
+		spans.Add(event.SpanID)
+		dependencies.Add(event.DependencyTarget)
+	}
+	if err := scanner.Err(); err != nil {
+		return traces.Values(), spans.Values(), dependencies.Values(), fmt.Errorf("scan archived transactions: %w", err)
+	}
+	return traces.Values(), spans.Values(), dependencies.Values(), nil
+}
+
+type boundedSortedStringSet struct {
+	limit  int
+	values map[string]struct{}
+}
+
+func newBoundedSortedStringSet(limit int) *boundedSortedStringSet {
+	return &boundedSortedStringSet{limit: limit, values: make(map[string]struct{}, max(0, limit))}
+}
+
+func (set *boundedSortedStringSet) Add(value string) {
+	value = strings.TrimSpace(value)
+	if value == "" || set.limit <= 0 {
+		return
+	}
+	if _, exists := set.values[value]; exists {
+		return
+	}
+	if len(set.values) < set.limit {
+		set.values[value] = struct{}{}
+		return
+	}
+	largest := ""
+	for existing := range set.values {
+		if existing > largest {
+			largest = existing
+		}
+	}
+	if value < largest {
+		delete(set.values, largest)
+		set.values[value] = struct{}{}
+	}
+}
+
+func (set *boundedSortedStringSet) Values() []string {
+	return firstSortedSetValues(set.values, set.limit)
 }
 
 func traceIDSet(transactions []TransactionEvent) map[string]struct{} {

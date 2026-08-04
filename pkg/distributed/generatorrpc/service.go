@@ -1645,12 +1645,29 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
 	writer := s.archiveManager.writer(testID)
+	recordArchive := !requireMatch || s.isArchivePublisherLocked(testID, groupName)
 	s.mu.Unlock()
 
-	s.recordMetricsBatch(testID, writer, batch)
+	if recordArchive {
+		s.recordMetricsBatch(testID, writer, batch)
+	}
 
 	s.broadcastMetricsLocked(batch)
 	return nil
+}
+
+func (s *Service) isArchivePublisherLocked(testID, groupName string) bool {
+	groups := s.executions[testID]
+	if len(groups) == 0 {
+		return true
+	}
+	selected := ""
+	for candidate := range groups {
+		if selected == "" || candidate < selected {
+			selected = candidate
+		}
+	}
+	return groupName == selected
 }
 
 func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, batch *pb.MetricsBatch) {
@@ -2233,7 +2250,12 @@ func (s *Service) collectExecutionMetrics(exec *groupExecution) (executionMetric
 		if exec.lastMetrics == nil {
 			return executionMetricsSnapshot{}, false
 		}
-		return *exec.lastMetrics, true
+		idle := *exec.lastMetrics
+		idle.transactions = nil
+		idle.aggregates = metricsAggregateSet{}
+		idle.telemetry.WindowMs = s.publishInterval.Milliseconds()
+		idle.telemetry.PublishedAtUnixMs = time.Now().UnixMilli()
+		return idle, true
 	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
 	// The final out-of-band publish (after engine.Run returns) drains leftover
@@ -2264,13 +2286,6 @@ func (s *Service) collectExecutionMetrics(exec *groupExecution) (executionMetric
 	telemetry.DroppedSubscriberBatches = s.metricsBroker.droppedCount()
 	metrics := executionMetricsSnapshot{stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates}
 	exec.metricsMu.Lock()
-	if exec.lastMetrics != nil && !metricsAggregateSetHasEvidence(metrics.aggregates) {
-		metrics.transactions = exec.lastMetrics.transactions
-		metrics.aggregates = exec.lastMetrics.aggregates
-		if exec.lastMetrics.telemetry.WindowMs > 0 {
-			metrics.telemetry.WindowMs = exec.lastMetrics.telemetry.WindowMs
-		}
-	}
 	stored := metrics
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	exec.lastMetrics = &stored
@@ -2313,9 +2328,13 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 		}
 		assignment.groupTransactions[groupName] = transactions
 		boundRetainedTransactionSamples(assignment.groupTransactions, groupName)
+	} else {
+		delete(assignment.groupTransactions, groupName)
 	}
 	if metricsAggregateSetHasEvidence(metrics.aggregates) {
 		assignment.groupAggregates[groupName] = metrics.aggregates
+	} else {
+		delete(assignment.groupAggregates, groupName)
 	}
 }
 

@@ -1,0 +1,21 @@
+{{- if and .Values.importAssets.persistence.enabled (not .Values.importAssets.persistence.existingClaim) }}
+{{- if .Values.controller.ha.enabled }}
+{{- fail "importAssets.persistence.existingClaim is required when controller HA is enabled (use a ReadWriteMany claim)" }}
+{{- end }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "apexload.importAssetsClaimName" . }}
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+  accessModes:
+{{ toYaml .Values.importAssets.persistence.accessModes | indent 4 }}
+{{- if .Values.importAssets.persistence.storageClassName }}
+  storageClassName: {{ .Values.importAssets.persistence.storageClassName | quote }}
+{{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.importAssets.persistence.size | quote }}
+{{- end }}

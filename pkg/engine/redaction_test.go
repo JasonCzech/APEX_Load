@@ -508,6 +508,44 @@ func TestRuntimeSecretRedactionDoesNotAmplifyShortMatches(t *testing.T) {
 	}
 }
 
+func TestRuntimeSecretRedactionPreservesPreexistingNULBytes(t *testing.T) {
+	config, err := WithSecretValueRedactionChecked(nil, []string{"secret-value"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := "before\x00secret-value\x00after"
+	got := config.ScrubText(input)
+	if got != "before\x00"+redactedPayloadValue+"\x00after" {
+		t.Fatalf("ScrubText() = %q", got)
+	}
+}
+
+func TestGenericJWTRedactionRequiresStructuredHeaderAndPayload(t *testing.T) {
+	valid := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
+	invalid := "documents.example.invalid.assets.bundle123456789"
+	got := scrubSensitiveText(valid + " " + invalid)
+	if strings.Contains(got, valid) {
+		t.Fatalf("valid JWT survived: %q", got)
+	}
+	if !strings.Contains(got, invalid) {
+		t.Fatalf("non-JWT dotted token was redacted: %q", got)
+	}
+}
+
+func TestReplacingUnchangedRuntimeCredentialScopeReusesMatcher(t *testing.T) {
+	vu := &VUser{}
+	if err := vu.replaceRuntimeCredentialScope("test", []string{"two", "one"}); err != nil {
+		t.Fatal(err)
+	}
+	first := vu.RedactionConfig
+	if err := vu.replaceRuntimeCredentialScope("test", []string{"one", "two", "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if vu.RedactionConfig != first {
+		t.Fatal("unchanged normalized scope rebuilt the runtime matcher")
+	}
+}
+
 func TestRuntimeSecretRedactionBoundsOptionalVariantsWithoutDroppingRawValues(t *testing.T) {
 	values := make([]string, 200)
 	for index := range values {

@@ -561,3 +561,9 @@ func isTerminalTestStatus(status string) bool {
 		return false
 	}
 }
+
+// IsTerminalTestStatus exposes the controller's terminal-state vocabulary to
+// first-party clients and contract tests without duplicating lifecycle rules.
+func IsTerminalTestStatus(status string) bool {
+	return isTerminalTestStatus(status)
+}

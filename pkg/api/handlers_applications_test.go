@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -164,6 +165,59 @@ func TestApplicationReleaseAndScenarioHandlers(t *testing.T) {
 	}
 	if scenario.RuntimeSettings.ErrorHandling == nil || !scenario.RuntimeSettings.ErrorHandling.ContinueOnError || !scenario.RuntimeSettings.ErrorHandling.SnapshotOnError {
 		t.Fatalf("scenario error handling = %#v, want continue_on_error and snapshot_on_error", scenario.RuntimeSettings.ErrorHandling)
+	}
+}
+
+func TestApplicationAndReleaseUpdatesRequireCurrentToken(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore returned error: %v", err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+
+	application := &storage.Application{ID: "application-cas", ProjectID: storage.DefaultProjectID, Name: "Payments", CreatedAt: time.Now()}
+	if err := store.SaveApplication(application); err != nil {
+		t.Fatalf("SaveApplication: %v", err)
+	}
+	release := &storage.Release{ID: "release-cas", ApplicationID: application.ID, ProjectID: storage.DefaultProjectID, Name: "2026.08", CreatedAt: time.Now()}
+	if err := store.SaveRelease(release); err != nil {
+		t.Fatalf("SaveRelease: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		path       string
+		missing    string
+		stale      string
+		current    time.Time
+		updatedKey string
+	}{
+		{name: "application", path: "/api/v1/applications/" + application.ID, missing: `{"name":"Renamed"}`, stale: `{"name":"Renamed","updated_at":"2000-01-01T00:00:00Z"}`, current: application.UpdatedAt},
+		{name: "release", path: "/api/v1/releases/" + release.ID, missing: `{"name":"2026.09"}`, stale: `{"name":"2026.09","updated_at":"2000-01-01T00:00:00Z"}`, current: release.UpdatedAt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := func(body string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodPut, tc.path, bytes.NewBufferString(body))
+				req.Header.Set("Content-Type", "application/json")
+				resp := httptest.NewRecorder()
+				server.mux.ServeHTTP(resp, req)
+				return resp
+			}
+			if resp := request(tc.missing); resp.Code != http.StatusBadRequest {
+				t.Fatalf("missing token status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+			if resp := request(tc.stale); resp.Code != http.StatusConflict {
+				t.Fatalf("stale token status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+			}
+			body, err := json.Marshal(map[string]any{"name": "Current", "updated_at": tc.current})
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if resp := request(string(body)); resp.Code != http.StatusOK {
+				t.Fatalf("current token status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+			}
+		})
 	}
 }
 

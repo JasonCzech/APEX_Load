@@ -337,8 +337,8 @@ func TestInferredJSONRequestRequiredFieldsFollowRouteSemantics(t *testing.T) {
 
 	applicationUpdate := spec.Paths["/api/v1/applications/{id}"]["put"].
 		RequestBody.Content["application/json"].Schema
-	if len(applicationUpdate.Required) != 0 {
-		t.Errorf("application update required fields = %v, want none because {} is a valid no-op update", applicationUpdate.Required)
+	if !openAPIStringSliceContains(applicationUpdate.Required, "updated_at") {
+		t.Errorf("application update required fields = %v, want updated_at for optimistic concurrency", applicationUpdate.Required)
 	}
 
 	for _, route := range []struct {

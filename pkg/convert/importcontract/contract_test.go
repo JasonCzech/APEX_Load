@@ -64,7 +64,7 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 var frozenImportContractHashes = map[string]string{
 	"har":      "2941c93093c9a2fd2e98a15499f3890b751eaf3dbc3cb4ab99a5170da9cd051f",
 	"jmeter":   "4dc8ac1a0a6512eb5d6d32a6dfa2b3e1f9911457fa748b274307833f6f854162",
-	"k6":       "ad3473a1f5752e85de836f10dc1577fe47b89cab4dcb12a0c45ca429b0af762c",
+	"k6":       "3f92bb0162d595533f7ada6cfcf49603ec6bc6d1c4a98fcaf147f4a003a669dd",
 	"openapi":  "5e2c943038817074188f11976ea67241a63c3509acfc9dbb204735856aba6ba3",
 	"postman":  "84bc234a9d609b99955696e58afa1f7f45f5d07a15dbe7c7fe092f5c36d01947",
 	"raw_http": "9db5248a05074b18cf32f05634c12b826cf5c4974978c2e53e98feef886aad19",

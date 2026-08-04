@@ -299,6 +299,11 @@ type schema struct {
 	Example              any               `json:"example,omitempty" yaml:"example,omitempty"`
 	Default              any               `json:"default,omitempty" yaml:"default,omitempty"`
 	Enum                 []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
+	Minimum              *float64          `json:"minimum,omitempty" yaml:"minimum,omitempty"`
+	Maximum              *float64          `json:"maximum,omitempty" yaml:"maximum,omitempty"`
+	MinLength            *int              `json:"minLength,omitempty" yaml:"minLength,omitempty"`
+	MaxLength            *int              `json:"maxLength,omitempty" yaml:"maxLength,omitempty"`
+	Pattern              string            `json:"pattern,omitempty" yaml:"pattern,omitempty"`
 	Nullable             bool              `json:"nullable,omitempty" yaml:"nullable,omitempty"`
 	AdditionalProperties any               `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
 	OneOf                []schema          `json:"oneOf,omitempty" yaml:"oneOf,omitempty"`
@@ -1172,6 +1177,28 @@ func (r resolver) resolveSchema(s schema, location string, seen map[string]bool)
 			if merged.Type == "" {
 				merged.Type = resolved.Type
 			}
+			merged.Required = uniqueSorted(append(merged.Required, resolved.Required...))
+			if merged.Format == "" {
+				merged.Format = resolved.Format
+			}
+			if merged.Minimum == nil {
+				merged.Minimum = resolved.Minimum
+			}
+			if merged.Maximum == nil {
+				merged.Maximum = resolved.Maximum
+			}
+			if merged.MinLength == nil {
+				merged.MinLength = resolved.MinLength
+			}
+			if merged.MaxLength == nil {
+				merged.MaxLength = resolved.MaxLength
+			}
+			if merged.Pattern == "" {
+				merged.Pattern = resolved.Pattern
+			}
+			if len(merged.Enum) == 0 {
+				merged.Enum = append([]any(nil), resolved.Enum...)
+			}
 		}
 		return merged
 	}
@@ -1330,8 +1357,8 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 	if len(bodyReviewCodes) > 0 {
 		applyOpenAPIReviewGate(&action, bodyReviewCodes, location)
 	}
-	status, hasStatus := firstSuccessStatus(op.Responses)
-	successSchema, responseObject := successResponseSchema(op.Responses, status, res, location)
+	status, responseKey, hasStatus := firstSuccessStatus(op.Responses)
+	successSchema, responseObject := successResponseSchema(op.Responses, responseKey, res, location)
 	opInfo := builtOperation{
 		Method:                 method,
 		RawPath:                path,
@@ -1345,7 +1372,11 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 	}
 	if includeAssertion {
 		if hasStatus {
-			action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: status}}
+			if strings.EqualFold(responseKey, "2XX") {
+				action.Assertions = []dsl.Assertion{{Type: "status_code_range", Min: 200, Max: 299}}
+			} else {
+				action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: status}}
+			}
 			action.Assertions = append(action.Assertions, responseBodyAssertions(successSchema)...)
 			return action, uniqueSorted(append(bodyColumns, paramColumns...)), true, opInfo
 		}
@@ -2417,23 +2448,26 @@ func preferredContentType(contentTypes []string) string {
 	return contentTypes[0]
 }
 
-func firstSuccessStatus(responses map[string]any) (int, bool) {
+func firstSuccessStatus(responses map[string]any) (int, string, bool) {
 	if len(responses) == 0 {
-		return 0, false
+		return 0, "", false
 	}
 	keys := sortedMapKeys(responses)
 	for _, key := range keys {
 		if len(key) == 3 && key[0] == '2' {
 			var status int
 			if _, err := fmt.Sscanf(key, "%d", &status); err == nil {
-				return status, true
+				return status, key, true
+			}
+			if strings.EqualFold(key, "2XX") {
+				return 200, key, true
 			}
 		}
 	}
 	if _, ok := responses["default"]; ok {
-		return 200, true
+		return 200, "default", true
 	}
-	return 0, false
+	return 0, "", false
 }
 
 func templatePath(path string, params []parameter, res resolver, location string, columns columnRegistry) (string, []string) {

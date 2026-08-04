@@ -73,6 +73,10 @@ spec:
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
+            - name: APEXLOAD_IMPORT_ASSET_DIR
+              value: /var/lib/apexload-import-assets
+            - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
+              value: /var/lib/apexload-import-assets/.bruno-artifacts
           envFrom:
             - configMapRef:
                 name: apexload-data-platform
@@ -83,6 +87,8 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /var/lib/apexload
+            - name: import-assets
+              mountPath: /var/lib/apexload-import-assets
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
@@ -115,6 +121,9 @@ spec:
         - name: data
           emptyDir:
             sizeLimit: 10Gi
+        - name: import-assets
+          persistentVolumeClaim:
+            claimName: apexload-controller-import-assets
         # Client certificate + CA for mTLS to generators. Provision the
         # apexload-controller-grpc-tls Secret via cert-manager or the Key Vault
         # CSI driver (see onprem/certificates.example.yaml for issuance).

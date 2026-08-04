@@ -365,6 +365,56 @@ func TestSOAPExecuteFlagsSOAP11FaultEnvelope(t *testing.T) {
 	}
 }
 
+func TestSOAPExecuteInspectsFaultBeforeDiscardingSuccessfulBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><soapenv:Fault><faultcode>soapenv:Client</faultcode><faultstring>bad request</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>`)
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url": ts.URL, "soap_fault_fail_on_fault": true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Target: "/", Body: []byte(`<Envelope><Body/></Envelope>`),
+		DiscardResponseBodyOnSuccess: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.ServerTelemetry == nil || result.ServerTelemetry.SOAPFaultCode != "soapenv:Client" {
+		t.Fatalf("fault was not retained for inspection: %#v", result)
+	}
+	if result.ResponseBody == "" {
+		t.Fatal("failed SOAP response body was discarded")
+	}
+}
+
+func TestSOAPExecutePreservesAuthoredContentType(t *testing.T) {
+	var contentType string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType = r.Header.Get("Content-Type")
+		_, _ = io.WriteString(w, `<Envelope><Body><ok/></Body></Envelope>`)
+	}))
+	defer ts.Close()
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{"base_url": ts.URL}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Execute(context.Background(), &protocol.Action{
+		Target: "/", Body: []byte(`<Envelope><Body/></Envelope>`),
+		Headers: map[string]string{"content-type": "application/vnd.example+xml"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if contentType != "application/vnd.example+xml" {
+		t.Fatalf("Content-Type = %q", contentType)
+	}
+}
+
 func TestBuildSOAPSnapshot_RedactsSecretRequestValues(t *testing.T) {
 	action := &protocol.Action{
 		Method:          http.MethodPost,

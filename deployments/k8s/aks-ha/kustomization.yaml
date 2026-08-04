@@ -85,3 +85,11 @@ patches:
     patch: |-
       - op: remove
         path: /spec/selector
+  - target:
+      kind: PersistentVolumeClaim
+      name: apexload-controller-import-assets
+    patch: |-
+      - op: replace
+        path: /spec/accessModes
+        value:
+          - ReadWriteMany

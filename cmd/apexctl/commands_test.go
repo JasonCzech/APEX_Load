@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/api"
 )
 
 func TestIsTerminalStatus(t *testing.T) {
@@ -18,6 +20,14 @@ func TestIsTerminalStatus(t *testing.T) {
 	for _, s := range []string{"RUNNING", "QUEUED", "PENDING", ""} {
 		if isTerminalStatus(s) {
 			t.Fatalf("%s should not be terminal", s)
+		}
+	}
+}
+
+func TestTerminalStatusVocabularyMatchesController(t *testing.T) {
+	for _, status := range []string{"CREATED", "PENDING", "QUEUED", "STARTING", "RUNNING", "PAUSED", "STOPPING", "FINALIZING", "COMPLETE", "FAILED", "ABORTED", ""} {
+		if got, want := isTerminalStatus(status), api.IsTerminalTestStatus(status); got != want {
+			t.Fatalf("terminal classification for %q: apexctl=%t controller=%t", status, got, want)
 		}
 	}
 }
@@ -140,7 +150,19 @@ func TestParseCtlArgsDefaults(t *testing.T) {
 	if c.format != "text" {
 		t.Fatalf("default format = %q, want text", c.format)
 	}
-	if c.timeout != 30*time.Minute {
-		t.Fatalf("default timeout = %v, want 30m", c.timeout)
+	if c.timeout != 0 {
+		t.Fatalf("default timeout = %v, want derived timeout", c.timeout)
+	}
+}
+
+func TestParseCtlArgsRejectsUnknownMissingAndMalformedValues(t *testing.T) {
+	for _, args := range [][]string{{"--unknown"}, {"--api"}, {"--timeout=tomorrow"}, {"positional"}} {
+		if parsed := parseCtlArgs(args); parsed.err == nil {
+			t.Fatalf("parseCtlArgs(%q) accepted invalid input", args)
+		}
+	}
+	parsed := parseCtlArgs([]string{"--api=https://controller.example", "--test-id=test-1", "--timeout=5m"})
+	if parsed.err != nil || parsed.api != "https://controller.example" || parsed.test != "test-1" || parsed.timeout != 5*time.Minute {
+		t.Fatalf("equals-form control flags = %#v", parsed)
 	}
 }

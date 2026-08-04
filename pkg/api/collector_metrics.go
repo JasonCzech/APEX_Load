@@ -20,6 +20,7 @@ import (
 // collectorStaleAfter is the freshness window after which a collector's latest
 // snapshot is reported stale (≈ a few missed heartbeats at a typical interval).
 const collectorStaleAfter = 90 * time.Second
+const collectorSnapshotRetention = 10 * time.Minute
 
 // Heartbeat ingest bounds. The heartbeat route is collector-token authenticated
 // in-handler and not in the RBAC catalog, so these caps (not the 128 MiB global
@@ -59,6 +60,12 @@ func newCollectorMetricStore() *collectorMetricStore {
 func (c *collectorMetricStore) put(snap collectorMetricSnapshot) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	cutoff := snap.ReceivedAt.Add(-collectorSnapshotRetention)
+	for id, existing := range c.snapshots {
+		if existing.ReceivedAt.Before(cutoff) {
+			delete(c.snapshots, id)
+		}
+	}
 	c.snapshots[snap.CollectorID] = snap
 }
 
@@ -67,6 +74,15 @@ func (c *collectorMetricStore) get(id string) (collectorMetricSnapshot, bool) {
 	defer c.mu.RUnlock()
 	snap, ok := c.snapshots[id]
 	return snap, ok
+}
+
+func (c *collectorMetricStore) delete(id string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.snapshots, id)
 }
 
 type collectorHeartbeatRequest struct {

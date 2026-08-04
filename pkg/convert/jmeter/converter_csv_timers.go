@@ -35,7 +35,7 @@ func parseCSVDataSet(node *xmlNode, sidecarFiles map[string][]byte) dsl.DataSour
 	filename := prop(node, "filename")
 	variableNames := splitCSVNames(prop(node, "variableNames"))
 	delimiter := convertutil.FirstNonEmpty(prop(node, "delimiter"), ",")
-	firstRowHeader := len(variableNames) == 0
+	firstRowHeader := len(variableNames) == 0 || strings.EqualFold(strings.TrimSpace(prop(node, "ignoreFirstLine")), "true")
 	inlineData := ""
 	if len(variableNames) == 0 {
 		if content, ok := jmeterSidecarFile(sidecarFiles, filename); ok {

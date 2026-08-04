@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -121,9 +123,13 @@ func runController() (runErr error) {
 		slog.Info("HA execution leader election enabled; only the lease holder will run tests")
 	}
 
-	activeEndpointPublisher, err := activeEndpointPublisherFromEnv(haLeaderElection)
+	activeEndpointPublisher, err := activeEndpointPublisherFromEnv(haLeaderElection, addr)
 	if err != nil {
 		return fmt.Errorf("configure active controller endpoint routing: %w", err)
+	}
+	importAssetDir, err := importAssetDirFromEnv()
+	if err != nil {
+		return err
 	}
 
 	server := api.NewServer(api.ServerConfig{
@@ -136,6 +142,7 @@ func runController() (runErr error) {
 		Store:                   store,
 		GeneratorTargets:        generatorTargets,
 		GeneratorTimeout:        generatorTimeout,
+		ImportAssetDir:          importAssetDir,
 		BrunoArtifactDir:        brunoArtifactDirFromEnv(),
 		K8sRestart:              k8sRestartSettings,
 		KubeRestarter:           restarter,
@@ -394,7 +401,18 @@ func brunoArtifactDirFromEnv() string {
 	return strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_ARTIFACT_ROOT"))
 }
 
-func activeEndpointPublisherFromEnv(haEnabled bool) (api.ExecutionEndpointPublisher, error) {
+func importAssetDirFromEnv() (string, error) {
+	dir := strings.TrimSpace(os.Getenv("APEXLOAD_IMPORT_ASSET_DIR"))
+	if dir != "" {
+		return dir, nil
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("APEXLOAD_ENV")), "production") {
+		return "", fmt.Errorf("APEXLOAD_IMPORT_ASSET_DIR is required in production; import assets must not use the temporary default")
+	}
+	return "", nil
+}
+
+func activeEndpointPublisherFromEnv(haEnabled bool, bindAddr string) (api.ExecutionEndpointPublisher, error) {
 	sliceName := strings.TrimSpace(os.Getenv("APEXLOAD_ACTIVE_ENDPOINT_SLICE"))
 	if sliceName == "" {
 		return nil, nil
@@ -419,6 +437,10 @@ func activeEndpointPublisherFromEnv(haEnabled bool) (api.ExecutionEndpointPublis
 	if err != nil {
 		return nil, err
 	}
+	endpointPort, err := controllerEndpointPort(bindAddr)
+	if err != nil {
+		return nil, err
+	}
 	return kubeops.NewActiveEndpointPublisher(client, kubeops.ActiveEndpointConfig{
 		Namespace:         namespace,
 		EndpointSliceName: sliceName,
@@ -426,8 +448,20 @@ func activeEndpointPublisherFromEnv(haEnabled bool) (api.ExecutionEndpointPublis
 		PodName:           podName,
 		PodIP:             podIP,
 		PortName:          "http",
-		Port:              8080,
+		Port:              endpointPort,
 	})
+}
+
+func controllerEndpointPort(bindAddr string) (int32, error) {
+	_, portText, err := net.SplitHostPort(strings.TrimSpace(bindAddr))
+	if err != nil {
+		return 0, fmt.Errorf("resolve controller endpoint port from bind address %q: %w", bindAddr, err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, fmt.Errorf("controller bind address %q has an invalid port", bindAddr)
+	}
+	return int32(port), nil
 }
 
 type kubeRestarterAdapter struct {

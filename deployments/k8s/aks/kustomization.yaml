@@ -7,6 +7,7 @@ resources:
   - configmap.yaml
   - controller-service.yaml
   - controller-deployment.yaml
+  - controller-import-assets-pvc.yaml
   - controller-ingress.yaml
   - generator-service.yaml
   - generator-statefulset.yaml

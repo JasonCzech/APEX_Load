@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jmespath/go-jmespath"
@@ -35,7 +36,10 @@ func JSONPath(expr string, body []byte) (string, error) {
 		if part == "" {
 			continue
 		}
-		key, indexes := splitPathToken(part)
+		key, indexes, err := splitPathToken(part)
+		if err != nil {
+			return "", fmt.Errorf("invalid jsonpath %q: %w", expr, err)
+		}
 		if key != "" {
 			object, ok := current.(map[string]any)
 			if !ok {
@@ -58,25 +62,30 @@ func JSONPath(expr string, body []byte) (string, error) {
 	return Stringify(current), nil
 }
 
-func splitPathToken(token string) (string, []int) {
+func splitPathToken(token string) (string, []int, error) {
 	key := token
 	indexes := []int{}
 	if bracket := strings.Index(token, "["); bracket >= 0 {
 		key = token[:bracket]
 		rest := token[bracket:]
-		for strings.HasPrefix(rest, "[") {
+		for rest != "" {
+			if !strings.HasPrefix(rest, "[") {
+				return "", nil, fmt.Errorf("unexpected suffix %q", rest)
+			}
 			end := strings.Index(rest, "]")
 			if end <= 1 {
-				break
+				return "", nil, fmt.Errorf("malformed array index")
 			}
-			var index int
-			if _, err := fmt.Sscanf(rest[1:end], "%d", &index); err == nil {
-				indexes = append(indexes, index)
+			indexText := rest[1:end]
+			index, err := strconv.Atoi(indexText)
+			if err != nil || index < 0 {
+				return "", nil, fmt.Errorf("malformed array index %q", indexText)
 			}
+			indexes = append(indexes, index)
 			rest = rest[end+1:]
 		}
 	}
-	return key, indexes
+	return key, indexes, nil
 }
 
 // JMESPath evaluates a JMESPath expression against a JSON body.

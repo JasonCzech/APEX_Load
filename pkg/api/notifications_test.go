@@ -174,6 +174,23 @@ func TestDynatraceDryRunBuildsPayloadWithoutDelivery(t *testing.T) {
 	}
 }
 
+func TestBoundedSortedStringSetRetainsLexicallyFirstUniqueValues(t *testing.T) {
+	set := newBoundedSortedStringSet(3)
+	for _, value := range []string{"delta", "bravo", "charlie", "alpha", "bravo", "echo"} {
+		set.Add(value)
+	}
+	got := set.Values()
+	want := []string{"alpha", "bravo", "charlie"}
+	if len(got) != len(want) {
+		t.Fatalf("values = %#v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("values = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestValidateNotificationsAllowsTelemetryEvents(t *testing.T) {
 	err := validateNotificationsSettings(NotificationsSettings{
 		Webhooks: []NotificationWebhookSettings{{

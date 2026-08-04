@@ -625,6 +625,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.DurationStr = stored.DurationStr
 	current.CreatedAt = stored.CreatedAt
 	current.ScheduledStartAt = cloneTimePtr(stored.ScheduledStartAt)
+	current.StartedAt = cloneTimePtr(stored.StartedAt)
 	current.TimeslotID = cloneStringPtr(stored.TimeslotID)
 	current.PendingSince = cloneTimePtr(stored.PendingSince)
 	current.PausedAt = cloneTimePtr(stored.PausedAt)
@@ -722,6 +723,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		DurationStr:              time.Duration(record.Duration).String(),
 		CreatedAt:                record.StartTime,
 		ScheduledStartAt:         cloneTimePtr(record.ScheduledStartAt),
+		StartedAt:                cloneTimePtr(record.StartedAt),
 		TimeslotID:               cloneStringPtr(record.TimeslotID),
 		PendingSince:             record.PendingSince,
 		PausedAt:                 cloneTimePtr(record.PausedAt),
@@ -1397,6 +1399,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		Duration:              int64(test.Duration),
 		StartTime:             test.CreatedAt,
 		ScheduledStartAt:      cloneTimePtr(test.ScheduledStartAt),
+		StartedAt:             cloneTimePtr(test.StartedAt),
 		TimeslotID:            cloneStringPtr(test.TimeslotID),
 		PendingSince:          test.PendingSince,
 		PausedAt:              cloneTimePtr(test.PausedAt),

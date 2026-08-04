@@ -1270,6 +1270,7 @@ type TestRecord struct {
 	Duration              int64                     `json:"duration_ns"`
 	StartTime             time.Time                 `json:"start_time"`
 	ScheduledStartAt      *time.Time                `json:"scheduled_start_at,omitempty"`
+	StartedAt             *time.Time                `json:"started_at,omitempty"`
 	PendingSince          *time.Time                `json:"pending_since,omitempty"`
 	PausedAt              *time.Time                `json:"paused_at,omitempty"`
 	CumulativePause       int64                     `json:"cumulative_pause_ns,omitempty"`
