@@ -3,6 +3,7 @@ package api
 // handlers_import_jmeter — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -111,7 +112,11 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 			return nil, false
 		}
 		data = body
-		sidecarFiles = readJMeterSidecarFiles(r, "file", fileName)
+		sidecarFiles, err = readJMeterSidecarFiles(r, "file", fileName)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JMeter sidecar uploads: "+err.Error())
+			return nil, false
+		}
 	}
 
 	if len(data) == 0 {
@@ -126,7 +131,11 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		}
 		data = documents[0].Data
 		fileName = documents[0].FileName
-		sidecarFiles = mergeJMeterSidecarFiles(sidecarFiles, zipSidecars)
+		sidecarFiles, err = mergeJMeterSidecarFiles(sidecarFiles, zipSidecars)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JMeter multipart/ZIP sidecars: "+err.Error())
+			return nil, false
+		}
 		return &jmeterImportRequest{
 			Data: data, Documents: documents, ProjectID: authorizedImportProjectID(r),
 			Opts: jmeter.ConvertOptions{
@@ -193,7 +202,6 @@ func readJMeterZipImportAll(data []byte) ([]jmeterImportDocument, map[string][]b
 			jmxFiles[file.Name] = file.Data
 		case ".csv":
 			sidecars[file.Name] = file.Data
-			sidecars[path.Base(file.Name)] = file.Data
 		}
 	}
 	if len(jmxFiles) == 0 {
@@ -223,6 +231,9 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 	for _, document := range documents {
 		opts := request.Opts
 		opts.FileName = document.FileName
+		if len(request.Documents) > 0 {
+			opts.SidecarFiles = jmeterSidecarsForDocument(request.Opts.SidecarFiles, document.FileName)
+		}
 		if len(documents) > 1 && strings.TrimSpace(opts.ScriptName) != "" {
 			opts.ScriptName = fmt.Sprintf("%s — %s", strings.TrimSpace(opts.ScriptName), strings.TrimSuffix(path.Base(document.FileName), path.Ext(document.FileName)))
 		}
@@ -293,61 +304,226 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 	return combined, nil
 }
 
-func mergeJMeterSidecarFiles(first map[string][]byte, second map[string][]byte) map[string][]byte {
+// jmeterSidecarsForDocument presents archive sidecars relative to one JMX
+// entry. A basename-only global map is ambiguous when independent plans contain
+// same-named CSV files, so each document gets its own deterministic namespace.
+func jmeterSidecarsForDocument(files map[string][]byte, documentName string) map[string][]byte {
+	if len(files) == 0 {
+		return nil
+	}
+	documentDir := path.Dir(strings.TrimLeft(strings.ReplaceAll(documentName, `\`, `/`), "/"))
+	if documentDir == "." {
+		documentDir = ""
+	}
+	out := make(map[string][]byte, len(files)*2)
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	// Preserve full archive paths first for plans that authored them explicitly.
+	for _, name := range names {
+		data := files[name]
+		normalized := path.Clean(strings.TrimLeft(strings.ReplaceAll(strings.TrimSpace(name), `\`, `/`), "/"))
+		if normalized == "." || normalized == "" {
+			continue
+		}
+		out[normalized] = data
+	}
+	// Relative aliases are authoritative: a plain data.csv in a JMX means the
+	// sibling entry, not an unrelated root or another plan's same-named file.
+	for _, name := range names {
+		data := files[name]
+		normalized := path.Clean(strings.TrimLeft(strings.ReplaceAll(strings.TrimSpace(name), `\`, `/`), "/"))
+		if normalized == "." || normalized == "" {
+			continue
+		}
+		relative, err := filepath.Rel(filepath.FromSlash(documentDir), filepath.FromSlash(normalized))
+		if err == nil {
+			relative = filepath.ToSlash(relative)
+			if relative != "." && relative != "" {
+				out[relative] = data
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// mergeJMeterSidecarFiles combines optional external multipart sidecars with
+// sidecars embedded in a ZIP. Same-basename files wholly inside the ZIP remain
+// valid because jmeterSidecarsForDocument scopes them to their neighboring JMX.
+// A cross-source exact-name or basename collision is different: an external
+// upload could silently replace archive-owned data, so differing bytes fail
+// closed while identical exact names deduplicate deterministically.
+func mergeJMeterSidecarFiles(first map[string][]byte, second map[string][]byte) (map[string][]byte, error) {
 	if len(first) == 0 {
 		if len(second) == 0 {
-			return nil
+			return nil, nil
 		}
 		out := make(map[string][]byte, len(second))
 		for key, value := range second {
 			out[key] = value
 		}
-		return out
+		return out, nil
+	}
+	if len(second) == 0 {
+		out := make(map[string][]byte, len(first))
+		for key, value := range first {
+			out[key] = value
+		}
+		return out, nil
 	}
 	out := make(map[string][]byte, len(first)+len(second))
-	for key, value := range first {
-		out[key] = value
+	exactPayloads := make(map[string][]byte, len(first)+len(second))
+	multipartBasenames := make(map[string][]byte, len(first))
+	firstNames := make([]string, 0, len(first))
+	for name := range first {
+		firstNames = append(firstNames, name)
 	}
-	for key, value := range second {
-		out[key] = value
+	sort.Strings(firstNames)
+	for _, originalName := range firstNames {
+		data := first[originalName]
+		name := normalizeJMeterMultipartSidecarName(originalName)
+		if name == "" {
+			continue
+		}
+		exactKey := strings.ToLower(name)
+		if existing, duplicate := exactPayloads[exactKey]; duplicate {
+			if !bytes.Equal(existing, data) {
+				return nil, fmt.Errorf("conflicting multipart sidecars use the same filename %q with different content", name)
+			}
+			continue
+		}
+		baseName := path.Base(name)
+		baseKey := strings.ToLower(baseName)
+		if existing, duplicate := multipartBasenames[baseKey]; duplicate && !bytes.Equal(existing, data) {
+			return nil, fmt.Errorf("conflicting multipart sidecars use the same basename %q with different content", baseName)
+		}
+		exactPayloads[exactKey] = data
+		if _, exists := multipartBasenames[baseKey]; !exists {
+			multipartBasenames[baseKey] = data
+		}
+		out[name] = data
 	}
-	return out
+	secondNames := make([]string, 0, len(second))
+	for name := range second {
+		secondNames = append(secondNames, name)
+	}
+	sort.Strings(secondNames)
+	for _, originalName := range secondNames {
+		data := second[originalName]
+		name := normalizeJMeterMultipartSidecarName(originalName)
+		if name == "" {
+			continue
+		}
+		exactKey := strings.ToLower(name)
+		if existing, duplicate := exactPayloads[exactKey]; duplicate {
+			if !bytes.Equal(existing, data) {
+				return nil, fmt.Errorf("multipart and ZIP sidecars use the same filename %q with different content", name)
+			}
+			// Byte-identical exact names are one logical sidecar. Keep the
+			// multipart entry and omit the redundant archive alias.
+			continue
+		}
+		baseName := path.Base(name)
+		if existing, duplicate := multipartBasenames[strings.ToLower(baseName)]; duplicate && !bytes.Equal(existing, data) {
+			return nil, fmt.Errorf("multipart and ZIP sidecars use the same basename %q with different content", baseName)
+		}
+		exactPayloads[exactKey] = data
+		out[name] = data
+	}
+	return out, nil
 }
 
-func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileName string) map[string][]byte {
+// readJMeterSidecarFiles preserves path-qualified upload names so the converter
+// can resolve an authored relative path without a lossy basename alias. Two
+// uploads with the same normalized name or basename are accepted only when
+// their bytes are identical. Identical exact-name duplicates collapse to one
+// logical sidecar. Distinct path-qualified names remain available to separate
+// JMX plans; the converter permits their basename fallback only because their
+// bytes are identical. Differing payloads are ambiguous and fail closed before
+// conversion.
+func readJMeterSidecarFiles(r *http.Request, primaryField string, primaryFileName string) (map[string][]byte, error) {
 	if r == nil || r.MultipartForm == nil || len(r.MultipartForm.File) == 0 {
-		return nil
+		return nil, nil
 	}
 	files := map[string][]byte{}
-	for field, headers := range r.MultipartForm.File {
+	exactPayloads := map[string][]byte{}
+	basenamePayloads := map[string][]byte{}
+	primaryName := normalizeJMeterMultipartSidecarName(primaryFileName)
+	fields := make([]string, 0, len(r.MultipartForm.File))
+	for field := range r.MultipartForm.File {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		headers := r.MultipartForm.File[field]
 		if field == primaryField {
 			continue
 		}
 		for _, header := range headers {
-			if header == nil || strings.TrimSpace(header.Filename) == "" {
+			if header == nil {
+				continue
+			}
+			name := normalizeJMeterMultipartSidecarName(header.Filename)
+			if name == "" || (primaryName != "" && strings.EqualFold(name, primaryName)) {
 				continue
 			}
 			file, err := header.Open()
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("open sidecar %q: %w", name, err)
 			}
 			data, err := io.ReadAll(file)
 			_ = file.Close()
-			if err != nil || len(data) == 0 {
+			if err != nil {
+				return nil, fmt.Errorf("read sidecar %q: %w", name, err)
+			}
+			exactKey := strings.ToLower(name)
+			if existing, duplicate := exactPayloads[exactKey]; duplicate {
+				if !bytes.Equal(existing, data) {
+					return nil, fmt.Errorf("conflicting sidecars use the same filename %q with different content", name)
+				}
+				// Identical exact-name uploads are one logical sidecar. Keep the
+				// first normalized spelling selected by sorted form-field order.
 				continue
 			}
-			name := strings.TrimSpace(header.Filename)
-			if name == primaryFileName {
+			baseName := path.Base(name)
+			baseKey := strings.ToLower(baseName)
+			if existing, duplicate := basenamePayloads[baseKey]; duplicate && !bytes.Equal(existing, data) {
+				return nil, fmt.Errorf("conflicting sidecars use the same basename %q with different content", baseName)
+			}
+			exactPayloads[exactKey] = data
+			if _, exists := basenamePayloads[baseKey]; !exists {
+				basenamePayloads[baseKey] = data
+			}
+			if len(data) == 0 {
+				// Retain the collision identity above, but preserve the historical
+				// behavior of omitting an empty sidecar from conversion.
 				continue
 			}
 			files[name] = data
-			files[filepath.Base(name)] = data
 		}
 	}
 	if len(files) == 0 {
-		return nil
+		return nil, nil
 	}
-	return files
+	return files, nil
+}
+
+func normalizeJMeterMultipartSidecarName(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, "/"))
+	value = strings.TrimLeft(value, "/")
+	if value == "" {
+		return ""
+	}
+	cleaned := path.Clean(value)
+	if cleaned == "." {
+		return ""
+	}
+	return cleaned
 }
 
 func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult, unsupported []string) *protocolCompatReport {

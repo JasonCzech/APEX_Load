@@ -14,23 +14,53 @@ import (
 )
 
 func countJMeterSamplerElements(nodes []*treeNode) (int, int) {
+	return countJMeterSamplerElementsEnabled(nodes, true)
+}
+
+func countJMeterSamplerElementsEnabled(nodes []*treeNode, ancestorsEnabled bool) (int, int) {
 	total := 0
 	skipped := 0
 	for _, node := range nodes {
 		if node == nil || node.Element == nil {
 			continue
 		}
+		enabled := ancestorsEnabled && jmeterElementEnabled(node.Element)
 		if isJMeterSamplerElement(node.Element.Name) {
 			total++
-			if node.Element.Name != "HTTPSamplerProxy" {
+			if !enabled || node.Element.Name != "HTTPSamplerProxy" {
 				skipped++
 			}
 		}
-		childTotal, childSkipped := countJMeterSamplerElements(node.Children)
+		childTotal, childSkipped := countJMeterSamplerElementsEnabled(node.Children, enabled)
 		total += childTotal
 		skipped += childSkipped
 	}
 	return total, skipped
+}
+
+func appendJMeterDisabledMapping(mappings *[]sourceview.Mapping, sourceFile string, element *xmlNode) {
+	if mappings == nil || element == nil {
+		return
+	}
+	location := jmeterElementLocation(element)
+	for _, existing := range *mappings {
+		if existing.SourceFile == sourceFile &&
+			existing.StartLine == element.StartLine &&
+			existing.Function == element.Name &&
+			existing.Status == "ignored" {
+			return
+		}
+	}
+	*mappings = append(*mappings, jmeterSourceMapping(
+		sourceFile,
+		element,
+		element.Name,
+		"",
+		location,
+		"disabled",
+		"ignored",
+		"Disabled JMeter element and its subtree were intentionally omitted.",
+	))
 }
 
 func appendJMeterActionSourceMappings(mappings *[]sourceview.Mapping, sourceFile string, node *treeNode, actionIndex int, action *dsl.Action) {

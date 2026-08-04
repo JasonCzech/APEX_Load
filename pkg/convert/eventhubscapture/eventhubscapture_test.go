@@ -3,6 +3,9 @@ package eventhubscapture
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -124,6 +127,39 @@ func TestConvertCaptureRoundTrip(t *testing.T) {
 	}
 	if res.Stats.RecordsRead != 2 || res.Stats.ActionsEmitted != 2 || res.Stats.PartitionKeys != 2 {
 		t.Fatalf("unexpected stats: %+v", res.Stats)
+	}
+}
+
+func TestConvertCaptureMakesNonFiniteApplicationPropertiesJSONSafe(t *testing.T) {
+	record := captureRecord(1, "device-9", "sensor", "payload")
+	record["Properties"] = map[string]any{
+		"nan":     map[string]any{"double": math.NaN()},
+		"pos_inf": map[string]any{"double": math.Inf(1)},
+		"neg_inf": map[string]any{"double": math.Inf(-1)},
+	}
+	result, err := Convert(ConvertRequest{Name: "non-finite", Data: writeCapture(t, []map[string]any{record})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := json.Marshal(result); err != nil {
+		t.Fatalf("converted capture is not JSON-safe: %v", err)
+	}
+	unmapped, _ := result.Script.Actions[0].Metadata["eventhubs_capture_unmapped_properties"].(map[string]any)
+	for name, want := range map[string]string{
+		"nan": "NaN", "pos_inf": "+Infinity", "neg_inf": "-Infinity",
+	} {
+		descriptor, _ := unmapped[name].(map[string]any)
+		if descriptor["value"] != want {
+			t.Fatalf("%s descriptor = %#v, want JSON-safe label %q", name, descriptor, want)
+		}
+		bits, _ := descriptor["ieee754_bits_hex"].(string)
+		if len(bits) != 16 {
+			t.Fatalf("%s descriptor lost IEEE-754 bits: %#v", name, descriptor)
+		}
+	}
+	descriptor, _ := unmapped["nan"].(map[string]any)
+	if descriptor["ieee754_bits_hex"] != fmt.Sprintf("%016x", math.Float64bits(math.NaN())) {
+		t.Fatalf("NaN bit preservation = %#v", descriptor)
 	}
 }
 

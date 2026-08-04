@@ -12,15 +12,16 @@ func (b *Browser) dispatchSetGeolocation(action *protocol.Action, result *protoc
 	if err != nil {
 		return nil, failBrowserAction(result, err.Error())
 	}
-	if b.pwContext == nil {
+	browserContext := b.currentBrowserContext()
+	if browserContext == nil {
 		return nil, failBrowserAction(result, "browser context is not initialized")
 	}
 	if actionParamBool(action.Params, "grant_permission", true) {
-		if err := b.pwContext.GrantPermissions([]string{"geolocation"}); err != nil {
+		if err := browserContext.GrantPermissions([]string{"geolocation"}); err != nil {
 			return err, false
 		}
 	}
-	if err := b.pwContext.SetGeolocation(geo); err != nil {
+	if err := browserContext.SetGeolocation(geo); err != nil {
 		return err, false
 	}
 	b.geolocation = geo

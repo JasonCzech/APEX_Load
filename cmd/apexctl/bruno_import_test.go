@@ -46,6 +46,34 @@ func TestParseBrunoImportArgs(t *testing.T) {
 	}
 }
 
+func TestParseBrunoImportArgsSupportsEqualsAndRejectsAmbiguousAssignments(t *testing.T) {
+	args, err := parseBrunoImportArgs([]string{
+		"--api=https://controller.example.test/", "--path=./collection", "--project=project-1",
+		"--secret-binding=requirement-1=BRUNO_PASSWORD", "--format=json",
+	})
+	if err != nil || args.api != "https://controller.example.test" || args.secretBindings["requirement-1"] != "BRUNO_PASSWORD" || args.format != "json" {
+		t.Fatalf("equals-form Bruno args = %#v, error %v", args, err)
+	}
+	args, err = parseBrunoImportArgs([]string{
+		"--api=https://controller.example.test", "--path=./collection", "--project=project-1",
+		"--migrate-secrets=false", "--ack-review-required=false",
+	})
+	if err != nil || args.migrateSecrets || args.ackReview {
+		t.Fatalf("boolean equals-form Bruno args = %#v, error %v", args, err)
+	}
+	base := []string{"--api=https://controller.example.test", "--path=./collection", "--project=project-1"}
+	for _, extra := range [][]string{
+		{"--secret-binding=a=one", "--secret-binding=a=two"},
+		{"--conflict-resolution=a=one", "--conflict-resolution=a=two"},
+		{"--migrate-secrets", "--no-migrate-secrets"},
+		{"--api=controller-without-scheme"},
+	} {
+		if _, err := parseBrunoImportArgs(append(append([]string(nil), base...), extra...)); err == nil {
+			t.Errorf("parseBrunoImportArgs(%q) accepted ambiguous/malformed input", extra)
+		}
+	}
+}
+
 func TestParseBrunoImportArgsNativeMode(t *testing.T) {
 	args, err := parseBrunoImportArgs([]string{
 		"--api", "https://controller.example.test",

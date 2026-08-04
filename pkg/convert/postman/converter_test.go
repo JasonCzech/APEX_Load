@@ -28,22 +28,204 @@ func TestRawURLPreservesStructuredPortAndHash(t *testing.T) {
 }
 
 func TestPostmanLiteralAssignmentsApplyAtTheirSourcePosition(t *testing.T) {
-	vars := map[string]string{"stage": "initial"}
+	vars := newPostmanScopedVariables(map[string]string{"stage": "initial"}, nil)
 	request := requestItem{
 		Name: "one",
 		Events: []event{
 			{Listen: "prerequest", Script: eventScript{Exec: []string{`pm.environment.set("stage", "before")`}}},
-			{Listen: "test", Script: eventScript{Exec: []string{`pm.collectionVariables.set("stage", "after")`}}},
+			{Listen: "test", Script: eventScript{Exec: []string{`pm.environment.set("stage", "after")`}}},
 		},
 	}
 	var diagnostics diag.Collector
-	applyPostmanEventVariablesForListen(vars, request, "prerequest", &diagnostics)
-	if vars["stage"] != "before" {
-		t.Fatalf("pre-request value = %q", vars["stage"])
+	applyPostmanScopedEventAssignmentsForListen(vars, request, "prerequest", &diagnostics)
+	values, _ := vars.effectiveValues()
+	if values["stage"] != "before" {
+		t.Fatalf("pre-request value = %q", values["stage"])
 	}
-	applyPostmanEventVariablesForListen(vars, request, "test", &diagnostics)
-	if vars["stage"] != "after" {
-		t.Fatalf("post-response value = %q", vars["stage"])
+	applyPostmanScopedEventAssignmentsForListen(vars, request, "test", &diagnostics)
+	values, _ = vars.effectiveValues()
+	if values["stage"] != "after" {
+		t.Fatalf("post-response value = %q", values["stage"])
+	}
+}
+
+func TestConvertPostmanLiteralAssignmentsMaterializeAtSourcePosition(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "info":{"name":"Ordered assignments","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"https://api.example.test"},{"key":"stage","value":"initial"}],
+  "item":[
+    {"name":"First","event":[
+      {"listen":"prerequest","script":{"exec":["pm.environment.set(\"stage\", \"before\")"]}},
+      {"listen":"test","script":{"exec":["pm.environment.set(\"stage\", \"after\")"]}}
+    ],"request":{"method":"GET","url":"{{baseUrl}}/one/{{stage}}"}},
+    {"name":"Second","request":{"method":"GET","url":"{{baseUrl}}/two/{{stage}}"}}
+  ]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "/one/before" {
+		t.Fatalf("first target = %q, want source-position value", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/two/after" {
+		t.Fatalf("second target = %q, want post-response value", got)
+	}
+	for _, parameter := range result.Script.Parameters {
+		if parameter.Name == "stage" {
+			t.Fatalf("mutable literal was retained as one global parameter: %#v", parameter)
+		}
+	}
+}
+
+func TestConvertPostmanVariableStoresHonorScopePrecedence(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "info":{"name":"Scoped assignments","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"https://api.example.test"},{"key":"stage","value":"collection"}],
+  "item":[
+    {"name":"First","event":[
+      {"listen":"prerequest","script":{"exec":["pm.collectionVariables.set(\"stage\", \"lower-write\")"]}}
+    ],"request":{"method":"GET","url":"{{baseUrl}}/one/{{stage}}"}},
+    {"name":"Second","request":{"method":"GET","url":"{{baseUrl}}/two/{{stage}}"}}
+  ]
+}`,
+		EnvironmentContent: `{"name":"selected","values":[{"key":"stage","value":"environment","enabled":true}]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "/one/{{var.stage}}" {
+		t.Fatalf("first target = %q, want stable higher-scope environment parameter", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/two/{{var.stage}}" {
+		t.Fatalf("second target = %q, lower-scope write escaped precedence", got)
+	}
+	if !postmanParameterNames(result, "stage") {
+		t.Fatalf("shadowed lower-scope write removed stable environment parameter: %#v", result.Script.Parameters)
+	}
+}
+
+func TestConvertPostmanLocalVariableDoesNotLeakIntoNextRequest(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "info":{"name":"Local lifetime","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"https://api.example.test"},{"key":"stage","value":"collection"}],
+  "item":[
+    {"name":"First","event":[
+      {"listen":"prerequest","script":{"exec":["pm.variables.set(\"stage\", \"request-local\")"]}}
+    ],"request":{"method":"GET","url":"{{baseUrl}}/one/{{stage}}"}},
+    {"name":"Second","request":{"method":"GET","url":"{{baseUrl}}/two/{{stage}}"}}
+  ]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "/one/request-local" {
+		t.Fatalf("first target = %q, want request-local value", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/two/collection" {
+		t.Fatalf("second target = %q, local value leaked past its request", got)
+	}
+}
+
+func TestConvertPostmanGlobalLiteralPersistsAcrossRequests(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "info":{"name":"Global lifetime","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"https://api.example.test"}],
+  "item":[
+    {"name":"First","event":[
+      {"listen":"prerequest","script":{"exec":["pm.globals.set(\"region\", \"global-value\")"]}}
+    ],"request":{"method":"GET","url":"{{baseUrl}}/one/{{region}}"}},
+    {"name":"Second","request":{"method":"GET","url":"{{baseUrl}}/two/{{region}}"}}
+  ]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "/one/global-value" {
+		t.Fatalf("first target = %q, want global value", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/two/global-value" {
+		t.Fatalf("second target = %q, global value did not persist", got)
+	}
+}
+
+func TestConvertPostmanMixedLiteralAndResponseAssignmentsPreserveChaining(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "info":{"name":"Mixed assignments","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"https://api.example.test"},{"key":"stage","value":"initial"}],
+  "item":[
+    {"name":"Capture","event":[
+      {"listen":"prerequest","script":{"exec":["pm.environment.set(\"stage\", \"bootstrap\")"]}},
+      {"listen":"test","script":{"exec":["pm.environment.set(\"stage\", pm.response.json().stage)"]}}
+    ],"request":{"method":"GET","url":"{{baseUrl}}/capture/{{stage}}"}},
+    {"name":"Consume","request":{"method":"GET","url":"{{baseUrl}}/consume/{{stage}}"}},
+    {"name":"Override","event":[
+      {"listen":"prerequest","script":{"exec":["pm.variables.set(\"stage\", \"manual\")"]}}
+    ],"request":{"method":"GET","url":"{{baseUrl}}/override/{{stage}}"}}
+  ]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %d, want 3", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Target; got != "/capture/bootstrap" {
+		t.Fatalf("literal phase target = %q", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/consume/{{var.stage}}" {
+		t.Fatalf("response-derived phase target = %q, want runtime variable", got)
+	}
+	if got := result.Script.Actions[2].Target; got != "/override/manual" {
+		t.Fatalf("later literal override target = %q", got)
+	}
+	if len(result.Script.Actions[0].Extractors) != 1 || result.Script.Actions[0].Extractors[0].Name != "stage" {
+		t.Fatalf("response extractor was lost: %#v", result.Script.Actions[0].Extractors)
+	}
+	foundParameter := false
+	for _, parameter := range result.Script.Parameters {
+		foundParameter = foundParameter || parameter.Name == "stage"
+	}
+	if !foundParameter {
+		t.Fatal("mixed-provenance variable lost its initial parameter fallback")
+	}
+}
+
+func TestConvertPostmanLiteralAssignmentsMaterializeColonPathVariables(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "info":{"name":"Colon assignment","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "variable":[{"key":"baseUrl","value":"https://api.example.test"},{"key":"stage","value":"initial"}],
+  "item":[{"name":"Request","event":[{"listen":"prerequest","script":{"exec":["pm.environment.set(\"stage\", \"before\")"]}}],"request":{"method":"GET","url":"{{baseUrl}}/jobs/:stage"}}]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Script.Actions[0].Target; got != "/jobs/before" {
+		t.Fatalf("target = %q, want inlined colon path assignment", got)
+	}
+	for _, parameter := range result.Script.Parameters {
+		if parameter.Name == "stage" {
+			t.Fatalf("mutable colon path variable retained as global parameter: %#v", parameter)
+		}
+	}
+}
+
+func TestToTargetPreservesSameOriginFragment(t *testing.T) {
+	got := toTarget("https://api.example.test/orders?view=full#result", "https://api.example.test", postmanVariableLookup{}, nil, "")
+	if got != "/orders?view=full#result" {
+		t.Fatalf("target = %q, want query and fragment", got)
 	}
 }
 
@@ -981,8 +1163,8 @@ func TestConvertPostmanReportsEventScriptsAndTranslatesSimpleVariables(t *testin
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if !postmanParameterNames(result, "token") {
-		t.Fatalf("translated script variable was not retained in parameters: %#v", result.Script.Parameters)
+	if postmanParameterNames(result, "token") {
+		t.Fatalf("source-position literal was incorrectly retained as one global parameter: %#v", result.Script.Parameters)
 	}
 	if !containsPostmanDiagnostic(result, "Postman pre-request script") {
 		t.Fatalf("diagnostics = %#v, want pre-request warning", result.Unsupported)

@@ -1,6 +1,9 @@
 package jsonextract
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestJSONPath(t *testing.T) {
 	body := []byte(`{"data":{"items":[{"id":"a"},{"id":"b"}]},"count":2}`)
@@ -41,6 +44,41 @@ func TestJSONPathErrors(t *testing.T) {
 	}
 }
 
+func TestJSONPathRejectsEmptySegmentsAsConfigurationErrors(t *testing.T) {
+	body := []byte(`{"items":[{"id":"one"}]}`)
+	for _, expr := range []string{
+		"$.",
+		".items",
+		"$.items..id",
+		"items..id",
+		"items.",
+		"$items",
+		"$.[0]",
+		"$.items.[0]",
+		"items.[0]",
+	} {
+		t.Run(expr, func(t *testing.T) {
+			_, err := JSONPath(expr, body)
+			if err == nil {
+				t.Fatalf("JSONPath(%q) accepted an empty or malformed path segment", expr)
+			}
+			if errors.Is(err, ErrNotFound) {
+				t.Fatalf("JSONPath(%q) error = %v, want configuration error", expr, err)
+			}
+		})
+	}
+}
+
+func TestJSONPathAllowsRootArrayIndex(t *testing.T) {
+	got, err := JSONPath("$[1].id", []byte(`[{"id":"first"},{"id":"second"}]`))
+	if err != nil {
+		t.Fatalf("JSONPath root array index error: %v", err)
+	}
+	if got != "second" {
+		t.Fatalf("JSONPath root array index = %q, want second", got)
+	}
+}
+
 func TestJMESPath(t *testing.T) {
 	body := []byte(`{"users":[{"name":"ann"},{"name":"bob"}]}`)
 	got, err := JMESPath("users[1].name", body)
@@ -49,6 +87,13 @@ func TestJMESPath(t *testing.T) {
 	}
 	if got != "bob" {
 		t.Fatalf("JMESPath = %q, want %q", got, "bob")
+	}
+}
+
+func TestJMESPathClassifiesMissingValue(t *testing.T) {
+	_, err := JMESPath("users[3].name", []byte(`{"users":[{"name":"alice"}]}`))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("JMESPath error = %v, want ErrNotFound", err)
 	}
 }
 

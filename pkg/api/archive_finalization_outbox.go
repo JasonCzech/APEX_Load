@@ -235,6 +235,13 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	if record.TestID != job.TestID {
 		return fmt.Errorf("archive record test id %q does not match job %q", record.TestID, job.TestID)
 	}
+	// A refresh can change manifest-derived SLA/completeness evidence while
+	// retaining the same run ID. Never carry the prior publication's compact
+	// trend projection into the refreshed manifest; regenerate it after adjuncts
+	// have been persisted below.
+	if strings.TrimSpace(job.RefreshToken) != "" {
+		record.TrendPointJSON = ""
+	}
 	var materializationLease *archiveMaterializationLease
 	// Refreshes always operate on a token-private copy. This is required for
 	// filesystem archives too: adjunct generation writes manifest/report files,

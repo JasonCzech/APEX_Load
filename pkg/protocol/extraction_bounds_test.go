@@ -8,7 +8,7 @@ import (
 )
 
 func TestApplyExtractionOnMissContract(t *testing.T) {
-	miss := errors.New("not found")
+	miss := MarkExtractionMiss(errors.New("not found"))
 	tests := []struct {
 		name      string
 		onMiss    string
@@ -30,6 +30,26 @@ func TestApplyExtractionOnMissContract(t *testing.T) {
 			_, exists := result.Extractions["token"]
 			if exists != test.wantValue {
 				t.Fatalf("value exists = %v, want %v", exists, test.wantValue)
+			}
+		})
+	}
+}
+
+func TestApplyExtractionNeverSuppressesInvalidExtractor(t *testing.T) {
+	for _, onMiss := range []string{"", "ignore", "empty", "fail"} {
+		t.Run(onMiss, func(t *testing.T) {
+			result := &Result{}
+			err := ApplyExtraction(
+				result,
+				Extractor{Name: "token", OnMiss: onMiss},
+				"",
+				errors.New("invalid regex"),
+			)
+			if err == nil || !strings.Contains(err.Error(), "invalid regex") {
+				t.Fatalf("error = %v, want invalid extractor failure", err)
+			}
+			if len(result.Extractions) != 0 {
+				t.Fatalf("invalid extractor published values: %#v", result.Extractions)
 			}
 		})
 	}

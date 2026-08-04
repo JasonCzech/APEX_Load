@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +25,33 @@ type ApiClient struct {
 	APIKey      string
 	BearerToken string
 	PollTimeout time.Duration
+}
+
+type controllerHTTPStatusError struct {
+	operation  string
+	status     string
+	statusCode int
+	detail     string
+}
+
+func (e *controllerHTTPStatusError) Error() string {
+	if e == nil {
+		return "controller request failed"
+	}
+	message := strings.TrimSpace(e.operation)
+	if message == "" {
+		message = "controller request"
+	}
+	message += " failed: " + strings.TrimSpace(e.status)
+	if detail := strings.TrimSpace(e.detail); detail != "" {
+		message += ": " + detail
+	}
+	return message
+}
+
+func isPermanentControllerHTTPError(err error) bool {
+	var statusErr *controllerHTTPStatusError
+	return errors.As(err, &statusErr) && !retryableHTTPStatus(statusErr.statusCode)
 }
 
 func NewApiClient(baseURL string) *ApiClient {
@@ -108,12 +136,22 @@ func (c *ApiClient) doContextWithHeaders(ctx context.Context, method string, pat
 }
 
 func (c *ApiClient) doStatusRead(path string) (*http.Response, error) {
+	return c.doStatusReadContext(context.Background(), path)
+}
+
+func (c *ApiClient) doStatusReadContext(ctx context.Context, path string) (*http.Response, error) {
 	const maxAttempts = 4
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		response, err := c.do(http.MethodGet, path, nil, "")
+		response, err := c.doContext(ctx, http.MethodGet, path, nil, "")
 		if err == nil && !retryableHTTPStatus(response.StatusCode) {
 			return response, nil
+		}
+		if ctx.Err() != nil {
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			return nil, ctx.Err()
 		}
 		if err == nil && attempt == maxAttempts-1 {
 			return response, nil
@@ -131,9 +169,30 @@ func (c *ApiClient) doStatusRead(path string) (*http.Response, error) {
 			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
 			_ = response.Body.Close()
 		}
-		time.Sleep(delay)
+		if err := waitForContext(ctx, delay); err != nil {
+			return nil, err
+		}
 	}
 	return nil, lastErr
+}
+
+func waitForContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func retryableHTTPStatus(status int) bool {
@@ -178,6 +237,7 @@ func effectiveURLPort(u *url.URL) string {
 // Result mimics engine.TestResult for formatting
 type ApiTestResult struct {
 	TestID            string
+	Status            string
 	Duration          time.Duration
 	TotalTransactions int64
 	TotalErrors       int64
@@ -194,44 +254,81 @@ func (c *ApiClient) RunTest(scriptPath string, vusers int, duration string, ramp
 }
 
 func (c *ApiClient) RunPreparedTest(scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
+	ctx := context.Background()
+	cancel := func() {}
+	if c.PollTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, c.PollTimeout)
+	}
+	defer cancel()
+	return c.runPreparedTestContext(ctx, scriptName, scriptBody, vusers, duration, rampUp, format, goalConfig)
+}
+
+func (c *ApiClient) runPreparedTestContext(ctx context.Context, scriptName string, scriptBody []byte, vusers int, duration string, rampUp string, format string, goalConfig *api.GoalConfig) (*ApiTestResult, error) {
+	commandStarted := time.Now()
 	// 1. Upload script
-	scriptID, err := c.uploadScript(scriptName, scriptBody)
+	scriptID, err := c.uploadScriptContext(ctx, scriptName, scriptBody)
 	if err != nil {
-		return nil, fmt.Errorf("upload script: %w", err)
+		return nil, c.preparedRunStageError(ctx, "upload script", err)
 	}
 
 	// 2. Create Test
-	testID, err := c.createTest(scriptID, vusers, duration, rampUp, goalConfig)
+	testID, err := c.createTestContext(ctx, scriptID, vusers, duration, rampUp, goalConfig)
 	if err != nil {
-		return nil, fmt.Errorf("create test: %w", err)
+		return nil, c.preparedRunStageError(ctx, "create test", err)
 	}
+	partial := &ApiTestResult{TestID: testID, Duration: time.Since(commandStarted)}
 
 	if format != "json" {
 		fmt.Printf("Created test %s from script %s. Starting...\n", testID, scriptID)
 	}
 
 	// 3. Start Test
-	err = c.startTest(testID)
+	err = c.startTestContext(ctx, testID)
 	if err != nil {
-		return nil, fmt.Errorf("start test: %w", err)
+		partial.Duration = time.Since(commandStarted)
+		return partial, c.preparedRunStageError(ctx, "start test", err)
 	}
 
-	// 4. Poll Test Status
-	result, err := c.pollTest(testID, format, goalConfig != nil)
-	if result != nil {
+	// 4. Poll Test Status. Preserve the durable test identity even when the
+	// controller becomes unavailable while polling, so JSON/JUnit evidence can
+	// point operators at the still-running server-side run.
+	pollStarted := time.Now()
+	result, err := c.pollTestContext(ctx, testID, format, goalConfig != nil, pollStarted)
+	if result == nil {
+		result = partial
+		result.Duration = time.Since(pollStarted)
+	} else {
 		result.TestID = testID
 	}
 	return result, err
 }
 
+func (c *ApiClient) preparedRunStageError(ctx context.Context, stage string, err error) error {
+	if c.PollTimeout > 0 && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("timed out after %s during %s: %w", c.PollTimeout, stage, ctx.Err())
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("%s: %w", stage, ctx.Err())
+	}
+	return fmt.Errorf("%s: %w", stage, err)
+}
+
 func (c *ApiClient) uploadScript(scriptName string, scriptBody []byte) (string, error) {
-	return c.UploadScriptWithProject(scriptName, scriptBody, "")
+	return c.uploadScriptContext(context.Background(), scriptName, scriptBody)
+}
+
+func (c *ApiClient) uploadScriptContext(ctx context.Context, scriptName string, scriptBody []byte) (string, error) {
+	return c.UploadScriptWithProjectContext(ctx, scriptName, scriptBody, "")
 }
 
 // UploadScriptWithProject uploads a script JSON document via the controller's
 // JSON wrapper contract ({project_id, script}), optionally scoping it to a
 // project. Returns the created script ID.
 func (c *ApiClient) UploadScriptWithProject(scriptName string, scriptBody []byte, projectID string) (string, error) {
+	return c.UploadScriptWithProjectContext(context.Background(), scriptName, scriptBody, projectID)
+}
+
+func (c *ApiClient) UploadScriptWithProjectContext(ctx context.Context, scriptName string, scriptBody []byte, projectID string) (string, error) {
 	var script map[string]any
 	if err := json.Unmarshal(scriptBody, &script); err != nil {
 		return "", fmt.Errorf("script %s is not valid JSON: %w", scriptName, err)
@@ -245,7 +342,7 @@ func (c *ApiClient) UploadScriptWithProject(scriptName string, scriptBody []byte
 		return "", err
 	}
 
-	resp, err := c.do(http.MethodPost, "/api/v1/scripts", bytes.NewReader(b), "application/json")
+	resp, err := c.doContext(ctx, http.MethodPost, "/api/v1/scripts", bytes.NewReader(b), "application/json")
 	if err != nil {
 		return "", err
 	}
@@ -268,6 +365,10 @@ func (c *ApiClient) UploadScriptWithProject(scriptName string, scriptBody []byte
 }
 
 func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp string, goalConfig *api.GoalConfig) (string, error) {
+	return c.createTestContext(context.Background(), scriptID, vusers, duration, rampUp, goalConfig)
+}
+
+func (c *ApiClient) createTestContext(ctx context.Context, scriptID string, vusers int, duration, rampUp string, goalConfig *api.GoalConfig) (string, error) {
 	reqBody := api.CreateTestRequest{
 		Name:     "CLI Run " + time.Now().Format("2006-01-02 15:04:05"),
 		Duration: duration,
@@ -281,58 +382,83 @@ func (c *ApiClient) createTest(scriptID string, vusers int, duration, rampUp str
 	}
 
 	b, _ := json.Marshal(reqBody)
-	resp, err := c.do(http.MethodPost, "/api/v1/tests", bytes.NewReader(b), "application/json")
+	resp, err := c.doContext(ctx, http.MethodPost, "/api/v1/tests", bytes.NewReader(b), "application/json")
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("bad status: %s, %s", resp.Status, string(b))
 	}
 
 	var test api.ManagedTest
-	json.NewDecoder(resp.Body).Decode(&test)
+	if err := json.NewDecoder(resp.Body).Decode(&test); err != nil {
+		return "", fmt.Errorf("decode create-test response: %w", err)
+	}
+	if strings.TrimSpace(test.ID) == "" {
+		return "", fmt.Errorf("create-test response missing test id")
+	}
 	return test.ID, nil
 }
 
 func (c *ApiClient) startTest(testID string) error {
-	resp, err := c.do(http.MethodPost, "/api/v1/tests/"+testID+"/start", nil, "application/json")
+	return c.startTestContext(context.Background(), testID)
+}
+
+func (c *ApiClient) startTestContext(ctx context.Context, testID string) error {
+	resp, err := c.doContext(ctx, http.MethodPost, "/api/v1/tests/"+url.PathEscape(testID)+"/start", nil, "application/json")
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("bad status: %s: %s", resp.Status, strings.TrimSpace(string(detail)))
 	}
 	return nil
 }
 
-// maxPollErrors bounds consecutive transient poll failures before pollTest gives
-// up, so the CLI cannot hang forever on a persistent error response.
+// maxPollErrors bounds consecutive transient status-poll failures before the
+// run and wait commands give up, so brief ingress/controller outages do not
+// false-fail CI while persistent failures remain bounded.
 const maxPollErrors = 5
 
 func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*ApiTestResult, error) {
 	start := time.Now()
-	var deadline time.Time
+	ctx := context.Background()
+	cancel := func() {}
 	if c.PollTimeout > 0 {
-		deadline = start.Add(c.PollTimeout)
+		ctx, cancel = context.WithTimeout(ctx, c.PollTimeout)
+	}
+	defer cancel()
+	return c.pollTestContext(ctx, testID, format, expectSLA, start)
+}
+
+func (c *ApiClient) pollTestContext(ctx context.Context, testID string, format string, expectSLA bool, start time.Time) (*ApiTestResult, error) {
+	timeoutError := func() error {
+		return fmt.Errorf("timed out after %s waiting for test %s", c.PollTimeout, testID)
 	}
 	consecutiveErrors := 0
 	for {
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out after %s waiting for test %s", c.PollTimeout, testID)
+		if err := waitForContext(ctx, 2*time.Second); err != nil {
+			if ctx.Err() != nil && c.PollTimeout > 0 {
+				return nil, timeoutError()
+			}
+			return nil, err
 		}
-		time.Sleep(2 * time.Second)
 
 		// GetTestStatus validates the status code (404 -> "not found", other
 		// non-2xx -> error) and surfaces decode errors, so a deleted test or an
 		// auth/posture flip no longer leaves Status empty and loops forever.
-		test, err := c.GetTestStatus(testID)
+		test, err := c.GetTestStatusContext(ctx, testID)
 		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
+			if ctx.Err() != nil && c.PollTimeout > 0 {
+				return nil, timeoutError()
+			}
+			if isPermanentControllerHTTPError(err) {
 				return nil, err
 			}
 			consecutiveErrors++
@@ -350,8 +476,9 @@ func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*Api
 			fmt.Printf("... Status: %s\n", test.Status)
 		}
 
-		if test.Status == "COMPLETE" || test.Status == "FAILED" || test.Status == "ABORTED" {
+		if isTerminalStatus(test.Status) {
 			res := &ApiTestResult{
+				Status:   test.Status,
 				Duration: time.Since(start),
 			}
 			if test.LiveMetrics != nil {
@@ -363,8 +490,11 @@ func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*Api
 				}
 			}
 			if expectSLA {
-				sla, err := c.GetSLAStatus(testID)
+				sla, err := c.GetSLAStatusContext(ctx, testID)
 				if err != nil {
+					if ctx.Err() != nil && c.PollTimeout > 0 {
+						return res, timeoutError()
+					}
 					return res, fmt.Errorf("fetch SLA status: %w", err)
 				}
 				if sla != nil {
@@ -378,7 +508,7 @@ func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*Api
 					}
 				}
 			}
-			if test.Status == "FAILED" || test.Status == "ABORTED" {
+			if isFailedTestStatus(test.Status) {
 				return res, fmt.Errorf("test completed with status %s", strings.ToLower(test.Status))
 			}
 			return res, nil
@@ -388,16 +518,21 @@ func (c *ApiClient) pollTest(testID string, format string, expectSLA bool) (*Api
 
 // GetTestStatus fetches the current managed-test record (status + live metrics).
 func (c *ApiClient) GetTestStatus(testID string) (*api.ManagedTest, error) {
-	resp, err := c.doStatusRead("/api/v1/tests/" + testID)
+	return c.GetTestStatusContext(context.Background(), testID)
+}
+
+func (c *ApiClient) GetTestStatusContext(ctx context.Context, testID string) (*api.ManagedTest, error) {
+	resp, err := c.doStatusReadContext(ctx, "/api/v1/tests/"+url.PathEscape(testID))
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("test %s not found", testID)
+		return nil, &controllerHTTPStatusError{operation: fmt.Sprintf("test %s status", testID), status: resp.Status, statusCode: resp.StatusCode, detail: "test not found"}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bad status: %s", resp.Status)
+		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, &controllerHTTPStatusError{operation: fmt.Sprintf("test %s status", testID), status: resp.Status, statusCode: resp.StatusCode, detail: string(detail)}
 	}
 	var test api.ManagedTest
 	if err := json.NewDecoder(resp.Body).Decode(&test); err != nil {
@@ -411,38 +546,104 @@ func (c *ApiClient) GetTestStatus(testID string) (*api.ManagedTest, error) {
 // CI pipelines on an already-started run.
 func (c *ApiClient) WaitForTest(testID, format string, timeout time.Duration) (*ApiTestResult, error) {
 	start := time.Now()
-	var deadline time.Time
 	if timeout > 0 {
-		deadline = start.Add(timeout)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		return c.waitForTestContext(ctx, testID, format, timeout, start, nil)
 	}
-	for {
-		test, err := c.GetTestStatus(testID)
-		if err != nil {
-			return nil, err
+
+	// The default wait budget depends on the stored test duration, so one
+	// bounded-by-HTTP-client status read is required before deriving it. The
+	// resulting deadline is still anchored to start, including that first read.
+	test, err := c.getTestStatusWithTolerance(context.Background(), testID, format)
+	if err != nil {
+		return nil, err
+	}
+	timeout = test.Duration + 30*time.Minute
+	if timeout <= 0 {
+		timeout = 30 * time.Minute
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), start.Add(timeout))
+	defer cancel()
+	return c.waitForTestContext(ctx, testID, format, timeout, start, test)
+}
+
+func (c *ApiClient) waitForTestContext(ctx context.Context, testID, format string, timeout time.Duration, start time.Time, initial *api.ManagedTest) (*ApiTestResult, error) {
+	lastStatus := ""
+	timeoutError := func() error {
+		if lastStatus == "" {
+			return fmt.Errorf("timed out after %s waiting for test %s", timeout, testID)
 		}
+		return fmt.Errorf("timed out after %s waiting for test %s (last status %s)", timeout, testID, lastStatus)
+	}
+	test := initial
+	for {
+		if test == nil {
+			var err error
+			test, err = c.getTestStatusWithTolerance(ctx, testID, format)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, timeoutError()
+				}
+				return nil, err
+			}
+		}
+		lastStatus = test.Status
 		if format != "json" {
 			fmt.Printf("... Status: %s\n", test.Status)
 		}
-		if deadline.IsZero() {
-			timeout = test.Duration + 30*time.Minute
-			if timeout <= 0 {
-				timeout = 30 * time.Minute
-			}
-			deadline = start.Add(timeout)
+		if ctx.Err() != nil {
+			return nil, timeoutError()
 		}
 		if isTerminalStatus(test.Status) {
-			return c.resolveTestResult(testID, test, time.Since(start))
+			result, err := c.resolveTestResultContext(ctx, testID, test, time.Since(start))
+			if ctx.Err() != nil {
+				return result, timeoutError()
+			}
+			return result, err
 		}
-		if !deadline.IsZero() && time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out after %s waiting for test %s (last status %s)", timeout, testID, test.Status)
+		if err := waitForContext(ctx, 2*time.Second); err != nil {
+			if ctx.Err() != nil {
+				return nil, timeoutError()
+			}
+			return nil, err
 		}
-		time.Sleep(2 * time.Second)
+		test = nil
+	}
+}
+
+func (c *ApiClient) getTestStatusWithTolerance(ctx context.Context, testID, format string) (*api.ManagedTest, error) {
+	for consecutiveErrors := 0; ; {
+		test, err := c.GetTestStatusContext(ctx, testID)
+		if err == nil {
+			return test, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if isPermanentControllerHTTPError(err) {
+			return nil, err
+		}
+		consecutiveErrors++
+		if consecutiveErrors >= maxPollErrors {
+			return nil, fmt.Errorf("waiting for test %s failed after %d consecutive status errors: %w", testID, consecutiveErrors, err)
+		}
+		if format != "json" {
+			fmt.Printf("... status check failed (%d/%d): %v\n", consecutiveErrors, maxPollErrors, err)
+		}
+		if err := waitForContext(ctx, 2*time.Second); err != nil {
+			return nil, err
+		}
 	}
 }
 
 // resolveTestResult builds an ApiTestResult (with SLA verdict) from a terminal test.
 func (c *ApiClient) resolveTestResult(testID string, test *api.ManagedTest, elapsed time.Duration) (*ApiTestResult, error) {
-	res := &ApiTestResult{Duration: elapsed}
+	return c.resolveTestResultContext(context.Background(), testID, test, elapsed)
+}
+
+func (c *ApiClient) resolveTestResultContext(ctx context.Context, testID string, test *api.ManagedTest, elapsed time.Duration) (*ApiTestResult, error) {
+	res := &ApiTestResult{Status: test.Status, Duration: elapsed}
 	if test.LiveMetrics != nil {
 		res.TotalTransactions = test.LiveMetrics.TotalTx
 		res.TotalErrors = test.LiveMetrics.TotalErrors
@@ -451,7 +652,7 @@ func (c *ApiClient) resolveTestResult(testID string, test *api.ManagedTest, elap
 			TPS:          test.LiveMetrics.TPS,
 		}
 	}
-	sla, err := c.GetSLAStatus(testID)
+	sla, err := c.GetSLAStatusContext(ctx, testID)
 	if err != nil {
 		return res, fmt.Errorf("fetch SLA status: %w", err)
 	}
@@ -462,19 +663,14 @@ func (c *ApiClient) resolveTestResult(testID string, test *api.ManagedTest, elap
 			Details:   append([]string(nil), sla.Details...),
 		}
 	}
-	if test.Status == "FAILED" || test.Status == "ABORTED" {
+	if isFailedTestStatus(test.Status) {
 		return res, fmt.Errorf("test completed with status %s", strings.ToLower(test.Status))
 	}
 	return res, nil
 }
 
 func isTerminalStatus(status string) bool {
-	switch status {
-	case "COMPLETE", "FAILED", "ABORTED":
-		return true
-	default:
-		return false
-	}
+	return api.IsTerminalTestStatus(status)
 }
 
 // VerifyArchive re-verifies an archived run against the SHA-256 hashes recorded in
@@ -482,7 +678,7 @@ func isTerminalStatus(status string) bool {
 // tampered or corrupt archive comes back as a populated report (not an error); a
 // transport failure or a missing archive returns an error.
 func (c *ApiClient) VerifyArchive(testID string) (*api.RunArchiveIntegrityReport, error) {
-	resp, err := c.do(http.MethodGet, "/api/v1/tests/"+testID+"/archive/verify", nil, "")
+	resp, err := c.doStatusRead("/api/v1/tests/" + url.PathEscape(testID) + "/archive/verify")
 	if err != nil {
 		return nil, err
 	}
@@ -505,14 +701,18 @@ func (c *ApiClient) VerifyArchive(testID string) (*api.RunArchiveIntegrityReport
 }
 
 func (c *ApiClient) GetSLAStatus(testID string) (*api.SLABreachReport, error) {
-	resp, err := c.doStatusRead("/api/v1/tests/" + testID + "/sla-status")
+	return c.GetSLAStatusContext(context.Background(), testID)
+}
+
+func (c *ApiClient) GetSLAStatusContext(ctx context.Context, testID string) (*api.SLABreachReport, error) {
+	resp, err := c.doStatusReadContext(ctx, "/api/v1/tests/"+url.PathEscape(testID)+"/sla-status")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("SLA status request failed: %s: %s", resp.Status, strings.TrimSpace(string(detail)))
+		return nil, &controllerHTTPStatusError{operation: "SLA status request", status: resp.Status, statusCode: resp.StatusCode, detail: string(detail)}
 	}
 
 	var report api.SLABreachReport

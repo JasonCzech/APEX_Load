@@ -352,19 +352,35 @@ func canonicalCIOutputPath(path string) (string, error) {
 }
 
 func validateCISLAThresholds(args ciArgs) error {
-	if args.p95LatencyMs != nil && *args.p95LatencyMs <= 0 {
+	return validateSLAThresholdValues(
+		args.p95LatencyMs,
+		args.maxErrorPct,
+		args.maxAvgServerProcessingMs,
+		args.maxAvgTransferMs,
+		args.maxErrorCount,
+	)
+}
+
+func validateSLAThresholdValues(
+	p95LatencyMs *float64,
+	maxErrorPct *float64,
+	maxAvgServerProcessingMs *float64,
+	maxAvgTransferMs *float64,
+	maxErrorCount *int,
+) error {
+	if p95LatencyMs != nil && (math.IsNaN(*p95LatencyMs) || math.IsInf(*p95LatencyMs, 0) || *p95LatencyMs <= 0) {
 		return fmt.Errorf("--p95-latency-ms must be greater than zero")
 	}
-	if args.maxErrorPct != nil && (*args.maxErrorPct < 0 || *args.maxErrorPct > 100) {
+	if maxErrorPct != nil && (math.IsNaN(*maxErrorPct) || math.IsInf(*maxErrorPct, 0) || *maxErrorPct < 0 || *maxErrorPct > 100) {
 		return fmt.Errorf("--max-error-pct must be between 0 and 100")
 	}
-	if args.maxAvgServerProcessingMs != nil && *args.maxAvgServerProcessingMs <= 0 {
+	if maxAvgServerProcessingMs != nil && (math.IsNaN(*maxAvgServerProcessingMs) || math.IsInf(*maxAvgServerProcessingMs, 0) || *maxAvgServerProcessingMs <= 0) {
 		return fmt.Errorf("--max-avg-server-processing-ms must be greater than zero")
 	}
-	if args.maxAvgTransferMs != nil && *args.maxAvgTransferMs <= 0 {
+	if maxAvgTransferMs != nil && (math.IsNaN(*maxAvgTransferMs) || math.IsInf(*maxAvgTransferMs, 0) || *maxAvgTransferMs <= 0) {
 		return fmt.Errorf("--max-avg-transfer-ms must be greater than zero")
 	}
-	if args.maxErrorCount != nil && *args.maxErrorCount < 0 {
+	if maxErrorCount != nil && *maxErrorCount < 0 {
 		return fmt.Errorf("--max-error-count must be non-negative")
 	}
 	return nil
@@ -413,7 +429,7 @@ func ciCmd() {
 	if os.Args[2] != "run" {
 		fmt.Fprintf(os.Stderr, "unknown ci command: %s\n", os.Args[2])
 		printCIUsage()
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 
 	args, parseErr := parseCIArgs(os.Args[3:])
@@ -425,7 +441,7 @@ func ciCmd() {
 		result := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID", Message: parseErr.Error()}
 		_ = finalizeCIResult(args, result)
 		fmt.Fprintf(os.Stderr, "configuration error: %v\n", parseErr)
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -456,12 +472,12 @@ func ciCmd() {
 	}
 	if err := finalizeCIResult(args, result); err != nil {
 		fmt.Fprintf(os.Stderr, "evidence error: %v\n", err)
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	if runErr != nil {
 		fmt.Fprintf(os.Stderr, "CI run failed: %v\n", runErr)
 	}
-	os.Exit(ciExitCode(result.Outcome))
+	os.Exit(ciResultExitCode(result))
 }
 
 func executeCI(ctx context.Context, args ciArgs) (CIResult, error) {
@@ -1857,17 +1873,15 @@ func containsCIString(values []string, want string) bool {
 }
 
 func ciExitCode(outcome string) int {
-	switch outcome {
+	switch strings.ToLower(strings.TrimSpace(outcome)) {
 	case ciOutcomePassed:
-		return 0
+		return exitCodeSuccess
 	case ciOutcomeSLABreached:
-		return 1
+		return exitCodeTestFailure
 	case ciOutcomeConfigurationError:
-		return 2
-	case ciOutcomeCancelled:
-		return 4
+		return exitCodeUsageOrConfiguration
 	default:
-		return 3
+		return exitCodeControllerOrTransport
 	}
 }
 

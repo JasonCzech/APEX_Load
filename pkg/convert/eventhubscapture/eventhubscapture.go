@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -37,11 +38,12 @@ type ConvertRequest struct {
 
 // Stats summarizes what the import produced.
 type Stats struct {
-	RecordsRead    int `json:"records_read"`
-	ActionsEmitted int `json:"actions_emitted"`
-	PartitionKeys  int `json:"partition_keys"`
-	EmptyBodies    int `json:"empty_bodies"`
-	BinaryBodies   int `json:"binary_bodies"`
+	RecordsRead           int `json:"records_read"`
+	ActionsEmitted        int `json:"actions_emitted"`
+	PartitionKeys         int `json:"partition_keys"`
+	EmptyBodies           int `json:"empty_bodies"`
+	BinaryBodies          int `json:"binary_bodies"`
+	ReviewGatedProperties int `json:"review_gated_properties,omitempty"`
 }
 
 // ConvertResult is the import output (mirrors the other importer result shapes).
@@ -73,12 +75,13 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 	}
 
 	var (
-		actions       []dsl.Action
-		warnings      []string
-		recordsRead   int
-		partitionKeys int
-		emptyBodies   int
-		binaryBodies  int
+		actions               []dsl.Action
+		warnings              []string
+		recordsRead           int
+		partitionKeys         int
+		emptyBodies           int
+		binaryBodies          int
+		reviewGatedProperties int
 	)
 	for dec.HasNext() {
 		var rec map[string]any
@@ -94,7 +97,7 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 		if len(body) == 0 {
 			emptyBodies++
 		}
-		props := decodeStringMap(rec["Properties"])
+		props, unsupportedProps := decodeCaptureApplicationProperties(rec["Properties"])
 		sysProps := decodeStringMap(rec["SystemProperties"])
 		partitionKey := firstNonEmpty(sysProps[partitionKeyProperty], props[partitionKeyProperty])
 
@@ -121,6 +124,17 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 		if len(props) > 0 {
 			action.Headers = props
 		}
+		if len(unsupportedProps) > 0 {
+			action.Metadata["eventhubs_capture_unmapped_properties"] = unsupportedProps
+			action.Metadata["execution_blocker"] = "import_review_required"
+			action.Metadata["execution_blockers"] = []string{"import_review_required"}
+			action.Metadata["import_review"] = map[string]any{
+				"version":      1,
+				"source":       "eventhubs_capture",
+				"reason_codes": []string{"typed_application_properties_require_mapping"},
+			}
+			reviewGatedProperties += len(unsupportedProps)
+		}
 		if partitionKey != "" {
 			action.Params = map[string]any{"partition_key": partitionKey}
 			partitionKeys++
@@ -146,6 +160,9 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 	if binaryBodies > 0 {
 		warnings = append(warnings, fmt.Sprintf("%d captured event(s) had a non-UTF-8 (binary) body; imported as base64 (body_encoding=base64) so the payload round-trips losslessly — verify before promotion", binaryBodies))
 	}
+	if reviewGatedProperties > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d typed or binary application propert%s could not be represented by string headers; preserved in action metadata and review-gated instead of being lossy-stringified", reviewGatedProperties, map[bool]string{true: "y", false: "ies"}[reviewGatedProperties == 1]))
+	}
 	if partitionKeys == 0 {
 		warnings = append(warnings, "no partition keys found in the capture; produced events use namespace default routing (set params.partition_id to measure per-partition skew)")
 	}
@@ -165,8 +182,11 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 	return &ConvertResult{
 		Script:   script,
 		Warnings: warnings,
-		Stats:    Stats{RecordsRead: recordsRead, ActionsEmitted: len(actions), PartitionKeys: partitionKeys, EmptyBodies: emptyBodies, BinaryBodies: binaryBodies},
-		Summary:  fmt.Sprintf("Imported %d of %d captured Event Hubs events into produce actions for event hub %q (mock mode).", len(actions), recordsRead, eventHub),
+		Stats: Stats{
+			RecordsRead: recordsRead, ActionsEmitted: len(actions), PartitionKeys: partitionKeys,
+			EmptyBodies: emptyBodies, BinaryBodies: binaryBodies, ReviewGatedProperties: reviewGatedProperties,
+		},
+		Summary: fmt.Sprintf("Imported %d of %d captured Event Hubs events into produce actions for event hub %q (mock mode).", len(actions), recordsRead, eventHub),
 	}, nil
 }
 
@@ -205,16 +225,94 @@ func decodeStringMap(v any) map[string]string {
 		if unwrapped == nil {
 			continue
 		}
-		if b, ok := unwrapped.([]byte); ok {
+		if b, ok := unwrapped.([]byte); ok && utf8.Valid(b) {
 			out[key] = string(b)
 			continue
 		}
-		out[key] = fmt.Sprint(unwrapped)
+		if text, ok := unwrapped.(string); ok {
+			out[key] = text
+		}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func decodeCaptureApplicationProperties(v any) (map[string]string, map[string]any) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	stringsOnly := make(map[string]string)
+	unsupported := make(map[string]any)
+	for key, raw := range m {
+		value := unwrapUnion(raw)
+		if value == nil {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			stringsOnly[key] = text
+			continue
+		}
+		descriptor := map[string]any{"type": capturePropertyType(value)}
+		switch typed := value.(type) {
+		case []byte:
+			descriptor["base64"] = base64.StdEncoding.EncodeToString(typed)
+		case float32:
+			if math.IsNaN(float64(typed)) || math.IsInf(float64(typed), 0) {
+				descriptor["value"] = nonFiniteCaptureFloatLabel(float64(typed))
+				descriptor["ieee754_bits_hex"] = fmt.Sprintf("%08x", math.Float32bits(typed))
+			} else {
+				descriptor["value"] = typed
+			}
+		case float64:
+			if math.IsNaN(typed) || math.IsInf(typed, 0) {
+				descriptor["value"] = nonFiniteCaptureFloatLabel(typed)
+				descriptor["ieee754_bits_hex"] = fmt.Sprintf("%016x", math.Float64bits(typed))
+			} else {
+				descriptor["value"] = typed
+			}
+		default:
+			descriptor["value"] = typed
+		}
+		unsupported[key] = descriptor
+	}
+	if len(stringsOnly) == 0 {
+		stringsOnly = nil
+	}
+	if len(unsupported) == 0 {
+		unsupported = nil
+	}
+	return stringsOnly, unsupported
+}
+
+func nonFiniteCaptureFloatLabel(value float64) string {
+	switch {
+	case math.IsNaN(value):
+		return "NaN"
+	case math.IsInf(value, 1):
+		return "+Infinity"
+	case math.IsInf(value, -1):
+		return "-Infinity"
+	default:
+		return ""
+	}
+}
+
+func capturePropertyType(value any) string {
+	switch value.(type) {
+	case []byte:
+		return "bytes"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "integer"
+	case float32, float64:
+		return "number"
+	case bool:
+		return "boolean"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
 }
 
 func firstNonEmpty(values ...string) string {

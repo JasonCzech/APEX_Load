@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -419,6 +420,68 @@ func TestBuildRunArchiveBrowserDiagnosticsTruncatesAndPrefersFailures(t *testing
 	}
 	if !foundFailure {
 		t.Fatal("bounded diagnostics did not retain failure evidence")
+	}
+}
+
+func TestRetainBoundedBrowserDiagnosticEventFindsFittingReplacementAndKeepsOrder(t *testing.T) {
+	events := []BrowserDiagnosticsEvent{
+		{Index: 1, Success: true, PageURL: "x"},
+		{Index: 2, Success: true, PageURL: strings.Repeat("x", 20)},
+	}
+	payloadBytes := browserDiagnosticEventPayloadBytes(&events[0]) + browserDiagnosticEventPayloadBytes(&events[1])
+	failure := BrowserDiagnosticsEvent{Index: 3, Success: false, ErrorMessage: strings.Repeat("e", 15)}
+	failureBytes := browserDiagnosticEventPayloadBytes(&failure)
+
+	retained, retainedBytes := retainBoundedBrowserDiagnosticEvent(events, payloadBytes, failure, failureBytes, 2, 25)
+	if len(retained) != 2 || retained[0].Index != 1 || retained[1].Index != 3 || retained[1].Success {
+		t.Fatalf("retained events = %#v, want small success followed by failure", retained)
+	}
+	if retainedBytes != 16 {
+		t.Fatalf("retained payload bytes = %d, want 16", retainedBytes)
+	}
+}
+
+func TestRetainBoundedBrowserDiagnosticEventCanEvictMultipleSuccesses(t *testing.T) {
+	events := []BrowserDiagnosticsEvent{
+		{Index: 1, Success: true, PageURL: "aaaaaa"},
+		{Index: 2, Success: true, PageURL: "bbbbbb"},
+	}
+	payloadBytes := browserDiagnosticEventPayloadBytes(&events[0]) + browserDiagnosticEventPayloadBytes(&events[1])
+	failure := BrowserDiagnosticsEvent{Index: 3, Success: false, ErrorMessage: "failure-ten"}
+	failureBytes := browserDiagnosticEventPayloadBytes(&failure)
+
+	retained, retainedBytes := retainBoundedBrowserDiagnosticEvent(events, payloadBytes, failure, failureBytes, 2, failureBytes)
+	if len(retained) != 1 || retained[0].Index != 3 || retained[0].Success {
+		t.Fatalf("retained events = %#v, want only the failure", retained)
+	}
+	if retainedBytes != failureBytes {
+		t.Fatalf("retained payload bytes = %d, want %d", retainedBytes, failureBytes)
+	}
+}
+
+func TestBrowserDiagnosticEventPayloadBytesCountsNestedVariableData(t *testing.T) {
+	event := BrowserDiagnosticsEvent{
+		Group:      "group",
+		ActionName: "action",
+		Snapshot:   &BrowserDiagnosticSnapshot{RequestMethod: "POST"},
+		NetworkEntries: []protocol.NetworkEntry{{
+			RequestBodyEncoding: "base64",
+		}},
+		DOMSummary: &protocol.DOMSummary{
+			Title:       "title",
+			ReadyState:  "complete",
+			VisibleText: []string{"one", "two"},
+		},
+		ClientMetrics: &protocol.ClientMetrics{
+			DeviceProfile:  "phone",
+			DevicePlatform: "ios",
+			DeviceTier:     "high",
+			BrowserEngine:  "webkit",
+		},
+	}
+	want := len("groupactionPOSTbase64titlecompleteonetwophoneioshighwebkit")
+	if got := browserDiagnosticEventPayloadBytes(&event); got != want {
+		t.Fatalf("nested diagnostic payload bytes = %d, want %d", got, want)
 	}
 }
 

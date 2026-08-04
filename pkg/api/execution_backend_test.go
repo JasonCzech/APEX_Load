@@ -812,7 +812,10 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	// Match the distributed backend's five-second dial/stream budget. The API
+	// package has many integration tests, and a two-second eventual assertion can
+	// expire under full-suite scheduler load even though the stream is healthy.
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		started, ok := runner.GetTest(testRun.ID)
 		if !ok {
@@ -900,7 +903,7 @@ func TestDistributedExecutionBackendPublishesRemoteTransactionMetrics(t *testing
 		t.Fatalf("PublishMetrics returned error: %v", err)
 	}
 
-	deadline = time.Now().Add(2 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for {
 		updated, ok := runner.GetTest(testRun.ID)
 		if !ok {

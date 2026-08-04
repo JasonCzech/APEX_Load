@@ -44,11 +44,6 @@ func TestParseRecordArgs(t *testing.T) {
 			args: []string{"-u", "https://a.example", "-o", "a.json", "-n", "A"},
 			want: recordArgs{url: "https://a.example", out: "a.json", harOut: "a.har", name: "A", api: "http://localhost:8080"},
 		},
-		{
-			name: "invalid max think ignored",
-			args: []string{"--max-think-ms", "nope"},
-			want: recordArgs{out: "recording.json", harOut: "recording.har", api: "http://localhost:8080"},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -58,6 +53,39 @@ func TestParseRecordArgs(t *testing.T) {
 				t.Errorf("parseRecordArgs(%v) =\n  %+v\nwant\n  %+v", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParseRecordArgsRejectsUnknownMissingAndMalformedValues(t *testing.T) {
+	t.Setenv("APEXLOAD_API", "")
+	for _, args := range [][]string{
+		{"--unknown"},
+		{"--url"},
+		{"--max-think-ms=nope"},
+		{"--max-think-ms=-1"},
+		{"--no-har", "--har=network.har"},
+		{"--upload", "--api=controller-without-scheme"},
+		{"extra"},
+	} {
+		if got := parseRecordArgs(args); got.err == nil {
+			t.Errorf("parseRecordArgs(%q) accepted invalid input: %#v", args, got)
+		}
+	}
+	parsed := parseRecordArgs([]string{"--url=https://shop.example", "--out=flow.json", "--max-think-ms=250"})
+	if parsed.err != nil || parsed.url != "https://shop.example" || parsed.out != "flow.json" || parsed.maxThinkMs != 250 {
+		t.Fatalf("equals-form record flags = %#v", parsed)
+	}
+}
+
+func TestParseRecordArgsRejectsInvalidURLAndOverlappingOutputs(t *testing.T) {
+	for _, raw := range [][]string{
+		{"--url=not-a-url"},
+		{"--url=file:///tmp/local"},
+		{"--url=https://example.test", "--out=result.json", "--har=result.json"},
+	} {
+		if parsed := parseRecordArgs(raw); parsed.err == nil {
+			t.Errorf("parseRecordArgs(%q) accepted unsafe input", raw)
+		}
 	}
 }
 

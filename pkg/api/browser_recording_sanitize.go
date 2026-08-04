@@ -36,6 +36,7 @@ func sanitizeBrowserRecordingSessionForResponse(session *BrowserRecordingSession
 		WarningCount:        session.WarningCount,
 		MarkerCount:         session.MarkerCount,
 		AnnotationCount:     session.AnnotationCount,
+		CapHits:             cloneStringInt64Map(session.CapHits),
 		OpenTransactions:    sanitizeBrowserRecordingStrings(session.OpenTransactions, policy),
 		Section:             session.Section,
 		DeviceProfile:       session.DeviceProfile,

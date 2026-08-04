@@ -44,6 +44,39 @@ func TestNewDataProvider_CSV(t *testing.T) {
 	}
 }
 
+func TestNewDataProvider_CSVStorageRef(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCSV(t, dir, "users.csv", "username,password\nalice,pass1\n")
+	ref := (&url.URL{Scheme: "file", Path: path}).String()
+
+	dp, err := NewDataProvider([]dsl.DataSource{{
+		Name: "users", Type: "csv", StorageRef: ref, FirstRowHeader: true, Strategy: "sequential",
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider CSV storage_ref: %v", err)
+	}
+	row := dp.GetRow("users", 0)
+	if row["users.username"] != "alice" || row["users.password"] != "pass1" {
+		t.Fatalf("storage_ref row = %#v", row)
+	}
+}
+
+func TestNewDataProvider_CSVStorageRefRejectsOutsideAllowedRoots(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "users.csv")
+	if err := os.WriteFile(path, []byte("username\nalice\n"), 0o600); err != nil {
+		t.Fatalf("write ungoverned CSV: %v", err)
+	}
+	ref := (&url.URL{Scheme: "file", Path: path}).String()
+
+	_, err := NewDataProvider([]dsl.DataSource{{
+		Name: "users", Type: "csv", StorageRef: ref, FirstRowHeader: true, Strategy: "sequential",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "outside allowed roots") {
+		t.Fatalf("ungoverned CSV storage_ref error = %v", err)
+	}
+}
+
 func TestDataProvider_Sequential(t *testing.T) {
 	dir := t.TempDir()
 	path := writeCSV(t, dir, "data.csv", "id,name\n1,alice\n2,bob\n3,charlie\n")

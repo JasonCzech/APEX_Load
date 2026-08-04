@@ -34,8 +34,13 @@ func buildCaptureFixture(t *testing.T) []byte {
 		"Offset":           "512",
 		"EnqueuedTimeUtc":  "2026-06-21T00:00:00Z",
 		"SystemProperties": map[string]any{"x-opt-partition-key": map[string]any{"string": "device-9"}},
-		"Properties":       map[string]any{"source": map[string]any{"string": "sensor"}},
-		"Body":             map[string]any{"bytes": []byte(`{"deviceId":"device-9"}`)},
+		"Properties": map[string]any{
+			"source": map[string]any{"string": "sensor"},
+			"count":  map[string]any{"long": int64(42)},
+			"ratio":  map[string]any{"double": 1.5},
+			"opaque": map[string]any{"bytes": []byte{0xff, 0x00}},
+		},
+		"Body": map[string]any{"bytes": []byte(`{"deviceId":"device-9"}`)},
 	}
 	if err := enc.Encode(rec); err != nil {
 		t.Fatalf("Encode: %v", err)
@@ -63,10 +68,12 @@ func TestHandleImportEventHubsCapture(t *testing.T) {
 			ProjectID string `json:"project_id"`
 			Protocol  string `json:"protocol"`
 			Actions   []struct {
-				Type   string         `json:"type"`
-				Target string         `json:"target"`
-				Body   string         `json:"body"`
-				Params map[string]any `json:"params"`
+				Type     string            `json:"type"`
+				Target   string            `json:"target"`
+				Body     string            `json:"body"`
+				Headers  map[string]string `json:"headers"`
+				Params   map[string]any    `json:"params"`
+				Metadata map[string]any    `json:"metadata"`
 			} `json:"actions"`
 		} `json:"script"`
 		ReviewSections []struct {
@@ -85,6 +92,21 @@ func TestHandleImportEventHubsCapture(t *testing.T) {
 	}
 	if pk, _ := result.Script.Actions[0].Params["partition_key"].(string); pk != "device-9" {
 		t.Fatalf("partition_key = %q, want device-9", pk)
+	}
+	action := result.Script.Actions[0]
+	if len(action.Headers) != 1 || action.Headers["source"] != "sensor" {
+		t.Fatalf("typed properties were stringified into headers: %#v", action.Headers)
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("typed properties were not review-gated: %#v", action.Metadata)
+	}
+	preserved, ok := action.Metadata["eventhubs_capture_unmapped_properties"].(map[string]any)
+	if !ok || len(preserved) != 3 {
+		t.Fatalf("preserved typed properties = %#v, want count/ratio/opaque", action.Metadata["eventhubs_capture_unmapped_properties"])
+	}
+	opaque, _ := preserved["opaque"].(map[string]any)
+	if opaque["base64"] != "/wA=" {
+		t.Fatalf("binary property descriptor = %#v", opaque)
 	}
 	foundReview := false
 	for _, sec := range result.ReviewSections {

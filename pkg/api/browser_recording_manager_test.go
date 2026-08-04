@@ -51,6 +51,19 @@ func TestBrowserRecordingManagerTracksLiveNetworkAndWebSocketEvents(t *testing.T
 	}
 }
 
+func TestBrowserRecordingManagerTracksLiveCaptureCapHits(t *testing.T) {
+	manager := &BrowserRecordingManager{}
+	session := &BrowserRecordingSession{}
+
+	manager.handleEvent(session, recbrowser.Event{Type: recbrowser.EventCapHit, CapName: "steps", CapCount: 1})
+	manager.handleEvent(session, recbrowser.Event{Type: recbrowser.EventCapHit, CapName: "steps", CapCount: 2})
+
+	snapshot := session.summary()
+	if snapshot.CapHits["steps"] != 2 {
+		t.Fatalf("live cap hits = %#v, want steps=2", snapshot.CapHits)
+	}
+}
+
 func TestReconcileBrowserRecordingArtifactCountsUsesFinalArtifact(t *testing.T) {
 	session := &BrowserRecordingSession{NetworkRequestCount: 99, WebSocketCount: 99}
 	artifact := &recbrowser.Session{
@@ -58,10 +71,14 @@ func TestReconcileBrowserRecordingArtifactCountsUsesFinalArtifact(t *testing.T) 
 		NetworkEvents: []time.Time{time.Now(), time.Now()},
 		WebSockets:    []recbrowser.WebSocketSummary{{URL: "wss://example.test"}},
 		Warnings:      []string{"bounded"},
+		CapHits:       map[string]int64{"steps": 3},
 	}
 	reconcileBrowserRecordingArtifactCountsLocked(session, artifact)
 	if session.StepCount != 1 || session.NetworkRequestCount != 2 || session.WebSocketCount != 1 || session.WarningCount != 1 {
 		t.Fatalf("reconciled counters = %#v", session)
+	}
+	if session.CapHits["steps"] != 3 {
+		t.Fatalf("reconciled cap hits = %#v", session.CapHits)
 	}
 }
 

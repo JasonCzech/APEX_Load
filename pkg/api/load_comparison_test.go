@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,6 +161,118 @@ func TestLoadComparisonStreamsBeyondLegacyRecordLimit(t *testing.T) {
 	}
 }
 
+func TestStreamLoadComparisonTransactionAggregatesEnforcesDimensionAndCellCaps(t *testing.T) {
+	base := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
+	writeFixture := func(t *testing.T, id string, transactions ...TransactionEvent) *storage.RunArchiveRecord {
+		t.Helper()
+		archiveDir := t.TempDir()
+		manifest := RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: id, TransactionsFile: "transactions.jsonl"}
+		manifestPath := filepath.Join(archiveDir, runArchiveManifestFileName)
+		manifestBytes, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(manifestPath, manifestBytes, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		values := make([]any, len(transactions))
+		for index := range transactions {
+			values[index] = transactions[index]
+		}
+		writeJSONL(t, filepath.Join(archiveDir, manifest.TransactionsFile), values...)
+		return &storage.RunArchiveRecord{TestID: id, ArchivePath: archiveDir, ManifestPath: manifestPath}
+	}
+
+	dimensionRecord := writeFixture(t, "dimension-cap",
+		TransactionEvent{Timestamp: base, ActionName: "A", Success: true},
+		TransactionEvent{Timestamp: base, ActionName: "B", Success: true},
+	)
+	if _, err := streamLoadComparisonTransactionAggregatesWithLimits(context.Background(), dimensionRecord,
+		[]IntervalSummaryRecord{{Timestamp: base, ActiveVUsers: 5}}, 1, 10); err == nil || !strings.Contains(err.Error(), "transaction dimensions") {
+		t.Fatalf("dimension cap error = %v", err)
+	}
+
+	cellRecord := writeFixture(t, "cell-cap",
+		TransactionEvent{Timestamp: base, ActionName: "A", Success: true},
+		TransactionEvent{Timestamp: base.Add(time.Second), ActionName: "A", Success: true},
+	)
+	if _, err := streamLoadComparisonTransactionAggregatesWithLimits(context.Background(), cellRecord,
+		[]IntervalSummaryRecord{{Timestamp: base, ActiveVUsers: 5}, {Timestamp: base.Add(time.Second), ActiveVUsers: 10}}, 10, 1); err == nil || !strings.Contains(err.Error(), "interval cells") {
+		t.Fatalf("cell cap error = %v", err)
+	}
+}
+
+func TestLoadComparisonAggregateBudgetAppliesAcrossRunsAtomically(t *testing.T) {
+	interval := func() map[transactionIntervalLoadKey]*transactionIntervalAccumulator {
+		return map[transactionIntervalLoadKey]*transactionIntervalAccumulator{
+			{Index: 0, Load: 5}: {},
+		}
+	}
+	budget := newLoadComparisonAggregateBudget(2, 8)
+	if err := budget.reserveRun(LoadComparisonScopeTransaction, nil, map[string]*loadComparisonTransactionAggregate{
+		"checkout": {Intervals: interval()},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A repeated option identity is one request-global dimension, even though its
+	// per-run aggregate and interval nodes are each charged to the cell budget.
+	if err := budget.reserveRun(LoadComparisonScopeTransaction, nil, map[string]*loadComparisonTransactionAggregate{
+		"checkout": {Intervals: interval()},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(budget.dimensions) != 1 || budget.cells != 4 {
+		t.Fatalf("repeated dimension budget = dimensions:%d cells:%d", len(budget.dimensions), budget.cells)
+	}
+	if err := budget.reserveRun(LoadComparisonScopeTransaction, nil, map[string]*loadComparisonTransactionAggregate{
+		"search": {Intervals: interval()},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := budget.reserveRun(LoadComparisonScopeTransaction, nil, map[string]*loadComparisonTransactionAggregate{
+		"login": {Intervals: interval()},
+	}); err == nil || !strings.Contains(err.Error(), "aggregate dimensions") {
+		t.Fatalf("dimension budget error = %v", err)
+	}
+	if len(budget.dimensions) != 2 || budget.cells != 6 {
+		t.Fatalf("failed reservation mutated budget: dimensions=%d cells=%d", len(budget.dimensions), budget.cells)
+	}
+
+	// The failed dimension reservation must not consume its aggregate/interval
+	// cells. A dimensionless aggregate can still reserve the remaining two.
+	if err := budget.reserveRun(LoadComparisonScopeTransaction, nil, map[string]*loadComparisonTransactionAggregate{
+		"": {Intervals: interval()},
+	}); err != nil {
+		t.Fatalf("reserve remaining cells after failed run: %v", err)
+	}
+	if len(budget.dimensions) != 2 || budget.cells != 8 {
+		t.Fatalf("final budget: dimensions=%d cells=%d", len(budget.dimensions), budget.cells)
+	}
+
+	cellBudget := newLoadComparisonAggregateBudget(10, 1)
+	if err := cellBudget.reserveRun(LoadComparisonScopeGroup, []IntervalSummaryRecord{{
+		Groups: map[string]*GroupLiveMetrics{"browse": {}},
+	}}, nil); err == nil || !strings.Contains(err.Error(), "aggregate cells") {
+		t.Fatalf("cell budget error = %v", err)
+	}
+
+	sparseBudget := newLoadComparisonAggregateBudget(10, 2)
+	if err := sparseBudget.reserveRun(LoadComparisonScopeGroup, []IntervalSummaryRecord{{}, {}}, nil); err != nil {
+		t.Fatalf("reserve sparse summaries: %v", err)
+	}
+	if err := sparseBudget.reserveRun(LoadComparisonScopeGroup, []IntervalSummaryRecord{{}}, nil); err == nil || !strings.Contains(err.Error(), "aggregate cells") {
+		t.Fatalf("sparse-summary cell budget error = %v", err)
+	}
+
+	byteBudget := newLoadComparisonAggregateBudgetWithLimits(10, 10, 16)
+	if err := byteBudget.reserveRun(LoadComparisonScopeGroup, []IntervalSummaryRecord{{TestName: strings.Repeat("x", 32)}}, nil); err == nil || !strings.Contains(err.Error(), "aggregate bytes") {
+		t.Fatalf("summary byte budget error = %v", err)
+	}
+	if byteBudget.bytes != 0 || byteBudget.cells != 0 || len(byteBudget.dimensions) != 0 {
+		t.Fatalf("failed byte reservation mutated budget: %#v", byteBudget)
+	}
+}
+
 func TestBuildLoadComparisonTransactionFallsBackToTotalActiveVUsers(t *testing.T) {
 	base := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
 	runs := []loadComparisonRun{
@@ -216,6 +329,9 @@ func TestApplicationLoadComparisonEndpointReturnsJSON(t *testing.T) {
 	releaseID := "rel-load-comparison"
 	started := time.Date(2026, time.June, 1, 12, 0, 0, 0, time.UTC)
 	archive := writeLoadComparisonArchiveFixture(t, releaseID, "run-load", "Load Run", started)
+	if err := os.Remove(filepath.Join(archive.ArchivePath, "transactions.jsonl")); err != nil {
+		t.Fatal(err)
+	}
 
 	server.runner.mu.Lock()
 	server.runner.tests["run-load"] = &ManagedTest{

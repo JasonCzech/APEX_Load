@@ -18,17 +18,22 @@ import (
 type postmanChainItem struct {
 	ActionIndex int
 	Item        requestItem
+	// Extractors is precomputed while walking the collection's scoped variable
+	// stores. A non-nil empty slice deliberately suppresses the syntax-only
+	// fallback: the response writes were recognized, but none survives Postman's
+	// scope precedence and request-local lifetime into the next request.
+	Extractors []detectedExtractor
 }
 
 var (
 	// const/let/var jsonData = pm.response.json()
 	postmanJSONAliasPattern = regexp.MustCompile(`(?:var|let|const)\s+([A-Za-z_$][\w$]*)\s*=\s*pm\.response\.json\s*\(\s*\)`)
 	// pm.<scope>.set("name", pm.response.json()<.a.b>)
-	postmanSetJSONPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables|globals)\.set\s*\(\s*["']([^"']+)["']\s*,\s*pm\.response\.json\s*\(\s*\)((?:\.[A-Za-z_$][\w$]*)*)\s*\)`)
+	postmanSetJSONPattern = regexp.MustCompile(`pm\.(environment|collectionVariables|globals|variables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*pm\.response\.json\s*\(\s*\)((?:\.[A-Za-z_$][\w$]*)*)\s*\)`)
 	// pm.<scope>.set("name", <ident><.a.b>) where <ident> aliases the parsed body
-	postmanSetAliasPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables|globals)\.set\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)+)\s*\)`)
+	postmanSetAliasPattern = regexp.MustCompile(`pm\.(environment|collectionVariables|globals|variables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*([A-Za-z_$][\w$]*)((?:\.[A-Za-z_$][\w$]*)+)\s*\)`)
 	// pm.<scope>.set("name", pm.response.headers.get("Header"))
-	postmanSetHeaderPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables|globals)\.set\s*\(\s*["']([^"']+)["']\s*,\s*pm\.response\.headers\.get\s*\(\s*["']([^"']+)["']\s*\)\s*\)`)
+	postmanSetHeaderPattern = regexp.MustCompile(`pm\.(environment|collectionVariables|globals|variables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*pm\.response\.headers\.get\s*\(\s*["']([^"']+)["']\s*\)\s*\)`)
 )
 
 type detectedExtractor struct {
@@ -47,7 +52,10 @@ func applyPostmanResponseChaining(script *dsl.Script, items []postmanChainItem, 
 		if ci.ActionIndex < 0 || ci.ActionIndex >= len(script.Actions) {
 			continue
 		}
-		detected := detectPostmanExtractors(ci.Item.Events)
+		detected := ci.Extractors
+		if detected == nil {
+			detected = detectPostmanExtractors(ci.Item.Events)
+		}
 		if len(detected) == 0 {
 			continue
 		}
@@ -101,39 +109,13 @@ func applyPostmanResponseChaining(script *dsl.Script, items []postmanChainItem, 
 }
 
 func detectPostmanExtractors(events []event) []detectedExtractor {
-	var out []detectedExtractor
-	seen := map[string]bool{}
-	add := func(rawName, source, extractType, expr string) {
-		name := normalizeVariableName(rawName)
-		if name == "" || seen[name] {
-			return
-		}
-		seen[name] = true
-		out = append(out, detectedExtractor{varName: name, source: source, extractType: extractType, expression: expr})
-	}
-	for _, ev := range events {
-		if !strings.EqualFold(strings.TrimSpace(ev.Listen), "test") {
-			continue
-		}
-		script := strings.Join(ev.Script.Exec, "\n")
-		aliases := map[string]bool{}
-		for _, m := range postmanJSONAliasPattern.FindAllStringSubmatch(script, -1) {
-			aliases[m[1]] = true
-		}
-		for _, m := range postmanSetJSONPattern.FindAllStringSubmatch(script, -1) {
-			add(m[1], "body", "jsonpath", jsonPathFromDotPath(m[2]))
-		}
-		for _, m := range postmanSetHeaderPattern.FindAllStringSubmatch(script, -1) {
-			add(m[1], "header", "header", m[2])
-		}
-		for _, m := range postmanSetAliasPattern.FindAllStringSubmatch(script, -1) {
-			if !aliases[m[2]] {
-				continue
-			}
-			add(m[1], "body", "jsonpath", jsonPathFromDotPath(m[3]))
-		}
-	}
-	return out
+	state := newPostmanScopedVariables(nil, nil)
+	request := requestItem{Events: events}
+	writes := applyPostmanScopedEventAssignmentsForListen(state, request, "test", nil)
+	// This syntax-only helper describes the value visible at the end of the
+	// post-response script. Convert's collection walk additionally clears the
+	// local store and supplies its persistent, next-request extractor set.
+	return state.effectiveResponseExtractors(writes)
 }
 
 // postmanCorrelationScriptFullyTranslated proves that every executable token

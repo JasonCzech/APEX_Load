@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"strings"
 	"sync"
@@ -162,7 +163,13 @@ func (c *franzClient) replyHandle() (*kgo.Client, error) {
 }
 
 func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Client, error) {
-	opts := []kgo.Opt{kgo.SeedBrokers(c.cfg.Brokers...)}
+	// Explicit partitions (including zero) must be honored, while key-hash and
+	// round-robin routing must use the real topic's broker-reported partition
+	// count. config.kafka.partitions is only a mock-broker hint.
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(c.cfg.Brokers...),
+		kgo.RecordPartitioner(resolvedRecordPartitioner(c.cfg.PartitionStrategy)),
+	}
 	if c.cfg.ClientID != "" {
 		opts = append(opts, kgo.ClientID(c.cfg.ClientID))
 	}
@@ -381,16 +388,7 @@ func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord
 	if err != nil {
 		return recordMeta{}, err
 	}
-	r := &kgo.Record{Topic: topic, Value: rec.Value}
-	if rec.Key != "" {
-		r.Key = []byte(rec.Key)
-	}
-	if rec.Partition > 0 {
-		r.Partition = rec.Partition
-	}
-	for k, v := range rec.Headers {
-		r.Headers = append(r.Headers, kgo.RecordHeader{Key: k, Value: []byte(v)})
-	}
+	r := resolvedProducerRecord(topic, rec)
 	results := cl.ProduceSync(ctx, r)
 	if err := results.FirstErr(); err != nil {
 		return recordMeta{}, err
@@ -402,6 +400,71 @@ func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord
 		Offset:    produced.Offset,
 		Timestamp: produced.Timestamp,
 	}, nil
+}
+
+type routedRecordPartitioner struct {
+	fallback kgo.Partitioner
+}
+
+func resolvedRecordPartitioner(strategy string) kgo.Partitioner {
+	var fallback kgo.Partitioner
+	switch strings.ToLower(strings.TrimSpace(strategy)) {
+	case "round-robin":
+		fallback = kgo.RoundRobinPartitioner()
+	default:
+		fallback = kgo.StickyKeyPartitioner(func(key []byte, partitions int) int {
+			if partitions <= 0 {
+				return 0
+			}
+			hash := fnv.New32a()
+			_, _ = hash.Write(key)
+			return int(hash.Sum32() % uint32(partitions))
+		})
+	}
+	return &routedRecordPartitioner{fallback: fallback}
+}
+
+func (p *routedRecordPartitioner) ForTopic(topic string) kgo.TopicPartitioner {
+	return &routedTopicPartitioner{fallback: p.fallback.ForTopic(topic)}
+}
+
+type routedTopicPartitioner struct {
+	fallback kgo.TopicPartitioner
+}
+
+func (p *routedTopicPartitioner) RequiresConsistency(record *kgo.Record) bool {
+	if record != nil && record.Partition >= 0 {
+		return true
+	}
+	return p.fallback.RequiresConsistency(record)
+}
+
+func (p *routedTopicPartitioner) Partition(record *kgo.Record, partitions int) int {
+	if record != nil && record.Partition >= 0 {
+		return int(record.Partition)
+	}
+	return p.fallback.Partition(record, partitions)
+}
+
+func (p *routedTopicPartitioner) OnNewBatch() {
+	if fallback, ok := p.fallback.(kgo.TopicPartitionerOnNewBatch); ok {
+		fallback.OnNewBatch()
+	}
+}
+
+func resolvedProducerRecord(topic string, rec kafkaRecord) *kgo.Record {
+	partition := int32(-1)
+	if rec.ManualPartition {
+		partition = rec.Partition
+	}
+	r := &kgo.Record{Topic: topic, Value: rec.Value, Partition: partition}
+	if rec.Key != "" {
+		r.Key = []byte(rec.Key)
+	}
+	for k, v := range rec.Headers {
+		r.Headers = append(r.Headers, kgo.RecordHeader{Key: k, Value: []byte(v)})
+	}
+	return r
 }
 
 func (c *franzClient) Consume(ctx context.Context, topic string, group string, timeout time.Duration) (kafkaRecord, int64, error) {

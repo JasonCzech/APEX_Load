@@ -45,11 +45,15 @@ func (s *Server) collectReleaseTrendRuns(releaseID string, requireReport bool) (
 		if !ok {
 			continue
 		}
-		if !requireReport && strings.TrimSpace(record.TrendPointJSON) != "" {
+		var cachedPoint *ReleaseTrendPoint
+		if strings.TrimSpace(record.TrendPointJSON) != "" {
 			var point ReleaseTrendPoint
 			if err := json.Unmarshal([]byte(record.TrendPointJSON), &point); err == nil && point.RunID == test.ID {
-				runs = append(runs, releaseTrendRun{Test: test, Point: &point})
-				continue
+				cachedPoint = &point
+				if !requireReport {
+					runs = append(runs, releaseTrendRun{Test: test, Point: cachedPoint})
+					continue
+				}
 			}
 		}
 		report, err := cachedRunArchiveReport(record)
@@ -58,12 +62,13 @@ func (s *Server) collectReleaseTrendRuns(releaseID string, requireReport bool) (
 			slog.Warn("release trend: archive report unavailable", "test", test.ID, "err", err)
 			continue
 		}
-		if strings.TrimSpace(record.TrendPointJSON) == "" {
+		// Missing, malformed, and mismatched projections are all repairable. Use a
+		// targeted publication CAS so this request cannot rewrite a concurrently
+		// refreshed archive from its stale catalog snapshot.
+		if cachedPoint == nil {
 			point := trendPointFromRun(releaseTrendRun{Test: test, Report: report})
 			if encoded, encodeErr := json.Marshal(point); encodeErr == nil {
-				updated := *record
-				updated.TrendPointJSON = string(encoded)
-				if saveErr := s.runner.saveRunArchiveRecord(&updated); saveErr != nil {
+				if _, saveErr := s.runner.updateRunArchiveTrendPointIfUnchanged(record, string(encoded)); saveErr != nil {
 					slog.Warn("release trend: compact trend point could not be cached", "test", test.ID, "err", saveErr)
 				}
 			}

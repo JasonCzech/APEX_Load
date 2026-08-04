@@ -96,6 +96,12 @@ type executionMetricsSnapshot struct {
 	transactions []TransactionMetric
 	telemetry    MetricsTelemetry
 	aggregates   metricsAggregateSet
+	// sourceSnapshotAt identifies the engine snapshot whose gauges and
+	// side-channel aggregates were projected into this window. LatestSnapshot
+	// returns the cached latest value, so the timestamp fences that evidence from
+	// being emitted again by a second final callback or a faster publisher tick.
+	sourceSnapshotAt    time.Time
+	sourceSnapshotValid bool
 }
 
 const (
@@ -570,8 +576,18 @@ func (b *transactionBuffer) Drain() []TransactionMetric {
 // final post-run publish). The first drain reports the window since the buffer
 // was created (see newTransactionBuffer).
 func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWindowAggregate, time.Duration) {
+	return b.drainWindow(true)
+}
+
+// drainWindow optionally leaves an empty window untouched. Periodic publishers
+// advance idle windows to preserve cadence, while out-of-band final drains must
+// not split a sibling's rate window unless they actually publish new evidence.
+func (b *transactionBuffer) drainWindow(advanceEmpty bool) ([]TransactionMetric, *transactionWindowAggregate, time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if !advanceEmpty && len(b.transactions) == 0 && b.window.empty() {
+		return nil, nil, 0
+	}
 	now := time.Now()
 	var window time.Duration
 	if !b.lastDrainAt.IsZero() {
@@ -611,6 +627,7 @@ type Service struct {
 	stopCompletions         map[string]*stopCompletion
 	resCollector            *engine.ResourceCollector
 	resCollectorMu          sync.Mutex // serializes resCollector.Collect (mutates delta state)
+	metricsSnapshotMu       sync.Mutex // serializes per-test multi-group evidence drains
 	executionEnabled        bool
 	draining                bool
 	publishInterval         time.Duration
@@ -2213,51 +2230,160 @@ func (s *Service) runExecutionPublisher(ctx context.Context, testID string, grou
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.publishExecutionSnapshot(testID, groupName, exec)
+			s.publishTestExecutionSnapshot(testID, groupName, exec, true)
 		}
 	}
 }
 
 func (s *Service) publishExecutionSnapshot(testID string, groupName string, exec *groupExecution) {
-	if exec == nil || !s.isCurrentExecution(testID, groupName, exec) {
+	s.publishTestExecutionSnapshot(testID, groupName, exec, false)
+}
+
+// publishTestExecutionSnapshot drains every group in a test as one publication
+// window. Per-group tickers deliberately elect one publisher; final callbacks
+// may force a coordinated drain so a group that ends between ticks cannot strand
+// evidence. Holding the service lock across the bounded snapshot reads prevents
+// a stop transition from removing the assignment after a transaction window was
+// drained but before that evidence was attached to the archive batch.
+func (s *Service) publishTestExecutionSnapshot(testID string, groupName string, expected *groupExecution, requirePublisher bool) {
+	if expected == nil {
 		return
 	}
-	metrics, ok := s.collectExecutionMetrics(exec)
-	if !ok {
+	s.metricsSnapshotMu.Lock()
+	defer s.metricsSnapshotMu.Unlock()
+
+	// Match the publication-lock -> service-lock ordering used by lifecycle
+	// mutations so the combined metrics batch stays ordered with terminal state.
+	s.metricsBroker.lockPublication()
+	defer s.metricsBroker.unlockPublication()
+	s.mu.Lock()
+	assignment, ok := s.assignments[testID]
+	if !ok || assignment.executionGeneration != expected.executionGeneration ||
+		s.executions[testID][groupName] != expected {
+		s.mu.Unlock()
 		return
 	}
-	_ = s.publishMetricsForExecution(testID, groupName, exec, metrics.stats, metrics.transactions, metrics.telemetry, metrics.aggregates)
+	if requirePublisher && !s.isArchivePublisherLocked(testID, groupName) {
+		s.mu.Unlock()
+		return
+	}
+
+	groupNames := make([]string, 0, len(s.executions[testID]))
+	for candidate := range s.executions[testID] {
+		groupNames = append(groupNames, candidate)
+	}
+	sort.Strings(groupNames)
+	type collectedGroupMetrics struct {
+		groupName string
+		metrics   executionMetricsSnapshot
+		ok        bool
+	}
+	collected := make([]collectedGroupMetrics, 0, len(groupNames))
+	published := false
+	for _, candidate := range groupNames {
+		execution := s.executions[testID][candidate]
+		if execution == nil || execution.executionGeneration != assignment.executionGeneration {
+			continue
+		}
+		// The elected periodic publisher emits an explicit idle cadence. Forced
+		// final callbacks only publish groups with changed/new evidence; otherwise
+		// simultaneous group completions would each repeat the coordinated window.
+		metrics, metricsOK := s.collectExecutionMetricsWithIdle(execution, requirePublisher)
+		collected = append(collected, collectedGroupMetrics{groupName: candidate, metrics: metrics, ok: metricsOK})
+		published = published || metricsOK
+	}
+	if !published {
+		s.mu.Unlock()
+		return
+	}
+	// assignment contains shallow map fields. Mutate those maps only after the
+	// collection pass proves a batch will be emitted; otherwise an all-empty
+	// forced drain could alter the live assignment despite returning early.
+	// Transaction samples and aggregates are window evidence, not gauges. Start
+	// each coordinated publication with fresh maps so evidence from a group that
+	// already finished and was removed from s.executions cannot leak into a
+	// sibling's later final window. Stats and telemetry remain per-group snapshots
+	// and deliberately retain their latest values.
+	assignment.groupTransactions = make(map[string][]TransactionMetric)
+	assignment.groupAggregates = make(map[string]metricsAggregateSet)
+	for _, group := range collected {
+		if group.ok {
+			applyExecutionMetricsToAssignment(&assignment, group.groupName, group.metrics)
+		}
+	}
+	s.assignments[testID] = assignment
+	batch := s.metricsBatchLocked(testID)
+	writer := s.archiveManager.writer(testID)
+	s.mu.Unlock()
+
+	s.recordMetricsBatch(testID, writer, batch)
+	s.broadcastMetricsLocked(batch)
 }
 
 func (s *Service) collectExecutionMetrics(exec *groupExecution) (executionMetricsSnapshot, bool) {
+	return s.collectExecutionMetricsWithIdle(exec, true)
+}
+
+func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeIdle bool) (executionMetricsSnapshot, bool) {
 	if exec == nil {
 		return executionMetricsSnapshot{}, false
 	}
+	exec.metricsMu.Lock()
+	var previous *executionMetricsSnapshot
+	if exec.lastMetrics != nil {
+		copy := *exec.lastMetrics
+		previous = &copy
+	}
+	exec.metricsMu.Unlock()
+
 	var snapshot engine.MetricsSnapshot
 	snapshotOK := false
 	if exec.engine != nil {
 		snapshot, snapshotOK = exec.engine.LatestSnapshot()
 	}
+	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
+	if previous != nil {
+		stats = previous.stats
+		stats.GoroutineCount = int32(runtime.NumGoroutine())
+	}
+	if snapshotOK {
+		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
+	}
+	droppedSubscriberBatches := s.metricsBroker.droppedCount()
+	changes := classifyExecutionMetricsChanges(previous, snapshot, snapshotOK, stats, droppedSubscriberBatches, false)
+
 	var transactions []TransactionMetric
 	var aggregateWindow *transactionWindowAggregate
 	var window time.Duration
 	if exec.results != nil {
-		transactions, aggregateWindow, window = exec.results.DrainWindow()
+		transactions, aggregateWindow, window = exec.results.drainWindow(includeIdle || changes.sourceSnapshot)
 	}
-	if !snapshotOK && len(transactions) == 0 {
-		exec.metricsMu.Lock()
-		defer exec.metricsMu.Unlock()
-		if exec.lastMetrics == nil {
-			return executionMetricsSnapshot{}, false
-		}
-		idle := *exec.lastMetrics
+	hasWindowEvidence := len(transactions) > 0 || !aggregateWindow.empty()
+	changes.windowEvidence = hasWindowEvidence
+	if !changes.shouldPublish(includeIdle, previous != nil) {
+		return executionMetricsSnapshot{}, false
+	}
+	if !changes.sourceSnapshot && !hasWindowEvidence {
+		idle := *previous
+		idle.stats = stats
 		idle.transactions = nil
 		idle.aggregates = metricsAggregateSet{}
 		idle.telemetry.WindowMs = s.publishInterval.Milliseconds()
-		idle.telemetry.PublishedAtUnixMs = time.Now().UnixMilli()
+		now := time.Now()
+		idle.telemetry.PublishedAtUnixMs = now.UnixMilli()
+		idle.telemetry.DroppedSubscriberBatches = droppedSubscriberBatches
+		if snapshotOK {
+			idle.telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
+			idle.telemetry.SampleAgeMs = float64(now.Sub(snapshot.Timestamp).Microseconds()) / 1000.0
+			idle.telemetry.GeneratorProcessingLagMs = idle.telemetry.SampleAgeMs
+			if snapshot.Telemetry != nil {
+				idle.telemetry.DroppedResults = snapshot.Telemetry.DroppedResults
+				idle.telemetry.SheddedArrivals = snapshot.Telemetry.SheddedArrivals
+			}
+		}
+		storeExecutionMetrics(exec, idle)
 		return idle, true
 	}
-	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
 	// The final out-of-band publish (after engine.Run returns) drains leftover
 	// transactions over the sub-tick remainder since the last periodic drain. That
 	// window can be a few milliseconds, which would yield an order-of-magnitude TPS
@@ -2269,9 +2395,13 @@ func (s *Service) collectExecutionMetrics(exec *groupExecution) (executionMetric
 		windowMs = s.publishInterval.Milliseconds()
 	}
 	telemetry := MetricsTelemetry{WindowMs: windowMs}
+	if previous != nil {
+		telemetry.DroppedResults = previous.telemetry.DroppedResults
+		telemetry.SheddedArrivals = previous.telemetry.SheddedArrivals
+		telemetry.CollectedAtUnixMs = previous.telemetry.CollectedAtUnixMs
+	}
 	aggregates := aggregateWindow.finalize(windowMs)
 	if snapshotOK {
-		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
 		telemetry.CollectedAtUnixMs = snapshot.Timestamp.UnixMilli()
 		now := time.Now()
 		telemetry.PublishedAtUnixMs = now.UnixMilli()
@@ -2281,16 +2411,79 @@ func (s *Service) collectExecutionMetrics(exec *groupExecution) (executionMetric
 			telemetry.DroppedResults = snapshot.Telemetry.DroppedResults
 			telemetry.SheddedArrivals = snapshot.Telemetry.SheddedArrivals
 		}
-		mergeSnapshotSideChannelAggregates(&aggregates, snapshot)
+		if changes.sourceSnapshot {
+			mergeSnapshotSideChannelAggregates(&aggregates, snapshot)
+		}
 	}
-	telemetry.DroppedSubscriberBatches = s.metricsBroker.droppedCount()
-	metrics := executionMetricsSnapshot{stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates}
+	telemetry.DroppedSubscriberBatches = droppedSubscriberBatches
+	metrics := executionMetricsSnapshot{
+		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates,
+	}
+	if snapshotOK {
+		metrics.sourceSnapshotAt = snapshot.Timestamp
+		metrics.sourceSnapshotValid = true
+	} else if previous != nil {
+		metrics.sourceSnapshotAt = previous.sourceSnapshotAt
+		metrics.sourceSnapshotValid = previous.sourceSnapshotValid
+	}
+	storeExecutionMetrics(exec, metrics)
+	return metrics, true
+}
+
+type executionMetricsChanges struct {
+	sourceSnapshot      bool
+	processStats        bool
+	subscriberTelemetry bool
+	windowEvidence      bool
+}
+
+func classifyExecutionMetricsChanges(
+	previous *executionMetricsSnapshot,
+	snapshot engine.MetricsSnapshot,
+	snapshotOK bool,
+	stats GeneratorStats,
+	droppedSubscriberBatches int64,
+	windowEvidence bool,
+) executionMetricsChanges {
+	changes := executionMetricsChanges{windowEvidence: windowEvidence}
+	changes.sourceSnapshot = snapshotOK && (previous == nil || !previous.sourceSnapshotValid ||
+		!snapshot.Timestamp.Equal(previous.sourceSnapshotAt))
+	if previous == nil {
+		return changes
+	}
+	changes.processStats = stats != previous.stats || snapshotTelemetryChanged(snapshot, previous.telemetry)
+	changes.subscriberTelemetry = droppedSubscriberBatches != previous.telemetry.DroppedSubscriberBatches
+	return changes
+}
+
+func (changes executionMetricsChanges) shouldPublish(includeIdle bool, hasPrevious bool) bool {
+	if changes.sourceSnapshot || changes.windowEvidence {
+		return true
+	}
+	// Process gauges and subscriber-drop telemetry remain observable on the
+	// regular cadence, but they are not execution evidence. A forced completion
+	// callback must therefore not create a second empty final window merely
+	// because one of those values changed after the first callback published.
+	return includeIdle && hasPrevious
+}
+
+func snapshotTelemetryChanged(snapshot engine.MetricsSnapshot, previous MetricsTelemetry) bool {
+	if snapshot.Telemetry == nil {
+		return false
+	}
+	return snapshot.Telemetry.DroppedResults != previous.DroppedResults ||
+		snapshot.Telemetry.SheddedArrivals != previous.SheddedArrivals
+}
+
+func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapshot) {
+	if exec == nil {
+		return
+	}
 	exec.metricsMu.Lock()
 	stored := metrics
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
 	exec.lastMetrics = &stored
 	exec.metricsMu.Unlock()
-	return metrics, true
 }
 
 func metricsAggregateSetHasEvidence(aggregates metricsAggregateSet) bool {
@@ -2346,7 +2539,7 @@ func (s *Service) captureStoppedExecutionMetrics(assignment *assignedTest, execu
 		return
 	}
 	for _, execution := range executions {
-		metrics, ok := s.collectExecutionMetrics(execution)
+		metrics, ok := s.collectExecutionMetricsWithIdle(execution, false)
 		if !ok {
 			continue
 		}

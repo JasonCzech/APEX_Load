@@ -117,25 +117,10 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 		}
 		bundle.Overview.BrowserTransactions++
 		eventBytes := browserDiagnosticEventPayloadBytes(&event)
-		if len(bundle.Events) < maxBrowserDiagnosticEvents && payloadBytes+eventBytes <= maxBrowserDiagnosticPayloadBytes {
-			payloadBytes += eventBytes
-			bundle.Events = append(bundle.Events, event)
-			return nil
-		}
-		// Once bounded, prefer failure evidence over an earlier success. This
-		// keeps the export useful for triage without materializing all events.
-		if !event.Success {
-			for index := range bundle.Events {
-				if bundle.Events[index].Success {
-					previousBytes := browserDiagnosticEventPayloadBytes(&bundle.Events[index])
-					if payloadBytes-previousBytes+eventBytes <= maxBrowserDiagnosticPayloadBytes {
-						bundle.Events[index] = event
-						payloadBytes = payloadBytes - previousBytes + eventBytes
-					}
-					break
-				}
-			}
-		}
+		bundle.Events, payloadBytes = retainBoundedBrowserDiagnosticEvent(
+			bundle.Events, payloadBytes, event, eventBytes,
+			maxBrowserDiagnosticEvents, maxBrowserDiagnosticPayloadBytes,
+		)
 		return nil
 	}); err != nil {
 		return nil, err
@@ -146,13 +131,65 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 	return bundle, nil
 }
 
+func retainBoundedBrowserDiagnosticEvent(events []BrowserDiagnosticsEvent, payloadBytes int, event BrowserDiagnosticsEvent, eventBytes int, maxEvents int, maxPayloadBytes int) ([]BrowserDiagnosticsEvent, int) {
+	if len(events) < maxEvents && payloadBytes+eventBytes <= maxPayloadBytes {
+		return append(events, event), payloadBytes + eventBytes
+	}
+	if event.Success || eventBytes > maxPayloadBytes || maxEvents <= 0 {
+		return events, payloadBytes
+	}
+	// Prefer failure evidence over retained successes. A large failure can need
+	// more than one success evicted to satisfy the byte budget, so select the
+	// largest successes first until both the byte and event-count limits fit.
+	type evictionCandidate struct {
+		index int
+		bytes int
+	}
+	candidates := make([]evictionCandidate, 0, len(events))
+	for index := range events {
+		if events[index].Success {
+			candidates = append(candidates, evictionCandidate{
+				index: index,
+				bytes: browserDiagnosticEventPayloadBytes(&events[index]),
+			})
+		}
+	}
+	sort.SliceStable(candidates, func(left, right int) bool {
+		return candidates[left].bytes > candidates[right].bytes
+	})
+	minimumEvictions := len(events) + 1 - maxEvents
+	if minimumEvictions < 0 {
+		minimumEvictions = 0
+	}
+	evicted := make(map[int]struct{}, len(candidates))
+	evictedBytes := 0
+	for _, candidate := range candidates {
+		evicted[candidate.index] = struct{}{}
+		evictedBytes += candidate.bytes
+		if len(evicted) < minimumEvictions || payloadBytes-evictedBytes+eventBytes > maxPayloadBytes {
+			continue
+		}
+		retained := make([]BrowserDiagnosticsEvent, 0, len(events)-len(evicted)+1)
+		for index := range events {
+			if _, remove := evicted[index]; !remove {
+				retained = append(retained, events[index])
+			}
+		}
+		// The new failure follows every retained source event, preserving source
+		// order even though eviction selection was size-based.
+		retained = append(retained, event)
+		return retained, payloadBytes - evictedBytes + eventBytes
+	}
+	return events, payloadBytes
+}
+
 func browserDiagnosticEventPayloadBytes(event *BrowserDiagnosticsEvent) int {
 	if event == nil {
 		return 0
 	}
-	size := len(event.ErrorMessage) + len(event.PageURL) + len(event.PageTitle) + len(event.screenshotBase64) + len(event.html)
+	size := len(event.Group) + len(event.ActionName) + len(event.ErrorMessage) + len(event.PageURL) + len(event.PageTitle) + len(event.screenshotBase64) + len(event.html)
 	if event.Snapshot != nil {
-		size += len(event.Snapshot.RequestURL) + len(event.Snapshot.RequestBody) + len(event.Snapshot.ResponseBody)
+		size += len(event.Snapshot.RequestMethod) + len(event.Snapshot.RequestURL) + len(event.Snapshot.RequestBody) + len(event.Snapshot.ResponseBody)
 		for key, value := range event.Snapshot.RequestHeaders {
 			size += len(key) + len(value)
 		}
@@ -164,13 +201,22 @@ func browserDiagnosticEventPayloadBytes(event *BrowserDiagnosticsEvent) int {
 		size += len(entry.Level) + len(entry.Text) + len(entry.Source)
 	}
 	for _, entry := range event.NetworkEntries {
-		size += len(entry.URL) + len(entry.Method) + len(entry.ResourceType) + len(entry.RequestBody)
+		size += len(entry.URL) + len(entry.Method) + len(entry.ResourceType) + len(entry.RequestBody) + len(entry.RequestBodyEncoding)
 		for key, value := range entry.RequestHeaders {
 			size += len(key) + len(value)
 		}
 		for key, value := range entry.ResponseHeaders {
 			size += len(key) + len(value)
 		}
+	}
+	if event.DOMSummary != nil {
+		size += len(event.DOMSummary.Title) + len(event.DOMSummary.ReadyState)
+		for _, text := range event.DOMSummary.VisibleText {
+			size += len(text)
+		}
+	}
+	if event.ClientMetrics != nil {
+		size += len(event.ClientMetrics.DeviceProfile) + len(event.ClientMetrics.DevicePlatform) + len(event.ClientMetrics.DeviceTier) + len(event.ClientMetrics.BrowserEngine)
 	}
 	return size
 }

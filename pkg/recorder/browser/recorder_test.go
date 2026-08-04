@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -298,7 +299,10 @@ func TestRegisterPageRejectsPageBeyondLimit(t *testing.T) {
 	for i := range existing {
 		existing[i] = &pageLimitPage{}
 	}
-	r := New(Options{StartURL: "https://app.example/"})
+	var events []Event
+	r := New(Options{StartURL: "https://app.example/", OnEvent: func(event Event) {
+		events = append(events, event)
+	}})
 	r.context = &pageLimitBrowserContext{pages: existing}
 	excess := &pageLimitPage{}
 
@@ -309,6 +313,17 @@ func TestRegisterPageRejectsPageBeyondLimit(t *testing.T) {
 	}
 	if warnings := r.Snapshot().Warnings; len(warnings) != 1 || !strings.Contains(warnings[0], "page limit") {
 		t.Fatalf("warnings = %v, want page-limit warning", warnings)
+	}
+	if hits := r.Snapshot().CapHits["pages"]; hits != 1 {
+		t.Fatalf("page cap hits = %d, want 1", hits)
+	}
+	var sawCap, sawWarning bool
+	for _, event := range events {
+		sawCap = sawCap || event.Type == EventCapHit && event.CapName == "pages" && event.CapCount == 1
+		sawWarning = sawWarning || event.Type == EventWarning && strings.Contains(event.Warning, "page limit")
+	}
+	if !sawCap || !sawWarning {
+		t.Fatalf("events = %#v, want live page-cap and warning events", events)
 	}
 }
 
@@ -986,6 +1001,79 @@ func TestAtomicCaptureBatchReservesPageSwitchCapacity(t *testing.T) {
 	}
 	if got := len(r.session.Steps); got != maxBrowserSteps-2 {
 		t.Fatalf("steps = %d after omitted switch, want %d", got, maxBrowserSteps-2)
+	}
+}
+
+func TestAtomicCaptureBatchReportsStepCapFromCapMinusOne(t *testing.T) {
+	var events []Event
+	r := New(Options{
+		StartURL: "https://app.example/",
+		OnEvent: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	r.session.Steps = make([]Step, maxBrowserSteps-1)
+	payload := `{"kind":"capture_batch","events":[` +
+		`{"kind":"fill","value":"alice","ts":1700000000000,"element":{"tag":"input","id":"first","css_path":"#first"}},` +
+		`{"kind":"press_key","value":"Tab","ts":1700000000000,"element":{"tag":"input","id":"first","css_path":"#first"}}]}`
+
+	if err := r.handleRecordBinding(nil, payload); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := r.Snapshot()
+	if got := len(snapshot.Steps); got != maxBrowserSteps-1 {
+		t.Fatalf("steps = %d, want atomic batch dropped at %d", got, maxBrowserSteps-1)
+	}
+	if snapshot.CapHits["steps"] != 1 {
+		t.Fatalf("step cap hits = %#v, want one reported drop", snapshot.CapHits)
+	}
+	var capEvent, warningEvent bool
+	for _, event := range events {
+		if event.Type == EventCapHit && event.CapName == "steps" && event.CapCount == 1 {
+			capEvent = true
+		}
+		if event.Type == EventWarning && strings.Contains(event.Warning, "step limit") {
+			warningEvent = true
+		}
+	}
+	if !capEvent || !warningEvent {
+		t.Fatalf("cap events = %#v, want live cap + warning", events)
+	}
+}
+
+func TestRecordBindingReportsEveryAggregateByteCapHit(t *testing.T) {
+	var events []Event
+	r := New(Options{
+		StartURL: "https://app.example/",
+		OnEvent: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	payload := `{"kind":"click","ts":1,"element":{"tag":"button","css_path":"#go"}}`
+	r.bindingBytes = maxBrowserBindingTotalBytes - int64(len(payload)) + 1
+
+	r.handleRecordBinding(nil, payload)
+	r.handleRecordBinding(nil, payload)
+
+	snapshot := r.Snapshot()
+	if snapshot.CapHits["binding_bytes"] != 2 || len(snapshot.Steps) != 0 {
+		t.Fatalf("binding cap state = hits:%#v steps:%d", snapshot.CapHits, len(snapshot.Steps))
+	}
+	if len(snapshot.Warnings) != 1 || !strings.Contains(snapshot.Warnings[0], "capture byte limit") {
+		t.Fatalf("warnings = %#v, want one retained byte-limit warning", snapshot.Warnings)
+	}
+	var counts []int64
+	warnings := 0
+	for _, event := range events {
+		if event.Type == EventCapHit && event.CapName == "binding_bytes" {
+			counts = append(counts, event.CapCount)
+		}
+		if event.Type == EventWarning && strings.Contains(event.Warning, "capture byte limit") {
+			warnings++
+		}
+	}
+	if !slices.Equal(counts, []int64{1, 2}) || warnings != 1 {
+		t.Fatalf("events = %#v, want cap counts [1 2] and one warning", events)
 	}
 }
 

@@ -29,8 +29,17 @@ func buildSanitizedRunArchivePlan(ctx context.Context, record *storage.RunArchiv
 		ctx = context.Background()
 	}
 	key := sanitizedArchivePlanCacheKey(record)
-	prepared, err := runArchiveSanitizedPlanCache.getOrLoad(key, func() (*sanitizedRunArchivePlan, error) {
-		return prepareSanitizedRunArchivePlan(ctx, record, manifest)
+	if key == "" {
+		prepared, err := prepareSanitizedRunArchivePlan(ctx, record, manifest)
+		if err != nil {
+			return nil, err
+		}
+		return sanitizedArchivePlanForRequest(ctx, record, manifest, prepared), nil
+	}
+	prepared, err := runArchiveSanitizedPlanCache.getOrLoadContext(ctx, key, func() (*sanitizedRunArchivePlan, error) {
+		loadCtx, cancelLoad := context.WithTimeout(context.Background(), configuredArchiveMaterializationTimeout())
+		defer cancelLoad()
+		return prepareSanitizedRunArchivePlan(loadCtx, record, manifest)
 	})
 	if err != nil {
 		return nil, err

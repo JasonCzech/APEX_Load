@@ -4,18 +4,22 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	gorillawebsocket "github.com/gorilla/websocket"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	"github.com/jmespath/go-jmespath"
 )
 
@@ -23,6 +27,12 @@ const (
 	defaultReadTimeout    = 30 * time.Second
 	defaultWriteTimeout   = 10 * time.Second
 	defaultMaxMessageSize = int64(1024 * 1024)
+	// RFC 6455 control frames have a 125-byte payload ceiling. Reject an
+	// oversized authored ping before touching connection state; it is a local
+	// configuration error, not an unexpected disconnect eligible for reconnect.
+	maxWebSocketControlPayloadBytes = 125
+	// A close control frame reserves two payload bytes for the status code.
+	maxWebSocketCloseReasonBytes = maxWebSocketControlPayloadBytes - 2
 )
 
 func init() {
@@ -44,6 +54,8 @@ type WebSocket struct {
 	reconnect          bool
 	lastTarget         string
 	lastHeaders        http.Header
+	closedByAction     bool
+	connectionEpoch    uint64
 	mu                 sync.Mutex
 }
 
@@ -126,6 +138,8 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 func (w *WebSocket) Teardown(_ context.Context) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	w.closedByAction = true
+	w.connectionEpoch++
 	if w.conn == nil {
 		return nil
 	}
@@ -176,6 +190,13 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	if w.origin != "" && headers.Get("Origin") == "" {
 		headers.Set("Origin", w.origin)
 	}
+	w.mu.Lock()
+	// An explicit connect is a new connection intent. A later explicit close or
+	// connect increments the epoch and prevents this in-flight dial from
+	// replacing the newer state when the handshake completes.
+	w.connectionEpoch++
+	connectionEpoch := w.connectionEpoch
+	w.mu.Unlock()
 
 	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
 	if resp != nil {
@@ -189,12 +210,18 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	}
 
 	w.mu.Lock()
+	if w.connectionEpoch != connectionEpoch {
+		w.mu.Unlock()
+		_ = conn.Close()
+		return fmt.Errorf("websocket connection state changed while connecting")
+	}
 	if w.conn != nil {
 		_ = w.conn.Close()
 	}
 	w.conn = conn
 	w.lastTarget = target
 	w.lastHeaders = cloneHeader(headers)
+	w.closedByAction = false
 	w.mu.Unlock()
 
 	result.StatusCode = http.StatusSwitchingProtocols
@@ -203,11 +230,14 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 }
 
 func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
-	conn, err := w.currentConn()
+	messageType, err := messageType(action)
 	if err != nil {
 		return err
 	}
-	messageType, err := messageType(action)
+	if len(action.Body) > dsl.MaxWebSocketMessageBytes {
+		return fmt.Errorf("websocket message exceeds %d byte limit", dsl.MaxWebSocketMessageBytes)
+	}
+	conn, err := w.currentOrReconnect(ctx, result)
 	if err != nil {
 		return err
 	}
@@ -229,7 +259,7 @@ func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *p
 }
 
 func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
-	conn, err := w.currentConn()
+	conn, err := w.currentOrReconnect(ctx, result)
 	if err != nil {
 		return err
 	}
@@ -284,7 +314,10 @@ func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result
 }
 
 func (w *WebSocket) ping(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
-	conn, err := w.currentConn()
+	if len(action.Body) > maxWebSocketControlPayloadBytes {
+		return fmt.Errorf("websocket ping payload exceeds %d byte limit", maxWebSocketControlPayloadBytes)
+	}
+	conn, err := w.currentOrReconnect(ctx, result)
 	if err != nil {
 		return err
 	}
@@ -308,30 +341,109 @@ func (w *WebSocket) ping(ctx context.Context, action *protocol.Action, result *p
 }
 
 func (w *WebSocket) close(action *protocol.Action, result *protocol.Result) error {
+	var params map[string]any
+	if action != nil {
+		params = action.Params
+	}
+	code, err := webSocketCloseCode(params)
+	if err != nil {
+		return err
+	}
+	reason, _ := stringParam(params, "reason")
+	if !utf8.ValidString(reason) {
+		return fmt.Errorf("websocket close reason must be valid UTF-8")
+	}
+	if len(reason) > maxWebSocketCloseReasonBytes {
+		return fmt.Errorf("websocket close reason exceeds %d byte limit", maxWebSocketCloseReasonBytes)
+	}
+	msg := gorillawebsocket.FormatCloseMessage(code, reason)
+
 	w.mu.Lock()
 	conn := w.conn
 	w.conn = nil
+	w.closedByAction = true
+	w.connectionEpoch++
 	w.mu.Unlock()
 	if conn == nil {
 		return nil
 	}
 
-	code := intParam(action.Params, "code", gorillawebsocket.CloseNormalClosure)
-	reason, _ := stringParam(action.Params, "reason")
-	msg := gorillawebsocket.FormatCloseMessage(code, reason)
 	deadline := time.Now().Add(w.writeTimeout)
-	_ = conn.WriteControl(gorillawebsocket.CloseMessage, msg, deadline)
+	writeErr := conn.WriteControl(gorillawebsocket.CloseMessage, msg, deadline)
 	result.BytesSent = int64(len(msg))
-	return conn.Close()
+	closeErr := conn.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
-func (w *WebSocket) currentConn() (*gorillawebsocket.Conn, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.conn == nil {
-		return nil, fmt.Errorf("websocket connection is not open")
+func webSocketCloseCode(params map[string]any) (int, error) {
+	raw, authored := params["code"]
+	if !authored {
+		return gorillawebsocket.CloseNormalClosure, nil
 	}
-	return w.conn, nil
+	var code int64
+	switch typed := raw.(type) {
+	case int:
+		code = int64(typed)
+	case int64:
+		code = typed
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) || math.Trunc(typed) != typed {
+			return 0, fmt.Errorf("websocket close code must be an integer")
+		}
+		code = int64(typed)
+	case float32:
+		converted := float64(typed)
+		if math.IsNaN(converted) || math.IsInf(converted, 0) || math.Trunc(converted) != converted {
+			return 0, fmt.Errorf("websocket close code must be an integer")
+		}
+		code = int64(converted)
+	default:
+		return 0, fmt.Errorf("websocket close code must be an integer")
+	}
+	if !validWebSocketCloseCode(code) {
+		return 0, fmt.Errorf("websocket close code %d is not a valid sendable status code", code)
+	}
+	return int(code), nil
+}
+
+// validWebSocketCloseCode mirrors Gorilla's receive-side status validation so
+// this adapter never emits a close frame that the same transport would reject.
+// Codes 1004-1006 and 1015 are reserved/non-wire sentinels; unregistered codes
+// below 3000 are not application-defined.
+func validWebSocketCloseCode(code int64) bool {
+	switch code {
+	case gorillawebsocket.CloseNormalClosure,
+		gorillawebsocket.CloseGoingAway,
+		gorillawebsocket.CloseProtocolError,
+		gorillawebsocket.CloseUnsupportedData,
+		gorillawebsocket.CloseInvalidFramePayloadData,
+		gorillawebsocket.ClosePolicyViolation,
+		gorillawebsocket.CloseMessageTooBig,
+		gorillawebsocket.CloseMandatoryExtension,
+		gorillawebsocket.CloseInternalServerErr,
+		gorillawebsocket.CloseServiceRestart,
+		gorillawebsocket.CloseTryAgainLater:
+		return true
+	default:
+		return code >= 3000 && code <= 4999
+	}
+}
+
+func (w *WebSocket) currentOrReconnect(ctx context.Context, result *protocol.Result) (*gorillawebsocket.Conn, error) {
+	w.mu.Lock()
+	conn := w.conn
+	shouldReconnect := conn == nil && w.reconnect && !w.closedByAction && w.lastTarget != ""
+	w.mu.Unlock()
+	if conn != nil {
+		return conn, nil
+	}
+	if shouldReconnect {
+		return w.reconnectConn(ctx, result)
+	}
+	return nil, fmt.Errorf("websocket connection is not open")
 }
 
 func (w *WebSocket) writeMessage(conn *gorillawebsocket.Conn, messageType int, body []byte) error {
@@ -346,6 +458,11 @@ func (w *WebSocket) writeMessage(conn *gorillawebsocket.Conn, messageType int, b
 
 func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) (*gorillawebsocket.Conn, error) {
 	w.mu.Lock()
+	if w.closedByAction {
+		w.mu.Unlock()
+		return nil, fmt.Errorf("websocket connection is not open")
+	}
+	connectionEpoch := w.connectionEpoch
 	target := w.lastTarget
 	headers := cloneHeader(w.lastHeaders)
 	oldConn := w.conn
@@ -371,10 +488,16 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 	}
 
 	w.mu.Lock()
+	if w.closedByAction || w.connectionEpoch != connectionEpoch {
+		w.mu.Unlock()
+		_ = conn.Close()
+		return nil, fmt.Errorf("websocket connection was closed while reconnecting")
+	}
 	if w.conn != nil {
 		_ = w.conn.Close()
 	}
 	w.conn = conn
+	w.closedByAction = false
 	w.mu.Unlock()
 
 	result.DependencyTarget = dependencyTarget(target)
@@ -386,6 +509,7 @@ func (w *WebSocket) discardConn(conn *gorillawebsocket.Conn) {
 	w.mu.Lock()
 	if w.conn == conn {
 		w.conn = nil
+		w.closedByAction = false
 	}
 	w.mu.Unlock()
 	_ = conn.Close()
@@ -606,46 +730,14 @@ func extract(ext protocol.Extractor, body []byte) (string, error) {
 }
 
 func extractJSONPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimPrefix(strings.TrimSpace(expr), "$.")
-	if expr == "" {
-		return "", fmt.Errorf("jsonpath expression is required")
+	value, err := jsonextract.JSONPath(expr, body)
+	if errors.Is(err, jsonextract.ErrNotFound) {
+		return "", protocol.MarkExtractionMiss(err)
 	}
-	parts := strings.Split(expr, ".")
-
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", fmt.Errorf("invalid JSON message: %w", err)
+	if err != nil {
+		return "", fmt.Errorf("invalid JSONPath extraction: %w", err)
 	}
-	for _, part := range parts {
-		idx := -1
-		if bracket := strings.Index(part, "["); bracket != -1 {
-			idxText := strings.TrimSuffix(part[bracket+1:], "]")
-			if _, err := fmt.Sscanf(idxText, "%d", &idx); err != nil {
-				return "", fmt.Errorf("invalid array index %q", idxText)
-			}
-			part = part[:bracket]
-		}
-
-		obj, ok := current.(map[string]any)
-		if !ok {
-			return "", fmt.Errorf("expected object at %q", part)
-		}
-		current, ok = obj[part]
-		if !ok {
-			return "", fmt.Errorf("field %q not found", part)
-		}
-		if idx >= 0 {
-			arr, ok := current.([]any)
-			if !ok {
-				return "", fmt.Errorf("expected array at %q", part)
-			}
-			if idx >= len(arr) {
-				return "", fmt.Errorf("index %d out of range for %q", idx, part)
-			}
-			current = arr[idx]
-		}
-	}
-	return stringifyExtraction(current)
+	return value, nil
 }
 
 func extractJMESPath(expr string, body []byte) (string, error) {
@@ -662,7 +754,7 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("evaluate JMESPath expression: %w", err)
 	}
 	if result == nil {
-		return "", fmt.Errorf("no match for JMESPath %q", expr)
+		return "", protocol.MarkExtractionMiss(fmt.Errorf("no match for JMESPath %q", expr))
 	}
 	return stringifyExtraction(result)
 }
@@ -674,7 +766,7 @@ func extractRegex(expr string, body []byte) (string, error) {
 	}
 	found := matches.FindSubmatch(body)
 	if len(found) == 0 {
-		return "", fmt.Errorf("no match for regex %q", expr)
+		return "", protocol.MarkExtractionMiss(fmt.Errorf("no match for regex %q", expr))
 	}
 	if len(found) == 1 {
 		return string(found[0]), nil
@@ -717,12 +809,12 @@ func extractBoundary(expr string, body []byte) (string, error) {
 	text := string(body)
 	left := strings.Index(text, parts[0])
 	if left < 0 {
-		return "", fmt.Errorf("left boundary %q not found", parts[0])
+		return "", protocol.MarkExtractionMiss(fmt.Errorf("left boundary %q not found", parts[0]))
 	}
 	start := left + len(parts[0])
 	right := strings.Index(text[start:], parts[1])
 	if right < 0 {
-		return "", fmt.Errorf("right boundary %q not found", parts[1])
+		return "", protocol.MarkExtractionMiss(fmt.Errorf("right boundary %q not found", parts[1]))
 	}
 	return text[start : start+right], nil
 }
@@ -803,33 +895,6 @@ func int64ConfigOK(config map[string]any, key string) (int64, bool) {
 		return int64(typed), true
 	case float32:
 		return int64(typed), true
-	default:
-		return 0, false
-	}
-}
-
-func intParam(params map[string]any, key string, fallback int) int {
-	value, ok := intParamOK(params, key)
-	if !ok {
-		return fallback
-	}
-	return value
-}
-
-func intParamOK(params map[string]any, key string) (int, bool) {
-	raw, ok := params[key]
-	if !ok {
-		return 0, false
-	}
-	switch typed := raw.(type) {
-	case int:
-		return typed, true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case float32:
-		return int(typed), true
 	default:
 		return 0, false
 	}

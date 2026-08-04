@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -372,6 +373,27 @@ func TestFilesystemArchiveRefreshStagesBeforeCatalogCAS(t *testing.T) {
 	defer store.Close()
 	const testID = "filesystem-refresh-stage"
 	test, record := createArchiveFinalizationTest(t, store, testID, archiveRoot)
+	manifest, err := loadRunArchiveManifest(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.TransactionsFile = "transactions.jsonl"
+	manifest.ResourceSamplesFile = "resource_samples.jsonl"
+	manifest.IntervalSummariesFile = "interval_summaries.jsonl"
+	for _, name := range []string{manifest.TransactionsFile, manifest.ResourceSamplesFile, manifest.IntervalSummariesFile} {
+		if err := os.WriteFile(filepath.Join(record.ArchivePath, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeIndentedJSONFile(record.ManifestPath, manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := os.ReadFile(record.ManifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.ManifestSHA256 = sha256BytesHex(manifestBytes)
+	record.TrendPointJSON = `{"run_id":"stale-refresh-point","sla_status":"FAIL"}`
 	if err := store.SaveRunArchive(record); err != nil {
 		t.Fatal(err)
 	}
@@ -398,6 +420,13 @@ func TestFilesystemArchiveRefreshStagesBeforeCatalogCAS(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(committed.ArchivePath, testRunManifestFileName)); err != nil {
 		t.Fatalf("staged adjunct missing after CAS: %v", err)
+	}
+	if committed.TrendPointJSON == record.TrendPointJSON || strings.TrimSpace(committed.TrendPointJSON) == "" {
+		t.Fatalf("refresh retained stale trend projection: before=%q after=%q", record.TrendPointJSON, committed.TrendPointJSON)
+	}
+	var refreshedPoint ReleaseTrendPoint
+	if err := json.Unmarshal([]byte(committed.TrendPointJSON), &refreshedPoint); err != nil || refreshedPoint.RunID != testID {
+		t.Fatalf("refreshed trend projection = %q (%+v, %v)", committed.TrendPointJSON, refreshedPoint, err)
 	}
 }
 

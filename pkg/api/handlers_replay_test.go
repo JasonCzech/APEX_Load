@@ -60,6 +60,22 @@ func TestHandleClassicReplayHonorsRequestCancellation(t *testing.T) {
 	}
 }
 
+func TestHandleClassicReplayExtendsWriteDeadline(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	response := &archiveDeadlineRecorder{}
+	started := time.Now()
+
+	server.handleReplayRequestContext(ctx, response, "script", &dsl.Script{}, ReplayScriptRequest{})
+
+	minimum := started.Add(classicReplayRequestTimeout)
+	maximum := time.Now().Add(classicReplayRequestTimeout + classicReplayErrorWriteGrace)
+	if response.deadline.Before(minimum) || response.deadline.After(maximum) {
+		t.Fatalf("classic replay write deadline = %s, want within [%s, %s]", response.deadline, minimum, maximum)
+	}
+}
+
 func TestHandleReplayScriptReturnsStructuredReport(t *testing.T) {
 	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		switch action.Name {

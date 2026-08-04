@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +24,7 @@ type grafanaImportArgs struct {
 	timeout                                                 time.Duration
 	bindings                                                map[string]string
 	inspectOnly                                             bool
+	help                                                    bool
 }
 
 type grafanaCLIInspectResponse struct {
@@ -38,7 +40,11 @@ func grafanaImportCmd() {
 	args, err := parseGrafanaImportArgs(os.Args[3:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n\n%s\n", err, grafanaImportUsage())
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
+	if args.help {
+		fmt.Println(grafanaImportUsage())
+		return
 	}
 	result, inspected, err := runGrafanaImport(context.Background(), args)
 	if err != nil {
@@ -47,7 +53,7 @@ func grafanaImportCmd() {
 		} else {
 			fmt.Fprintf(os.Stderr, "Grafana import failed: %v\n", err)
 		}
-		os.Exit(1)
+		os.Exit(importCommandExitCode(err))
 	}
 	if args.inspectOnly {
 		if args.format == "json" {
@@ -66,109 +72,86 @@ func grafanaImportCmd() {
 
 func parseGrafanaImportArgs(raw []string) (grafanaImportArgs, error) {
 	a := grafanaImportArgs{api: strings.TrimRight(strings.TrimSpace(os.Getenv("APEXLOAD_API")), "/"), apiKey: strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY")), bearerToken: strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")), format: "text", timeout: defaultCLIImportTimeout, bindings: map[string]string{}}
-	next := func(i *int, flag string) (string, error) {
-		if *i+1 >= len(raw) {
-			return "", fmt.Errorf("%s requires a value", flag)
-		}
-		*i = *i + 1
-		return raw[*i], nil
+	flags := flag.NewFlagSet("apexctl import grafana", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.BoolVar(&a.help, "help", false, "show help")
+	flags.BoolVar(&a.help, "h", false, "show help")
+	flags.StringVar(&a.path, "path", "", "dashboard path")
+	flags.StringVar(&a.path, "p", "", "dashboard path")
+	flags.StringVar(&a.projectID, "project", "", "project ID")
+	flags.StringVar(&a.name, "name", "", "dashboard name")
+	flags.StringVar(&a.api, "api", a.api, "controller URL")
+	flags.StringVar(&a.apiKey, "api-key", a.apiKey, "API key")
+	flags.StringVar(&a.bearerToken, "bearer-token", a.bearerToken, "bearer token")
+	flags.StringVar(&a.format, "format", a.format, "output format")
+	flags.DurationVar(&a.timeout, "timeout", a.timeout, "HTTP timeout")
+	flags.Var(uniqueCLIAssignments{values: a.bindings, flagName: "--binding"}, "binding", "binding name=value")
+	flags.BoolVar(&a.inspectOnly, "inspect-only", false, "inspect without committing")
+	if err := flags.Parse(raw); err != nil {
+		return a, err
 	}
-	set := func(i *int, flag string, destination *string) error {
-		value, err := next(i, flag)
-		if err == nil {
-			*destination = value
-		}
-		return err
-	}
-	for i := 0; i < len(raw); i++ {
-		flag := raw[i]
-		switch flag {
-		case "--path", "-p":
-			if err := set(&i, flag, &a.path); err != nil {
-				return a, err
-			}
-		case "--project":
-			if err := set(&i, flag, &a.projectID); err != nil {
-				return a, err
-			}
-		case "--name":
-			if err := set(&i, flag, &a.name); err != nil {
-				return a, err
-			}
-		case "--api":
-			if err := set(&i, flag, &a.api); err != nil {
-				return a, err
-			}
-		case "--api-key":
-			if err := set(&i, flag, &a.apiKey); err != nil {
-				return a, err
-			}
-		case "--bearer-token":
-			if err := set(&i, flag, &a.bearerToken); err != nil {
-				return a, err
-			}
-		case "--format":
-			if err := set(&i, flag, &a.format); err != nil {
-				return a, err
-			}
-		case "--timeout":
-			value, err := next(&i, flag)
-			if err != nil {
-				return a, err
-			}
-			a.timeout, err = time.ParseDuration(value)
-			if err != nil || a.timeout <= 0 {
-				return a, errors.New("--timeout must be a positive duration")
-			}
-		case "--binding":
-			value, err := next(&i, flag)
-			if err != nil {
-				return a, err
-			}
-			name, bound, ok := strings.Cut(value, "=")
-			if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(bound) == "" {
-				return a, errors.New("--binding must use name=value")
-			}
-			name = strings.TrimSpace(name)
-			if _, duplicate := a.bindings[name]; duplicate {
-				return a, fmt.Errorf("--binding %s was supplied more than once", name)
-			}
-			a.bindings[name] = strings.TrimSpace(bound)
-		case "--inspect-only":
-			a.inspectOnly = true
-		default:
-			return a, fmt.Errorf("unknown Grafana import flag %q", flag)
-		}
+	if flags.NArg() != 0 {
+		return a, fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	}
 	a.path, a.projectID, a.name, a.api, a.format = strings.TrimSpace(a.path), strings.TrimSpace(a.projectID), strings.TrimSpace(a.name), strings.TrimRight(strings.TrimSpace(a.api), "/"), strings.ToLower(strings.TrimSpace(a.format))
+	a.apiKey, a.bearerToken = strings.TrimSpace(a.apiKey), strings.TrimSpace(a.bearerToken)
+	if a.help {
+		return a, nil
+	}
 	if a.path == "" || a.projectID == "" || a.api == "" {
 		return a, errors.New("--path, --project, and --api (or APEXLOAD_API) are required")
 	}
-	if a.format != "text" && a.format != "json" {
-		return a, errors.New("--format must be text or json")
+	if a.timeout <= 0 {
+		return a, errors.New("--timeout must be a positive duration")
+	}
+	if err := validateCLIOutputFormat(a.format); err != nil {
+		return a, err
+	}
+	if err := validateCLIControllerURL(a.api); err != nil {
+		return a, err
 	}
 	return a, nil
+}
+
+type uniqueCLIAssignments struct {
+	values   map[string]string
+	flagName string
+}
+
+func (a uniqueCLIAssignments) String() string { return "name=value" }
+
+func (a uniqueCLIAssignments) Set(raw string) error {
+	name, value, ok := strings.Cut(raw, "=")
+	name, value = strings.TrimSpace(name), strings.TrimSpace(value)
+	if !ok || name == "" || value == "" {
+		return fmt.Errorf("%s must use name=value", a.flagName)
+	}
+	if _, duplicate := a.values[name]; duplicate {
+		return fmt.Errorf("%s %s was supplied more than once", a.flagName, name)
+	}
+	a.values[name] = value
+	return nil
 }
 
 func runGrafanaImport(ctx context.Context, args grafanaImportArgs) (map[string]any, *grafanaCLIInspectResponse, error) {
 	info, err := os.Stat(args.path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("stat dashboard: %w", err)
+		return nil, nil, cliInputErrorf("stat dashboard: %v", err)
 	}
 	if info.Size() > maxGrafanaCLIImportBytes {
-		return nil, nil, fmt.Errorf("dashboard exceeds the %d-byte import limit", maxGrafanaCLIImportBytes)
+		return nil, nil, cliInputErrorf("dashboard exceeds the %d-byte import limit", maxGrafanaCLIImportBytes)
 	}
 	file, err := os.Open(args.path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open dashboard: %w", err)
+		return nil, nil, cliInputErrorf("open dashboard: %v", err)
 	}
 	defer file.Close()
 	content, err := io.ReadAll(io.LimitReader(file, maxGrafanaCLIImportBytes+1))
 	if err != nil {
-		return nil, nil, fmt.Errorf("read dashboard: %w", err)
+		return nil, nil, cliInputErrorf("read dashboard: %v", err)
 	}
 	if int64(len(content)) > maxGrafanaCLIImportBytes {
-		return nil, nil, fmt.Errorf("dashboard exceeds the %d-byte import limit", maxGrafanaCLIImportBytes)
+		return nil, nil, cliInputErrorf("dashboard exceeds the %d-byte import limit", maxGrafanaCLIImportBytes)
 	}
 	client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
 	client.Client.Timeout = args.timeout
@@ -186,7 +169,7 @@ func runGrafanaImport(ctx context.Context, args grafanaImportArgs) (map[string]a
 		return nil, nil, err
 	}
 	if inspected.HasBlockers {
-		return nil, &inspected, errors.New("dashboard has blocking import diagnostics")
+		return nil, &inspected, cliInputErrorf("dashboard has blocking import diagnostics")
 	}
 	if inspected.ImportSessionID == "" {
 		return nil, &inspected, errors.New("inspect response omitted import_session_id")
@@ -196,7 +179,7 @@ func runGrafanaImport(ctx context.Context, args grafanaImportArgs) (map[string]a
 	}
 	for _, required := range inspected.RequiredBindings {
 		if strings.TrimSpace(args.bindings[required]) == "" {
-			return nil, &inspected, fmt.Errorf("required binding %q is missing", required)
+			return nil, &inspected, cliInputErrorf("required binding %q is missing", required)
 		}
 	}
 	commitPayload, _ := json.Marshal(map[string]any{"project_id": args.projectID, "import_session_id": inspected.ImportSessionID, "name": args.name, "bindings": args.bindings})

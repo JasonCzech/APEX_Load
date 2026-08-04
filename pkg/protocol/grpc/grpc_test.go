@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,6 +24,23 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
+
+func TestGRPCJSONPathRejectsMalformedIndexesAndClassifiesMisses(t *testing.T) {
+	body := []byte(`{"items":[{"id":"one"}]}`)
+	for _, expression := range []string{
+		"$.items[0", "$.items[]", "$.items[-1]", "$.items[0]junk",
+		"$.", ".items", "$.items..id", "$.[0]", "$.items.[0]",
+	} {
+		t.Run(expression, func(t *testing.T) {
+			if _, err := extractJSONPath(expression, body); err == nil || errors.Is(err, protocol.ErrExtractionMiss) {
+				t.Fatalf("extractJSONPath(%q) error = %v, want configuration error", expression, err)
+			}
+		})
+	}
+	if _, err := extractJSONPath("$.missing", body); !errors.Is(err, protocol.ErrExtractionMiss) {
+		t.Fatalf("missing field error = %v, want ErrExtractionMiss", err)
+	}
+}
 
 func TestGRPCRejectsUnboundedTimeouts(t *testing.T) {
 	g := &GRPC{}

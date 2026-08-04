@@ -41,6 +41,8 @@ type VUser struct {
 	runtimeCredentialRedactionErr        error
 	runtimeCredentialStateReady          bool
 	runtimeCredentialBase                *RedactionConfig
+	runtimeDimensionRedaction            *RedactionConfig
+	runtimeDimensionCredentialValues     []string
 	runtimeCredentialValues              map[string]struct{}
 	runtimeCredentialScopes              map[string][]string
 	runtimeCredentialResolvingAction     bool

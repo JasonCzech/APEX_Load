@@ -120,7 +120,7 @@ type convertContext struct {
 	provenVariables  map[string]struct{}
 	csvSources       []dsl.DataSource
 	timerMs          int
-	oneShotTimer     bool
+	oneShotTimerMs   int
 	assertions       []dsl.Assertion
 	auths            []jmeterAuth
 	defaultAuthSeen  bool
@@ -182,7 +182,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		source credentialpolicy.SourceRef
 	}
 	planVariableSets := make([]variableSet, 0)
-	for _, plan := range findTreeNodes(trees, "TestPlan") {
+	appendDisabledJMeterSelectionMappings(trees, sourceFileName, &sourceMappings)
+	enabledPlans := findEnabledTreeNodes(trees, "TestPlan")
+	for _, plan := range enabledPlans {
 		values := parseArguments(plan.Element)
 		if len(values) == 0 {
 			continue
@@ -201,14 +203,40 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 
-	threadGroups := findTreeNodes(trees, "ThreadGroup")
+	threadGroups := findEnabledTreeNodes(trees, "ThreadGroup")
 	if len(threadGroups) == 0 {
-		threadGroups = trees
-		result.Assumptions = append(result.Assumptions, "No Thread Group was found; the whole plan was converted into a single script.")
+		threadGroups = enabledPlans
+		if len(threadGroups) == 0 {
+			threadGroups = enabledJMeterTreeRoots(trees)
+		}
+		if len(threadGroups) > 0 {
+			result.Assumptions = append(result.Assumptions, "No enabled Thread Group was found; the enabled plan was converted into a single script.")
+		} else {
+			result.Warnings = append(result.Warnings, "No enabled JMeter plan or Thread Group was found; disabled source elements were retained only for review.")
+		}
 	}
 	result.Stats.ThreadGroups = len(threadGroups)
 	result.Stats.TotalSamplers, result.Stats.SkippedSamplers = countJMeterSamplerElements(trees)
 	result.Summary.ThreadGroupCount = len(threadGroups)
+	inheritedTimerMs := make(map[*treeNode]int, len(threadGroups))
+	countedAncestorTimers := make(map[*treeNode]struct{})
+	countedAncestorConfigs := make(map[*treeNode]struct{})
+	for _, threadGroup := range threadGroups {
+		ancestorTimers, _ := jmeterAncestorScopeTimers(trees, threadGroup)
+		for _, timer := range ancestorTimers {
+			if delayMs := parseTimerMs(timer.Element, timer.Element.Name); delayMs > 0 {
+				inheritedTimerMs[threadGroup] += delayMs
+			}
+			if _, counted := countedAncestorTimers[timer]; counted {
+				continue
+			}
+			countedAncestorTimers[timer] = struct{}{}
+			result.Stats.Timers++
+			if isThroughputTimer(timer.Element.Name) {
+				diagnostics.Add(diag.Info, "JMeter "+timer.Element.Name, jmeterElementLocation(timer.Element), "throughput timer was approximated as fixed think time")
+			}
+		}
+	}
 
 	for i, tg := range threadGroups {
 		groupProtocol, heterogeneous := classifyThreadGroupProtocol(tg)
@@ -235,6 +263,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ctx := convertContext{
 			variableScope:   variableScope,
 			provenVariables: make(map[string]struct{}),
+			timerMs:         inheritedTimerMs[tg],
 			scriptProtocol:  groupProtocol,
 			requestReports:  &requestReports,
 			credentialNames: credentialpolicy.NewNameRegistry(),
@@ -271,6 +300,23 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 					"imported_at":        importedAt,
 				},
 			}},
+		}
+		ancestorConfigs, _ := jmeterAncestorScopeConfigs(trees, tg)
+		for _, config := range ancestorConfigs {
+			_, counted := countedAncestorConfigs[config]
+			applyJMeterScopeConfig(
+				config,
+				&ctx,
+				script,
+				opts,
+				result,
+				variableNames,
+				csvNames,
+				&diagnostics,
+				sourceFileName,
+				!counted,
+			)
+			countedAncestorConfigs[config] = struct{}{}
 		}
 		if heterogeneous {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: mixed-protocol thread group converted as %s; samplers from other protocols were review-gated. Split them into separate scripts to run natively.", threadName, script.Protocol))
@@ -446,96 +492,60 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 	if ctx != nil && ctx.importErr != nil && *ctx.importErr != nil {
 		return
 	}
+	// JMeter timers are configuration elements: every enabled timer directly in
+	// this tree scope applies to every sampler in the scope, independent of where
+	// the timer appears relative to the sampler. Add the scope total up front and
+	// remove it on return so nested scopes inherit it without leaking it to later
+	// siblings. Flow Control/TestAction pauses remain positional one-shot state.
+	scopeTimerMs := jmeterDirectScopeTimerMs(node)
+	ctx.timerMs += scopeTimerMs
+	defer func() {
+		ctx.timerMs -= scopeTimerMs
+	}()
+	// JMeter configuration elements apply to their entire tree scope regardless
+	// of whether they appear before or after a sampler in the serialized JMX.
+	// Preload them once before walking executable children. Ancestor scope is
+	// bootstrapped separately when conversion starts directly at a selected
+	// ThreadGroup.
+	for _, config := range jmeterDirectScopeConfigs(node) {
+		applyJMeterScopeConfig(
+			config,
+			ctx,
+			script,
+			opts,
+			result,
+			variableNames,
+			csvNames,
+			diagnostics,
+			sourceFileName,
+			true,
+		)
+	}
 	for _, child := range node.Children {
 		if child == nil || child.Element == nil {
 			continue
 		}
 		if !jmeterElementEnabled(child.Element) {
-			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(
-				sourceFileName,
-				child.Element,
-				child.Element.Name,
-				"",
-				jmeterElementLocation(child.Element),
-				"disabled",
-				"ignored",
-				"Disabled JMeter element and its subtree were intentionally omitted.",
-			))
+			appendJMeterDisabledMapping(sourceMappings, sourceFileName, child.Element)
+			continue
+		}
+		if isJMeterDirectScopeConfig(child.Element.Name) {
 			continue
 		}
 		switch child.Element.Name {
-		case "ConfigTestElement":
-			applyHTTPDefaults(child.Element, ctx)
-		case "HeaderManager":
-			headers := parseHeaders(child.Element)
-			for _, header := range headers {
-				ctx.headers = append(ctx.headers, header)
-				result.Stats.Headers++
-			}
-		case "CookieManager":
-			enabled := true
-			script.Config.HTTP.CookiesEnabled = &enabled
-			setJMeterRuntimeParity(script, "cookieManager", "executed")
-		case "CacheManager":
-			applyJMeterCacheManager(child.Element, script)
 		case "TestAction":
 			if pauseMs := parseTestActionPauseMs(child); pauseMs > 0 {
-				ctx.timerMs = pauseMs
-				ctx.oneShotTimer = true
+				ctx.oneShotTimerMs += pauseMs
 				result.Stats.Timers++
 				setJMeterRuntimeParity(script, "testActionPause", "executed")
 				diagnostics.Add(diag.Info, "JMeter TestAction", jmeterElementLocation(child.Element), "pause action was mapped to think time on the next converted sampler")
 			}
 			continue
-		case "AuthManager":
-			auths := parseAuthManager(child.Element, diagnostics)
-			resolution := ctx.variableScope.resolve(diagnostics)
-			provenVariables := jmeterProvenVariables(ctx)
-			for index := range auths {
-				auths[index].URL, _ = resolution.expandRuntimeValue(auths[index].URL, provenVariables)
-			}
-			ctx.auths = append(ctx.auths, auths...)
-			for _, auth := range auths {
-				if auth.URL == "" && !ctx.defaultAuthSeen {
-					ctx.defaultAuthSeen = true
-					if auth.Config.Type != "" &&
-						authCapabilityFromJMeterMechanism(auth.Mechanism).Support == httpprotocol.AuthExecutable {
-						script.Config.HTTP.Auth = auth.Config
-					}
-				}
-			}
-		case "Arguments":
-			vars := parseArguments(child.Element)
-			ctx.variableScope = ctx.variableScope.withDefinitions(vars, credentialpolicy.SourceRef{
-				Format:  "jmeter",
-				Path:    sourceFileName,
-				Pointer: jmeterElementLocation(child.Element),
-			}, diagnostics)
-			for k := range vars {
-				variableNames[k] = struct{}{}
-				result.Stats.Variables++
-			}
-		case "CSVDataSet":
-			ds := parseCSVDataSet(child.Element, opts.SidecarFiles)
-			if ds.Name != "" {
-				ctx.csvSources = append(ctx.csvSources, ds)
-				csvNames[ds.Name] = struct{}{}
-				result.Stats.CSVSources++
-			}
-			if shareMode := strings.TrimSpace(prop(child.Element, "shareMode")); shareMode != "" &&
-				!strings.EqualFold(shareMode, "shareMode.all") && !strings.EqualFold(shareMode, "all") {
-				diagnostics.Add(diag.Warning, "JMeter CSVDataSet", jmeterElementLocation(child.Element), "CSV shareMode has no equivalent and requires review")
-			}
 		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
-			ctx.timerMs = parseTimerMs(child.Element, child.Element.Name)
 			if isThroughputTimer(child.Element.Name) {
 				diagnostics.Add(diag.Info, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "throughput timer was approximated as fixed think time")
 			}
 			result.Stats.Timers++
-		case "ResponseAssertion":
-			assertions := parseResponseAssertions(child.Element, diagnostics)
-			ctx.assertions = append(ctx.assertions, assertions...)
-			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
 			// A HeaderManager nested under a sampler's own hashTree applies to
 			// that sampler alone in JMeter. Sampler children are not walked (see
@@ -544,20 +554,17 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			// the headers were silently dropped and the imported request went out
 			// without them, auth headers included.
 			samplerCtx := ctx
-			scopedHeaders, scopedTimerMs, scopedAssertions := jmeterSamplerScope(child, diagnostics)
-			if len(scopedHeaders) > 0 || scopedTimerMs > 0 || len(scopedAssertions) > 0 {
+			scopedHeaders, scopedTimerMs, scopedTimerCount, scopedAssertions := jmeterSamplerScope(child, diagnostics)
+			if len(scopedHeaders) > 0 || scopedTimerCount > 0 || ctx.oneShotTimerMs > 0 || len(scopedAssertions) > 0 {
 				next := *ctx
 				next.headers = overlayJMeterHeaders(ctx.headers, scopedHeaders)
-				if scopedTimerMs > 0 {
-					next.timerMs = scopedTimerMs
-				}
+				next.timerMs = ctx.timerMs + ctx.oneShotTimerMs + scopedTimerMs
+				next.oneShotTimerMs = 0
 				next.assertions = append(append([]dsl.Assertion(nil), ctx.assertions...), scopedAssertions...)
 				samplerCtx = &next
 				result.Stats.Headers += len(scopedHeaders)
 				result.Stats.Assertions += len(scopedAssertions)
-				if scopedTimerMs > 0 {
-					result.Stats.Timers++
-				}
+				result.Stats.Timers += scopedTimerCount
 			}
 			action, warnings, convertErr := convertHTTPSampler(child, samplerCtx, opts, diagnostics)
 			if convertErr != nil {
@@ -574,10 +581,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				appendJMeterActionSourceMappings(sourceMappings, sourceFileName, child, actionIndex, action)
 				result.Stats.ConvertedActions++
 			}
-			if ctx.oneShotTimer {
-				ctx.timerMs = 0
-				ctx.oneShotTimer = false
-			}
+			ctx.oneShotTimerMs = 0
 			diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
 		case "ThreadGroup", "TestPlan":
 			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
@@ -590,6 +594,10 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			}
 			next.transaction = txName
 			walkThreadGroup(child, &next, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
+			// TestAction is positional rather than controller-scoped. If the first
+			// sampler lived inside this controller, propagate its consumption so the
+			// pause is not replayed again by the next sibling sampler.
+			ctx.oneShotTimerMs = next.oneShotTimerMs
 			continue
 		case "OnceOnlyController":
 			steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
@@ -708,29 +716,22 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "JSR223Sampler", "BeanShellSampler", "BSFSampler":
 			handleJMeterScriptSampler(child, script, result, diagnostics, sourceFileName, sourceMappings)
 			continue
-		case "JDBCDataSource":
-			if cfg, credentialRetained, ok := parseJMeterJDBCConnection(child.Element); ok {
-				ctx.databaseConfig = cfg
-				// Keep the complete authored JDBC source record even when every
-				// property could be projected into the native DSN. Some JDBC
-				// driver properties have no portable database/sql equivalent;
-				// retaining the exact source lets an operator repair the
-				// already-gated adapter without re-importing or re-entering a
-				// password.
-				preserveJMeterJDBCSource(script, child.Element)
-				if credentialRetained {
-					diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(child.Element), "database credentials were retained in the durable destination and will be masked on ordinary reads; review the imported connection before replay")
-				}
-			}
-			continue
 		case "JDBCSampler":
+			actionStart := len(script.Actions)
 			handleJMeterJDBCSampler(child, ctx, script, result, diagnostics, sourceFileName, sourceMappings)
+			applyJMeterNativeSamplerTiming(child, appendedJMeterSamplerAction(script, actionStart), ctx, result, diagnostics)
 			continue
 		case "FTPSampler", "TCPSampler":
+			actionStart := len(script.Actions)
 			handleJMeterNetworkSampler(child, ctx, script, result, diagnostics, sourceFileName, sourceMappings)
+			applyJMeterNativeSamplerTiming(child, appendedJMeterSamplerAction(script, actionStart), ctx, result, diagnostics)
 			continue
 		case "JMSSampler", "JMSPublisher", "JMSSubscriber", "PublisherSampler", "SubscriberSampler":
 			handleJMeterJMSSampler(child, script, result, diagnostics, sourceFileName, sourceMappings)
+			// JMS remains review-only until a provider is selected, but it is still
+			// the positional target of a preceding TestAction. Consume that pause so
+			// it cannot leak to a later executable sampler.
+			applyJMeterNativeSamplerTiming(child, nil, ctx, result, diagnostics)
 			continue
 		case "hashTree":
 		default:
@@ -751,6 +752,201 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 	}
 }
 
+func applyJMeterScopeConfig(
+	config *treeNode,
+	ctx *convertContext,
+	script *dsl.Script,
+	opts ConvertOptions,
+	result *ConvertResult,
+	variableNames map[string]struct{},
+	csvNames map[string]struct{},
+	diagnostics *diag.Collector,
+	sourceFileName string,
+	countStats bool,
+) bool {
+	if config == nil || config.Element == nil || ctx == nil || script == nil || result == nil {
+		return false
+	}
+	element := config.Element
+	switch element.Name {
+	case "ConfigTestElement":
+		applyHTTPDefaults(element, ctx)
+	case "HeaderManager":
+		headers := parseHeaders(element)
+		ctx.headers = overlayJMeterHeaders(ctx.headers, headers)
+		if countStats {
+			result.Stats.Headers += len(headers)
+		}
+	case "CookieManager":
+		enabled := true
+		script.Config.HTTP.CookiesEnabled = &enabled
+		setJMeterRuntimeParity(script, "cookieManager", "executed")
+	case "CacheManager":
+		applyJMeterCacheManager(element, script)
+	case "AuthManager":
+		auths := parseAuthManager(element, diagnostics)
+		resolution := ctx.variableScope.resolve(diagnostics)
+		provenVariables := jmeterProvenVariables(ctx)
+		for index := range auths {
+			auths[index].URL, _ = resolution.expandRuntimeValue(auths[index].URL, provenVariables)
+		}
+		ctx.auths = append(ctx.auths, auths...)
+		for _, auth := range auths {
+			if auth.URL == "" && !ctx.defaultAuthSeen {
+				ctx.defaultAuthSeen = true
+				if auth.Config.Type != "" &&
+					authCapabilityFromJMeterMechanism(auth.Mechanism).Support == httpprotocol.AuthExecutable {
+					script.Config.HTTP.Auth = auth.Config
+				}
+			}
+		}
+	case "Arguments":
+		vars := parseArguments(element)
+		ctx.variableScope = ctx.variableScope.withDefinitions(vars, credentialpolicy.SourceRef{
+			Format:  "jmeter",
+			Path:    sourceFileName,
+			Pointer: jmeterElementLocation(element),
+		}, diagnostics)
+		for name := range vars {
+			variableNames[name] = struct{}{}
+			if countStats {
+				result.Stats.Variables++
+			}
+		}
+	case "CSVDataSet":
+		source := parseCSVDataSet(element, opts.SidecarFiles)
+		if source.Name != "" {
+			ctx.csvSources = append(ctx.csvSources, source)
+			csvNames[source.Name] = struct{}{}
+			if countStats {
+				result.Stats.CSVSources++
+			}
+		}
+		if countStats {
+			if shareMode := strings.TrimSpace(prop(element, "shareMode")); shareMode != "" &&
+				!strings.EqualFold(shareMode, "shareMode.all") && !strings.EqualFold(shareMode, "all") {
+				diagnostics.Add(diag.Warning, "JMeter CSVDataSet", jmeterElementLocation(element), "CSV shareMode has no equivalent and requires review")
+			}
+		}
+	case "ResponseAssertion":
+		assertions := parseResponseAssertions(element, diagnostics)
+		ctx.assertions = append(ctx.assertions, assertions...)
+		if countStats {
+			result.Stats.Assertions += len(assertions)
+		}
+	case "JDBCDataSource":
+		if cfg, credentialRetained, ok := parseJMeterJDBCConnection(element); ok {
+			ctx.databaseConfig = cfg
+			// Keep the complete authored JDBC source record even when every
+			// property could be projected into the native DSN. Some JDBC driver
+			// properties have no portable database/sql equivalent; retaining the
+			// exact source lets an operator repair the already-gated adapter without
+			// re-importing or re-entering a password.
+			preserveJMeterJDBCSource(script, element)
+			if credentialRetained {
+				diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(element), "database credentials were retained in the durable destination and will be masked on ordinary reads; review the imported connection before replay")
+			}
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+func isJMeterDirectScopeConfig(name string) bool {
+	switch name {
+	case "ConfigTestElement", "HeaderManager", "CookieManager", "CacheManager", "AuthManager", "Arguments", "CSVDataSet", "ResponseAssertion", "JDBCDataSource":
+		return true
+	default:
+		return false
+	}
+}
+
+func jmeterDirectScopeConfigs(node *treeNode) []*treeNode {
+	if node == nil {
+		return nil
+	}
+	configs := make([]*treeNode, 0)
+	for _, child := range node.Children {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) ||
+			!isJMeterDirectScopeConfig(child.Element.Name) {
+			continue
+		}
+		configs = append(configs, child)
+	}
+	return configs
+}
+
+func jmeterAncestorScopeConfigs(nodes []*treeNode, target *treeNode) ([]*treeNode, bool) {
+	for _, node := range nodes {
+		if node == nil || node.Element == nil || !jmeterElementEnabled(node.Element) {
+			continue
+		}
+		if node == target {
+			return nil, true
+		}
+		childConfigs, found := jmeterAncestorScopeConfigs(node.Children, target)
+		if !found {
+			continue
+		}
+		return append(jmeterDirectScopeConfigs(node), childConfigs...), true
+	}
+	return nil, false
+}
+
+func jmeterDirectScopeTimerMs(node *treeNode) int {
+	if node == nil {
+		return 0
+	}
+	total := 0
+	for _, child := range node.Children {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
+		switch child.Element.Name {
+		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
+			if delayMs := parseTimerMs(child.Element, child.Element.Name); delayMs > 0 {
+				total += delayMs
+			}
+		}
+	}
+	return total
+}
+
+func jmeterAncestorScopeTimers(nodes []*treeNode, target *treeNode) ([]*treeNode, bool) {
+	for _, node := range nodes {
+		if node == nil || node.Element == nil || !jmeterElementEnabled(node.Element) {
+			continue
+		}
+		if node == target {
+			return nil, true
+		}
+		childTimers, found := jmeterAncestorScopeTimers(node.Children, target)
+		if !found {
+			continue
+		}
+		return append(jmeterDirectScopeTimers(node), childTimers...), true
+	}
+	return nil, false
+}
+
+func jmeterDirectScopeTimers(node *treeNode) []*treeNode {
+	if node == nil {
+		return nil
+	}
+	var timers []*treeNode
+	for _, child := range node.Children {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
+		switch child.Element.Name {
+		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
+			timers = append(timers, child)
+		}
+	}
+	return timers
+}
+
 func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string) []dsl.Action {
 	if node == nil || len(node.Children) == 0 {
 		return nil
@@ -760,6 +956,7 @@ func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript
 	tempScript := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{}}}}
 	var tempMappings []sourceview.Mapping
 	walkThreadGroup(node, &next, tempScript, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, &tempMappings)
+	ctx.oneShotTimerMs = next.oneShotTimerMs
 	mergeJMeterRuntimeParity(parentScript, tempScript)
 	return append([]dsl.Action(nil), tempScript.Actions...)
 }
@@ -847,12 +1044,12 @@ func jmeterSamplerScopedHeaders(sampler *treeNode) dsl.HeaderList {
 	return headers
 }
 
-func jmeterSamplerScope(sampler *treeNode, diagnostics *diag.Collector) (dsl.HeaderList, int, []dsl.Assertion) {
+func jmeterSamplerScope(sampler *treeNode, diagnostics *diag.Collector) (dsl.HeaderList, int, int, []dsl.Assertion) {
 	if sampler == nil {
-		return nil, 0, nil
+		return nil, 0, 0, nil
 	}
 	var headers dsl.HeaderList
-	var timerMs int
+	timerMs, timerCount := jmeterSamplerTimerScope(sampler, diagnostics)
 	var assertions []dsl.Assertion
 	for _, child := range sampler.Children {
 		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
@@ -861,26 +1058,80 @@ func jmeterSamplerScope(sampler *treeNode, diagnostics *diag.Collector) (dsl.Hea
 		switch child.Element.Name {
 		case "HeaderManager":
 			headers = append(headers, parseHeaders(child.Element)...)
-		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
-			timerMs = parseTimerMs(child.Element, child.Element.Name)
 		case "ResponseAssertion":
 			assertions = append(assertions, parseResponseAssertions(child.Element, diagnostics)...)
 		}
 	}
-	return headers, timerMs, assertions
+	return headers, timerMs, timerCount, assertions
+}
+
+func jmeterSamplerTimerScope(sampler *treeNode, diagnostics *diag.Collector) (int, int) {
+	if sampler == nil {
+		return 0, 0
+	}
+	var timerMs int
+	var timerCount int
+	for _, child := range sampler.Children {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
+		switch child.Element.Name {
+		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer", "ConstantThroughputTimer", "PreciseThroughputTimer":
+			if delayMs := parseTimerMs(child.Element, child.Element.Name); delayMs > 0 {
+				timerMs += delayMs
+			}
+			timerCount++
+			if diagnostics != nil && isThroughputTimer(child.Element.Name) {
+				diagnostics.Add(diag.Info, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "throughput timer was approximated as fixed think time")
+			}
+		}
+	}
+	return timerMs, timerCount
+}
+
+func appendedJMeterSamplerAction(script *dsl.Script, actionStart int) *dsl.Action {
+	if script == nil || actionStart < 0 || len(script.Actions) != actionStart+1 {
+		return nil
+	}
+	return &script.Actions[actionStart]
+}
+
+func applyJMeterNativeSamplerTiming(sampler *treeNode, action *dsl.Action, ctx *convertContext, result *ConvertResult, diagnostics *diag.Collector) {
+	scopedTimerMs, scopedTimerCount := jmeterSamplerTimerScope(sampler, diagnostics)
+	if result != nil {
+		result.Stats.Timers += scopedTimerCount
+	}
+	if ctx == nil {
+		return
+	}
+	if action != nil {
+		totalTimerMs := ctx.timerMs + ctx.oneShotTimerMs + scopedTimerMs
+		if totalTimerMs > 0 {
+			action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: float64(totalTimerMs)}
+			action.ThinkTimeAfter = true
+		}
+	}
+	ctx.oneShotTimerMs = 0
 }
 
 func overlayJMeterHeaders(inherited, local dsl.HeaderList) dsl.HeaderList {
-	result := append(dsl.HeaderList(nil), inherited...)
-	for _, header := range local {
-		filtered := result[:0]
-		for _, existing := range result {
-			if !strings.EqualFold(strings.TrimSpace(existing.Name), strings.TrimSpace(header.Name)) {
-				filtered = append(filtered, existing)
-			}
-		}
-		result = append(filtered, header)
+	if len(local) == 0 {
+		return append(dsl.HeaderList(nil), inherited...)
 	}
+	localNames := make(map[string]struct{}, len(local))
+	for _, header := range local {
+		localNames[strings.ToLower(strings.TrimSpace(header.Name))] = struct{}{}
+	}
+	result := make(dsl.HeaderList, 0, len(inherited)+len(local))
+	for _, header := range inherited {
+		if _, shadowed := localNames[strings.ToLower(strings.TrimSpace(header.Name))]; !shadowed {
+			result = append(result, header)
+		}
+	}
+	// Keep every occurrence from the winning manager. Repeated header fields can
+	// be wire-significant; only entries inherited from an outer scope are
+	// shadowed.
+	result = append(result, local...)
 	return result
 }
 

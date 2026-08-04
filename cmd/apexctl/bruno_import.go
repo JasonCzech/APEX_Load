@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -43,6 +44,7 @@ type brunoImportArgs struct {
 	bearerToken    string
 	format         string
 	timeout        time.Duration
+	help           bool
 	migrateSecrets bool
 	secretBindings map[string]string
 	conflicts      map[string]string
@@ -339,12 +341,16 @@ func importCmd() {
 	if len(os.Args) < 3 || strings.TrimSpace(os.Args[2]) != "bruno" {
 		fmt.Fprintln(os.Stderr, "error: import subcommand is required (bruno or grafana)")
 		fmt.Fprintln(os.Stderr, brunoImportUsage())
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	args, err := parseBrunoImportArgs(os.Args[3:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n\n%s\n", err, brunoImportUsage())
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
+	if args.help {
+		fmt.Println(brunoImportUsage())
+		return
 	}
 	result, err := runBrunoImport(context.Background(), args)
 	if err != nil {
@@ -360,7 +366,7 @@ func importCmd() {
 		} else {
 			fmt.Fprintf(os.Stderr, "Bruno import failed: %v\n", err)
 		}
-		os.Exit(1)
+		os.Exit(importCommandExitCode(err))
 	}
 	if args.format == "json" {
 		if args.output == "native" {
@@ -439,128 +445,66 @@ func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
 		secretBindings: map[string]string{},
 		conflicts:      map[string]string{},
 	}
-	next := func(index *int, flag string) (string, error) {
-		if *index+1 >= len(raw) {
-			return "", fmt.Errorf("%s requires a value", flag)
-		}
-		(*index)++
-		return raw[*index], nil
+	flags := flag.NewFlagSet("apexctl import bruno", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	noMigrateSecrets := false
+	flags.BoolVar(&args.help, "help", false, "show help")
+	flags.BoolVar(&args.help, "h", false, "show help")
+	flags.StringVar(&args.path, "path", "", "Bruno collection path")
+	flags.StringVar(&args.path, "p", "", "Bruno collection path")
+	flags.StringVar(&args.projectID, "project", "", "project ID")
+	flags.StringVar(&args.syncScriptID, "sync", "", "script ID to synchronize")
+	flags.StringVar(&args.name, "name", "", "script name")
+	flags.StringVar(&args.sandbox, "sandbox", args.sandbox, "safe or developer sandbox")
+	flags.StringVar(&args.output, "output", args.output, "canonical or native output")
+	flags.StringVar(&args.folderID, "folder", "", "native output folder ID")
+	flags.BoolVar(&args.ackReview, "ack-review-required", false, "acknowledge review findings")
+	flags.StringVar(&args.api, "api", args.api, "controller URL")
+	flags.StringVar(&args.apiKey, "api-key", args.apiKey, "API key")
+	flags.StringVar(&args.bearerToken, "bearer-token", args.bearerToken, "bearer token")
+	flags.StringVar(&args.format, "format", args.format, "output format")
+	flags.DurationVar(&args.timeout, "timeout", args.timeout, "request timeout")
+	flags.Var(uniqueCLIAssignments{values: args.secretBindings, flagName: "--secret-binding"}, "secret-binding", "requirement=secret")
+	flags.Var(uniqueCLIAssignments{values: args.conflicts, flagName: "--conflict-resolution"}, "conflict-resolution", "conflict=resolution")
+	flags.BoolVar(&args.migrateSecrets, "migrate-secrets", args.migrateSecrets, "migrate literal secrets")
+	flags.BoolVar(&noMigrateSecrets, "no-migrate-secrets", false, "do not migrate literal secrets")
+	if err := flags.Parse(raw); err != nil {
+		return args, err
 	}
-	for index := 0; index < len(raw); index++ {
-		switch raw[index] {
-		case "--path", "-p":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.path = value
-		case "--project":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.projectID = value
-		case "--sync":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.syncScriptID = value
-		case "--name":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.name = value
-		case "--sandbox":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.sandbox = strings.ToLower(strings.TrimSpace(value))
+	if flags.NArg() != 0 {
+		return args, fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	migrateSecretsSet, noMigrateSecretsSet := false, false
+	flags.Visit(func(item *flag.Flag) {
+		switch item.Name {
+		case "sandbox":
 			args.sandboxSet = true
-		case "--output":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.output = strings.ToLower(strings.TrimSpace(value))
-		case "--folder":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.folderID = strings.TrimSpace(value)
-		case "--ack-review-required":
-			args.ackReview = true
-		case "--api":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.api = value
-		case "--api-key":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.apiKey = value
-		case "--bearer-token":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.bearerToken = value
-		case "--format":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.format = strings.ToLower(strings.TrimSpace(value))
-		case "--timeout":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			args.timeout, err = time.ParseDuration(value)
-			if err != nil || args.timeout <= 0 {
-				return args, fmt.Errorf("--timeout must be a positive duration")
-			}
-		case "--secret-binding":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			key, secretName, found := strings.Cut(value, "=")
-			key, secretName = strings.TrimSpace(key), strings.TrimSpace(secretName)
-			if !found || key == "" || secretName == "" {
-				return args, fmt.Errorf("--secret-binding must use <requirement-id-or-name>=<logical-secret-name>")
-			}
-			args.secretBindings[key] = secretName
-		case "--conflict-resolution":
-			value, err := next(&index, raw[index])
-			if err != nil {
-				return args, err
-			}
-			conflictID, resolution, found := strings.Cut(value, "=")
-			conflictID, resolution = strings.TrimSpace(conflictID), strings.TrimSpace(resolution)
-			if !found || conflictID == "" || resolution == "" {
-				return args, fmt.Errorf("--conflict-resolution must use <conflict-id>=<resolution>")
-			}
-			args.conflicts[conflictID] = resolution
-		case "--migrate-secrets":
-			args.migrateSecrets = true
-		case "--no-migrate-secrets":
-			args.migrateSecrets = false
-		default:
-			return args, fmt.Errorf("unknown Bruno import flag %q", raw[index])
+		case "migrate-secrets":
+			migrateSecretsSet = true
+		case "no-migrate-secrets":
+			noMigrateSecretsSet = true
 		}
+	})
+	if noMigrateSecrets {
+		args.migrateSecrets = false
 	}
 	args.path = strings.TrimSpace(args.path)
 	args.projectID = strings.TrimSpace(args.projectID)
 	args.syncScriptID = strings.TrimSpace(args.syncScriptID)
 	args.name = strings.TrimSpace(args.name)
+	args.sandbox = strings.ToLower(strings.TrimSpace(args.sandbox))
+	args.output = strings.ToLower(strings.TrimSpace(args.output))
+	args.folderID = strings.TrimSpace(args.folderID)
 	args.api = strings.TrimRight(strings.TrimSpace(args.api), "/")
+	args.apiKey = strings.TrimSpace(args.apiKey)
+	args.bearerToken = strings.TrimSpace(args.bearerToken)
+	args.format = strings.ToLower(strings.TrimSpace(args.format))
+	if args.help {
+		return args, nil
+	}
+	if migrateSecretsSet && noMigrateSecretsSet {
+		return args, errors.New("--migrate-secrets and --no-migrate-secrets cannot be used together")
+	}
 	if args.path == "" {
 		return args, errors.New("--path is required")
 	}
@@ -573,8 +517,11 @@ func parseBrunoImportArgs(raw []string) (brunoImportArgs, error) {
 	if args.sandbox != "safe" && args.sandbox != "developer" {
 		return args, errors.New("--sandbox must be safe or developer")
 	}
-	if args.format != "text" && args.format != "json" {
-		return args, errors.New("--format must be text or json")
+	if err := validateCLIOutputFormat(args.format); err != nil {
+		return args, err
+	}
+	if err := validateCLIControllerURL(args.api); err != nil {
+		return args, err
 	}
 	if args.output != "canonical" && args.output != "native" {
 		return args, errors.New("--output must be canonical or native")
@@ -612,10 +559,10 @@ func runBrunoImport(ctx context.Context, args brunoImportArgs) (*brunoCLICommitR
 	}
 	info, err := os.Lstat(args.path)
 	if err != nil {
-		return nil, fmt.Errorf("inspect import path: %w", err)
+		return nil, cliInputErrorf("inspect import path: %v", err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("Bruno import path must not be a symlink")
+		return nil, cliInputErrorf("Bruno import path must not be a symlink")
 	}
 	args.pathIdentity = info
 	client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
@@ -626,7 +573,7 @@ func runBrunoImport(ctx context.Context, args brunoImportArgs) (*brunoCLICommitR
 	} else if info.Mode().IsRegular() {
 		inspected, err = client.InspectBrunoFile(ctx, args)
 	} else {
-		return nil, errors.New("Bruno import path must be a directory or regular file")
+		return nil, cliInputErrorf("Bruno import path must be a directory or regular file")
 	}
 	if err != nil {
 		return nil, err

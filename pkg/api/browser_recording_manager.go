@@ -114,6 +114,7 @@ type BrowserRecordingSession struct {
 	WarningCount        int                     `json:"warning_count"`
 	MarkerCount         int                     `json:"marker_count"`
 	AnnotationCount     int                     `json:"annotation_count"`
+	CapHits             map[string]int64        `json:"cap_hits,omitempty"`
 	OpenTransactions    []string                `json:"open_transactions,omitempty"`
 	Section             string                  `json:"section,omitempty"`
 	DeviceProfile       string                  `json:"device_profile,omitempty"`
@@ -956,6 +957,7 @@ func reconcileBrowserRecordingArtifactCountsLocked(session *BrowserRecordingSess
 	session.WarningCount = len(artifact.Warnings)
 	session.MarkerCount = len(artifact.Markers)
 	session.AnnotationCount = len(artifact.Annotations)
+	session.CapHits = cloneStringInt64Map(artifact.CapHits)
 }
 
 func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *recbrowser.Session {
@@ -1047,6 +1049,23 @@ func (m *BrowserRecordingManager) handleEvent(session *BrowserRecordingSession, 
 		session.WarningCount++
 		session.mu.Unlock()
 		m.broadcast("browser_recording_warning", session, map[string]any{"warning": event.Warning})
+	case recbrowser.EventCapHit:
+		name := strings.TrimSpace(event.CapName)
+		if name == "" {
+			return
+		}
+		session.mu.Lock()
+		if session.CapHits == nil {
+			session.CapHits = make(map[string]int64)
+		}
+		if event.CapCount > session.CapHits[name] {
+			session.CapHits[name] = event.CapCount
+		} else if event.CapCount <= 0 {
+			session.CapHits[name]++
+		}
+		count := session.CapHits[name]
+		session.mu.Unlock()
+		m.broadcast("browser_recording_cap_hit", session, map[string]any{"cap": name, "count": count})
 	case recbrowser.EventPauseState:
 		messageType := ""
 		session.mu.Lock()
@@ -1218,6 +1237,7 @@ func (s *BrowserRecordingSession) summaryLocked() *BrowserRecordingSession {
 		WarningCount:        s.WarningCount,
 		MarkerCount:         s.MarkerCount,
 		AnnotationCount:     s.AnnotationCount,
+		CapHits:             cloneStringInt64Map(s.CapHits),
 		OpenTransactions:    append([]string(nil), s.OpenTransactions...),
 		Section:             s.Section,
 		DeviceProfile:       s.DeviceProfile,
@@ -1246,6 +1266,7 @@ func (s *BrowserRecordingSession) fullSnapshot() *BrowserRecordingSession {
 	clone.WarningCount = len(artifact.Warnings)
 	clone.MarkerCount = len(artifact.Markers)
 	clone.AnnotationCount = len(artifact.Annotations)
+	clone.CapHits = cloneStringInt64Map(artifact.CapHits)
 	clone.OpenTransactions = artifact.OpenTransactions
 	clone.HARAvailable = len(artifact.HAR) > 0
 	clone.StorageStateReady = len(artifact.StorageState) > 0

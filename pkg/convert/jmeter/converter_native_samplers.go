@@ -48,7 +48,7 @@ func classifyThreadGroupProtocol(tg *treeNode) (string, bool) {
 	var scan func(nodes []*treeNode)
 	scan = func(nodes []*treeNode) {
 		for _, node := range nodes {
-			if node == nil || node.Element == nil {
+			if node == nil || node.Element == nil || !jmeterElementEnabled(node.Element) {
 				continue
 			}
 			if node.Element.Name == "ThreadGroup" {

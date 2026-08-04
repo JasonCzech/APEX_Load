@@ -243,7 +243,8 @@ func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Actio
 	if rawURL == "" {
 		return fmt.Errorf("browser_open_window requires target or params.url")
 	}
-	if b.pwContext == nil {
+	browserContext := b.currentBrowserContext()
+	if browserContext == nil {
 		return fmt.Errorf("browser context is not initialized")
 	}
 	resolvedURL := b.resolveURL(rawURL)
@@ -256,7 +257,7 @@ func (b *Browser) dispatchOpenWindow(ctx context.Context, action *protocol.Actio
 	if b.hasDownloadFilters() && b.shouldBlockFilteredRequest(resolvedURL) {
 		return fmt.Errorf("browser_open_window target %q is blocked by the configured URL filter", resolvedURL)
 	}
-	page, err := b.pwContext.NewPage()
+	page, err := browserContext.NewPage()
 	if err != nil {
 		return err
 	}

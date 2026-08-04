@@ -259,8 +259,7 @@ func (collector *importedCredentialCollector) collectHeaderCredential(name, valu
 		if err == nil {
 			pair := string(decoded)
 			collector.add(pair)
-			username, password, hasPassword := strings.Cut(pair, ":")
-			collector.add(username)
+			_, password, hasPassword := strings.Cut(pair, ":")
 			if hasPassword {
 				collector.add(password)
 			}
@@ -278,7 +277,6 @@ func (collector *importedCredentialCollector) collectAuthorizationParameters(pay
 		}
 		name = strings.TrimSpace(name)
 		if !credential.SensitiveName(name) &&
-			!strings.EqualFold(name, "username") &&
 			!strings.EqualFold(name, "response") {
 			continue
 		}
@@ -340,13 +338,7 @@ func (collector *importedCredentialCollector) collectResolvedURLUserinfo(raw str
 	if err != nil || parsed.User == nil {
 		return
 	}
-	username := parsed.User.Username()
-	collector.add(username)
-	collector.add(url.User(username).String())
-	if password, ok := parsed.User.Password(); ok {
-		collector.add(password)
-		collector.add(username + ":" + password)
-	}
+	collector.collectURLUserinfo(parsed.User)
 }
 
 func scrubResolvedActionRedactedProjection(action *protocol.Action, config *RedactionConfig) {

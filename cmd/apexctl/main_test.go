@@ -123,9 +123,14 @@ func TestCommandArgsUseCredentialEnvironmentDefaults(t *testing.T) {
 }
 
 func TestParseScriptArgs(t *testing.T) {
-	args := parseScriptArgs([]string{"validate", "--script", "examples/web-api/ecommerce-http.json", "--format", "json"})
-	if args.command != "validate" || args.script != "examples/web-api/ecommerce-http.json" || args.format != "json" {
+	args := parseScriptArgs([]string{"validate", "--script=examples/web-api/ecommerce-http.json", "--format=json"})
+	if args.err != nil || args.command != "validate" || args.script != "examples/web-api/ecommerce-http.json" || args.format != "json" {
 		t.Fatalf("args = %#v", args)
+	}
+	for _, raw := range [][]string{{"validate", "--unknown"}, {"validate", "--script"}, {"validate", "extra"}, {"validate", "--format=yaml"}} {
+		if parsed := parseScriptArgs(raw); parsed.err == nil {
+			t.Errorf("parseScriptArgs(%q) accepted invalid input", raw)
+		}
 	}
 }
 
@@ -143,6 +148,9 @@ func TestParseGithubArgs(t *testing.T) {
 		"--api-key", "gh-key",
 		"--bearer-token", "gh-token",
 	})
+	if args.err != nil {
+		t.Fatalf("parse error: %v", args.err)
+	}
 
 	if args.command != "sync" || args.api != "http://controller.local" || args.projectID != "project-a" {
 		t.Fatalf("args = %#v", args)
@@ -152,6 +160,31 @@ func TestParseGithubArgs(t *testing.T) {
 	}
 	if args.apiKey != "gh-key" || args.bearerToken != "gh-token" {
 		t.Fatalf("github auth args = %#v", args)
+	}
+}
+
+func TestParseGithubArgsUsesStrictFlagContracts(t *testing.T) {
+	t.Setenv("APEXLOAD_API", "")
+	parsed := parseGithubArgs([]string{"sync", "--project=project-a", "--kind=push", "--format=json"})
+	if parsed.err != nil || parsed.projectID != "project-a" || parsed.kind != "push" || parsed.format != "json" {
+		t.Fatalf("equals-form GitHub flags = %#v", parsed)
+	}
+	for _, raw := range [][]string{{"sync", "--unknown"}, {"sync", "--project"}, {"sync", "extra"}, {"sync", "--format=yaml"}} {
+		if got := parseGithubArgs(raw); got.err == nil {
+			t.Errorf("parseGithubArgs(%q) accepted invalid input", raw)
+		}
+	}
+	if err := validateGithubArgs(parseGithubArgs([]string{"sync"})); err == nil {
+		t.Fatal("GitHub sync accepted a missing project")
+	}
+	if err := validateGithubArgs(parseGithubArgs([]string{"not-a-command"})); err == nil {
+		t.Fatal("GitHub parser accepted an unknown subcommand")
+	}
+	if err := validateGithubArgs(parseGithubArgs([]string{"sync", "--project=project-a", "--kind=invalid"})); err == nil {
+		t.Fatal("GitHub sync accepted an invalid kind")
+	}
+	if err := validateGithubArgs(parseGithubArgs([]string{"sync", "--project=project-a", "--kind=push", "--strategy=invalid"})); err == nil {
+		t.Fatal("GitHub push sync accepted an invalid strategy")
 	}
 }
 
@@ -238,6 +271,44 @@ func TestParseRunArgs_SLAFlags(t *testing.T) {
 	goalConfig := buildGoalConfigFromArgs(args)
 	if goalConfig == nil || goalConfig.MaxErrorCount == nil || *goalConfig.MaxErrorCount != 5 {
 		t.Fatalf("goalConfig = %#v, want populated thresholds", goalConfig)
+	}
+}
+
+func TestParseRunArgsRejectsNonFiniteAndOutOfRangeSLAThresholds(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "p95 NaN", args: []string{"--p95-latency-ms", "NaN"}},
+		{name: "p95 positive infinity", args: []string{"--p95-latency-ms", "+Inf"}},
+		{name: "server negative infinity", args: []string{"--max-avg-server-processing-ms", "-Inf"}},
+		{name: "transfer zero", args: []string{"--max-avg-transfer-ms", "0"}},
+		{name: "error percent NaN", args: []string{"--max-error-pct", "NaN"}},
+		{name: "error percent above 100", args: []string{"--max-error-pct", "100.1"}},
+		{name: "negative error count", args: []string{"--max-error-count", "-1"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if parsed := parseRunArgs(test.args); parsed.err == nil {
+				t.Fatalf("parseRunArgs(%q) accepted an invalid SLA threshold", test.args)
+			}
+		})
+	}
+}
+
+func TestRunAndControlParsersRejectMalformedOutputAndControllerURLs(t *testing.T) {
+	for _, args := range [][]string{
+		{"--format=yaml"},
+		{"--api=controller-without-scheme"},
+		{"--api=https://user:pass@controller.example"},
+		{"--api=https://controller.example?token=secret"},
+	} {
+		if parsed := parseRunArgs(args); parsed.err == nil {
+			t.Errorf("parseRunArgs(%q) accepted invalid input", args)
+		}
+	}
+	if parsed := parseCtlArgs([]string{"--format=JSON", "--api=https://controller.example", "--test=t1"}); parsed.err != nil || parsed.format != "json" {
+		t.Fatalf("normalized control args = %#v", parsed)
 	}
 }
 

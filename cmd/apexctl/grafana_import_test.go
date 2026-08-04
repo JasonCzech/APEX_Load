@@ -23,6 +23,26 @@ func TestParseGrafanaImportArgsRejectsDuplicateBindings(t *testing.T) {
 	}
 }
 
+func TestParseGrafanaImportArgsSupportsEqualsAndRejectsMalformedFlags(t *testing.T) {
+	t.Setenv("APEXLOAD_API", "")
+	args, err := parseGrafanaImportArgs([]string{
+		"--api=https://controller.example", "--path=dashboard.json", "--project=project-a",
+		"--binding=env=prod", "--timeout=5m", "--format=json",
+	})
+	if err != nil || args.api != "https://controller.example" || args.path != "dashboard.json" || args.projectID != "project-a" || args.bindings["env"] != "prod" || args.format != "json" {
+		t.Fatalf("equals-form Grafana args = %#v, error %v", args, err)
+	}
+	for _, raw := range [][]string{
+		{"--api=https://controller.example", "--path=dashboard.json", "--project=project-a", "extra"},
+		{"--api=controller-without-scheme", "--path=dashboard.json", "--project=project-a"},
+		{"--api=https://controller.example", "--path=dashboard.json", "--project=project-a", "--format=yaml"},
+	} {
+		if _, err := parseGrafanaImportArgs(raw); err == nil {
+			t.Errorf("parseGrafanaImportArgs(%q) accepted invalid input", raw)
+		}
+	}
+}
+
 func TestRunGrafanaImportInspectOnlyDoesNotRequireBindingsOrCommit(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

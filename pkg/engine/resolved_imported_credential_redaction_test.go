@@ -173,7 +173,7 @@ func TestResolvedImportedCredentialRegistersComposedBearerComponentBeforeTranspo
 	}
 }
 
-func TestResolvedImportedCredentialRegistersURLUsernameBeforeTransport(t *testing.T) {
+func TestResolvedImportedCredentialRegistersURLPasswordAndCompositeBeforeTransport(t *testing.T) {
 	const (
 		username = "runtime-user-3571"
 		password = "runtime-password-8642"
@@ -216,13 +216,19 @@ func TestResolvedImportedCredentialRegistersURLUsernameBeforeTransport(t *testin
 	if probe.probeErr != nil {
 		t.Fatal(probe.probeErr)
 	}
+	if got, want := vu.RedactionConfig.ScrubText("account "+username), "account "+username; got != want {
+		t.Fatalf("bare username was treated as a runtime secret: got %q, want %q", got, want)
+	}
 	if got := script.Actions[0].Target; got != action.Target {
 		t.Fatalf("durable target was changed to %q", got)
 	}
 }
 
-func TestImportedCredentialValuesIncludesDecodedURLUsernameBeforeProtocolInit(t *testing.T) {
-	const username = "static-user-5831"
+func TestImportedCredentialValuesExcludeBareURLUsernameBeforeProtocolInit(t *testing.T) {
+	const (
+		username = "static-user-5831"
+		password = "static-password-7164"
+	)
 	script := credentialPreservingRuntimeScript(dsl.Action{
 		Name:   "userinfo",
 		Type:   "GET",
@@ -234,8 +240,50 @@ func TestImportedCredentialValuesIncludesDecodedURLUsernameBeforeProtocolInit(t 
 	if err != nil {
 		t.Fatalf("ImportedCredentialValues: %v", err)
 	}
-	if !containsExactString(values, username) {
-		t.Fatalf("runtime credential values = %#v, want decoded URL username %q", values, username)
+	if containsExactString(values, username) {
+		t.Fatalf("runtime credential values = %#v, included bare URL username %q", values, username)
+	}
+	for _, expected := range []string{password, username + ":" + password} {
+		if !containsExactString(values, expected) {
+			t.Fatalf("runtime credential values = %#v, want protected URL credential %q", values, expected)
+		}
+	}
+}
+
+func TestResolvedBasicCredentialExcludesBareUsername(t *testing.T) {
+	const (
+		username = "admin"
+		password = "basic-password-9731"
+	)
+	collector := importedCredentialCollector{resolved: true, seen: make(map[string]struct{})}
+	collector.collectHeaderCredential(
+		"Authorization",
+		"Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)),
+	)
+
+	if containsExactString(collector.values, username) {
+		t.Fatalf("resolved credential values = %#v, included bare Basic username", collector.values)
+	}
+	for _, expected := range []string{password, username + ":" + password} {
+		if !containsExactString(collector.values, expected) {
+			t.Fatalf("resolved credential values = %#v, want %q", collector.values, expected)
+		}
+	}
+}
+
+func TestResolvedDigestCredentialExcludesBareUsername(t *testing.T) {
+	const username = "admin"
+	collector := importedCredentialCollector{resolved: true, seen: make(map[string]struct{})}
+	collector.collectHeaderCredential(
+		"Authorization",
+		`Digest username="admin", realm="example", response="digest-response-4182"`,
+	)
+
+	if containsExactString(collector.values, username) {
+		t.Fatalf("resolved credential values = %#v, included bare Digest username", collector.values)
+	}
+	if !containsExactString(collector.values, "digest-response-4182") {
+		t.Fatalf("resolved credential values = %#v, omitted Digest response", collector.values)
 	}
 }
 

@@ -25,7 +25,7 @@ func TestIsTerminalStatus(t *testing.T) {
 }
 
 func TestTerminalStatusVocabularyMatchesController(t *testing.T) {
-	for _, status := range []string{"CREATED", "PENDING", "QUEUED", "STARTING", "RUNNING", "PAUSED", "STOPPING", "FINALIZING", "COMPLETE", "FAILED", "ABORTED", ""} {
+	for _, status := range []string{"CREATED", "PENDING", "QUEUED", "STARTING", "RUNNING", "PAUSED", "STOPPING", "FINALIZING", "COMPLETE", " complete ", "FAILED", "ABORTED", ""} {
 		if got, want := isTerminalStatus(status), api.IsTerminalTestStatus(status); got != want {
 			t.Fatalf("terminal classification for %q: apexctl=%t controller=%t", status, got, want)
 		}
@@ -117,9 +117,12 @@ func TestWaitForTestFailedStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := NewApiClient(srv.URL)
-	_, err := client.WaitForTest("t1", "json", 5*time.Second)
+	result, err := client.WaitForTest("t1", "json", 5*time.Second)
 	if err == nil || !strings.Contains(err.Error(), "failed") {
 		t.Fatalf("expected failure error, got %v", err)
+	}
+	if result == nil || result.Status != "FAILED" {
+		t.Fatalf("failed result = %#v, want retained terminal status", result)
 	}
 }
 
@@ -164,5 +167,14 @@ func TestParseCtlArgsRejectsUnknownMissingAndMalformedValues(t *testing.T) {
 	parsed := parseCtlArgs([]string{"--api=https://controller.example", "--test-id=test-1", "--timeout=5m"})
 	if parsed.err != nil || parsed.api != "https://controller.example" || parsed.test != "test-1" || parsed.timeout != 5*time.Minute {
 		t.Fatalf("equals-form control flags = %#v", parsed)
+	}
+}
+
+func TestStatusRejectsWaitOnlyFlags(t *testing.T) {
+	if err := validateStatusArgs(ctlArgs{timeout: time.Second}); err == nil {
+		t.Fatal("status accepted --timeout")
+	}
+	if err := validateStatusArgs(ctlArgs{junit: "result.xml"}); err == nil {
+		t.Fatal("status accepted --junit")
 	}
 }

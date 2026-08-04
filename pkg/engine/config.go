@@ -35,9 +35,9 @@ func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 }
 
 // runtimeProtocolAuthCompositeValues returns protocol-generated credential
-// spellings that do not contain either raw component. Exact redaction of the
-// username and password alone cannot match a Basic-auth base64 payload echoed
-// by a server.
+// spellings that do not contain the raw password. Exact redaction of the
+// password alone cannot match a user:password pair or Basic-auth base64 payload
+// echoed by a server; the bare username is intentionally not a secret.
 func runtimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResolver) []string {
 	if script == nil {
 		return nil
@@ -53,8 +53,9 @@ func runtimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResol
 		if username == "" && password == "" {
 			return
 		}
-		payload := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-		values = append(values, username, password, payload, "Basic "+payload)
+		pair := username + ":" + password
+		payload := base64.StdEncoding.EncodeToString([]byte(pair))
+		values = append(values, password, pair, payload, "Basic "+payload)
 	}
 	addBasic("auth_username", "auth_password", strings.EqualFold(strings.TrimSpace(protocol.ConfigString(config, "auth_type")), "basic"))
 	addBasic("proxy_username", "proxy_password", protocol.ConfigString(config, "proxy_username") != "" || protocol.ConfigString(config, "proxy_password") != "")

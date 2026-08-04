@@ -100,6 +100,104 @@ baseUri: https://example.test
 	}
 }
 
+func TestConvertRAMLScopesConflictingPathParameterExamples(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Scoped IDs
+/orders/{id}:
+  uriParameters:
+    id:
+      example: ORD-1
+  get:
+/users/{id}:
+  uriParameters:
+    id:
+      example: USR-1
+  get:
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 2 || len(result.Script.Parameters) != 2 {
+		t.Fatalf("actions/parameters = %#v / %#v", result.Script.Actions, result.Script.Parameters)
+	}
+	if result.Script.Actions[0].Target == result.Script.Actions[1].Target {
+		t.Fatalf("conflicting resources share target binding: %#v", result.Script.Actions)
+	}
+	values := map[string]string{}
+	for _, parameter := range result.Script.Parameters {
+		values[parameter.Name] = parameter.Values[0]
+	}
+	if values["id"] != "ORD-1" {
+		t.Fatalf("first binding = %#v", values)
+	}
+	if !strings.Contains(result.Script.Actions[1].Target, "{{param.id_get_users_id}}") || values["id_get_users_id"] != "USR-1" {
+		t.Fatalf("second binding/action = %#v / %#v", values, result.Script.Actions[1])
+	}
+}
+
+func TestConvertRAMLScopedPathParameterNamesRemainUniqueAfterNormalizationCollision(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Colliding scoped IDs
+/foo--bar/{id}:
+  uriParameters:
+    id: {example: DOUBLE}
+  get:
+/foo-bar/{id}:
+  uriParameters:
+    id: {example: DASH}
+  get:
+/foo_bar/{id}:
+  uriParameters:
+    id: {example: UNDERSCORE}
+  get:
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 3 || len(result.Script.Parameters) != 3 {
+		t.Fatalf("actions/parameters = %#v / %#v", result.Script.Actions, result.Script.Parameters)
+	}
+	values := make(map[string]string, len(result.Script.Parameters))
+	for _, parameter := range result.Script.Parameters {
+		if _, duplicate := values[parameter.Name]; duplicate {
+			t.Fatalf("duplicate scoped parameter name %q: %#v", parameter.Name, result.Script.Parameters)
+		}
+		if len(parameter.Values) != 1 {
+			t.Fatalf("parameter values = %#v", parameter)
+		}
+		values[parameter.Name] = parameter.Values[0]
+	}
+	for _, action := range result.Script.Actions {
+		start := strings.Index(action.Target, "{{param.")
+		end := strings.Index(action.Target, "}}")
+		if start < 0 || end <= start+8 {
+			t.Fatalf("action has no parameter binding: %#v", action)
+		}
+		name := action.Target[start+8 : end]
+		if _, ok := values[name]; !ok {
+			t.Fatalf("action references missing parameter %q: parameters=%#v", name, result.Script.Parameters)
+		}
+	}
+}
+
+func TestConvertRAMLMultipleSuccessResponsesUseSuccessRange(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Multiple outcomes
+/jobs:
+  post:
+    responses:
+      201: {}
+      202: {}
+`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertions := result.Script.Actions[0].Assertions
+	if len(assertions) != 1 || assertions[0].Type != "status_code_range" || assertions[0].Min != 200 || assertions[0].Max != 299 {
+		t.Fatalf("assertions = %#v, want 2xx range", assertions)
+	}
+}
+
 func TestConvertRAMLReviewGatesUnboundPathParameter(t *testing.T) {
 	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
 title: Orders

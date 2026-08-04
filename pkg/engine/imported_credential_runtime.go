@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -125,6 +126,7 @@ func (vu *VUser) ensureRuntimeCredentialRedactionState() {
 	}
 	vu.runtimeCredentialStateReady = true
 	vu.runtimeCredentialBase = vu.RedactionConfig
+	vu.runtimeDimensionRedaction = vu.RedactionConfig
 	vu.runtimeCredentialValues = make(map[string]struct{})
 	vu.runtimeCredentialScopes = make(map[string][]string)
 }
@@ -189,6 +191,41 @@ func (vu *VUser) publishRuntimeCredentialRedaction(
 	persistent map[string]struct{},
 	scopes map[string][]string,
 ) error {
+	// Protocol-session snapshots (currently HTTP cookies) are untrusted evidence
+	// values, not authoring metadata. Keep them in the payload/evidence matcher but
+	// exclude them from stable action/group/dependency dimensions so an ordinary
+	// cookie such as "Login" cannot rename or merge metric series.
+	dimensionValues := runtimeCredentialValuesForScopes(persistent, scopes, runtimeCredentialSessionScope)
+	dimensionValues = filterRuntimeCredentialBaseValues(dimensionValues, vu.runtimeCredentialBase)
+	dimensionConfig := vu.runtimeDimensionRedaction
+	if !slices.Equal(vu.runtimeDimensionCredentialValues, dimensionValues) {
+		var err error
+		dimensionConfig, err = withRuntimeSecretValueOverlay(vu.runtimeCredentialBase, dimensionValues)
+		if err != nil {
+			vu.runtimeCredentialRedactionErr = errors.New("runtime credential redaction capacity exceeded")
+			return vu.runtimeCredentialRedactionErr
+		}
+	}
+	sessionValues := uniqueSortedRuntimeCredentialValues(scopes[runtimeCredentialSessionScope])
+	sessionValues = filterRuntimeCredentialBaseValues(sessionValues, dimensionConfig)
+	config, err := withRuntimeSecretValueOverlay(dimensionConfig, sessionValues)
+	if err != nil {
+		vu.runtimeCredentialRedactionErr = errors.New("runtime credential redaction capacity exceeded")
+		return vu.runtimeCredentialRedactionErr
+	}
+
+	vu.RedactionConfig = config
+	vu.runtimeDimensionRedaction = dimensionConfig
+	vu.runtimeDimensionCredentialValues = append(vu.runtimeDimensionCredentialValues[:0], dimensionValues...)
+	vu.runtimeRedaction.Store(config)
+	return nil
+}
+
+func runtimeCredentialValuesForScopes(
+	persistent map[string]struct{},
+	scopes map[string][]string,
+	excludedScope string,
+) []string {
 	values := make([]string, 0, len(persistent))
 	for value := range persistent {
 		values = append(values, value)
@@ -199,10 +236,16 @@ func (vu *VUser) publishRuntimeCredentialRedaction(
 	}
 	sort.Strings(scopeNames)
 	for _, name := range scopeNames {
+		if name == excludedScope {
+			continue
+		}
 		values = append(values, scopes[name]...)
 	}
-	values = uniqueSortedRuntimeCredentialValues(values)
-	if baseValues := allRuntimeSecretValues(vu.runtimeCredentialBase); len(baseValues) > 0 {
+	return uniqueSortedRuntimeCredentialValues(values)
+}
+
+func filterRuntimeCredentialBaseValues(values []string, base *RedactionConfig) []string {
+	if baseValues := allRuntimeSecretValues(base); len(baseValues) > 0 {
 		filtered := values[:0]
 		for _, value := range values {
 			if _, covered := baseValues[value]; !covered {
@@ -211,14 +254,17 @@ func (vu *VUser) publishRuntimeCredentialRedaction(
 		}
 		values = filtered
 	}
-	config, err := withRuntimeSecretValueOverlay(vu.runtimeCredentialBase, values)
-	if err != nil {
-		vu.runtimeCredentialRedactionErr = errors.New("runtime credential redaction capacity exceeded")
-		return vu.runtimeCredentialRedactionErr
+	return values
+}
+
+func (vu *VUser) stableDimensionRedactionConfig() *RedactionConfig {
+	if vu == nil {
+		return nil
 	}
-	vu.RedactionConfig = config
-	vu.runtimeRedaction.Store(config)
-	return nil
+	if !vu.runtimeCredentialStateReady {
+		return vu.RedactionConfig
+	}
+	return vu.runtimeDimensionRedaction
 }
 
 func cloneRuntimeCredentialValueSet(input map[string]struct{}) map[string]struct{} {

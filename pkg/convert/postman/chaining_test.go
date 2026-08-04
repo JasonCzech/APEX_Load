@@ -25,6 +25,104 @@ func findCorrelation(result *ConvertResult, name string) (Correlation, bool) {
 	return Correlation{}, false
 }
 
+func TestDetectPostmanExtractorsUsesFinalEffectiveWrite(t *testing.T) {
+	tests := []struct {
+		name        string
+		script      string
+		source      string
+		extractType string
+		expression  string
+	}{
+		{
+			name: "json then json",
+			script: `pm.environment.set("token", pm.response.json().first);
+pm.environment.set("token", pm.response.json().second);`,
+			source:      "body",
+			extractType: "jsonpath",
+			expression:  "$.second",
+		},
+		{
+			name: "json then header",
+			script: `pm.environment.set("token", pm.response.json().first);
+pm.environment.set("token", pm.response.headers.get("X-Final"));`,
+			source:      "header",
+			extractType: "header",
+			expression:  "X-Final",
+		},
+		{
+			name: "header then json",
+			script: `pm.environment.set("token", pm.response.headers.get("X-First"));
+pm.environment.set("token", pm.response.json().final);`,
+			source:      "body",
+			extractType: "jsonpath",
+			expression:  "$.final",
+		},
+		{
+			name: "higher scope beats later lower scope",
+			script: `pm.environment.set("token", pm.response.json().environment);
+pm.collectionVariables.set("token", pm.response.headers.get("X-Lower"));`,
+			source:      "body",
+			extractType: "jsonpath",
+			expression:  "$.environment",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			detected := detectPostmanExtractors([]event{{
+				Listen: "test",
+				Script: eventScript{Exec: []string{tt.script}},
+			}})
+			if len(detected) != 1 {
+				t.Fatalf("detected = %#v, want one final extractor", detected)
+			}
+			got := detected[0]
+			if got.varName != "token" || got.source != tt.source ||
+				got.extractType != tt.extractType || got.expression != tt.expression {
+				t.Fatalf("extractor = %#v, want source=%q type=%q expression=%q", got, tt.source, tt.extractType, tt.expression)
+			}
+		})
+	}
+}
+
+func TestConvertPostmanLocalResponseVariableDoesNotLeakIntoNextRequest(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "info": {"name": "Local response lifetime"},
+  "variable": [
+    {"key": "baseUrl", "value": "https://api.example.test"},
+    {"key": "token", "value": "collection-fallback"}
+  ],
+  "item": [
+    {
+      "name": "Producer",
+      "event": [{"listen": "test", "script": {"exec": [
+        "pm.variables.set(\"token\", pm.response.json().request_only);"
+      ]}}],
+      "request": {"method": "GET", "url": "{{baseUrl}}/produce"}
+    },
+    {
+      "name": "Consumer",
+      "request": {"method": "GET", "url": "{{baseUrl}}/consume/{{token}}"}
+    }
+  ]
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[0].Extractors; len(got) != 0 {
+		t.Fatalf("request-local response write produced persistent extractors: %#v", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/consume/{{var.token}}" {
+		t.Fatalf("consumer target = %q, want collection fallback binding", got)
+	}
+	if !postmanParameterNames(result, "token") {
+		t.Fatalf("collection fallback parameter missing: %#v", result.Script.Parameters)
+	}
+}
+
 func TestConvertPostmanChainsTestScriptCaptures(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `{

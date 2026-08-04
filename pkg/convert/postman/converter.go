@@ -313,12 +313,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceFileName := "postman_collection.json"
 	sources := map[string]string{sourceFileName: content}
 	sourceMappings := make([]sourceview.Mapping, 0)
-	sourceVars := collectionVariables(col.Variable)
+	collectionVars := collectionVariables(col.Variable)
 	envVars := environmentVariables(req.EnvironmentContent, &diagnostics)
-	for key, value := range envVars {
-		sourceVars[key] = value
-	}
+	scopedVars := newPostmanScopedVariables(collectionVars, envVars)
+	sourceVars, effectiveLiteralAssignments := scopedVars.effectiveValues()
 	variableBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
+	effectiveLiteralAssignmentNames := postmanEffectiveLiteralAssignmentNames(collectionVars, envVars, requests)
+	responseAssignmentNames := postmanResponseAssignmentNames(requests)
+	parameterlessLiteralNames := postmanLiteralOnlyAssignmentNames(effectiveLiteralAssignmentNames, responseAssignmentNames)
+	variableBindings.Lookup.inlineLiterals = unionPostmanVariableSets(parameterlessLiteralNames, effectiveLiteralAssignments)
 	vars := variableBindings.Lookup
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
 	scriptName := sanitizeName(convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, col.Info.Name, "Imported_Postman_Collection"))
@@ -369,8 +372,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 
-	result.Script.Parameters = buildParameters(variableBindings.RuntimeValues, baseURL)
-	result.Script.Parameters = mergeParameters(result.Script.Parameters, pathVariableParameters(requests))
+	result.Script.Parameters = buildParameters(postmanRuntimeValuesWithoutInlinedLiterals(variableBindings.RuntimeValues, parameterlessLiteralNames), baseURL)
+	result.Script.Parameters = mergeParameters(result.Script.Parameters, postmanParametersWithoutInlinedLiterals(pathVariableParameters(requests), parameterlessLiteralNames))
 	if convertutil.BoolOption(req.Options.UseParameterDataSet, true) {
 		result.Script.Parameters, result.Script.DataSources = postmanParameterDataSource(
 			result.Script.Parameters,
@@ -392,8 +395,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceLineIndex := sourceview.NewLineIndex(content)
 	eventSourceRedacted := false
 	for index, item := range requests {
-		applyPostmanEventVariablesForListen(sourceVars, item, "prerequest", &diagnostics)
+		scopedVars.clearLocal()
+		applyPostmanScopedEventAssignmentsForListen(scopedVars, item, "prerequest", &diagnostics)
+		sourceVars, effectiveLiteralAssignments = scopedVars.effectiveValues()
 		currentBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
+		currentBindings.Lookup.inlineLiterals = unionPostmanVariableSets(parameterlessLiteralNames, effectiveLiteralAssignments)
 		vars = currentBindings.Lookup
 		requestPipeline.updateSourceVariables(currentBindings.SourceValues, currentBindings.Dependencies)
 		reportPostmanEvents(item, &diagnostics)
@@ -434,7 +440,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			item,
 			len(assets) != 0,
 			hasUnsupportedBody,
-			variableBindings.ReviewRequired,
+			currentBindings.ReviewRequired,
 			invalidMultipartMetadata,
 			&diagnostics,
 		)
@@ -454,11 +460,18 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		actionIndex := len(result.Script.Actions)
 		result.Script.Actions = append(result.Script.Actions, action)
-		chainItems = append(chainItems, postmanChainItem{ActionIndex: actionIndex, Item: item})
 		sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, sourceLineIndex, item, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "Postman request was converted into a generated APEX Load action."))
 		result.Summary.Requests = append(result.Summary.Requests, action.Method+" "+action.Target)
 		result.Stats.ConvertedActions++
-		applyPostmanEventVariablesForListen(sourceVars, item, "test", &diagnostics)
+		responseWrites := applyPostmanScopedEventAssignmentsForListen(scopedVars, item, "test", &diagnostics)
+		// pm.variables is request-local. Clear it after post-response scripts before
+		// choosing which persistent response write supplies later request templates.
+		scopedVars.clearLocal()
+		chainItems = append(chainItems, postmanChainItem{
+			ActionIndex: actionIndex,
+			Item:        item,
+			Extractors:  scopedVars.effectiveResponseExtractors(responseWrites),
+		})
 	}
 	if len(result.Script.Actions) == 0 {
 		return nil, errors.New("Postman collection contains no supported requests")
@@ -466,8 +479,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	// Retain deterministic literal assignments as authoring parameters after
 	// applying them in source order. This preserves the existing review surface
 	// without leaking a later assignment backward into earlier requests.
+	sourceVars, _ = scopedVars.effectiveValues()
 	finalBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
-	result.Script.Parameters = mergeParameters(result.Script.Parameters, buildParameters(finalBindings.RuntimeValues, baseURL))
+	result.Script.Parameters = mergeParameters(result.Script.Parameters, buildParameters(postmanRuntimeValuesWithoutInlinedLiterals(finalBindings.RuntimeValues, parameterlessLiteralNames), baseURL))
 	// Turn pm.<scope>.set("var", pm.response...) test-script assignments into
 	// response extractors on the producing action so later {{var.X}} references
 	// resolve at replay (Postman's response→request chaining idiom).
@@ -814,34 +828,192 @@ func postmanEventRequiresReview(event event) bool {
 	return true
 }
 
-var postmanSetPattern = regexp.MustCompile(`pm\.(?:environment|collectionVariables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']*)["']\s*\)`)
+var postmanSetPattern = regexp.MustCompile(`pm\.(environment|collectionVariables|globals|variables)\.set\s*\(\s*["']([^"']+)["']\s*,\s*["']([^"']*)["']\s*\)`)
 
-func applyPostmanEventVariables(vars map[string]string, requests []requestItem, diagnostics *diag.Collector) {
-	for _, req := range requests {
-		applyPostmanEventVariablesForListen(vars, req, "", diagnostics)
+// postmanEffectiveLiteralAssignmentNames simulates the collection event walk
+// and records only script literals that actually win scope resolution for an
+// authored request. A lower-scope write that remains shadowed by a stable
+// environment value must not turn that environment parameter into a collection-
+// wide inline literal.
+func postmanEffectiveLiteralAssignmentNames(
+	collectionValues map[string]string,
+	environmentValues map[string]string,
+	requests []requestItem,
+) map[string]struct{} {
+	state := newPostmanScopedVariables(collectionValues, environmentValues)
+	names := make(map[string]struct{})
+	for _, request := range requests {
+		state.clearLocal()
+		applyPostmanScopedEventAssignmentsForListen(state, request, "prerequest", nil)
+		_, effective := state.effectiveValues()
+		for name := range effective {
+			names[name] = struct{}{}
+		}
+		applyPostmanScopedEventAssignmentsForListen(state, request, "test", nil)
+		state.clearLocal()
 	}
+	return names
 }
 
-func applyPostmanEventVariablesForListen(vars map[string]string, req requestItem, listen string, diagnostics *diag.Collector) {
-	location := postmanItemLocation(req)
-	for _, ev := range req.Events {
-		if listen != "" && !strings.EqualFold(strings.TrimSpace(ev.Listen), listen) {
-			continue
-		}
-		for _, line := range ev.Script.Exec {
-			for _, match := range postmanSetPattern.FindAllStringSubmatch(line, -1) {
-				if len(match) < 3 {
-					continue
+func postmanResponseAssignmentNames(requests []requestItem) map[string]struct{} {
+	names := make(map[string]struct{})
+	for _, request := range requests {
+		for _, ev := range request.Events {
+			for _, occurrence := range postmanAssignmentOccurrences(ev) {
+				if occurrence.extractor != nil {
+					if name := postmanVariableCanonicalName(occurrence.name); name != "" {
+						names[name] = struct{}{}
+					}
 				}
-				key := strings.TrimSpace(match[1])
-				if key == "" {
-					continue
-				}
-				vars[key] = match[2]
-				diagnostics.Add(diag.Info, "Postman script variable", location, "translated deterministic pm variable assignment for "+key)
 			}
 		}
 	}
+	return names
+}
+
+func postmanLiteralOnlyAssignmentNames(literal, response map[string]struct{}) map[string]struct{} {
+	result := make(map[string]struct{}, len(literal))
+	for name := range literal {
+		if _, dynamic := response[name]; !dynamic {
+			result[name] = struct{}{}
+		}
+	}
+	return result
+}
+
+type postmanAssignmentOccurrence struct {
+	offset    int
+	scope     postmanVariableScope
+	name      string
+	value     string
+	literal   bool
+	extractor *detectedExtractor
+}
+
+func postmanAssignmentOccurrences(event event) []postmanAssignmentOccurrence {
+	script := strings.Join(event.Script.Exec, "\n")
+	occurrences := make([]postmanAssignmentOccurrence, 0)
+	for _, match := range postmanSetPattern.FindAllStringSubmatchIndex(script, -1) {
+		if len(match) < 8 || match[2] < 0 || match[3] < 0 ||
+			match[4] < 0 || match[5] < 0 || match[6] < 0 || match[7] < 0 {
+			continue
+		}
+		scope, ok := parsePostmanVariableScope(script[match[2]:match[3]])
+		name := strings.TrimSpace(script[match[4]:match[5]])
+		if ok && name != "" {
+			occurrences = append(occurrences, postmanAssignmentOccurrence{
+				offset:  match[0],
+				scope:   scope,
+				name:    name,
+				value:   script[match[6]:match[7]],
+				literal: true,
+			})
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(event.Listen), "test") {
+		aliases := make(map[string]struct{})
+		for _, match := range postmanJSONAliasPattern.FindAllStringSubmatch(script, -1) {
+			if len(match) > 1 {
+				aliases[match[1]] = struct{}{}
+			}
+		}
+		for _, match := range postmanSetJSONPattern.FindAllStringSubmatchIndex(script, -1) {
+			if len(match) < 8 || match[2] < 0 || match[3] < 0 ||
+				match[4] < 0 || match[5] < 0 || match[6] < 0 || match[7] < 0 {
+				continue
+			}
+			scope, ok := parsePostmanVariableScope(script[match[2]:match[3]])
+			name := strings.TrimSpace(script[match[4]:match[5]])
+			if !ok || name == "" {
+				continue
+			}
+			extractor := &detectedExtractor{
+				varName:     normalizeVariableName(name),
+				source:      "body",
+				extractType: "jsonpath",
+				expression:  jsonPathFromDotPath(script[match[6]:match[7]]),
+			}
+			occurrences = append(occurrences, postmanAssignmentOccurrence{
+				offset: match[0], scope: scope, name: name, extractor: extractor,
+			})
+		}
+		for _, match := range postmanSetHeaderPattern.FindAllStringSubmatchIndex(script, -1) {
+			if len(match) < 8 || match[2] < 0 || match[3] < 0 ||
+				match[4] < 0 || match[5] < 0 || match[6] < 0 || match[7] < 0 {
+				continue
+			}
+			scope, ok := parsePostmanVariableScope(script[match[2]:match[3]])
+			name := strings.TrimSpace(script[match[4]:match[5]])
+			if !ok || name == "" {
+				continue
+			}
+			extractor := &detectedExtractor{
+				varName:     normalizeVariableName(name),
+				source:      "header",
+				extractType: "header",
+				expression:  script[match[6]:match[7]],
+			}
+			occurrences = append(occurrences, postmanAssignmentOccurrence{
+				offset: match[0], scope: scope, name: name, extractor: extractor,
+			})
+		}
+		for _, match := range postmanSetAliasPattern.FindAllStringSubmatchIndex(script, -1) {
+			if len(match) < 10 || match[2] < 0 || match[3] < 0 ||
+				match[4] < 0 || match[5] < 0 || match[6] < 0 || match[7] < 0 ||
+				match[8] < 0 || match[9] < 0 {
+				continue
+			}
+			if _, ok := aliases[script[match[6]:match[7]]]; !ok {
+				continue
+			}
+			scope, ok := parsePostmanVariableScope(script[match[2]:match[3]])
+			name := strings.TrimSpace(script[match[4]:match[5]])
+			if !ok || name == "" {
+				continue
+			}
+			extractor := &detectedExtractor{
+				varName:     normalizeVariableName(name),
+				source:      "body",
+				extractType: "jsonpath",
+				expression:  jsonPathFromDotPath(script[match[8]:match[9]]),
+			}
+			occurrences = append(occurrences, postmanAssignmentOccurrence{
+				offset: match[0], scope: scope, name: name, extractor: extractor,
+			})
+		}
+	}
+	sort.SliceStable(occurrences, func(left, right int) bool {
+		return occurrences[left].offset < occurrences[right].offset
+	})
+	return occurrences
+}
+
+func postmanRuntimeValuesWithoutInlinedLiterals(values map[string]string, inline map[string]struct{}) map[string]string {
+	if len(values) == 0 || len(inline) == 0 {
+		return values
+	}
+	out := make(map[string]string, len(values))
+	for name, value := range values {
+		if _, assigned := inline[postmanVariableCanonicalName(name)]; assigned {
+			continue
+		}
+		out[name] = value
+	}
+	return out
+}
+
+func postmanParametersWithoutInlinedLiterals(parameters []dsl.Parameter, inline map[string]struct{}) []dsl.Parameter {
+	if len(parameters) == 0 || len(inline) == 0 {
+		return parameters
+	}
+	out := make([]dsl.Parameter, 0, len(parameters))
+	for _, parameter := range parameters {
+		if _, assigned := inline[postmanVariableCanonicalName(parameter.Name)]; assigned {
+			continue
+		}
+		out = append(out, parameter)
+	}
+	return out
 }
 
 func reportPostmanEvents(item requestItem, diagnostics *diag.Collector) {
@@ -1167,7 +1339,10 @@ func rawURL(u postmanURL) string {
 	if strings.TrimSpace(u.Raw) != "" {
 		raw := strings.TrimSpace(u.Raw)
 		if len(u.Query) > 0 {
-			return reconcileRawQuery(raw, u.Query)
+			raw = reconcileRawQuery(raw, u.Query)
+		}
+		if hash := strings.TrimPrefix(strings.TrimSpace(u.Hash), "#"); hash != "" && !strings.Contains(raw, "#") {
+			raw += "#" + hash
 		}
 		return raw
 	}
@@ -1197,18 +1372,21 @@ func rawURL(u postmanURL) string {
 }
 
 func reconcileRawQuery(raw string, entries []keyValueEntry) string {
+	base, fragment, hasFragment := strings.Cut(raw, "#")
 	query := postmanQueryString(entries)
 	if query == "" {
-		if before, _, ok := strings.Cut(raw, "?"); ok {
-			return before
+		if before, _, ok := strings.Cut(base, "?"); ok {
+			base = before
 		}
-		return raw
+	} else if before, _, ok := strings.Cut(base, "?"); ok {
+		base = before + "?" + query
+	} else {
+		base += "?" + query
 	}
-	before, _, ok := strings.Cut(raw, "?")
-	if !ok {
-		return raw + "?" + query
+	if hasFragment {
+		base += "#" + fragment
 	}
-	return before + "?" + query
+	return base
 }
 
 func postmanQueryString(entries []keyValueEntry) string {
@@ -1236,7 +1414,7 @@ func toTarget(raw string, baseURL string, vars postmanVariableLookup, diagnostic
 	if strings.TrimSpace(baseURL) != "" {
 		base := strings.TrimRight(baseURL, "/")
 		if strings.HasPrefix(expanded, base+"/") {
-			return rewriteVariablesWithContext(rewritePathVariables(strings.TrimPrefix(expanded, base)), vars, diagnostics, location)
+			return rewriteVariablesWithContext(rewritePathVariablesWithContext(strings.TrimPrefix(expanded, base), vars, diagnostics, location), vars, diagnostics, location)
 		}
 		if expanded == base {
 			return "/"
@@ -1251,7 +1429,7 @@ func toTarget(raw string, baseURL string, vars postmanVariableLookup, diagnostic
 			// first-derived base URL and silently send the request to the wrong
 			// host. Userinfo likewise remains visible to the shared credential
 			// projector instead of being discarded during relativization.
-			return rewriteVariablesWithContext(rewritePathVariables(expanded), vars, diagnostics, location)
+			return rewriteVariablesWithContext(rewritePathVariablesWithContext(expanded, vars, diagnostics, location), vars, diagnostics, location)
 		}
 		target := parsed.EscapedPath()
 		if target == "" {
@@ -1260,7 +1438,10 @@ func toTarget(raw string, baseURL string, vars postmanVariableLookup, diagnostic
 		if parsed.RawQuery != "" {
 			target += "?" + parsed.RawQuery
 		}
-		return rewriteVariablesWithContext(rewritePathVariables(target), vars, diagnostics, location)
+		if parsed.Fragment != "" {
+			target += "#" + parsed.EscapedFragment()
+		}
+		return rewriteVariablesWithContext(rewritePathVariablesWithContext(target, vars, diagnostics, location), vars, diagnostics, location)
 	}
 	if strings.HasPrefix(raw, "{{") {
 		return rewriteVariablesWithContext(raw, vars, diagnostics, location)
@@ -1268,7 +1449,7 @@ func toTarget(raw string, baseURL string, vars postmanVariableLookup, diagnostic
 	if !strings.HasPrefix(raw, "/") {
 		raw = "/" + raw
 	}
-	return rewriteVariablesWithContext(rewritePathVariables(raw), vars, diagnostics, location)
+	return rewriteVariablesWithContext(rewritePathVariablesWithContext(raw, vars, diagnostics, location), vars, diagnostics, location)
 }
 
 func postmanURLSameOrigin(left, right *url.URL) bool {
@@ -1917,6 +2098,11 @@ func rewriteVariablesWithContext(value string, vars postmanVariableLookup, diagn
 		if replacement, ok := inlineRuntimeVariable(name, vars, diagnostics, location); ok {
 			return replacement
 		}
+		if vars.ShouldInline(name) {
+			if replacement, _, ok := vars.Get(name); ok {
+				return tmpl.TranslateDynamic(replacement, diagnostics, location)
+			}
+		}
 		if _, bindingName, ok := vars.Get(name); ok && bindingName != "" {
 			return "{{var." + bindingName + "}}"
 		}
@@ -1955,12 +2141,22 @@ func runtimeTemplateValue(value string) bool {
 var pathVariablePattern = regexp.MustCompile(`(^|/):([A-Za-z][A-Za-z0-9_-]*)`)
 
 func rewritePathVariables(value string) string {
+	return rewritePathVariablesWithContext(value, postmanVariableLookup{}, nil, "")
+}
+
+func rewritePathVariablesWithContext(value string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
 	return pathVariablePattern.ReplaceAllStringFunc(value, func(token string) string {
 		matches := pathVariablePattern.FindStringSubmatch(token)
 		if len(matches) != 3 {
 			return token
 		}
-		return matches[1] + "{{var." + normalizeVariableName(matches[2]) + "}}"
+		name := matches[2]
+		if vars.ShouldInline(name) {
+			if replacement, _, ok := vars.Get(name); ok {
+				return matches[1] + tmpl.TranslateDynamic(replacement, diagnostics, location)
+			}
+		}
+		return matches[1] + "{{var." + normalizeVariableName(name) + "}}"
 	})
 }
 

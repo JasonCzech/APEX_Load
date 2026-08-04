@@ -46,7 +46,8 @@ dataPlatform:
   # config.eventhubs.connection_string_secret. The native eventhubs adapter needs
   # images built with -tags eventhubs_real (image.tag); the default image
   # fail-closes on non-mock Event Hubs scripts.
-  # Empty derives the headless-service target from the Helm release namespace.
+  # Empty derives the headless-service target from namespace.name, falling back
+  # to the Helm release namespace.
   generators: ""
   generatorDiscoveryInterval: 15s
   generatorTimeout: 10s

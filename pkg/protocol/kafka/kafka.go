@@ -864,6 +864,8 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 	key := paramString(action.Params, "key", "")
 	correlationID := paramString(action.Params, "correlation_id", "")
+	_, actionPartition := intParamOK(action.Params, "partition")
+	manualPartition := actionPartition || strings.EqualFold(strings.TrimSpace(k.cfg.PartitionStrategy), "explicit")
 	headers := cloneStringMap(action.Headers)
 	if headers == nil && len(action.Metadata) > 0 {
 		headers = make(map[string]string)
@@ -877,13 +879,14 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 		}
 	}
 	return kafkaRecord{
-		Key:           key,
-		Value:         action.Body,
-		Headers:       headers,
-		Topic:         topic,
-		Partition:     k.resolvePartition(action, key),
-		CorrelationID: correlationID,
-		Timestamp:     time.Now(),
+		Key:             key,
+		Value:           action.Body,
+		Headers:         headers,
+		Topic:           topic,
+		Partition:       k.resolvePartition(action, key),
+		ManualPartition: manualPartition,
+		CorrelationID:   correlationID,
+		Timestamp:       time.Now(),
 	}
 }
 

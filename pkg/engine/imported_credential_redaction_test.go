@@ -1047,10 +1047,13 @@ func TestImportedCredentialValuesAcceptsEffectiveRequestBaseURLLocators(t *testi
 	if err != nil {
 		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
 	}
-	for _, expected := range []string{username, password, token} {
+	for _, expected := range []string{password, username + ":" + password, token} {
 		if !containsExactString(values, expected) {
 			t.Fatalf("values = %#v, want %q", values, expected)
 		}
+	}
+	if containsExactString(values, username) {
+		t.Fatalf("values = %#v, bare username was governed as a secret", values)
 	}
 	if containsExactString(values, "east") {
 		t.Fatalf("values = %#v, nonsensitive query value was governed", values)

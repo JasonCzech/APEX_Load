@@ -115,6 +115,13 @@ metadata:
 {{ include "apexload.labels" . | indent 4 }}
 spec:
   replicas: {{ ternary 2 .Values.controller.replicas .Values.controller.ha.enabled }}
+{{- if not .Values.controller.ha.enabled }}
+  # A non-HA controller must never overlap its replacement: overlapping pods
+  # can both orchestrate runs, and the default RWO import-assets claim may not
+  # attach to replacement and incumbent pods on different nodes.
+  strategy:
+    type: Recreate
+{{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: apexload-controller
@@ -234,10 +241,8 @@ spec:
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
-{{- if .Values.importAssets.persistence.enabled }}
             - name: import-assets
               mountPath: {{ .Values.importAssets.root | quote }}
-{{- end }}
 {{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
             - name: bruno-artifacts
               mountPath: {{ .Values.bruno.artifactRoot | quote }}
@@ -272,10 +277,13 @@ spec:
         - name: grpc-tls
           secret:
             secretName: {{ .Values.controller.grpcTlsSecretName }}
-{{- if .Values.importAssets.persistence.enabled }}
         - name: import-assets
+{{- if .Values.importAssets.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "apexload.importAssetsClaimName" . | quote }}
+{{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.importAssets.persistence.size | quote }}
 {{- end }}
 {{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
         - name: bruno-artifacts

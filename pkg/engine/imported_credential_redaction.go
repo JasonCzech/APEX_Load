@@ -597,9 +597,10 @@ func importedCredentialStringAt(raw any, index int) (string, bool) {
 	return "", false
 }
 
-// collectDSN protects both the complete connection composite and components
-// that database drivers may echo independently in errors. A DSN is itself a
-// credential-governed field, so even neutral query option names are included.
+// collectDSN protects both the complete connection composite and protected
+// components (passwords, tokens, and sensitive options) that database drivers
+// may echo independently in errors. A DSN is itself a credential-governed
+// field, so even neutral query option names are included.
 func (collector *importedCredentialCollector) collectDSN(raw string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -625,11 +626,7 @@ func (collector *importedCredentialCollector) collectDSN(raw string) {
 	}
 	if parsed, err := url.Parse(candidate); err == nil {
 		if parsed.User != nil {
-			collector.add(parsed.User.String())
-			collector.add(parsed.User.Username())
-			if password, ok := parsed.User.Password(); ok {
-				collector.add(password)
-			}
+			collector.collectURLUserinfo(parsed.User)
 		}
 		for _, values := range parsed.Query() {
 			for _, value := range values {
@@ -665,8 +662,10 @@ func (collector *importedCredentialCollector) collectJDBCReviewEnvelope(raw stri
 		return false
 	}
 	collector.collectDSN(envelope.JDBCURL)
-	collector.add(envelope.Username)
 	collector.add(envelope.Password)
+	if envelope.Username != "" && envelope.Password != "" {
+		collector.add(envelope.Username + ":" + envelope.Password)
+	}
 	return true
 }
 
@@ -1901,11 +1900,7 @@ func (collector *importedCredentialCollector) collectURL(raw string, target *imp
 		return
 	}
 	if parsed.User != nil {
-		collector.add(parsed.User.String())
-		collector.add(parsed.User.Username())
-		if password, ok := parsed.User.Password(); ok {
-			collector.add(password)
-		}
+		collector.collectURLUserinfo(parsed.User)
 	}
 	queryStart := strings.IndexByte(raw, '?')
 	if queryStart < 0 {
@@ -1962,11 +1957,7 @@ func (collector *importedCredentialCollector) collectURLTarget(
 		if err != nil || parsed.User == nil {
 			return errors.New("retained credential userinfo locator no longer matches the executable request")
 		}
-		collector.add(parsed.User.String())
-		collector.add(parsed.User.Username())
-		if password, ok := parsed.User.Password(); ok {
-			collector.add(password)
-		}
+		collector.collectURLUserinfo(parsed.User)
 		return nil
 	case strings.HasSuffix(field, ".fragment"):
 		parsed, err := url.Parse(raw)
@@ -1979,6 +1970,24 @@ func (collector *importedCredentialCollector) collectURLTarget(
 		collector.collectURL(raw, &target)
 		return nil
 	}
+}
+
+// collectURLUserinfo protects the password and the complete userinfo composite
+// without treating an ordinary username as a secret everywhere it appears. A
+// bare username is a stable identifier in many imported scripts and adding it
+// to the exact-value matcher corrupts paths, action names, and metric labels.
+func (collector *importedCredentialCollector) collectURLUserinfo(user *url.Userinfo) {
+	if collector == nil || user == nil {
+		return
+	}
+	password, ok := user.Password()
+	if !ok {
+		return
+	}
+	username := user.Username()
+	collector.add(password)
+	collector.add(username + ":" + password)
+	collector.add(user.String())
 }
 
 func (collector *importedCredentialCollector) collectURLPathTarget(

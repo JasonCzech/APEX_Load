@@ -1,12 +1,16 @@
 package api
 
 import (
+	"net/url"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 func openAPIKeyedAction(name, operationKey string) dsl.Action {
@@ -29,6 +33,26 @@ func csvDataSource(name, inline string, columns ...string) dsl.DataSource {
 		FirstRowHeader: true,
 		Columns:        columns,
 	}
+}
+
+func governedCSVAsset(t *testing.T, projectID, content string) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := fileasset.RegisterProjectRoot(root); err != nil {
+		t.Fatalf("register project asset root: %v", err)
+	}
+	projectDir, err := fileasset.ProjectAssetDir(root, projectID)
+	if err != nil {
+		t.Fatalf("resolve project asset directory: %v", err)
+	}
+	if err := os.MkdirAll(projectDir, 0o700); err != nil {
+		t.Fatalf("create project asset directory: %v", err)
+	}
+	path := filepath.Join(projectDir, "data.csv")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write project asset: %v", err)
+	}
+	return path
 }
 
 func TestDiffOpenAPIImportFullReplace(t *testing.T) {
@@ -162,8 +186,300 @@ func TestMergeCSVDataSourcePreservesExistingExternalAssetConfiguration(t *testin
 	if merged.InlineData != "" {
 		t.Fatalf("external source received imported inline data: %q", merged.InlineData)
 	}
-	if !slices.Equal(merged.Columns, []string{"id", "name", "email"}) || !slices.Equal(added, []string{"email"}) {
-		t.Fatalf("columns = %#v added=%#v", merged.Columns, added)
+	if !slices.Equal(merged.Columns, []string{"id", "name"}) || len(added) != 0 {
+		t.Fatalf("external asset advertised unavailable columns: columns=%#v added=%#v", merged.Columns, added)
+	}
+}
+
+func TestMergeCSVDataSourceHonorsHeaderlessTabSources(t *testing.T) {
+	existing := dsl.DataSource{
+		Name:           "users",
+		Type:           "csv",
+		InlineData:     "1\tAlice\n2\tBob\n",
+		Strategy:       "sequential",
+		Delimiter:      "auto",
+		FirstRowHeader: false,
+		Columns:        []string{"id", "name"},
+	}
+	imported := dsl.DataSource{
+		Name:           "users",
+		Type:           "csv",
+		InlineData:     "sample-id\tuser@example.test\n",
+		Strategy:       "sequential",
+		Delimiter:      "tab",
+		FirstRowHeader: false,
+		Columns:        []string{"id", "email"},
+	}
+
+	merged, added := mergeCSVDataSource(existing, imported)
+	if !slices.Equal(added, []string{"email"}) {
+		t.Fatalf("added columns = %#v, want email", added)
+	}
+	if merged.FirstRowHeader {
+		t.Fatal("headerless source was changed to first_row_header=true")
+	}
+	if merged.Delimiter != "tab" {
+		t.Fatalf("normalized delimiter = %q, want tab", merged.Delimiter)
+	}
+	if strings.HasPrefix(merged.InlineData, "id\t") || strings.Contains(merged.InlineData, ",") {
+		t.Fatalf("headerless tab data was rendered with the wrong shape: %q", merged.InlineData)
+	}
+	header, rows := parseCSVDataSource(merged)
+	if !slices.Equal(header, []string{"id", "name", "email"}) {
+		t.Fatalf("runtime columns = %#v", header)
+	}
+	wantRows := [][]string{{"1", "Alice", "user@example.test"}, {"2", "Bob", "user@example.test"}}
+	if !slices.EqualFunc(rows, wantRows, func(left, right []string) bool { return slices.Equal(left, right) }) {
+		t.Fatalf("runtime rows = %#v, want %#v", rows, wantRows)
+	}
+}
+
+func TestMergeImportUsesGovernedExternalCSVHeaderInsteadOfColumnsMetadata(t *testing.T) {
+	const projectID = "project-a"
+	actualWide := governedCSVAsset(t, projectID, "id\temail\n1\ta@example.test\n")
+	actualNarrow := governedCSVAsset(t, projectID, "id\n1\n")
+	imported := &dsl.Script{
+		Actions: []dsl.Action{func() dsl.Action {
+			action := openAPIKeyedAction("Get", "GET /users")
+			action.Body = `{"email":"{{data.openapi.email}}"}`
+			return action
+		}()},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")},
+	}
+
+	t.Run("actual header prevents false gate", func(t *testing.T) {
+		existing := &dsl.Script{
+			ProjectID: projectID,
+			Actions:   []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+			DataSources: []dsl.DataSource{{
+				Name: "openapi", Type: "csv", StorageRef: (&url.URL{Scheme: "file", Path: actualWide}).String(),
+				Delimiter: "tab", FirstRowHeader: true, Columns: []string{"id"},
+			}},
+		}
+		merged := mergeOpenAPIImportScript(existing, imported)
+		if blocker := merged.Actions[0].Metadata["execution_blocker"]; blocker != nil {
+			t.Fatalf("actual email header was falsely gated: blocker=%v metadata=%#v", blocker, merged.Actions[0].Metadata)
+		}
+	})
+
+	t.Run("actual header catches stale advertised column", func(t *testing.T) {
+		existing := &dsl.Script{
+			ProjectID: projectID,
+			Actions:   []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+			DataSources: []dsl.DataSource{{
+				Name: "openapi", Type: "csv", Path: actualNarrow,
+				Delimiter: "comma", FirstRowHeader: true, Columns: []string{"id", "email"},
+			}},
+		}
+		merged := mergeOpenAPIImportScript(existing, imported)
+		if blocker := merged.Actions[0].Metadata["execution_blocker"]; blocker != "import_review_required" {
+			t.Fatalf("missing actual email header was not gated: blocker=%v metadata=%#v", blocker, merged.Actions[0].Metadata)
+		}
+		if _, unknown := merged.Actions[0].Metadata["unknown_external_data_source_schemas"]; unknown {
+			t.Fatalf("readable governed schema was reported unknown: %#v", merged.Actions[0].Metadata)
+		}
+	})
+}
+
+func TestMergeImportFailsClosedWhenExternalCSVHeaderIsUnknown(t *testing.T) {
+	existing := &dsl.Script{
+		ProjectID: "project-a",
+		Actions:   []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+		DataSources: []dsl.DataSource{{
+			Name: "openapi", Type: "csv", Path: "/arbitrary/operator/users.csv",
+			FirstRowHeader: true, Columns: []string{"id", "email"},
+		}},
+	}
+	imported := &dsl.Script{
+		Actions: []dsl.Action{func() dsl.Action {
+			action := openAPIKeyedAction("Get", "GET /users")
+			action.Body = `{"email":"{{data.openapi.email}}"}`
+			return action
+		}()},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")},
+	}
+
+	merged := mergeOpenAPIImportScript(existing, imported)
+	if blocker := merged.Actions[0].Metadata["execution_blocker"]; blocker != "import_review_required" {
+		t.Fatalf("unknown external schema trusted Columns metadata: blocker=%v metadata=%#v", blocker, merged.Actions[0].Metadata)
+	}
+	unknown, _ := merged.Actions[0].Metadata["unknown_external_data_source_schemas"].([]string)
+	if !slices.Equal(unknown, []string{"openapi"}) {
+		t.Fatalf("unknown schema disclosure = %#v", unknown)
+	}
+	review, _ := merged.Actions[0].Metadata["import_review"].(map[string]any)
+	reasons, _ := review["reason_codes"].([]string)
+	if !slices.Contains(reasons, "external_data_source_schema_unknown") {
+		t.Fatalf("review reasons = %#v", reasons)
+	}
+}
+
+func TestMergeImportPreservesJSONDecodedReviewBlockersWhenGatingCSV(t *testing.T) {
+	existing := &dsl.Script{
+		Actions: []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+		DataSources: []dsl.DataSource{{
+			Name: "openapi", Type: "csv", Path: "/arbitrary/operator/users.csv",
+			FirstRowHeader: true, Columns: []string{"email"},
+		}},
+	}
+	action := openAPIKeyedAction("Get", "GET /users")
+	action.Body = `{{data.openapi.email}}`
+	action.Metadata["execution_blockers"] = []any{"existing_blocker"}
+	action.Metadata["import_review"] = map[string]any{"reason_codes": []any{"existing_reason"}}
+	imported := &dsl.Script{
+		Actions:     []dsl.Action{action},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "email\na@example.test\n", "email")},
+	}
+
+	merged := mergeOpenAPIImportScript(existing, imported)
+	blockers, _ := merged.Actions[0].Metadata["execution_blockers"].([]string)
+	if !slices.Equal(blockers, []string{"existing_blocker", "import_review_required"}) {
+		t.Fatalf("execution blockers = %#v", blockers)
+	}
+	review, _ := merged.Actions[0].Metadata["import_review"].(map[string]any)
+	reasons, _ := review["reason_codes"].([]string)
+	if !slices.Equal(reasons, []string{"existing_reason", "external_data_source_schema_unknown"}) {
+		t.Fatalf("review reasons = %#v", reasons)
+	}
+}
+
+func TestGovernedExternalCSVHeaderReadIsBounded(t *testing.T) {
+	const projectID = "project-a"
+	path := governedCSVAsset(t, projectID, strings.Repeat("x", int(maxImportExternalCSVHeaderBytes)+1)+"\nvalue\n")
+	_, err := readGovernedExternalCSVFirstRecord(projectID, dsl.DataSource{
+		Name: "openapi", Type: "csv", Path: path, FirstRowHeader: true, Delimiter: "comma",
+	})
+	if err == nil || !strings.Contains(err.Error(), "header exceeds") {
+		t.Fatalf("oversized header error = %v", err)
+	}
+}
+
+func TestMergeImportReadsShortHeaderFromLargeGovernedAutoCSV(t *testing.T) {
+	const projectID = "project-a"
+	content := "id,email\n" + strings.Repeat("1,a@example.test\n", 5_000)
+	if len(content) <= int(maxImportExternalCSVHeaderBytes) {
+		t.Fatalf("test fixture is only %d bytes", len(content))
+	}
+	path := governedCSVAsset(t, projectID, content)
+	existing := &dsl.Script{
+		ProjectID: projectID,
+		Actions:   []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+		DataSources: []dsl.DataSource{{
+			Name: "openapi", Type: "csv", Path: path, Delimiter: "auto",
+			FirstRowHeader: true, Columns: []string{"id"},
+		}},
+	}
+	imported := &dsl.Script{
+		Actions: []dsl.Action{func() dsl.Action {
+			action := openAPIKeyedAction("Get", "GET /users")
+			action.Body = `{{data.openapi.email}}`
+			return action
+		}()},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")},
+	}
+
+	merged := mergeOpenAPIImportScript(existing, imported)
+	if blocker := merged.Actions[0].Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("complete short header in large governed CSV was treated as unknown: blocker=%v metadata=%#v", blocker, merged.Actions[0].Metadata)
+	}
+}
+
+func TestMergeImportGatesColumnsUnavailableInPreservedExternalCSV(t *testing.T) {
+	existing := &dsl.Script{
+		Actions:     []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+		DataSources: []dsl.DataSource{{Name: "openapi", Type: "csv", Path: "/operator/users.csv", FirstRowHeader: true, Columns: []string{"id"}}},
+	}
+	imported := &dsl.Script{
+		Actions: []dsl.Action{
+			func() dsl.Action {
+				action := openAPIKeyedAction("Get", "GET /users")
+				action.Body = `{"email":"{{data.openapi.email}}"}`
+				return action
+			}(),
+			openAPIKeyedAction("Health", "GET /health"),
+		},
+		Init:        []dsl.Action{{Name: "Seed", Type: "request", Method: "POST", Target: "/seed", Body: `{{ data.openapi.email }}`}},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")},
+	}
+	merged := mergeOpenAPIImportScript(existing, imported)
+	if !slices.Equal(merged.DataSources[0].Columns, []string{"id"}) {
+		t.Fatalf("external schema changed: %#v", merged.DataSources[0])
+	}
+	if merged.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("action was not gated for unavailable external column: %#v", merged.Actions[0].Metadata)
+	}
+	blocked, _ := merged.Actions[0].Metadata["unavailable_external_data_columns"].(map[string][]string)
+	if !slices.Equal(blocked["openapi"], []string{"email"}) {
+		t.Fatalf("blocked columns = %#v", blocked)
+	}
+	if merged.Actions[1].Metadata["execution_blocker"] != nil {
+		t.Fatalf("unrelated imported action was unnecessarily gated: %#v", merged.Actions[1].Metadata)
+	}
+	if len(merged.Init) != 1 || merged.Init[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("imported lifecycle binding was not gated: %#v", merged.Init)
+	}
+}
+
+func TestMergeImportGatesUnavailableExternalColumnThroughParameterAliases(t *testing.T) {
+	existing := &dsl.Script{
+		Actions:     []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+		DataSources: []dsl.DataSource{{Name: "openapi", Type: "csv", Path: "/operator/users.csv", FirstRowHeader: true, Columns: []string{"id"}}},
+	}
+	imported := &dsl.Script{
+		Actions: []dsl.Action{func() dsl.Action {
+			action := openAPIKeyedAction("Get", "GET /users")
+			action.Body = `{"email":"{{param.contact}}"}`
+			return action
+		}()},
+		Parameters: []dsl.Parameter{
+			{Name: "email", Type: "file", DataSource: "openapi", Column: "email"},
+			{Name: "contact", Type: "list", Values: []string{"{{param.email}}"}},
+		},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")},
+	}
+
+	merged := mergeOpenAPIImportScript(existing, imported)
+	if merged.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("parameter-indirected unavailable column was not gated: %#v", merged.Actions[0].Metadata)
+	}
+	blocked, _ := merged.Actions[0].Metadata["unavailable_external_data_columns"].(map[string][]string)
+	if !slices.Equal(blocked["openapi"], []string{"email"}) {
+		t.Fatalf("blocked columns = %#v", blocked)
+	}
+}
+
+func TestMergeImportUsesPreservedParameterDefinitionWhenEvaluatingExternalColumns(t *testing.T) {
+	existing := &dsl.Script{
+		Actions:     []dsl.Action{openAPIKeyedAction("Get", "GET /users")},
+		DataSources: []dsl.DataSource{{Name: "openapi", Type: "csv", Path: "/operator/users.csv", FirstRowHeader: false, Columns: []string{"id"}}},
+		Parameters:  []dsl.Parameter{{Name: "identity", Type: "file", DataSource: "openapi", Column: "id"}},
+	}
+	imported := &dsl.Script{
+		Actions: []dsl.Action{func() dsl.Action {
+			action := openAPIKeyedAction("Get", "GET /users")
+			action.Target = `/users/{{param.identity}}`
+			return action
+		}()},
+		Parameters:  []dsl.Parameter{{Name: "identity", Type: "file", DataSource: "openapi", Column: "email"}},
+		DataSources: []dsl.DataSource{csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")},
+	}
+
+	merged := mergeOpenAPIImportScript(existing, imported)
+	if merged.Actions[0].Metadata["execution_blocker"] != nil {
+		t.Fatalf("preserved valid parameter was unnecessarily gated: %#v", merged.Actions[0].Metadata)
+	}
+}
+
+func TestMergeCSVDataSourceRebuildsInlineHeaderForExistingOnlyColumns(t *testing.T) {
+	existing := csvDataSource("openapi", "", "id", "name")
+	imported := csvDataSource("openapi", "id,email\n1,a@example.test\n", "id", "email")
+	merged, added := mergeCSVDataSource(existing, imported)
+	if !slices.Equal(added, []string{"email"}) || !slices.Equal(merged.Columns, []string{"id", "name", "email"}) {
+		t.Fatalf("columns=%#v added=%#v", merged.Columns, added)
+	}
+	header, rows := parseCSVDataSource(merged)
+	if !slices.Equal(header, merged.Columns) || len(rows) != 1 || !slices.Equal(rows[0], []string{"1", "", "a@example.test"}) {
+		t.Fatalf("rebuilt inline CSV header/rows = %#v / %#v", header, rows)
 	}
 }
 
@@ -308,7 +624,7 @@ func TestMergeCSVDataSourceUnionsColumns(t *testing.T) {
 	if len(newCols) != 1 || newCols[0] != "email" {
 		t.Fatalf("new columns = %#v, want [email]", newCols)
 	}
-	header, rows := parseCSVInline(merged.InlineData)
+	header, rows := parseCSVDataSource(merged)
 	if strings.Join(header, ",") != "id,name,email" {
 		t.Fatalf("merged header = %#v", header)
 	}

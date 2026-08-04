@@ -85,7 +85,7 @@ func (b *Browser) openBrowserContext() error {
 		return err
 	}
 
-	b.pwContext = browserContext
+	b.setBrowserContext(browserContext)
 	b.startHARMonitor()
 	b.startNetworkWorkers()
 	b.registerPage(page, true)
@@ -370,6 +370,12 @@ func (b *Browser) currentBrowserContext() playwright.BrowserContext {
 	return b.pwContext
 }
 
+func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
+	b.mu.Lock()
+	b.pwContext = browserContext
+	b.mu.Unlock()
+}
+
 func (b *Browser) registerPage(page playwright.Page, activate bool) {
 	if page == nil {
 		return
@@ -405,7 +411,6 @@ func (b *Browser) registerPage(page playwright.Page, activate bool) {
 
 func (b *Browser) removePage(page playwright.Page) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	for i, existing := range b.pages {
 		if existing != page {
 			continue
@@ -413,11 +418,35 @@ func (b *Browser) removePage(page playwright.Page) {
 		b.pages = append(b.pages[:i], b.pages[i+1:]...)
 		break
 	}
+	activeChanged := false
 	if b.pwPage == page {
 		b.pwPage = nil
 		if len(b.pages) > 0 {
 			b.pwPage = b.pages[len(b.pages)-1]
 		}
+		activeChanged = true
+	}
+	staleCDP := playwright.CDPSession(nil)
+	if b.pwCDPPage == page {
+		staleCDP = b.pwCDP
+		b.pwCDP = nil
+		b.pwCDPPage = nil
+	}
+	if activeChanged || staleCDP != nil {
+		// Invalidate a NewCDPSession call that may still be in flight for the
+		// closed page. Its commit path will detach the stale result.
+		b.cdpInstallGeneration++
+	}
+	fallback := b.pwPage
+	browserContext := b.pwContext
+	needsFallbackCDP := fallback != nil && b.pwCDPPage != fallback
+	b.mu.Unlock()
+
+	if staleCDP != nil {
+		_ = staleCDP.Detach()
+	}
+	if needsFallbackCDP {
+		b.installCDPSession(browserContext, fallback)
 	}
 }
 
@@ -625,19 +654,39 @@ func (b *Browser) installCDPSession(browserContext playwright.BrowserContext, pa
 		return
 	}
 	b.mu.Lock()
+	if b.closing || b.pwPage != page {
+		b.mu.Unlock()
+		return
+	}
 	if b.pwCDP != nil && b.pwCDPPage == page {
 		b.mu.Unlock()
 		return
 	}
+	b.cdpInstallGeneration++
+	generation := b.cdpInstallGeneration
+	createCDPSession := b.createCDPSession
 	b.mu.Unlock()
-	cdp, err := browserContext.NewCDPSession(page)
-	if err != nil {
+	var (
+		cdp playwright.CDPSession
+		err error
+	)
+	if createCDPSession != nil {
+		cdp, err = createCDPSession(browserContext, page)
+	} else {
+		cdp, err = browserContext.NewCDPSession(page)
+	}
+	if err != nil || cdp == nil {
 		return
 	}
 	// b.pwCDP is read by the action goroutine (captureRuntimeMetrics) and close();
 	// registerPage runs this on Playwright's OnPage dispatch goroutine, so guard
 	// the write with b.mu (registerPage already released b.mu before calling here).
 	b.mu.Lock()
+	if b.closing || b.pwPage != page || b.cdpInstallGeneration != generation {
+		b.mu.Unlock()
+		_ = cdp.Detach()
+		return
+	}
 	previous := b.pwCDP
 	b.pwCDP = cdp
 	b.pwCDPPage = page

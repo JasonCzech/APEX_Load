@@ -31,15 +31,19 @@ type kafkaClient interface {
 
 // kafkaRecord is a provider-neutral representation of a Kafka record.
 type kafkaRecord struct {
-	Key           string
-	Value         []byte
-	Headers       map[string]string
-	Topic         string
-	Partition     int32
-	Offset        int64
-	LeaderEpoch   int32
-	Timestamp     time.Time
-	CorrelationID string
+	Key       string
+	Value     []byte
+	Headers   map[string]string
+	Topic     string
+	Partition int32
+	// ManualPartition distinguishes an authored partition (including zero) from
+	// the mock broker's resolved partition hint. Real clients must let their
+	// partitioner use broker metadata for key-hash and round-robin routing.
+	ManualPartition bool
+	Offset          int64
+	LeaderEpoch     int32
+	Timestamp       time.Time
+	CorrelationID   string
 }
 
 // recordMeta is the broker acknowledgement returned by a produce.

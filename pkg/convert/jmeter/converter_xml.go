@@ -83,6 +83,48 @@ func findTreeNodes(nodes []*treeNode, name string) []*treeNode {
 	return out
 }
 
+// findEnabledTreeNodes follows JMeter's execution semantics: disabling a plan,
+// thread group, or controller disables its entire subtree even when descendants
+// retain their default enabled="true" attribute.
+func findEnabledTreeNodes(nodes []*treeNode, name string) []*treeNode {
+	var out []*treeNode
+	for _, node := range nodes {
+		if node == nil || node.Element == nil || !jmeterElementEnabled(node.Element) {
+			continue
+		}
+		if node.Element.Name == name {
+			out = append(out, node)
+		}
+		out = append(out, findEnabledTreeNodes(node.Children, name)...)
+	}
+	return out
+}
+
+func enabledJMeterTreeRoots(nodes []*treeNode) []*treeNode {
+	result := make([]*treeNode, 0, len(nodes))
+	for _, node := range nodes {
+		if node != nil && node.Element != nil && jmeterElementEnabled(node.Element) {
+			result = append(result, node)
+		}
+	}
+	return result
+}
+
+func appendDisabledJMeterSelectionMappings(nodes []*treeNode, sourceFile string, mappings *[]sourceview.Mapping) {
+	for _, node := range nodes {
+		if node == nil || node.Element == nil {
+			continue
+		}
+		if !jmeterElementEnabled(node.Element) {
+			if node.Element.Name == "TestPlan" || node.Element.Name == "ThreadGroup" {
+				appendJMeterDisabledMapping(mappings, sourceFile, node.Element)
+			}
+			continue
+		}
+		appendDisabledJMeterSelectionMappings(node.Children, sourceFile, mappings)
+	}
+}
+
 func prop(node *xmlNode, name string) string {
 	if node == nil {
 		return ""

@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -28,6 +30,8 @@ type githubCLIArgs struct {
 	detailsURL  string
 	refresh     bool
 	format      string
+	help        bool
+	err         error
 }
 
 func parseGithubArgs(args []string) githubCLIArgs {
@@ -42,86 +46,55 @@ func parseGithubArgs(args []string) githubCLIArgs {
 		parsed.command = args[0]
 		args = args[1:]
 	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--api":
-			if i+1 < len(args) {
-				i++
-				parsed.api = args[i]
-			}
-		case "--api-key":
-			if i+1 < len(args) {
-				i++
-				parsed.apiKey = args[i]
-			}
-		case "--bearer-token":
-			if i+1 < len(args) {
-				i++
-				parsed.bearerToken = args[i]
-			}
-		case "--project", "--project-id":
-			if i+1 < len(args) {
-				i++
-				parsed.projectID = args[i]
-			}
-		case "--kind":
-			if i+1 < len(args) {
-				i++
-				parsed.kind = args[i]
-			}
-		case "--owner":
-			if i+1 < len(args) {
-				i++
-				parsed.owner = args[i]
-			}
-		case "--repo":
-			if i+1 < len(args) {
-				i++
-				parsed.repo = args[i]
-			}
-		case "--branch":
-			if i+1 < len(args) {
-				i++
-				parsed.branch = args[i]
-			}
-		case "--path":
-			if i+1 < len(args) {
-				i++
-				parsed.path = args[i]
-			}
-		case "--strategy":
-			if i+1 < len(args) {
-				i++
-				parsed.strategy = args[i]
-			}
-		case "--script", "--script-id":
-			if i+1 < len(args) {
-				i++
-				parsed.scriptID = args[i]
-			}
-		case "--test", "--test-id":
-			if i+1 < len(args) {
-				i++
-				parsed.testID = args[i]
-			}
-		case "--commit", "--commit-sha":
-			if i+1 < len(args) {
-				i++
-				parsed.commitSHA = args[i]
-			}
-		case "--details-url":
-			if i+1 < len(args) {
-				i++
-				parsed.detailsURL = args[i]
-			}
-		case "--refresh":
-			parsed.refresh = true
-		case "--format":
-			if i+1 < len(args) {
-				i++
-				parsed.format = args[i]
-			}
-		}
+	flags := flag.NewFlagSet("apexctl github", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.BoolVar(&parsed.help, "help", false, "show help")
+	flags.BoolVar(&parsed.help, "h", false, "show help")
+	flags.StringVar(&parsed.api, "api", parsed.api, "controller URL")
+	flags.StringVar(&parsed.apiKey, "api-key", parsed.apiKey, "API key")
+	flags.StringVar(&parsed.bearerToken, "bearer-token", parsed.bearerToken, "bearer token")
+	flags.StringVar(&parsed.projectID, "project", "", "project ID")
+	flags.StringVar(&parsed.projectID, "project-id", "", "project ID")
+	flags.StringVar(&parsed.kind, "kind", parsed.kind, "sync kind")
+	flags.StringVar(&parsed.owner, "owner", "", "repository owner")
+	flags.StringVar(&parsed.repo, "repo", "", "repository name")
+	flags.StringVar(&parsed.branch, "branch", "", "repository branch")
+	flags.StringVar(&parsed.path, "path", "", "repository path")
+	flags.StringVar(&parsed.strategy, "strategy", "", "sync strategy")
+	flags.StringVar(&parsed.scriptID, "script", "", "script ID")
+	flags.StringVar(&parsed.scriptID, "script-id", "", "script ID")
+	flags.StringVar(&parsed.testID, "test", "", "test ID")
+	flags.StringVar(&parsed.testID, "test-id", "", "test ID")
+	flags.StringVar(&parsed.commitSHA, "commit", "", "commit SHA")
+	flags.StringVar(&parsed.commitSHA, "commit-sha", "", "commit SHA")
+	flags.StringVar(&parsed.detailsURL, "details-url", "", "details URL")
+	flags.BoolVar(&parsed.refresh, "refresh", false, "refresh installation data")
+	flags.StringVar(&parsed.format, "format", parsed.format, "output format")
+	if err := flags.Parse(args); err != nil {
+		parsed.err = err
+	} else if flags.NArg() != 0 {
+		parsed.err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	parsed.api = strings.TrimRight(strings.TrimSpace(parsed.api), "/")
+	parsed.apiKey = strings.TrimSpace(parsed.apiKey)
+	parsed.bearerToken = strings.TrimSpace(parsed.bearerToken)
+	parsed.command = strings.ToLower(strings.TrimSpace(parsed.command))
+	parsed.projectID = strings.TrimSpace(parsed.projectID)
+	parsed.kind = strings.ToLower(strings.TrimSpace(parsed.kind))
+	parsed.owner = strings.TrimSpace(parsed.owner)
+	parsed.repo = strings.TrimSpace(parsed.repo)
+	parsed.branch = strings.TrimSpace(parsed.branch)
+	parsed.path = strings.TrimSpace(parsed.path)
+	parsed.strategy = strings.ToLower(strings.TrimSpace(parsed.strategy))
+	parsed.scriptID = strings.TrimSpace(parsed.scriptID)
+	parsed.testID = strings.TrimSpace(parsed.testID)
+	parsed.commitSHA = strings.TrimSpace(parsed.commitSHA)
+	parsed.detailsURL = strings.TrimSpace(parsed.detailsURL)
+	parsed.format = strings.ToLower(strings.TrimSpace(parsed.format))
+	if err := validateCLIOutputFormat(parsed.format); parsed.err == nil && err != nil {
+		parsed.err = err
+	} else if err := validateCLIControllerURL(parsed.api); parsed.err == nil && err != nil {
+		parsed.err = err
 	}
 	return parsed
 }
@@ -137,9 +110,17 @@ func firstNonEmptyCLI(values ...string) string {
 
 func githubCmd() {
 	args := parseGithubArgs(os.Args[2:])
-	if args.command == "" || args.command == "help" || args.command == "--help" || args.command == "-h" {
+	if args.help || args.command == "" || args.command == "help" || args.command == "--help" || args.command == "-h" {
 		printGithubUsage()
 		return
+	}
+	if args.err != nil {
+		fmt.Fprintf(os.Stderr, "github %s configuration error: %v\n", args.command, args.err)
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
+	if err := validateGithubArgs(args); err != nil {
+		fmt.Fprintf(os.Stderr, "github %s configuration error: %v\n", args.command, err)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	client := NewApiClientWithAuth(strings.TrimRight(args.api, "/"), args.apiKey, args.bearerToken)
 	var (
@@ -156,16 +137,8 @@ func githubCmd() {
 		}
 		out, err = client.getJSON(path)
 	case "policy":
-		if args.projectID == "" {
-			err = fmt.Errorf("--project is required")
-			break
-		}
-		out, err = client.getJSON("/api/v1/projects/" + args.projectID + "/github/policy")
+		out, err = client.getJSON("/api/v1/projects/" + url.PathEscape(args.projectID) + "/github/policy")
 	case "sync":
-		if args.projectID == "" {
-			err = fmt.Errorf("--project is required")
-			break
-		}
 		out, err = client.postJSON("/api/v1/integrations/github/sync-jobs", map[string]any{
 			"project_id": args.projectID,
 			"kind":       args.kind,
@@ -176,17 +149,9 @@ func githubCmd() {
 			"strategy":   args.strategy,
 		})
 	case "status":
-		if args.scriptID == "" {
-			err = fmt.Errorf("--script is required")
-			break
-		}
-		out, err = client.getJSON("/api/v1/scripts/" + args.scriptID + "/github/status")
+		out, err = client.getJSON("/api/v1/scripts/" + url.PathEscape(args.scriptID) + "/github/status")
 	case "check-run":
-		if args.testID == "" {
-			err = fmt.Errorf("--test is required")
-			break
-		}
-		out, err = client.postJSON("/api/v1/tests/"+args.testID+"/github/check-run", map[string]any{
+		out, err = client.postJSON("/api/v1/tests/"+url.PathEscape(args.testID)+"/github/check-run", map[string]any{
 			"owner":       args.owner,
 			"repo":        args.repo,
 			"branch":      args.branch,
@@ -194,14 +159,50 @@ func githubCmd() {
 			"script_id":   args.scriptID,
 			"details_url": args.detailsURL,
 		})
-	default:
-		err = fmt.Errorf("unknown github command: %s", args.command)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "github %s failed: %v\n", args.command, err)
-		os.Exit(1)
+		os.Exit(exitCodeControllerOrTransport)
 	}
 	printGithubResult(args, out)
+}
+
+func validateGithubArgs(args githubCLIArgs) error {
+	if args.api == "" {
+		return fmt.Errorf("--api is required")
+	}
+	switch args.command {
+	case "diagnostics", "installations":
+		return nil
+	case "policy":
+		if args.projectID == "" {
+			return fmt.Errorf("--project is required")
+		}
+		return nil
+	case "sync":
+		if args.projectID == "" {
+			return fmt.Errorf("--project is required")
+		}
+		if args.kind != "import" && args.kind != "push" {
+			return fmt.Errorf("--kind must be import or push")
+		}
+		if args.kind == "push" && args.strategy != "" && args.strategy != "pr" && args.strategy != "commit" {
+			return fmt.Errorf("--strategy must be pr or commit for push sync")
+		}
+		return nil
+	case "status":
+		if args.scriptID == "" {
+			return fmt.Errorf("--script is required")
+		}
+		return nil
+	case "check-run":
+		if args.testID == "" {
+			return fmt.Errorf("--test is required")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown github command: %s", args.command)
+	}
 }
 
 func printGithubUsage() {

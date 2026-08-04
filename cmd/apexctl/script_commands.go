@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -13,6 +15,8 @@ type scriptArgs struct {
 	command string
 	script  string
 	format  string
+	help    bool
+	err     error
 }
 
 type scriptValidationResult struct {
@@ -39,20 +43,28 @@ type scriptExplainResult struct {
 
 func scriptCmd() {
 	args := parseScriptArgs(os.Args[2:])
+	if args.err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", args.err)
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
+	if args.help || args.command == "help" || args.command == "--help" || args.command == "-h" {
+		fmt.Println("Usage: apexctl script <validate|explain> --script <path> [--format text|json]")
+		return
+	}
 	if args.command == "" {
 		fmt.Fprintln(os.Stderr, "error: script subcommand is required (validate or explain)")
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	if args.script == "" {
 		fmt.Fprintln(os.Stderr, "error: --script is required")
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	switch args.command {
 	case "validate":
 		result := validateScriptFile(args.script)
 		writeScriptValidation(args, result)
 		if !result.Valid {
-			os.Exit(1)
+			os.Exit(exitCodeUsageOrConfiguration)
 		}
 	case "explain":
 		result, err := explainScriptFile(args.script)
@@ -62,12 +74,12 @@ func scriptCmd() {
 			} else {
 				fmt.Fprintf(os.Stderr, "error explaining script: %v\n", err)
 			}
-			os.Exit(1)
+			os.Exit(exitCodeUsageOrConfiguration)
 		}
 		writeScriptExplain(args, result)
 	default:
 		fmt.Fprintf(os.Stderr, "error: unknown script subcommand %q\n", args.command)
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 }
 
@@ -77,19 +89,23 @@ func parseScriptArgs(raw []string) scriptArgs {
 		args.command = strings.TrimSpace(raw[0])
 		raw = raw[1:]
 	}
-	for i := 0; i < len(raw); i++ {
-		switch raw[i] {
-		case "--script", "-s":
-			if i+1 < len(raw) {
-				i++
-				args.script = raw[i]
-			}
-		case "--format":
-			if i+1 < len(raw) {
-				i++
-				args.format = raw[i]
-			}
-		}
+	flags := flag.NewFlagSet("apexctl script", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.BoolVar(&args.help, "help", false, "show help")
+	flags.BoolVar(&args.help, "h", false, "show help")
+	flags.StringVar(&args.script, "script", "", "script path")
+	flags.StringVar(&args.script, "s", "", "script path")
+	flags.StringVar(&args.format, "format", args.format, "output format")
+	if err := flags.Parse(raw); err != nil {
+		args.err = err
+	} else if flags.NArg() != 0 {
+		args.err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	args.command = strings.TrimSpace(args.command)
+	args.script = strings.TrimSpace(args.script)
+	args.format = strings.ToLower(strings.TrimSpace(args.format))
+	if err := validateCLIOutputFormat(args.format); args.err == nil && err != nil {
+		args.err = err
 	}
 	return args
 }

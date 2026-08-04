@@ -1,6 +1,7 @@
 package raml
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -198,6 +199,7 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 }
 
 var ramlURIParameterPattern = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_.-]*)\}`)
+var ramlParameterScopePattern = regexp.MustCompile(`[^a-z0-9]+`)
 
 func mergeRAMLURIParameters(parent, local map[string]any) map[string]any {
 	if len(parent) == 0 && len(local) == 0 {
@@ -239,19 +241,89 @@ func bindRAMLURIParameters(action *dsl.Action, script *dsl.Script, declarations 
 			})
 			continue
 		}
+		bindingName := name
 		found := false
 		for _, parameter := range script.Parameters {
-			found = found || parameter.Name == name
+			if parameter.Name != bindingName {
+				continue
+			}
+			if len(parameter.Values) > 0 && parameter.Values[0] == value {
+				found = true
+				break
+			}
+			// The same placeholder name can legitimately mean different things
+			// on different resources. Scope only the conflicting binding so one
+			// resource's example cannot silently leak into another action.
+			bindingName = ramlScopedParameterName(action, name)
+			break
 		}
 		if !found {
-			script.Parameters = append(script.Parameters, dsl.Parameter{Name: name, Type: "list", Update: "once", Values: []string{value}})
+			bindingName, found = collisionSafeRAMLParameterName(script.Parameters, action, name, bindingName, value)
 		}
-		action.Target = strings.ReplaceAll(action.Target, match[0], "{{param."+name+"}}")
+		if !found {
+			script.Parameters = append(script.Parameters, dsl.Parameter{Name: bindingName, Type: "list", Update: "once", Values: []string{value}})
+		}
+		action.Target = strings.ReplaceAll(action.Target, match[0], "{{param."+bindingName+"}}")
 	}
+}
+
+func collisionSafeRAMLParameterName(parameters []dsl.Parameter, action *dsl.Action, sourceName, candidate, value string) (string, bool) {
+	if exists, matching := ramlParameterNameState(parameters, candidate, value); !exists || matching {
+		return candidate, matching
+	}
+
+	// Normalization deliberately removes path punctuation and the readable scope
+	// is capped, so distinct resources can share the same candidate. Add a stable
+	// operation/value fingerprint only on collision, then retain a deterministic
+	// numeric escape hatch for a pre-existing parameter with that exact hash.
+	scope := ""
+	if action != nil {
+		scope = action.Method + "\x00" + action.Target
+	}
+	fingerprint := sha256.Sum256([]byte(scope + "\x00" + sourceName + "\x00" + value))
+	hashed := candidate + "_" + fmt.Sprintf("%x", fingerprint[:6])
+	for suffix := 0; ; suffix++ {
+		unique := hashed
+		if suffix > 0 {
+			unique = fmt.Sprintf("%s_%d", hashed, suffix+1)
+		}
+		exists, matching := ramlParameterNameState(parameters, unique, value)
+		if !exists || matching {
+			return unique, matching
+		}
+	}
+}
+
+func ramlParameterNameState(parameters []dsl.Parameter, name, value string) (exists bool, matching bool) {
+	for _, parameter := range parameters {
+		if parameter.Name != name {
+			continue
+		}
+		exists = true
+		if len(parameter.Values) > 0 && parameter.Values[0] == value {
+			return true, true
+		}
+	}
+	return exists, false
+}
+
+func ramlScopedParameterName(action *dsl.Action, name string) string {
+	scope := strings.ToLower(strings.TrimSpace(action.Method + "_" + action.Target))
+	scope = ramlParameterScopePattern.ReplaceAllString(scope, "_")
+	scope = strings.Trim(scope, "_")
+	if len(scope) > 64 {
+		scope = scope[:64]
+	}
+	if scope == "" {
+		scope = "resource"
+	}
+	return name + "_" + scope
 }
 
 func ramlResponseAssertions(method map[string]any) []dsl.Assertion {
 	responses := mapValue(method["responses"])
+	exactSuccesses := 0
+	onlySuccess := 0
 	for _, raw := range sortedMapKeys(responses) {
 		status := strings.ToUpper(strings.TrimSpace(raw))
 		if status == "2XX" {
@@ -259,8 +331,15 @@ func ramlResponseAssertions(method map[string]any) []dsl.Assertion {
 		}
 		code, err := strconv.Atoi(status)
 		if err == nil && code >= 200 && code <= 299 {
-			return []dsl.Assertion{{Type: "status_code", Expected: code}}
+			exactSuccesses++
+			onlySuccess = code
 		}
+	}
+	if exactSuccesses > 1 {
+		return []dsl.Assertion{{Type: "status_code_range", Min: 200, Max: 299}}
+	}
+	if exactSuccesses == 1 {
+		return []dsl.Assertion{{Type: "status_code", Expected: onlySuccess}}
 	}
 	return []dsl.Assertion{{Type: "status_code", Expected: 200}}
 }

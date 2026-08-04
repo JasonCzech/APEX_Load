@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -13,7 +15,7 @@ func archiveCmd() {
 		fmt.Fprintln(os.Stderr, "error: archive subcommand required (verify)")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, archiveUsage())
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	switch os.Args[2] {
 	case "verify":
@@ -23,7 +25,7 @@ func archiveCmd() {
 	default:
 		fmt.Fprintf(os.Stderr, "unknown archive subcommand: %s\n", os.Args[2])
 		fmt.Fprintln(os.Stderr, archiveUsage())
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 }
 
@@ -40,38 +42,53 @@ func parseArchiveVerifyArgs(args []string) ctlArgs {
 		apiKey:      os.Getenv("APEXLOAD_API_KEY"),
 		bearerToken: os.Getenv("APEXLOAD_BEARER_TOKEN"),
 	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--api":
-			if i+1 < len(args) {
-				i++
-				c.api = args[i]
-			}
-		case "--api-key":
-			if i+1 < len(args) {
-				i++
-				c.apiKey = args[i]
-			}
-		case "--bearer-token":
-			if i+1 < len(args) {
-				i++
-				c.bearerToken = args[i]
-			}
-		case "--test", "--test-id", "-t":
-			if i+1 < len(args) {
-				i++
-				c.test = args[i]
-			}
-		case "--format":
-			if i+1 < len(args) {
-				i++
-				c.format = args[i]
-			}
-		default:
-			if c.test == "" && !strings.HasPrefix(args[i], "-") {
-				c.test = args[i]
-			}
+	flags := flag.NewFlagSet("apexctl archive verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flaggedTest := ""
+	flags.BoolVar(&c.help, "help", false, "show help")
+	flags.BoolVar(&c.help, "h", false, "show help")
+	flags.StringVar(&c.api, "api", c.api, "controller URL")
+	flags.StringVar(&c.apiKey, "api-key", c.apiKey, "API key")
+	flags.StringVar(&c.bearerToken, "bearer-token", c.bearerToken, "bearer token")
+	flags.StringVar(&flaggedTest, "test", "", "test ID")
+	flags.StringVar(&flaggedTest, "test-id", "", "test ID")
+	flags.StringVar(&flaggedTest, "t", "", "test ID")
+	flags.StringVar(&c.format, "format", c.format, "output format")
+
+	// The documented form puts the positional test ID before optional flags.
+	// Go's standard flag package stops at the first positional, so parse the
+	// remainder once more after consuming that single positional argument.
+	if err := flags.Parse(args); err != nil {
+		c.err = err
+		return c
+	}
+	remainder := flags.Args()
+	positionalTest := ""
+	if len(remainder) > 0 {
+		positionalTest = remainder[0]
+		if err := flags.Parse(remainder[1:]); err != nil {
+			c.err = err
+			return c
 		}
+		if flags.NArg() != 0 {
+			c.err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
+			return c
+		}
+	}
+	if positionalTest != "" && flaggedTest != "" {
+		c.err = fmt.Errorf("test ID was supplied both positionally and with --test")
+		return c
+	}
+	c.test = firstNonEmptyCLI(flaggedTest, positionalTest)
+	c.api = strings.TrimRight(strings.TrimSpace(c.api), "/")
+	c.apiKey = strings.TrimSpace(c.apiKey)
+	c.bearerToken = strings.TrimSpace(c.bearerToken)
+	c.test = strings.TrimSpace(c.test)
+	c.format = strings.ToLower(strings.TrimSpace(c.format))
+	if err := validateCLIOutputFormat(c.format); c.err == nil && err != nil {
+		c.err = err
+	} else if err := validateCLIControllerURL(c.api); c.err == nil && err != nil {
+		c.err = err
 	}
 	return c
 }
@@ -82,20 +99,28 @@ func parseArchiveVerifyArgs(args []string) ctlArgs {
 // pipelines can gate on tamper detection.
 func archiveVerifyCmd(args []string) {
 	c := parseArchiveVerifyArgs(args)
+	if c.err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", c.err)
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
+	if c.help {
+		fmt.Println(archiveUsage())
+		return
+	}
 	if c.api == "" {
 		fmt.Fprintln(os.Stderr, "error: --api is required (e.g. http://localhost:8080) or set APEXLOAD_API")
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	if c.test == "" {
 		fmt.Fprintln(os.Stderr, "error: a test id is required (positional <test-id> or --test <id>)")
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 
 	client := NewApiClientWithAuth(c.api, c.apiKey, c.bearerToken)
 	report, err := client.VerifyArchive(c.test)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error verifying archive: %v\n", err)
-		os.Exit(2)
+		os.Exit(exitCodeControllerOrTransport)
 	}
 
 	if c.format == "json" {
@@ -120,7 +145,7 @@ func archiveVerifyCmd(args []string) {
 	}
 
 	if !report.Verified {
-		os.Exit(1)
+		os.Exit(exitCodeTestFailure)
 	}
 }
 

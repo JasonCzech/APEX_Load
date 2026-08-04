@@ -3395,6 +3395,217 @@ func TestHandleImportJMeterUsesCSVSidecarHeaders(t *testing.T) {
 	}
 }
 
+func TestHandleImportJMeterRejectsConflictingMultipartSidecars(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan"/><hashTree>
+<ThreadGroup testname="Users"/><hashTree>
+<CSVDataSet testname="Customers"><stringProp name="filename">customers.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/>
+<HTTPSamplerProxy testname="Lookup"><stringProp name="HTTPSampler.domain">api.example.com</stringProp><stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	tests := []struct {
+		name       string
+		firstName  string
+		secondName string
+		want       string
+	}{
+		{name: "exact filename", firstName: "customers.csv", secondName: "customers.csv", want: "same filename"},
+		// Backslashes survive multipart filename basename normalization on Unix;
+		// the handler normalizes both path separators before checking basenames.
+		{name: "path-qualified basename", firstName: `a\customers.csv`, secondName: `b\customers.csv`, want: "same basename"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			primary, err := writer.CreateFormFile("file", "checkout.jmx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := primary.Write([]byte(jmx)); err != nil {
+				t.Fatal(err)
+			}
+			first, err := writer.CreateFormFile("sidecar_a", test.firstName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := first.Write([]byte("customer_id\nfirst\n")); err != nil {
+				t.Fatal(err)
+			}
+			second, err := writer.CreateFormFile("sidecar_b", test.secondName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := second.Write([]byte("account_id\nsecond\n")); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), test.want) ||
+				!strings.Contains(resp.Body.String(), "different content") {
+				t.Fatalf("status=%d body=%s, want clear %q collision", resp.Code, resp.Body.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestHandleImportJMeterAllowsIdenticalDuplicateMultipartSidecars(t *testing.T) {
+	const jmx = `<?xml version="1.0"?><jmeterTestPlan><hashTree><TestPlan testname="Plan"/><hashTree><ThreadGroup testname="Users"/><hashTree>
+<CSVDataSet testname="Customers"><stringProp name="filename">customers.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/>
+<HTTPSamplerProxy testname="Lookup"><stringProp name="HTTPSampler.domain">api.example.com</stringProp><stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	const payload = "customer_id,region\n42,east\n"
+	tests := []struct {
+		name      string
+		filenames []string
+	}{
+		{name: "exact filename collapses", filenames: []string{"customers.csv", "customers.csv"}},
+		{name: "path-qualified basename remains resolvable", filenames: []string{`a\customers.csv`, `b\customers.csv`}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			primary, err := writer.CreateFormFile("file", "checkout.jmx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := primary.Write([]byte(jmx)); err != nil {
+				t.Fatal(err)
+			}
+			for index, filename := range test.filenames {
+				part, err := writer.CreateFormFile(fmt.Sprintf("sidecar_%d", index), filename)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := part.Write([]byte(payload)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+			}
+			var result struct {
+				Scripts []struct {
+					DataSources []struct {
+						InlineData string   `json:"inline_data"`
+						Columns    []string `json:"columns"`
+					} `json:"data_sources"`
+				} `json:"scripts"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Scripts) != 1 || len(result.Scripts[0].DataSources) != 1 ||
+				result.Scripts[0].DataSources[0].InlineData != payload ||
+				strings.Join(result.Scripts[0].DataSources[0].Columns, ",") != "customer_id,region" {
+				t.Fatalf("identical duplicate sidecar result = %#v", result.Scripts)
+			}
+		})
+	}
+}
+
+func TestHandleImportJMeterAuditsMultipartAndZIPSidecarCollisions(t *testing.T) {
+	const jmx = `<?xml version="1.0"?><jmeterTestPlan><hashTree><TestPlan testname="Plan"/><hashTree><ThreadGroup testname="Users"/><hashTree>
+<CSVDataSet testname="Customers"><stringProp name="filename">customers.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/>
+<HTTPSamplerProxy testname="Lookup"><stringProp name="HTTPSampler.domain">api.example.com</stringProp><stringProp name="HTTPSampler.path">/customers/${customer_id}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	const archivePayload = "customer_id,region\n42,east\n"
+	tests := []struct {
+		name            string
+		uploadName      string
+		uploadPayload   string
+		wantStatus      int
+		wantErrorDetail string
+	}{
+		{name: "different exact filename", uploadName: "customers.csv", uploadPayload: "account_id\n7\n", wantStatus: http.StatusBadRequest, wantErrorDetail: "same filename"},
+		{name: "different basename", uploadName: `external\customers.csv`, uploadPayload: "account_id\n7\n", wantStatus: http.StatusBadRequest, wantErrorDetail: "same basename"},
+		{name: "identical exact filename", uploadName: "customers.csv", uploadPayload: archivePayload, wantStatus: http.StatusOK},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var archive bytes.Buffer
+			zipWriter := zip.NewWriter(&archive)
+			for name, content := range map[string]string{"checkout.jmx": jmx, "customers.csv": archivePayload} {
+				entry, err := zipWriter.Create(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := entry.Write([]byte(content)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := zipWriter.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			primary, err := writer.CreateFormFile("file", "bundle.zip")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := primary.Write(archive.Bytes()); err != nil {
+				t.Fatal(err)
+			}
+			sidecar, err := writer.CreateFormFile("sidecar", test.uploadName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sidecar.Write([]byte(test.uploadPayload)); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			server := NewServer(ServerConfig{})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter", &body)
+			req.Header.Set("Content-Type", writer.FormDataContentType())
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != test.wantStatus {
+				t.Fatalf("status=%d body=%s, want %d", resp.Code, resp.Body.String(), test.wantStatus)
+			}
+			if test.wantErrorDetail != "" && (!strings.Contains(resp.Body.String(), test.wantErrorDetail) ||
+				!strings.Contains(resp.Body.String(), "different content")) {
+				t.Fatalf("body=%s, want clear %q collision", resp.Body.String(), test.wantErrorDetail)
+			}
+			if test.wantStatus == http.StatusOK {
+				var result struct {
+					Scripts []struct {
+						DataSources []struct {
+							InlineData string `json:"inline_data"`
+						} `json:"data_sources"`
+					} `json:"scripts"`
+				}
+				if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Scripts) != 1 || len(result.Scripts[0].DataSources) != 1 ||
+					result.Scripts[0].DataSources[0].InlineData != archivePayload {
+					t.Fatalf("identical multipart/ZIP sidecar result = %#v", result.Scripts)
+				}
+			}
+		})
+	}
+}
+
 func TestHandleImportJMeterZipUsesJMXAndCSVSidecars(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	var zipBody bytes.Buffer

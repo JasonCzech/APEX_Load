@@ -79,6 +79,8 @@ func TestParseCIArgsControllerAndLocalValidation(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--p95-latency-ms", "0"},
+		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--p95-latency-ms", "NaN"},
+		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-avg-server-processing-ms", "+Inf"},
 		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-error-pct", "101"},
 		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-avg-transfer-ms", "-1"},
 		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-error-count", "-1"},

@@ -79,6 +79,90 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	return tx.Commit()
 }
 
+// UpdateRunArchiveTrendPointIfUnchanged updates only the derived trend
+// projection for the publication described by expected. It deliberately does
+// not route through SaveRunArchive: a release-trend request can hold an older
+// catalog snapshot while a manifest refresh publishes a newer archive version.
+// The old snapshot must never overwrite that newer publication's pointers or
+// counts. The existing trend value participates in the CAS so concurrent
+// repairs cannot overwrite one another either.
+func (s *SQLiteStore) UpdateRunArchiveTrendPointIfUnchanged(expected *RunArchiveRecord, trendPointJSON string) (bool, error) {
+	if expected == nil || strings.TrimSpace(expected.TestID) == "" {
+		return false, errors.New("expected run archive is required")
+	}
+	if strings.TrimSpace(trendPointJSON) == "" {
+		return false, errors.New("run archive trend point is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	testQuery := `SELECT 1 FROM tests WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		testQuery += ` FOR UPDATE`
+	}
+	var exists int
+	if err := tx.QueryRow(testQuery, expected.TestID).Scan(&exists); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	var cleanupExists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM archive_cleanup_jobs WHERE test_id = ?`, expected.TestID).Scan(&cleanupExists); err != nil {
+		return false, err
+	}
+	if cleanupExists != 0 {
+		return false, nil
+	}
+
+	result, err := tx.Exec(`UPDATE run_archives SET trend_point_json = ?
+		WHERE test_id = ?
+		  AND COALESCE(ref_key, '') = ?
+		  AND schema_version = ?
+		  AND COALESCE(archive_backend, '') = ?
+		  AND archive_path = ?
+		  AND manifest_path = ?
+		  AND COALESCE(manifest_sha256, '') = ?
+		  AND COALESCE(archive_uri, '') = ?
+		  AND COALESCE(manifest_uri, '') = ?
+		  AND transaction_count = ?
+		  AND resource_sample_count = ?
+		  AND interval_summary_count = ?
+		  AND COALESCE(trend_point_json, '') = ?
+		  AND created_at = ?
+		  AND completed_at = ?`,
+		trendPointJSON,
+		expected.TestID,
+		expected.RefKey,
+		normalizeTelemetrySchemaVersion(expected.SchemaVersion, archiveRecordSchemaVersion),
+		expected.ArchiveBackend,
+		expected.ArchivePath,
+		expected.ManifestPath,
+		expected.ManifestSHA256,
+		expected.ArchiveURI,
+		expected.ManifestURI,
+		expected.TransactionCount,
+		expected.ResourceSampleCount,
+		expected.IntervalSummaryCount,
+		expected.TrendPointJSON,
+		expected.CreatedAt,
+		expected.CompletedAt,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 0 {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *SQLiteStore) GetRunArchive(testID string) (*RunArchiveRecord, error) {
 	var record RunArchiveRecord
 	err := s.db.QueryRow(`SELECT test_id, COALESCE(ref_key, ''), schema_version, COALESCE(archive_backend, ''), archive_path, manifest_path, COALESCE(manifest_sha256, ''), COALESCE(archive_uri, ''), COALESCE(manifest_uri, ''), transaction_count, resource_sample_count, interval_summary_count, COALESCE(trend_point_json, ''), created_at, completed_at FROM run_archives WHERE test_id = ?`, testID).Scan(
@@ -136,7 +220,6 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 		  AND transaction_count = ?
 		  AND resource_sample_count = ?
 		  AND interval_summary_count = ?
-		  AND COALESCE(trend_point_json, '') = ?
 		  AND created_at = ?
 		  AND completed_at = ?`,
 		expected.TestID,
@@ -151,7 +234,6 @@ func (s *SQLiteStore) DeleteRunArchiveIfUnchanged(expected *RunArchiveRecord) (b
 		expected.TransactionCount,
 		expected.ResourceSampleCount,
 		expected.IntervalSummaryCount,
-		expected.TrendPointJSON,
 		expected.CreatedAt,
 		expected.CompletedAt,
 	)

@@ -260,6 +260,56 @@ func TestFailedMutationReleasesOnlyItsOwnedIdempotencyReservation(t *testing.T) 
 	}
 }
 
+func TestCanceledClientFailureReleasesIdempotencyReservation(t *testing.T) {
+	cache := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "idempotency-canceled"})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "retry-after-cancel")
+	resolution := authResolution{User: &AuthenticatedUser{Subject: "alice"}}
+
+	response := httptest.NewRecorder()
+	reservation, ok := enforceIdempotencyKey(response, request, cache, resolution)
+	if !ok || reservation == nil {
+		t.Fatalf("reservation failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	serveReservedMutation(response, request, cache, reservation, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		cancel()
+		writeError(w, http.StatusBadRequest, "invalid request")
+	}))
+
+	retryRequest := httptest.NewRequest(http.MethodPost, request.URL.Path, nil)
+	retryRequest.Header.Set("Idempotency-Key", "retry-after-cancel")
+	retryResponse := httptest.NewRecorder()
+	retry, ok := enforceIdempotencyKey(retryResponse, retryRequest, cache, resolution)
+	if !ok || retry == nil {
+		t.Fatalf("canceled client failure retained reservation: status=%d body=%s", retryResponse.Code, retryResponse.Body.String())
+	}
+}
+
+func TestServerFailureReleasesIdempotencyReservation(t *testing.T) {
+	cache := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "idempotency-server-failure"})
+	request := func() *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/system/usage/snapshots", nil)
+		req.Header.Set("Idempotency-Key", "ambiguous-server-failure")
+		return req
+	}
+	resolution := authResolution{User: &AuthenticatedUser{Subject: "alice"}}
+
+	response := httptest.NewRecorder()
+	reservation, ok := enforceIdempotencyKey(response, request(), cache, resolution)
+	if !ok || reservation == nil {
+		t.Fatalf("reservation failed: status=%d body=%s", response.Code, response.Body.String())
+	}
+	serveReservedMutation(response, request(), cache, reservation, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusInternalServerError, "commit result unknown")
+	}))
+
+	retryResponse := httptest.NewRecorder()
+	if retry, ok := enforceIdempotencyKey(retryResponse, request(), cache, resolution); !ok || retry == nil {
+		t.Fatalf("5xx reservation was retained: retry=%#v status=%d body=%s", retry, retryResponse.Code, retryResponse.Body.String())
+	}
+}
+
 func TestTrustedHeaderAuthRejectsServiceAccountWithoutRouteScope(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

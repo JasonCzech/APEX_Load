@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -237,6 +238,28 @@ func TestRuntimeProtocolCompositeValuesIncludeResolvedImportedDSN(t *testing.T) 
 	if containsExactString(values, unresolved) ||
 		containsExactString(values, "{{secret.DB_CERT_PASSWORD}}") {
 		t.Fatalf("runtime protocol credential values retain unresolved template: %#v", values)
+	}
+}
+
+func TestRuntimeProtocolBasicCompositeValuesExcludeBareUsername(t *testing.T) {
+	const (
+		username = "admin"
+		password = "basic-password-4182"
+	)
+	script := &dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{
+		Type: "basic", Username: username, Password: password,
+	}}}}
+	pair := username + ":" + password
+	payload := base64.StdEncoding.EncodeToString([]byte(pair))
+	values := runtimeProtocolAuthCompositeValues(script, nil)
+
+	if containsExactString(values, username) {
+		t.Fatalf("runtime protocol credential values = %#v, included bare username", values)
+	}
+	for _, expected := range []string{password, pair, payload, "Basic " + payload} {
+		if !containsExactString(values, expected) {
+			t.Fatalf("runtime protocol credential values = %#v, want %q", values, expected)
+		}
 	}
 }
 

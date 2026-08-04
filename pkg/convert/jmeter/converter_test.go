@@ -310,7 +310,7 @@ func TestConvertJMXCSVDataSetInfersHeadersFromSidecarFile(t *testing.T) {
 	result, err := ConvertJMX([]byte(jmx), ConvertOptions{
 		FileName: "checkout.jmx",
 		SidecarFiles: map[string][]byte{
-			"customers.csv": []byte("customer_id,zip\n42,02139\n"),
+			"data/customers.csv": []byte("customer_id,zip\n42,02139\n"),
 		},
 	})
 	if err != nil {

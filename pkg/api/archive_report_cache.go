@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strconv"
 	"strings"
@@ -65,6 +66,19 @@ func newWeightedBoundedArchiveCache[T any](max int, maxBytes int64, weigh func(*
 }
 
 func (c *boundedArchiveCache[T]) getOrLoad(key string, load func() (*T, error)) (*T, error) {
+	return c.getOrLoadContext(context.Background(), key, load)
+}
+
+// getOrLoadContext lets each waiter abandon an in-flight load independently.
+// The load itself is owned by the cache call, not by whichever HTTP request won
+// the singleflight race, so one canceled client cannot poison healthy waiters.
+func (c *boundedArchiveCache[T]) getOrLoadContext(ctx context.Context, key string, load func() (*T, error)) (*T, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if key == "" {
 		return load()
 	}
@@ -77,25 +91,56 @@ func (c *boundedArchiveCache[T]) getOrLoad(key string, load func() (*T, error)) 
 	}
 	if call := c.inFlight[key]; call != nil {
 		c.mu.Unlock()
-		<-call.done
-		return call.value, call.err
+		select {
+		case <-call.done:
+			return call.value, call.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	call := &boundedArchiveCacheCall[T]{done: make(chan struct{}), cache: true}
 	c.inFlight[key] = call
 	c.mu.Unlock()
+	go c.completeLoad(key, call, load)
+	select {
+	case <-call.done:
+		return call.value, call.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
-	call.value, call.err = load()
+func (c *boundedArchiveCache[T]) completeLoad(key string, call *boundedArchiveCacheCall[T], load func() (*T, error)) {
 	loadedSize := int64(0)
 	cacheEligible := true
-	if call.err == nil && call.value != nil && c.weigh != nil {
-		loadedSize = c.weigh(call.value)
-		if loadedSize < 0 || (c.maxBytes > 0 && loadedSize > c.maxBytes) {
-			cacheEligible = false
+	// The cache owns this goroutine, so it also owns its panic boundary. Without
+	// recovery here, a loader panic escapes net/http's per-request recovery and
+	// terminates the controller process. Convert it into a disclosure-safe error,
+	// complete every waiter, and leave the key retryable.
+	func() {
+		defer func() {
+			if recover() != nil {
+				call.value = nil
+				call.err = errors.New("archive cache load failed")
+				cacheEligible = false
+			}
+		}()
+		call.value, call.err = load()
+		if call.err == nil && call.value != nil && c.weigh != nil {
+			loadedSize = c.weigh(call.value)
+			if loadedSize < 0 || (c.maxBytes > 0 && loadedSize > c.maxBytes) {
+				cacheEligible = false
+			}
 		}
-	}
+	}()
 
 	c.mu.Lock()
-	delete(c.inFlight, key)
+	// Invalidation can detach this call and install a newer load under the same
+	// key. Only remove the registry entry when it still belongs to this exact
+	// call; an older completion must not erase the replacement singleflight.
+	if c.inFlight[key] == call {
+		delete(c.inFlight, key)
+	}
 	call.size = loadedSize
 	call.cache = call.cache && cacheEligible
 	if call.cache && call.err == nil && call.value != nil {
@@ -112,7 +157,6 @@ func (c *boundedArchiveCache[T]) getOrLoad(key string, load func() (*T, error)) 
 	}
 	close(call.done)
 	c.mu.Unlock()
-	return call.value, call.err
 }
 
 func (c *boundedArchiveCache[T]) deleteTest(testID string) {
@@ -132,6 +176,9 @@ func (c *boundedArchiveCache[T]) deleteTest(testID string) {
 	for key, call := range c.inFlight {
 		if strings.HasPrefix(key, prefix) {
 			call.cache = false
+			// Existing waiters may finish against their pre-invalidation snapshot,
+			// but requests that arrive after invalidation must start a fresh load.
+			delete(c.inFlight, key)
 		}
 	}
 }

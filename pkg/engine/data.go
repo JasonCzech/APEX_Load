@@ -292,10 +292,13 @@ func openDataSourceReader(src dsl.DataSource, assets map[string][]byte) (io.Read
 	if strings.TrimSpace(src.InlineData) != "" {
 		return io.NopCloser(strings.NewReader(src.InlineData)), nil
 	}
-	if strings.TrimSpace(src.Path) == "" {
-		return nil, fmt.Errorf("either path or inline_data is required")
+	if strings.TrimSpace(src.Path) != "" {
+		return fileasset.OpenPath(src.Path)
 	}
-	return fileasset.OpenPath(src.Path)
+	if strings.TrimSpace(src.StorageRef) != "" {
+		return fileasset.OpenStorageRef(src.StorageRef)
+	}
+	return nil, fmt.Errorf("inline_data, path, or storage_ref is required")
 }
 
 func openFileDataSourceReader(src dsl.DataSource, assets map[string][]byte) (io.ReadCloser, error) {

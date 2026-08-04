@@ -10,6 +10,14 @@ spec:
   # aks-ha overlay, which sets APEXLOAD_CONTROLLER_HA=true and uses the shared
   # PostgreSQL/Redis data platform.
   replicas: 1
+  # Do not overlap non-HA controller revisions or attach the RWO import-assets
+  # claim from incumbent and replacement pods. The HA overlay inherits this
+  # one-at-a-time strategy and keeps one of its two replicas available.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: apexload-controller

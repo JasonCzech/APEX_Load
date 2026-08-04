@@ -21,6 +21,7 @@ const (
 	defaultReplaySessionLeaseTTL           = 30 * time.Second
 	defaultReplaySessionLeaseTimeout       = 5 * time.Second
 	classicReplayRequestTimeout            = 5 * time.Minute
+	classicReplayErrorWriteGrace           = 5 * time.Second
 )
 
 var (
@@ -124,6 +125,10 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 }
 
 func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
+	// The server-wide WriteTimeout is shorter than a governed classic replay.
+	// Extend this route's connection deadline to the replay budget plus enough
+	// grace to deliver its timeout/error response.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(classicReplayRequestTimeout + classicReplayErrorWriteGrace))
 	if requestCtx == nil {
 		requestCtx = context.Background()
 	}

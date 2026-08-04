@@ -1,9 +1,24 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrExtractionMiss marks the absence of a requested response value. Adapter
+// configuration and parsing errors must not wrap this sentinel: on_miss is a
+// disposition for missing data, not permission to ignore an invalid extractor.
+var ErrExtractionMiss = errors.New("extraction found no match")
+
+// MarkExtractionMiss preserves the adapter's useful cause while classifying it
+// for ApplyExtraction.
+func MarkExtractionMiss(cause error) error {
+	if cause == nil {
+		return ErrExtractionMiss
+	}
+	return fmt.Errorf("%w: %v", ErrExtractionMiss, cause)
+}
 
 // Extraction limits protect the VUser variable store. Extracted values persist
 // across iterations, so accepting response-sized values or data-driven key
@@ -57,6 +72,9 @@ func StoreExtraction(result *Result, key, value string) error {
 func ApplyExtraction(result *Result, extractor Extractor, value string, extractionErr error) error {
 	if extractionErr == nil {
 		return StoreExtraction(result, extractor.Name, value)
+	}
+	if !errors.Is(extractionErr, ErrExtractionMiss) {
+		return fmt.Errorf("extractor %q failed: %w", extractor.Name, extractionErr)
 	}
 	switch strings.ToLower(strings.TrimSpace(extractor.OnMiss)) {
 	case "fail":

@@ -18,6 +18,11 @@ const (
 type postmanVariableLookup struct {
 	values       map[string]string
 	bindingNames map[string]string
+	// inlineLiterals identifies deterministic pm.*.set assignments whose value
+	// changes during the collection. The DSL has no equivalent mutable-variable
+	// action, so these bindings are materialized into each request at its source
+	// position instead of pointing every request at one initial parameter value.
+	inlineLiterals map[string]struct{}
 }
 
 func (lookup postmanVariableLookup) Get(name string) (value string, bindingName string, ok bool) {
@@ -30,6 +35,11 @@ func (lookup postmanVariableLookup) Get(name string) (value string, bindingName 
 		return "", "", false
 	}
 	return value, lookup.bindingNames[canonical], true
+}
+
+func (lookup postmanVariableLookup) ShouldInline(name string) bool {
+	_, ok := lookup.inlineLiterals[postmanVariableCanonicalName(name)]
+	return ok
 }
 
 type postmanVariableBindingLimits struct {

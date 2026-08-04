@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	"github.com/jmespath/go-jmespath"
 	googlegrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -804,46 +806,14 @@ func evaluate(assertion protocol.Assertion, result *protocol.Result, body []byte
 }
 
 func extractJSONPath(expr string, body []byte) (string, error) {
-	expr = strings.TrimPrefix(strings.TrimSpace(expr), "$.")
-	if expr == "" {
-		return "", fmt.Errorf("jsonpath expression is required")
+	value, err := jsonextract.JSONPath(expr, body)
+	if errors.Is(err, jsonextract.ErrNotFound) {
+		return "", protocol.MarkExtractionMiss(err)
 	}
-	parts := strings.Split(expr, ".")
-
-	var current any
-	if err := json.Unmarshal(body, &current); err != nil {
-		return "", fmt.Errorf("invalid JSON response: %w", err)
+	if err != nil {
+		return "", fmt.Errorf("invalid JSONPath extraction: %w", err)
 	}
-	for _, part := range parts {
-		idx := -1
-		if bracket := strings.Index(part, "["); bracket != -1 {
-			idxText := strings.TrimSuffix(part[bracket+1:], "]")
-			if _, err := fmt.Sscanf(idxText, "%d", &idx); err != nil {
-				return "", fmt.Errorf("invalid array index %q", idxText)
-			}
-			part = part[:bracket]
-		}
-
-		obj, ok := current.(map[string]any)
-		if !ok {
-			return "", fmt.Errorf("expected object at %q", part)
-		}
-		current, ok = obj[part]
-		if !ok {
-			return "", fmt.Errorf("field %q not found", part)
-		}
-		if idx >= 0 {
-			arr, ok := current.([]any)
-			if !ok {
-				return "", fmt.Errorf("expected array at %q", part)
-			}
-			if idx >= len(arr) {
-				return "", fmt.Errorf("index %d out of range for %q", idx, part)
-			}
-			current = arr[idx]
-		}
-	}
-	return stringifyExtraction(current)
+	return value, nil
 }
 
 func extractJMESPath(expr string, body []byte) (string, error) {
@@ -856,7 +826,7 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("invalid JMESPath expression: %w", err)
 	}
 	if result == nil {
-		return "", fmt.Errorf("no match for JMESPath %q", expr)
+		return "", protocol.MarkExtractionMiss(fmt.Errorf("no match for JMESPath %q", expr))
 	}
 	return stringifyExtraction(result)
 }

@@ -90,6 +90,8 @@ type Browser struct {
 	pwPage               playwright.Page
 	pwCDP                playwright.CDPSession
 	pwCDPPage            playwright.Page
+	cdpInstallGeneration uint64
+	createCDPSession     func(playwright.BrowserContext, playwright.Page) (playwright.CDPSession, error)
 	currentFrameSelector string
 
 	mu             sync.Mutex

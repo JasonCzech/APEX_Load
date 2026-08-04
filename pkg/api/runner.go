@@ -112,6 +112,10 @@ type archivePersistence interface {
 	GetRunArchive(testID string) (*storage.RunArchiveRecord, error)
 }
 
+type archiveTrendPointPersistence interface {
+	UpdateRunArchiveTrendPointIfUnchanged(expected *storage.RunArchiveRecord, trendPointJSON string) (bool, error)
+}
+
 type testNotesPersistence interface {
 	ListTestNotes(testID string) ([]*storage.TestNote, error)
 }

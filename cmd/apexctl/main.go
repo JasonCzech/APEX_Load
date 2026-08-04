@@ -39,7 +39,7 @@ func main() {
 
 	if len(os.Args) < 2 {
 		printUsage()
-		os.Exit(1)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 
 	if handler, ok := apexctlCommandHandlers[os.Args[1]]; ok {
@@ -55,7 +55,7 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
-		os.Exit(1)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 }
 
@@ -76,18 +76,22 @@ func runTest() {
 	args := parseRunArgs(os.Args[2:])
 	if args.err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", args.err)
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
+	if args.help {
+		printUsage()
+		return
 	}
 
 	if args.script == "" {
 		fmt.Fprintln(os.Stderr, "error: --script is required")
-		os.Exit(1)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 
 	script, err := loadScriptForRun(args.script, args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error preparing script: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	goalConfig := resolveGoalConfig(script, args)
 
@@ -100,7 +104,7 @@ func runTest() {
 		scriptBody, err := marshalScriptForUpload(script)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error preparing upload script: %v\n", err)
-			os.Exit(1)
+			os.Exit(exitCodeUsageOrConfiguration)
 		}
 		client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
 		client.PollTimeout = args.timeout
@@ -118,7 +122,7 @@ func runTest() {
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error creating engine: %v\n", err)
-			os.Exit(1)
+			os.Exit(exitCodeUsageOrConfiguration)
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -139,15 +143,17 @@ func runTest() {
 		slaSummary = evaluateLocalSLA(result, goalConfig)
 	}
 
+	var evidenceErr error
 	if args.junit != "" {
-		if err := writeRunJUnit(args, script, result, apiResult, slaSummary, runErr); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		evidenceErr = writeRunJUnit(args, script, result, apiResult, slaSummary, runErr)
+		if evidenceErr != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", evidenceErr)
 		}
 	}
 
 	if args.format == "json" {
 		out := map[string]any{
-			"status": "success",
+			"status": testRunOutcome(args.api != "", apiTestStatus(apiResult), slaSummary != nil && slaSummary.Breached, runErr),
 		}
 		if slaSummary != nil && slaSummary.Evaluated {
 			out["sla_evaluated"] = true
@@ -157,14 +163,12 @@ func runTest() {
 			}
 		}
 		if slaSummary != nil && slaSummary.Breached {
-			out["status"] = "failed"
 			if runErr != nil {
 				out["error"] = runErr.Error()
 			} else {
 				out["error"] = "SLA thresholds breached"
 			}
 		} else if runErr != nil {
-			out["status"] = "error"
 			out["error"] = runErr.Error()
 		}
 		if result != nil {
@@ -176,6 +180,9 @@ func runTest() {
 			if apiResult.TestID != "" {
 				out["test_id"] = apiResult.TestID
 			}
+			if apiResult.Status != "" {
+				out["test_status"] = apiResult.Status
+			}
 			out["duration_ms"] = apiResult.Duration.Milliseconds()
 			out["transactions"] = apiResult.TotalTransactions
 			out["errors"] = apiResult.TotalErrors
@@ -185,15 +192,20 @@ func runTest() {
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
 
-		if runErr != nil || (slaSummary != nil && slaSummary.Breached) {
-			os.Exit(1)
+		if evidenceErr != nil {
+			os.Exit(exitCodeUsageOrConfiguration)
+		}
+		if code := testRunExitCode(args.api != "", apiTestStatus(apiResult), slaSummary != nil && slaSummary.Breached, runErr); code != exitCodeSuccess {
+			os.Exit(code)
 		}
 		return
 	}
-
-	if runErr != nil && result == nil && apiResult == nil {
+	if runErr != nil && result == nil && (apiResult == nil || !isTerminalStatus(apiResult.Status)) {
 		fmt.Fprintf(os.Stderr, "test failed: %v\n", runErr)
-		os.Exit(1)
+		if evidenceErr != nil {
+			os.Exit(exitCodeUsageOrConfiguration)
+		}
+		os.Exit(testRunExitCode(args.api != "", apiTestStatus(apiResult), false, runErr))
 	}
 
 	fmt.Println("\n=== Test Complete ===")
@@ -229,17 +241,28 @@ func runTest() {
 			fmt.Printf("    - %s\n", detail)
 		}
 	}
+	if evidenceErr != nil {
+		os.Exit(exitCodeUsageOrConfiguration)
+	}
 	if runErr != nil {
 		fmt.Fprintf(os.Stderr, "test failed: %v\n", runErr)
-		os.Exit(1)
+		os.Exit(testRunExitCode(args.api != "", apiTestStatus(apiResult), false, runErr))
 	}
 	if slaSummary != nil && slaSummary.Breached {
-		os.Exit(1)
+		os.Exit(exitCodeTestFailure)
 	}
+}
+
+func apiTestStatus(result *ApiTestResult) string {
+	if result == nil {
+		return ""
+	}
+	return result.Status
 }
 
 type runArgs struct {
 	err                      error
+	help                     bool
 	script                   string
 	api                      string
 	apiKey                   string
@@ -284,6 +307,8 @@ func parseRunArgs(args []string) runArgs {
 	}
 	flags := flag.NewFlagSet("apexctl run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	flags.BoolVar(&r.help, "help", false, "show help")
+	flags.BoolVar(&r.help, "h", false, "show help")
 	flags.StringVar(&r.script, "script", "", "script path")
 	flags.StringVar(&r.script, "s", "", "script path")
 	flags.StringVar(&r.api, "api", r.api, "controller URL")
@@ -324,21 +349,30 @@ func parseRunArgs(args []string) runArgs {
 		r.err = fmt.Errorf("--ramp-up cannot be negative")
 	} else if r.timeout < 0 {
 		r.err = fmt.Errorf("--timeout cannot be negative")
+	} else if err := validateCLIOutputFormat(r.format); err != nil {
+		r.err = err
+	} else if err := validateCLIControllerURL(r.api); err != nil {
+		r.err = err
+	} else if err := validateSLAThresholdValues(
+		r.p95LatencyMs,
+		r.maxErrorPct,
+		r.maxAvgServerProcessingMs,
+		r.maxAvgTransferMs,
+		r.maxErrorCount,
+	); err != nil {
+		r.err = err
 	} else if r.timeout == 0 {
 		r.timeout = r.duration + 30*time.Minute
 	}
+	r.api = strings.TrimRight(strings.TrimSpace(r.api), "/")
+	r.apiKey = strings.TrimSpace(r.apiKey)
+	r.bearerToken = strings.TrimSpace(r.bearerToken)
+	r.format = strings.ToLower(strings.TrimSpace(r.format))
 	return r
 }
 
 func floatPointerFlag(flags *flag.FlagSet, name string, target **float64) {
-	flags.Func(name, name, func(raw string) error {
-		value, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			return err
-		}
-		*target = &value
-		return nil
-	})
+	flags.Var(optionalFloat{value: target}, name, name)
 }
 
 func printUsage() {

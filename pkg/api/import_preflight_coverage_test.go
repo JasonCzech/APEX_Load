@@ -336,3 +336,35 @@ func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestJMeterZIPScopesSameNamedCSVSidecarsToEachJMX(t *testing.T) {
+	const jmx = `<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan" enabled="true"/><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree><CSVDataSet testname="Rows" enabled="true"><stringProp name="filename">data.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/><HTTPSamplerProxy testname="Lookup" enabled="true"><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`
+	archive := buildPreflightCoverageArchive(t, map[string]string{
+		"a/plan.jmx": jmx,
+		"a/data.csv": "alpha\nfirst\n",
+		"b/plan.jmx": jmx,
+		"b/data.csv": "beta\nsecond\n",
+	})
+	documents, sidecars, err := readJMeterZipImportAll(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := convertJMeterImportRequest(&jmeterImportRequest{
+		Documents: documents,
+		Opts:      jmeter.ConvertOptions{SidecarFiles: sidecars},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	for index, want := range []string{"alpha\nfirst\n", "beta\nsecond\n"} {
+		if len(result.Scripts[index].DataSources) != 1 {
+			t.Fatalf("script %d data sources = %#v", index, result.Scripts[index].DataSources)
+		}
+		if got := result.Scripts[index].DataSources[0].InlineData; got != want {
+			t.Fatalf("script %d inline data = %q, want %q", index, got, want)
+		}
+	}
+}

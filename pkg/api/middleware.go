@@ -360,7 +360,15 @@ func serveReservedMutation(w http.ResponseWriter, r *http.Request, store Idempot
 	if rw.status < http.StatusBadRequest {
 		return
 	}
-	released, err := store.ReleaseIdempotencyKey(r.Context(), reservation.key, reservation.ownerToken)
+	// Handlers commonly observe request cancellation while producing an error
+	// response. Releasing through that canceled context would leave the key
+	// reserved for its full TTL, so detach cancellation but retain a short bound.
+	// Durable idempotent-create endpoints bypass this generic reservation layer;
+	// keeping a generic 5xx reservation would only make a same-key retry
+	// impossible because this layer stores no committed response to replay.
+	releaseCtx, cancelRelease := context.WithTimeout(context.WithoutCancel(r.Context()), defaultCacheWriteTimeout)
+	defer cancelRelease()
+	released, err := store.ReleaseIdempotencyKey(releaseCtx, reservation.key, reservation.ownerToken)
 	if err != nil {
 		slog.Warn("idempotency-key release failed", "path", r.URL.Path, "status", rw.status, "err", err)
 	} else if !released {

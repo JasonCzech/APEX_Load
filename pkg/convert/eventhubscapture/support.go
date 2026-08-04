@@ -17,7 +17,7 @@ func GetSupportMatrix() []SupportMatrixEntry {
 	return []SupportMatrixEntry{
 		{ID: "ehcapture-container", Area: "Container", Construct: "Avro Object Container File", Status: "supported", ExecutionStatus: "executable", Fields: []string{"Body", "Properties", "SystemProperties", "SequenceNumber"}, Notes: "Capture's Avro OCF is decoded record by record into eventhubs_produce actions."},
 		{ID: "ehcapture-body", Area: "Event", Construct: "EventData.Body", Status: "supported", ExecutionStatus: "executable", Fields: []string{"Body"}, Notes: "The captured body is replayed verbatim as the produce payload (binary bodies are stored as the raw byte string)."},
-		{ID: "ehcapture-properties", Area: "Event", Construct: "EventData.Properties", Status: "supported", ExecutionStatus: "executable", Fields: []string{"Properties"}, Notes: "Application properties become action headers."},
+		{ID: "ehcapture-properties", Area: "Event", Construct: "EventData.Properties", Status: "partial", ExecutionStatus: "review_required", ReviewRequired: true, Fields: []string{"Properties"}, Notes: "String application properties become action headers. Numeric, boolean, and binary properties are preserved in metadata and review-gated because the current DSL header surface cannot retain their AMQP types."},
 		{ID: "ehcapture-partition-key", Area: "Routing", Construct: "x-opt-partition-key", Status: "supported", ExecutionStatus: "executable", Fields: []string{"SystemProperties[x-opt-partition-key]"}, Notes: "When present, the captured partition key seeds params.partition_key for co-location."},
 		{ID: "ehcapture-sequence", Area: "Event", Construct: "SequenceNumber / Offset / EnqueuedTimeUtc", Status: "partial", ExecutionStatus: "executable", ReviewRequired: false, Notes: "Sequence number is preserved in action metadata for traceability; offset/enqueue time are informational only."},
 		{ID: "ehcapture-namespace", Area: "Target", Construct: "namespace / event hub", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Capture files carry no namespace; the script imports in mock mode — set config.eventhubs.namespace/connection_string and build -tags eventhubs_real to run live."},
@@ -30,6 +30,7 @@ func GetSupportMatrixNotes() []string {
 		"Event Hubs Capture import targets the native eventhubs protocol; each captured event becomes an eventhubs_produce action.",
 		"Generated scripts default to config.eventhubs.mock so they validate and run immediately; set a namespace/connection string and build -tags eventhubs_real to drive a real hub.",
 		"Only the first max_events (default 25) events are seeded as actions; the full event count is reported for sizing.",
-		"Binary bodies are stored as their raw byte string — re-serialize before promotion if the payload is not UTF-8 text.",
+		"Binary bodies are base64-encoded in the draft and decoded by the runtime so non-UTF-8 payloads round-trip losslessly.",
+		"Typed or binary application properties are never stringified: they are preserved as typed metadata and require an explicit mapping before promotion.",
 	}
 }

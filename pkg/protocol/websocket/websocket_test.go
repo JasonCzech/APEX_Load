@@ -2,6 +2,9 @@ package websocket
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +15,106 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
+
+func TestWebSocketJSONPathRejectsMalformedIndexesAndClassifiesMisses(t *testing.T) {
+	body := []byte(`{"items":[{"id":"one"}]}`)
+	for _, expression := range []string{
+		"$.items[0", "$.items[]", "$.items[-1]", "$.items[0]junk",
+		"$.", ".items", "$.items..id", "$.[0]", "$.items.[0]",
+	} {
+		t.Run(expression, func(t *testing.T) {
+			if _, err := extractJSONPath(expression, body); err == nil || errors.Is(err, protocol.ErrExtractionMiss) {
+				t.Fatalf("extractJSONPath(%q) error = %v, want configuration error", expression, err)
+			}
+		})
+	}
+	if _, err := extractJSONPath("$.missing", body); !errors.Is(err, protocol.ErrExtractionMiss) {
+		t.Fatalf("missing field error = %v, want ErrExtractionMiss", err)
+	}
+}
+
+func TestWebSocketLocalPayloadErrorsDoNotTriggerReconnect(t *testing.T) {
+	ws := &WebSocket{
+		reconnect:    true,
+		lastTarget:   "ws://127.0.0.1:1/unreachable",
+		dialer:       gorillawebsocket.DefaultDialer,
+		writeTimeout: time.Second,
+	}
+	result := &protocol.Result{}
+
+	oversizedMessage := &protocol.Action{Type: "ws_send", Body: make([]byte, dsl.MaxWebSocketMessageBytes+1)}
+	if err := ws.send(context.Background(), oversizedMessage, result); err == nil || !strings.Contains(err.Error(), "message exceeds") {
+		t.Fatalf("oversized send error = %v, want local message-size error", err)
+	}
+	oversizedPing := &protocol.Action{Type: "ws_ping", Body: make([]byte, maxWebSocketControlPayloadBytes+1)}
+	if err := ws.ping(context.Background(), oversizedPing, result); err == nil || !strings.Contains(err.Error(), "ping payload exceeds") {
+		t.Fatalf("oversized ping error = %v, want local ping-size error", err)
+	}
+	oversizedClose := &protocol.Action{
+		Type:   "ws_close",
+		Params: map[string]any{"reason": strings.Repeat("x", maxWebSocketCloseReasonBytes+1)},
+	}
+	if err := ws.close(oversizedClose, result); err == nil || !strings.Contains(err.Error(), "close reason exceeds") {
+		t.Fatalf("oversized close error = %v, want local close-reason-size error", err)
+	}
+	invalidUTF8Close := &protocol.Action{Type: "ws_close", Params: map[string]any{"reason": string([]byte{0xff})}}
+	if err := ws.close(invalidUTF8Close, result); err == nil || !strings.Contains(err.Error(), "valid UTF-8") {
+		t.Fatalf("invalid UTF-8 close error = %v, want local UTF-8 error", err)
+	}
+	ws.mu.Lock()
+	closedByAction := ws.closedByAction
+	ws.mu.Unlock()
+	if closedByAction {
+		t.Fatal("invalid local close payload changed connection state")
+	}
+}
+
+func TestWebSocketCloseRejectsInvalidCodesBeforeStateMutation(t *testing.T) {
+	for _, code := range []any{
+		999, 1004, 1005, 1006, 1014, 1015, 1016, 2999, 5000, -1,
+		1000.5, "1000", math.NaN(), math.Inf(1),
+	} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			ws := &WebSocket{
+				reconnect:  true,
+				lastTarget: "ws://127.0.0.1:1/unreachable",
+			}
+			err := ws.close(&protocol.Action{
+				Type:   "ws_close",
+				Params: map[string]any{"code": code},
+			}, &protocol.Result{})
+			if err == nil || !strings.Contains(err.Error(), "close code") {
+				t.Fatalf("close code %v error = %v, want local configuration error", code, err)
+			}
+			ws.mu.Lock()
+			closedByAction := ws.closedByAction
+			ws.mu.Unlock()
+			if closedByAction {
+				t.Fatalf("invalid close code %v changed connection state", code)
+			}
+		})
+	}
+}
+
+func TestWebSocketCloseAcceptsStandardAndApplicationCodes(t *testing.T) {
+	for _, code := range []any{1000, 1013, 3000, 4999, float64(1001)} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			ws := &WebSocket{}
+			if err := ws.close(&protocol.Action{
+				Type:   "ws_close",
+				Params: map[string]any{"code": code},
+			}, &protocol.Result{}); err != nil {
+				t.Fatalf("close code %v rejected: %v", code, err)
+			}
+			ws.mu.Lock()
+			closedByAction := ws.closedByAction
+			ws.mu.Unlock()
+			if !closedByAction {
+				t.Fatalf("valid close code %v did not close connection state", code)
+			}
+		})
+	}
+}
 
 func TestWebSocketInitRejectsOversizedMessageLimit(t *testing.T) {
 	ws := &WebSocket{}
@@ -385,6 +488,129 @@ func TestWebSocketSendReconnectsAfterClosedConnection(t *testing.T) {
 	}
 	if receive.ResponseBody != "reconnected" {
 		t.Fatalf("ResponseBody = %q, want reconnected", receive.ResponseBody)
+	}
+}
+
+func TestWebSocketSendReconnectsAfterReceiveTimeout(t *testing.T) {
+	server := newEchoServer(t, "")
+	defer server.Close()
+
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{
+		"base_url":                   server.URL,
+		"websocket_reconnect":        true,
+		"websocket_read_timeout_ms":  float64(25),
+		"websocket_write_timeout_ms": float64(1000),
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "ws_connect", Target: "/ws"}); !result.Success {
+		t.Fatalf("connect failed: %s", result.ErrorMessage)
+	}
+
+	timedOut, err := ws.Execute(context.Background(), &protocol.Action{
+		Name: "timeout", Type: "ws_receive", Params: map[string]any{"timeout_ms": float64(25)},
+	})
+	if err != nil {
+		t.Fatalf("receive Execute returned error: %v", err)
+	}
+	if timedOut.Success {
+		t.Fatal("receive unexpectedly succeeded without a message")
+	}
+
+	sent, err := ws.Execute(context.Background(), &protocol.Action{Name: "send", Type: "ws_send", Body: []byte("after-timeout")})
+	if err != nil {
+		t.Fatalf("send Execute returned error: %v", err)
+	}
+	if !sent.Success {
+		t.Fatalf("send did not reconnect after receive timeout: %s", sent.ErrorMessage)
+	}
+	received, _ := ws.Execute(context.Background(), &protocol.Action{
+		Name: "receive", Type: "ws_receive", Params: map[string]any{"timeout_ms": float64(1000)},
+	})
+	if !received.Success || received.ResponseBody != "after-timeout" {
+		t.Fatalf("receive after reconnect = success:%t body:%q error:%q", received.Success, received.ResponseBody, received.ErrorMessage)
+	}
+}
+
+func TestWebSocketExplicitCloseDoesNotReconnect(t *testing.T) {
+	server := newEchoServer(t, "")
+	defer server.Close()
+
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{
+		"base_url":            server.URL,
+		"websocket_reconnect": true,
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "connect", Type: "ws_connect", Target: "/ws"}); !result.Success {
+		t.Fatalf("connect failed: %s", result.ErrorMessage)
+	}
+	if result, _ := ws.Execute(context.Background(), &protocol.Action{Name: "close", Type: "ws_close"}); !result.Success {
+		t.Fatalf("close failed: %s", result.ErrorMessage)
+	}
+	sent, _ := ws.Execute(context.Background(), &protocol.Action{Name: "send", Type: "ws_send", Body: []byte("must-not-reopen")})
+	if sent.Success || !strings.Contains(sent.ErrorMessage, "not open") {
+		t.Fatalf("send after explicit close = success:%t error:%q", sent.Success, sent.ErrorMessage)
+	}
+}
+
+func TestWebSocketExplicitCloseWinsAgainstInflightReconnect(t *testing.T) {
+	reconnectStarted := make(chan struct{})
+	releaseReconnect := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		close(reconnectStarted)
+		<-releaseReconnect
+		conn, err := (&gorillawebsocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(writer, request, nil)
+		if err == nil {
+			defer conn.Close()
+			_, _, _ = conn.ReadMessage()
+		}
+	}))
+	defer server.Close()
+
+	ws := &WebSocket{
+		reconnect:  true,
+		lastTarget: strings.Replace(server.URL, "http://", "ws://", 1),
+		dialer:     &gorillawebsocket.Dialer{HandshakeTimeout: time.Second},
+	}
+	reconnectDone := make(chan error, 1)
+	go func() {
+		_, err := ws.reconnectConn(context.Background(), &protocol.Result{})
+		reconnectDone <- err
+	}()
+	select {
+	case <-reconnectStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconnect handshake did not start")
+	}
+	if err := ws.close(&protocol.Action{Type: "ws_close"}, &protocol.Result{}); err != nil {
+		t.Fatalf("explicit close: %v", err)
+	}
+	close(releaseReconnect)
+	select {
+	case err := <-reconnectDone:
+		if err == nil || !strings.Contains(err.Error(), "closed while reconnecting") {
+			t.Fatalf("reconnect error = %v, want explicit-close fence", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconnect did not finish")
+	}
+	ws.mu.Lock()
+	conn, closedByAction := ws.conn, ws.closedByAction
+	ws.mu.Unlock()
+	if conn != nil || !closedByAction {
+		t.Fatalf("connection state after close/reconnect race = conn:%v closed:%t", conn, closedByAction)
+	}
+}
+
+func TestWebSocketInvalidExtractorIsNotAnOnMiss(t *testing.T) {
+	extractor := protocol.Extractor{Name: "token", Type: "regex", Expression: "[", OnMiss: "ignore"}
+	value, extractionErr := extract(extractor, []byte("token=value"))
+	result := &protocol.Result{}
+	if err := protocol.ApplyExtraction(result, extractor, value, extractionErr); err == nil || !strings.Contains(err.Error(), "invalid regex") {
+		t.Fatalf("ApplyExtraction error = %v, want invalid regex failure", err)
 	}
 }
 

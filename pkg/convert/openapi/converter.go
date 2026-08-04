@@ -1373,16 +1373,150 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 	}
 	if includeAssertion {
 		if hasStatus {
-			if strings.EqualFold(responseKey, "2XX") {
-				action.Assertions = []dsl.Assertion{{Type: "status_code_range", Min: 200, Max: 299}}
-			} else {
-				action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: status}}
+			action.Assertions = openAPISuccessStatusAssertions(op.Responses, status)
+			if openAPISuccessResponseSchemasConflict(op.Responses, res, location) {
+				applyOpenAPIReviewGate(&action, []string{"multiple_success_response_schemas"}, location)
+				res.add(diag.Warning, "OpenAPI success responses", location, "multiple successful responses declare incompatible body schemas; response-body replay assertions require review")
 			}
 			action.Assertions = append(action.Assertions, responseBodyAssertions(successSchema)...)
 			return action, uniqueSorted(append(bodyColumns, paramColumns...)), true, opInfo
 		}
 	}
 	return action, uniqueSorted(append(bodyColumns, paramColumns...)), false, opInfo
+}
+
+func openAPISuccessStatusAssertions(responses map[string]any, fallback int) []dsl.Assertion {
+	exact := 0
+	for _, key := range sortedMapKeys(responses) {
+		status := strings.ToUpper(strings.TrimSpace(key))
+		if status == "2XX" {
+			return []dsl.Assertion{{Type: "status_code_range", Min: 200, Max: 299}}
+		}
+		code, err := strconv.Atoi(status)
+		if err == nil && code >= 200 && code <= 299 {
+			exact++
+			fallback = code
+		}
+	}
+	if exact > 1 {
+		return []dsl.Assertion{{Type: "status_code_range", Min: 200, Max: 299}}
+	}
+	return []dsl.Assertion{{Type: "status_code", Expected: fallback}}
+}
+
+func openAPISuccessResponseSchemasConflict(responses map[string]any, res resolver, location string) bool {
+	seen := ""
+	seenResponse := false
+	for _, key := range sortedMapKeys(responses) {
+		upper := strings.ToUpper(strings.TrimSpace(key))
+		code, err := strconv.Atoi(upper)
+		if upper != "2XX" && (err != nil || code < 200 || code > 299) {
+			continue
+		}
+		schema, _ := successResponseSchema(responses, key, res, location)
+		current := "<no-body-schema>"
+		if schema != nil {
+			normalized := normalizeOpenAPIResponseSchemaForComparison(*schema)
+			encoded, err := json.Marshal(normalized)
+			if err != nil {
+				continue
+			}
+			current = string(encoded)
+		}
+		if !seenResponse {
+			seen = current
+			seenResponse = true
+			continue
+		}
+		if current != seen {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeOpenAPIResponseSchemaForComparison(current schema) schema {
+	// Examples and defaults are sample values, and XML annotations control wire
+	// presentation rather than the JSON response shape consumed by the generated
+	// assertions and extractors. Including them makes two otherwise identical
+	// success schemas look incompatible and needlessly blocks execution.
+	current.Example = nil
+	current.Default = nil
+	current.XML = nil
+	current.Required = uniqueSorted(current.Required)
+	current.Enum = normalizeOpenAPIEnumForComparison(current.Enum)
+	if len(current.Properties) > 0 {
+		properties := make(map[string]schema, len(current.Properties))
+		for name, property := range current.Properties {
+			properties[name] = normalizeOpenAPIResponseSchemaForComparison(property)
+		}
+		current.Properties = properties
+	}
+	if current.Items != nil {
+		item := normalizeOpenAPIResponseSchemaForComparison(*current.Items)
+		current.Items = &item
+	}
+	for index := range current.OneOf {
+		current.OneOf[index] = normalizeOpenAPIResponseSchemaForComparison(current.OneOf[index])
+	}
+	current.OneOf = sortOpenAPISchemaAlternativesForComparison(current.OneOf)
+	for index := range current.AnyOf {
+		current.AnyOf[index] = normalizeOpenAPIResponseSchemaForComparison(current.AnyOf[index])
+	}
+	current.AnyOf = sortOpenAPISchemaAlternativesForComparison(current.AnyOf)
+	for index := range current.AllOf {
+		current.AllOf[index] = normalizeOpenAPIResponseSchemaForComparison(current.AllOf[index])
+	}
+	current.AllOf = sortOpenAPISchemaAlternativesForComparison(current.AllOf)
+	return current
+}
+
+func normalizeOpenAPIEnumForComparison(values []any) []any {
+	if len(values) < 2 {
+		return values
+	}
+	type encodedValue struct {
+		key   string
+		value any
+	}
+	encoded := make([]encodedValue, 0, len(values))
+	for _, value := range values {
+		data, err := json.Marshal(value)
+		if err != nil {
+			// Parsed OpenAPI enum values should always be JSON-compatible. Retain
+			// authored order if a future decoder introduces an unsupported value;
+			// conservatively review-gating that case is safer than conflating it.
+			return values
+		}
+		encoded = append(encoded, encodedValue{key: string(data), value: value})
+	}
+	sort.Slice(encoded, func(i, j int) bool { return encoded[i].key < encoded[j].key })
+	result := make([]any, 0, len(encoded))
+	previous := ""
+	for index, candidate := range encoded {
+		if index > 0 && candidate.key == previous {
+			continue
+		}
+		result = append(result, candidate.value)
+		previous = candidate.key
+	}
+	return result
+}
+
+func sortOpenAPISchemaAlternativesForComparison(values []schema) []schema {
+	if len(values) < 2 {
+		return values
+	}
+	result := append([]schema(nil), values...)
+	sort.SliceStable(result, func(i, j int) bool {
+		left, leftErr := json.Marshal(result[i])
+		right, rightErr := json.Marshal(result[j])
+		if leftErr != nil || rightErr != nil {
+			return false
+		}
+		return bytes.Compare(left, right) < 0
+	})
+	return result
 }
 
 // finalizeOpenAPIRequestAction is the adapter boundary between OpenAPI
@@ -1784,11 +1918,12 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 	contentTypes := sortedMapKeys(body.Content)
 	preferred := preferredContentType(contentTypes)
 	media := body.Content[preferred]
+	resolvedMediaSchema := res.resolveSchema(media.Schema, location+" request body", map[string]bool{})
 	sensitiveNames := openAPISchemaCredentialNames(media.Schema, res, location)
 	encodingReviewCodes := openAPIEncodingReviewCodes(preferred, media.Encoding)
 	if media.Example != nil {
 		if strings.Contains(strings.ToLower(preferred), "xml") {
-			rendered, reviewCodes := renderStructuredXMLExample(media.Example, media.Schema)
+			rendered, reviewCodes := renderStructuredXMLExample(media.Example, resolvedMediaSchema)
 			return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 		}
 		if strings.Contains(strings.ToLower(preferred), "multipart/") {
@@ -1804,7 +1939,7 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 			return "", preferred, nil, append(exampleReviewCodes, encodingReviewCodes...), sensitiveNames
 		}
 		if strings.Contains(strings.ToLower(preferred), "xml") {
-			rendered, reviewCodes := renderStructuredXMLExample(example, media.Schema)
+			rendered, reviewCodes := renderStructuredXMLExample(example, resolvedMediaSchema)
 			reviewCodes = append(reviewCodes, exampleReviewCodes...)
 			return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 		}
@@ -1817,16 +1952,16 @@ func requestBodyExample(body *requestBody, res resolver, location string, column
 		reviewCodes = append(reviewCodes, exampleReviewCodes...)
 		return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 	}
-	if media.Schema.Example != nil {
+	if resolvedMediaSchema.Example != nil {
 		if strings.Contains(strings.ToLower(preferred), "xml") {
-			rendered, reviewCodes := renderStructuredXMLExample(media.Schema.Example, media.Schema)
+			rendered, reviewCodes := renderStructuredXMLExample(resolvedMediaSchema.Example, resolvedMediaSchema)
 			return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 		}
 		if strings.Contains(strings.ToLower(preferred), "multipart/") {
-			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(media.Schema.Example, preferred, media.Schema, res, location)
+			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(resolvedMediaSchema.Example, preferred, media.Schema, res, location)
 			return rendered, contentType, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 		}
-		rendered, reviewCodes := renderGovernedExample(media.Schema.Example, preferred)
+		rendered, reviewCodes := renderGovernedExample(resolvedMediaSchema.Example, preferred)
 		return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 	}
 	if strings.Contains(preferred, "application/x-www-form-urlencoded") {
@@ -1866,62 +2001,148 @@ func renderStructuredXMLExample(value any, root schema) (string, []string) {
 	if text, ok := value.(string); ok {
 		return text, nil
 	}
-	name := "root"
-	namespace := ""
-	prefix := ""
+	rootName := ""
 	if root.XML != nil {
-		name = convertutil.FirstNonEmpty(strings.TrimSpace(root.XML.Name), name)
-		namespace = strings.TrimSpace(root.XML.Namespace)
-		prefix = strings.TrimSpace(root.XML.Prefix)
+		rootName = strings.TrimSpace(root.XML.Name)
+	}
+	// A structured top-level value has no property name to supply OpenAPI's
+	// ordinary XML element fallback. Inventing <root> changes the authored wire
+	// body, so only serialize when the schema declares the document element.
+	if rootName == "" {
+		return "", []string{"unsupported_structured_xml_example"}
 	}
 	var output strings.Builder
-	if err := writeOpenAPIStructuredXML(&output, name, prefix, namespace, value, true); err != nil {
+	if values, ok := value.([]any); ok {
+		// A top-level array needs an authored wrapper to form one valid XML
+		// document. Rendering an unwrapped array as sibling roots, or routing a
+		// wrapped array through the ordinary element writer, would respectively
+		// produce invalid XML or a duplicate wrapper.
+		if !root.XML.Wrapped || root.Items == nil || root.Items.XML == nil || strings.TrimSpace(root.Items.XML.Name) == "" {
+			return "", []string{"unsupported_structured_xml_example"}
+		}
+		if err := writeOpenAPIStructuredXMLArray(&output, rootName, values, root, true); err != nil {
+			return "", []string{"unsupported_structured_xml_example"}
+		}
+		return output.String(), nil
+	}
+	if err := writeOpenAPIStructuredXML(&output, rootName, value, root); err != nil {
 		return "", []string{"unsupported_structured_xml_example"}
 	}
 	return output.String(), nil
 }
 
-func writeOpenAPIStructuredXML(output *strings.Builder, name, prefix, namespace string, value any, root bool) error {
-	if !openAPISafeXMLName.MatchString(name) || (prefix != "" && !openAPISafeXMLName.MatchString(prefix)) {
-		return fmt.Errorf("invalid XML name")
+const openAPIPredefinedXMLNamespace = "http://www.w3.org/XML/1998/namespace"
+
+type openAPIXMLNamespaceContext map[string]string
+
+func newOpenAPIXMLNamespaceContext() openAPIXMLNamespaceContext {
+	return openAPIXMLNamespaceContext{"xml": openAPIPredefinedXMLNamespace}
+}
+
+func cloneOpenAPIXMLNamespaceContext(parent openAPIXMLNamespaceContext) openAPIXMLNamespaceContext {
+	clone := make(openAPIXMLNamespaceContext, len(parent)+1)
+	for prefix, namespace := range parent {
+		clone[prefix] = namespace
 	}
-	qualified := name
-	if prefix != "" {
-		qualified = prefix + ":" + name
+	if _, ok := clone["xml"]; !ok {
+		clone["xml"] = openAPIPredefinedXMLNamespace
 	}
-	output.WriteByte('<')
-	output.WriteString(qualified)
-	if root && namespace != "" {
-		if prefix == "" {
-			output.WriteString(` xmlns="`)
-		} else {
-			output.WriteString(` xmlns:` + prefix + `="`)
+	return clone
+}
+
+func writeOpenAPIStructuredXML(output *strings.Builder, fallbackName string, value any, current schema) error {
+	return writeOpenAPIStructuredXMLWithNamespaces(output, fallbackName, value, current, newOpenAPIXMLNamespaceContext())
+}
+
+func writeOpenAPIStructuredXMLWithNamespaces(
+	output *strings.Builder,
+	fallbackName string,
+	value any,
+	current schema,
+	parentNamespaces openAPIXMLNamespaceContext,
+) error {
+	name := fallbackName
+	metadata := current.XML
+	if current.XML != nil {
+		name = convertutil.FirstNonEmpty(strings.TrimSpace(current.XML.Name), name)
+	}
+	qualified, namespaces, err := writeOpenAPIStructuredXMLElementStart(output, name, metadata, parentNamespaces)
+	if err != nil {
+		return err
+	}
+	object, isObject := openAPIStructuredXMLObject(value)
+	if isObject {
+		attributeNames := make(map[string]struct{})
+		for _, propertyName := range sortedSchemaPropertyKeys(current.Properties) {
+			property := current.Properties[propertyName]
+			if property.XML == nil || !property.XML.Attribute {
+				continue
+			}
+			attributeValue, present := object[propertyName]
+			if !present || attributeValue == nil {
+				continue
+			}
+			if _, complex := openAPIStructuredXMLObject(attributeValue); complex {
+				return fmt.Errorf("complex XML attribute")
+			}
+			if _, complex := attributeValue.([]any); complex {
+				return fmt.Errorf("array XML attribute")
+			}
+			attributeName := convertutil.FirstNonEmpty(strings.TrimSpace(property.XML.Name), propertyName)
+			attributePrefix := strings.TrimSpace(property.XML.Prefix)
+			if !openAPISafeXMLName.MatchString(attributeName) || attributeName == "xmlns" ||
+				(attributePrefix != "" && (!openAPISafeXMLName.MatchString(attributePrefix) || attributePrefix == "xmlns")) {
+				return fmt.Errorf("invalid XML attribute name")
+			}
+			attributeNamespace := strings.TrimSpace(property.XML.Namespace)
+			if attributeNamespace != "" && attributePrefix == "" {
+				return fmt.Errorf("namespaced XML attribute requires a prefix")
+			}
+			resolvedNamespace, err := ensureOpenAPIXMLNamespaceBinding(output, namespaces, attributePrefix, attributeNamespace, true)
+			if err != nil {
+				return err
+			}
+			attributeKey := resolvedNamespace + "\x00" + attributeName
+			if _, duplicate := attributeNames[attributeKey]; duplicate {
+				return fmt.Errorf("duplicate XML attribute name")
+			}
+			attributeNames[attributeKey] = struct{}{}
+			output.WriteByte(' ')
+			if attributePrefix != "" {
+				output.WriteString(attributePrefix + ":")
+			}
+			output.WriteString(attributeName)
+			output.WriteString(`="`)
+			if err := xml.EscapeText(output, []byte(fmt.Sprint(attributeValue))); err != nil {
+				return err
+			}
+			output.WriteByte('"')
 		}
-		if err := xml.EscapeText(output, []byte(namespace)); err != nil {
-			return err
-		}
-		output.WriteByte('"')
 	}
 	output.WriteByte('>')
-	switch typed := value.(type) {
-	case map[string]any:
-		for _, childName := range sortedMapKeys(typed) {
-			child := typed[childName]
+	if isObject {
+		for _, childName := range sortedMapKeys(object) {
+			child := object[childName]
+			property, declared := current.Properties[childName]
+			if declared && property.XML != nil && property.XML.Attribute {
+				continue
+			}
 			if values, ok := child.([]any); ok {
-				for _, item := range values {
-					if err := writeOpenAPIStructuredXML(output, childName, "", "", item, false); err != nil {
-						return err
-					}
+				if err := writeOpenAPIStructuredXMLArrayWithNamespaces(output, childName, values, property, declared, namespaces); err != nil {
+					return err
 				}
 				continue
 			}
-			if err := writeOpenAPIStructuredXML(output, childName, "", "", child, false); err != nil {
+			if err := writeOpenAPIStructuredXMLWithNamespaces(output, childName, child, property, namespaces); err != nil {
 				return err
 			}
 		}
-	case nil:
-	default:
-		if err := xml.EscapeText(output, []byte(fmt.Sprint(typed))); err != nil {
+	} else if values, ok := value.([]any); ok {
+		if err := writeOpenAPIStructuredXMLArrayWithNamespaces(output, fallbackName, values, current, true, namespaces); err != nil {
+			return err
+		}
+	} else if value != nil {
+		if err := xml.EscapeText(output, []byte(fmt.Sprint(value))); err != nil {
 			return err
 		}
 	}
@@ -1929,6 +2150,169 @@ func writeOpenAPIStructuredXML(output *strings.Builder, name, prefix, namespace 
 	output.WriteString(qualified)
 	output.WriteByte('>')
 	return nil
+}
+
+func writeOpenAPIStructuredXMLArray(output *strings.Builder, fallbackName string, values []any, arraySchema schema, declared bool) error {
+	return writeOpenAPIStructuredXMLArrayWithNamespaces(output, fallbackName, values, arraySchema, declared, newOpenAPIXMLNamespaceContext())
+}
+
+func writeOpenAPIStructuredXMLArrayWithNamespaces(
+	output *strings.Builder,
+	fallbackName string,
+	values []any,
+	arraySchema schema,
+	declared bool,
+	parentNamespaces openAPIXMLNamespaceContext,
+) error {
+	itemSchema := schema{}
+	if arraySchema.Items != nil {
+		itemSchema = *arraySchema.Items
+	}
+	if declared && arraySchema.XML != nil && arraySchema.XML.Wrapped {
+		wrapper := arraySchema
+		wrapper.Type = "object"
+		wrapper.Items = nil
+		wrapper.Properties = nil
+		name := fallbackName
+		if wrapper.XML != nil {
+			name = convertutil.FirstNonEmpty(strings.TrimSpace(wrapper.XML.Name), name)
+		}
+		qualified, namespaces, err := writeOpenAPIStructuredXMLElementStart(output, name, wrapper.XML, parentNamespaces)
+		if err != nil {
+			return err
+		}
+		output.WriteByte('>')
+		itemName := fallbackName
+		if itemSchema.XML != nil {
+			itemName = convertutil.FirstNonEmpty(strings.TrimSpace(itemSchema.XML.Name), itemName)
+		}
+		for _, item := range values {
+			if err := writeOpenAPIStructuredXMLWithNamespaces(output, itemName, item, itemSchema, namespaces); err != nil {
+				return err
+			}
+		}
+		output.WriteString("</" + qualified + ">")
+		return nil
+	}
+	itemName := fallbackName
+	if itemSchema.XML != nil {
+		itemName = convertutil.FirstNonEmpty(strings.TrimSpace(itemSchema.XML.Name), itemName)
+	}
+	for _, item := range values {
+		if err := writeOpenAPIStructuredXMLWithNamespaces(output, itemName, item, itemSchema, parentNamespaces); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeOpenAPIStructuredXMLElementStart(
+	output *strings.Builder,
+	name string,
+	metadata *xmlObject,
+	parentNamespaces openAPIXMLNamespaceContext,
+) (string, openAPIXMLNamespaceContext, error) {
+	prefix := ""
+	namespace := ""
+	if metadata != nil {
+		prefix = strings.TrimSpace(metadata.Prefix)
+		namespace = strings.TrimSpace(metadata.Namespace)
+	}
+	if !openAPISafeXMLName.MatchString(name) || name == "xmlns" ||
+		(prefix != "" && (!openAPISafeXMLName.MatchString(prefix) || prefix == "xmlns")) {
+		return "", nil, fmt.Errorf("invalid XML name")
+	}
+	qualified := name
+	if prefix != "" {
+		qualified = prefix + ":" + name
+	}
+	namespaces := cloneOpenAPIXMLNamespaceContext(parentNamespaces)
+	output.WriteByte('<')
+	output.WriteString(qualified)
+	if _, err := ensureOpenAPIXMLNamespaceBinding(output, namespaces, prefix, namespace, false); err != nil {
+		return "", nil, err
+	}
+	return qualified, namespaces, nil
+}
+
+func ensureOpenAPIXMLNamespaceBinding(
+	output *strings.Builder,
+	namespaces openAPIXMLNamespaceContext,
+	prefix string,
+	namespace string,
+	attribute bool,
+) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	namespace = strings.TrimSpace(namespace)
+	if prefix == "xmlns" {
+		return "", fmt.Errorf("reserved XML namespace prefix")
+	}
+	if prefix == "xml" {
+		if namespace != "" && namespace != openAPIPredefinedXMLNamespace {
+			return "", fmt.Errorf("conflicting XML namespace prefix")
+		}
+		return openAPIPredefinedXMLNamespace, nil
+	}
+	if prefix != "" {
+		bound, exists := namespaces[prefix]
+		if namespace == "" {
+			if !exists || bound == "" {
+				return "", fmt.Errorf("unbound XML namespace prefix")
+			}
+			return bound, nil
+		}
+		if exists {
+			if bound != namespace {
+				return "", fmt.Errorf("conflicting XML namespace prefix")
+			}
+			return bound, nil
+		}
+		output.WriteString(` xmlns:` + prefix + `="`)
+		if err := xml.EscapeText(output, []byte(namespace)); err != nil {
+			return "", err
+		}
+		output.WriteByte('"')
+		namespaces[prefix] = namespace
+		return namespace, nil
+	}
+	if attribute {
+		if namespace != "" {
+			return "", fmt.Errorf("namespaced XML attribute requires a prefix")
+		}
+		return "", nil
+	}
+	if namespace == "" {
+		return namespaces[""], nil
+	}
+	if namespaces[""] == namespace {
+		return namespace, nil
+	}
+	output.WriteString(` xmlns="`)
+	if err := xml.EscapeText(output, []byte(namespace)); err != nil {
+		return "", err
+	}
+	output.WriteByte('"')
+	namespaces[""] = namespace
+	return namespace, nil
+}
+
+func openAPIStructuredXMLObject(value any) (map[string]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		return typed, true
+	case map[any]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			name, ok := key.(string)
+			if !ok {
+				return nil, false
+			}
+			out[name] = item
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }
 
 func openAPIEncodingReviewCodes(contentType string, encoding map[string]any) []string {

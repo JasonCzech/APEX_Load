@@ -1,3 +1,6 @@
+{{- if and .Values.controller.ha.enabled (not .Values.importAssets.persistence.enabled) }}
+{{- fail "importAssets.persistence.enabled must be true when controller HA is enabled (use a ReadWriteMany existingClaim)" }}
+{{- end }}
 {{- if and .Values.importAssets.persistence.enabled (not .Values.importAssets.persistence.existingClaim) }}
 {{- if .Values.controller.ha.enabled }}
 {{- fail "importAssets.persistence.existingClaim is required when controller HA is enabled (use a ReadWriteMany claim)" }}

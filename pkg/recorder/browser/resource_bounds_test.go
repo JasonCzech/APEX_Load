@@ -77,6 +77,35 @@ func TestRecorderCapHitsAreRetainedInArtifact(t *testing.T) {
 	}
 }
 
+func TestRecorderReportsWebSocketCapWhenEncodingExceedsRemainingBytes(t *testing.T) {
+	var events []Event
+	r := New(Options{
+		StartURL:          "https://example.test/",
+		CaptureWSPayloads: true,
+		OnEvent: func(event Event) {
+			events = append(events, event)
+		},
+	})
+	r.session.WebSockets = []WebSocketSummary{{URL: "wss://example.test/socket"}}
+	r.wsBytes = maxBrowserWSBytes - 3
+
+	// Three non-printable bytes fit the raw remaining budget, but their base64
+	// representation needs four bytes and must be reported as a bounded drop.
+	r.recordWSFrame(0, "received", []byte{0, 1, 2})
+	snapshot := r.Snapshot()
+	if snapshot.CapHits["websocket_frames"] != 1 || len(snapshot.WebSockets[0].Frames) != 0 {
+		t.Fatalf("websocket cap state = hits:%#v frames:%#v", snapshot.CapHits, snapshot.WebSockets[0].Frames)
+	}
+	var sawCap, sawWarning bool
+	for _, event := range events {
+		sawCap = sawCap || (event.Type == EventCapHit && event.CapName == "websocket_frames" && event.CapCount == 1)
+		sawWarning = sawWarning || (event.Type == EventWarning && strings.Contains(event.Warning, "WebSocket-frame limit"))
+	}
+	if !sawCap || !sawWarning {
+		t.Fatalf("events = %#v, want cap hit and warning", events)
+	}
+}
+
 func TestRecorderInteractiveOperationsRejectConcurrentFanout(t *testing.T) {
 	r := New(Options{StartURL: "https://example.test/"})
 	r.navigationSlots <- struct{}{}

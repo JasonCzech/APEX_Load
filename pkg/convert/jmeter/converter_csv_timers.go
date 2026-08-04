@@ -64,26 +64,65 @@ func jmeterSidecarFile(files map[string][]byte, filename string) ([]byte, bool) 
 	if len(files) == 0 {
 		return nil, false
 	}
-	keys := []string{
-		filename,
-		jmeterBaseName(filename),
-		strings.TrimLeft(strings.ReplaceAll(filename, `\`, `/`), `/`),
+	target := normalizeJMeterSidecarPath(filename)
+	if target == "" {
+		return nil, false
 	}
-	for _, key := range keys {
-		key = strings.TrimSpace(key)
-		if key == "" {
+	if data, ok := files[target]; ok {
+		return data, true
+	}
+	var foldedMatch []byte
+	foldedMatches := 0
+	for key, data := range files {
+		if strings.EqualFold(normalizeJMeterSidecarPath(key), target) {
+			foldedMatch = data
+			foldedMatches++
+		}
+	}
+	if foldedMatches == 1 {
+		return foldedMatch, true
+	}
+	// Multipart uploads normally expose only the client filename, even when the
+	// JMX authored a relative directory such as data/customers.csv. Permit that
+	// basename fallback only when it identifies one logical payload. Archive
+	// imports can contain same-named sidecars in different plan directories; if
+	// those payloads differ, refusing the match prevents one plan from silently
+	// consuming another plan's data. Duplicate aliases of identical bytes are
+	// safe and arise naturally from per-document ZIP scoping.
+	targetBase := path.Base(target)
+	var basenameMatch []byte
+	basenameMatched := false
+	for key, data := range files {
+		candidate := normalizeJMeterSidecarPath(key)
+		if candidate == "" || !strings.EqualFold(path.Base(candidate), targetBase) {
 			continue
 		}
-		if data, ok := files[key]; ok {
-			return data, true
+		if !basenameMatched {
+			basenameMatch = data
+			basenameMatched = true
+			continue
+		}
+		if !bytes.Equal(basenameMatch, data) {
+			return nil, false
 		}
 	}
-	for key, data := range files {
-		if strings.EqualFold(jmeterBaseName(key), jmeterBaseName(filename)) {
-			return data, true
-		}
+	if basenameMatched {
+		return basenameMatch, true
 	}
 	return nil, false
+}
+
+func normalizeJMeterSidecarPath(value string) string {
+	value = strings.TrimSpace(strings.ReplaceAll(value, `\`, `/`))
+	value = strings.TrimLeft(value, "/")
+	if value == "" {
+		return ""
+	}
+	cleaned := path.Clean(value)
+	if cleaned == "." {
+		return ""
+	}
+	return cleaned
 }
 
 func inferCSVHeader(data []byte, delimiter string) []string {

@@ -636,11 +636,20 @@ func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 }
 
 func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionConfig, retainResponseBody bool) {
+	scrubSensitiveResultWithDimensionConfig(result, config, config, retainResponseBody)
+}
+
+func scrubSensitiveResultWithDimensionConfig(
+	result *protocol.Result,
+	config *RedactionConfig,
+	dimensionConfig *RedactionConfig,
+	retainResponseBody bool,
+) {
 	if result == nil {
 		return
 	}
 
-	scrubSensitiveResultMetadata(result, config)
+	scrubSensitiveResultMetadata(result, dimensionConfig, config)
 	result.ErrorMessage = scrubSensitiveTextWithConfig(result.ErrorMessage, config)
 	if retainResponseBody {
 		result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
@@ -686,39 +695,42 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 // evidence handling, so leaving them untouched would let a resolved secret in
 // a correlation header, dependency label, adapter label, or imported source
 // identifier survive an otherwise valid custom redaction policy.
-func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConfig) {
-	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, config)
-	result.SampleKind = scrubSensitiveTextWithConfig(result.SampleKind, config)
-	result.ParentActionName = scrubSensitiveTextWithConfig(result.ParentActionName, config)
-	result.Group = scrubSensitiveTextWithConfig(result.Group, config)
-	result.Region = scrubSensitiveTextWithConfig(result.Region, config)
-	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, config)
-	result.NetworkProfile = scrubSensitiveTextWithConfig(result.NetworkProfile, config)
-	result.DependencyType = scrubSensitiveTextWithConfig(result.DependencyType, config)
-	result.DependencyTarget = scrubSensitiveTextWithConfig(result.DependencyTarget, config)
-	result.SourceStepID = scrubSensitiveTextWithConfig(result.SourceStepID, config)
-	result.SourceAction = scrubSensitiveTextWithConfig(result.SourceAction, config)
-	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, config)
-	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, config)
-	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, config)
-	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, config)
-	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, config)
-	result.RequestType = scrubSensitiveTextWithConfig(result.RequestType, config)
-	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, config)
+func scrubSensitiveResultMetadata(result *protocol.Result, dimensionConfig, evidenceConfig *RedactionConfig) {
+	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, dimensionConfig)
+	result.SampleKind = scrubSensitiveTextWithConfig(result.SampleKind, dimensionConfig)
+	result.ParentActionName = scrubSensitiveTextWithConfig(result.ParentActionName, dimensionConfig)
+	result.Group = scrubSensitiveTextWithConfig(result.Group, dimensionConfig)
+	result.Region = scrubSensitiveTextWithConfig(result.Region, dimensionConfig)
+	// Correlation IDs are response evidence rather than an authored metric
+	// dimension. Keep the full protocol-session matcher here even though stable
+	// labels deliberately exclude cookie snapshots.
+	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, evidenceConfig)
+	result.NetworkProfile = scrubSensitiveTextWithConfig(result.NetworkProfile, dimensionConfig)
+	result.DependencyType = scrubSensitiveTextWithConfig(result.DependencyType, dimensionConfig)
+	result.DependencyTarget = scrubSensitiveTextWithConfig(result.DependencyTarget, dimensionConfig)
+	result.SourceStepID = scrubSensitiveTextWithConfig(result.SourceStepID, dimensionConfig)
+	result.SourceAction = scrubSensitiveTextWithConfig(result.SourceAction, dimensionConfig)
+	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, dimensionConfig)
+	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, dimensionConfig)
+	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, dimensionConfig)
+	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, dimensionConfig)
+	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, dimensionConfig)
+	result.RequestType = scrubSensitiveTextWithConfig(result.RequestType, dimensionConfig)
+	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, dimensionConfig)
 
 	if result.ClientMetrics != nil {
-		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, config)
-		result.ClientMetrics.DevicePlatform = scrubSensitiveTextWithConfig(result.ClientMetrics.DevicePlatform, config)
-		result.ClientMetrics.DeviceTier = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceTier, config)
-		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, config)
+		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, dimensionConfig)
+		result.ClientMetrics.DevicePlatform = scrubSensitiveTextWithConfig(result.ClientMetrics.DevicePlatform, dimensionConfig)
+		result.ClientMetrics.DeviceTier = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceTier, dimensionConfig)
+		result.ClientMetrics.BrowserEngine = scrubSensitiveTextWithConfig(result.ClientMetrics.BrowserEngine, dimensionConfig)
 	}
 	if result.ServerTelemetry != nil {
-		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, config)
-		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, config)
-		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, config)
-		result.ServerTelemetry.SOAPFaultCategory = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCategory, config)
-		result.ServerTelemetry.SOAPNamespaceConflict = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPNamespaceConflict, config)
-		result.ServerTelemetry.PartitionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.PartitionID, config)
+		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, dimensionConfig)
+		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, dimensionConfig)
+		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, dimensionConfig)
+		result.ServerTelemetry.SOAPFaultCategory = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCategory, dimensionConfig)
+		result.ServerTelemetry.SOAPNamespaceConflict = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPNamespaceConflict, dimensionConfig)
+		result.ServerTelemetry.PartitionID = scrubSensitiveTextWithConfig(result.ServerTelemetry.PartitionID, dimensionConfig)
 	}
 }
 
@@ -924,15 +936,32 @@ func scrubStructurallyValidJWTs(value string) string {
 		if len(segments) != 3 {
 			return candidate
 		}
-		for _, segment := range segments[:2] {
-			decoded, err := base64.RawURLEncoding.DecodeString(segment)
-			if err != nil {
-				return candidate
-			}
-			var object map[string]json.RawMessage
-			if err := json.Unmarshal(decoded, &object); err != nil || object == nil {
-				return candidate
-			}
+		headerBytes, err := base64.RawURLEncoding.DecodeString(segments[0])
+		if err != nil {
+			return candidate
+		}
+		var header map[string]json.RawMessage
+		if err := json.Unmarshal(headerBytes, &header); err != nil || header == nil {
+			return candidate
+		}
+		var algorithm string
+		if err := json.Unmarshal(header["alg"], &algorithm); err != nil || strings.TrimSpace(algorithm) == "" {
+			return candidate
+		}
+		payloadBytes, err := base64.RawURLEncoding.DecodeString(segments[1])
+		if err != nil {
+			return candidate
+		}
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(payloadBytes, &payload); err != nil || payload == nil {
+			return candidate
+		}
+		// The signature is opaque rather than JSON, but it is still a base64url
+		// JWT segment. Requiring it to decode prevents dotted identifiers with a
+		// JSON-looking prefix from being classified as tokens solely because their
+		// final component happens to use URL-safe characters.
+		if _, err := base64.RawURLEncoding.DecodeString(segments[2]); err != nil {
+			return candidate
 		}
 		return redactedPayloadValue
 	})

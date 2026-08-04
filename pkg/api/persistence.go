@@ -1724,6 +1724,37 @@ func (tr *TestRunner) saveRunArchiveRecord(record *storage.RunArchiveRecord) err
 	return tr.archiveStore.SaveRunArchive(record)
 }
 
+func (tr *TestRunner) updateRunArchiveTrendPointIfUnchanged(expected *storage.RunArchiveRecord, trendPointJSON string) (bool, error) {
+	if tr == nil || tr.archiveStore == nil || expected == nil || strings.TrimSpace(trendPointJSON) == "" {
+		return false, nil
+	}
+	store, ok := tr.archiveStore.(archiveTrendPointPersistence)
+	if !ok {
+		// A full-row SaveRunArchive fallback is intentionally unsafe here: the
+		// projection is generated from a read snapshot that may have been
+		// superseded by a manifest refresh.
+		return false, nil
+	}
+	updated, err := store.UpdateRunArchiveTrendPointIfUnchanged(expected, trendPointJSON)
+	if err != nil || !updated {
+		return updated, err
+	}
+
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if current := tr.archives[expected.TestID]; sameRunArchiveRecordVersion(current, expected) && current.TrendPointJSON == expected.TrendPointJSON {
+		copy := *current
+		copy.TrendPointJSON = trendPointJSON
+		tr.archives[expected.TestID] = &copy
+	}
+	if test := tr.tests[expected.TestID]; test != nil && sameRunArchiveRecordVersion(test.Archive, expected) && test.Archive.TrendPointJSON == expected.TrendPointJSON {
+		copy := *test.Archive
+		copy.TrendPointJSON = trendPointJSON
+		test.Archive = &copy
+	}
+	return true, nil
+}
+
 func (tr *TestRunner) populateRunArchiveTrendPoint(record *storage.RunArchiveRecord) {
 	if record == nil || strings.TrimSpace(record.TrendPointJSON) != "" {
 		return

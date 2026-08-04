@@ -624,6 +624,9 @@ func runNetworkExtractors(extractors []protocol.Extractor, result *protocol.Resu
 	}
 	for _, extractor := range extractors {
 		value, err := extractNetworkValue(extractor, payload, []byte(result.ResponseBody), result)
+		if errors.Is(err, jsonextract.ErrNotFound) {
+			err = protocol.MarkExtractionMiss(err)
+		}
 		if extractor.Name != "" {
 			if err := protocol.ApplyExtraction(result, extractor, value, err); err != nil {
 				result.Extractions = nil

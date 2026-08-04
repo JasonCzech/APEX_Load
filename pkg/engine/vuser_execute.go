@@ -46,7 +46,12 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	}
 	retainResponseBody := shouldRetainResultResponseBody(result, logCfg)
 	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
-	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
+	scrubSensitiveResultWithDimensionConfig(
+		result,
+		vu.RedactionConfig,
+		vu.stableDimensionRedactionConfig(),
+		retainResponseBody,
+	)
 	boundResultEvidence(result)
 	if result.BusinessTransaction {
 		// Streamed adapters (notably java_vuser) emit completed business
@@ -188,7 +193,12 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	// redaction, and evidence bounds before either metrics or archive sinks can
 	// retain adapter-controlled metadata or error text.
 	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
-	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
+	scrubSensitiveResultWithDimensionConfig(
+		tx,
+		vu.RedactionConfig,
+		vu.stableDimensionRedactionConfig(),
+		false,
+	)
 	boundResultEvidence(tx)
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(tx)

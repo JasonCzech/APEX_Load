@@ -14,6 +14,7 @@ import (
 // on an already-created test by ID against a running controller.
 type ctlArgs struct {
 	err         error
+	help        bool
 	api         string
 	apiKey      string
 	bearerToken string
@@ -33,6 +34,8 @@ func parseCtlArgs(args []string) ctlArgs {
 	}
 	flags := flag.NewFlagSet("apexctl control", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	flags.BoolVar(&c.help, "help", false, "show help")
+	flags.BoolVar(&c.help, "h", false, "show help")
 	flags.StringVar(&c.api, "api", c.api, "controller URL")
 	flags.StringVar(&c.apiKey, "api-key", c.apiKey, "API key")
 	flags.StringVar(&c.bearerToken, "bearer-token", c.bearerToken, "bearer token")
@@ -48,22 +51,31 @@ func parseCtlArgs(args []string) ctlArgs {
 		c.err = fmt.Errorf("unexpected argument %q", flags.Arg(0))
 	} else if c.timeout < 0 {
 		c.err = fmt.Errorf("--timeout cannot be negative")
+	} else if err := validateCLIOutputFormat(c.format); err != nil {
+		c.err = err
+	} else if err := validateCLIControllerURL(c.api); err != nil {
+		c.err = err
 	}
+	c.api = strings.TrimRight(strings.TrimSpace(c.api), "/")
+	c.apiKey = strings.TrimSpace(c.apiKey)
+	c.bearerToken = strings.TrimSpace(c.bearerToken)
+	c.test = strings.TrimSpace(c.test)
+	c.format = strings.ToLower(strings.TrimSpace(c.format))
 	return c
 }
 
 func requireCtlTarget(c ctlArgs) {
 	if c.err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", c.err)
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	if c.api == "" {
 		fmt.Fprintln(os.Stderr, "error: --api is required (e.g. http://localhost:8080)")
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	if c.test == "" {
 		fmt.Fprintln(os.Stderr, "error: --test <id> is required")
-		os.Exit(2)
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
 }
 
@@ -71,16 +83,23 @@ func requireCtlTarget(c ctlArgs) {
 // non-zero if the SLA is breached or the test failed — a cheap pipeline check.
 func statusCmd() {
 	c := parseCtlArgs(os.Args[2:])
+	if c.help && c.err == nil {
+		fmt.Println(ctlUsage())
+		return
+	}
+	if c.err == nil {
+		c.err = validateStatusArgs(c)
+	}
 	requireCtlTarget(c)
 
 	client := NewApiClientWithAuth(c.api, c.apiKey, c.bearerToken)
 	report, err := client.GetSLAStatus(c.test)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error fetching status: %v\n", err)
-		os.Exit(2)
+		os.Exit(exitCodeControllerOrTransport)
 	}
 
-	failed := report.SLABreached || report.Status == "FAILED" || report.Status == "ABORTED"
+	failed := report.SLABreached || isFailedTestStatus(report.Status)
 
 	if c.format == "json" {
 		out := map[string]any{
@@ -108,8 +127,18 @@ func statusCmd() {
 	}
 
 	if failed {
-		os.Exit(1)
+		os.Exit(exitCodeTestFailure)
 	}
+}
+
+func validateStatusArgs(c ctlArgs) error {
+	if c.timeout != 0 {
+		return fmt.Errorf("--timeout is supported by wait, not status")
+	}
+	if c.junit != "" {
+		return fmt.Errorf("--junit is supported by wait, not status")
+	}
+	return nil
 }
 
 // waitCmd blocks on an already-started test until it reaches a terminal state,
@@ -117,6 +146,10 @@ func statusCmd() {
 // failure/SLA breach so CI gates on it.
 func waitCmd() {
 	c := parseCtlArgs(os.Args[2:])
+	if c.help && c.err == nil {
+		fmt.Println(ctlUsage())
+		return
+	}
 	requireCtlTarget(c)
 
 	client := NewApiClientWithAuth(c.api, c.apiKey, c.bearerToken)
@@ -127,6 +160,7 @@ func waitCmd() {
 		sla = result.SLASummary
 	}
 
+	var evidenceErr error
 	if c.junit != "" {
 		in := junitInput{suiteName: "apexload:" + c.test, classname: "apexload", sla: sla, runErr: runErr}
 		if result != nil {
@@ -136,19 +170,28 @@ func waitCmd() {
 			in.tps = result.FinalSnapshot.TPS
 		}
 		if err := writeJUnitReport(c.junit, in); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+			evidenceErr = err
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		}
 	}
 
 	breached := sla != nil && sla.Breached
+	terminalStatus := ""
+	if result != nil {
+		terminalStatus = result.Status
+	}
+	failedVerdict := breached || isFailedTestStatus(terminalStatus)
 
 	if c.format == "json" {
 		out := map[string]any{"test_id": c.test, "status": "success"}
-		if runErr != nil {
+		if failedVerdict {
+			out["status"] = "failed"
+			if runErr != nil {
+				out["error"] = runErr.Error()
+			}
+		} else if runErr != nil {
 			out["status"] = "error"
 			out["error"] = runErr.Error()
-		} else if breached {
-			out["status"] = "failed"
 		}
 		if sla != nil {
 			out["sla_evaluated"] = sla.Evaluated
@@ -158,6 +201,7 @@ func waitCmd() {
 			}
 		}
 		if result != nil {
+			out["test_status"] = result.Status
 			out["duration_ms"] = result.Duration.Milliseconds()
 			out["transactions"] = result.TotalTransactions
 			out["errors"] = result.TotalErrors
@@ -165,13 +209,12 @@ func waitCmd() {
 		}
 		b, _ := json.MarshalIndent(out, "", "  ")
 		fmt.Println(string(b))
-	} else {
+	} else if result != nil {
 		fmt.Println("\n=== Test Complete ===")
-		if result != nil {
-			fmt.Printf("  Duration:     %s\n", result.Duration.Round(time.Millisecond))
-			fmt.Printf("  Transactions: %d\n", result.TotalTransactions)
-			fmt.Printf("  Errors:       %d\n", result.TotalErrors)
-		}
+		fmt.Printf("  Status:       %s\n", result.Status)
+		fmt.Printf("  Duration:     %s\n", result.Duration.Round(time.Millisecond))
+		fmt.Printf("  Transactions: %d\n", result.TotalTransactions)
+		fmt.Printf("  Errors:       %d\n", result.TotalErrors)
 		if sla != nil && sla.Evaluated {
 			status := "passing"
 			if sla.Breached {
@@ -185,18 +228,15 @@ func waitCmd() {
 		if runErr != nil {
 			fmt.Fprintf(os.Stderr, "test failed: %v\n", runErr)
 		}
+	} else if runErr != nil {
+		fmt.Fprintf(os.Stderr, "wait failed: %v\n", runErr)
 	}
 
-	if runErr != nil {
-		// A non-SLA execution error (timeout, transport, FAILED/ABORTED) is a
-		// hard failure for the pipeline.
-		if breached {
-			os.Exit(1)
-		}
-		os.Exit(1)
+	if evidenceErr != nil {
+		os.Exit(exitCodeUsageOrConfiguration)
 	}
-	if breached {
-		os.Exit(1)
+	if code := testRunExitCode(true, terminalStatus, breached, runErr); code != exitCodeSuccess {
+		os.Exit(code)
 	}
 }
 

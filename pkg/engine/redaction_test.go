@@ -468,6 +468,76 @@ func TestVUserRecordResultRegistersProtocolManagedCredentialsBeforePublishing(t 
 	}
 }
 
+func TestProtocolSessionCookieDoesNotRewriteStableMetricDimensions(t *testing.T) {
+	const cookieValue = "Login"
+	sink := &captureResultSink{}
+	vu := &VUser{
+		Group:      "Login group",
+		Metrics:    NewMetricsCollector(4),
+		ResultSink: sink,
+		Variables:  map[string]string{},
+	}
+	result := &protocol.Result{
+		ActionName:                      "Login action",
+		DependencyTarget:                "https://example.test/Login",
+		CorrelationID:                   cookieValue,
+		Success:                         false,
+		ErrorMessage:                    "cookie=" + cookieValue,
+		ResponseBody:                    "payload=" + cookieValue,
+		Extractions:                     map[string]string{"echo": cookieValue},
+		ProtocolEvidence:                map[string]any{"echo": cookieValue},
+		RuntimeCredentialValues:         []string{cookieValue},
+		RuntimeCredentialValuesSnapshot: true,
+	}
+
+	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	if sink.result == nil {
+		t.Fatal("result did not reach sink")
+	}
+	if sink.result.ActionName != "Login action" || sink.result.Group != "Login group" ||
+		sink.result.DependencyTarget != "https://example.test/Login" {
+		t.Fatalf("session cookie rewrote stable dimensions: action=%q group=%q target=%q",
+			sink.result.ActionName, sink.result.Group, sink.result.DependencyTarget)
+	}
+	if strings.Contains(sink.result.ErrorMessage, cookieValue) ||
+		strings.Contains(sink.result.ResponseBody, cookieValue) ||
+		strings.Contains(sink.result.Extractions["echo"], cookieValue) {
+		t.Fatalf("session cookie survived retained payload evidence: %#v", sink.result)
+	}
+	if evidence, _ := sink.result.ProtocolEvidence["echo"].(string); strings.Contains(evidence, cookieValue) {
+		t.Fatalf("session cookie survived protocol evidence: %#v", sink.result.ProtocolEvidence)
+	}
+	if strings.Contains(sink.result.CorrelationID, cookieValue) {
+		t.Fatalf("session cookie survived correlation evidence: %q", sink.result.CorrelationID)
+	}
+}
+
+func TestNonSessionRuntimeCredentialStillRedactsStableDimensions(t *testing.T) {
+	const credential = "resolved-secret-4821"
+	vu := &VUser{
+		Group:     "group-" + credential,
+		Metrics:   NewMetricsCollector(1),
+		Variables: map[string]string{},
+	}
+	result := &protocol.Result{
+		ActionName:              "action-" + credential,
+		DependencyTarget:        "https://example.test/" + credential,
+		Success:                 true,
+		RuntimeCredentialValues: []string{credential},
+	}
+
+	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+	for name, value := range map[string]string{
+		"action": result.ActionName,
+		"group":  result.Group,
+		"target": result.DependencyTarget,
+	} {
+		if strings.Contains(value, credential) {
+			t.Fatalf("%s dimension retained non-session runtime credential: %q", name, value)
+		}
+	}
+}
+
 func TestRuntimeSecretRedactionRunsBeforeGenericCredentialPatterns(t *testing.T) {
 	const secret = `abc"UNIQUELEAK`
 	config, err := WithSecretValueRedactionChecked(nil, []string{secret})
@@ -521,14 +591,22 @@ func TestRuntimeSecretRedactionPreservesPreexistingNULBytes(t *testing.T) {
 }
 
 func TestGenericJWTRedactionRequiresStructuredHeaderAndPayload(t *testing.T) {
-	valid := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
+	valid := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl"
 	invalid := "documents.example.invalid.assets.bundle123456789"
+	missingAlgorithm := "eyJ0eXAiOiJKV1QifQ.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl"
+	nonStringAlgorithm := "eyJhbGciOjEyM30.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl"
+	invalidSignature := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature"
 	got := scrubSensitiveText(valid + " " + invalid)
 	if strings.Contains(got, valid) {
 		t.Fatalf("valid JWT survived: %q", got)
 	}
 	if !strings.Contains(got, invalid) {
 		t.Fatalf("non-JWT dotted token was redacted: %q", got)
+	}
+	for _, nonJWT := range []string{missingAlgorithm, nonStringAlgorithm, invalidSignature} {
+		if classified := scrubStructurallyValidJWTs(nonJWT); classified != nonJWT {
+			t.Fatalf("JWT classifier accepted header without a string alg: got %q, want %q", classified, nonJWT)
+		}
 	}
 }
 

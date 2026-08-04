@@ -93,3 +93,6 @@ patches:
         path: /spec/accessModes
         value:
           - ReadWriteMany
+      - op: add
+        path: /spec/storageClassName
+        value: azurefile-csi

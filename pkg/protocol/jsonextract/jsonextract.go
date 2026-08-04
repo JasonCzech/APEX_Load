@@ -7,6 +7,7 @@ package jsonextract
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -15,6 +16,10 @@ import (
 	"github.com/jmespath/go-jmespath"
 )
 
+// ErrNotFound distinguishes a valid expression that found no response value
+// from malformed configuration or an invalid response representation.
+var ErrNotFound = errors.New("extraction value not found")
+
 // JSONPath evaluates a JSONPath-lite expression (dotted keys with optional
 // [n] indexing, leading "$"/"$." stripped) against a JSON body.
 func JSONPath(expr string, body []byte) (string, error) {
@@ -22,8 +27,29 @@ func JSONPath(expr string, body []byte) (string, error) {
 	if expr == "" {
 		return "", fmt.Errorf("jsonpath expression is required")
 	}
-	expr = strings.TrimPrefix(expr, "$.")
-	expr = strings.TrimPrefix(expr, "$")
+	rootOnly := expr == "$"
+	switch {
+	case rootOnly:
+		expr = ""
+	case strings.HasPrefix(expr, "$."):
+		expr = strings.TrimPrefix(expr, "$.")
+		if expr == "" {
+			return "", fmt.Errorf("invalid jsonpath: empty segment after root")
+		}
+		if strings.HasPrefix(expr, "[") {
+			return "", fmt.Errorf("invalid jsonpath: array index must follow the root directly")
+		}
+	case strings.HasPrefix(expr, "$"):
+		expr = strings.TrimPrefix(expr, "$")
+		if !strings.HasPrefix(expr, "[") {
+			return "", fmt.Errorf("invalid jsonpath: expected dot or array index after root")
+		}
+	case strings.HasPrefix(expr, "."):
+		return "", fmt.Errorf("invalid jsonpath: leading empty segment")
+	}
+	if strings.HasSuffix(expr, ".") || strings.Contains(expr, "..") {
+		return "", fmt.Errorf("invalid jsonpath: empty path segment")
+	}
 	var current any
 	if err := json.Unmarshal(body, &current); err != nil {
 		return "", err
@@ -31,30 +57,33 @@ func JSONPath(expr string, body []byte) (string, error) {
 	if expr == "" {
 		return Stringify(current), nil
 	}
-	for _, part := range strings.Split(expr, ".") {
+	for index, part := range strings.Split(expr, ".") {
 		part = strings.TrimSpace(part)
 		if part == "" {
-			continue
+			return "", fmt.Errorf("invalid jsonpath: empty path segment")
 		}
 		key, indexes, err := splitPathToken(part)
 		if err != nil {
 			return "", fmt.Errorf("invalid jsonpath %q: %w", expr, err)
 		}
+		if key == "" && len(indexes) > 0 && index > 0 {
+			return "", fmt.Errorf("invalid jsonpath %q: array index must follow its value directly", expr)
+		}
 		if key != "" {
 			object, ok := current.(map[string]any)
 			if !ok {
-				return "", fmt.Errorf("jsonpath %q expected object", expr)
+				return "", fmt.Errorf("%w: jsonpath %q expected object", ErrNotFound, expr)
 			}
 			next, ok := object[key]
 			if !ok {
-				return "", fmt.Errorf("jsonpath %q not found", expr)
+				return "", fmt.Errorf("%w: jsonpath %q", ErrNotFound, expr)
 			}
 			current = next
 		}
 		for _, index := range indexes {
 			items, ok := current.([]any)
 			if !ok || index < 0 || index >= len(items) {
-				return "", fmt.Errorf("jsonpath %q index out of range", expr)
+				return "", fmt.Errorf("%w: jsonpath %q index out of range", ErrNotFound, expr)
 			}
 			current = items[index]
 		}
@@ -98,6 +127,9 @@ func JMESPath(expr string, body []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if value == nil {
+		return "", fmt.Errorf("%w: jmespath %q", ErrNotFound, expr)
+	}
 	return Stringify(value), nil
 }
 
@@ -110,7 +142,7 @@ func Regex(expr string, body []byte) (string, error) {
 	}
 	match := re.FindSubmatch(body)
 	if len(match) == 0 {
-		return "", fmt.Errorf("regex %q not found", expr)
+		return "", fmt.Errorf("%w: regex %q", ErrNotFound, expr)
 	}
 	if len(match) > 1 {
 		return string(match[1]), nil
@@ -128,12 +160,12 @@ func Boundary(expr string, body []byte) (string, error) {
 	text := string(body)
 	start := strings.Index(text, parts[0])
 	if start < 0 {
-		return "", fmt.Errorf("left boundary not found")
+		return "", fmt.Errorf("%w: left boundary", ErrNotFound)
 	}
 	start += len(parts[0])
 	end := strings.Index(text[start:], parts[1])
 	if end < 0 {
-		return "", fmt.Errorf("right boundary not found")
+		return "", fmt.Errorf("%w: right boundary", ErrNotFound)
 	}
 	return text[start : start+end], nil
 }

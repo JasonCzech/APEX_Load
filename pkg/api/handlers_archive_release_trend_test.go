@@ -1,13 +1,42 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type releaseTrendArchiveCASStore struct {
+	record  *storage.RunArchiveRecord
+	updates int
+}
+
+func (s *releaseTrendArchiveCASStore) SaveRunArchive(record *storage.RunArchiveRecord) error {
+	s.record = cloneRunArchiveRecord(record)
+	return nil
+}
+
+func (s *releaseTrendArchiveCASStore) GetRunArchive(testID string) (*storage.RunArchiveRecord, error) {
+	if s.record == nil || s.record.TestID != testID {
+		return nil, sql.ErrNoRows
+	}
+	return cloneRunArchiveRecord(s.record), nil
+}
+
+func (s *releaseTrendArchiveCASStore) UpdateRunArchiveTrendPointIfUnchanged(expected *storage.RunArchiveRecord, trendPointJSON string) (bool, error) {
+	if !sameRunArchiveRecordVersion(s.record, expected) || s.record.TrendPointJSON != expected.TrendPointJSON {
+		return false, nil
+	}
+	s.record.TrendPointJSON = trendPointJSON
+	s.updates++
+	return true, nil
+}
 
 // registerReleaseTrendRun wires an archived run into the runner so the archive-report
 // handlers can build it and discover its release siblings.
@@ -123,5 +152,59 @@ func TestArchiveReportOmitsReleaseTrendForUnassociatedRun(t *testing.T) {
 	report := getArchiveReportJSON(t, server, "run-orphan")
 	if report.ReleaseTrend != nil {
 		t.Fatalf("run with no release association should have nil release_trend, got %#v", report.ReleaseTrend)
+	}
+}
+
+func TestReleaseTrendRepairsInvalidCompactProjectionAndLiveCache(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "malformed", raw: `{"run_id":`},
+		{name: "mismatched run", raw: `{"run_id":"another-run"}`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			const releaseID = "release-trend-repair"
+			const runID = "run-repair"
+			started := time.Date(2026, time.May, 18, 12, 0, 0, 0, time.UTC)
+			record := writeReleaseTrendArchiveFixture(t, releaseID, runID, "Repair Run", started, started.Add(3*time.Minute), false)
+			record.TrendPointJSON = testCase.raw
+			store := &releaseTrendArchiveCASStore{record: cloneRunArchiveRecord(record)}
+			server.runner.archiveStore = store
+			server.runner.mu.Lock()
+			server.runner.tests[runID] = &ManagedTest{
+				ID: runID, Name: "Repair Run", Status: "COMPLETE", ReleaseID: releaseID,
+				CreatedAt: started, StartedAt: ptrTime(started), EndedAt: ptrTime(started.Add(3 * time.Minute)),
+				Archive: cloneRunArchiveRecord(record),
+			}
+			server.runner.archives[runID] = cloneRunArchiveRecord(record)
+			server.runner.mu.Unlock()
+
+			runs, err := server.collectReleaseTrendRuns(releaseID, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(runs) != 1 || runs[0].Report == nil {
+				t.Fatalf("repaired trend runs = %#v", runs)
+			}
+			if store.updates != 1 {
+				t.Fatalf("targeted trend updates = %d, want 1", store.updates)
+			}
+			var persisted ReleaseTrendPoint
+			if err := json.Unmarshal([]byte(store.record.TrendPointJSON), &persisted); err != nil || persisted.RunID != runID {
+				t.Fatalf("persisted trend point = %q (%+v, %v)", store.record.TrendPointJSON, persisted, err)
+			}
+			cached, ok := server.runner.GetRunArchive(runID)
+			if !ok || cached.TrendPointJSON != store.record.TrendPointJSON {
+				t.Fatalf("runner archive cache was not repaired: ok=%v cached=%+v stored=%+v", ok, cached, store.record)
+			}
+			server.runner.mu.RLock()
+			attached := cloneRunArchiveRecord(server.runner.tests[runID].Archive)
+			server.runner.mu.RUnlock()
+			if attached == nil || attached.TrendPointJSON != store.record.TrendPointJSON {
+				t.Fatalf("managed test archive was not repaired: %+v", attached)
+			}
+		})
 	}
 }

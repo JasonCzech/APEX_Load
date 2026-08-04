@@ -798,7 +798,7 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 	}
 	dockerfile := string(content)
 	for _, required := range []string{
-		"node:22.22.0-alpine3.23",
+		"node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34",
 		"golang:1.26.5-alpine3.24@sha256:",
 		"FROM alpine:3.24@sha256:",
 		"AS dashboard-builder",
@@ -820,6 +820,15 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 	}
 	if strings.Contains(dockerfile, "npm install --prefix /opt/playwright-driver") {
 		t.Fatal("Dockerfile must copy the lockfile-resolved Playwright driver instead of fetching it in the runtime stage")
+	}
+	for _, line := range strings.Split(dockerfile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "FROM") {
+			continue
+		}
+		if !strings.Contains(fields[1], "@sha256:") {
+			t.Errorf("release Dockerfile base image is not digest-pinned: %s", line)
+		}
 	}
 	dockerIgnore, err := os.ReadFile("../.dockerignore")
 	if err != nil {

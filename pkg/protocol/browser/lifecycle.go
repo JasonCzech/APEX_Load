@@ -10,6 +10,7 @@ func (b *Browser) close() {
 	cdp := b.pwCDP
 	b.pwCDP = nil
 	b.pwCDPPage = nil
+	b.cdpInstallGeneration++
 	page := b.pwPage
 	b.pwPage = nil
 	b.mu.Unlock()

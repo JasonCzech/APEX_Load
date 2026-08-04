@@ -135,8 +135,12 @@ const (
 	EventNetworkRequest = "network_request"
 	EventWebSocket      = "websocket"
 	EventWarning        = "warning"
-	EventPauseState     = "pause_state"
-	EventMarker         = "marker"
+	// EventCapHit reports every bounded-capture drop, including repeats after
+	// the one retained warning. This lets control-plane summaries expose exact
+	// live truncation counts without cloning the full recording artifact.
+	EventCapHit     = "cap_hit"
+	EventPauseState = "pause_state"
+	EventMarker     = "marker"
 	// EventPickState reports the in-page element-picker (assert) mode toggling.
 	EventPickState = "pick_state"
 	// EventAnnotation reports a console error or failed request captured live.
@@ -159,6 +163,8 @@ type Event struct {
 	Step       *Step
 	Nav        *NavEvent
 	Warning    string
+	CapName    string
+	CapCount   int64
 	Paused     bool
 	Picking    bool
 	Marker     *Marker

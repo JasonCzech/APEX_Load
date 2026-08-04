@@ -63,12 +63,17 @@ default StorageClass, and size it with `generator.statePersistence.size` (the
 default is `10Gi`).
 
 Generic import assets also use persistent storage by default. For a single
-controller, configure `importAssets.persistence` or its StorageClass. HA
+controller, configure `importAssets.persistence` or its StorageClass. When
+`importAssets.persistence.enabled=false`, the chart mounts a bounded `emptyDir`
+at `importAssets.root`; imported assets are writable but intentionally disappear
+when the pod is replaced. Single-controller releases use a `Recreate` rollout so
+the RWO claim is never mounted by overlapping controller revisions. HA
 controllers must supply an RWX claim through
 `importAssets.persistence.existingClaim`; copy pre-upgrade assets from
 `/var/lib/apexload/bruno-artifacts` (legacy Helm import-only installs) into the
 new claim before rollout. The generated generator discovery target uses the
-Helm release namespace unless `dataPlatform.generators` is set explicitly.
+effective chart namespace (`namespace.name`, falling back to the Helm release
+namespace) unless `dataPlatform.generators` is set explicitly.
 
 Generator pods no longer assume a dedicated node pool. Clusters that used the
 old defaults must set `generator.nodeSelector` and `generator.tolerations`
