@@ -168,14 +168,18 @@ func TestRecurringScheduleSweepRearmsExactQueuedStartRetry(t *testing.T) {
 	}
 
 	const scheduleID = "scheduled-sweep-recovery-schedule"
-	if err := store.SaveScenarioSchedule(&storage.ScenarioSchedule{
+	schedule := &storage.ScenarioSchedule{
 		ID: scheduleID, ScenarioID: scenario.ID, ProjectID: scenario.ProjectID, Revision: 1,
 		Name: "Scheduled sweep recovery", CronExpr: "*/5 * * * *", Timezone: "UTC", Enabled: true,
 		MissedRunPolicy: "catch_up_once", LastRunTestID: created.ID, NextRunAt: &now,
 		CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
-	}); err != nil {
+	}
+	if err := store.SaveScenarioSchedule(schedule); err != nil {
 		t.Fatal(err)
 	}
+	runner.mu.Lock()
+	runner.scenarios[scenario.ID].Schedules = append(runner.scenarios[scenario.ID].Schedules, cloneScenarioSchedule(schedule))
+	runner.mu.Unlock()
 	if err := store.SaveScenarioScheduleOccurrence(&storage.ScenarioScheduleOccurrence{
 		ID: "scheduled-sweep-recovery-occurrence", ScheduleID: scheduleID,
 		ScenarioID: scenario.ID, ProjectID: scenario.ProjectID, ScheduleRevision: 1,
