@@ -69,6 +69,7 @@ function plan(overrides: Partial<ExecutionPlan>): ExecutionPlan {
   return {
     id: 'p1',
     project_id: 'proj-a',
+    revision: 7,
     name: 'nightly',
     run_mode: 'sequential',
     entries: [
@@ -124,6 +125,25 @@ describe('ExecutionPlansPanel', () => {
     expect(container.textContent).toContain('1 enabled')
     // Manage actions present.
     expect(container.textContent).toContain('Run')
+  })
+
+  it('sends the current revision when saving an existing plan', async () => {
+    const existing = plan({ revision: 7 })
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [existing], count: 1 })
+    plansApiMock.updateExecutionPlan.mockResolvedValue(plan({ revision: 8, name: 'renamed' }))
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click()
+    })
+    await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'renamed'))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-modal-actions button')).find(button => button.textContent === 'Save')?.click()
+    })
+    await flush()
+    expect(plansApiMock.updateExecutionPlan).toHaveBeenCalledWith('p1', expect.objectContaining({ revision: 7, name: 'renamed' }))
   })
 
   it('hides management actions without permission', async () => {

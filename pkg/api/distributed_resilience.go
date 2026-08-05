@@ -105,6 +105,14 @@ func groupAllowsStatelessDataReshard(group TestGroup) (bool, string) {
 }
 
 func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *ManagedTest, target string, dryRun bool, _ string) ([]GeneratorEvacuationImpact, error) {
+	return b.evacuateGenerator(tr, test, target, dryRun, false)
+}
+
+// evacuateGenerator's allowLostSourceLeaseFence bit is intentionally private:
+// the public API's free-text reason must never grant authority to treat lease
+// expiry as proof that an unreachable source stopped. Only the internal stream-
+// loss path may opt into that recovery after establishing a per-test fence.
+func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *ManagedTest, target string, dryRun bool, allowLostSourceLeaseFence bool) ([]GeneratorEvacuationImpact, error) {
 	b.evacuationMu.Lock()
 	defer b.evacuationMu.Unlock()
 	target = strings.TrimSpace(target)
@@ -132,6 +140,7 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 	executionCtx := test.executionCtx
 	remoteLifecycleCtx := test.remoteLifecycleCtx
 	executionGeneration := test.executionGeneration
+	requireTestExecutionLease := assignmentToleratesGeneratorLoss(test.Assignment)
 	testName := test.Name
 	testID := test.ID
 	startPaused := status == "PAUSED" || test.PausedAt != nil
@@ -336,7 +345,7 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 		return impacts, fmt.Errorf("generator evacuation refused: %s", strings.Join(refused, "; "))
 	}
 
-	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target)
+	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target)
 	if err != nil {
 		var uncertain *distributedEvacuationUncertainError
 		if errors.As(err, &uncertain) {
@@ -350,6 +359,38 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 		}
 		closeDialedClients()
 		return impacts, err
+	}
+	replacementClients := make(map[string]generatorClient, len(newlyAssigned))
+	for replacementTarget := range newlyAssigned {
+		if client := clientsByTarget[replacementTarget]; client != nil {
+			replacementClients[replacementTarget] = client
+		}
+	}
+	var stopStagedLeaseKeeper context.CancelFunc
+	if requireTestExecutionLease {
+		currentGeneration, currentOwnerID, currentDeadline, leaseErr := tr.generatorExecutionClaim()
+		if leaseErr != nil || currentGeneration != executionGeneration || currentOwnerID != executionLeaseOwnerID {
+			for _, stream := range openedStreams {
+				_ = stream.CloseSend()
+			}
+			rollbackErr := rollback()
+			closeDialedClients()
+			return impacts, errors.Join(fmt.Errorf("execution leadership changed before replacement lease establishment"), rollbackErr)
+		}
+		if leaseErr := b.renewGeneratorTestExecutionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); leaseErr != nil {
+			for _, stream := range openedStreams {
+				_ = stream.CloseSend()
+			}
+			rollbackErr := rollback()
+			closeDialedClients()
+			return impacts, errors.Join(fmt.Errorf("establish replacement assignment leases: %w", leaseErr), rollbackErr)
+		}
+		stagedLeaseCtx, cancelStagedLeaseKeeper := context.WithCancel(executionCtx)
+		stopStagedLeaseKeeper = cancelStagedLeaseKeeper
+		go b.maintainStagedGeneratorTestExecutionLeases(stagedLeaseCtx, tr, test, executionGeneration, replacementClients)
+	}
+	if stopStagedLeaseKeeper != nil {
+		defer stopStagedLeaseKeeper()
 	}
 
 	// Mark the source before issuing StopTest. Generator StopTest broadcasts a
@@ -383,12 +424,23 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 	}
 	test.remoteTargetStates[target] = remoteTargetStateEvacuating
 	tr.mu.Unlock()
+	if requireTestExecutionLease {
+		// Suppress only this assignment's renewal before attempting StopTest. A
+		// claim already in flight can finish, so the controller deadline sampled
+		// after the stop attempt remains the conservative positive fence.
+		b.fenceTestExecutionLease(test, target)
+	}
 
 	// The source must be positively fenced before its replacement topology is
 	// advertised. A timeout is ambiguous: the stop may have applied, so neither
 	// rolling back nor committing the reshard can prove the active VUser count.
 	if source := clientsByTarget[target]; source != nil {
 		if err := b.stopEvacuationClient(testID, executionGeneration, source); err != nil {
+			if allowLostSourceLeaseFence && requireTestExecutionLease {
+				if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, executionGeneration); expiryErr == nil {
+					goto sourceFenced
+				}
+			}
 			uncertain := &distributedEvacuationUncertainError{
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
@@ -399,6 +451,11 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 		}
 	} else {
+		if allowLostSourceLeaseFence && requireTestExecutionLease {
+			if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, executionGeneration); expiryErr == nil {
+				goto sourceFenced
+			}
+		}
 		uncertain := &distributedEvacuationUncertainError{
 			testID:             testID,
 			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
@@ -409,14 +466,29 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 		return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 	}
 
+sourceFenced:
+
 	// AssignWork above is a staging boundary: replacement VUsers must remain
 	// inert until the source's exact-generation StopTest has positively fenced
 	// the old logical shards. Only then may the same shard coordinates and data
 	// partitions be released on their replacement generators.
-	replacementClients := make(map[string]generatorClient, len(newlyAssigned))
-	for replacementTarget := range newlyAssigned {
-		if client := clientsByTarget[replacementTarget]; client != nil {
-			replacementClients[replacementTarget] = client
+	if requireTestExecutionLease {
+		currentGeneration, currentOwnerID, currentDeadline, leaseErr := tr.generatorExecutionClaim()
+		if leaseErr != nil || currentGeneration != executionGeneration || currentOwnerID != executionLeaseOwnerID {
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				err:                fmt.Errorf("execution leadership changed before replacement commit"),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		if leaseErr := b.renewGeneratorTestExecutionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); leaseErr != nil {
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				err:                fmt.Errorf("renew replacement assignment leases: %w", leaseErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
 		}
 	}
 	replacementStartAt := time.Now().Add(distributedCommitStartLead(b.timeout))
@@ -512,11 +584,42 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 	for candidate, stream := range openedStreams {
 		go b.consumeMetrics(runCtx, tr, test, candidate, stream)
 	}
+	// The replacement is now part of the published topology. The existing
+	// topology-aware run keeper takes ownership when this method returns, while
+	// the deferred cancellation prevents duplicate steady-state renewals.
 
 	if stream := streamsByTarget[target]; stream != nil {
 		_ = stream.CloseSend()
 	}
 	return impacts, nil
+}
+
+// waitForLostGeneratorEpochFence waits past the latest controller lease
+// deadline that an already-in-flight assignment claim could have installed on
+// the lost generator. With this test/target renewal suppressed, that one
+// assignment is guaranteed to have stopped before replacement shards start;
+// unrelated assignments retain their own leases and continue normally.
+func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, generation uint64) error {
+	current, _, deadline, err := tr.generatorExecutionClaim()
+	if err != nil || current != generation || deadline.IsZero() {
+		return fmt.Errorf("execution epoch deadline is unavailable while fencing lost generator")
+	}
+	wait := time.Until(deadline) + 10*time.Millisecond
+	if wait <= 0 {
+		wait = time.Millisecond
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+	}
+	current, _, _, err = tr.generatorExecutionClaim()
+	if err != nil || current != generation {
+		return fmt.Errorf("execution leadership changed while fencing lost generator")
+	}
+	return nil
 }
 
 // distributedEvacuationTiming separates controller wall time into the
@@ -555,6 +658,7 @@ func (b *distributedExecutionBackend) connectEvacuationCandidates(parent context
 		candidates = append(candidates, groupTargets...)
 	}
 	candidates = orderedUniqueTargets(candidates)
+	candidates = b.filterTestPlacementTargets(test, candidates)
 	dialed := make(map[string]generatorClient)
 	for _, candidate := range candidates {
 		if candidate == evacuatedTarget || clients[candidate] != nil || remoteTargetStateDone(states[candidate]) {
@@ -624,7 +728,7 @@ func generatorSupportsEvacuationAssignmentState(snapshot generatorLoadSnapshot) 
 	return snapshot.HeartbeatOK && stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureEvacuationAssignmentStateV1)
 }
 
-func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent context.Context, metricsParent context.Context, tr *TestRunner, managedTest *ManagedTest, testID string, executionGeneration uint64, remainingDuration time.Duration, steadyElapsed time.Duration, startPaused bool, groups map[string]TestGroup, clients map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream, previousByGroup map[string][]GeneratorShardSummary, nextByGroup map[string][]GeneratorShardSummary, evacuatedTarget string) (map[string]*generatorrpc.MetricsStream, map[string]map[string]struct{}, map[string]struct{}, func() error, error) {
+func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent context.Context, metricsParent context.Context, tr *TestRunner, managedTest *ManagedTest, testID string, executionGeneration uint64, requireTestExecutionLease bool, remainingDuration time.Duration, steadyElapsed time.Duration, startPaused bool, groups map[string]TestGroup, clients map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream, previousByGroup map[string][]GeneratorShardSummary, nextByGroup map[string][]GeneratorShardSummary, evacuatedTarget string) (map[string]*generatorrpc.MetricsStream, map[string]map[string]struct{}, map[string]struct{}, func() error, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -767,28 +871,29 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				changes = append(changes, appliedChange{target: shard.Target, group: groupName, newlyAssigned: true})
 				touchedTargets[shard.Target] = struct{}{}
 				assignment, assignErr := client.AssignWork(ctx, generatorrpc.Assignment{
-					TestID:                testID,
-					ExecutionGeneration:   executionGeneration,
-					ScenarioID:            scenarioID,
-					GroupName:             groupName,
-					TargetDuration:        remainingDuration,
-					TargetDurationSeconds: distributedCompatibilityDurationSeconds(remainingDuration),
-					DurationOffset:        steadyElapsed,
-					ScriptID:              group.ScriptID,
-					ExpectedScriptHash:    contentHash,
-					VUserCount:            int32(shard.VUsers),
-					RampUp:                rampUp,
-					RampDown:              rampDown,
-					InitStrategy:          initStrategy,
-					PostBaseline:          postBaseline,
-					ShardOrdinal:          shard.ShardOrdinal,
-					ShardCount:            shard.ShardCount,
-					VUserIDOffset:         shard.VUserIDOffset,
-					StartPaused:           startPaused,
-					DataFiles:             dataFiles,
-					RedactionRules:        cloneRedactionRules(group.redactionRules),
-					SecretBundle:          secretBundle,
-					SecretBundleID:        secretBundleID,
+					TestID:                    testID,
+					ExecutionGeneration:       executionGeneration,
+					ScenarioID:                scenarioID,
+					RequireTestExecutionLease: requireTestExecutionLease,
+					GroupName:                 groupName,
+					TargetDuration:            remainingDuration,
+					TargetDurationSeconds:     distributedCompatibilityDurationSeconds(remainingDuration),
+					DurationOffset:            steadyElapsed,
+					ScriptID:                  group.ScriptID,
+					ExpectedScriptHash:        contentHash,
+					VUserCount:                int32(shard.VUsers),
+					RampUp:                    rampUp,
+					RampDown:                  rampDown,
+					InitStrategy:              initStrategy,
+					PostBaseline:              postBaseline,
+					ShardOrdinal:              shard.ShardOrdinal,
+					ShardCount:                shard.ShardCount,
+					VUserIDOffset:             shard.VUserIDOffset,
+					StartPaused:               startPaused,
+					DataFiles:                 dataFiles,
+					RedactionRules:            cloneRedactionRules(group.redactionRules),
+					SecretBundle:              secretBundle,
+					SecretBundleID:            secretBundleID,
 				})
 				cancel()
 				if assignErr != nil || !assignment.Accepted {
@@ -980,6 +1085,7 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 	active := owned && !isTerminalTestStatus(test.Status)
 	var persistErr error
 	var cancel context.CancelFunc
+	var eventSnapshot *ManagedTest
 	if active {
 		test.Status = "STOPPING"
 		test.Error = "generator evacuation state is uncertain: " + uncertain.Error()
@@ -1004,18 +1110,19 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		persistErr = retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 		tr.cancelAllVUserScaleRampsLocked(test)
 		cancel = test.cancel
+		eventSnapshot = cloneManagedTestFieldsLocked(test)
 	}
 	tr.mu.Unlock()
 	if releaseTopology != nil {
 		releaseTopology()
 	}
+	if active {
+		tr.broadcastEvent("test_stopping", eventSnapshot)
+	}
 
 	stopErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants)
 	if cancel != nil {
 		cancel()
-	}
-	if active {
-		tr.broadcastEvent("test_stopping", test)
 	}
 	if stopErr == nil {
 		if active {
@@ -1052,11 +1159,12 @@ func (b *distributedExecutionBackend) finalizeFailClosedEvacuation(tr *TestRunne
 	finalError := test.Error
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 	defer unlockArchiveCommit()
+	targetHistory := snapshotRemoteArchiveTargetHistory(tr, test)
 
 	// Commit the authoritative failure before potentially slow best-effort
 	// evidence transfer, matching the ordinary distributed failure path.
 	completionErr := tr.completeTestRunUnderArchiveFence(test, "FAILED", completedAt, finalError, nil)
-	archiveRecord, archiveErr := b.stageRemoteArchive(tr, test, "FAILED", finalError, completedAt, false)
+	archiveRecord, archiveErr := b.stageRemoteArchiveWithTargetHistory(tr, test, "FAILED", finalError, completedAt, false, targetHistory)
 	// Clients remain attached until staging has snapshotted every stopped
 	// participant. Closing after the fetch prevents partial-run evidence loss.
 	b.closeRemoteResources(tr, test)
@@ -1083,6 +1191,15 @@ func wrapEvacuationPersistenceError(err error) error {
 }
 
 func (b *distributedExecutionBackend) detachEvacuationResources(tr *TestRunner, test *ManagedTest, participants map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream) {
+	// Terminal and stale-incarnation callers may have no separately captured
+	// participants. Allocate the local collectors before merging handles retained
+	// on the managed test so cleanup remains safe and still closes those handles.
+	if participants == nil {
+		participants = make(map[string]generatorClient)
+	}
+	if streams == nil {
+		streams = make(map[string]*generatorrpc.MetricsStream)
+	}
 	var archivedClients map[string]generatorClient
 	tr.mu.Lock()
 	if tr.tests[test.ID] == test {
@@ -1112,6 +1229,10 @@ func (b *distributedExecutionBackend) detachEvacuationResources(tr *TestRunner, 
 		test.remoteControlGeneration++
 	}
 	tr.mu.Unlock()
+	// Fences are keyed by the ManagedTest pointer so stale-incarnation cleanup
+	// must release the exact detached owner even when tr.tests now contains a
+	// newer run with the same ID.
+	b.clearTestExecutionLeaseFences(test)
 	for _, stream := range streams {
 		if stream != nil {
 			_ = stream.CloseSend()
@@ -1141,7 +1262,7 @@ func (b *distributedExecutionBackend) tolerateMetricsStreamLoss(tr *TestRunner, 
 	if !tolerate || (status != "RUNNING" && status != "INITIALIZING") {
 		return false
 	}
-	impacts, evacuateErr := b.EvacuateGenerator(tr, test, target, false, "generator_loss")
+	impacts, evacuateErr := b.evacuateGenerator(tr, test, target, false, true)
 	if evacuateErr != nil {
 		slog.Warn("generator loss tolerance failed; falling back to run failure", "test_id", test.ID, "target", target, "err", evacuateErr)
 		return false

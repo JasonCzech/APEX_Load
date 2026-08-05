@@ -9,10 +9,21 @@ import (
 )
 
 // accessRequirementFingerprint produces a stable, comparable string describing
-// the access requirement resolved for a request. It captures every observable
-// field (roles, lookups-present, flags, body limits) so that a refactor of the
-// route-access resolution can be proven behavior-preserving.
+// every observable access-requirement field, including the independent
+// service-account scope gate.
 func accessRequirementFingerprint(r *http.Request) string {
+	return accessRequirementFingerprintWithScopes(r, true)
+}
+
+// accessRequirementRBACFingerprint preserves the original characterization
+// baseline for the human RBAC/body-limit contract. Service-account scopes were
+// added to the characterization separately and are asserted exactly for the
+// query-conditional routes that cannot be represented by the static catalog.
+func accessRequirementRBACFingerprint(r *http.Request) string {
+	return accessRequirementFingerprintWithScopes(r, false)
+}
+
+func accessRequirementFingerprintWithScopes(r *http.Request, includeScopes bool) string {
 	req, ok := accessRequirementForRequest(r)
 	if !ok {
 		return "NO_MATCH"
@@ -27,6 +38,12 @@ func accessRequirementFingerprint(r *http.Request) string {
 		fmt.Sprintf("domainLookup=%t", req.DomainLookup != nil),
 		fmt.Sprintf("repoLookup=%t", req.RepositoryLookup != nil),
 		fmt.Sprintf("maxBody=%d", req.MaxBodyBytes),
+	}
+	if includeScopes {
+		parts = append(parts,
+			"serviceScope="+req.ServiceAccountScope,
+			fmt.Sprintf("serviceScopeLookup=%t", req.ServiceAccountScopeLookup != nil),
+		)
 	}
 	return strings.Join(parts, " ")
 }
@@ -88,6 +105,7 @@ func characterizationCases(t *testing.T) []characterizationCase {
 		{method: http.MethodGet, path: "/api/v1/ai/policy"},
 		{method: http.MethodGet, path: "/api/v1/ai/policy", query: "project_id=p1"},
 		{method: http.MethodGet, path: "/api/v1/ai/review-queue", query: "project_id=p1"},
+		{method: http.MethodGet, path: "/api/v1/scripts/authoring/capabilities", query: "project_id=p1"},
 		{method: http.MethodGet, path: "/api/v1/recorder/status"},
 		{method: http.MethodGet, path: "/api/v1/recorder/status", query: "project_id=p1"},
 		{method: http.MethodGet, path: "/api/v1/recorder/ca.pem", query: "project_id=p1"},
@@ -160,9 +178,42 @@ func TestAccessRequirementSnapshotStable(t *testing.T) {
 			t.Errorf("no golden fingerprint for %s (got %q) — add it to accessRequirementGolden", c.key(), accessRequirementFingerprint(c.request()))
 			continue
 		}
-		if got := accessRequirementFingerprint(c.request()); got != want {
+		if got := accessRequirementRBACFingerprint(c.request()); got != want {
 			t.Errorf("%s:\n  got  %s\n  want %s", c.key(), got, want)
 		}
+	}
+}
+
+func TestAuthoringCapabilitiesAccessRequirementIncludesServiceAccountScope(t *testing.T) {
+	tests := []struct {
+		name              string
+		target            string
+		wantProjectLookup bool
+	}{
+		{name: "global", target: "/api/v1/scripts/authoring/capabilities"},
+		{name: "project", target: "/api/v1/scripts/authoring/capabilities?project_id=p1", wantProjectLookup: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, test.target, nil)
+			requirement, ok := accessRequirementForRequest(request)
+			if !ok {
+				t.Fatal("authoring capabilities access requirement did not resolve")
+			}
+			if requirement.ServiceAccountScope != "read" || requirement.ServiceAccountScopeLookup != nil {
+				t.Fatalf("service-account scope = %q lookup=%v, want exact read scope", requirement.ServiceAccountScope, requirement.ServiceAccountScopeLookup != nil)
+			}
+			if (requirement.ProjectLookup != nil) != test.wantProjectLookup {
+				t.Fatalf("project lookup present = %v, want %v", requirement.ProjectLookup != nil, test.wantProjectLookup)
+			}
+			if got := requiredServiceAccountScope(request); got != "read" {
+				t.Fatalf("runtime service-account scope = %q, want read", got)
+			}
+			fingerprint := accessRequirementFingerprint(request)
+			if !strings.Contains(fingerprint, "serviceScope=read serviceScopeLookup=false") {
+				t.Fatalf("fingerprint omitted service-account contract: %q", fingerprint)
+			}
+		})
 	}
 }
 
@@ -398,6 +449,7 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/schedules/health":                                                                           "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/scripts":                                                                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/scripts/authoring/capabilities":                                                             "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/scripts/authoring/capabilities?project_id=p1":                                               "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/scripts/authoring/components":                                                               "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"POST /api/v1/scripts/authoring/components":                                                              "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"DELETE /api/v1/scripts/authoring/components/sample-id":                                                  "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",

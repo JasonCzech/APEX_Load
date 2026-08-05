@@ -409,7 +409,9 @@ func (tr *TestRunner) loadStoredTests() {
 	}
 	for _, record := range tests {
 		managedTest := managedTestFromRecord(record)
-		if err := tr.restoreManagedTestRuntimeAndRepair(managedTest); err != nil {
+		if isTerminalTestStatus(managedTest.Status) {
+			trimTerminalManagedTestRuntime(managedTest)
+		} else if err := tr.restoreManagedTestRuntimeAndRepair(managedTest); err != nil {
 			managedTest.runtimeHydrationError = err.Error()
 			slog.Error("failed to restore stored test runtime", "test_id", managedTest.ID, "error", err)
 		}
@@ -421,7 +423,11 @@ func (tr *TestRunner) loadStoredTests() {
 				slog.Error("failed to reconcile stored active test", "test_id", managedTest.ID, "error", err)
 			}
 		}
-		tr.loadStoredTestHistory(managedTest)
+		if isTerminalTestStatus(managedTest.Status) {
+			tr.loadStoredTerminalTestSummary(managedTest)
+		} else {
+			tr.loadStoredTestHistory(managedTest)
+		}
 		tr.loadStoredTestArchive(managedTest)
 		tr.tests[record.ID] = managedTest
 	}
@@ -487,11 +493,16 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			continue
 		}
 		managedTest := managedTestFromRecord(record)
-		if !reuseReplicaState || retryHydration {
+		if isTerminalTestStatus(managedTest.Status) {
+			trimTerminalManagedTestRuntime(managedTest)
+		} else if !reuseReplicaState || retryHydration {
 			if err := tr.restoreManagedTestRuntimeAndRepair(managedTest); err != nil {
 				managedTest.runtimeHydrationError = err.Error()
 				slog.Error("failed to restore reloaded test runtime", "test_id", managedTest.ID, "error", err)
 			}
+		}
+		if isTerminalTestStatus(managedTest.Status) {
+			trimTerminalManagedTestRuntime(managedTest)
 		}
 		if leaderAtStart && sameExecutionEpoch() {
 			if err := tr.reconcileStoredActiveTest(managedTest); err != nil {
@@ -502,7 +513,11 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 		// object storage. Hydrate them only for a genuinely new/reused identity;
 		// unchanged replicas retain their already-loaded immutable snapshots.
 		if !reuseReplicaState {
-			tr.loadStoredTestHistory(managedTest)
+			if isTerminalTestStatus(managedTest.Status) {
+				tr.loadStoredTerminalTestSummary(managedTest)
+			} else {
+				tr.loadStoredTestHistory(managedTest)
+			}
 			if archive, found, loadErr := tr.loadRunArchiveFromStore(managedTest.ID); loadErr != nil {
 				slog.Warn("failed to load stored test archive", "test_id", managedTest.ID, "error", loadErr)
 			} else if found && runArchiveRecordAvailable(archive) {
@@ -531,6 +546,9 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 				current.groupSpecs = managedTest.groupSpecs
 				current.runtimeHydrationError = ""
 			}
+			if isTerminalTestStatus(current.Status) {
+				compactTerminalManagedTestLocked(current)
+			}
 			if oldRefKey != current.RefKey {
 				tr.removeRefKeyLocked(oldRefKey)
 			}
@@ -543,6 +561,9 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			tr.forgetRunSnapshotWriteStateLocked(record.ID)
 			forgetRunArchiveCache(record.ID)
 			deleteGroupMetricsHistoryCache(record.ID)
+			if tr.storedHistoryCache != nil {
+				tr.storedHistoryCache.deleteTest(record.ID)
+			}
 		}
 		tr.tests[record.ID] = managedTest
 		if managedTest.Archive != nil {
@@ -581,6 +602,9 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			tr.removeRefKeyLocked(current.RefKey)
 		}
 		tr.forgetRunSnapshotWriteStateLocked(id)
+		if tr.storedHistoryCache != nil {
+			tr.storedHistoryCache.deleteTest(id)
+		}
 		delete(tr.tests, id)
 		tr.mu.Unlock()
 	}
@@ -694,6 +718,7 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 			tr.enqueueCapacityReservationReleaseRetry(test.ID, slotID)
 		}
 	}
+	compactTerminalManagedTestLocked(test)
 	return nil
 }
 
@@ -1005,40 +1030,95 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 }
 
 func (tr *TestRunner) loadStoredTestHistory(test *ManagedTest) {
+	if err := tr.loadStoredTestHistoryLimit(test, maxManagedTestHistory); err != nil {
+		slog.Warn("failed to load stored test history", "test_id", test.ID, "error", err)
+	}
+}
+
+func (tr *TestRunner) loadStoredTestHistoryLimit(test *ManagedTest, limit int) error {
 	if tr.historyStore == nil {
-		return
+		return nil
 	}
 	var history []any
 	var err error
 	if limited, ok := tr.historyStore.(limitedHistoryPersistence); ok {
-		history, err = limited.GetHistoryLimit(test.ID, maxManagedTestHistory)
+		history, err = limited.GetHistoryLimit(test.ID, limit)
 	} else {
 		history, err = tr.historyStore.GetHistory(test.ID)
 	}
 	if err != nil {
-		// Best-effort at startup, but never swallow silently: a dialect break
-		// here (e.g. a Postgres-incompatible query) would otherwise blank every
-		// run's history with no trace.
-		slog.Warn("failed to load stored test history", "test_id", test.ID, "error", err)
-		return
+		return err
+	}
+	entryLimit := maxManagedTestHistory
+	if limit > 0 && limit < entryLimit {
+		entryLimit = limit
 	}
 	for _, entry := range history {
 		switch metrics := entry.(type) {
 		case storage.IntervalSummaryRecord:
-			appendManagedTestHistoryWithLimits(test, intervalSummaryRecordToLiveMetrics(metrics), maxManagedTestHistory, maxManagedTestHistoryBytes)
+			appendManagedTestHistoryWithLimits(test, intervalSummaryRecordToLiveMetrics(metrics), entryLimit, maxManagedTestHistoryBytes)
 		case *storage.IntervalSummaryRecord:
 			if metrics != nil {
-				appendManagedTestHistoryWithLimits(test, intervalSummaryRecordToLiveMetrics(*metrics), maxManagedTestHistory, maxManagedTestHistoryBytes)
+				appendManagedTestHistoryWithLimits(test, intervalSummaryRecordToLiveMetrics(*metrics), entryLimit, maxManagedTestHistoryBytes)
 			}
 		case map[string]any:
 			// This is a bit lossy due to any -> map conversion,
 			// but works for basic history display.
-			appendManagedTestHistoryWithLimits(test, mapToLiveMetrics(metrics), maxManagedTestHistory, maxManagedTestHistoryBytes)
+			appendManagedTestHistoryWithLimits(test, mapToLiveMetrics(metrics), entryLimit, maxManagedTestHistoryBytes)
 		}
 	}
 	if len(test.History) > 0 {
 		test.LiveMetrics = test.History[len(test.History)-1]
 	}
+	return nil
+}
+
+func trimTerminalManagedTestRuntime(test *ManagedTest) {
+	if test == nil || !isTerminalTestStatus(test.Status) {
+		return
+	}
+	test.groupSpecs = nil
+	test.multiEngine = nil
+	test.goalControl = nil
+	for index := range test.Groups {
+		group := &test.Groups[index]
+		if group.script != nil || group.baseScript != nil || len(group.sharedDataSources) > 0 || len(group.redactionRules) > 0 {
+			test.terminalGroupRuntimeTrimmed = true
+		}
+		group.script = nil
+		group.baseScript = nil
+		group.sharedDataSources = nil
+		group.redactionRules = nil
+		group.runtimeSecretValues = nil
+	}
+}
+
+func compactTerminalManagedTestLocked(test *ManagedTest) {
+	trimTerminalManagedTestRuntime(test)
+	if len(test.History) > 1 || len(test.Sparkline) == 0 {
+		test.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+	}
+	if len(test.History) > 1 {
+		test.History = []*LiveMetrics{test.History[len(test.History)-1]}
+	}
+	if len(test.History) == 0 {
+		test.historyBytes = 0
+		test.historyWeights = nil
+		return
+	}
+	lastWeight := managedTestHistoryPointWeight(test.History[0], maxManagedTestHistoryBytes)
+	test.historyBytes = lastWeight
+	test.historyWeights = []int64{lastWeight}
+}
+
+func (tr *TestRunner) loadStoredTerminalTestSummary(test *ManagedTest) {
+	if test == nil || !isTerminalTestStatus(test.Status) {
+		return
+	}
+	if err := tr.loadStoredTestHistoryLimit(test, 1); err != nil {
+		slog.Warn("failed to load stored terminal test summary", "test_id", test.ID, "error", err)
+	}
+	compactTerminalManagedTestLocked(test)
 }
 
 func (tr *TestRunner) loadStoredTestArchive(test *ManagedTest) {
@@ -1334,6 +1414,9 @@ func (tr *TestRunner) forgetProject(projectID string) {
 			delete(tr.archives, id)
 			forgetRunArchiveCache(id)
 			deleteGroupMetricsHistoryCache(id)
+			if tr.storedHistoryCache != nil {
+				tr.storedHistoryCache.deleteTest(id)
+			}
 		}
 	}
 }
@@ -1427,7 +1510,10 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 
 func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 	if tr.testStore != nil {
-		record := buildManagedTestRecord(test)
+		record, err := tr.buildManagedTestRecordForSave(test)
+		if err != nil {
+			return err
+		}
 		if tr.durableExecutionFence {
 			if test == nil {
 				return fmt.Errorf("test is required")
@@ -1453,6 +1539,35 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 		return tr.testStore.SaveTest(record)
 	}
 	return nil
+}
+
+// buildManagedTestRecordForSave preserves immutable compiled group snapshots
+// when a compatibility persistence implementation can only update a test via
+// full-row SaveTest. Terminal compaction deliberately removes those often-large
+// objects from ManagedTest; projecting that compacted copy directly would erase
+// groups_json and make later inspection/recovery lossy. Production SQL stores
+// use targeted updates for these mutations, so the extra read is confined to
+// legacy/embedding paths that invoke a full-row save after compaction.
+func (tr *TestRunner) buildManagedTestRecordForSave(test *ManagedTest) (*storage.TestRecord, error) {
+	record := buildManagedTestRecord(test)
+	if tr == nil || tr.testStore == nil || test == nil || !test.terminalGroupRuntimeTrimmed {
+		return record, nil
+	}
+	durable, err := tr.testStore.GetTest(test.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: test %s", errStoredTestMissing, test.ID)
+		}
+		return nil, fmt.Errorf("load terminal runtime snapshot for test %s: %w", test.ID, err)
+	}
+	if durable == nil {
+		return nil, fmt.Errorf("%w: test %s", errStoredTestMissing, test.ID)
+	}
+	if !sameStoredTestIdentity(test, durable) {
+		return nil, fmt.Errorf("%w: test %s changed before compatibility save", errStoredTestTransitionFenced, test.ID)
+	}
+	record.Groups = durable.Groups
+	return record, nil
 }
 
 type initialArchiveProvenanceStore interface {
@@ -1625,7 +1740,21 @@ func (tr *TestRunner) deleteStoredTest(id string) (storage.LeaseFencedDeleteResu
 
 func (tr *TestRunner) saveLiveMetricsHistory(testID string, timestamp time.Time, live *LiveMetrics) error {
 	if tr.historyStore != nil {
-		return tr.historyStore.SaveHistory(testID, timestamp, live)
+		if err := tr.historyStore.SaveHistory(testID, timestamp, live); err != nil {
+			return err
+		}
+		// Only terminal runs can populate this cache. Avoid scanning its bounded
+		// keyset on every active metrics tick, while still catching a final write
+		// that began before terminalization and completed afterward.
+		tr.mu.RLock()
+		status := ""
+		if test := tr.tests[testID]; test != nil {
+			status = test.Status
+		}
+		tr.mu.RUnlock()
+		if isTerminalTestStatus(status) && tr.storedHistoryCache != nil {
+			tr.storedHistoryCache.deleteTest(testID)
+		}
 	}
 	return nil
 }

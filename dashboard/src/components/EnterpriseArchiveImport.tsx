@@ -900,7 +900,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     return Promise.all(discards).then(() => undefined)
   }, [discardSourceSecretSession, sourceSecretSessionKey])
   const fenceOperationScopes = useCallback((itemIds?: readonly string[]) => {
-    operationGenerationRef.current += 1
+    // A queue-item fence must not invalidate unrelated imports that are already
+    // running. Reserve the global generation for whole-surface resets/close.
+    if (!itemIds) operationGenerationRef.current += 1
     const ids = itemIds || importItemsRef.current.map(item => item.id)
     ids.forEach(id => {
       nextRequestToken(itemRequestTokensRef.current, id)

@@ -1,4 +1,5 @@
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics } from '../types'
+import { comparisonRunColor } from './resultsComparisonChartModel'
 
 export type BrowserBreakdown = 'overall' | 'platform' | 'engine' | 'device'
 
@@ -348,7 +349,7 @@ export function buildArchiveBrowserBreakdownSeries(): BrowserBreakdownSeries[] {
 
 export function buildComparisonBrowserBreakdownSeries(runs: Array<{ id: string; name: string }>): BrowserBreakdownSeries[] {
   return runs.flatMap((run, index) => {
-    const color = index === 0 ? 'var(--accent)' : 'var(--accent-2, #d97706)'
+    const color = comparisonRunColor(index)
     return [
       {
         dataKey: run.id,

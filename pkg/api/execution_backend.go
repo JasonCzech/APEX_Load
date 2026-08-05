@@ -124,6 +124,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			test.Status = finalStatus
 			test.Error = finalError
 			test.EndedAt = &endTime
+			compactTerminalManagedTestLocked(test)
 		}
 		tr.mu.Unlock()
 		unlockArchiveCommit()

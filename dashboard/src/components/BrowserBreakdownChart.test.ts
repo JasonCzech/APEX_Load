@@ -33,6 +33,12 @@ describe('BrowserBreakdownChart helpers', () => {
         ]),
       ),
     ).toBe('Series: solid LCP and dashed INP for each selected run.')
+    const runSeries = buildComparisonBrowserBreakdownSeries([
+      { id: 'run-a', name: 'Run A' },
+      { id: 'run-b', name: 'Run B' },
+      { id: 'run-c', name: 'Run C' },
+    ])
+    expect(new Set(runSeries.filter((_, index) => index % 2 === 0).map(series => series.stroke)).size).toBe(3)
   })
 
   it('builds browser breakdown data from shared sources with device fallbacks', () => {

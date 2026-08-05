@@ -551,7 +551,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
           ) : (
             <div className="settings-release-list" style={{ maxHeight: 240, overflow: 'auto' }}>
               {browsePath && (
-                  <button type="button" className="settings-release-row" aria-label="Browse parent directory" onClick={() => void browse(browsePath.split('/').slice(0, -1).join(''))}>
+                  <button type="button" className="settings-release-row" aria-label="Browse parent directory" onClick={() => void browse(browsePath.split('/').slice(0, -1).join('/'))}>
                   <div className="settings-release-main"><span>⬆ ..</span><small>{browsePath}</small></div>
                 </button>
               )}

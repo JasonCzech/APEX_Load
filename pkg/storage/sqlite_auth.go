@@ -1104,6 +1104,25 @@ func (s *SQLiteStore) ListUsers(filter UserFilter) ([]*User, error) {
 		)`)
 		args = append(args, role)
 	}
+	if projectID := strings.TrimSpace(filter.ProjectID); projectID != "" {
+		query.WriteString(` AND EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id AND LOWER(TRIM(b.scope_type)) = 'project' AND b.scope_id = ?
+		)`)
+		args = append(args, projectID)
+	}
+	if domainID := strings.TrimSpace(filter.DomainID); domainID != "" {
+		query.WriteString(` AND EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id AND (
+				(LOWER(TRIM(b.scope_type)) = 'domain' AND b.scope_id = ?)
+				OR (LOWER(TRIM(b.scope_type)) = 'project' AND EXISTS (
+					SELECT 1 FROM projects p WHERE p.id = b.scope_id AND p.domain_id = ?
+				))
+			)
+		)`)
+		args = append(args, domainID, domainID)
+	}
 	query.WriteString(` ORDER BY updated_at DESC LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := s.db.Query(query.String(), args...)
@@ -1159,6 +1178,25 @@ func (s *SQLiteStore) CountUsers(filter UserFilter) (int, error) {
 			WHERE b.user_id = users.id AND LOWER(TRIM(b.role)) = ?
 		)`)
 		args = append(args, role)
+	}
+	if projectID := strings.TrimSpace(filter.ProjectID); projectID != "" {
+		query.WriteString(` AND EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id AND LOWER(TRIM(b.scope_type)) = 'project' AND b.scope_id = ?
+		)`)
+		args = append(args, projectID)
+	}
+	if domainID := strings.TrimSpace(filter.DomainID); domainID != "" {
+		query.WriteString(` AND EXISTS (
+			SELECT 1 FROM user_role_bindings b
+			WHERE b.user_id = users.id AND (
+				(LOWER(TRIM(b.scope_type)) = 'domain' AND b.scope_id = ?)
+				OR (LOWER(TRIM(b.scope_type)) = 'project' AND EXISTS (
+					SELECT 1 FROM projects p WHERE p.id = b.scope_id AND p.domain_id = ?
+				))
+			)
+		)`)
+		args = append(args, domainID, domainID)
 	}
 	var count int
 	if err := s.db.QueryRow(query.String(), args...).Scan(&count); err != nil {

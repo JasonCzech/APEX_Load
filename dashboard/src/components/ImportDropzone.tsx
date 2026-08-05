@@ -124,7 +124,10 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
         type="file"
         accept={accept}
         onClick={event => event.stopPropagation()}
-        onChange={event => acceptFile(event.target.files?.[0])}
+        onChange={event => {
+          acceptFile(event.target.files?.[0])
+          event.target.value = ''
+        }}
         hidden
       />
       {file ? (
@@ -140,7 +143,11 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
           <button
             type="button"
             className="btn btn-sm btn-ghost"
-            onClick={event => { event.stopPropagation(); onFile(null) }}
+            onClick={event => {
+              event.stopPropagation()
+              onFile(null)
+              if (inputRef.current) inputRef.current.value = ''
+            }}
           >
             Change
           </button>

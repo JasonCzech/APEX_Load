@@ -430,6 +430,37 @@ func TestRecorderSnapshotsDeltasAndEventsOmitHeavyBodies(t *testing.T) {
 	if len(delta.Requests) != 1 || delta.Requests[0].Seq != 2 || delta.RequestCount != 2 || delta.LastSeq != 2 {
 		t.Fatalf("delta = %#v, want only requests after seq 1 with full counts", delta)
 	}
+	tail, ok := r.GetSessionWindow("s1", true, 0, 1)
+	if !ok {
+		t.Fatal("tail GetSessionWindow failed")
+	}
+	if len(tail.Requests) != 1 || tail.Requests[0].Seq != 2 || tail.RequestCount != 2 || tail.LastSeq != 2 {
+		t.Fatalf("tail = %#v, want latest request with full counts", tail)
+	}
+}
+
+func TestGetSessionWindowBoundsDeltaByTail(t *testing.T) {
+	r := New(":0")
+	session, err := r.StartSession("s1", "Bounded Delta", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &http.Response{StatusCode: http.StatusOK}
+	for index := 0; index < 3; index++ {
+		request, requestErr := http.NewRequest(http.MethodGet, fmt.Sprintf("https://example.com/%d", index), nil)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		r.recordRequest(session, request, nil, response, nil, time.Millisecond)
+	}
+
+	deltaTail, ok := r.GetSessionWindow("s1", true, 1, 1)
+	if !ok {
+		t.Fatal("delta tail GetSessionWindow failed")
+	}
+	if len(deltaTail.Requests) != 1 || deltaTail.Requests[0].Seq != 3 || deltaTail.RequestCount != 3 || deltaTail.LastSeq != 3 {
+		t.Fatalf("delta tail = %#v, want only latest request with full counts", deltaTail)
+	}
 }
 
 func TestDeleteSession(t *testing.T) {

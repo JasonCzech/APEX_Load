@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -178,11 +179,24 @@ type lifecycleTransitionBackend struct {
 	pauseHook    func(*TestRunner, *ManagedTest)
 	resumeHook   func(*TestRunner, *ManagedTest)
 	durationHook func(*TestRunner, *ManagedTest)
+	stopHook     func(*TestRunner, *ManagedTest)
 	pauseErr     error
 	resumeErr    error
 	durationErr  error
 	scaleErr     error
 	stopErrs     []error
+}
+
+type commitOrderingGeneratorClient struct {
+	startupLifecycleFakeClient
+	stopHook func()
+}
+
+func (c *commitOrderingGeneratorClient) StopTestAtGeneration(context.Context, string, bool, uint64) (generatorrpc.StopResult, error) {
+	if c.stopHook != nil {
+		c.stopHook()
+	}
+	return generatorrpc.StopResult{Acknowledged: true}, nil
 }
 
 func TestUncertainRemoteMutationsStillStopWhenFailClosedPersistenceFails(t *testing.T) {
@@ -407,8 +421,9 @@ func (b *lifecycleTransitionBackend) Run(_ *TestRunner, _ *ManagedTest) {
 	b.mu.Unlock()
 }
 
-func (b *lifecycleTransitionBackend) StopTest(_ *TestRunner, _ *ManagedTest) error {
+func (b *lifecycleTransitionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
 	b.mu.Lock()
+	hook := b.stopHook
 	var err error
 	if len(b.stopErrs) > 0 {
 		err = b.stopErrs[0]
@@ -416,6 +431,9 @@ func (b *lifecycleTransitionBackend) StopTest(_ *TestRunner, _ *ManagedTest) err
 	}
 	b.stopCalls++
 	b.mu.Unlock()
+	if hook != nil {
+		hook(tr, test)
+	}
 	return err
 }
 
@@ -435,6 +453,90 @@ func (b *lifecycleTransitionBackend) ResumeTest(tr *TestRunner, test *ManagedTes
 		b.resumeHook(tr, test)
 	}
 	return b.resumeErr
+}
+
+func TestFailClosedControlsBroadcastStoppingBeforeBackendTeardown(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		invoke func(*TestRunner, *ManagedTest, testExecutionBackend) error
+	}{
+		{
+			name: "vuser scale",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainVUserScale(&vuserScaleReservation{
+					test: test, groupIndex: 0,
+					oldGroup: TestGroup{Name: "group", VUsers: 1},
+					newGroup: TestGroup{Name: "group", VUsers: 2},
+				}, backend, errors.New("uncertain scale"))
+			},
+		},
+		{
+			name: "duration",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainDurationAdjustment(test, backend, 2*time.Minute, errors.New("uncertain duration"))
+			},
+		},
+		{
+			name: "pause",
+			invoke: func(runner *TestRunner, test *ManagedTest, backend testExecutionBackend) error {
+				return runner.failClosedUncertainPauseControl(test, "RUNNING", backend, errors.New("uncertain pause"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hub := NewHub()
+			runner := NewTestRunner(1, hub, nil)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			test := &ManagedTest{
+				ID: "ordering-" + tc.name, Status: "RUNNING", Duration: time.Minute,
+				Groups: []TestGroup{{Name: "group", VUsers: 1}}, TotalVUsers: 1,
+				executionCtx: ctx, cancel: cancel,
+			}
+			runner.tests[test.ID] = test
+			observedStopping := false
+			backend := &lifecycleTransitionBackend{stopHook: func(*TestRunner, *ManagedTest) {
+				select {
+				case message := <-hub.broadcast:
+					observedStopping = strings.Contains(string(message.payload), `"type":"test_stopping"`)
+				default:
+				}
+			}}
+			_ = tc.invoke(runner, test, backend)
+			if !observedStopping {
+				t.Fatal("backend teardown began before test_stopping was broadcast")
+			}
+		})
+	}
+}
+
+func TestFailClosedDistributedCommitBroadcastsStoppingBeforeRemoteStop(t *testing.T) {
+	hub := NewHub()
+	runner := NewTestRunner(1, hub, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	observedStopping := false
+	client := &commitOrderingGeneratorClient{stopHook: func() {
+		select {
+		case message := <-hub.broadcast:
+			observedStopping = strings.Contains(string(message.payload), `"type":"test_stopping"`)
+		default:
+		}
+	}}
+	test := &ManagedTest{
+		ID: "commit-ordering", Status: "RUNNING", executionGeneration: 7,
+		executionCtx: ctx, cancel: cancel,
+		remoteClientsByTarget: map[string]generatorClient{"generator": client},
+		remoteTargetStates:    map[string]string{"generator": "RUNNING"},
+	}
+	runner.tests[test.ID] = test
+	backend := newDistributedExecutionBackend([]string{"generator"}, 100*time.Millisecond, nil)
+	if err := backend.failClosedDistributedCommit(runner, test, "commit failed"); err != nil {
+		t.Fatalf("fail closed commit: %v", err)
+	}
+	if !observedStopping {
+		t.Fatal("remote StopTest began before test_stopping was broadcast")
+	}
 }
 
 func TestPauseResumePersistenceRollbackFailureStopsFailClosed(t *testing.T) {

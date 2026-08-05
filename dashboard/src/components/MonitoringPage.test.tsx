@@ -771,6 +771,37 @@ describe('MonitoringPage', () => {
     expect(container.querySelector('.monitor-last-refreshed')?.textContent).toContain('stale card')
   })
 
+  it('retries every initial category when a hidden mount becomes visible', async () => {
+    let visibility: DocumentVisibilityState = 'hidden'
+    const visibilitySpy = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+
+    try {
+      await act(async () => {
+        root.render(<MonitoringPage connectionState="connected" />)
+      })
+      await flushAsyncWork()
+
+      expect(apiMock.getHealth).not.toHaveBeenCalled()
+      expect(apiMock.getFleetAlerts).not.toHaveBeenCalled()
+      expect(apiMock.getAPMIntegrationProfiles).not.toHaveBeenCalled()
+      expect(apiMock.getScheduleHealth).not.toHaveBeenCalled()
+
+      visibility = 'visible'
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'))
+      })
+      await flushAsyncWork()
+      await flushAsyncWork()
+
+      expect(apiMock.getHealth).toHaveBeenCalledTimes(1)
+      expect(apiMock.getFleetAlerts).toHaveBeenCalledTimes(1)
+      expect(apiMock.getAPMIntegrationProfiles).toHaveBeenCalledTimes(1)
+      expect(apiMock.getScheduleHealth).toHaveBeenCalledTimes(1)
+    } finally {
+      visibilitySpy.mockRestore()
+    }
+  })
+
   it('coalesces slow polling instead of starting overlapping refreshes', async () => {
     vi.useFakeTimers()
     let resolveHealth: ((value: Awaited<ReturnType<typeof apiMock.getHealth>>) => void) | undefined
@@ -1439,6 +1470,7 @@ describe('MonitoringPage', () => {
 
   it('renders run calendar events and opens test details', async () => {
     const onSelectTest = vi.fn()
+    const onScheduleForDate = vi.fn()
     const eventStart = new Date()
     eventStart.setHours(9, 0, 0, 0)
     const eventEnd = new Date(eventStart)
@@ -1525,7 +1557,14 @@ describe('MonitoringPage', () => {
     })
 
     await act(async () => {
-      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} onSelectTest={onSelectTest} />)
+      root.render(
+        <MonitoringPage
+          connectionState="connected"
+          telemetryDiagnostics={[]}
+          onSelectTest={onSelectTest}
+          onScheduleForDate={onScheduleForDate}
+        />,
+      )
     })
 
     await clickMonitorTab('Schedules')
@@ -1545,6 +1584,14 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Cron')
     expect(container.textContent).toContain('Ad-hoc')
     expect(container.textContent).toContain('Current')
+
+    const schedulableDay = container.querySelector<HTMLElement>('.run-calendar-day.schedulable')
+    expect(schedulableDay?.getAttribute('role')).toBe('button')
+    expect(schedulableDay?.tabIndex).toBe(0)
+    await act(async () => {
+      schedulableDay?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    expect(onScheduleForDate).toHaveBeenCalledTimes(1)
 
     const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.run-calendar-event'))
       .find(button => button.textContent?.includes('Checkout Spike Investigation'))

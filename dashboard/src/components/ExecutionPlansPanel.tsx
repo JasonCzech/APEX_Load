@@ -42,6 +42,7 @@ type EntryDraft = {
 
 type PlanDraft = {
   id?: string
+  revision?: number
   name: string
   run_mode: string
   entries: EntryDraft[]
@@ -248,7 +249,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
     try {
 			let saved: ExecutionPlan
       if (draft.id) {
-				saved = await api.updateExecutionPlan(draft.id, { name: draft.name.trim(), run_mode: draft.run_mode, entries })
+				saved = await api.updateExecutionPlan(draft.id, { revision: draft.revision, name: draft.name.trim(), run_mode: draft.run_mode, entries })
       } else {
 				saved = await api.createExecutionPlan({ project_id: projectId, name: draft.name.trim(), run_mode: draft.run_mode, entries })
       }
@@ -341,6 +342,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const startEdit = (plan: ExecutionPlan) => {
 		const fields: PlanDraftFields = {
       id: plan.id,
+      revision: plan.revision,
       name: plan.name,
       run_mode: plan.run_mode,
       entries:

@@ -130,6 +130,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const [archiveErrorsOnly, setArchiveErrorsOnly] = useState(false)
   const [archiveTransactionSort, setArchiveTransactionSort] = useState<ArchiveTransactionSort>(null)
   const [archiveTransactionFilters, setArchiveTransactionFilters] = useState<ArchiveTransactionFilters>(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
+  const [committedArchiveTransactionFilters, setCommittedArchiveTransactionFilters] = useState<ArchiveTransactionFilters>(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
   const [archiveTransactionsOffset, setArchiveTransactionsOffset] = useState(0)
   const [archivePageSize, setArchivePageSize] = useState(ARCHIVE_PAGE_SIZE_DEFAULT)
   const [expandedArchiveEvent, setExpandedArchiveEvent] = useState<string | null>(null)
@@ -144,14 +145,14 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
     soap_operation: selectedArchiveSOAPOperation || undefined,
     group: selectedArchiveGroup || undefined,
     success: archiveErrorsOnly ? false : undefined,
-    time_from: parseTimeFilter(archiveTransactionFilters.timeFrom),
-    time_to: parseTimeFilter(archiveTransactionFilters.timeTo),
-    status: archiveTransactionFilters.status.trim() || undefined,
-    min_duration_ms: parseNumberFilter(archiveTransactionFilters.minDurationMs),
-    max_duration_ms: parseNumberFilter(archiveTransactionFilters.maxDurationMs),
-    min_bytes: parseNumberFilter(archiveTransactionFilters.minBytes),
-    max_bytes: parseNumberFilter(archiveTransactionFilters.maxBytes),
-    error_contains: archiveTransactionFilters.errorContains.trim() || undefined,
+    time_from: parseTimeFilter(committedArchiveTransactionFilters.timeFrom),
+    time_to: parseTimeFilter(committedArchiveTransactionFilters.timeTo),
+    status: committedArchiveTransactionFilters.status.trim() || undefined,
+    min_duration_ms: parseNumberFilter(committedArchiveTransactionFilters.minDurationMs),
+    max_duration_ms: parseNumberFilter(committedArchiveTransactionFilters.maxDurationMs),
+    min_bytes: parseNumberFilter(committedArchiveTransactionFilters.minBytes),
+    max_bytes: parseNumberFilter(committedArchiveTransactionFilters.maxBytes),
+    error_contains: committedArchiveTransactionFilters.errorContains.trim() || undefined,
     sort_by: archiveTransactionSort?.key,
     sort_dir: archiveTransactionSort?.direction,
     limit: archivePageSize,
@@ -159,13 +160,20 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   }), [
     archiveErrorsOnly,
     archivePageSize,
-    archiveTransactionFilters,
+    committedArchiveTransactionFilters,
     archiveTransactionSort,
     archiveTransactionsOffset,
     selectedArchiveAction,
     selectedArchiveGroup,
     selectedArchiveSOAPOperation,
   ])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setCommittedArchiveTransactionFilters(archiveTransactionFilters)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [archiveTransactionFilters])
 
   useEffect(() => {
     if (!hasArchive || !isTerminalStatus(testStatus)) {
@@ -184,6 +192,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
       setArchiveErrorsOnly(false)
       setArchiveTransactionSort(null)
       setArchiveTransactionFilters(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
+      setCommittedArchiveTransactionFilters(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
       setArchiveTransactionsOffset(0)
       setExpandedArchiveEvent(null)
       return
@@ -372,6 +381,7 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
 
   const onArchiveTransactionFiltersReset = useCallback(() => {
     setArchiveTransactionFilters(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
+    setCommittedArchiveTransactionFilters(DEFAULT_ARCHIVE_TRANSACTION_FILTERS)
     setArchiveTransactionsOffset(0)
     setExpandedArchiveEvent(null)
   }, [])

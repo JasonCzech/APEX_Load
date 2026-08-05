@@ -68,9 +68,12 @@ type WorkAssignment struct {
 	SecretBundleId string `protobuf:"bytes,25,opt,name=secret_bundle_id,json=secretBundleId,proto3" json:"secret_bundle_id,omitempty"`
 	// scenario_id is the stable managed scenario identity exposed to protocol
 	// runtimes. It is distinct from the generated script artifact ID.
-	ScenarioId    string `protobuf:"bytes,26,opt,name=scenario_id,json=scenarioId,proto3" json:"scenario_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ScenarioId string `protobuf:"bytes,26,opt,name=scenario_id,json=scenarioId,proto3" json:"scenario_id,omitempty"`
+	// require_test_execution_lease makes CommitWork fail closed unless this
+	// assignment has a live, explicitly acknowledged run-scoped lease.
+	RequireTestExecutionLease bool `protobuf:"varint,27,opt,name=require_test_execution_lease,json=requireTestExecutionLease,proto3" json:"require_test_execution_lease,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -285,6 +288,13 @@ func (x *WorkAssignment) GetScenarioId() string {
 	return ""
 }
 
+func (x *WorkAssignment) GetRequireTestExecutionLease() bool {
+	if x != nil {
+		return x.RequireTestExecutionLease
+	}
+	return false
+}
+
 type WorkCommitRequest struct {
 	state               protoimpl.MessageState `protogen:"open.v1"`
 	TestId              string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
@@ -409,8 +419,12 @@ type ExecutionEpochClaim struct {
 	// identifies one durable controller term and lets a replacement generator
 	// safely revalidate that same live term without admitting a different owner.
 	ExecutionLeaseOwnerId string `protobuf:"bytes,3,opt,name=execution_lease_owner_id,json=executionLeaseOwnerId,proto3" json:"execution_lease_owner_id,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// test_id requests a run-scoped assignment lease instead of renewing the
+	// process-wide controller epoch. Controllers use this lease to fence one
+	// lost assignment without interrupting unrelated tests on the generator.
+	TestId        string `protobuf:"bytes,4,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExecutionEpochClaim) Reset() {
@@ -464,12 +478,23 @@ func (x *ExecutionEpochClaim) GetExecutionLeaseOwnerId() string {
 	return ""
 }
 
+func (x *ExecutionEpochClaim) GetTestId() string {
+	if x != nil {
+		return x.TestId
+	}
+	return ""
+}
+
 type ExecutionEpochAck struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	Accepted          bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
 	CurrentGeneration uint64                 `protobuf:"varint,2,opt,name=current_generation,json=currentGeneration,proto3" json:"current_generation,omitempty"`
 	ExpiresAtUnixMs   int64                  `protobuf:"varint,3,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
 	ErrorMessage      string                 `protobuf:"bytes,4,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	// Explicit capability acknowledgement. Older generators ignore test_id and
+	// leave this false, so a newer controller cannot mistake a process-epoch
+	// renewal for a run-scoped fence.
+	TestLeaseAccepted bool `protobuf:"varint,5,opt,name=test_lease_accepted,json=testLeaseAccepted,proto3" json:"test_lease_accepted,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -530,6 +555,13 @@ func (x *ExecutionEpochAck) GetErrorMessage() string {
 		return x.ErrorMessage
 	}
 	return ""
+}
+
+func (x *ExecutionEpochAck) GetTestLeaseAccepted() bool {
+	if x != nil {
+		return x.TestLeaseAccepted
+	}
+	return false
 }
 
 type RedactionRule struct {
@@ -3578,7 +3610,7 @@ var File_api_proto_generator_proto protoreflect.FileDescriptor
 
 const file_api_proto_generator_proto_rawDesc = "" +
 	"\n" +
-	"\x19api/proto/generator.proto\x12\vapexload.v1\x1a\x1egoogle/protobuf/duration.proto\"\x85\v\n" +
+	"\x19api/proto/generator.proto\x12\vapexload.v1\x1a\x1egoogle/protobuf/duration.proto\"\xc6\v\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -3611,7 +3643,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rsecret_bundle\x18\x18 \x03(\v2-.apexload.v1.WorkAssignment.SecretBundleEntryR\fsecretBundle\x12(\n" +
 	"\x10secret_bundle_id\x18\x19 \x01(\tR\x0esecretBundleId\x12\x1f\n" +
 	"\vscenario_id\x18\x1a \x01(\tR\n" +
-	"scenarioId\x1a>\n" +
+	"scenarioId\x12?\n" +
+	"\x1crequire_test_execution_lease\x18\x1b \x01(\bR\x19requireTestExecutionLease\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
@@ -3624,16 +3657,18 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x12start_at_unix_nano\x18\x03 \x01(\x03R\x0fstartAtUnixNano\"P\n" +
 	"\rWorkCommitAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
-	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"\xb7\x01\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"\xd0\x01\n" +
 	"\x13ExecutionEpochClaim\x121\n" +
 	"\x14execution_generation\x18\x01 \x01(\x04R\x13executionGeneration\x124\n" +
 	"\x16lease_ttl_milliseconds\x18\x02 \x01(\x03R\x14leaseTtlMilliseconds\x127\n" +
-	"\x18execution_lease_owner_id\x18\x03 \x01(\tR\x15executionLeaseOwnerId\"\xb0\x01\n" +
+	"\x18execution_lease_owner_id\x18\x03 \x01(\tR\x15executionLeaseOwnerId\x12\x17\n" +
+	"\atest_id\x18\x04 \x01(\tR\x06testId\"\xe0\x01\n" +
 	"\x11ExecutionEpochAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12-\n" +
 	"\x12current_generation\x18\x02 \x01(\x04R\x11currentGeneration\x12+\n" +
 	"\x12expires_at_unix_ms\x18\x03 \x01(\x03R\x0fexpiresAtUnixMs\x12#\n" +
-	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\"_\n" +
+	"\rerror_message\x18\x04 \x01(\tR\ferrorMessage\x12.\n" +
+	"\x13test_lease_accepted\x18\x05 \x01(\bR\x11testLeaseAccepted\"_\n" +
 	"\rRedactionRule\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\apattern\x18\x02 \x01(\tR\apattern\x12 \n" +

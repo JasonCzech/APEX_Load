@@ -188,6 +188,7 @@ func (manager *executionEpochManager) commitPersistenceLocked(service *Service, 
 		manager.executionGeneration = persistence.generation
 		manager.executionLeaseOwner = persistence.leaseOwner
 		manager.executionRestartRevalidation = false
+		service.resetTestExecutionLeasesForGenerationLocked(persistence.generation)
 		service.metricsBroker.fenceBeforeGeneration(persistence.generation)
 	} else if persistence.bindOwner {
 		manager.executionLeaseOwner = persistence.leaseOwner
@@ -417,6 +418,9 @@ func (service *Service) ClaimExecutionEpoch(ctx context.Context, claim *pb.Execu
 		return nil, status.Errorf(codes.InvalidArgument, "execution_lease_owner_id: %v", err)
 	}
 	expiresAt := time.Now().Add(time.Duration(ttlMs) * time.Millisecond)
+	if testID := strings.TrimSpace(claim.GetTestId()); testID != "" {
+		return service.claimTestExecutionLease(ctx, testID, generation, leaseOwner, expiresAt)
+	}
 	return service.claimValidatedExecutionEpoch(ctx, generation, leaseOwner, expiresAt)
 }
 

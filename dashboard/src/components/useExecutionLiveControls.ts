@@ -35,6 +35,7 @@ export function useExecutionLiveControls(
   const [vuserTargets, setVuserTargets] = useState<Record<string, number>>({})
   const [vuserGroupActions, setVuserGroupActions] = useState<Record<string, VUserGroupAction>>({})
   const syncedVuserTargetsRef = useRef<Record<string, number>>({})
+  const syncedDurationRef = useRef('')
   const syncedTestIdRef = useRef<string | null>(null)
   const autoOpenedLiveTestIdRef = useRef<string | null>(null)
   const [vuserRampEnabled, setVuserRampEnabled] = useState(false)
@@ -90,7 +91,9 @@ export function useExecutionLiveControls(
       })
       return next
     })
-    setDurationInput(test.duration || '')
+    const nextDuration = test.duration || ''
+    setDurationInput(previous => isNewTest || previous === syncedDurationRef.current ? nextDuration : previous)
+    syncedDurationRef.current = nextDuration
   }, [test?.duration, test?.groups, test?.id, test?.vuser_ramps])
 
   const onScaleVUsers = useCallback(async (groupName: string) => {

@@ -85,6 +85,8 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
     roles_claim: 'roles',
     project_roles_claim: 'project_roles',
     session_secret_env_var: 'APEXLOAD_AUTH_SESSION_SECRET',
+    trusted_proxy_cidrs: [],
+    trusted_proxy_secret_env_var: '',
     user_header: 'X-Auth-Request-User',
     name_header: 'X-Auth-Request-Name',
     email_header: 'X-Auth-Request-Email',
@@ -278,6 +280,11 @@ export function projectGitHubDraftFromPolicy(policy?: GitHubProjectPolicy): GitH
     default_branch: (policy?.default_branch || '').trim(),
     default_sync_directory: (policy?.default_sync_directory || '').trim(),
     automation_identity: (policy?.automation_identity || '').trim(),
+    // GitHub Actions authorization is not edited by this source-sync form, but
+    // it is passed through by buildProjectGitHubDraft. Keep it in the baseline
+    // too, otherwise a project with an Actions policy is permanently reported
+    // as dirty as soon as Settings loads.
+    actions: policy?.actions,
   }
 }
 
@@ -755,6 +762,7 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       ...DEFAULT_SETTINGS.auth,
       ...settings.auth,
 	      scopes: settings.auth?.scopes ? [...settings.auth.scopes] : [...(DEFAULT_SETTINGS.auth.scopes || [])],
+	      trusted_proxy_cidrs: settings.auth?.trusted_proxy_cidrs ? [...settings.auth.trusted_proxy_cidrs] : [],
       mode: normalizeDashboardAuthMode(settings.auth?.mode),
     },
     github: {

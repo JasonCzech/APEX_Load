@@ -2699,7 +2699,11 @@ export interface operations {
     };
   };
   "handleAuthoringCapabilities": {
-    parameters?: never;
+    parameters: {
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
     requestBody?: never;
     responses: {
       "200": {
@@ -13623,6 +13627,7 @@ export interface operations {
         "include_requests"?: boolean;
         "requests"?: boolean;
         "since"?: string;
+        "tail"?: string;
       };
     };
     requestBody?: never;
@@ -25101,8 +25106,10 @@ export interface operations {
     parameters: {
       "query"?: {
         "active"?: string;
+        "domain_id"?: string;
         "limit"?: number;
         "offset"?: number;
+        "project_id"?: string;
         "q"?: string;
         "role"?: string;
       };

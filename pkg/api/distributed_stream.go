@@ -166,6 +166,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 			}
 			test.remoteActivated = true
 			test.remoteActivationPending = false
+			eventSnapshot := cloneManagedTestFieldsLocked(test)
 			snapshotTime := time.Now()
 			if test.StartedAt != nil {
 				snapshotTime = *test.StartedAt
@@ -173,7 +174,7 @@ func (b *distributedExecutionBackend) prepareDistributedTestRun(tr *TestRunner, 
 			snapshot := buildRunLiveStateSnapshotLocked(test, snapshotTime)
 			tr.mu.Unlock()
 			tr.cacheRunSnapshot(snapshot)
-			tr.broadcastEvent("test_started", test)
+			tr.broadcastEvent("test_started", eventSnapshot)
 			for _, target := range orderedMetricsTargets(streamsByTarget, b.configuredTargets()) {
 				go b.consumeMetrics(lifecycleCtx, tr, test, target, streamsByTarget[target])
 			}
@@ -435,6 +436,7 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	clearDistributedRunSecretSnapshotsLocked(test)
 	test.remoteControlGeneration++
 	tr.mu.Unlock()
+	b.clearTestExecutionLeaseFences(test)
 	if lifecycleCancel != nil {
 		lifecycleCancel()
 	}
@@ -1467,6 +1469,9 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		// slow when a target is unreachable. Publish the already-derived terminal
 		// outcome durably before attempting remote cleanup so the run cannot
 		// remain visibly active behind transport or archive timeouts.
+		// Snapshot controller-owned target/resource evidence before terminal
+		// compaction reduces canonical history to its latest point.
+		targetHistory := snapshotRemoteArchiveTargetHistory(tr, test)
 		if test.cancel != nil {
 			test.cancel()
 		}
@@ -1487,7 +1492,7 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		var archiveRecord *storage.RunArchiveRecord
 		var archiveErr error
 		if owned {
-			archiveRecord, archiveErr = b.stageRemoteArchive(tr, test, finalStatus, finalError, completedAt, false)
+			archiveRecord, archiveErr = b.stageRemoteArchiveWithTargetHistory(tr, test, finalStatus, finalError, completedAt, false, targetHistory)
 		}
 		b.closeRemoteResources(tr, test)
 		if archiveErr != nil {

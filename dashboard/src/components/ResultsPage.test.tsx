@@ -505,6 +505,9 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Checkout (LOC-RUN-20260512-002)')
     expect(container.textContent).toContain('Search')
     expect(container.textContent).toContain('Run')
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-a', { sample_limit: 5000, action: undefined })
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-b', { sample_limit: 5000, action: undefined })
+    expect(container.textContent).toContain('Curves use up to 5,000 representative samples per run.')
     let comparisonTable = container.querySelector('.results-compare-table') as HTMLElement
     expect(comparisonTable.textContent).toContain('Peak TPS')
     expect(comparisonTable.textContent).toContain('4.0')
@@ -621,8 +624,8 @@ describe('ResultsPage', () => {
     await changeSelect(transactionSelect!, 'Checkout')
     await flushPromises()
 
-    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-a', expect.objectContaining({ action: 'Checkout' }))
-    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-b', expect.objectContaining({ action: 'Checkout' }))
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-a', { sample_limit: 5000, action: 'Checkout' })
+    expect(apiMock.getTestArchiveSummaries).toHaveBeenCalledWith('run-b', { sample_limit: 5000, action: 'Checkout' })
     expect(container.textContent).toContain('50')
     expect(container.textContent).toContain('60')
     expect(container.textContent).toContain('120.0 ms')

@@ -218,9 +218,7 @@ import {
 } from './ScriptEditorParameterFeatures'
 import {
   buildMergedParameterSourceScript,
-  compareDataSourceCellValues,
   summarizeParameterSourceMerge,
-  type DataSourceSortDirection,
 } from './scriptEditorParameterDataModel'
 import { useEditorDialogRef } from './useEditorDialogRef'
 import { ScriptRuntimeSettingsSidebar, ScriptRuntimeSettingsView } from './ScriptRuntimeSettingsView'
@@ -1238,6 +1236,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const [authoringComponents, setAuthoringComponents] = useState<AuthoringComponent[]>([])
   const [, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
+  const [validationEvidenceDocumentKey, setValidationEvidenceDocumentKey] = useState<string | null>(null)
   const [validationEditableActionsKey, setValidationEditableActionsKey] = useState<string | null>(null)
   const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
   const [validationSidebarResult, setValidationSidebarResult] = useState<ValidationSidebarResult | null>(null)
@@ -1273,6 +1272,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setValidating(false)
     setSaving(false)
     setValidationEvidence(null)
+    setValidationEvidenceDocumentKey(null)
     setValidationEditableActionsKey(null)
     setValidationReplayPreflight(null)
     setValidationSidebarResult(null)
@@ -2481,6 +2481,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     saveInFlightScopeRef.current = requestResourceScope
     setError(''); setSuccess(''); setWarnings([]); setSaving(true)
     setValidationEvidence(null)
+    setValidationEvidenceDocumentKey(null)
     setValidationEditableActionsKey(null)
     setValidationReplayPreflight(null)
     try {
@@ -2563,6 +2564,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setSuccess('')
     setWarnings([])
     setValidationEvidence(null)
+    setValidationEvidenceDocumentKey(null)
     setValidationEditableActionsKey(null)
     setValidationReplayPreflight(null)
     setValidationSidebarResult(null)
@@ -2588,6 +2590,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         ai_guardrails: res.ai_guardrails,
         authoring_health: res.authoring_health,
       })
+      setValidationEvidenceDocumentKey(formatScriptJson(validationScript))
       if (jsonDirty || currentScript.metadata?.import || validationScript !== currentScript) {
         commitJsonDraft(validationScript)
       }
@@ -2612,6 +2615,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       if (!requestDocumentIsCurrent()) return
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
       setValidationEvidence(null)
+      setValidationEvidenceDocumentKey(null)
       setValidationEditableActionsKey(null)
       setValidationReplayPreflight(null)
       setValidationSidebarResult({
@@ -3219,11 +3223,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     : undefined
 
   useEffect(() => {
+    if (validationEvidenceDocumentKey === null || validationDocumentKey === validationEvidenceDocumentKey) return
     setValidationReplayPreflight(null)
     setValidationEvidence(null)
+    setValidationEvidenceDocumentKey(null)
     setValidationEditableActionsKey(null)
     setValidationSidebarResult(null)
-  }, [jsonText, replayOptions.variablesText, script.actions, script.data_sources, script.name, script.parameters, script.protocol])
+  }, [validationDocumentKey, validationEvidenceDocumentKey])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
   const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
   const replayVariableTimeline = replayReport
@@ -4013,7 +4019,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const mergeParameterSourceFiles = () => {
     const merge = buildMergedParameterSourceScript(script)
     if (!merge) {
-      setError('At least two .dat or .csv parameter source files are required to merge.')
+      setError('Merge requires compatible .dat or .csv sources with equal row counts, matching strategies, and no unbound or directly referenced columns.')
       return
     }
 
@@ -4064,21 +4070,6 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     const { columns, rows } = parseInlineData(source)
     const nextRows = rows.filter((_, idx) => idx !== rowIdx)
     updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
-  }
-
-  const sortDataRows = (sourceIdx: number, colIdx: number, direction: DataSourceSortDirection) => {
-    const source = (script.data_sources || [])[sourceIdx]
-    if (!source) return
-    const { columns, rows } = parseInlineData(source)
-    const sortedRows = rows
-      .map((row, originalIndex) => ({ row: [...row], originalIndex }))
-      .sort((first, second) => {
-        const comparison = compareDataSourceCellValues(first.row[colIdx], second.row[colIdx])
-        const stableComparison = comparison === 0 ? first.originalIndex - second.originalIndex : comparison
-        return direction === 'asc' ? stableComparison : -stableComparison
-      })
-      .map(({ row }) => row)
-    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, sortedRows))
   }
 
   const addDataColumn = (sourceIdx: number) => {
@@ -6434,7 +6425,6 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               onRedoDataSource={redoDataSource}
               onRemoveDataColumn={removeDataColumn}
               onRemoveDataRow={removeDataRow}
-              onSortDataRows={sortDataRows}
               onToggleDataEditorMode={toggleDataEditorModeAt}
               onUndoDataSource={undoDataSource}
               onUpdateDataCell={updateDataCell}
@@ -6443,6 +6433,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               onUpdateParameter={updateParameter}
               onUpdateParameterDraftName={updatePendingParameterDraftName}
               onUpdateParameterDraftValue={updatePendingParameterDraftValue}
+              onSelectDataSource={setOpenDataEditor}
               openDataEditor={openDataEditor}
               pendingParameterDraft={pendingParameterDraft}
               selectedParameterIdx={selectedParameterIdx}

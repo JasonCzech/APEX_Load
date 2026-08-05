@@ -9,6 +9,7 @@ import { CapacityTimeslot, FleetPool } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import { listAllFleetPools } from './fleetCatalogModel'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
+import { zonedLocalToISO } from './timeslotTimezoneModel'
 import './parityPanels.css'
 
 interface Props {
@@ -31,13 +32,6 @@ function fmt(value?: string): string {
   if (!value) return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-
-// datetime-local value (no tz) -> RFC3339 in the browser's local zone.
-function toISO(local: string): string {
-  if (!local) return ''
-  const date = new Date(local)
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
 type Draft = {
@@ -190,7 +184,11 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
 	}, [])
 
   const draftValid = useMemo(
-    () => Boolean(draft && draft.start_local && draft.end_local && new Date(draft.start_local) < new Date(draft.end_local)),
+    () => Boolean(draft && (() => {
+      const start = zonedLocalToISO(draft.start_local, draft.timezone)
+      const end = zonedLocalToISO(draft.end_local, draft.timezone)
+      return start && end && new Date(start) < new Date(end)
+    })()),
     [draft],
   )
   const reservationActionDisabled = !canManage || !projectId
@@ -205,7 +203,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
     setAvailability(null)
     setAvailabilityError(false)
     try {
-      const res = await api.checkTimeslotAvailability({ project_id: projectId, start_at: toISO(draft.start_local), end_at: toISO(draft.end_local) })
+      const res = await api.checkTimeslotAvailability({ project_id: projectId, start_at: zonedLocalToISO(draft.start_local, draft.timezone), end_at: zonedLocalToISO(draft.end_local, draft.timezone) })
       if (!isCurrentScope(scope)) return
       setAvailability(res.available ? 'Window is available — no conflicting reservations.' : res.summary || `${res.count} conflicting reservation(s) in this window.`)
     } catch (err) {
@@ -235,8 +233,8 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
 			const saved = await api.createTimeslot({
         project_id: projectId,
         scenario_id: draft.scenario_id.trim() || undefined,
-        start_at: toISO(draft.start_local),
-        end_at: toISO(draft.end_local),
+        start_at: zonedLocalToISO(draft.start_local, draft.timezone),
+        end_at: zonedLocalToISO(draft.end_local, draft.timezone),
         timezone: draft.timezone.trim() || undefined,
         requested_capacity: requested,
       })

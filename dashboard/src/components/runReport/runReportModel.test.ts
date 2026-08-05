@@ -27,6 +27,8 @@ describe('runReportModel', () => {
     expect(merged).toHaveLength(2)
     expect(merged[0]).toMatchObject({ tps: 12, cpuProcess: 44 })
     expect(merged[1]).toMatchObject({ timestampMs: 2_000, resourceSampleOnly: 1 })
+    expect(Number.isNaN(merged[1].tps)).toBe(true)
+    expect(Number.isNaN(merged[1].p95)).toBe(true)
   })
 
   it('aligns baseline curves by nearest timestamp instead of sample index', () => {

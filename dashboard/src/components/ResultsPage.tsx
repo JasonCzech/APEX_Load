@@ -45,6 +45,8 @@ import type { LibraryCatalogItem } from '../types/library'
 import { requestSettingsFocus } from './settingsSectionLayout'
 import { loadAllExternalResultImports } from './externalResultImportPagination'
 import { loadResultTestTail } from './resultTestPagination'
+import { parseDurationToSeconds } from '../utils/timeUtils'
+import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -861,8 +863,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           bValue = rowStartedAt(b)
           break
         case 'duration':
-          aValue = a.duration || ''
-          bValue = b.duration || ''
+          aValue = parseDurationToSeconds(a.duration)
+          bValue = parseDurationToSeconds(b.duration)
           break
         case 'archive':
           aValue = a.archiveCount ?? (a.hasArchive ? 1 : 0)
@@ -945,6 +947,14 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
 
   const comparisonSummaryAction = comparisonActionFilter === ALL_COMPARISON_ACTIONS ? undefined : comparisonActionFilter
 
+  const loadComparisonSummaries = useCallback(async (testId: string) => {
+    const response = await api.getTestArchiveSummaries(testId, {
+      sample_limit: ARCHIVE_CHART_MAX_SAMPLES,
+      action: comparisonSummaryAction,
+    })
+    return response.summaries || []
+  }, [api, comparisonSummaryAction])
+
   useEffect(() => {
     if (comparisonTestIds.length < 2 || comparisonTestIds.length > MAX_COMPARISON_RUNS) {
       setComparisonReports({})
@@ -970,7 +980,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
           comparisonTests.map(async test => [test.id, (await api.getTestArchiveReport(test.id)) as RunArchiveReport] as const),
         )
         const summaries = await Promise.all(
-          comparisonTests.map(async test => [test.id, ((await api.getTestArchiveSummaries(test.id, { limit: 120, offset: 0, action: comparisonSummaryAction })).summaries || []) as IntervalSummaryRecord[]] as const),
+          comparisonTests.map(async test => [test.id, await loadComparisonSummaries(test.id)] as const),
         )
         if (!cancelled) {
           setComparisonReports(Object.fromEntries(reports))
@@ -991,7 +1001,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
     return () => {
       cancelled = true
     }
-  }, [api, comparisonSummaryAction, comparisonTestIdKey, comparisonTestIds.length, comparisonTests])
+  }, [api, comparisonSummaryAction, comparisonTestIdKey, comparisonTestIds.length, comparisonTests, loadComparisonSummaries])
 
   const comparisonCards = useMemo(() => {
     if (comparisonTests.length < 2 || comparisonTests.length > MAX_COMPARISON_RUNS) return []
@@ -1729,7 +1739,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
                         <div>
                           <h4 className="results-compare-chart-title">Archived Summary Curves</h4>
                           <p className="results-compare-chart-copy">
-                            Showing {comparisonChartMetricConfig.description}; color identifies the run.
+                            Showing {comparisonChartMetricConfig.description}; color identifies the run. Curves use up to {ARCHIVE_CHART_MAX_SAMPLES.toLocaleString()} representative samples per run.
                           </p>
                         </div>
                         <div className="results-compare-metric-tabs" role="tablist" aria-label="Comparison metric">

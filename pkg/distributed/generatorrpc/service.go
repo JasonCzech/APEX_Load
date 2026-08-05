@@ -32,26 +32,27 @@ import (
 )
 
 type assignedTest struct {
-	testID                 string
-	lifecycle              assignmentLifecycleState
-	executionGeneration    uint64
-	vuserCount             int32
-	paused                 bool
-	pauseOperationID       string
-	pauseOperationSequence uint64
-	duration               time.Duration
-	durationSeconds        int64
-	committed              bool
-	groups                 map[string]int32
-	activeGroups           map[string]int32
-	groupStats             map[string]GeneratorStats
-	groupTelemetry         map[string]MetricsTelemetry
-	groupTransactions      map[string][]TransactionMetric
-	groupAggregates        map[string]metricsAggregateSet
-	groupAssignments       map[string][sha256.Size]byte
-	groupSecretBundleIDs   map[string]string
-	groupScripts           map[string]string
-	terminalError          string
+	testID                    string
+	lifecycle                 assignmentLifecycleState
+	executionGeneration       uint64
+	requireTestExecutionLease bool
+	vuserCount                int32
+	paused                    bool
+	pauseOperationID          string
+	pauseOperationSequence    uint64
+	duration                  time.Duration
+	durationSeconds           int64
+	committed                 bool
+	groups                    map[string]int32
+	activeGroups              map[string]int32
+	groupStats                map[string]GeneratorStats
+	groupTelemetry            map[string]MetricsTelemetry
+	groupTransactions         map[string][]TransactionMetric
+	groupAggregates           map[string]metricsAggregateSet
+	groupAssignments          map[string][sha256.Size]byte
+	groupSecretBundleIDs      map[string]string
+	groupScripts              map[string]string
+	terminalError             string
 }
 
 const defaultAssignmentStageTTL = 2 * time.Minute
@@ -607,35 +608,39 @@ func (b *transactionBuffer) drainWindow(advanceEmpty bool) ([]TransactionMetric,
 type Service struct {
 	pb.UnimplementedGeneratorControlServer
 
-	mu                      sync.RWMutex
-	adjustMu                sync.Mutex
-	generatorID             string
-	maxVUsers               int32
-	maxAssignedTests        int
-	maxAssignedGroups       int
-	maxExecutions           int
-	maxHeartbeatStreams     int
-	activeHeartbeatStreams  int
-	podResources            podResourceCapacity
-	scriptCache             *scriptCacheManager
-	assignments             map[string]assignedTest
-	executions              map[string]map[string]*groupExecution
-	persistentJavaDrains    map[uint64]javaVuserCapacityDrain
-	nextPersistentJavaDrain uint64
-	stoppingTests           map[string]struct{}
-	stoppingGenerations     map[string]uint64
-	stopCompletions         map[string]*stopCompletion
-	resCollector            *engine.ResourceCollector
-	resCollectorMu          sync.Mutex // serializes resCollector.Collect (mutates delta state)
-	metricsSnapshotMu       sync.Mutex // serializes per-test multi-group evidence drains
-	executionEnabled        bool
-	draining                bool
-	publishInterval         time.Duration
-	completionTimers        map[string]*time.Timer
-	completionTokens        map[string]uint64
-	nextCompletionToken     uint64
-	stageTimers             map[string]*time.Timer
-	stageTokens             map[string]uint64
+	mu                                   sync.RWMutex
+	adjustMu                             sync.Mutex
+	generatorID                          string
+	maxVUsers                            int32
+	maxAssignedTests                     int
+	maxAssignedGroups                    int
+	maxExecutions                        int
+	maxHeartbeatStreams                  int
+	activeHeartbeatStreams               int
+	podResources                         podResourceCapacity
+	scriptCache                          *scriptCacheManager
+	assignments                          map[string]assignedTest
+	executions                           map[string]map[string]*groupExecution
+	persistentJavaDrains                 map[uint64]javaVuserCapacityDrain
+	nextPersistentJavaDrain              uint64
+	stoppingTests                        map[string]struct{}
+	stoppingGenerations                  map[string]uint64
+	stopCompletions                      map[string]*stopCompletion
+	resCollector                         *engine.ResourceCollector
+	resCollectorMu                       sync.Mutex // serializes resCollector.Collect (mutates delta state)
+	metricsSnapshotMu                    sync.Mutex // serializes per-test multi-group evidence drains
+	executionEnabled                     bool
+	draining                             bool
+	publishInterval                      time.Duration
+	completionTimers                     map[string]*time.Timer
+	completionTokens                     map[string]uint64
+	nextCompletionToken                  uint64
+	stageTimers                          map[string]*time.Timer
+	stageTokens                          map[string]uint64
+	testExecutionLeases                  map[string]testExecutionLease
+	testExecutionLeaseFences             map[string]uint64
+	testExecutionLeaseFenceAllGeneration uint64
+	nextTestLeaseToken                   uint64
 	*executionEpochManager
 	shutdown     chan struct{}
 	shutdownOnce sync.Once
@@ -767,31 +772,33 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 	archiveTTL := configuredGeneratorArchiveTTL()
 	archiveManager := newArchiveManager(generatorID, archiveRecordMax, archiveTTL, 1024, defaultMaxArchiveTransfers, defaultMaxArchiveUnaryTransfers)
 	service := &Service{
-		generatorID:           generatorID,
-		maxVUsers:             int32(maxVUsers),
-		maxAssignedTests:      1024,
-		maxAssignedGroups:     4096,
-		maxExecutions:         4096,
-		maxHeartbeatStreams:   defaultMaxHeartbeatStreams,
-		podResources:          detectPodResourceCapacity(int32(maxVUsers)),
-		scriptCache:           newScriptCacheManager(configuredGeneratorScriptCacheMax(), configuredGeneratorScriptCacheMaxBytes()),
-		assignments:           make(map[string]assignedTest),
-		executions:            make(map[string]map[string]*groupExecution),
-		persistentJavaDrains:  make(map[uint64]javaVuserCapacityDrain),
-		lifecycleCoordinator:  lifecycleCoordinator,
-		stoppingTests:         lifecycleCoordinator.stoppingTests,
-		stoppingGenerations:   lifecycleCoordinator.stoppingGenerations,
-		stopCompletions:       lifecycleCoordinator.stopCompletions,
-		resCollector:          engine.NewResourceCollector(),
-		publishInterval:       time.Second,
-		completionTimers:      make(map[string]*time.Timer),
-		completionTokens:      make(map[string]uint64),
-		stageTimers:           lifecycleCoordinator.stageTimers,
-		stageTokens:           lifecycleCoordinator.stageTokens,
-		executionEpochManager: executionEpochManager,
-		shutdown:              make(chan struct{}),
-		metricsBroker:         newMetricsBroker(defaultMaxMetricsSubscribers, archiveRecordMax, archiveTTL),
-		archiveManager:        archiveManager,
+		generatorID:              generatorID,
+		maxVUsers:                int32(maxVUsers),
+		maxAssignedTests:         1024,
+		maxAssignedGroups:        4096,
+		maxExecutions:            4096,
+		maxHeartbeatStreams:      defaultMaxHeartbeatStreams,
+		podResources:             detectPodResourceCapacity(int32(maxVUsers)),
+		scriptCache:              newScriptCacheManager(configuredGeneratorScriptCacheMax(), configuredGeneratorScriptCacheMaxBytes()),
+		assignments:              make(map[string]assignedTest),
+		executions:               make(map[string]map[string]*groupExecution),
+		persistentJavaDrains:     make(map[uint64]javaVuserCapacityDrain),
+		lifecycleCoordinator:     lifecycleCoordinator,
+		stoppingTests:            lifecycleCoordinator.stoppingTests,
+		stoppingGenerations:      lifecycleCoordinator.stoppingGenerations,
+		stopCompletions:          lifecycleCoordinator.stopCompletions,
+		resCollector:             engine.NewResourceCollector(),
+		publishInterval:          time.Second,
+		completionTimers:         make(map[string]*time.Timer),
+		completionTokens:         make(map[string]uint64),
+		stageTimers:              lifecycleCoordinator.stageTimers,
+		stageTokens:              lifecycleCoordinator.stageTokens,
+		testExecutionLeases:      make(map[string]testExecutionLease),
+		testExecutionLeaseFences: make(map[string]uint64),
+		executionEpochManager:    executionEpochManager,
+		shutdown:                 make(chan struct{}),
+		metricsBroker:            newMetricsBroker(defaultMaxMetricsSubscribers, archiveRecordMax, archiveTTL),
+		archiveManager:           archiveManager,
 	}
 	if _, archiveNamespaceErr := archiveManager.namespaceSnapshot(); archiveNamespaceErr != nil {
 		slog.Error("initialize generator archive namespace", "generator_id", generatorID, "error", archiveNamespaceErr)
@@ -841,13 +848,16 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	// Detach and cancel the whole fleet before waiting for any one engine. A
 	// protocol that is slow to honor cancellation must not leave later tests
 	// generating load until the process-level timeout expires.
-	if err := s.forceStopTests(ctx, testIDs, ^uint64(0), "FAILED", "generator shut down before test completion"); err != nil {
+	if err := s.forceStopTests(ctx, testIDs, ^uint64(0), "FAILED", "generator shut down before test completion", true); err != nil {
 		failures = append(failures, fmt.Errorf("stop active generator tests: %w", err))
 	}
 	s.archiveManager.beginShutdown()
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
 	s.mu.Lock()
 	s.executionEpochManager.stopTimerLocked()
+	for testID := range s.testExecutionLeases {
+		s.clearTestExecutionLeaseLocked(testID)
+	}
 	var epochState *executionEpochStateStore
 	if epochQuiesced {
 		epochState = s.executionEpochManager.stateForCloseLocked()
@@ -1498,6 +1508,7 @@ func (s *Service) FailTest(testID string, message string) {
 	if ok {
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		persistentJavaDrainToken = s.reserveAssignmentJavaDrainLocked(assignment)
+		s.clearTestExecutionLeaseLocked(testID)
 		delete(s.assignments, testID)
 	}
 	execs := s.executions[testID]
@@ -2179,6 +2190,7 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 	assignment, ok := s.assignments[testID]
 	if ok {
 		s.markStoppingLocked(testID, assignment.executionGeneration)
+		s.clearTestExecutionLeaseLocked(testID)
 		delete(s.assignments, testID)
 	}
 	delete(s.executions, testID)
@@ -2613,6 +2625,7 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 		return
 	}
 	s.markStoppingLocked(testID, assignment.executionGeneration)
+	s.clearTestExecutionLeaseLocked(testID)
 	delete(s.assignments, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)

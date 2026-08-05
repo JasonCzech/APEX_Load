@@ -46,6 +46,10 @@ type streamingArchiveGeneratorClient interface {
 }
 
 func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *ManagedTest, finalStatus, finalError string, completedAt time.Time, requireAll bool) (*storage.RunArchiveRecord, error) {
+	return b.stageRemoteArchiveWithTargetHistory(tr, test, finalStatus, finalError, completedAt, requireAll, snapshotRemoteArchiveTargetHistory(tr, test))
+}
+
+func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *TestRunner, test *ManagedTest, finalStatus, finalError string, completedAt time.Time, requireAll bool, targetHistory []remoteArchiveTargetSnapshot) (*storage.RunArchiveRecord, error) {
 	if test == nil {
 		return nil, fmt.Errorf("test is required")
 	}
@@ -88,7 +92,6 @@ func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *M
 	}
 	defer func() { _ = removeArchiveSubdirectory(archiveParent, workingDir) }()
 
-	targetHistory := snapshotRemoteArchiveTargetHistory(tr, test)
 	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles, targetHistory); err != nil {
 		return nil, err
 	}

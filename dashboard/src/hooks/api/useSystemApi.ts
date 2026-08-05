@@ -115,7 +115,7 @@ export function useSystemApi() {
     [],
   )
   const deleteAuthServiceAccount = useCallback((id: string) => request<{ deleted: string }>(`/auth/service-accounts/${encodeURIComponent(id)}`, { method: 'DELETE' }), [])
-  const listAuthUsers = useCallback((filter: { q?: string; active?: string; role?: string; limit?: number; offset?: number } = {}) => request<DashboardUserListResponse>(`/auth/users${buildQuery({ limit: 100, ...filter })}`), [])
+  const listAuthUsers = useCallback((filter: { q?: string; active?: string; role?: string; domain_id?: string; project_id?: string; limit?: number; offset?: number } = {}) => request<DashboardUserListResponse>(`/auth/users${buildQuery({ limit: 100, ...filter })}`), [])
   const createAuthUser = useCallback(
     (payload: DashboardCreateUserRequest) => request<DashboardUser>('/auth/users', { method: 'POST', body: JSON.stringify(payload) }),
     [],

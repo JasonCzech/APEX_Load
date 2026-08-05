@@ -475,7 +475,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         }}
       >
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
-        <input ref={fileRef} type="file" accept=".jmx,.xml" onClick={event => event.stopPropagation()} onChange={event => acceptFile(event.target.files?.[0])} hidden />
+        <input ref={fileRef} type="file" accept=".jmx,.xml" onClick={event => event.stopPropagation()} onChange={event => { acceptFile(event.target.files?.[0]); event.target.value = '' }} hidden />
         {file ? (
           <div className="lr-file-info">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -483,7 +483,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
               <span className="lr-filename">{file.name}</span>
               <span className="lr-filesize">{(file.size / 1024).toFixed(1)} KB</span>
             </div>
-            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); invalidateReview(); setFile(null) }}>Change</button>
+            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); invalidateReview(); setFile(null); if (fileRef.current) fileRef.current.value = '' }}>Change</button>
           </div>
         ) : (
           <div className="lr-drop-content">

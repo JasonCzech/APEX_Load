@@ -45,14 +45,15 @@ func accessRequirementForRequest(r *http.Request) (accessRequirement, bool) {
 		}, true
 	}
 
-	if (path == "/api/v1/ai/policy" || path == "/api/v1/ai/review-queue") && method == http.MethodGet {
+	if (path == "/api/v1/ai/policy" || path == "/api/v1/ai/review-queue" || path == "/api/v1/scripts/authoring/capabilities") && method == http.MethodGet {
 		if strings.TrimSpace(r.URL.Query().Get("project_id")) == "" {
-			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}, true
+			return accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ServiceAccountScope: "read"}, true
 		}
 		return accessRequirement{
-			GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-			ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-			ProjectLookup: resolveProjectIDFromQuery,
+			GlobalRoles:         []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
+			ProjectRoles:        []string{RoleViewer, RoleEditor, RoleProjectAdmin},
+			ProjectLookup:       resolveProjectIDFromQuery,
+			ServiceAccountScope: "read",
 		}, true
 	}
 

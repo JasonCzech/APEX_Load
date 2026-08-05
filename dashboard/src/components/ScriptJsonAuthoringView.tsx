@@ -99,6 +99,7 @@ export function ScriptCodePane({
   onRequestParameterize,
 }: ScriptCodePaneProps) {
   const viewRef = useRef<EditorView | null>(null)
+  const parameterNavigationRef = useRef<{ name?: string; editorReadyVersion: number }>({ editorReadyVersion: -1 })
   const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
   const activeStartLine = activeRange?.startLine ?? null
@@ -154,13 +155,18 @@ export function ScriptCodePane({
     if (!view) return
     const firstMatch = parameterMatchRanges[0]
     const effects: StateEffect<unknown>[] = [setScriptCodeParameterMatches.of(parameterMatchRanges)]
-    if (firstMatch && firstMatch.to <= view.state.doc.length) {
+    const shouldNavigate = Boolean(activeParameterName) && (
+      parameterNavigationRef.current.name !== activeParameterName
+      || parameterNavigationRef.current.editorReadyVersion !== editorReadyVersion
+    )
+    parameterNavigationRef.current = { name: activeParameterName || undefined, editorReadyVersion }
+    if (shouldNavigate && firstMatch && firstMatch.to <= view.state.doc.length) {
       effects.push(EditorView.scrollIntoView(firstMatch.from, { y: 'center' }))
       view.dispatch({ selection: EditorSelection.range(firstMatch.from, firstMatch.to), effects })
       return
     }
     view.dispatch({ effects })
-  }, [editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
+  }, [activeParameterName, editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
 
   useEffect(() => {
     const view = viewRef.current

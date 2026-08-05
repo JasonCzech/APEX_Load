@@ -271,8 +271,8 @@ type Store interface {
 	GetUser(id string) (*User, error)
 	GetUserBySubject(subject string) (*User, error)
 	ListUsers(filter UserFilter) ([]*User, error)
-	// CountUsers returns the total number of users matching the filter's query/active
-	// predicates, ignoring limit/offset — used to report a real total for pagination.
+	// CountUsers returns the total number of users matching all non-pagination
+	// filter predicates, ignoring limit/offset.
 	CountUsers(filter UserFilter) (int, error)
 	UpdateUserActive(id string, active bool, updatedAt time.Time) error
 	// BumpUserSessionEpoch increments the user's session epoch (revoking existing OIDC
@@ -301,11 +301,13 @@ type Store interface {
 }
 
 type UserFilter struct {
-	Query  string
-	Active *bool
-	Role   string
-	Limit  int
-	Offset int
+	Query     string
+	Active    *bool
+	Role      string
+	DomainID  string
+	ProjectID string
+	Limit     int
+	Offset    int
 }
 
 type User struct {

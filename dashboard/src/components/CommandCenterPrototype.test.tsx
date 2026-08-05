@@ -9,6 +9,7 @@ import CommandCenterPrototype, {
   historicalGroupSummaryQuery,
   selectedGroupLoadImpactData,
 } from './CommandCenterPrototype'
+import { buildLoadModelProfile, plannedGroupLoadAt } from './commandCenterLoadModel'
 import { buildScenarioRunRows, type CommandGroup } from './commandCenterScenarioRows'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS } from './useExecutionTestPolling'
@@ -45,6 +46,34 @@ describe('CommandCenterPrototype', () => {
 
   it('qualifies live evidence cache entries by run and signature', () => {
     expect(liveEvidenceCacheKey('run-a', 'HTTP 500')).not.toBe(liveEvidenceCacheKey('run-b', 'HTTP 500'))
+  })
+
+  it('starts an authored first-stage ramp-down at the group peak', () => {
+    const group = commandGroup('Checkout', 100)
+    const testGroup = {
+      name: 'Checkout',
+      script_id: 'script-1',
+      vusers: 100,
+      role: 'load' as const,
+      stages: [{ type: 'ramp_down', duration: '1m', target_vusers: 20 }],
+    } as TestSummary['groups'][number]
+
+    expect(buildLoadModelProfile([testGroup], [group], 60).map(point => point.planned)).toEqual([100, 20])
+  })
+
+  it('treats authored hold stage casing consistently', () => {
+    const testGroup = {
+      name: 'Checkout',
+      script_id: 'script-1',
+      vusers: 100,
+      role: 'load' as const,
+      stages: [
+        { type: 'ramp_up', duration: '1m', target_vusers: 100 },
+        { type: 'HOLD', duration: '1m', target_vusers: 60 },
+      ],
+    } as TestSummary['groups'][number]
+
+    expect(plannedGroupLoadAt(testGroup, 100, 90, 120)).toBe(60)
   })
 
   it('keeps unfiltered graph data when selected group fields are absent', () => {

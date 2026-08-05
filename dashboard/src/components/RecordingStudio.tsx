@@ -6,6 +6,7 @@ import {
   useRef,
   type MouseEvent,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   downloadBlob,
   downloadFilenameFromDisposition,
@@ -177,7 +178,7 @@ function mergeRecordingSession(
   return {
     ...previous,
     ...next,
-    requests: Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq),
+    requests: Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq).slice(-20),
   };
 }
 
@@ -609,6 +610,23 @@ export default function RecordingStudio({
     useState<RecordingSession | null>(null);
   const [selectedRequest, setSelectedRequest] =
     useState<RecordedRequest | null>(null);
+  const requestTableRef = useRef<HTMLDivElement | null>(null);
+  const selectedRequests = selectedSession?.requests || [];
+  const virtualizeSelectedRequests = selectedRequests.length > 100;
+  const selectedRequestVirtualizer = useVirtualizer({
+    count: selectedRequests.length,
+    getScrollElement: () => requestTableRef.current,
+    estimateSize: () => 42,
+    overscan: 12,
+    enabled: virtualizeSelectedRequests,
+  });
+  const selectedRequestVirtualRows = virtualizeSelectedRequests
+    ? selectedRequestVirtualizer.getVirtualItems()
+    : [];
+  const selectedRequestPaddingTop = selectedRequestVirtualRows[0]?.start || 0;
+  const selectedRequestPaddingBottom = selectedRequestVirtualRows.length > 0
+    ? Math.max(0, selectedRequestVirtualizer.getTotalSize() - selectedRequestVirtualRows[selectedRequestVirtualRows.length - 1].end)
+    : 0;
   const [requestDraft, setRequestDraft] = useState({
     step_name: "",
     transaction_name: "",
@@ -1149,14 +1167,11 @@ export default function RecordingStudio({
           setBrowserPanelSessionId((current) => current ?? liveBrowser.id);
         }
         if (recorderStatus.active) {
-          // Always fetch the FULL active session, not an incremental since=last_seq
-          // window: its already-captured requests mutate in place — WebSocket frames
-          // are appended to an existing request (its Seq is unchanged) and
-          // exclusion/think-time edits change existing seqs — and snapshotSince
-          // filters those out, so an incremental fetch would leave the UI copy
-          // permanently stale until the session is re-selected.
+          // Refresh only the bounded tail rendered by the live feed. Tail
+          // snapshots include in-place WebSocket/exclusion edits while avoiding
+          // a full body download every two seconds.
           const full = await api.getRecording(recorderStatus.active.id, {
-            includeRequests: true,
+            tail: 20,
           });
           if (!isCurrentScope()) return;
           setActiveSession((prev) => mergeRecordingSession(prev, full));
@@ -3507,7 +3522,7 @@ export default function RecordingStudio({
               requests
             </span>
           </h3>
-          <div className="rec-detail-table-wrap">
+          <div ref={requestTableRef} className="rec-detail-table-wrap">
             <table className="rec-detail-table">
               <thead>
                 <tr>
@@ -3523,7 +3538,13 @@ export default function RecordingStudio({
                 </tr>
               </thead>
               <tbody>
-                {selectedSession.requests?.map((req) => (
+                {virtualizeSelectedRequests && selectedRequestPaddingTop > 0 && (
+                  <tr aria-hidden="true"><td aria-label="Virtualized rows omitted" colSpan={9} style={{ height: selectedRequestPaddingTop, padding: 0, border: 0 }} /></tr>
+                )}
+                {(virtualizeSelectedRequests
+                  ? selectedRequestVirtualRows.map(item => selectedRequests[item.index])
+                  : selectedRequests
+                ).map((req) => (
                   <tr
                     key={req.seq}
                     className={`${req.is_static ? "static" : ""} ${req.excluded ? "static" : ""} ${selectedRequest?.seq === req.seq ? "selected" : ""}`}
@@ -3585,6 +3606,9 @@ export default function RecordingStudio({
                     </td>
                   </tr>
                 ))}
+                {virtualizeSelectedRequests && selectedRequestPaddingBottom > 0 && (
+                  <tr aria-hidden="true"><td aria-label="Virtualized rows omitted" colSpan={9} style={{ height: selectedRequestPaddingBottom, padding: 0, border: 0 }} /></tr>
+                )}
               </tbody>
             </table>
           </div>

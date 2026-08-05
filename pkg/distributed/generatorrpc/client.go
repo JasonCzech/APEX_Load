@@ -29,32 +29,33 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	TestID                string
-	ExecutionGeneration   uint64
-	ScenarioID            string
-	GroupName             string
-	TargetDuration        time.Duration
-	TargetDurationSeconds int64
-	DurationOffset        time.Duration
-	ScriptID              string
-	ExpectedScriptHash    string
-	ScriptContent         []byte
-	VUserCount            int32
-	RampUp                time.Duration
-	RampUpSeconds         int32
-	RampDown              time.Duration
-	InitStrategy          string
-	PreBaseline           time.Duration
-	PostBaseline          time.Duration
-	ShardOrdinal          uint32
-	ShardCount            uint32
-	VUserIDOffset         uint64
-	StartPaused           bool
-	Environment           map[string]string
-	DataFiles             []DataFile
-	RedactionRules        []engine.RedactionRule
-	SecretBundle          map[string]string
-	SecretBundleID        string
+	TestID                    string
+	ExecutionGeneration       uint64
+	ScenarioID                string
+	RequireTestExecutionLease bool
+	GroupName                 string
+	TargetDuration            time.Duration
+	TargetDurationSeconds     int64
+	DurationOffset            time.Duration
+	ScriptID                  string
+	ExpectedScriptHash        string
+	ScriptContent             []byte
+	VUserCount                int32
+	RampUp                    time.Duration
+	RampUpSeconds             int32
+	RampDown                  time.Duration
+	InitStrategy              string
+	PreBaseline               time.Duration
+	PostBaseline              time.Duration
+	ShardOrdinal              uint32
+	ShardCount                uint32
+	VUserIDOffset             uint64
+	StartPaused               bool
+	Environment               map[string]string
+	DataFiles                 []DataFile
+	RedactionRules            []engine.RedactionRule
+	SecretBundle              map[string]string
+	SecretBundleID            string
 }
 
 type AssignmentResult struct {
@@ -444,6 +445,21 @@ func (c *Client) DistributeScript(ctx context.Context, script Script) (ScriptRes
 // on a generator. A generator accepts test mutations only for the exact active
 // generation until ttl expires.
 func (c *Client) ClaimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration) (ExecutionEpochResult, error) {
+	return c.claimExecutionEpoch(ctx, generation, leaseOwnerID, ttl, "")
+}
+
+// ClaimTestExecutionEpoch establishes or renews the volatile lease for one
+// assignment. The explicit acknowledgement prevents an older server, which
+// ignores the additive test_id field, from being treated as loss-fence capable.
+func (c *Client) ClaimTestExecutionEpoch(ctx context.Context, testID string, generation uint64, leaseOwnerID string, ttl time.Duration) (ExecutionEpochResult, error) {
+	testID = strings.TrimSpace(testID)
+	if testID == "" {
+		return ExecutionEpochResult{}, fmt.Errorf("test id is required")
+	}
+	return c.claimExecutionEpoch(ctx, generation, leaseOwnerID, ttl, testID)
+}
+
+func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration, testID string) (ExecutionEpochResult, error) {
 	if ttl <= 0 {
 		return ExecutionEpochResult{}, fmt.Errorf("execution epoch ttl must be positive")
 	}
@@ -457,16 +473,21 @@ func (c *Client) ClaimExecutionEpoch(ctx context.Context, generation uint64, lea
 		ExecutionGeneration:   generation,
 		LeaseTtlMilliseconds:  ttl.Milliseconds(),
 		ExecutionLeaseOwnerId: strings.TrimSpace(leaseOwnerID),
+		TestId:                testID,
 	})
 	if err != nil {
 		return ExecutionEpochResult{}, err
 	}
-	return ExecutionEpochResult{
+	result := ExecutionEpochResult{
 		Accepted:          ack.GetAccepted(),
 		CurrentGeneration: ack.GetCurrentGeneration(),
 		ExpiresAt:         time.UnixMilli(ack.GetExpiresAtUnixMs()),
 		ErrorMessage:      ack.GetErrorMessage(),
-	}, nil
+	}
+	if testID != "" && !ack.GetTestLeaseAccepted() {
+		return result, fmt.Errorf("generator does not acknowledge assignment-scoped execution leases")
+	}
+	return result, nil
 }
 
 func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (AssignmentResult, error) {
@@ -978,32 +999,33 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{
-		TestId:                assignment.TestID,
-		ExecutionGeneration:   assignment.ExecutionGeneration,
-		ScenarioId:            assignment.ScenarioID,
-		GroupName:             assignment.GroupName,
-		TargetDurationSeconds: compatibilityDurationSeconds(targetDuration),
-		TargetDuration:        preciseDurationProto(targetDuration, 0),
-		DurationOffset:        preciseDurationProto(assignment.DurationOffset, 0),
-		ScriptId:              assignment.ScriptID,
-		ExpectedScriptHash:    assignment.ExpectedScriptHash,
-		ScriptContent:         assignment.ScriptContent,
-		VuserCount:            assignment.VUserCount,
-		RampUpSeconds:         compatibilityDurationSecondsInt32(rampUp),
-		RampUp:                preciseDurationProto(rampUp, 0),
-		RampDown:              preciseDurationProto(assignment.RampDown, 0),
-		InitStrategy:          assignment.InitStrategy,
-		PreBaseline:           preciseDurationProto(assignment.PreBaseline, 0),
-		PostBaseline:          preciseDurationProto(assignment.PostBaseline, 0),
-		ShardOrdinal:          assignment.ShardOrdinal,
-		ShardCount:            assignment.ShardCount,
-		VuserIdOffset:         assignment.VUserIDOffset,
-		StartPaused:           assignment.StartPaused,
-		Environment:           environment,
-		DataFiles:             dataFiles,
-		RedactionRules:        redactionRulesToProto(assignment.RedactionRules),
-		SecretBundle:          cloneSecretBundle(assignment.SecretBundle),
-		SecretBundleId:        assignment.SecretBundleID,
+		TestId:                    assignment.TestID,
+		ExecutionGeneration:       assignment.ExecutionGeneration,
+		ScenarioId:                assignment.ScenarioID,
+		RequireTestExecutionLease: assignment.RequireTestExecutionLease,
+		GroupName:                 assignment.GroupName,
+		TargetDurationSeconds:     compatibilityDurationSeconds(targetDuration),
+		TargetDuration:            preciseDurationProto(targetDuration, 0),
+		DurationOffset:            preciseDurationProto(assignment.DurationOffset, 0),
+		ScriptId:                  assignment.ScriptID,
+		ExpectedScriptHash:        assignment.ExpectedScriptHash,
+		ScriptContent:             assignment.ScriptContent,
+		VuserCount:                assignment.VUserCount,
+		RampUpSeconds:             compatibilityDurationSecondsInt32(rampUp),
+		RampUp:                    preciseDurationProto(rampUp, 0),
+		RampDown:                  preciseDurationProto(assignment.RampDown, 0),
+		InitStrategy:              assignment.InitStrategy,
+		PreBaseline:               preciseDurationProto(assignment.PreBaseline, 0),
+		PostBaseline:              preciseDurationProto(assignment.PostBaseline, 0),
+		ShardOrdinal:              assignment.ShardOrdinal,
+		ShardCount:                assignment.ShardCount,
+		VuserIdOffset:             assignment.VUserIDOffset,
+		StartPaused:               assignment.StartPaused,
+		Environment:               environment,
+		DataFiles:                 dataFiles,
+		RedactionRules:            redactionRulesToProto(assignment.RedactionRules),
+		SecretBundle:              cloneSecretBundle(assignment.SecretBundle),
+		SecretBundleId:            assignment.SecretBundleID,
 	}
 }
 

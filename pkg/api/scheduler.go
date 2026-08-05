@@ -1939,6 +1939,7 @@ func (tr *TestRunner) failScheduledTestBeforeLaunchLocked(test *ManagedTest, now
 		current.cancel()
 	}
 	tr.broadcastEvent("test_failed", current)
+	compactTerminalManagedTestLocked(current)
 	return releaseErr
 }
 

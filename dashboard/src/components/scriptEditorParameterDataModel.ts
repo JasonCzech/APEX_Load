@@ -239,16 +239,49 @@ export function summarizeParameterSourceMerge(script: ScriptData): ParameterSour
   const candidates = collectParameterSourceMergeCandidates(script)
   const sourceCount = new Set(candidates.map(candidate => candidate.sourceIndex)).size
   return {
-    canMerge: sourceCount > 1 && candidates.length > 0,
+    canMerge: sourceCount > 1 && candidates.length > 0 && parameterSourceMergeIsLossless(script, candidates),
     parameterCount: candidates.length,
     sourceCount,
   }
 }
 
+function parameterSourceMergeIsLossless(
+  script: ScriptData,
+  candidates: ReturnType<typeof collectParameterSourceMergeCandidates>,
+): boolean {
+  if (candidates.some(candidate => candidate.columnIndex === null)) return false
+  const rowCounts = new Set(candidates.map(candidate => candidate.parsed.rows.length))
+  if (rowCounts.size !== 1) return false
+  const sourceStrategies = new Set(candidates.map(candidate => (candidate.source.strategy || 'sequential').trim().toLowerCase()))
+  if (sourceStrategies.size !== 1) return false
+  const candidatesBySource = new Map<number, typeof candidates>()
+  candidates.forEach(candidate => {
+    candidatesBySource.set(candidate.sourceIndex, [...(candidatesBySource.get(candidate.sourceIndex) || []), candidate])
+  })
+  // The original sources are removed after the merge. Every source column must
+  // therefore have a parameter mapping; otherwise the operation would silently
+  // discard data even when no current action happens to reference that column.
+  for (const sourceCandidates of candidatesBySource.values()) {
+    const usedColumns = new Set(sourceCandidates.map(candidate => candidate.columnIndex))
+    if (usedColumns.size !== sourceCandidates[0].parsed.columns.length) return false
+  }
+  const sourceNames = new Set(candidates.map(candidate => candidate.source.name).filter(Boolean))
+  const serialized = JSON.stringify({
+    config: script.config,
+    init: script.init,
+    actions: script.actions,
+    teardown: script.teardown,
+  })
+  return !Array.from(sourceNames).some(name => {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`\\{\\{\\s*data\\.${escaped}\\.`, 'i').test(serialized)
+  })
+}
+
 export function buildMergedParameterSourceScript(script: ScriptData): ParameterSourceMergeResult | null {
   const candidates = collectParameterSourceMergeCandidates(script)
   const sourceIndexes = new Set(candidates.map(candidate => candidate.sourceIndex))
-  if (sourceIndexes.size <= 1 || candidates.length === 0) return null
+  if (sourceIndexes.size <= 1 || candidates.length === 0 || !parameterSourceMergeIsLossless(script, candidates)) return null
 
   const sources = script.data_sources || []
   const parameters = script.parameters || []
@@ -258,7 +291,7 @@ export function buildMergedParameterSourceScript(script: ScriptData): ParameterS
     name: mergedSourceName,
     type: 'csv',
     path: `${mergedSourceName}.csv`,
-    strategy: 'sequential',
+    strategy: candidates[0].source.strategy || 'sequential',
     delimiter: 'comma',
     first_row_header: true,
     columns: [],

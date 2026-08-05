@@ -18,6 +18,8 @@ export interface DashboardAuthSettings {
   domain_roles_claim?: string
   application_repository_roles_claim?: string
   session_secret_env_var?: string
+  trusted_proxy_cidrs?: string[]
+  trusted_proxy_secret_env_var?: string
   user_header: string
   name_header: string
   email_header: string

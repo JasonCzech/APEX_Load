@@ -300,14 +300,6 @@ export function lineStatusForSource(
   return result
 }
 
-/** True when two DSL paths sit on the same ancestor chain (one contains the other). */
-function pathsRelated(a: string, b: string): boolean {
-  if (a === b) return true
-  const isDescendant = (child: string, parent: string) =>
-    child.startsWith(`${parent}.`) || child.startsWith(`${parent}[`)
-  return isDescendant(a, b) || isDescendant(b, a)
-}
-
 function notableNodePaths(ranges: Map<string, LineRange>): string[] {
   const paths: string[] = []
   for (const path of ranges.keys()) {
@@ -345,9 +337,21 @@ export function dslLineStatus(
   const lines = new Map<number, GutterStatus>(mapped)
   const withoutOrigin: string[] = []
   const targetPaths = mappings.map(mapping => mapping?.target_path).filter((path): path is string => Boolean(path))
+  const coveredNodes = new Set<string>()
+  const coveredSections = new Set<string>()
+  for (const target of targetPaths) {
+    const node = target.match(/^(actions|init|teardown|parameters|data_sources)\[\d+\](?=\.|\[|$)/)?.[0]
+    if (node) {
+      coveredNodes.add(node)
+      continue
+    }
+    const section = target.match(/^(actions|init|teardown|parameters|data_sources)$/)?.[0]
+    if (section) coveredSections.add(section)
+  }
 
   for (const nodePath of notableNodePaths(ranges)) {
-    const covered = targetPaths.some(target => pathsRelated(nodePath, target))
+    const section = nodePath.slice(0, nodePath.indexOf('['))
+    const covered = coveredNodes.has(nodePath) || coveredSections.has(section)
     if (covered) continue
     withoutOrigin.push(nodePath)
     const range = ranges.get(nodePath)

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import type {
   ScriptDefinition,
   ScriptDataSource,
@@ -48,7 +49,6 @@ interface ParameterDataSourcesSectionProps {
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
   onRemoveDataSource: (idx: number) => void
-  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onToggleOpenDataEditor: (idx: number) => void
   onToggleOpen: () => void
@@ -76,7 +76,6 @@ export function ParameterDataSourcesSection({
   onRemoveDataColumn,
   onRemoveDataRow,
   onRemoveDataSource,
-  onSortDataRows,
   onToggleDataEditorMode,
   onToggleOpenDataEditor,
   onToggleOpen,
@@ -191,7 +190,6 @@ export function ParameterDataSourcesSection({
               onRemoveDataColumn={onRemoveDataColumn}
               onRemoveDataRow={onRemoveDataRow}
               onRemoveDataSource={onRemoveDataSource}
-              onSortDataRows={onSortDataRows}
               onToggleDataEditorMode={onToggleDataEditorMode}
               onToggleOpenDataEditor={onToggleOpenDataEditor}
               onUndoDataSource={onUndoDataSource}
@@ -257,7 +255,6 @@ interface ParameterDataSourceRowsProps {
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
   onRemoveDataSource: (idx: number) => void
-  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onToggleOpenDataEditor: (idx: number) => void
   onUndoDataSource: (idx: number) => void
@@ -290,7 +287,6 @@ function ParameterDataSourceRows({
   onRemoveDataColumn,
   onRemoveDataRow,
   onRemoveDataSource,
-  onSortDataRows,
   onToggleDataEditorMode,
   onToggleOpenDataEditor,
   onUndoDataSource,
@@ -429,7 +425,6 @@ function ParameterDataSourceRows({
               onRedoDataSource={onRedoDataSource}
               onRemoveDataColumn={onRemoveDataColumn}
               onRemoveDataRow={onRemoveDataRow}
-              onSortDataRows={onSortDataRows}
               onToggleDataEditorMode={onToggleDataEditorMode}
               onUndoDataSource={onUndoDataSource}
               onUpdateDataCell={onUpdateDataCell}
@@ -465,7 +460,6 @@ interface ParameterDataEditorProps {
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
-  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onUndoDataSource: (idx: number) => void
   onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
@@ -496,7 +490,6 @@ export function ParameterDataEditor({
   onRedoDataSource,
   onRemoveDataColumn,
   onRemoveDataRow,
-  onSortDataRows,
   onToggleDataEditorMode,
   onUndoDataSource,
   onUpdateDataCell,
@@ -528,6 +521,28 @@ export function ParameterDataEditor({
   const filteredRows = parsed.rows
     .map((row, rowIdx) => ({ row, rowIdx }))
     .filter(({ row }) => dataSourceRowMatchesFilter(row, filterText, effectiveFilterColumn))
+    .sort((left, right) => {
+      if (!sortState) return left.rowIdx - right.rowIdx
+      const comparison = (left.row[sortState.column] || '').localeCompare(right.row[sortState.column] || '', undefined, { numeric: true })
+      return sortState.direction === 'asc' ? comparison : -comparison
+    })
+  const gridScrollRef = useRef<HTMLDivElement | null>(null)
+  const virtualizeRows = filteredRows.length > 100
+  const rowVirtualizer = useVirtualizer({
+    count: filteredRows.length,
+    getScrollElement: () => gridScrollRef.current,
+    estimateSize: () => 42,
+    overscan: 12,
+    enabled: virtualizeRows,
+  })
+  const virtualRows = virtualizeRows ? rowVirtualizer.getVirtualItems() : []
+  const rowsToRender = virtualizeRows
+    ? virtualRows.map(item => filteredRows[item.index])
+    : filteredRows
+  const paddingTop = virtualRows[0]?.start || 0
+  const paddingBottom = virtualRows.length > 0
+    ? Math.max(0, rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end)
+    : 0
   const focusedRawData = isFocusedParameterView
     ? stringifyFocusedParameterData(source, parsed, visibleColumnIndexes)
     : source.inline_data || ''
@@ -544,7 +559,6 @@ export function ParameterDataEditor({
       ? 'desc'
       : 'asc'
     setSortState({ column: colIdx, direction: nextDirection })
-    onSortDataRows(index, colIdx, nextDirection)
   }
 
   return (
@@ -640,7 +654,7 @@ export function ParameterDataEditor({
               )}
             </div>
           </div>
-          <div className="parameter-grid-scroll">
+          <div ref={gridScrollRef} className="parameter-grid-scroll">
             <table className="parameter-grid">
               <thead>
                 <tr>
@@ -687,7 +701,10 @@ export function ParameterDataEditor({
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map(({ row, rowIdx }) => (
+                {virtualizeRows && paddingTop > 0 && (
+                  <tr aria-hidden="true"><td aria-label="Virtualized rows omitted" colSpan={visibleColumnIndexes.length + 2} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>
+                )}
+                {rowsToRender.map(({ row, rowIdx }) => (
                   <tr key={`${index}-r-${rowIdx}`}>
                     <td className="parameter-grid-row-action">
                       <button
@@ -713,6 +730,9 @@ export function ParameterDataEditor({
                     ))}
                   </tr>
                 ))}
+                {virtualizeRows && paddingBottom > 0 && (
+                  <tr aria-hidden="true"><td aria-label="Virtualized rows omitted" colSpan={visibleColumnIndexes.length + 2} style={{ height: paddingBottom, padding: 0, border: 0 }} /></tr>
+                )}
                 {parsed.rows.length === 0 && (
                   <tr>
                     <td colSpan={visibleColumnIndexes.length + 2} className="parameter-grid-empty">
@@ -743,4 +763,3 @@ export function ParameterDataEditor({
     </div>
   )
 }
-

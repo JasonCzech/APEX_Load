@@ -736,6 +736,12 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	filter := storage.UserFilter{Query: strings.TrimSpace(r.URL.Query().Get("q")), Limit: queryInt(r, "limit", 100), Offset: queryInt(r, "offset", 0)}
 	filter.Role = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("role")))
+	if domainID := strings.TrimSpace(r.URL.Query().Get("domain_id")); domainID != "" {
+		filter.DomainID = normalizeDomainID(domainID)
+	}
+	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+		filter.ProjectID = normalizeProjectID(projectID)
+	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("active")); raw != "" {
 		active := raw == "true" || raw == "1"
 		filter.Active = &active

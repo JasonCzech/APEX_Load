@@ -114,10 +114,11 @@ export function useRecorderApi() {
   const resumeRecording = useCallback((id: string) => request<RecorderSession>(`/recorder/${id}/resume`, { method: 'POST' }), [])
 
   const getRecording = useCallback(
-    (id: string, params?: { includeRequests?: boolean; since?: number }) => {
+    (id: string, params?: { includeRequests?: boolean; since?: number; tail?: number }) => {
       const query = new URLSearchParams()
       if (params?.includeRequests) query.set('include', 'requests')
       if (typeof params?.since === 'number') query.set('since', String(params.since))
+      if (typeof params?.tail === 'number') query.set('tail', String(params.tail))
       const suffix = query.toString()
       return request<RecorderSession>(`/recorder/${id}${suffix ? `?${suffix}` : ''}`)
     },

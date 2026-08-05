@@ -26,6 +26,7 @@ import {
   formatSourceSecretSessionFailure,
   sourceSecretSessionIsExpired,
 } from './sourceSecretSession'
+import { requiredScriptSecrets } from './scriptSecretReferenceModel'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -53,8 +54,6 @@ const healthFilters: Array<{ key: AuthoringHealthFilter; label: string }> = [
   { key: 'runtime_warning', label: 'Runtime Warning' },
   { key: 'ai_guardrail', label: 'AI Guardrail' },
 ]
-
-const SECRET_STATUS_CONCURRENCY = 8
 
 function buildImportedSaveNotice(result: ImportedSaveResult): string | null {
   const savedCount = result.scripts.length
@@ -173,7 +172,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       return
     }
     const addressableScripts = scripts.filter(script => isAddressableScriptId(script.id))
-    if (typeof api.getScriptSecretStatus !== 'function') {
+    if (typeof api.getProjectSecretStatuses !== 'function') {
       setSecretStatusByScript({})
       setSecretStatusStateByScript(Object.fromEntries(addressableScripts.map(script => [script.id, 'error'])))
       return
@@ -184,34 +183,60 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       return
     }
     let cancelled = false
+    const requiredByScript = new Map(addressableScripts.map(script => [script.id, requiredScriptSecrets(script)]))
+    const scriptsRequiringSecrets = addressableScripts.filter(script => (requiredByScript.get(script.id)?.length || 0) > 0)
     setSecretStatusByScript({})
-    setSecretStatusStateByScript(Object.fromEntries(addressableScripts.map(script => [script.id, 'loading'])))
-    let nextIndex = 0
-    const worker = async () => {
-      while (!cancelled) {
-        const index = nextIndex
-        nextIndex += 1
-        const script = addressableScripts[index]
-        if (!script) return
-        try {
-          const status = await api.getScriptSecretStatus(script.id)
-          if (cancelled) return
-          setSecretStatusByScript(current => ({ ...current, [script.id]: status }))
-          setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'ready' }))
-        } catch {
-          if (cancelled) return
-          setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'error' }))
-        }
+    setSecretStatusStateByScript(Object.fromEntries(scriptsRequiringSecrets.map(script => [script.id, 'loading'])))
+    const byProject = new Map<string, StoredScript[]>()
+    for (const script of scriptsRequiringSecrets) {
+      const projectID = script.project_id || activeProjectId
+      if (!projectID) {
+        setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'error' }))
+        continue
       }
+      byProject.set(projectID, [...(byProject.get(projectID) || []), script])
     }
-    void Promise.all(Array.from(
-      { length: Math.min(SECRET_STATUS_CONCURRENCY, addressableScripts.length) },
-      () => worker(),
-    ))
+    void Promise.all(Array.from(byProject.entries()).map(async ([projectID, projectScripts]) => {
+      const required = Array.from(new Set(projectScripts.flatMap(script => requiredByScript.get(script.id) || []))).sort()
+      try {
+        const responses = await Promise.all(Array.from({ length: Math.ceil(required.length / 256) }, (_, index) => (
+          api.getProjectSecretStatuses(projectID, required.slice(index * 256, (index + 1) * 256))
+        )))
+        if (cancelled) return
+        const secrets = responses.flatMap(response => response.secrets)
+        const configured = new Set(secrets.filter(secret => secret.configured).map(secret => secret.name))
+        setSecretStatusByScript(current => {
+          const next = { ...current }
+          for (const script of projectScripts) {
+            const names = requiredByScript.get(script.id) || []
+            next[script.id] = {
+              script_id: script.id,
+              project_id: projectID,
+              required: names,
+              configured: names.filter(name => configured.has(name)),
+              missing: names.filter(name => !configured.has(name)),
+              secrets: secrets.filter(secret => names.includes(secret.name)),
+              capabilities: responses[0].capabilities,
+            }
+          }
+          return next
+        })
+        setSecretStatusStateByScript(current => ({
+          ...current,
+          ...Object.fromEntries(projectScripts.map(script => [script.id, 'ready' as const])),
+        }))
+      } catch {
+        if (cancelled) return
+        setSecretStatusStateByScript(current => ({
+          ...current,
+          ...Object.fromEntries(projectScripts.map(script => [script.id, 'error' as const])),
+        }))
+      }
+    }))
     return () => {
       cancelled = true
     }
-  }, [api, scripts, secretStatusRetryGeneration])
+  }, [activeProjectId, api, scripts, secretStatusRetryGeneration])
 
   const refresh = useCallback(async () => {
     const projectId = activeProjectId

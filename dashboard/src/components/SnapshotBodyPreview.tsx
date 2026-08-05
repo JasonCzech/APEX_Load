@@ -8,6 +8,8 @@ import './SnapshotBodyPreview.css'
 
 const MAX_PREVIEW_LINES = 14
 const MAX_PREVIEW_CHARS = 1400
+const MAX_HIGHLIGHTED_BODY_CHARS = 128 * 1024
+const MAX_HIGHLIGHTED_BODY_LINES = 4_000
 
 interface Props {
   body?: string
@@ -198,6 +200,8 @@ export default function SnapshotBodyPreview({
   const [copyFailed, setCopyFailed] = useState(false)
   const [fullDialogOpen, setFullDialogOpen] = useState(false)
   const isExpanded = expanded === true
+  const largeBody = formattedBody.length > MAX_HIGHLIGHTED_BODY_CHARS
+    || formattedBody.split('\n', MAX_HIGHLIGHTED_BODY_LINES + 1).length > MAX_HIGHLIGHTED_BODY_LINES
 
   const parsedJson = useMemo(() => {
     if (bodyFormat === 'json' && body) {
@@ -240,15 +244,16 @@ export default function SnapshotBodyPreview({
 
   return (
     <>
-      {isExpanded && parsedJson !== undefined ? (
+      {isExpanded && parsedJson !== undefined && !largeBody ? (
         <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ margin: 0, padding: 0 }}>
           <JsonViewer data={parsedJson} autoExpandPaths={autoExpandPaths} />
         </div>
       ) : (
         <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
-          {renderHighlightedCode(visibleBody, bodyFormat)}
+          {renderHighlightedCode(visibleBody, isExpanded && largeBody ? 'plain' : bodyFormat)}
         </pre>
       )}
+      {isExpanded && largeBody && <p className="snapshot-body-render-note">Syntax highlighting is disabled for this large body. Copy or open it to inspect the complete plain text.</p>}
       {(canOpenFull || canCopy) && (
         <div className="snapshot-body-actions">
           {canCopy && (
@@ -282,14 +287,17 @@ export default function SnapshotBodyPreview({
         onCopy={() => void handleCopy()}
         onClose={() => setFullDialogOpen(false)}
       >
-        {parsedJson !== undefined ? (
+        {parsedJson !== undefined && !largeBody ? (
           <div className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'} style={{ flex: 1, margin: 0, padding: 0 }}>
             <JsonViewer data={parsedJson} defaultExpandedDepth={4} autoExpandPaths={autoExpandPaths} />
           </div>
         ) : (
-          <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
-            {renderHighlightedCode(formattedBody, bodyFormat)}
-          </pre>
+          <>
+            {largeBody && <p className="snapshot-body-render-note">Syntax highlighting is disabled for this large body.</p>}
+            <pre className={preClassName ? `${preClassName} snapshot-code` : 'snapshot-code'}>
+              {renderHighlightedCode(formattedBody, largeBody ? 'plain' : bodyFormat)}
+            </pre>
+          </>
         )}
       </SnapshotFullDialog>
     </>

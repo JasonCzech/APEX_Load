@@ -256,7 +256,6 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/oracle-ebusiness/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/openapi/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/bruno/support-matrix", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/capabilities", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/authoring/components", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/scripts/authoring/components", editorProjectAccess(resolveReusableBlockCreateProjectID)),

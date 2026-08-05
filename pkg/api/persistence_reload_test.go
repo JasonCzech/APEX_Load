@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -171,6 +172,49 @@ func TestReloadStoredTestsDoesNotDowngradeTerminalState(t *testing.T) {
 	}
 	if tr.tests[id] != current || tr.tests[id].Status != "COMPLETE" {
 		t.Fatalf("terminal test was downgraded: %+v", tr.tests[id])
+	}
+}
+
+func TestReloadStoredTestsCompactsReusedReplicaOnTerminalTransition(t *testing.T) {
+	const id = "terminal-transition"
+	createdAt := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	endedAt := createdAt.Add(time.Minute)
+	current := &ManagedTest{
+		ID:             id,
+		ProjectID:      "project-a",
+		CreatedAt:      createdAt,
+		Status:         "RUNNING",
+		History:        []*LiveMetrics{{Timestamp: createdAt, TPS: 1}, {Timestamp: createdAt.Add(30 * time.Second), TPS: 2}, {Timestamp: endedAt, TPS: 3}},
+		LiveMetrics:    &LiveMetrics{Timestamp: endedAt, TPS: 3},
+		Groups:         []TestGroup{{script: &dsl.Script{}, runtimeSecretValues: map[string]string{"token": "secret"}}},
+		groupSpecs:     []engine.GroupConfig{{Name: "group"}},
+		multiEngine:    &engine.MultiGroupEngine{},
+		goalControl:    &goalControllerState{},
+		historyBytes:   3,
+		historyWeights: []int64{1, 1, 1},
+	}
+	record := &storage.TestRecord{ID: id, ProjectID: "project-a", Status: "COMPLETE", StartTime: createdAt, EndTime: &endedAt}
+	store := &reloadRaceStore{records: []*storage.TestRecord{record}}
+	runner := &TestRunner{
+		tests:              map[string]*ManagedTest{id: current},
+		archives:           map[string]*storage.RunArchiveRecord{},
+		testStore:          store,
+		historyStore:       store,
+		storedHistoryCache: newStoredTestHistoryCache(),
+	}
+
+	if err := runner.reloadStoredTests(); err != nil {
+		t.Fatal(err)
+	}
+	got := runner.tests[id]
+	if got != current || got.Status != "COMPLETE" {
+		t.Fatalf("reloaded test = %#v, want reused terminal identity", got)
+	}
+	if len(got.History) != 1 || len(got.Sparkline) != 3 || got.Sparkline[0].TPS != 1 {
+		t.Fatalf("terminal evidence = history:%#v sparkline:%#v", got.History, got.Sparkline)
+	}
+	if got.multiEngine != nil || got.goalControl != nil || got.groupSpecs != nil || got.Groups[0].script != nil || got.Groups[0].runtimeSecretValues != nil {
+		t.Fatalf("terminal replica retained runtime state: %#v", got)
 	}
 }
 

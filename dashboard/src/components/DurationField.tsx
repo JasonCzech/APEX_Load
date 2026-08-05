@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react'
+import { useId, useMemo, useRef } from 'react'
 
 import { DurationUnit, isValidDurationInput, serializeDurationFieldValue, splitDurationInput } from '../utils/timeUtils'
 import './DurationField.css'
@@ -50,6 +50,9 @@ export default function DurationField({
   const inputId = id || generatedId
   const parts = useMemo(() => splitDurationInput(value), [value])
   const isEmpty = value.trim() === ''
+  const retainedUnitRef = useRef<DurationUnit>(parts.unit)
+  if (!isEmpty) retainedUnitRef.current = parts.unit
+  const displayedUnit = isEmpty ? retainedUnitRef.current : parts.unit
   const isValid = isValidDurationInput(value, allowEmpty)
   const error = !showValidation || isValid
     ? ''
@@ -86,15 +89,19 @@ export default function DurationField({
           aria-label={label || 'Duration value'}
           aria-invalid={Boolean(error)}
           onChange={(event) => {
-            emitValue(event.target.value, parts.unit)
+            emitValue(event.target.value, displayedUnit)
           }}
         />
         <select
           className="duration-field-unit"
-          value={parts.unit}
+          value={displayedUnit}
           disabled={disabled}
           aria-label={label ? `${label} ${unitLabel}` : unitLabel}
-          onChange={(event) => emitValue(parts.value, event.target.value as DurationUnit)}
+          onChange={(event) => {
+            const nextUnit = event.target.value as DurationUnit
+            retainedUnitRef.current = nextUnit
+            emitValue(parts.value, nextUnit)
+          }}
         >
           {Object.entries(UNIT_LABELS).map(([unit, text]) => (
             <option key={unit} value={unit}>{compact ? unit : text}</option>

@@ -297,10 +297,26 @@ export default function AccessPage({
   const userListScopeKey = dataSignature({
     page: userPage,
     pageSize: userPageSize,
+    domainID: userFilters.domainID,
+    projectID: userFilters.projectID,
     query: userFilters.query.trim(),
     role: userFilters.role,
     status: userFilters.status,
   })
+  const currentUserListScopeRef = useRef(userListScopeKey)
+  currentUserListScopeRef.current = userListScopeKey
+  const currentUserFilterContextRef = useRef({
+    applicationRepository,
+    domains,
+    filters: userFilters,
+    projects,
+  })
+  currentUserFilterContextRef.current = {
+    applicationRepository,
+    domains,
+    filters: userFilters,
+    projects,
+  }
   // Attention summary for the access-review badge: flagged principals + recent denials.
   const accessReviewAttention = useMemo(() => {
     if (!accessReview) return null
@@ -545,12 +561,14 @@ export default function AccessPage({
     setUsersLoading(true)
     try {
       const offset = userPage * userPageSize
-      const requestFilter: { q?: string; active?: string; role?: string; limit: number; offset: number } = { limit: userPageSize, offset }
+      const requestFilter: { q?: string; active?: string; role?: string; domain_id?: string; project_id?: string; limit: number; offset: number } = { limit: userPageSize, offset }
       const query = userFilters.query.trim()
       if (query) requestFilter.q = query
       if (userFilters.status === 'active') requestFilter.active = 'true'
       if (userFilters.status === 'disabled') requestFilter.active = 'false'
       if (userFilters.role) requestFilter.role = userFilters.role
+      if (userFilters.domainID) requestFilter.domain_id = userFilters.domainID
+      if (userFilters.projectID) requestFilter.project_id = userFilters.projectID
       const response = await api.listAuthUsers(requestFilter)
       if (!isCurrentRequest()) return
       const reconciled = reconcileAuthoritativeEntities(
@@ -590,11 +608,14 @@ export default function AccessPage({
     } finally {
       if (isCurrentRequest()) setUsersLoading(false)
     }
-  }, [api, canUseUsers, userFilters.query, userFilters.role, userFilters.status, userListScopeKey, userPage, userPageSize])
+  }, [api, canUseUsers, userFilters.domainID, userFilters.projectID, userFilters.query, userFilters.role, userFilters.status, userListScopeKey, userPage, userPageSize])
+  const currentLoadUsersRef = useRef(loadUsers)
+  currentLoadUsersRef.current = loadUsers
+  const loadCurrentUsers = useCallback(() => currentLoadUsersRef.current(), [])
 
   useEffect(() => {
     setUserPage(0)
-  }, [userFilters.query, userFilters.role, userFilters.status])
+  }, [userFilters.domainID, userFilters.projectID, userFilters.query, userFilters.role, userFilters.status])
 
   const loadActivity = useCallback(async () => {
     const requestGeneration = ++activityLoadGenerationRef.current
@@ -790,20 +811,28 @@ export default function AccessPage({
   }, [activeDomain, activeProject, applicationRepository, domains, projects])
 
   const userMatchesCurrentServerFilters = (user: DashboardUser) => {
-    if (userFilters.status === 'active' && !user.active) return false
-    if (userFilters.status === 'disabled' && user.active) return false
+    const {
+      applicationRepository: currentApplicationRepository,
+      domains: currentDomains,
+      filters,
+      projects: currentProjects,
+    } = currentUserFilterContextRef.current
+    if (filters.status === 'active' && !user.active) return false
+    if (filters.status === 'disabled' && user.active) return false
     const roles = userRoleList(user)
-    if (userFilters.role && !roles.includes(userFilters.role)) return false
+    if (filters.role && !roles.includes(filters.role)) return false
+    if (!userMatchesDomain(user, filters.domainID, currentProjects)) return false
+    if (!userMatchesProject(user, filters.projectID)) return false
     return includesQuery([
       user.subject,
       user.email,
       user.display_name,
       ...roles,
-      ...userAccessLabels(user, projects, domains, applicationRepository),
-    ], userFilters.query)
+      ...userAccessLabels(user, currentProjects, currentDomains, currentApplicationRepository),
+    ], filters.query)
   }
 
-  const publishAuthoritativeUser = (user: DashboardUser, listScope = userListScopeKey) => {
+  const publishAuthoritativeUser = (user: DashboardUser, listScope = currentUserListScopeRef.current) => {
     if (!user?.id) return
     usersLoadGenerationRef.current += 1
     deletedUserIDsRef.current.delete(user.id)
@@ -910,7 +939,7 @@ export default function AccessPage({
         setUserActionMessage(`Onboarded ${user.display_name || user.email || user.subject} with ${initialBindings.length} role ${initialBindings.length === 1 ? 'binding' : 'bindings'}.`)
         setUserActionError('')
         succeeded = true
-        await loadUsers()
+        await loadCurrentUsers()
       } catch (error: unknown) {
         setUserActionError(getErrorMessage(error, 'Unable to create user'))
         setUserActionMessage('')
@@ -933,6 +962,11 @@ export default function AccessPage({
       return false
     }
     const desiredBindings = normalizedUserBindingDrafts(editBindingDrafts)
+    if (desiredBindings.length === 0) {
+      setUserActionError('Choose at least one role binding before saving access changes.')
+      setUserActionMessage('')
+      return false
+    }
     let succeeded = false
     await runAccessMutation(async () => {
       let reconciledUser = selectedUser
@@ -944,17 +978,33 @@ export default function AccessPage({
         return snapshot
       }
       try {
-        if (canManageUserLifecycle) {
-          reconciledUser = await api.updateAuthUser(selectedUser.id, {
-            subject: editUserForm.subject.trim(),
-            email: editUserForm.email.trim() || undefined,
-            display_name: editUserForm.displayName.trim() || undefined,
-          })
-          reconciledBindings = [...(reconciledUser.bindings || reconciledBindings)]
-          committedAnyChange = true
-        }
         const desiredSignatures = new Set(desiredBindings.map(draftSignature))
         const existingSignatures = new Set(reconciledBindings.map(bindingSignature))
+        // Add replacement grants before removing old ones. A failed grant must
+        // never strand the user with zero access or a partially deleted role.
+        for (const binding of desiredBindings) {
+          const signature = draftSignature(binding)
+          if (!existingSignatures.has(signature)) {
+            const request = {
+              scope_type: binding.scopeType,
+              scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
+              role: binding.role,
+            }
+            const response = await api.createAuthUserBinding(selectedUser.id, request) as DashboardUserRoleBinding
+            // Preserve the requested identity even when an older controller
+            // returns an acknowledgement-only response.
+            const created: DashboardUserRoleBinding = {
+              ...response,
+              user_id: response.user_id || selectedUser.id,
+              scope_type: response.scope_type || binding.scopeType,
+              scope_id: response.scope_id ?? (binding.scopeType === 'global' ? '' : binding.scopeID),
+              role: response.role || binding.role,
+            }
+            reconciledBindings = [...reconciledBindings, created]
+            existingSignatures.add(signature)
+            committedAnyChange = true
+          }
+        }
         for (const binding of [...reconciledBindings]) {
           if (!desiredSignatures.has(bindingSignature(binding))) {
             await api.deleteAuthUserBinding(selectedUser.id, binding.id)
@@ -963,18 +1013,15 @@ export default function AccessPage({
             committedAnyChange = true
           }
         }
-        for (const binding of desiredBindings) {
-          const signature = draftSignature(binding)
-          if (!existingSignatures.has(signature)) {
-            const created = await api.createAuthUserBinding(selectedUser.id, {
-              scope_type: binding.scopeType,
-              scope_id: binding.scopeType === 'global' ? undefined : binding.scopeID,
-              role: binding.role,
-            }) as DashboardUserRoleBinding
-            reconciledBindings = [...reconciledBindings, created]
-            existingSignatures.add(signature)
-            committedAnyChange = true
-          }
+        // Commit profile edits only after access reconciliation succeeds, so a
+        // binding failure cannot also leave an unrelated partial profile edit.
+        if (canManageUserLifecycle) {
+          reconciledUser = await api.updateAuthUser(selectedUser.id, {
+            subject: editUserForm.subject.trim(),
+            email: editUserForm.email.trim() || undefined,
+            display_name: editUserForm.displayName.trim() || undefined,
+          })
+          committedAnyChange = true
         }
         const user = publishReconciledUser()
         setSelectedUserID(user.id)
@@ -984,7 +1031,7 @@ export default function AccessPage({
         setUserActionMessage(`${canManageUserLifecycle ? 'Updated' : 'Updated access for'} ${user.display_name || user.email || user.subject}.`)
         setUserActionError('')
         succeeded = true
-        await loadUsers()
+        await loadCurrentUsers()
       } catch (error: unknown) {
         const message = getErrorMessage(error, 'Unable to update user')
         if (committedAnyChange) {
@@ -992,7 +1039,7 @@ export default function AccessPage({
           editingUserIDRef.current = ''
           editingUserSnapshotRef.current = null
           setSelectedUserEditMode(false)
-          await loadUsers()
+          await loadCurrentUsers()
           setUserActionError(`${message} Some changes were already applied; current access was reconciled before retrying.`)
         } else {
           setUserActionError(message)
@@ -1015,7 +1062,7 @@ export default function AccessPage({
         publishAuthoritativeUser(updated)
         setUserActionMessage(`${active ? 'Restored access for' : 'Removed access from'} ${user.display_name || user.subject}.`)
         setUserActionError('')
-        await loadUsers()
+        await loadCurrentUsers()
       } catch (error: unknown) {
         setUserActionError(getErrorMessage(error, `Unable to ${active ? 'restore' : 'remove'} user access`))
         setUserActionMessage('')
@@ -1034,7 +1081,7 @@ export default function AccessPage({
         publishAuthoritativeUser(updated)
         setUserActionMessage(`Revoked active sessions for ${user.display_name || user.subject}.`)
         setUserActionError('')
-        await loadUsers()
+        await loadCurrentUsers()
       } catch (error: unknown) {
         setUserActionError(getErrorMessage(error, 'Unable to revoke user sessions'))
         setUserActionMessage('')
@@ -1051,11 +1098,11 @@ export default function AccessPage({
       try {
         await api.deleteAuthUser(user.id)
         publishDeletedUser(user.id)
-        setUsersTotal(total => Math.max(0, total - 1))
+        if (userMatchesCurrentServerFilters(user)) setUsersTotal(total => Math.max(0, total - 1))
         setUserActionMessage(`Deleted ${user.display_name || user.subject}.`)
         setUserActionError('')
         setSelectedUserID('')
-        await loadUsers()
+        await loadCurrentUsers()
       } catch (error: unknown) {
         setUserActionError(getErrorMessage(error, 'Unable to delete user'))
         setUserActionMessage('')

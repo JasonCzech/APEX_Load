@@ -86,7 +86,6 @@ import {
   settingsIssuesForField,
   splitListDraft,
   TELEMETRY_BUDGET_DEFAULTS,
-  usesDefaultGeneratorCapacity,
   validateOptionalPositiveInteger,
   validateProjectDraft,
   validateProjectQuotaField,
@@ -337,6 +336,7 @@ export default function SettingsPage({
   const [authAccessResources, setAuthAccessResources] = useState<DashboardAuthAccessResource[]>([])
   const [authDiagnostics, setAuthDiagnostics] = useState<DashboardAuthDiagnostics | null>(null)
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
+  const [loadedEffectiveAuthAccessScope, setLoadedEffectiveAuthAccessScope] = useState<string | null>(null)
   const [authRoles, setAuthRoles] = useState<DashboardAuthRoleDefinition[]>([])
   const [serviceAccounts, setServiceAccounts] = useState<DashboardServiceAccount[]>([])
   const [auditEvents, setAuditEvents] = useState<DashboardAuditEvent[]>([])
@@ -511,7 +511,7 @@ export default function SettingsPage({
     setProjectDraftGitHubAutomationIdentity(policy?.automation_identity || '')
   }, [])
 
-  const buildProjectGitHubDraft = useCallback((): GitHubProjectPolicy => ({
+  const buildProjectGitHubDraft = useCallback((existing?: GitHubProjectPolicy): GitHubProjectPolicy => ({
     enabled: projectDraftGitHubEnabled,
     allowed_repos: splitListDraft(projectDraftGitHubAllowedRepos),
     allowed_branches: splitListDraft(projectDraftGitHubAllowedBranches),
@@ -528,6 +528,9 @@ export default function SettingsPage({
     default_branch: projectDraftGitHubDefaultBranch.trim(),
     default_sync_directory: projectDraftGitHubSyncDirectory.trim(),
     automation_identity: projectDraftGitHubAutomationIdentity.trim(),
+    // This form edits source-sync policy only. GitHub Actions authorization is
+    // a separate trust boundary and must survive a source-policy save intact.
+    actions: existing?.actions,
   }), [
     projectDraftGitHubAllowDirect,
     projectDraftGitHubAllowImport,
@@ -555,20 +558,10 @@ export default function SettingsPage({
     try {
       const response = normalizeDashboardSystemSettings(await api.getSystemSettings())
       if (generation !== settingsLoadGenerationRef.current) return
-      let resolvedSettings = response
-      if (usesDefaultGeneratorCapacity(response)) {
-        try {
-          const inventory = await api.getSystemInventory()
-          if (generation !== settingsLoadGenerationRef.current) return
-          resolvedSettings = applyLiveGeneratorPresetToSettings(response, deriveLiveGeneratorPreset(inventory))
-        } catch {
-          if (generation !== settingsLoadGenerationRef.current) return
-          resolvedSettings = response
-        }
-      }
-      if (generation !== settingsLoadGenerationRef.current) return
-      setSettings(resolvedSettings)
-      setSavedSettings(resolvedSettings)
+      // Inventory-derived capacity remains an explicit operator action. Loading
+      // settings must never fabricate a clean persisted baseline from live pods.
+      setSettings(response)
+      setSavedSettings(response)
       setCapacityFieldDrafts({})
       setLoadFailed(false)
     } catch (error: unknown) {
@@ -607,16 +600,22 @@ export default function SettingsPage({
     }
   }, [fleetApi])
 
+  const selectedAccessProject = projects.find(project => project.id === selectedProjectId)
+  const effectiveAuthAccessProjectId = selectedAccessProject?.id || activeProject?.id
+  const effectiveAuthAccessDomainId = selectedAccessProject?.domain_id || activeProject?.domain_id
+  const effectiveAuthAccessScope = [
+    effectiveAuthAccessProjectId || '',
+    effectiveAuthAccessDomainId || '',
+    applicationRepository?.id || '',
+  ].join('\u0000')
+  const effectiveAuthAccessLoading = loadedEffectiveAuthAccessScope !== effectiveAuthAccessScope
+
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
-      const selectedAccessProject = projects.find(project => project.id === selectedProjectId)
-      const accessProjectId = selectedAccessProject?.id || activeProject?.id
-      const accessDomainId = selectedAccessProject?.domain_id || activeProject?.domain_id
-      setEffectiveAuthAccessResources([])
       try {
-        const response = await api.getAuthEffectiveAccess(accessProjectId, {
-          domain_id: accessDomainId,
+        const response = await api.getAuthEffectiveAccess(effectiveAuthAccessProjectId, {
+          domain_id: effectiveAuthAccessDomainId,
           application_repository_id: applicationRepository?.id,
         })
         if (!cancelled) {
@@ -626,6 +625,8 @@ export default function SettingsPage({
         if (!cancelled) {
           setEffectiveAuthAccessResources([])
         }
+      } finally {
+        if (!cancelled) setLoadedEffectiveAuthAccessScope(effectiveAuthAccessScope)
       }
     }
 
@@ -633,7 +634,13 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [activeProject?.domain_id, activeProject?.id, api, applicationRepository?.id, projects, selectedProjectId])
+  }, [
+    api,
+    applicationRepository?.id,
+    effectiveAuthAccessDomainId,
+    effectiveAuthAccessProjectId,
+    effectiveAuthAccessScope,
+  ])
 
   useEffect(() => {
   let cancelled = false
@@ -828,14 +835,22 @@ export default function SettingsPage({
     [hasCapacityDraftChanges, settings, savedSettings],
   )
   const authDiagnosticsStale = useMemo(() => JSON.stringify(settings.auth) !== JSON.stringify(savedSettings.auth), [settings.auth, savedSettings.auth])
-  const canManageSystem = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system'), [effectiveAuthAccessResources])
-  const canManageDomains = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_domains', false), [effectiveAuthAccessResources])
-  const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
-  const canManageScripts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts'), [effectiveAuthAccessResources])
-  const canManageServiceAccounts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_service_accounts'), [effectiveAuthAccessResources])
-  const canViewAudit = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'view_audit'), [effectiveAuthAccessResources])
+  // Effective-access resources belong to the exact domain/project/repository
+  // scope that produced them. While a new scope is loading, fail every
+  // capability closed so standalone actions and topbar saves cannot reuse the
+  // previous scope's authority even though their fieldsets are already disabled.
+  const capabilityAllowed = useCallback((operation: string, defaultWhenMissing = false) => (
+    !effectiveAuthAccessLoading
+    && isEffectiveOperationAllowed(effectiveAuthAccessResources, operation, defaultWhenMissing)
+  ), [effectiveAuthAccessLoading, effectiveAuthAccessResources])
+  const canManageSystem = capabilityAllowed('manage_system')
+  const canManageDomains = capabilityAllowed('manage_domains', false)
+  const canManageProjects = capabilityAllowed('manage_projects')
+  const canManageScripts = capabilityAllowed('manage_scripts')
+  const canManageServiceAccounts = capabilityAllowed('manage_service_accounts')
+  const canViewAudit = capabilityAllowed('view_audit')
   const canSave = validationErrors.length === 0 && !loading && !loadFailed && !settingsMutationBusy && hasUnsavedChanges && canManageSystem
-  const formDisabled = loading || loadFailed || settingsMutationBusy || !canManageSystem
+  const formDisabled = loading || loadFailed || settingsMutationBusy || effectiveAuthAccessLoading || !canManageSystem
   const renderFieldIssues = (field: string) => settingsIssuesForField(validationIssues, field).map(message => (
     <p key={message} className="settings-error-inline settings-field-error" role="alert">{message}</p>
   ))
@@ -897,7 +912,7 @@ export default function SettingsPage({
     }
     const draft = {
       name: projectDraftName.trim(),
-      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(), selectedProject?.settings?.pool_quotas),
+      settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas),
     }
 
     return JSON.stringify(current) !== JSON.stringify(draft)
@@ -1976,7 +1991,7 @@ export default function SettingsPage({
     try {
       const updated = await updateProject(selectedProject.id, {
         name: projectDraftName.trim(),
-        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(), selectedProject?.settings?.pool_quotas),
+        settings: buildProjectSettingsDraft(projectDraftRules, projectDraftMaxConcurrentTests, projectDraftMaxVUsers, projectDraftMaxVUsersPerTest, projectDraftMaxTestDurationMinutes, buildProjectGitHubDraft(selectedProject?.settings?.github), selectedProject?.settings?.pool_quotas),
       })
       commitSettingsProject(updated)
       applyProjectSelection(updated)
@@ -2885,7 +2900,7 @@ export default function SettingsPage({
           hidden={activeSection !== 'general'}
           style={{ order: getSectionOrder('general') }}
         >
-          <fieldset className="settings-fieldset" disabled={formDisabled}>
+          <div className="settings-fieldset">
           <div className="settings-subsection-layout">
             <div className="settings-subnav" role="tablist" aria-label="General settings categories">
               {GENERAL_SETTINGS_SUBSECTIONS.map(subsection => (
@@ -2912,6 +2927,7 @@ export default function SettingsPage({
               aria-labelledby="settings-general-tab-platform"
               hidden={activeGeneralSubsection !== 'platform'}
             >
+              <fieldset className="settings-fieldset" disabled={formDisabled} aria-label="Platform settings controls">
               <div className="settings-group">
             <div className="setting-row">
               <div className="setting-info">
@@ -3017,6 +3033,7 @@ export default function SettingsPage({
               </label>
             </div>
               </div>
+              </fieldset>
             </section>
 
             <section
@@ -3045,7 +3062,7 @@ export default function SettingsPage({
                 <button className="btn btn-secondary" type="button" onClick={refreshUsageAccounting}>
                   Refresh Usage
                 </button>
-                <button className="btn btn-secondary" type="button" onClick={captureUsageSnapshot} disabled={!canManageSystem}>
+                <button className="btn btn-secondary" type="button" onClick={captureUsageSnapshot} disabled={formDisabled}>
                   Capture Snapshot
                 </button>
                 <button className="btn btn-secondary" type="button" onClick={exportUsageAccounting}>
@@ -3148,6 +3165,7 @@ export default function SettingsPage({
               aria-labelledby="settings-general-tab-authentication"
               hidden={activeGeneralSubsection !== 'authentication'}
             >
+              <fieldset className="settings-fieldset" disabled={formDisabled} aria-label="Authentication settings controls">
               <div className="settings-group">
             <div className="settings-subsection">
               <div className="settings-manager-summary">
@@ -3216,10 +3234,34 @@ export default function SettingsPage({
                     </div>
                     <input
                       className="settings-input cell-mono"
-					  aria-label="Prometheus bearer token environment variable"
+					  aria-label="Trusted headers login URL"
                       value={settings.auth.login_url || ''}
                       onChange={(e) => updateAuth('login_url', e.target.value)}
                       placeholder="https://login.example.com/apexload/start"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Trusted Proxy CIDRs</span>
+                      <span className="setting-desc">Comma-separated proxy IP addresses or CIDRs allowed to supply identity headers.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={(settings.auth.trusted_proxy_cidrs || []).join(', ')}
+                      onChange={(e) => updateAuth('trusted_proxy_cidrs', e.target.value.split(',').map(value => value.trim()).filter(Boolean))}
+                      placeholder="10.0.0.0/8, 192.0.2.10/32"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Trusted Proxy Secret Environment Variable</span>
+                      <span className="setting-desc">Optional environment variable holding the shared secret required from the trusted proxy.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.auth.trusted_proxy_secret_env_var || ''}
+                      onChange={(e) => updateAuth('trusted_proxy_secret_env_var', e.target.value)}
+                      placeholder="APEXLOAD_TRUSTED_PROXY_SECRET"
                     />
                   </div>
                   <div className="setting-row">
@@ -3647,6 +3689,7 @@ export default function SettingsPage({
               )}
             </div>
               </div>
+              </fieldset>
             </section>
 
             <section
@@ -3690,6 +3733,7 @@ export default function SettingsPage({
                           <select
                             className="settings-input"
                             value={settings.schedule_defaults.approval_policy || 'auto'}
+                            disabled={formDisabled}
                             onChange={(e) => updateScheduleDefaults('approval_policy', e.target.value)}
                           >
                             <option value="auto">Auto approve</option>
@@ -3708,6 +3752,7 @@ export default function SettingsPage({
                           <select
                             className="settings-input"
                             value={settings.schedule_defaults.missed_run_policy || 'skip'}
+                            disabled={formDisabled}
                             onChange={(e) => updateScheduleDefaults('missed_run_policy', e.target.value)}
                           >
                             <option value="skip">Skip missed runs</option>
@@ -3725,12 +3770,14 @@ export default function SettingsPage({
                             <input
                               className="settings-input"
                               value={settings.schedule_defaults.blackout_start_time || ''}
+                              disabled={formDisabled}
                               onChange={(e) => updateScheduleDefaults('blackout_start_time', e.target.value)}
                               placeholder="00:00"
                             />
                             <input
                               className="settings-input"
                               value={settings.schedule_defaults.blackout_end_time || ''}
+                              disabled={formDisabled}
                               onChange={(e) => updateScheduleDefaults('blackout_end_time', e.target.value)}
                               placeholder="06:00"
                             />
@@ -3745,12 +3792,14 @@ export default function SettingsPage({
                             <input
                               className="settings-input"
                               value={settings.schedule_defaults.availability_start_time || ''}
+                              disabled={formDisabled}
                               onChange={(e) => updateScheduleDefaults('availability_start_time', e.target.value)}
                               placeholder="09:00"
                             />
                             <input
                               className="settings-input"
                               value={settings.schedule_defaults.availability_end_time || ''}
+                              disabled={formDisabled}
                               onChange={(e) => updateScheduleDefaults('availability_end_time', e.target.value)}
                               placeholder="17:00"
                             />
@@ -3808,7 +3857,7 @@ export default function SettingsPage({
                           <input
                             type="checkbox"
                             checked={settings.script_imports.allow_source_secret_migration}
-                            disabled={!canManageSystem}
+                            disabled={formDisabled}
                             onChange={event => updateScriptImports(event.target.checked)}
                           />
                           <span>{settings.script_imports.allow_source_secret_migration ? 'Allowed' : 'Blocked'}</span>
@@ -3981,7 +4030,7 @@ export default function SettingsPage({
               </div>
             </section>
           </div>
-          </fieldset>
+          </div>
         </div>
 
         <div
@@ -5602,6 +5651,7 @@ export default function SettingsPage({
               setActiveIntegrationSubsection,
               integrationSubsectionSummaries,
             )}
+            <fieldset className="settings-fieldset settings-integration-panels" disabled={formDisabled}>
             <section
               id="settings-integrations-panel-library"
               className="settings-subpanel"
@@ -5905,6 +5955,7 @@ export default function SettingsPage({
             </div>
               </div>
             </section>
+            </fieldset>
           </div>
         </div>
           </div>

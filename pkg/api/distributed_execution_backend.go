@@ -221,6 +221,8 @@ type distributedExecutionBackend struct {
 	dial               generatorDial
 	drainMu            sync.RWMutex
 	drainStates        map[string]string
+	testLeaseFences    map[distributedTestLeaseFenceKey]uint64
+	nextTestLeaseFence uint64
 	identityMu         sync.RWMutex
 	targetIDs          map[string]string
 	idTargets          map[string]string
@@ -260,13 +262,14 @@ func newDistributedExecutionBackend(targets []string, timeout time.Duration, dia
 		clonedTargets = append(clonedTargets, spec)
 	}
 	return &distributedExecutionBackend{
-		targets:     clonedTargets,
-		timeout:     timeout,
-		stopGrace:   max(2*timeout, 5*time.Second),
-		dial:        dial,
-		drainStates: make(map[string]string),
-		targetIDs:   make(map[string]string),
-		idTargets:   make(map[string]string),
+		targets:         clonedTargets,
+		timeout:         timeout,
+		stopGrace:       max(2*timeout, 5*time.Second),
+		dial:            dial,
+		drainStates:     make(map[string]string),
+		testLeaseFences: make(map[distributedTestLeaseFenceKey]uint64),
+		targetIDs:       make(map[string]string),
+		idTargets:       make(map[string]string),
 	}
 }
 
@@ -382,6 +385,62 @@ func (b *distributedExecutionBackend) SetGeneratorDrainStateByID(generatorID str
 	}
 	b.drainStates[generatorID] = state
 	return target, nil
+}
+
+type distributedTestLeaseFenceKey struct {
+	test   *ManagedTest
+	target string
+}
+
+// fenceTestExecutionLease stops renewal only for one logical assignment. The
+// returned token is incarnation-scoped; a stale cleanup cannot clear a newer
+// fence for the same test and target.
+func (b *distributedExecutionBackend) fenceTestExecutionLease(test *ManagedTest, target string) uint64 {
+	key := distributedTestLeaseFenceKey{test: test, target: strings.TrimSpace(target)}
+	if key.test == nil || key.target == "" {
+		return 0
+	}
+	b.drainMu.Lock()
+	defer b.drainMu.Unlock()
+	if b.testLeaseFences == nil {
+		b.testLeaseFences = make(map[distributedTestLeaseFenceKey]uint64)
+	}
+	b.nextTestLeaseFence++
+	if b.nextTestLeaseFence == 0 {
+		b.nextTestLeaseFence++
+	}
+	b.testLeaseFences[key] = b.nextTestLeaseFence
+	return b.nextTestLeaseFence
+}
+
+func (b *distributedExecutionBackend) testExecutionLeaseFenced(test *ManagedTest, target string) bool {
+	b.drainMu.RLock()
+	defer b.drainMu.RUnlock()
+	return b.testLeaseFences[distributedTestLeaseFenceKey{test: test, target: strings.TrimSpace(target)}] != 0
+}
+
+func (b *distributedExecutionBackend) clearTestExecutionLeaseFences(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	b.drainMu.Lock()
+	for key := range b.testLeaseFences {
+		if key.test == test {
+			delete(b.testLeaseFences, key)
+		}
+	}
+	b.drainMu.Unlock()
+}
+
+func (b *distributedExecutionBackend) filterTestPlacementTargets(test *ManagedTest, targets []string) []string {
+	filtered := make([]string, 0, len(targets))
+	for _, target := range targets {
+		if b.testExecutionLeaseFenced(test, target) {
+			continue
+		}
+		filtered = append(filtered, target)
+	}
+	return filtered
 }
 
 func (b *distributedExecutionBackend) ApplyGeneratorDrainStates(states map[string]string) {
@@ -693,6 +752,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	test.Assignment = assignment
+	requireTestExecutionLease := assignmentToleratesGeneratorLoss(assignment)
 	test.executionGeneration = executionGeneration
 	clearDistributedRunSecretSnapshotsLocked(test)
 	tr.mu.Unlock()
@@ -742,7 +802,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	distributedScripts := make(map[string]map[string]struct{})
 	loadByTarget := make(map[string]generatorLoadSnapshot)
 	startedTargets := make(map[string]struct{})
+	var stopInitialLeaseKeeper context.CancelFunc
 	cleanup := func(stopStarted bool) {
+		if stopInitialLeaseKeeper != nil {
+			stopInitialLeaseKeeper()
+			stopInitialLeaseKeeper = nil
+		}
 		if stopStarted {
 			for target := range startedTargets {
 				client := clientsByTarget[target]
@@ -990,26 +1055,27 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			startedTargets[target] = struct{}{}
 			rpcCtx, rpcCancel := context.WithTimeout(executionCtx, b.timeout)
 			assignment, err := client.AssignWork(rpcCtx, generatorrpc.Assignment{
-				TestID:              test.ID,
-				ExecutionGeneration: executionGeneration,
-				ScenarioID:          test.ScenarioID,
-				GroupName:           group.Name,
-				TargetDuration:      test.Duration,
-				ScriptID:            group.ScriptID,
-				ExpectedScriptHash:  contentHash,
-				VUserCount:          int32(shard.VUsers),
-				RampUp:              rampUp,
-				RampDown:            rampDown,
-				InitStrategy:        initStrategy,
-				PreBaseline:         preBaseline,
-				PostBaseline:        postBaseline,
-				ShardOrdinal:        shard.ShardOrdinal,
-				ShardCount:          shard.ShardCount,
-				VUserIDOffset:       shard.VUserIDOffset,
-				DataFiles:           dataFiles,
-				RedactionRules:      cloneRedactionRules(group.redactionRules),
-				SecretBundle:        secretBundle,
-				SecretBundleID:      secretBundleID,
+				TestID:                    test.ID,
+				ExecutionGeneration:       executionGeneration,
+				ScenarioID:                test.ScenarioID,
+				RequireTestExecutionLease: requireTestExecutionLease,
+				GroupName:                 group.Name,
+				TargetDuration:            test.Duration,
+				ScriptID:                  group.ScriptID,
+				ExpectedScriptHash:        contentHash,
+				VUserCount:                int32(shard.VUsers),
+				RampUp:                    rampUp,
+				RampDown:                  rampDown,
+				InitStrategy:              initStrategy,
+				PreBaseline:               preBaseline,
+				PostBaseline:              postBaseline,
+				ShardOrdinal:              shard.ShardOrdinal,
+				ShardCount:                shard.ShardCount,
+				VUserIDOffset:             shard.VUserIDOffset,
+				DataFiles:                 dataFiles,
+				RedactionRules:            cloneRedactionRules(group.redactionRules),
+				SecretBundle:              secretBundle,
+				SecretBundleID:            secretBundleID,
 			})
 			rpcCancel()
 			if err != nil {
@@ -1038,6 +1104,21 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		// will never emit.
 		_ = client.Close()
 		delete(clientsByTarget, target)
+	}
+
+	if requireTestExecutionLease {
+		currentGeneration, currentOwnerID, leaseDeadline, claimErr := tr.generatorExecutionClaim()
+		if claimErr != nil || currentGeneration != executionGeneration || currentOwnerID != executionLeaseOwnerID {
+			failStartup("execution leadership changed before assignment lease establishment")
+			return
+		}
+		if claimErr := b.renewGeneratorTestExecutionClients(executionCtx, test.ID, assignedClients, executionGeneration, executionLeaseOwnerID, leaseDeadline); claimErr != nil {
+			failStartup(fmt.Sprintf("establish loss-tolerance assignment leases: %v", claimErr))
+			return
+		}
+		initialLeaseCtx, cancelInitialLeaseKeeper := context.WithCancel(executionCtx)
+		stopInitialLeaseKeeper = cancelInitialLeaseKeeper
+		go b.maintainStagedGeneratorTestExecutionLeases(initialLeaseCtx, tr, test, executionGeneration, assignedClients)
 	}
 
 	for _, target := range orderedGeneratorTargets(assignedClients, allowedTargets) {
@@ -1080,7 +1161,14 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	activate()
-	go b.renewGeneratorExecutionEpoch(executionCtx, tr, test, executionGeneration)
+	if requireTestExecutionLease {
+		// The staged keeper protects the assignment through metrics setup and
+		// coordinated commit. Once the live topology is published, start its
+		// topology-aware successor before cancelling the staged owner so there is
+		// no unowned handoff window and no duplicate steady-state renewal loop.
+		b.handoffStagedGeneratorTestExecutionLeaseKeeper(executionCtx, tr, test, executionGeneration, stopInitialLeaseKeeper)
+		stopInitialLeaseKeeper = nil
+	}
 }
 
 func distributedRunStartable(tr *TestRunner, test *ManagedTest) bool {
@@ -1253,7 +1341,9 @@ func (b *distributedExecutionBackend) failClosedDistributedCommit(tr *TestRunner
 	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 	tr.cancelAllVUserScaleRampsLocked(test)
 	cancel := test.cancel
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
+	tr.broadcastEvent("test_stopping", eventSnapshot)
 
 	stopAndFinalize := func() error {
 		if err := b.StopTestContext(context.Background(), tr, test); err != nil {
@@ -1266,7 +1356,6 @@ func (b *distributedExecutionBackend) failClosedDistributedCommit(tr *TestRunner
 	if cancel != nil {
 		cancel()
 	}
-	tr.broadcastEvent("test_stopping", test)
 	if stopErr != nil {
 		tr.enqueueTerminalRetry("commit-stop:"+test.ID, "distributed startup commit teardown", stopAndFinalize)
 	}

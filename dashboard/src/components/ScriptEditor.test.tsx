@@ -4301,6 +4301,7 @@ describe('ScriptEditor', () => {
       same_line_as: 'market',
       on_exhaustion: 'last',
     })
+    expect(savedScript.data_sources?.[0]?.strategy).toBe('sequential')
 
     // The data table lives under the Data tab: it keeps its display options
     // but drops the old source-metadata header row.
@@ -4674,6 +4675,9 @@ describe('ScriptEditor', () => {
       'alice',
       'apass',
     ])
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(focusedScript.data_sources?.[0]?.inline_data).toBe('username,password\nbob,bpass\nalice,apass\ncarol,cpass')
   })
 
   it('filters focused data source rows by search text and selected column', async () => {

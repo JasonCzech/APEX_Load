@@ -436,6 +436,7 @@ func (tr *TestRunner) failExecutionPlanStagedTestWithTerm(testID, detail string,
 			test.PendingSince = nil
 			test.PendingReason = ""
 			test.QueuePosition = 0
+			compactTerminalManagedTestLocked(test)
 			if test.TimeslotID != nil {
 				slotID = strings.TrimSpace(*test.TimeslotID)
 			}

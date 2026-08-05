@@ -556,6 +556,17 @@ func TestGeneratedSwaggerDocumentsConditionalAndInHandlerAuthentication(t *testi
 		t.Errorf("metrics access text = %q, want conditional metrics-token requirement", metrics.XRoles)
 	}
 
+	authoringCapabilities := spec.Paths["/api/v1/scripts/authoring/capabilities"]["get"]
+	for _, contract := range []string{
+		"global roles: Viewer, Editor, ProjectAdmin, SystemAdmin",
+		"when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin",
+		"service-account scope: read",
+	} {
+		if !strings.Contains(authoringCapabilities.XRoles, contract) || !strings.Contains(authoringCapabilities.Description, contract) {
+			t.Errorf("authoring capabilities access text = %q / %q, want %q", authoringCapabilities.XRoles, authoringCapabilities.Description, contract)
+		}
+	}
+
 	for _, endpoint := range []struct {
 		method string
 		path   string

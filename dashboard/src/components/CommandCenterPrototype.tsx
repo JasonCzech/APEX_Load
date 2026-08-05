@@ -37,11 +37,13 @@ import ThresholdAlertStrip from './ThresholdAlertStrip'
 import type { ThresholdAlertEntry } from '../thresholdAlerts'
 import { liveEvidenceCacheKey } from './commandCenterEvidenceModel'
 import { listAllCommandCenterActiveRuns } from './commandCenterRunDiscovery'
+import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 import {
   buildScenarioRunRows,
   type CommandGroup,
   type ScenarioRunRow,
 } from './commandCenterScenarioRows'
+import { buildLoadModelProfile, type LoadModelPoint } from './commandCenterLoadModel'
 import {
   formatSnapshotRequestLineAndHeaders,
   formatSnapshotResponseStatusAndHeaders,
@@ -704,9 +706,8 @@ function formatRemaining(seconds: number) {
     : `${minutes}m ${remSeconds.toString().padStart(2, '0')}s`
 }
 
-function clampTarget(value: number) {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(2400, Math.round(value)))
+function clampTarget(value: number, role?: TestGroup['role']) {
+  return clampVUsersForRole(value, role)
 }
 
 function clampTpsTarget(value: number) {
@@ -846,6 +847,7 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
       key: group.name,
       name: group.name,
       protocol: group.protocol || 'unknown',
+      role: group.role,
       current,
       target,
       targetVusers: liveTargetVusers,
@@ -873,7 +875,7 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
     const rate = pattern.error_pct ?? (metrics?.total_transactions ? pattern.count / metrics.total_transactions * 100 : 0)
     const group = pattern.affected_groups?.join(', ') || 'Multiple groups'
     return {
-      id: `live-${index}-${pattern.signature}`,
+      id: `live-${pattern.signature || `pattern-${index}`}`,
       signature: pattern.signature,
       title: pattern.signature || `Error pattern ${index + 1}`,
       group,
@@ -1184,9 +1186,9 @@ export default function CommandCenterPrototype({
   const liveMode = Boolean(testId && activeLiveTest)
   const emptyMode = !prototypeMode && !hasLiveRoute && !activeLiveTest
   const loadingTest = useMemo<TestSummary>(() => ({
-    ...MOCK_TEST,
-    id: testId || MOCK_TEST.id,
-    ref_key: testId || MOCK_TEST.ref_key,
+    ...EMPTY_COMMAND_CENTER_TEST,
+    id: testId || '',
+    ref_key: testId || '',
     name: 'Loading command-center run...',
     status: 'INITIALIZING',
     groups: [],
@@ -1237,6 +1239,10 @@ export default function CommandCenterPrototype({
     [displayTest.live_metrics, emptyMode, hasLiveRoute, liveMode],
   )
   const selectedError = errorPatterns.find(error => error.id === state.selectedErrorId) || errorPatterns[0]
+  useEffect(() => {
+    if (!selectedError || selectedError.id === state.selectedErrorId) return
+    setState(previous => ({ ...previous, selectedErrorId: selectedError.id }))
+  }, [selectedError, state.selectedErrorId])
   const selectedEvidenceCacheKey = liveEvidenceCacheKey(testId || '', selectedError?.signature || '')
   const selectedEvidenceFreshnessKey = liveMode
     ? `${selectedError?.evidenceCount ?? ''}\u0000${selectedError?.latestEvidenceId ?? ''}`
@@ -1316,7 +1322,9 @@ export default function CommandCenterPrototype({
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
-  const remainingSeconds = liveMode ? computeRemainingSeconds(displayTest, runStatus) : emptyMode || runStatus === 'STOPPING' || runStatus === 'ABORTED' ? 0 : 37 * 60 + 18
+  const remainingSeconds = liveMode
+    ? computeRemainingSeconds(displayTest, runStatus)
+    : prototypeMode && runStatus !== 'STOPPING' && runStatus !== 'ABORTED' ? 37 * 60 + 18 : 0
   const historicalRun = liveMode && isHistoricalRunStatus(runStatus)
   const allGraphWallGroupsVisible = groups.length === 0 || graphWallGroups.length === groups.length
   const noGraphWallGroupsVisible = groups.length > 0 && graphWallGroups.length === 0
@@ -1559,7 +1567,8 @@ export default function CommandCenterPrototype({
 
   const changeTarget = (groupName: string, value: number) => {
     const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
-    const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value)
+    const role = displayTest.groups.find(group => group.name === groupName)?.role
+    const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value, role)
     setState(prev => ({
       ...prev,
       vuserTargets: { ...prev.vuserTargets, [groupName]: target },
@@ -1589,7 +1598,8 @@ export default function CommandCenterPrototype({
 
   const applyTarget = async (groupName: string, value: number) => {
     const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
-    const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value)
+    const role = displayTest.groups.find(group => group.name === groupName)?.role
+    const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value, role)
     if (targetMode === 'tps' && target <= 0) {
       setState(prev => ({ ...prev, feedback: `${groupName} target TPS must be greater than zero.` }))
       return
@@ -1693,9 +1703,9 @@ export default function CommandCenterPrototype({
         totalCurrent={totalCurrent}
         totalTarget={totalTarget}
         targetMode={targetMode}
-        errorPct={displayTest.live_metrics?.error_pct ?? MOCK_LIVE_METRICS.error_pct}
+        errorPct={displayTest.live_metrics?.error_pct}
         feedback={feedback}
-        historicalRun={historicalRun}
+        historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
         onStart={() => { void startRun() }}
         onPauseResume={() => { void togglePause() }}
         onStop={() => { void stopRun() }}
@@ -1745,6 +1755,7 @@ export default function CommandCenterPrototype({
           variant={variant}
           onVariantChange={changeVariant}
           groups={groups}
+          testGroups={displayTest.groups}
           metrics={displayTest.live_metrics}
           metricsHistory={liveMode ? localMetricsHistory : []}
           errorPatterns={errorPatterns}
@@ -1879,7 +1890,7 @@ interface RunControlShelfProps {
   totalCurrent: number
   totalTarget: number
   targetMode: CommandGroup['targetMode']
-  errorPct: number
+  errorPct?: number
   feedback: string
   historicalRun?: boolean
   onStart: () => void
@@ -1931,7 +1942,7 @@ function RunControlShelf({
           value={targetMode === 'tps' ? formatNumber(totalTarget, 1) : `${formatNumber(totalTarget)} VU`}
           tone="accent"
         />
-        <MetricPill label="Error Rate" value={formatPercent(errorPct)} tone="danger" />
+        <MetricPill label="Error Rate" value={formatOptionalPercent(errorPct)} tone="danger" />
       </div>
 
       <div className="command-run-actions">
@@ -2083,6 +2094,7 @@ interface OpsCockpitViewProps {
   variant: VariantId
   onVariantChange: (variant: VariantId) => void
   groups: CommandGroup[]
+  testGroups: TestGroup[]
   metrics?: LiveMetrics
   metricsHistory?: MetricsHistoryPoint[]
   errorPatterns: ErrorPattern[]
@@ -2126,6 +2138,7 @@ function OpsCockpitView({
   variant,
   onVariantChange,
   groups,
+  testGroups,
   metrics,
   metricsHistory,
   errorPatterns,
@@ -2170,6 +2183,7 @@ function OpsCockpitView({
           />
           <LoadModelPanel
             groups={groups}
+            testGroups={testGroups}
             runStatus={runStatus}
             totalDurationSeconds={totalDurationSeconds}
             remainingSeconds={remainingSeconds}
@@ -3509,25 +3523,6 @@ function HeroMetric({ label, value, tone, hint }: { label: string; value: string
   )
 }
 
-interface LoadModelPoint {
-  pct: number
-  planned: number
-  phase: string
-}
-
-function buildLoadModelProfile(totalTarget: number): LoadModelPoint[] {
-  const target = Math.max(0, totalTarget)
-  return [
-    { pct: 0, planned: 0, phase: 'Start' },
-    { pct: 12, planned: Math.round(target * 0.28), phase: 'Ramp' },
-    { pct: 24, planned: Math.round(target * 0.58), phase: 'Ramp' },
-    { pct: 40, planned: target, phase: 'At target' },
-    { pct: 78, planned: target, phase: 'Hold' },
-    { pct: 90, planned: Math.round(target * 0.72), phase: 'Ramp down' },
-    { pct: 100, planned: 0, phase: 'End' },
-  ]
-}
-
 function plannedLoadAtProgress(profile: LoadModelPoint[], progressPct: number) {
   if (profile.length === 0) return 0
   const progress = clampPercent(progressPct)
@@ -3550,11 +3545,13 @@ function loadPhaseAtProgress(profile: LoadModelPoint[], progressPct: number) {
 
 function LoadModelPanel({
   groups,
+  testGroups,
   runStatus,
   totalDurationSeconds,
   remainingSeconds,
 }: {
   groups: CommandGroup[]
+  testGroups: TestGroup[]
   runStatus: TestStatus
   totalDurationSeconds: number
   remainingSeconds: number
@@ -3562,7 +3559,10 @@ function LoadModelPanel({
   const totalTarget = groups.reduce((sum, group) => sum + (group.targetMode === 'vusers' ? group.target : group.suggestedVusers ?? group.targetVusers ?? group.current), 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const progressPct = loadProgressPercent(totalDurationSeconds, remainingSeconds)
-  const profile = useMemo(() => buildLoadModelProfile(totalTarget), [totalTarget])
+  const profile = useMemo(
+    () => buildLoadModelProfile(testGroups, groups, totalDurationSeconds),
+    [groups, testGroups, totalDurationSeconds],
+  )
   const plannedNow = plannedLoadAtProgress(profile, progressPct)
   const delta = totalCurrent - plannedNow
   const phase = runStatus === 'PAUSED' ? 'Paused' : loadPhaseAtProgress(profile, progressPct)
@@ -3800,7 +3800,7 @@ function GroupLoadTable({
           const committedTarget = isGoalTarget ? group.targetTps ?? group.target : group.targetVusers
           const sliderMax = isGoalTarget
             ? Math.max(100, Math.ceil(Math.max(group.target, indicatorCurrent, committedTarget) * 2))
-            : sharedVuserSliderMax
+            : Math.min(maxVUsersForRole(group.role), sharedVuserSliderMax)
           const sliderMin = isGoalTarget ? 0.1 : 0
           const applyDisabled = (isGoalTarget && group.target <= 0) || (!isGoalTarget && targetTransitionMode === 'gradual' && !rampDurationValid)
           const guardrail = isGoalTarget && (group.minVusers !== undefined || group.maxVusers !== undefined)
@@ -3875,7 +3875,7 @@ function GroupLoadTable({
                     <input
                       type="number"
                       min={sliderMin}
-                      max={isGoalTarget ? 100000 : 2400}
+                      max={isGoalTarget ? 100000 : maxVUsersForRole(group.role)}
                       step={isGoalTarget ? 0.1 : 1}
                       aria-label={`${group.name} target ${isGoalTarget ? 'TPS' : 'VUsers'}`}
                       value={group.target}

@@ -3293,6 +3293,73 @@ func TestLoadStoredTestHistoryTrimsHistoryWindow(t *testing.T) {
 	}
 }
 
+func TestTerminalHistoryHydratesLatestAtBootAndUsesBoundedOnDemandCache(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	endedAt := now.Add(time.Minute)
+	store := &metricsStoreSpy{
+		listedTests: []*storage.TestRecord{{
+			ID: "terminal-history", Name: "terminal", Status: "COMPLETE", StartTime: now, EndTime: &endedAt,
+		}},
+		historyByTestID: map[string][]any{
+			"terminal-history": {
+				map[string]any{"timestamp": now, "total_transactions": float64(1)},
+				map[string]any{"timestamp": endedAt, "total_transactions": float64(2)},
+			},
+		},
+	}
+	runner := NewTestRunner(2, NewHub(), store)
+	canonical := runner.tests["terminal-history"]
+	if canonical == nil || len(canonical.History) != 1 || canonical.History[0].TotalTx != 2 {
+		t.Fatalf("boot terminal history = %#v, want latest point only", canonical)
+	}
+	if store.limitedHistoryCalls != 1 || store.limitedHistoryLimit != 1 {
+		t.Fatalf("boot history calls/limit = %d/%d, want 1/1", store.limitedHistoryCalls, store.limitedHistoryLimit)
+	}
+	if len(canonical.Sparkline) != 1 {
+		t.Fatalf("boot terminal sparkline = %#v, want latest point only", canonical.Sparkline)
+	}
+
+	first, ok := runner.GetTest("terminal-history")
+	if !ok || len(first.History) != 2 {
+		t.Fatalf("first on-demand history = %#v, want both points", first)
+	}
+	first.History[0].TotalTx = 999
+	second, ok := runner.GetTest("terminal-history")
+	if !ok || len(second.History) != 2 || second.History[0].TotalTx != 1 {
+		t.Fatalf("cached history snapshot leaked caller mutation: %#v", second)
+	}
+	if store.limitedHistoryCalls != 2 || store.limitedHistoryLimit != maxManagedTestHistory {
+		t.Fatalf("on-demand history calls/limit = %d/%d, want one cached load at %d", store.limitedHistoryCalls, store.limitedHistoryLimit, maxManagedTestHistory)
+	}
+}
+
+func TestCompactTerminalManagedTestReleasesHistoryAndRuntimeState(t *testing.T) {
+	points := []*LiveMetrics{{TotalTx: 1}, {TotalTx: 2}, {TotalTx: 3}}
+	testRun := &ManagedTest{
+		Status:         "COMPLETE",
+		History:        points,
+		historyBytes:   999,
+		historyWeights: []int64{111, 222, 333},
+		Groups:         []TestGroup{{script: &dsl.Script{}, runtimeSecretValues: map[string]string{"token": "value"}}},
+		groupSpecs:     []engine.GroupConfig{{Name: "group"}},
+		multiEngine:    &engine.MultiGroupEngine{},
+		goalControl:    &goalControllerState{},
+	}
+	compactTerminalManagedTestLocked(testRun)
+	if len(testRun.History) != 1 || testRun.History[0].TotalTx != 3 {
+		t.Fatalf("compacted history = %#v, want latest point", testRun.History)
+	}
+	if len(testRun.historyWeights) != 1 || testRun.historyBytes != testRun.historyWeights[0] {
+		t.Fatalf("compacted history accounting = bytes:%d weights:%#v", testRun.historyBytes, testRun.historyWeights)
+	}
+	if testRun.groupSpecs != nil || testRun.multiEngine != nil || testRun.goalControl != nil || testRun.Groups[0].script != nil || testRun.Groups[0].runtimeSecretValues != nil {
+		t.Fatalf("terminal runtime state was retained: specs=%#v group=%#v", testRun.groupSpecs, testRun.Groups[0])
+	}
+	if len(testRun.Sparkline) != 3 || testRun.Sparkline[2].TPS != 0 {
+		t.Fatalf("terminal sparkline = %#v, want bounded pre-compaction evidence", testRun.Sparkline)
+	}
+}
+
 func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *testing.T) {
 	store := &metricsStoreSpy{historyByTestID: map[string][]any{
 		"test-1": {

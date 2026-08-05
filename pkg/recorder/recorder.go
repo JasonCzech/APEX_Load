@@ -609,6 +609,10 @@ func (s *Session) snapshotSince(seq int) *Session {
 }
 
 func (s *Session) snapshotWithOptions(includeRequests bool, sinceSeq int) *Session {
+	return s.snapshotWindow(includeRequests, sinceSeq, 0)
+}
+
+func (s *Session) snapshotWindow(includeRequests bool, sinceSeq int, tail int) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := &Session{
@@ -624,8 +628,12 @@ func (s *Session) snapshotWithOptions(includeRequests bool, sinceSeq int) *Sessi
 		Filters:      s.Filters,
 	}
 	if includeRequests && len(s.Requests) > 0 {
-		cp.Requests = make([]RecordedRequest, 0, len(s.Requests))
-		for _, request := range s.Requests {
+		start := 0
+		if tail > 0 && len(s.Requests) > tail {
+			start = len(s.Requests) - tail
+		}
+		cp.Requests = make([]RecordedRequest, 0, len(s.Requests)-start)
+		for _, request := range s.Requests[start:] {
 			if sinceSeq > 0 && request.Seq <= sinceSeq {
 				continue
 			}
@@ -646,6 +654,12 @@ func (r *Recorder) GetSession(id string) (*Session, bool) {
 }
 
 func (r *Recorder) GetSessionWithOptions(id string, includeRequests bool, sinceSeq int) (*Session, bool) {
+	return r.GetSessionWindow(id, includeRequests, sinceSeq, 0)
+}
+
+// GetSessionWindow returns a bounded tail when tail is positive. The total
+// RequestCount and LastSeq still describe the complete session.
+func (r *Recorder) GetSessionWindow(id string, includeRequests bool, sinceSeq int, tail int) (*Session, bool) {
 	r.mu.RLock()
 	s, ok := r.sessions[id]
 	r.mu.RUnlock()
@@ -653,10 +667,10 @@ func (r *Recorder) GetSessionWithOptions(id string, includeRequests bool, sinceS
 		return nil, false
 	}
 	if sinceSeq > 0 {
-		return s.snapshotSince(sinceSeq), true
+		return s.snapshotWindow(true, sinceSeq, tail), true
 	}
 	if includeRequests {
-		return s.snapshot(), true
+		return s.snapshotWindow(true, 0, tail), true
 	}
 	return s.summarySnapshot(), true
 }

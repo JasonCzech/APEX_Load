@@ -157,6 +157,16 @@ describe('DurationField', () => {
     })
     expect(onChange).toHaveBeenLastCalledWith(serialized)
   })
+
+  it('retains the selected unit while the numeric value is cleared', async () => {
+    let value = '30s'
+    const onChange = vi.fn((next: string) => { value = next })
+    await act(async () => root.render(<DurationField label="Duration" value={value} onChange={onChange} />))
+    const input = container.querySelector<HTMLInputElement>('input')!
+    await act(async () => setInputValue(input, ''))
+    await act(async () => root.render(<DurationField label="Duration" value={value} onChange={onChange} />))
+    expect(container.querySelector<HTMLSelectElement>('select')?.value).toBe('s')
+  })
 })
 
 function setInputValue(input: HTMLInputElement, value: string) {

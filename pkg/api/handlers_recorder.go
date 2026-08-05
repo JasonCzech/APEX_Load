@@ -116,6 +116,7 @@ func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
 	sinceSeq := 0
+	tail := 0
 	if rawSince := strings.TrimSpace(r.URL.Query().Get("since")); rawSince != "" {
 		parsed, err := strconv.Atoi(rawSince)
 		if err != nil || parsed < 0 {
@@ -125,7 +126,16 @@ func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
 		sinceSeq = parsed
 		includeRequests = true
 	}
-	session, ok := s.recorder.GetSessionWithOptions(id, includeRequests, sinceSeq)
+	if rawTail := strings.TrimSpace(r.URL.Query().Get("tail")); rawTail != "" {
+		parsed, err := strconv.Atoi(rawTail)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "tail must be between 1 and 100")
+			return
+		}
+		tail = parsed
+		includeRequests = true
+	}
+	session, ok := s.recorder.GetSessionWindow(id, includeRequests, sinceSeq, tail)
 	if !ok {
 		writeError(w, http.StatusNotFound, "recording session not found")
 		return

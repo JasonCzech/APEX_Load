@@ -229,6 +229,13 @@ describe('dslLineStatus', () => {
     ])
     expect(withoutOrigin).toEqual([])
   })
+
+  it('indexes a section-level mapping as covering every node in that section', () => {
+    const { withoutOrigin } = dslLineStatus(ranges, [
+      mapping({ target_path: 'actions', status: 'converted' }),
+    ])
+    expect(withoutOrigin).toEqual([])
+  })
 })
 
 describe('mappingForSourceLine / mappingForDslLine', () => {

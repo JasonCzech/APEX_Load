@@ -679,6 +679,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
               ? NETWORK_ACTION_TYPES
               : HTTP_ACTION_TYPES
   const actionTypeLabel = isBrowserScript || isJmsScript || isWebSocketScript || isGrpcScript || isDatabaseScript || isNetworkScript ? 'Action Type' : 'Method'
+  const selectableActionTypes = actionTypes.includes(action.type) ? actionTypes : [action.type, ...actionTypes]
 
   // http_oauth2_token is an engine action driven by params (no target/headers/body),
   // so it gets a dedicated field editor instead of the generic HTTP request inputs.
@@ -694,7 +695,7 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
       <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
       <label><span>{actionTypeLabel}</span>
         <select value={action.type} onChange={e => onUpdate(index, 'type', e.target.value)}>
-          {actionTypes.map(type => <option key={type}>{type}</option>)}
+          {selectableActionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
       </label>
       <label><span>Transaction</span>

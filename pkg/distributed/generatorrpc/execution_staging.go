@@ -304,6 +304,9 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		if current.executionGeneration != request.GetExecutionGeneration() {
 			return assignmentStageDecision{err: status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", current.executionGeneration), availableCapacity: available}
 		}
+		if current.requireTestExecutionLease != request.GetRequireTestExecutionLease() {
+			return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, "all groups in a test must use the same assignment lease policy"), availableCapacity: available}
+		}
 		if existing, groupExists := current.groups[request.GetGroupName()]; groupExists {
 			existingFingerprint, fingerprintExists := current.groupAssignments[request.GetGroupName()]
 			existingSecretBundleID := current.groupSecretBundleIDs[request.GetGroupName()]
@@ -584,6 +587,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	next.testID = request.GetTestId()
 	next.lifecycle = plan.nextLifecycle
 	next.executionGeneration = request.GetExecutionGeneration()
+	next.requireTestExecutionLease = request.GetRequireTestExecutionLease()
 	next.committed = plan.nextCommitted
 	next.paused = plan.startPaused
 	next.duration = plan.nextDuration
@@ -741,6 +745,7 @@ func assignmentControlFingerprint(assignment assignedTest, exists bool) [sha256.
 	fingerprintWriteString(h, assignment.testID)
 	fingerprintWriteUint64(h, uint64(assignment.lifecycle))
 	fingerprintWriteUint64(h, assignment.executionGeneration)
+	fingerprintWriteBool(h, assignment.requireTestExecutionLease)
 	fingerprintWriteUint64(h, uint64(uint32(assignment.vuserCount)))
 	fingerprintWriteBool(h, assignment.paused)
 	fingerprintWriteBool(h, assignment.committed)

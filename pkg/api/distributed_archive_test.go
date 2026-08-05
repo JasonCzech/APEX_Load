@@ -942,6 +942,27 @@ func TestMergeRemoteArchiveIntervalSummariesOverlaysTimeVaryingControllerTargets
 	}
 }
 
+func TestTerminalArchiveTargetSnapshotSurvivesManagedHistoryCompaction(t *testing.T) {
+	base := time.Date(2026, 8, 3, 15, 0, 0, 0, time.UTC)
+	first := &LiveMetrics{Timestamp: base, TargetTPS: 5, GroupMetrics: map[string]*GroupLiveMetrics{"buyers": {Name: "buyers", TargetTPS: 3}}}
+	second := &LiveMetrics{Timestamp: base.Add(time.Second), TargetTPS: 10, GroupMetrics: map[string]*GroupLiveMetrics{"buyers": {Name: "buyers", TargetTPS: 7}}}
+	test := &ManagedTest{ID: "failed-history", Status: "RUNNING", History: []*LiveMetrics{first, second}, LiveMetrics: second}
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.tests[test.ID] = test
+
+	targetHistory := snapshotRemoteArchiveTargetHistory(runner, test)
+	runner.mu.Lock()
+	test.Status = "FAILED"
+	compactTerminalManagedTestLocked(test)
+	runner.mu.Unlock()
+	if len(test.History) != 1 {
+		t.Fatalf("terminal history length = %d, want compacted latest point", len(test.History))
+	}
+	if len(targetHistory) != 2 || targetHistory[0].targetTPS != 5 || targetHistory[1].targetTPS != 10 {
+		t.Fatalf("pre-terminal target snapshot = %#v, want both controller intervals", targetHistory)
+	}
+}
+
 func TestMergeRemoteArchiveIntervalSummariesPairsPeriodicAndTerminalDrainsByGenerator(t *testing.T) {
 	root := t.TempDir()
 	base := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)

@@ -340,6 +340,28 @@ export interface GitHubProjectPolicy {
   default_repo?: string
   default_branch?: string
   default_sync_directory?: string
+  actions?: GitHubActionsPolicy
+}
+
+export interface GitHubActionsPolicy {
+  enabled?: boolean
+  issuer?: string
+  server_url?: string
+  audience?: string
+  allowed_repository_ids?: string[]
+  allowed_repositories?: string[]
+  allowed_refs?: string[]
+  allowed_workflow_refs?: string[]
+  allowed_environments?: string[]
+  required_runner_environment?: string
+  max_vusers?: number
+  max_duration_minutes?: number
+  allowed_protocols?: string[]
+  allowed_target_hosts?: string[]
+  checks_enabled?: boolean
+  revision?: number
+  updated_at?: string
+  updated_by?: string
 }
 
 export interface Application {

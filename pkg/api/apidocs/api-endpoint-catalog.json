@@ -40,7 +40,7 @@
       "category": "AI Assistance",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -60,7 +60,7 @@
       "category": "AI Assistance",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "DELETE",
@@ -90,7 +90,7 @@
       "category": "Workspace \u0026 Assets",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -550,7 +550,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -1050,7 +1050,7 @@
       "category": "Data \u0026 Parameters",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -1980,7 +1980,7 @@
       "category": "Script Library",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -2590,7 +2590,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -2610,7 +2610,7 @@
       "category": "Recording \u0026 Replay",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "DELETE",
@@ -2990,7 +2990,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -3330,7 +3330,7 @@
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -3350,7 +3350,7 @@
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",
@@ -4530,7 +4530,7 @@
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "POST",
@@ -5030,7 +5030,7 @@
       "category": "Operations \u0026 Observability",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin"
     },
     {
       "method": "GET",

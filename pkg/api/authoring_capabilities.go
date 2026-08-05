@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -340,7 +342,18 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 	}
 }
 
-func authoringCapabilityResponse() AuthoringCapabilityResponse {
+func authoringCapabilityResponse(projectIDs ...string) AuthoringCapabilityResponse {
+	projectID := ""
+	if len(projectIDs) > 0 {
+		projectID = normalizeProjectID(projectIDs[0])
+	}
+	aiPolicy := buildAIPolicyResponse(projectID, time.Now().UTC())
+	aiStatus := "disabled"
+	aiNotes := []string{"AI authoring is disabled by the current global, project, or provider policy."}
+	if aiPolicy.Enabled && stringSliceContainsFold(aiPolicy.AllowedProviders, defaultAIProvider) {
+		aiStatus = "active"
+		aiNotes = []string{"Deterministic-local authoring is available; external providers remain policy-gated."}
+	}
 	sources := []AuthoringSourceCapability{
 		{
 			Source:      "enterprise_script_archive",
@@ -531,7 +544,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 		{
 			Source:      "ai_generated",
 			DisplayName: "AI Generated",
-			Status:      "planned",
+			Status:      aiStatus,
 			Acquisition: []string{"prompt", "jira_story", "openapi", "har"},
 			Features: AuthoringFeatures{
 				DraftValidation:       true,
@@ -545,7 +558,7 @@ func authoringCapabilityResponse() AuthoringCapabilityResponse {
 				ApprovalGateCandidate: true,
 			},
 			HealthInputs: []string{"validation_issues", "provenance", "diff_review", "replay_readiness"},
-			Notes:        []string{"Generation guardrails are not complete; planned sources must satisfy this contract before save."},
+			Notes:        aiNotes,
 		},
 	}
 	sourceMap := make(map[string]AuthoringFeatures, len(sources))

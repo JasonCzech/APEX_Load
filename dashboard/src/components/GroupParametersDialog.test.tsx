@@ -99,10 +99,10 @@ describe('GroupParametersDialog', () => {
     })
     const valuesLabel = Array.from(dialog.querySelectorAll('label')).find(label => label.textContent?.includes('Inline Values'))
     expect(valuesLabel).toBeDefined()
-    const valuesInput = valuesLabel?.querySelector('input') as HTMLInputElement
+    const valuesInput = valuesLabel?.querySelector('textarea') as HTMLTextAreaElement
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
-      setter?.call(valuesInput, 'east, west, central')
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(valuesInput, 'east\nwest\ncentral')
       valuesInput.dispatchEvent(new Event('input', { bubbles: true }))
       valuesInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
@@ -191,9 +191,9 @@ describe('GroupParametersDialog', () => {
     })
     const valuesInput = Array.from(dialog.querySelectorAll('label'))
       .find(label => label.textContent?.includes('Inline Values'))
-      ?.querySelector('input') as HTMLInputElement
+      ?.querySelector('textarea') as HTMLTextAreaElement
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(valuesInput, 'client-value')
       valuesInput.dispatchEvent(new Event('input', { bubbles: true }))
       valuesInput.dispatchEvent(new Event('change', { bubbles: true }))
@@ -250,9 +250,9 @@ describe('GroupParametersDialog', () => {
     })
     const valuesInput = Array.from(dialog.querySelectorAll('label'))
       .find(label => label.textContent?.includes('Inline Values'))
-      ?.querySelector('input') as HTMLInputElement
+      ?.querySelector('textarea') as HTMLTextAreaElement
     await act(async () => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
       setter?.call(valuesInput, 'client-value')
       valuesInput.dispatchEvent(new Event('input', { bubbles: true }))
       valuesInput.dispatchEvent(new Event('change', { bubbles: true }))

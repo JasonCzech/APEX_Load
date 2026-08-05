@@ -3785,6 +3785,104 @@ describe("RecordingStudio", () => {
     ).not.toBeNull();
   });
 
+  it("loads only a bounded request tail for the live recorder feed", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+      active: {
+        id: "rec-live",
+        name: "Live Capture",
+        status: "recording",
+        request_count: 250,
+        started_at: "2026-05-12T20:00:00Z",
+      },
+      browser: {
+        availability: { available: true },
+        active: null,
+        install: { status: "idle" },
+      },
+    });
+    apiMock.getRecording.mockResolvedValue({
+      id: "rec-live",
+      name: "Live Capture",
+      status: "recording",
+      request_count: 250,
+      last_seq: 250,
+      started_at: "2026-05-12T20:00:00Z",
+      requests: [],
+      filters: { exclude_static: true },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+
+    expect(apiMock.getRecording).toHaveBeenCalledWith("rec-live", {
+      tail: 20,
+    });
+    expect(
+      container.querySelector(".rec-active-stats .rec-stat")?.textContent,
+    ).toBe("250Requests");
+  });
+
+  it("fetches the complete request list before opening a summary session", async () => {
+    apiMock.listRecordings.mockResolvedValue({
+      sessions: [
+        {
+          id: "rec-summary",
+          name: "Large Capture",
+          status: "stopped",
+          request_count: 125,
+          started_at: "2026-05-12T20:00:00Z",
+          filters: { exclude_static: true },
+        },
+      ],
+    });
+    apiMock.getRecording.mockResolvedValue({
+      id: "rec-summary",
+      name: "Large Capture",
+      status: "stopped",
+      request_count: 125,
+      started_at: "2026-05-12T20:00:00Z",
+      requests: Array.from({ length: 125 }, (_, index) => ({
+        seq: index + 1,
+        timestamp: "2026-05-12T20:00:01Z",
+        method: "GET",
+        url: `https://shop.example.com/items/${index + 1}`,
+        path: `/items/${index + 1}`,
+        host: "shop.example.com",
+        status_code: 200,
+        response_time_ms: 10,
+        content_type: "application/json",
+        body: "",
+        think_time_ms: 0,
+        is_static: false,
+      })),
+      filters: { exclude_static: true },
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio />);
+    });
+    await flushPromises();
+    const select = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Select recording session Large Capture"]',
+    );
+    expect(select).not.toBeNull();
+
+    await act(async () => {
+      select?.click();
+    });
+    await flushPromises();
+
+    expect(apiMock.getRecording).toHaveBeenCalledWith("rec-summary", {
+      includeRequests: true,
+    });
+    expect(container.textContent).toContain("Request Detail: Large Capture");
+    expect(container.textContent).toContain("125 requests");
+  });
+
   it("starts the new project refresh immediately and ignores the previous project response", async () => {
     let resolveOld!: (value: { sessions: any[] }) => void;
     const oldRequest = new Promise<{ sessions: any[] }>((resolve) => {

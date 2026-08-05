@@ -73,7 +73,7 @@ func buildAndAttachMultiScriptImportPreflight(aggregate *dsl.Script, scripts []*
 }
 
 func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, authoringCapabilityResponse())
+	writeJSON(w, http.StatusOK, authoringCapabilityResponse(r.URL.Query().Get("project_id")))
 }
 
 func parseBoolDefault(value string, defaultValue bool) bool {

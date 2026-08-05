@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TimeslotsPanel from './TimeslotsPanel'
+import { zonedLocalToISO } from './timeslotTimezoneModel'
 import { CapacityTimeslot } from '../types'
 import { ApiError } from '../hooks/apiClient'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
@@ -78,6 +79,12 @@ function slot(overrides: Partial<CapacityTimeslot>): CapacityTimeslot {
 }
 
 describe('TimeslotsPanel', () => {
+  it('interprets reservation wall-clock input in the selected timezone', () => {
+    expect(zonedLocalToISO('2026-08-04T09:30', 'UTC')).toBe('2026-08-04T09:30:00.000Z')
+    expect(zonedLocalToISO('2026-08-04T09:30', 'America/New_York')).toBe('2026-08-04T13:30:00.000Z')
+    expect(zonedLocalToISO('2026-03-08T02:30', 'America/New_York')).toBe('')
+    expect(zonedLocalToISO('2026-11-01T01:30', 'America/New_York')).toBe('2026-11-01T05:30:00.000Z')
+  })
   it('prompts to select a project when none is active and does not fetch', async () => {
     await act(async () => {
       root.render(<TimeslotsPanel canManage />)

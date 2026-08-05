@@ -588,7 +588,7 @@ func TestSQLiteStoreServiceAccountsAndAuditEvents(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	expiresAt := now.Add(24 * time.Hour)
 	keyRotatedAt := now.Add(-24 * time.Hour)
-	if err := store.SaveProject(&Project{ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
+	if err := store.SaveProject(&Project{ID: "project-a", DomainID: DefaultDomainID, Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("SaveProject returned error: %v", err)
 	}
 	account := &ServiceAccount{
@@ -801,6 +801,9 @@ func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
 	defer store.Close()
 
 	now := time.Now().UTC().Truncate(time.Second)
+	if err := store.SaveDomain(&Domain{ID: "domain-a", Name: "Domain A", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveDomain returned error: %v", err)
+	}
 	if err := store.SaveProject(&Project{ID: "project-a", Name: "Project A", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("SaveProject returned error: %v", err)
 	}
@@ -871,6 +874,35 @@ func TestSQLiteStoreUsersRoleBindingsAndAuditFilters(t *testing.T) {
 	}
 	if len(roleFiltered) != 1 || roleFiltered[0].ID != user.ID {
 		t.Fatalf("role filtered users = %#v, want alice", roleFiltered)
+	}
+	projectFiltered, err := store.ListUsers(UserFilter{ProjectID: "project-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers project returned error: %v", err)
+	}
+	if len(projectFiltered) != 1 || projectFiltered[0].ID != user.ID {
+		t.Fatalf("project filtered users = %#v, want alice", projectFiltered)
+	}
+	if count, err := store.CountUsers(UserFilter{ProjectID: "missing-project"}); err != nil || count != 0 {
+		t.Fatalf("missing project count = %d, %v, want 0", count, err)
+	}
+	domainFiltered, err := store.ListUsers(UserFilter{DomainID: DefaultDomainID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers project-derived domain returned error: %v", err)
+	}
+	if len(domainFiltered) != 1 || domainFiltered[0].ID != user.ID {
+		t.Fatalf("project-derived domain filtered users = %#v, want alice", domainFiltered)
+	}
+	if err := store.SaveUserRoleBinding(&UserRoleBinding{
+		ID: "binding-domain", UserID: user.ID, ScopeType: "domain", ScopeID: "domain-a", Role: "viewer", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveUserRoleBinding domain returned error: %v", err)
+	}
+	domainFiltered, err = store.ListUsers(UserFilter{DomainID: "domain-a", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListUsers domain returned error: %v", err)
+	}
+	if len(domainFiltered) != 1 || domainFiltered[0].ID != user.ID {
+		t.Fatalf("domain filtered users = %#v, want alice", domainFiltered)
 	}
 	scopeFiltered, err := store.ListUsers(UserFilter{Query: "project-a", Limit: 10})
 	if err != nil {

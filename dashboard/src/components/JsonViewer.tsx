@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { interactiveElementProps } from './interactiveElementProps'
+import { collectJsonViewerVisiblePaths } from './jsonViewerModel'
 import './JsonViewer.css'
 
 interface JsonViewerProps {
@@ -294,37 +295,7 @@ export default function JsonViewer({ data, defaultExpandedDepth = 2, autoExpandP
   }
 
   const visiblePaths = useMemo(() => {
-    if (!lowerFilter) return null
-    const paths = new Set<string>()
-
-    function traverse(value: unknown, currentPath: string, name?: string): boolean {
-      let matches = false
-      if (name && name.toLowerCase().includes(lowerFilter)) matches = true
-
-      if (value === null) {
-        if ('null'.includes(lowerFilter)) matches = true
-      } else if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i++) {
-          const childPath = `${currentPath}[${i}]`
-          if (traverse(value[i], childPath)) matches = true
-        }
-      } else if (typeof value === 'object') {
-        for (const [k, v] of Object.entries(value)) {
-          const childPath = `${currentPath}${formatPathKey(k)}`
-          if (traverse(v, childPath, k)) matches = true
-        }
-      } else {
-        if (String(value).toLowerCase().includes(lowerFilter)) matches = true
-      }
-
-      if (matches) {
-        paths.add(currentPath)
-      }
-      return matches
-    }
-
-    traverse(data, '$')
-    return paths
+    return collectJsonViewerVisiblePaths(data, lowerFilter)
   }, [data, lowerFilter])
 
   return (

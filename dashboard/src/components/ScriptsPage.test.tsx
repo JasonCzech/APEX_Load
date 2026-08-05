@@ -387,12 +387,18 @@ describe('ScriptsPage', () => {
   })
 
   it('preserves the script project when opening Project Secrets from library health', async () => {
-    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
-      script_id: 'script-1',
+    apiMock.listScripts.mockResolvedValueOnce({
+      scripts: [{
+        ...scriptRecord('script-1', 'Existing Script', 'project-1'),
+        script: {
+          name: 'Existing Script', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+          actions: [{ name: 'Login', type: 'GET', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+        },
+      }],
+      count: 1,
+    })
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({
       project_id: 'project-1',
-      required: ['LOGIN_TOKEN'],
-      configured: [],
-      missing: ['LOGIN_TOKEN'],
       secrets: [{ name: 'LOGIN_TOKEN', configured: false }],
       capabilities: {
         provider: 'encrypted_database',
@@ -423,7 +429,7 @@ describe('ScriptsPage', () => {
     expect(window.localStorage.getItem('apexload.settings.projectId')).toBe('project-1')
   })
 
-  it('bounds secret-status concurrency and publishes each completed row incrementally', async () => {
+  it('loads script secret readiness through one project-scoped batch', async () => {
     const scripts = Array.from({ length: 20 }, (_, index) => ({
       ...scriptRecord(`script-${index + 1}`, `Script ${index + 1}`, 'project-1'),
       script: {
@@ -435,17 +441,11 @@ describe('ScriptsPage', () => {
       },
     }))
     apiMock.listScripts.mockResolvedValueOnce({ scripts, count: scripts.length })
-    let active = 0
-    let maxActive = 0
-    const resolvers = new Map<string, (value: unknown) => void>()
-    apiMock.getScriptSecretStatus.mockImplementation((scriptId: string) => new Promise(resolve => {
-      active += 1
-      maxActive = Math.max(maxActive, active)
-      resolvers.set(scriptId, value => {
-        active -= 1
-        resolve(value)
-      })
-    }))
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({
+      project_id: 'project-1',
+      secrets: Array.from({ length: 20 }, (_, index) => ({ name: `TOKEN_${index + 1}`, configured: index === 0 })),
+      capabilities: { provider: 'encrypted_database', writable: true },
+    })
 
     await act(async () => {
       root.render(<ScriptsPage />)
@@ -453,31 +453,50 @@ describe('ScriptsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(8)
-    expect(maxActive).toBe(8)
-    const firstPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 1'))
-    expect(firstPendingRow?.textContent).toContain('Checking secrets')
-
-    await act(async () => {
-      resolvers.get('script-1')?.({
-        script_id: 'script-1',
-        project_id: 'project-1',
-        required: ['TOKEN_1'],
-        configured: ['TOKEN_1'],
-        missing: [],
-        secrets: [{ name: 'TOKEN_1', configured: true }],
-        capabilities: { provider: 'encrypted_database', writable: true },
-      })
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(9)
-    expect(maxActive).toBe(8)
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(1)
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith(
+      'project-1',
+      Array.from({ length: 20 }, (_, index) => `TOKEN_${index + 1}`).sort(),
+    )
     const readyRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 1'))
     const stillPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 2'))
     expect(readyRow?.textContent).not.toContain('Checking secrets')
-    expect(stillPendingRow?.textContent).toContain('Checking secrets')
+    expect(stillPendingRow?.textContent).toContain('1 secret missing')
+  })
+
+  it('canonicalizes every backend-valid secret reference before readiness lookup', async () => {
+    const script = {
+      ...scriptRecord('script-1', 'Canonical Secrets', 'project-1'),
+      script: {
+        name: 'Canonical Secrets',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: '' },
+        actions: [{
+          name: 'Call', type: 'http', target: '/',
+          headers: { Authorization: 'Bearer {{secret.login-token}} {{secret.1token}}' },
+        }],
+      },
+    }
+    apiMock.listScripts.mockResolvedValueOnce({ scripts: [script], count: 1 })
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({
+      project_id: 'project-1',
+      secrets: [
+        { name: 'LOGIN_TOKEN', configured: true },
+        { name: '1TOKEN', configured: true },
+      ],
+      capabilities: { provider: 'encrypted_database', writable: true },
+    })
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['1TOKEN', 'LOGIN_TOKEN'])
+    const row = Array.from(container.querySelectorAll('tr')).find(candidate => candidate.textContent?.includes('Canonical Secrets'))
+    expect(row?.textContent).not.toContain('secret missing')
   })
 
   it('does not issue ID-routed requests or actions for scripts with missing or noncanonical IDs', async () => {
@@ -502,10 +521,8 @@ describe('ScriptsPage', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(1)
-    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledWith('addressable-script')
-    expect(apiMock.getScriptSecretStatus).not.toHaveBeenCalledWith('')
-    expect(apiMock.getScriptSecretStatus).not.toHaveBeenCalledWith(' addressable-script ')
+    expect(apiMock.getScriptSecretStatus).not.toHaveBeenCalled()
+    expect(apiMock.getProjectSecretStatuses).not.toHaveBeenCalled()
 
     const legacyRow = Array.from(container.querySelectorAll('tbody > tr'))
       .find(row => row.textContent?.includes('Legacy Blank ID'))

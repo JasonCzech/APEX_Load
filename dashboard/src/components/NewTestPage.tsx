@@ -1985,11 +1985,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       runtimeChanged = true
     }
     if (groupEditChanges.error_handling) {
-      runtimeSettings.error_handling = {
-        ...(runtimeSettings.error_handling || effectiveRootRuntime.error_handling || {}),
-        continue_on_error: groupEditDraft.continue_on_error === 'true',
-        snapshot_on_error: groupEditDraft.snapshot_on_error === 'true',
+      const errorHandling = { ...(runtimeSettings.error_handling || effectiveRootRuntime.error_handling || {}) }
+      if (groupEditChanges.continue_on_error) {
+        if (groupEditDraft.continue_on_error === '') delete errorHandling.continue_on_error
+        else errorHandling.continue_on_error = groupEditDraft.continue_on_error === 'true'
       }
+      if (groupEditChanges.snapshot_on_error) {
+        if (groupEditDraft.snapshot_on_error === '') delete errorHandling.snapshot_on_error
+        else errorHandling.snapshot_on_error = groupEditDraft.snapshot_on_error === 'true'
+      }
+      if (Object.keys(errorHandling).length > 0) runtimeSettings.error_handling = errorHandling
+      else delete runtimeSettings.error_handling
       runtimeChanged = true
     }
     if (groupEditChanges.browser) {

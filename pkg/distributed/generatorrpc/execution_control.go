@@ -296,6 +296,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 	if assignment.executionGeneration != request.GetExecutionGeneration() {
 		return commitTransition{err: status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)}
 	}
+	if assignment.requireTestExecutionLease && !service.testExecutionLeaseCurrentLocked(testID, assignment.executionGeneration, now) {
+		return commitTransition{err: status.Error(codes.FailedPrecondition, "test assignment execution lease is missing or expired")}
+	}
 	committed, lifecycleErr := coordinator.commit(assignment)
 	if lifecycleErr != nil {
 		return commitTransition{err: status.Error(codes.FailedPrecondition, lifecycleErr.Error())}
@@ -566,6 +569,9 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 
 	assignment, _ = coordinator.beginStopping(testID, assignment.executionGeneration, assignment)
 	service.assignments[testID] = assignment
+	// A positively acknowledged StopTest is itself the assignment fence. Stop
+	// renewing/expiring its loss-tolerance lease while graceful shutdown drains.
+	service.clearTestExecutionLeaseLocked(testID)
 	if request.GetGraceful() && assignment.committed {
 		executionMap := service.executions[testID]
 		if len(executionMap) > 0 {
@@ -603,6 +609,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 	}
 
 	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
+	service.clearTestExecutionLeaseLocked(testID)
 	delete(service.assignments, testID)
 	service.stopCompletionTimerLocked(testID)
 	coordinator.stopStageTimerLocked(testID)

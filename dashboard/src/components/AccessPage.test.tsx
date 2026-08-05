@@ -820,6 +820,125 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('3 users')
   })
 
+  it('scopes authoritative user reconciliation to domain and project filters', async () => {
+    apiMock.listAuthUsers.mockImplementation(async (params?: { domain_id?: string; project_id?: string }) => {
+      if (params?.project_id === 'project-2') {
+        return { users: [], count: 0, total: 0, limit: 50, offset: 0 }
+      }
+      const alice = {
+        id: 'user-1',
+        subject: 'alice',
+        email: 'alice@example.com',
+        display_name: 'Alice Admin',
+        active: true,
+        bindings: [
+          { id: 'binding-1', user_id: 'user-1', scope_type: 'project', scope_id: 'project-1', role: 'editor', created_at: '2026-05-16T00:00:00Z', updated_at: '2026-05-16T00:00:00Z' },
+        ],
+        created_at: '2026-05-16T00:00:00Z',
+        updated_at: '2026-05-18T00:00:00Z',
+      }
+      return { users: [alice], count: 1, total: 1, limit: 50, offset: 0 }
+    })
+
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity={false} canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+
+    const userFilterSelect = (label: string) => Array.from(container.querySelectorAll<HTMLLabelElement>('.access-table-toolbar label'))
+      .find(item => item.querySelector('span')?.textContent === label)
+      ?.querySelector('select') as HTMLSelectElement | undefined
+    const domainSelect = userFilterSelect('Domain')
+    const projectSelect = userFilterSelect('Project')
+    expect(domainSelect).toBeDefined()
+    expect(projectSelect).toBeDefined()
+    if (!domainSelect || !projectSelect) return
+
+    await act(async () => changeSelect(domainSelect, 'domain-1'))
+    const projectOneSelect = userFilterSelect('Project')
+    expect(projectOneSelect).toBeDefined()
+    if (!projectOneSelect) return
+    await act(async () => changeSelect(projectOneSelect, 'project-1'))
+    await flushPromises()
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, domain_id: 'domain-1', project_id: 'project-1' })
+
+    await clickButton(container, 'Onboard Users')
+    const subjectInput = inputByPlaceholder(container, 'oidc-subject-or-upstream-user')
+    expect(subjectInput).toBeDefined()
+    if (!subjectInput) return
+    changeInput(subjectInput, 'cara')
+    await clickButton(container, 'Create User')
+    await flushPromises()
+    expect(tablePrimaryTexts(container)).toContain('Cara QA')
+
+    const projectTwoSelect = userFilterSelect('Project')
+    expect(projectTwoSelect).toBeDefined()
+    if (!projectTwoSelect) return
+    await act(async () => changeSelect(projectTwoSelect, 'project-2'))
+    await flushPromises()
+
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, domain_id: 'domain-1', project_id: 'project-2' })
+    expect(container.querySelector('.access-panel-header')?.textContent).toContain('0 of 0 users')
+    expect(tablePrimaryTexts(container)).not.toContain('Cara QA')
+  })
+
+  it('reloads the current user scope when filters change during a mutation', async () => {
+    const alice = {
+      id: 'user-1',
+      subject: 'alice',
+      email: 'alice@example.com',
+      display_name: 'Alice Admin',
+      active: true,
+      bindings: [
+        { id: 'binding-1', user_id: 'user-1', scope_type: 'project', scope_id: 'project-1', role: 'editor', created_at: '2026-05-16T00:00:00Z', updated_at: '2026-05-16T00:00:00Z' },
+      ],
+      created_at: '2026-05-16T00:00:00Z',
+      updated_at: '2026-05-18T00:00:00Z',
+    }
+    apiMock.listAuthUsers.mockImplementation(async (params?: { project_id?: string }) => (
+      params?.project_id === 'project-2'
+        ? { users: [], count: 0, total: 0, limit: 50, offset: 0 }
+        : { users: [alice], count: 1, total: 1, limit: 50, offset: 0 }
+    ))
+    let resolveDisable: ((user: typeof alice) => void) | undefined
+    apiMock.disableAuthUser.mockImplementation(() => new Promise(resolve => { resolveDisable = resolve }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await act(async () => {
+      root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle canManageUserBindings canViewUserActivity={false} canManageServiceAccounts={false} />)
+    })
+    await flushPromises()
+
+    const userFilterSelect = (label: string) => Array.from(container.querySelectorAll<HTMLLabelElement>('.access-table-toolbar label'))
+      .find(item => item.querySelector('span')?.textContent === label)
+      ?.querySelector('select') as HTMLSelectElement | undefined
+    const projectSelect = userFilterSelect('Project')
+    expect(projectSelect).toBeDefined()
+    if (!projectSelect) return
+
+    await act(async () => changeSelect(projectSelect, 'project-1'))
+    await flushPromises()
+    const removeAccess = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Remove Access')
+    expect(removeAccess).toBeDefined()
+    if (!removeAccess) return
+    await act(async () => removeAccess.click())
+
+    const currentProjectSelect = userFilterSelect('Project')
+    expect(currentProjectSelect).toBeDefined()
+    if (!currentProjectSelect) return
+    await act(async () => changeSelect(currentProjectSelect, 'project-2'))
+    await flushPromises()
+
+    await act(async () => resolveDisable?.({ ...alice, active: false, updated_at: '2026-05-19T00:00:00Z' }))
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({ limit: 50, offset: 0, project_id: 'project-2' })
+    expect(container.querySelector('.access-panel-header')?.textContent).toContain('0 of 0 users')
+    expect(tablePrimaryTexts(container)).not.toContain('Alice Admin')
+  })
+
   it('sorts, filters, selects, and performs service-account lifecycle actions', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => {
@@ -1135,16 +1254,6 @@ describe('AccessPage', () => {
   })
 
   it('reconciles a partially committed binding edit before a safe retry', async () => {
-    const aliceWithoutBindings = {
-      id: 'user-1',
-      subject: 'alice',
-      email: 'alice@example.com',
-      display_name: 'Alice Admin',
-      active: true,
-      bindings: [],
-      created_at: '2026-05-16T00:00:00Z',
-      updated_at: '2026-05-19T00:00:00Z',
-    }
     const replacementBinding = {
       id: 'binding-replacement',
       user_id: 'user-1',
@@ -1186,19 +1295,17 @@ describe('AccessPage', () => {
       await flushPromises()
     }
 
-    apiMock.listAuthUsers.mockResolvedValueOnce({ users: [aliceWithoutBindings], count: 1 })
     await editBinding()
 
-    expect(apiMock.deleteAuthUserBinding).toHaveBeenCalledTimes(1)
+    expect(apiMock.deleteAuthUserBinding).not.toHaveBeenCalled()
     expect(apiMock.createAuthUserBinding).toHaveBeenCalledTimes(1)
-    expect(container.textContent).toContain('Some changes were already applied; current access was reconciled before retrying.')
-    expect(container.querySelector('.access-user-management')?.textContent).toContain('No role bindings assigned.')
+    expect(container.textContent).not.toContain('Some changes were already applied; current access was reconciled before retrying.')
 
-    apiMock.listAuthUsers.mockResolvedValueOnce({
-      users: [{ ...aliceWithoutBindings, bindings: [replacementBinding] }],
-      count: 1,
-    })
-    await editBinding()
+    const retryEditor = container.querySelector('.access-user-management') as HTMLElement | null
+    expect(retryEditor).not.toBeNull()
+    if (!retryEditor) return
+    await clickScopedButton(retryEditor, 'Save Changes')
+    await flushPromises()
 
     expect(apiMock.deleteAuthUserBinding).toHaveBeenCalledTimes(1)
     expect(apiMock.createAuthUserBinding).toHaveBeenCalledTimes(2)

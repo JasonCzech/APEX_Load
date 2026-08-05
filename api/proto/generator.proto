@@ -102,6 +102,9 @@ message WorkAssignment {
   // scenario_id is the stable managed scenario identity exposed to protocol
   // runtimes. It is distinct from the generated script artifact ID.
   string scenario_id = 26;
+  // require_test_execution_lease makes CommitWork fail closed unless this
+  // assignment has a live, explicitly acknowledged run-scoped lease.
+  bool require_test_execution_lease = 27;
 }
 
 message WorkCommitRequest {
@@ -126,6 +129,10 @@ message ExecutionEpochClaim {
   // identifies one durable controller term and lets a replacement generator
   // safely revalidate that same live term without admitting a different owner.
   string execution_lease_owner_id = 3;
+  // test_id requests a run-scoped assignment lease instead of renewing the
+  // process-wide controller epoch. Controllers use this lease to fence one
+  // lost assignment without interrupting unrelated tests on the generator.
+  string test_id = 4;
 }
 
 message ExecutionEpochAck {
@@ -133,6 +140,10 @@ message ExecutionEpochAck {
   uint64 current_generation = 2;
   int64 expires_at_unix_ms = 3;
   string error_message = 4;
+  // Explicit capability acknowledgement. Older generators ignore test_id and
+  // leave this false, so a newer controller cannot mistake a process-epoch
+  // renewal for a run-scoped fence.
+  bool test_lease_accepted = 5;
 }
 
 message RedactionRule {

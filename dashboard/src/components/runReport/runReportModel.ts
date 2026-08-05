@@ -211,25 +211,45 @@ export function mergeTimelineHistory(summaryHistory: MetricsHistoryPoint[], reso
       netErrorsPerSec: point.netErrorsPerSec,
       tcpRetransmitsPerSec: point.tcpRetransmitsPerSec,
       diskIOTimePct: point.diskIOTimePct,
-    } : { ...point })
+    } : {
+      ...point,
+      tps: Number.NaN,
+      avgMs: Number.NaN,
+      errorPct: Number.NaN,
+      p50: Number.NaN,
+      p90: Number.NaN,
+      p95: Number.NaN,
+      p99: Number.NaN,
+      resourceSampleOnly: 1,
+    })
   })
   return Array.from(byTimestamp.values()).sort((left, right) => (left.timestampMs ?? 0) - (right.timestampMs ?? 0))
 }
 
 export function alignBaselineTimeline(current: MetricsHistoryPoint[], baseline: MetricsHistoryPoint[]): MetricsHistoryPoint[] {
   if (current.length === 0 || baseline.length === 0) return current
+  const orderedBaseline = baseline
+    .filter(point => finite(point.timestampMs))
+    .slice()
+    .sort((left, right) => left.timestampMs! - right.timestampMs!)
+  if (orderedBaseline.length === 0) return current
   return current.map(point => {
     if (!finite(point.timestampMs)) return point
-    let nearest: MetricsHistoryPoint | undefined
-    let bestDelta = Infinity
-    for (const baselinePoint of baseline) {
-      if (!finite(baselinePoint.timestampMs)) continue
-      const delta = Math.abs(baselinePoint.timestampMs - point.timestampMs)
-      if (delta < bestDelta) {
-        bestDelta = delta
-        nearest = baselinePoint
-      }
+    const timestamp = point.timestampMs!
+    let low = 0
+    let high = orderedBaseline.length
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2)
+      if (orderedBaseline[middle].timestampMs! < timestamp) low = middle + 1
+      else high = middle
     }
+    const after = orderedBaseline[low]
+    const before = low > 0 ? orderedBaseline[low - 1] : undefined
+    const nearest = !before
+      ? after
+      : !after
+        ? before
+        : timestamp - before.timestampMs! <= after.timestampMs! - timestamp ? before : after
     return nearest
       ? {
           ...point,
@@ -249,6 +269,7 @@ export function buildBreachWindows(history: MetricsHistoryPoint[], p95SlaMs?: nu
   let activeEnd: string | undefined
 
   history.forEach(point => {
+    if (point.resourceSampleOnly === 1) return
     const breached = (finite(p95SlaMs) && finite(point.p95) && point.p95 > p95SlaMs) ||
       (finite(maxErrorPct) && finite(point.errorPct) && point.errorPct > maxErrorPct)
     if (breached) {

@@ -15,6 +15,7 @@ export interface ExecutionPlanEntry {
 export interface ExecutionPlan {
   id: string
   project_id?: string
+  revision: number
   name: string
   description?: string
   entries: ExecutionPlanEntry[]

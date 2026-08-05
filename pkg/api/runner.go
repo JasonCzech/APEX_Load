@@ -215,6 +215,7 @@ type TestRunner struct {
 	projectStore          projectPersistence
 	releaseStore          releasePersistence
 	historyStore          historyPersistence
+	storedHistoryCache    *storedTestHistoryCache
 	archiveStore          archivePersistence
 	githubCheckStore      storage.GitHubEnterpriseStore
 	testNotesStore        testNotesPersistence
@@ -408,18 +409,24 @@ type ManagedTest struct {
 	creationAdopted               bool
 	historyBytes                  int64
 	historyWeights                []int64
-	goalControl                   *goalControllerState
-	executionBackend              testExecutionBackend
-	lastNetworkLatency            *NetworkLatency
-	latencyProbeInFlight          bool
-	latencyEndpointsCache         latencyEndpointCache
-	latencyProbeSamples           map[string][]latencyProbeSample
-	remoteTarget                  string
-	remoteClient                  generatorClient
-	remoteMetricsStream           *generatorrpc.MetricsStream
-	remoteGroupTargets            map[string]string
-	remoteGroupShards             map[string][]GeneratorShardSummary
-	remoteClientsByTarget         map[string]generatorClient
+	// terminalGroupRuntimeTrimmed records that terminal compaction discarded
+	// process-private group material needed to reconstruct groups_json. Legacy
+	// compatibility stores that still require a full-row SaveTest use it to
+	// preserve the immutable durable group snapshot instead of writing the
+	// compacted in-memory projection back over it.
+	terminalGroupRuntimeTrimmed bool
+	goalControl                 *goalControllerState
+	executionBackend            testExecutionBackend
+	lastNetworkLatency          *NetworkLatency
+	latencyProbeInFlight        bool
+	latencyEndpointsCache       latencyEndpointCache
+	latencyProbeSamples         map[string][]latencyProbeSample
+	remoteTarget                string
+	remoteClient                generatorClient
+	remoteMetricsStream         *generatorrpc.MetricsStream
+	remoteGroupTargets          map[string]string
+	remoteGroupShards           map[string][]GeneratorShardSummary
+	remoteClientsByTarget       map[string]generatorClient
 	// remoteArchiveClientsByTarget retains positively stopped evacuation
 	// sources for the final archive merge. They are deliberately excluded from
 	// active topology and every mutable-control fan-out.
@@ -1266,6 +1273,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		projectStore:          store,
 		releaseStore:          store,
 		historyStore:          store,
+		storedHistoryCache:    newStoredTestHistoryCache(),
 		archiveStore:          store,
 		testNotesStore:        store,
 		auditStore:            store,

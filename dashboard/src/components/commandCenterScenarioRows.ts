@@ -4,6 +4,7 @@ export interface CommandGroup {
   key: string
   name: string
   protocol: string
+  role?: 'load' | 'observer'
   current: number
   target: number
   targetVusers: number
@@ -68,7 +69,7 @@ export function buildScenarioRunRows(
     const tps = groupMetrics?.tps ?? group.tps
     const targetTps = group.targetMode === 'tps'
       ? group.targetTps ?? group.target
-      : groupMetrics?.target_tps ?? group.targetTps ?? group.tps * 1.12
+      : groupMetrics?.target_tps ?? group.targetTps
     return {
       id: `group-${group.key}`,
       type: 'Group',

@@ -567,6 +567,15 @@ describe('display granularity', () => {
     expect(out[0].timestampMs).toBe(base)
   })
 
+  it('does not round low error rates down to zero while aggregating', () => {
+    const base = 1_500_000
+    const points = [
+      { ...point(base, 10, 100), errorPct: 0.02 },
+      { ...point(base + 1000, 10, 100), errorPct: 0.04 },
+    ]
+    expect(aggregateByGranularity(points, 5)[0].errorPct).toBeCloseTo(0.03, 8)
+  })
+
   it('keeps separate buckets and is a no-op when finer than the cadence', () => {
     const base = 2_000_000
     const points = [point(base, 10, 100), point(base + 60_000, 40, 400)] // 60s apart

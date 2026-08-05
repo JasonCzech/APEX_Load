@@ -243,8 +243,8 @@ describe('testExecutionMetricsModel', () => {
     expect(mapped[0]).toMatchObject({
       timestampMs: Date.parse('2026-05-12T20:00:01.123Z'),
       vusers: 8,
-      tps: 0,
-      p95: 0,
+      tps: Number.NaN,
+      p95: Number.NaN,
       resourceSampleOnly: 1,
       cpuProcess: 11,
       memProcess: 256,
@@ -557,5 +557,31 @@ describe('recentMetricAverages', () => {
     expect(summary!.avgTps).toBe(10)
     expect(summary!.avgLatency).toBe(100)
     expect(summary!.avgError).toBe(0)
+  })
+
+  it('excludes unmatched resource-only archive points from chart-summary averages', () => {
+    const performancePoint = pt(1_000, 12, 150)
+    const resourceOnlyPoint: MetricsHistoryPoint = {
+      time: 'resource',
+      timestampMs: 1_500,
+      vusers: 40,
+      tps: Number.NaN,
+      avgMs: Number.NaN,
+      errorPct: Number.NaN,
+      p50: Number.NaN,
+      p90: Number.NaN,
+      p95: Number.NaN,
+      p99: Number.NaN,
+      resourceSampleOnly: 1,
+      cpuProcess: 72,
+    }
+
+    expect(summarizeExecutionChartData([performancePoint, resourceOnlyPoint])).toEqual({
+      avgTps: 12,
+      avgLatency: 150,
+      avgError: 0,
+      maxVusers: 0,
+    })
+    expect(summarizeExecutionChartData([resourceOnlyPoint])).toBeNull()
   })
 })

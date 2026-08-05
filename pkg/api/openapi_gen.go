@@ -1423,7 +1423,27 @@ func routeRolesText(method, path string) string {
 	if !ok {
 		return "Requires Authentication"
 	}
-	return renderAccessRoles(requirement)
+	accessText := renderAccessRoles(requirement)
+	if method != http.MethodGet || len(requirement.ProjectRoles) > 0 {
+		return accessText
+	}
+
+	// Query-conditional legacy routes are globally readable when no project is
+	// selected and enforce project RBAC when project_id is supplied. Probe that
+	// canonical runtime branch so generated Swagger and the endpoint catalog
+	// describe both contracts instead of only the empty-query variant.
+	projectReq, err := http.NewRequest(method, "http://localhost"+concrete+"?project_id=x", nil)
+	if err != nil {
+		return accessText
+	}
+	for _, m := range pathParamRe.FindAllStringSubmatch(path, -1) {
+		projectReq.SetPathValue(m[1], "x")
+	}
+	projectRequirement, ok := accessRequirementForRequest(projectReq)
+	if !ok || projectRequirement.ProjectLookup == nil || len(projectRequirement.ProjectRoles) == 0 {
+		return accessText
+	}
+	return accessText + "; when project_id is supplied, project roles: " + renderRoleNames(projectRequirement.ProjectRoles)
 }
 
 func inHandlerAuthenticatedRoute(method, path, handler string) bool {
@@ -1439,11 +1459,7 @@ func renderAccessRoles(req accessRequirement) string {
 		if len(roles) == 0 {
 			return
 		}
-		names := make([]string, 0, len(roles))
-		for _, role := range roles {
-			names = append(names, roleDisplayName(role))
-		}
-		parts = append(parts, scope+" roles: "+strings.Join(names, ", "))
+		parts = append(parts, scope+" roles: "+renderRoleNames(roles))
 	}
 	appendRoles("global", req.GlobalRoles)
 	appendRoles("project", req.ProjectRoles)
@@ -1455,6 +1471,14 @@ func renderAccessRoles(req accessRequirement) string {
 		parts = append(parts, "service-account scope: determined from the request")
 	}
 	return strings.Join(parts, "; ")
+}
+
+func renderRoleNames(roles []string) string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		names = append(names, roleDisplayName(role))
+	}
+	return strings.Join(names, ", ")
 }
 
 func roleDisplayName(role string) string {

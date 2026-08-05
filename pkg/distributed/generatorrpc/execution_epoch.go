@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	pb "github.com/jasonczech/apexload/api/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -21,7 +22,187 @@ const (
 	metricsTestIDMetadataKey       = "x-apexload-metrics-test-id"
 	maxExecutionEpochTTL           = 10 * time.Minute
 	maxExecutionFenceWorkers       = 16
+	maxExecutionLeaseTestIDBytes   = 512
+	maxTestExecutionLeaseFences    = 4096
 )
+
+// testExecutionLease is a volatile, assignment-scoped safety fence. The
+// durable process epoch remains the controller-term high-water; this narrower
+// lease lets one lost test expire without stopping unrelated assignments that
+// share the same generator process.
+type testExecutionLease struct {
+	generation uint64
+	leaseOwner string
+	expiresAt  time.Time
+	token      uint64
+	timer      *time.Timer
+}
+
+func (s *Service) claimTestExecutionLease(ctx context.Context, testID string, generation uint64, leaseOwner string, expiresAt time.Time) (*pb.ExecutionEpochAck, error) {
+	if len(testID) > maxExecutionLeaseTestIDBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "test_id exceeds %d bytes", maxExecutionLeaseTestIDBytes)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, status.FromContextError(err).Err()
+	}
+	if err := s.validateMutationGenerationLocked(generation); err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if fencedGeneration := max(s.testExecutionLeaseFences[testID], s.testExecutionLeaseFenceAllGeneration); fencedGeneration >= generation {
+		return &pb.ExecutionEpochAck{
+			Accepted:          false,
+			CurrentGeneration: s.executionGeneration,
+			ExpiresAtUnixMs:   s.executionExpiresAt.UnixMilli(),
+			ErrorMessage:      "test assignment lease has expired and cannot be revived in this execution generation",
+			TestLeaseAccepted: true,
+		}, nil
+	}
+	if current, exists := s.testExecutionLeases[testID]; exists && current.generation == generation && !now.Before(current.expiresAt) {
+		// Timer delivery is advisory; the timestamp is the semantic deadline. A
+		// delayed AfterFunc must not let a renewal replace the expired token and
+		// revive work that was already logically fenced.
+		s.clearTestExecutionLeaseLocked(testID)
+		s.recordTestExecutionLeaseFenceLocked(testID, generation)
+		assignment, assigned := s.assignments[testID]
+		if assigned && assignment.executionGeneration == generation {
+			go s.stopExpiredTestExecutionAssignment(testID, generation)
+		}
+		return &pb.ExecutionEpochAck{
+			Accepted:          false,
+			CurrentGeneration: s.executionGeneration,
+			ExpiresAtUnixMs:   current.expiresAt.UnixMilli(),
+			ErrorMessage:      "test assignment lease has expired and cannot be revived in this execution generation",
+			TestLeaseAccepted: true,
+		}, nil
+	}
+	if s.executionLeaseOwner != "" && leaseOwner != s.executionLeaseOwner {
+		return &pb.ExecutionEpochAck{
+			Accepted:          false,
+			CurrentGeneration: s.executionGeneration,
+			ExpiresAtUnixMs:   s.executionExpiresAt.UnixMilli(),
+			ErrorMessage:      "execution generation belongs to a different controller lease owner",
+			TestLeaseAccepted: true,
+		}, nil
+	}
+	assignment, ok := s.assignments[testID]
+	if !ok {
+		return nil, status.Error(codes.NotFound, "test assignment not found")
+	}
+	if assignment.executionGeneration != generation {
+		return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
+	}
+	// An assignment lease can never extend beyond its process epoch. This keeps
+	// process-level leadership loss the stronger outer fence.
+	if s.executionExpiresAt.Before(expiresAt) {
+		expiresAt = s.executionExpiresAt
+	}
+	if current, exists := s.testExecutionLeases[testID]; exists && current.generation == generation && current.leaseOwner == leaseOwner && current.expiresAt.After(expiresAt) {
+		expiresAt = current.expiresAt
+	}
+	s.nextTestLeaseToken++
+	if s.nextTestLeaseToken == 0 {
+		s.nextTestLeaseToken++
+	}
+	token := s.nextTestLeaseToken
+	if current := s.testExecutionLeases[testID]; current.timer != nil {
+		current.timer.Stop()
+	}
+	lease := testExecutionLease{
+		generation: generation,
+		leaseOwner: leaseOwner,
+		expiresAt:  expiresAt,
+		token:      token,
+	}
+	delay := time.Until(expiresAt)
+	if delay < 0 {
+		delay = 0
+	}
+	lease.timer = time.AfterFunc(delay, func() {
+		s.expireTestExecutionLease(testID, generation, expiresAt, token)
+	})
+	s.testExecutionLeases[testID] = lease
+	return &pb.ExecutionEpochAck{
+		Accepted:          true,
+		CurrentGeneration: generation,
+		ExpiresAtUnixMs:   expiresAt.UnixMilli(),
+		TestLeaseAccepted: true,
+	}, nil
+}
+
+func (s *Service) expireTestExecutionLease(testID string, generation uint64, expiresAt time.Time, token uint64) {
+	s.mu.Lock()
+	lease, ok := s.testExecutionLeases[testID]
+	if !ok || lease.token != token || lease.generation != generation || !lease.expiresAt.Equal(expiresAt) || time.Now().Before(expiresAt) {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.testExecutionLeases, testID)
+	s.recordTestExecutionLeaseFenceLocked(testID, generation)
+	assignment, assigned := s.assignments[testID]
+	s.mu.Unlock()
+	if !assigned || assignment.executionGeneration != generation {
+		return
+	}
+	s.stopExpiredTestExecutionAssignment(testID, generation)
+}
+
+func (s *Service) recordTestExecutionLeaseFenceLocked(testID string, generation uint64) {
+	if _, exists := s.testExecutionLeaseFences[testID]; !exists && len(s.testExecutionLeaseFences) >= maxTestExecutionLeaseFences {
+		// Keep memory bounded without weakening an existing tombstone. Exhausting
+		// this exceptional-loss budget fences every loss-tolerant assignment for
+		// the rest of this controller generation; ordinary work remains available.
+		s.testExecutionLeaseFenceAllGeneration = generation
+	} else {
+		s.testExecutionLeaseFences[testID] = generation
+	}
+}
+
+func (s *Service) stopExpiredTestExecutionAssignment(testID string, generation uint64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	_ = s.forceStopTests(ctx, []string{testID}, generation, "FAILED", "test execution lease expired before completion", false)
+	cancel()
+}
+
+func (s *Service) clearTestExecutionLeaseLocked(testID string) {
+	lease, ok := s.testExecutionLeases[testID]
+	if !ok {
+		return
+	}
+	delete(s.testExecutionLeases, testID)
+	if lease.timer != nil {
+		lease.timer.Stop()
+	}
+}
+
+func (s *Service) testExecutionLeaseCurrentLocked(testID string, generation uint64, now time.Time) bool {
+	if max(s.testExecutionLeaseFences[testID], s.testExecutionLeaseFenceAllGeneration) >= generation {
+		return false
+	}
+	lease, ok := s.testExecutionLeases[testID]
+	return ok && lease.generation == generation && now.Before(lease.expiresAt)
+}
+
+func (s *Service) resetTestExecutionLeasesForGenerationLocked(generation uint64) {
+	for testID, lease := range s.testExecutionLeases {
+		if lease.generation < generation {
+			s.clearTestExecutionLeaseLocked(testID)
+		}
+	}
+	for testID, fencedGeneration := range s.testExecutionLeaseFences {
+		if fencedGeneration < generation {
+			delete(s.testExecutionLeaseFences, testID)
+		}
+	}
+	if s.testExecutionLeaseFenceAllGeneration < generation {
+		s.testExecutionLeaseFenceAllGeneration = 0
+	}
+}
 
 func (s *Service) validateMutationGenerationLocked(generation uint64) error {
 	return s.executionEpochManager.validateMutationLocked(generation, time.Now())
@@ -66,10 +247,10 @@ func (s *Service) expireExecutionEpochToken(generation uint64, expiresAt time.Ti
 }
 
 func (s *Service) forceStopFencedTests(ctx context.Context, testIDs []string, maximumGeneration uint64) error {
-	return s.forceStopTests(ctx, testIDs, maximumGeneration, "FAILED", "execution generation was fenced before test completion")
+	return s.forceStopTests(ctx, testIDs, maximumGeneration, "FAILED", "execution generation was fenced before test completion", true)
 }
 
-func (s *Service) forceStopTests(ctx context.Context, testIDs []string, maximumGeneration uint64, finalState string, finalError string) error {
+func (s *Service) forceStopTests(ctx context.Context, testIDs []string, maximumGeneration uint64, finalState string, finalError string, trackExecutionEpochFence bool) error {
 	if len(testIDs) == 0 {
 		return nil
 	}
@@ -81,7 +262,7 @@ func (s *Service) forceStopTests(ctx context.Context, testIDs []string, maximumG
 	// maxExecutionFenceWorkers executions have blocked done channels, they must
 	// not prevent later assignments from seeing cancellation or remaining
 	// detached and runnable after the controller lease has expired.
-	stops := s.detachFencedTests(testIDs, maximumGeneration)
+	stops := s.detachFencedTests(testIDs, maximumGeneration, trackExecutionEpochFence)
 	for index := range stops {
 		stops[index].finalState = finalState
 		stops[index].finalError = finalError
@@ -135,12 +316,13 @@ type detachedFencedTest struct {
 	executions               []*groupExecution
 	writer                   *archiveRecorder
 	trackedFinalizer         bool
+	trackedExecutionFence    bool
 	persistentJavaDrainToken uint64
 	finalState               string
 	finalError               string
 }
 
-func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) []detachedFencedTest {
+func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64, trackExecutionEpochFence bool) []detachedFencedTest {
 	seen := make(map[string]struct{}, len(testIDs))
 	stops := make([]detachedFencedTest, 0, len(testIDs))
 	s.mu.Lock()
@@ -155,6 +337,7 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) 
 		}
 		s.markStoppingLocked(testID, assignment.executionGeneration)
 		persistentJavaDrainToken := s.reserveAssignmentJavaDrainLocked(assignment)
+		s.clearTestExecutionLeaseLocked(testID)
 		delete(s.assignments, testID)
 		s.stopCompletionTimerLocked(testID)
 		s.stopStageTimerLocked(testID)
@@ -165,16 +348,19 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) 
 			executions = append(executions, execution)
 		}
 		writer := s.archiveManager.takeWriter(testID)
-		// Keep the epoch fenced until this exact detached test has both quiesced and
-		// completed archive finalization. A retry cannot infer safety from the now
-		// empty assignments map because the detached engine may still be running.
-		s.executionEpochManager.beginDetachedFencesLocked(1)
+		// Process-generation expiry keeps the global epoch fenced until this exact
+		// detached test quiesces and finalizes. Assignment-lease expiry is already
+		// isolated by its per-test tombstone and must not block unrelated mutations.
+		if trackExecutionEpochFence {
+			s.executionEpochManager.beginDetachedFencesLocked(1)
+		}
 		stops = append(stops, detachedFencedTest{
 			testID:                   testID,
 			assignment:               assignment,
 			executions:               executions,
 			writer:                   writer,
 			trackedFinalizer:         writer != nil && s.archiveManager.addFinalizer(),
+			trackedExecutionFence:    trackExecutionEpochFence,
 			persistentJavaDrainToken: persistentJavaDrainToken,
 		})
 	}
@@ -189,7 +375,9 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 			s.releaseStopDrain(stop.persistentJavaDrainToken)
 			s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 			s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
-			s.completeDetachedExecutionFence()
+			if stop.trackedExecutionFence {
+				s.completeDetachedExecutionFence()
+			}
 		}
 		if stop.trackedFinalizer {
 			go func() {
@@ -204,7 +392,9 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 	if stop.trackedFinalizer {
 		defer s.archiveManager.finalizerDone()
 	}
-	defer s.completeDetachedExecutionFence()
+	if stop.trackedExecutionFence {
+		defer s.completeDetachedExecutionFence()
+	}
 	s.releaseStopDrain(stop.persistentJavaDrainToken)
 	s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 	_, finalError := s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)

@@ -27,6 +27,10 @@ type executionEpochGeneratorClient interface {
 	ClaimExecutionEpoch(context.Context, uint64, string, time.Duration) (generatorrpc.ExecutionEpochResult, error)
 }
 
+type testExecutionEpochGeneratorClient interface {
+	ClaimTestExecutionEpoch(context.Context, string, uint64, string, time.Duration) (generatorrpc.ExecutionEpochResult, error)
+}
+
 type executionGenerationStopClient interface {
 	StopTestAtGeneration(context.Context, string, bool, uint64) (generatorrpc.StopResult, error)
 }
@@ -118,6 +122,66 @@ func claimGeneratorExecutionEpoch(ctx context.Context, client generatorClient, g
 	}
 	if !result.Accepted || result.CurrentGeneration != generation {
 		return fmt.Errorf("generator rejected execution generation %d (current %d): %s", generation, result.CurrentGeneration, result.ErrorMessage)
+	}
+	return nil
+}
+
+func claimGeneratorTestExecutionLease(ctx context.Context, client generatorClient, testID string, generation uint64, leaseOwnerID string, leaseDeadline time.Time, maxTransit time.Duration) error {
+	if generation == 0 {
+		return fmt.Errorf("assignment-scoped execution leases require a fenced execution generation")
+	}
+	if testID == "" {
+		return fmt.Errorf("test id is required for assignment-scoped execution lease")
+	}
+	if leaseOwnerID == "" {
+		return fmt.Errorf("execution lease owner is unavailable")
+	}
+	if ctx == nil {
+		return fmt.Errorf("execution claim context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("execution claim context: %w", err)
+	}
+	claiming, ok := client.(testExecutionEpochGeneratorClient)
+	if !ok {
+		return fmt.Errorf("generator client does not support assignment-scoped execution fencing")
+	}
+	if leaseDeadline.IsZero() || maxTransit <= 0 {
+		return fmt.Errorf("execution lease deadline and transit bound are required")
+	}
+	remaining := time.Until(leaseDeadline)
+	if remaining < 3*time.Millisecond {
+		return fmt.Errorf("execution lease has insufficient time remaining for a safe assignment claim")
+	}
+	transitBudget := min(maxTransit, remaining/3)
+	if parentDeadline, ok := ctx.Deadline(); ok {
+		parentRemaining := time.Until(parentDeadline)
+		if parentRemaining <= 0 {
+			return fmt.Errorf("execution claim context: %w", context.DeadlineExceeded)
+		}
+		transitBudget = min(transitBudget, parentRemaining)
+	}
+	if transitBudget < time.Millisecond {
+		return fmt.Errorf("assignment claim has less than one millisecond of transit budget")
+	}
+	safeTTL := remaining - transitBudget
+	if safeTTL < time.Millisecond {
+		return fmt.Errorf("execution lease has less than one millisecond of safe assignment ttl")
+	}
+	claimCtx, cancel := context.WithTimeout(ctx, transitBudget)
+	defer cancel()
+	result, err := claiming.ClaimTestExecutionEpoch(claimCtx, testID, generation, leaseOwnerID, safeTTL)
+	if err != nil {
+		return err
+	}
+	if err := claimCtx.Err(); err != nil {
+		return fmt.Errorf("assignment claim exceeded its transit bound: %w", err)
+	}
+	if !time.Now().Before(leaseDeadline) {
+		return fmt.Errorf("execution lease expired while claiming generator assignment")
+	}
+	if !result.Accepted || result.CurrentGeneration != generation {
+		return fmt.Errorf("generator rejected test %s execution generation %d (current %d): %s", testID, generation, result.CurrentGeneration, result.ErrorMessage)
 	}
 	return nil
 }
@@ -220,9 +284,8 @@ func (b *distributedExecutionBackend) generatorEpochKeeperTargets() []string {
 	if b == nil {
 		return nil
 	}
-	// Keep cordoned/draining targets fenced too. If one is later reactivated in
-	// the same controller term, its generation must still be live before it can
-	// become an assignment candidate.
+	// Keep cordoned/draining targets process-fenced too. Run-scoped loss fences
+	// are renewed independently and must never interrupt unrelated assignments.
 	unique := make(map[string]struct{})
 	for _, spec := range b.configuredTargetSpecs() {
 		if spec.Address != "" {
@@ -407,15 +470,26 @@ func (b *distributedExecutionBackend) renewGeneratorExecutionEpoch(ctx context.C
 		}
 		clients := cloneClientMap(test.remoteClientsByTarget)
 		tr.mu.RUnlock()
+		for target := range clients {
+			if b.testExecutionLeaseFenced(test, target) {
+				delete(clients, target)
+			}
+		}
 		if len(clients) == 0 {
-			return
+			// A single-target loss evacuation temporarily leaves no live topology
+			// participant between source fencing and replacement commit. Keep the
+			// run renewer alive so it can take over from the staged-lease keeper.
+			if !waitForGeneratorEpochKeeper(ctx, generatorEpochKeeperFollowerPoll) {
+				return
+			}
+			continue
 		}
 
 		remaining := time.Until(leaseDeadline)
 		if remaining <= 0 {
 			return
 		}
-		renewalErr := b.renewGeneratorExecutionClients(ctx, clients, generation, leaseOwnerID, leaseDeadline)
+		renewalErr := b.renewGeneratorTestExecutionClients(ctx, test.ID, clients, generation, leaseOwnerID, leaseDeadline)
 		var next time.Duration
 		if renewalErr != nil {
 			slog.Warn("generator execution generation renewal failed", "test_id", test.ID, "generation", generation, "error", renewalErr)
@@ -447,7 +521,7 @@ func (b *distributedExecutionBackend) renewGeneratorExecutionEpoch(ctx context.C
 	}
 }
 
-func (b *distributedExecutionBackend) renewGeneratorExecutionClients(ctx context.Context, clients map[string]generatorClient, generation uint64, leaseOwnerID string, leaseDeadline time.Time) error {
+func (b *distributedExecutionBackend) renewGeneratorTestExecutionClients(ctx context.Context, testID string, clients map[string]generatorClient, generation uint64, leaseOwnerID string, leaseDeadline time.Time) error {
 	if len(clients) == 0 {
 		return nil
 	}
@@ -463,6 +537,16 @@ func (b *distributedExecutionBackend) renewGeneratorExecutionClients(ctx context
 	}
 	close(jobs)
 	workerCount := min(maxGeneratorEpochKeeperWorkers, len(targets))
+	// Bound one saturated worker round to a fraction of the remaining lease.
+	// Otherwise the first 16 unreachable targets can consume the entire safety
+	// window and starve healthy targets later in deterministic order. Reserving
+	// two thirds of the window also leaves room for a complete retry pass.
+	rounds := (len(targets) + workerCount - 1) / workerCount
+	remaining := time.Until(leaseDeadline)
+	transit := b.generatorEpochKeeperTransit()
+	if fairTransit := remaining / time.Duration(3*rounds); fairTransit < transit {
+		transit = fairTransit
+	}
 	var workers sync.WaitGroup
 	workers.Add(workerCount)
 	for range workerCount {
@@ -474,7 +558,7 @@ func (b *distributedExecutionBackend) renewGeneratorExecutionClients(ctx context
 					errCh <- fmt.Errorf("renew generator %s execution generation: client is unavailable", target)
 					continue
 				}
-				err := claimGeneratorExecutionEpoch(ctx, client, generation, leaseOwnerID, leaseDeadline, b.timeout)
+				err := claimGeneratorTestExecutionLease(ctx, client, testID, generation, leaseOwnerID, leaseDeadline, transit)
 				if err != nil {
 					errCh <- fmt.Errorf("renew generator %s execution generation: %w", target, err)
 					continue
@@ -491,4 +575,60 @@ func (b *distributedExecutionBackend) renewGeneratorExecutionClients(ctx context
 		}
 	}
 	return errors.Join(failures...)
+}
+
+func (b *distributedExecutionBackend) handoffStagedGeneratorTestExecutionLeaseKeeper(ctx context.Context, tr *TestRunner, test *ManagedTest, generation uint64, stopStaged context.CancelFunc) {
+	// Publish the successor goroutine before cancelling the setup owner. The
+	// already-established lease remains valid during scheduling, while this
+	// ordering prevents either an ownership gap or two long-lived renewal loops.
+	go b.renewGeneratorExecutionEpoch(ctx, tr, test, generation)
+	if stopStaged != nil {
+		stopStaged()
+	}
+}
+
+// maintainStagedGeneratorTestExecutionLeases keeps initial or evacuation
+// assignments fenced while they remain intentionally absent from the live
+// topology. The normal per-run renewal loop takes over after topology commit.
+func (b *distributedExecutionBackend) maintainStagedGeneratorTestExecutionLeases(ctx context.Context, tr *TestRunner, test *ManagedTest, generation uint64, clients map[string]generatorClient) {
+	if test == nil {
+		return
+	}
+	if len(clients) == 0 {
+		return
+	}
+	for {
+		cycleStarted := time.Now()
+		currentGeneration, leaseOwnerID, leaseDeadline, err := tr.generatorExecutionClaim()
+		if err != nil || currentGeneration != generation || ctx.Err() != nil {
+			return
+		}
+		currentClients := make(map[string]generatorClient, len(clients))
+		for target, client := range clients {
+			if !b.testExecutionLeaseFenced(test, target) {
+				currentClients[target] = client
+			}
+		}
+		if len(currentClients) == 0 {
+			return
+		}
+		renewalErr := b.renewGeneratorTestExecutionClients(ctx, test.ID, currentClients, generation, leaseOwnerID, leaseDeadline)
+		remaining := time.Until(leaseDeadline)
+		if remaining <= 0 {
+			return
+		}
+		next := remaining / 3
+		if renewalErr != nil {
+			next = min(remaining/10, generatorEpochKeeperRetryDelay)
+		} else if next > maxGeneratorEpochKeeperInterval {
+			next = maxGeneratorEpochKeeperInterval
+		}
+		next -= time.Since(cycleStarted)
+		if next < time.Millisecond {
+			next = time.Millisecond
+		}
+		if !waitForGeneratorEpochKeeper(ctx, next) {
+			return
+		}
+	}
 }

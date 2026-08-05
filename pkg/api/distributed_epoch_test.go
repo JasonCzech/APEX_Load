@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,6 +36,10 @@ func (c *epochRenewalFakeClient) ClaimExecutionEpoch(ctx context.Context, genera
 		}
 	}
 	return generatorrpc.ExecutionEpochResult{Accepted: true, CurrentGeneration: generation}, nil
+}
+
+func (c *epochRenewalFakeClient) ClaimTestExecutionEpoch(ctx context.Context, _ string, generation uint64, owner string, ttl time.Duration) (generatorrpc.ExecutionEpochResult, error) {
+	return c.ClaimExecutionEpoch(ctx, generation, owner, ttl)
 }
 
 type generatorEpochKeeperLeaseStore struct {
@@ -347,7 +353,7 @@ func TestGeneratorExecutionEpochKeeperBoundsConcurrentDials(t *testing.T) {
 	}
 }
 
-func TestRenewGeneratorExecutionClientsDoesNotSerializeSlowTargets(t *testing.T) {
+func TestRenewGeneratorTestExecutionClientsDoesNotSerializeSlowTargets(t *testing.T) {
 	slowStarted := make(chan struct{}, 1)
 	releaseSlow := make(chan struct{})
 	slow := &epochRenewalFakeClient{claimHook: func(ctx context.Context, _ uint64, _ time.Duration) error {
@@ -363,7 +369,7 @@ func TestRenewGeneratorExecutionClientsDoesNotSerializeSlowTargets(t *testing.T)
 	backend := &distributedExecutionBackend{timeout: time.Second}
 	done := make(chan error, 1)
 	go func() {
-		done <- backend.renewGeneratorExecutionClients(context.Background(), map[string]generatorClient{
+		done <- backend.renewGeneratorTestExecutionClients(context.Background(), "run", map[string]generatorClient{
 			"slow": slow,
 			"fast": fast,
 		}, 12, "controller/12", time.Now().Add(2*time.Second))
@@ -381,6 +387,34 @@ func TestRenewGeneratorExecutionClientsDoesNotSerializeSlowTargets(t *testing.T)
 	close(releaseSlow)
 	if err := <-done; err != nil {
 		t.Fatalf("renew fanout: %v", err)
+	}
+}
+
+func TestRenewGeneratorTestExecutionClientsDoesNotStarveHealthyTail(t *testing.T) {
+	backend := &distributedExecutionBackend{timeout: 10 * time.Second}
+	clients := make(map[string]generatorClient, maxGeneratorEpochKeeperWorkers+1)
+	for index := range maxGeneratorEpochKeeperWorkers {
+		clients[fmt.Sprintf("a-blocked-%02d", index)] = &epochRenewalFakeClient{claimHook: func(ctx context.Context, _ uint64, _ time.Duration) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}}
+	}
+	healthy := &epochRenewalFakeClient{notified: make(chan struct{}, 1)}
+	clients["z-healthy"] = healthy
+	deadline := time.Now().Add(900 * time.Millisecond)
+	done := make(chan error, 1)
+	go func() {
+		done <- backend.renewGeneratorTestExecutionClients(context.Background(), "healthy-tail", clients, 1, "controller/1", deadline)
+	}()
+	select {
+	case <-healthy.notified:
+	case <-time.After(450 * time.Millisecond):
+		t.Fatal("healthy tail target was starved behind one saturated worker round")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("bounded assignment renewal pass did not finish")
 	}
 }
 
@@ -404,6 +438,149 @@ func TestGeneratorExecutionClaimSubtractsDelayedDeliveryBudget(t *testing.T) {
 	generatorExpiry := <-receivedExpiry
 	if generatorExpiry.After(leaseDeadline) {
 		t.Fatalf("delayed generator session expires at %s, after controller deadline %s", generatorExpiry, leaseDeadline)
+	}
+}
+
+func TestAssignmentLeaseCapabilityFailsClosedForOlderGenerator(t *testing.T) {
+	client := &startupLifecycleFakeClient{}
+	err := claimGeneratorTestExecutionLease(context.Background(), client, "loss-tolerant-run", 13, "controller/13", time.Now().Add(time.Second), 100*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "assignment-scoped execution fencing") {
+		t.Fatalf("older generator capability error = %v", err)
+	}
+}
+
+func TestRunScopedFenceDoesNotSuppressHealthyRunRenewal(t *testing.T) {
+	now := time.Now().UTC()
+	leadership := newExecutionLeadership(nil, "multi-run-fence")
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = "multi-run-fence/1"
+	leadership.durableGeneration = 31
+	leadership.localLeaseDeadline = now.Add(500 * time.Millisecond)
+	leadership.mu.Unlock()
+
+	lostClient := &epochRenewalFakeClient{notified: make(chan struct{}, 1)}
+	healthyClient := &epochRenewalFakeClient{notified: make(chan struct{}, 1)}
+	lostCtx, cancelLost := context.WithCancel(context.Background())
+	defer cancelLost()
+	healthyCtx, cancelHealthy := context.WithCancel(context.Background())
+	defer cancelHealthy()
+	lost := &ManagedTest{ID: "lost-run", executionCtx: lostCtx, executionGeneration: 31, remoteClientsByTarget: map[string]generatorClient{"shared": lostClient}}
+	healthy := &ManagedTest{ID: "healthy-run", executionCtx: healthyCtx, executionGeneration: 31, remoteClientsByTarget: map[string]generatorClient{"shared": healthyClient}}
+	runner := &TestRunner{tests: map[string]*ManagedTest{lost.ID: lost, healthy.ID: healthy}, leadership: leadership}
+	backend := newDistributedExecutionBackend([]string{"shared"}, 20*time.Millisecond, nil)
+	backend.fenceTestExecutionLease(lost, "shared")
+
+	lostDone := make(chan struct{})
+	go func() {
+		backend.renewGeneratorExecutionEpoch(lostCtx, runner, lost, 31)
+		close(lostDone)
+	}()
+	go backend.renewGeneratorExecutionEpoch(healthyCtx, runner, healthy, 31)
+	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-healthyClient.notified:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("healthy run on shared target was not renewed")
+	}
+	if calls := lostClient.calls.Load(); calls != 0 {
+		t.Fatalf("fenced run received %d renewal calls", calls)
+	}
+	cancelLost()
+	select {
+	case <-lostDone:
+	case <-time.After(time.Second):
+		t.Fatal("fenced run renewal did not stop after cancellation")
+	}
+}
+
+func TestStagedAssignmentLeaseKeeperRenewsBeforeLiveTopologyCommit(t *testing.T) {
+	now := time.Now().UTC()
+	leadership := newExecutionLeadership(nil, "staged-replacement")
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = "staged-replacement/1"
+	leadership.durableGeneration = 41
+	leadership.localLeaseDeadline = now.Add(180 * time.Millisecond)
+	leadership.mu.Unlock()
+	client := &epochRenewalFakeClient{notified: make(chan struct{}, 8)}
+	runner := &TestRunner{leadership: leadership}
+	backend := &distributedExecutionBackend{timeout: 20 * time.Millisecond}
+	testRun := &ManagedTest{ID: "replacement"}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		backend.maintainStagedGeneratorTestExecutionLeases(ctx, runner, testRun, 41, map[string]generatorClient{"new": client})
+		close(done)
+	}()
+	select {
+	case <-client.notified:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("staged replacement did not receive its first renewal")
+	}
+	leadership.mu.Lock()
+	leadership.localLeaseDeadline = time.Now().Add(400 * time.Millisecond)
+	leadership.mu.Unlock()
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for client.calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if calls := client.calls.Load(); calls < 2 {
+		t.Fatalf("staged replacement renewal calls = %d, want at least 2", calls)
+	}
+	backend.fenceTestExecutionLease(testRun, "new")
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("staged replacement lease keeper did not stop after its assignment was fenced")
+	}
+	cancel()
+}
+
+func TestStagedAssignmentLeaseKeeperHandsOffToSingleTopologyOwner(t *testing.T) {
+	now := time.Now().UTC()
+	leadership := newExecutionLeadership(nil, "staged-handoff")
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = "staged-handoff/1"
+	leadership.durableGeneration = 42
+	leadership.localLeaseDeadline = now.Add(600 * time.Millisecond)
+	leadership.mu.Unlock()
+
+	stagedClient := &epochRenewalFakeClient{notified: make(chan struct{}, 8)}
+	liveClient := &epochRenewalFakeClient{notified: make(chan struct{}, 8)}
+	runCtx, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+	testRun := &ManagedTest{
+		ID:                    "staged-handoff-run",
+		executionCtx:          runCtx,
+		executionGeneration:   42,
+		remoteClientsByTarget: map[string]generatorClient{"new": liveClient},
+	}
+	runner := &TestRunner{
+		tests:      map[string]*ManagedTest{testRun.ID: testRun},
+		leadership: leadership,
+	}
+	backend := &distributedExecutionBackend{timeout: 20 * time.Millisecond}
+	stagedCtx, cancelStaged := context.WithCancel(runCtx)
+	stagedDone := make(chan struct{})
+	go func() {
+		backend.maintainStagedGeneratorTestExecutionLeases(stagedCtx, runner, testRun, 42, map[string]generatorClient{"new": stagedClient})
+		close(stagedDone)
+	}()
+	waitForEpochTestSignal(t, stagedClient.notified, "initial staged lease renewal")
+
+	backend.handoffStagedGeneratorTestExecutionLeaseKeeper(runCtx, runner, testRun, 42, cancelStaged)
+	waitForEpochTestSignal(t, liveClient.notified, "topology lease renewal after handoff")
+	select {
+	case <-stagedDone:
+	case <-time.After(time.Second):
+		t.Fatal("staged lease keeper remained active after topology handoff")
+	}
+	stagedCalls := stagedClient.calls.Load()
+	time.Sleep(250 * time.Millisecond)
+	if calls := stagedClient.calls.Load(); calls != stagedCalls {
+		t.Fatalf("staged lease keeper renewed after handoff: calls %d -> %d", stagedCalls, calls)
 	}
 }
 
@@ -456,5 +633,140 @@ func TestRenewGeneratorExecutionEpochIncludesEvacuationClients(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("renewal loop did not stop with the run context")
+	}
+}
+
+func TestGeneratorEpochKeeperContinuesUnrelatedRunsAcrossTestFenceAndReactivation(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"generator-a:9090", "generator-b:9090"}, time.Second, nil)
+	lostRun := &ManagedTest{ID: "lost-run"}
+	healthyRun := &ManagedTest{ID: "healthy-run"}
+	firstToken := backend.fenceTestExecutionLease(lostRun, "generator-a:9090")
+	if got := backend.generatorEpochKeeperTargets(); !reflect.DeepEqual(got, []string{"generator-a:9090", "generator-b:9090"}) {
+		t.Fatalf("process keeper targets after run fence = %#v", got)
+	}
+	if err := backend.SetGeneratorDrainState("generator-a:9090", "active"); err != nil {
+		t.Fatalf("reactivate generator: %v", err)
+	}
+	if !backend.testExecutionLeaseFenced(lostRun, "generator-a:9090") {
+		t.Fatal("fleet reactivation cleared the active run-scoped fence")
+	}
+	if backend.testExecutionLeaseFenced(healthyRun, "generator-a:9090") {
+		t.Fatal("run-scoped fence leaked into an unrelated run")
+	}
+	if nextToken := backend.fenceTestExecutionLease(lostRun, "generator-a:9090"); nextToken <= firstToken {
+		t.Fatalf("replacement fence token = %d, want newer than %d", nextToken, firstToken)
+	}
+}
+
+func TestExistingRunPlacementExcludesItsPreviouslyFencedTargetOnly(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"old-source", "current-source", "candidate"}, time.Second, nil)
+	runA := &ManagedTest{ID: "run-a"}
+	runB := &ManagedTest{ID: "run-b"}
+	backend.fenceTestExecutionLease(runA, "old-source")
+	targets := []string{"old-source", "current-source", "candidate"}
+	if got := backend.filterTestPlacementTargets(runA, targets); !reflect.DeepEqual(got, []string{"current-source", "candidate"}) {
+		t.Fatalf("run-a placement targets = %#v", got)
+	}
+	if got := backend.filterTestPlacementTargets(runB, targets); !reflect.DeepEqual(got, targets) {
+		t.Fatalf("unrelated run placement targets = %#v, want %#v", got, targets)
+	}
+	if err := backend.SetGeneratorDrainState("old-source", "active"); err != nil {
+		t.Fatalf("reactivate old source: %v", err)
+	}
+	if got := backend.filterTestPlacementTargets(runA, targets); !reflect.DeepEqual(got, []string{"current-source", "candidate"}) {
+		t.Fatalf("reactivation reintroduced fenced target: %#v", got)
+	}
+}
+
+func TestStaleRunCleanupCannotClearReplacementIncarnationFence(t *testing.T) {
+	backend := newDistributedExecutionBackend([]string{"generator"}, time.Second, nil)
+	oldRun := &ManagedTest{ID: "reused-id"}
+	newRun := &ManagedTest{ID: "reused-id"}
+	backend.fenceTestExecutionLease(oldRun, "generator")
+	backend.fenceTestExecutionLease(newRun, "generator")
+	backend.clearTestExecutionLeaseFences(oldRun)
+	if backend.testExecutionLeaseFenced(oldRun, "generator") {
+		t.Fatal("old run fence survived its own cleanup")
+	}
+	if !backend.testExecutionLeaseFenced(newRun, "generator") {
+		t.Fatal("stale old-run cleanup cleared replacement incarnation fence")
+	}
+}
+
+func TestStaleEvacuationDetachClearsOnlyDetachedIncarnationFence(t *testing.T) {
+	backend := newDistributedExecutionBackend(nil, 20*time.Millisecond, nil)
+	oldRun := &ManagedTest{ID: "reused-evacuation-id"}
+	newRun := &ManagedTest{ID: oldRun.ID}
+	runner := &TestRunner{tests: map[string]*ManagedTest{newRun.ID: newRun}}
+	backend.fenceTestExecutionLease(oldRun, "generator")
+	backend.fenceTestExecutionLease(newRun, "generator")
+
+	backend.detachEvacuationResources(runner, oldRun, map[string]generatorClient{}, map[string]*generatorrpc.MetricsStream{})
+	if backend.testExecutionLeaseFenced(oldRun, "generator") {
+		t.Fatal("stale evacuation detach retained its pointer-scoped fence")
+	}
+	if !backend.testExecutionLeaseFenced(newRun, "generator") {
+		t.Fatal("stale evacuation detach cleared the replacement incarnation fence")
+	}
+}
+
+func TestEvacuationDetachAcceptsNilCapturedResourceMaps(t *testing.T) {
+	backend := newDistributedExecutionBackend(nil, 20*time.Millisecond, nil)
+	testRun := &ManagedTest{
+		ID:                           "terminal-evacuation",
+		remoteClientsByTarget:        map[string]generatorClient{"generator": nil},
+		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"generator": nil},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{testRun.ID: testRun}}
+
+	backend.detachEvacuationResources(runner, testRun, nil, nil)
+
+	if testRun.remoteClientsByTarget != nil || testRun.remoteMetricsStreamsByTarget != nil {
+		t.Fatal("evacuation resources remained attached after nil-map cleanup")
+	}
+}
+
+func TestRunEpochRenewalWaitsForReplacementAfterLossFencedParticipant(t *testing.T) {
+	now := time.Now().UTC()
+	leadership := newExecutionLeadership(nil, "loss-fence-test")
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = "loss-fence-test/1"
+	leadership.durableGeneration = 23
+	leadership.localLeaseDeadline = now.Add(250 * time.Millisecond)
+	leadership.mu.Unlock()
+
+	client := &epochRenewalFakeClient{notified: make(chan struct{}, 1)}
+	runCtx, cancel := context.WithCancel(context.Background())
+	testRun := &ManagedTest{
+		ID: "loss-fenced-run", executionCtx: runCtx, executionGeneration: 23,
+		remoteClientsByTarget: map[string]generatorClient{"lost:9090": client},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{testRun.ID: testRun}, leadership: leadership}
+	backend := newDistributedExecutionBackend([]string{"lost:9090"}, 20*time.Millisecond, nil)
+	backend.fenceTestExecutionLease(testRun, "lost:9090")
+	done := make(chan struct{})
+	go func() {
+		backend.renewGeneratorExecutionEpoch(runCtx, runner, testRun, 23)
+		close(done)
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if calls := client.calls.Load(); calls != 0 {
+		t.Fatalf("loss-fenced participant received %d renewal calls", calls)
+	}
+	replacement := &epochRenewalFakeClient{notified: make(chan struct{}, 1)}
+	runner.mu.Lock()
+	testRun.remoteClientsByTarget["replacement:9090"] = replacement
+	runner.mu.Unlock()
+	select {
+	case <-replacement.notified:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("run renewal did not take over the committed replacement")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("run renewal did not stop after cancellation")
 	}
 }

@@ -1456,7 +1456,7 @@ describe('SettingsPage', () => {
     expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
   })
 
-  it('defaults generator capacity fields to the connected live pod capacity when settings are still at the stock defaults', async () => {
+  it('keeps stock capacity settings until the operator explicitly applies live pod capacity', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
@@ -1477,15 +1477,15 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(capacitySection, 'Availability')
     const availableGeneratorsInput = findSettingInput(capacitySection, 'Configured Available Generators')
 
-    expect(cpuCoresInput?.value).toBe('2')
-    expect(memoryInput?.value).toBe('4096')
-    expect(maxVUsersInput?.value).toBe('8000')
-    expect(availableGeneratorsInput?.value).toBe('2')
-    expect(container.textContent).toContain('2 CPU / 4096 MB')
+    expect(cpuCoresInput?.value).toBe('4')
+    expect(memoryInput?.value).toBe('8192')
+    expect(maxVUsersInput?.value).toBe('10000')
+    expect(availableGeneratorsInput?.value).toBe('1')
+    expect(container.textContent).toContain('4 CPU / 8192 MB')
     expect(container.querySelector('.settings-overview')).toBeNull()
     expect(container.textContent).not.toContain('Save State')
     expect(container.textContent).not.toContain('Up to date')
-    expect(apiMock.getSystemInventory).toHaveBeenCalledTimes(1)
+    expect(apiMock.getSystemInventory).not.toHaveBeenCalled()
   })
 
   it('plans archive retention pruning from the capacity settings section', async () => {
@@ -2149,6 +2149,12 @@ describe('SettingsPage', () => {
               default_repo: '  org/repo-a  ',
               default_branch: 'main',
               default_sync_directory: '  scripts  ',
+              // This server-owned policy is preserved by the form but not
+              // edited here. It must participate symmetrically in the saved
+              // baseline and live draft or Settings starts falsely dirty.
+              actions: {
+                updated_at: '0001-01-01T00:00:00Z',
+              },
             },
             pool_quotas: { 'pool-east': { max_vusers: 500, max_concurrent_tests: 3 } },
           },
@@ -2537,6 +2543,67 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(generalSection, 'Recent Audit Events')
     expect(generalSection.textContent).toContain('Recent Audit Events')
     expect(findButton('Export CSV')?.disabled).toBe(true)
+  })
+
+  it('lets audit viewers navigate to read-only governance while system mutations stay disabled', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [
+        {
+          id: 'system_configuration',
+          name: 'System Configuration',
+          description: 'Controller-wide settings.',
+          operations: [
+            { id: 'view_system', label: 'View settings', allowed: true, grant_source: 'global' },
+            { id: 'manage_system', label: 'Update settings', allowed: false },
+          ],
+        },
+        {
+          id: 'identity_and_audit',
+          name: 'Identity, Service Accounts, and Audit',
+          description: 'Identity operations.',
+          operations: [
+            { id: 'view_audit', label: 'View audit events', allowed: true, grant_source: 'global' },
+            { id: 'manage_service_accounts', label: 'Manage service accounts', allowed: false },
+          ],
+        },
+      ],
+    })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+
+    const apiEndpointInput = findSettingInput(generalSection, 'API Endpoint')
+    expect(apiEndpointInput?.closest('fieldset')?.disabled).toBe(true)
+
+    const usageButton = findGeneralSubnavButton(generalSection, 'Usage')
+    await act(async () => usageButton?.click())
+    expect(findButton('Refresh Usage')?.disabled).toBe(false)
+    expect(findButton('Export Usage CSV')?.disabled).toBe(false)
+    expect(findButton('Capture Snapshot')?.disabled).toBe(true)
+
+    const governanceButton = findGeneralSubnavButton(generalSection, 'Governance')
+    expect(governanceButton?.closest('fieldset')).toBeNull()
+    await act(async () => governanceButton?.click())
+    expect(governanceButton?.getAttribute('aria-selected')).toBe('true')
+
+    const auditButton = findSettingsSubnavButton(generalSection, 'Recent Audit Events')
+    expect(auditButton?.closest('fieldset')).toBeNull()
+    await act(async () => auditButton?.click())
+    expect(auditButton?.getAttribute('aria-selected')).toBe('true')
+
+    const auditPanel = generalSection.querySelector('#settings-governance-panel-recent-audit-events')
+    expect(auditPanel?.hasAttribute('hidden')).toBe(false)
+    expect(findButton('Export CSV')?.disabled).toBe(false)
+    expect(Array.from(auditPanel?.querySelectorAll('input') || []).every(input => !(input as HTMLInputElement).disabled)).toBe(true)
   })
 
   it('saves native OIDC auth settings through system settings', async () => {
@@ -3426,7 +3493,7 @@ describe('SettingsPage', () => {
       latest?.guard.discard()
     })
     expect(latest?.guard.isDirty()).toBe(false)
-    expect(configuredInput.value).toBe('2')
+    expect(configuredInput.value).toBe('1')
   })
 
   it('discarding changes clears capacity field drafts', async () => {
@@ -3451,9 +3518,8 @@ describe('SettingsPage', () => {
     await act(async () => {
       discardButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    // The suite's inventory mock auto-applies live pod capacity on load, which
-    // resolves configured generators to 2 connected pods.
-    expect(configuredInput.value).toBe('2')
+    // Live pod capacity is only applied through the explicit preset action.
+    expect(configuredInput.value).toBe('1')
   })
 
   it('disables threshold and capacity inputs for sessions without manage_system but keeps subnav browsable', async () => {
@@ -3490,6 +3556,69 @@ describe('SettingsPage', () => {
     await selectSettingsSubnav(capacitySection, 'Generator Profile')
     const cpuInput = findSettingInput(capacitySection, 'Generator CPU (cores)')
     expect(cpuInput?.closest('fieldset')?.disabled).toBe(true)
+  })
+
+  it('fails closed immediately while effective access for a new scope is loading', async () => {
+    let resolveSecondScope: ((value: {
+      enabled: boolean
+      authenticated: boolean
+      resources: DashboardAuthEffectiveAccessResource[]
+    }) => void) | undefined
+    apiMock.getAuthEffectiveAccess.mockImplementation((
+      _projectId?: string,
+      options?: { application_repository_id?: string },
+    ) => {
+      if (options?.application_repository_id === 'repo-2') {
+        return new Promise(resolve => {
+          resolveSecondScope = resolve
+        })
+      }
+      return Promise.resolve({
+        enabled: true,
+        authenticated: true,
+        resources: [{
+          id: 'system_configuration',
+          name: 'System Configuration',
+          description: '',
+          operations: [{ id: 'manage_system', label: 'Update system settings', allowed: true }],
+        }],
+      })
+    })
+    const firstRepository = {
+      id: 'repo-1', domain_id: 'domain-1', name: 'Repository', created_at: '', updated_at: '',
+    }
+    const secondRepository = { ...firstRepository, id: 'repo-2' }
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, (
+        <SettingsPage theme="dark" onThemeChange={vi.fn()} applicationRepository={firstRepository} />
+      ))
+    })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Performance Thresholds')
+    let errorRateInput = findSettingInput(container, 'Max Error Rate (%)')
+    expect(errorRateInput?.closest('fieldset')?.disabled).toBe(false)
+    if (!errorRateInput) return
+    await setFieldValue(errorRateInput, '5')
+    expect(findButton('Save Changes')?.disabled).toBe(false)
+    expect(findButton('Reset All Settings to Defaults')?.disabled).toBe(false)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, (
+        <SettingsPage theme="dark" onThemeChange={vi.fn()} applicationRepository={secondRepository} />
+      ))
+    })
+
+    errorRateInput = findSettingInput(container, 'Max Error Rate (%)')
+    expect(errorRateInput?.closest('fieldset')?.disabled).toBe(true)
+    expect(findButton('Save Changes')?.disabled).toBe(true)
+    expect(findButton('Reset All Settings to Defaults')?.disabled).toBe(true)
+    expect(apiMock.updateSystemSettings).not.toHaveBeenCalled()
+
+    await act(async () => {
+      resolveSecondScope?.({ enabled: true, authenticated: true, resources: [] })
+      await Promise.resolve()
+    })
   })
 
   it('keeps the form disabled and offers Retry when settings fail to load', async () => {
@@ -5609,7 +5738,7 @@ describe('SettingsPage', () => {
     await setFieldValue(projectInput, 'payments')
 
     const summary = container.querySelector('[data-testid="reservation-usage-summary"]')
-    expect(summary?.textContent).toContain('1 of 2 generators reserved')
+    expect(summary?.textContent).toContain('1 of 1 generator reserved')
 
     const poolSelect = reservationSection.querySelector('select[aria-label="Reservation pool"]') as HTMLSelectElement | null
     expect(poolSelect).toBeTruthy()
@@ -5618,7 +5747,7 @@ describe('SettingsPage', () => {
 
     // Pool-scoped reservations draw from the pool envelope, not the global sum.
     await setFieldValue(poolSelect, 'pool-1')
-    expect(summary?.textContent).toContain('0 of 2 generators reserved')
+    expect(summary?.textContent).toContain('0 of 1 generator reserved')
   })
 
   it('shows the overbooking validation error before save', async () => {
@@ -5646,7 +5775,7 @@ describe('SettingsPage', () => {
     await setFieldValue(projectInput, 'payments')
     await setFieldValue(generatorsInput, '4')
 
-    expect(capacitySection.textContent).toContain('Always-active global reservations (4) exceed configured available generators (2).')
+    expect(capacitySection.textContent).toContain('Always-active global reservations (4) exceed configured available generators (1).')
     const saveButton = findButton('Save Changes') || findButton('Saved')
     expect(saveButton?.disabled).toBe(true)
   })

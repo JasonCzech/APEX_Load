@@ -40,7 +40,6 @@ import {
   getSameLineParameterOptions,
   getSameLineParameterSelectOptions,
   type DataSourceDelimiterChoice,
-  type DataSourceSortDirection,
   type ParameterSameLineOption,
   type ParameterSourceMergeSummary,
 } from './scriptEditorParameterDataModel'
@@ -125,7 +124,6 @@ interface ParameterDataDialogProps {
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
-  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onUndoDataSource: (idx: number) => void
   onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
@@ -134,6 +132,7 @@ interface ParameterDataDialogProps {
   onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
   onUpdateParameterDraftName: (value: string) => void
   onUpdateParameterDraftValue: (value: string) => void
+  onSelectDataSource: (idx: number | null) => void
   onSelectParameter: (idx: number | null) => void
   openDataEditor: number | null
   pendingParameterDraft: ActionEditorParameterDraft | null
@@ -160,7 +159,6 @@ export function ParameterDataDialog({
   onRedoDataSource,
   onRemoveDataColumn,
   onRemoveDataRow,
-  onSortDataRows,
   onToggleDataEditorMode,
   onUndoDataSource,
   onUpdateDataCell,
@@ -169,6 +167,7 @@ export function ParameterDataDialog({
   onUpdateParameter,
   onUpdateParameterDraftName,
   onUpdateParameterDraftValue,
+  onSelectDataSource,
   onSelectParameter,
   openDataEditor,
   pendingParameterDraft,
@@ -256,14 +255,17 @@ export function ParameterDataDialog({
             onRedoDataSource={onRedoDataSource}
             onRemoveDataColumn={onRemoveDataColumn}
             onRemoveDataRow={onRemoveDataRow}
-            onSortDataRows={onSortDataRows}
             onToggleDataEditorMode={onToggleDataEditorMode}
             onUndoDataSource={onUndoDataSource}
             onUpdateDataCell={onUpdateDataCell}
             onUpdateDataColumnName={onUpdateDataColumnName}
             onUpdateDataSource={onUpdateDataSource}
             onUpdateParameter={(field, value) => {
-              if (selectedParameterIdx !== null) onUpdateParameter(selectedParameterIdx, field, value)
+              if (selectedParameterIdx === null) return
+              onUpdateParameter(selectedParameterIdx, field, value)
+              if (field === 'data_source') {
+                onSelectDataSource(findDataSourceIndexByName(script.data_sources, String(value || '')))
+              }
             }}
             selectedParameterIdx={selectedParameterIdx}
             selectedParameter={selectedParameter}
@@ -299,7 +301,6 @@ interface ParameterDataDetailProps {
   onRedoDataSource: (idx: number) => void
   onRemoveDataColumn: (idx: number, colIdx: number) => void
   onRemoveDataRow: (idx: number, rowIdx: number) => void
-  onSortDataRows: (idx: number, colIdx: number, direction: DataSourceSortDirection) => void
   onToggleDataEditorMode: (idx: number) => void
   onUndoDataSource: (idx: number) => void
   onUpdateDataCell: (idx: number, rowIdx: number, colIdx: number, value: string) => void
@@ -326,7 +327,6 @@ function ParameterDataDetail({
   onRedoDataSource,
   onRemoveDataColumn,
   onRemoveDataRow,
-  onSortDataRows,
   onToggleDataEditorMode,
   onUndoDataSource,
   onUpdateDataCell,
@@ -399,7 +399,7 @@ function ParameterDataDetail({
           dataEditorMode={dataEditorMode[selectedSourceIndex] || 'grid'}
           history={dataSourceHistory[selectedSourceIndex]}
           index={selectedSourceIndex}
-          key={`${selectedSource.name || 'source'}-${selectedSourceIndex}-${parameterName}`}
+          key={`${selectedSource.name || 'source'}-${selectedSourceIndex}`}
           onAddDataColumn={onAddDataColumn}
           onAddDataRow={onAddDataRow}
           onApplyDedupeHeaders={onApplyDedupeHeaders}
@@ -411,7 +411,6 @@ function ParameterDataDetail({
           onRedoDataSource={onRedoDataSource}
           onRemoveDataColumn={onRemoveDataColumn}
           onRemoveDataRow={onRemoveDataRow}
-          onSortDataRows={onSortDataRows}
           onToggleDataEditorMode={onToggleDataEditorMode}
           onUndoDataSource={onUndoDataSource}
           onUpdateDataCell={onUpdateDataCell}
@@ -508,7 +507,7 @@ function ParameterInfoPanel({
   const parameterName = parameter.name || 'Parameter'
   const parameterType = parameter.type || 'list'
   const isDataBacked = parameterType === 'file' || parameterType === 'list'
-  const isGenerated = ['random_number', 'counter', 'current_iteration', 'random_string', 'uuid'].includes(parameterType)
+  const isGenerated = ['random_number', 'counter', 'current_iteration', 'vuser_id', 'random_string', 'uuid'].includes(parameterType)
   const isTime = parameterType === 'date_time' || parameterType === 'timestamp' || parameterType === 'time'
   const showsDataMapping = isDataBacked || parameterType === 'host'
   const showsTypeOptions = isGenerated || isTime
@@ -543,7 +542,6 @@ function ParameterInfoPanel({
     }
     if (parameter.same_line_as) onUpdateParameter('same_line_as', undefined)
     onUpdateParameter('selection', value)
-    if (selectedSourceIndex !== null) onUpdateDataSource(selectedSourceIndex, 'strategy', value, true)
   }
 
   return (
@@ -689,11 +687,11 @@ function ParameterInfoPanel({
                 <tr>
                   <th scope="row">{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</th>
                   <td>
-                    <input
+                    <textarea
                       aria-label={`${parameterType === 'host' ? 'Host Overrides' : 'Inline Values'} for ${parameterName}`}
-                      value={(parameter.values || []).join(', ')}
+                      value={(parameter.values || []).join('\n')}
                       onChange={event => onUpdateParameter('values', parseParameterListInput(event.target.value))}
-                      placeholder={parameterType === 'host' ? 'host-a, host-b' : 'value1, value2'}
+                      placeholder={parameterType === 'host' ? 'host-a\nhost-b' : 'value1\nvalue2'}
                     />
                   </td>
                 </tr>
@@ -757,6 +755,9 @@ function ParameterInfoPanel({
               )}
               {parameterType === 'uuid' && (
                 <tr><td colSpan={2}><p className="parameter-settings-empty">UUID values are generated automatically using the selected update cadence.</p></td></tr>
+              )}
+              {parameterType === 'vuser_id' && (
+                <tr><td colSpan={2}><p className="parameter-settings-empty">The current virtual user identifier is supplied automatically.</p></td></tr>
               )}
               {isTime && (
                 <>
@@ -869,7 +870,7 @@ export function ParameterSidebar({
           onClick={onMergeParameterSources}
           title={mergeSummary.canMerge
             ? `Merge ${mergeSummary.sourceCount} source files for ${mergeSummary.parameterCount} parameters`
-            : 'Requires at least two .dat or .csv parameter source files'}
+            : 'Requires at least two compatible .dat or .csv sources with equal row counts and no unbound or directly referenced columns'}
           type="button"
         >
           Merge Source Files
@@ -993,7 +994,7 @@ interface AutoParameterizationSidebarProps {
 // The actual data values (CSV rows for file params) are not edited here.
 const PARAM_CHOICE_KEYS = new Set<string>(['update', 'selection', 'on_exhaustion'])
 const PARAM_BOOL_KEYS = new Set<string>(['value_for_each_vuser'])
-const PARAM_NUMBER_KEYS = new Set<string>(['start_row', 'block_size', 'offset_seconds', 'step', 'start', 'min', 'max', 'length', 'padding'])
+const PARAM_NUMBER_KEYS = new Set<string>(['start_row', 'block_size', 'offset_seconds', 'step', 'start', 'end', 'min', 'max', 'length', 'pad_width', 'seed'])
 // Handled outside the generic Settings loop: data_source/column live under the
 // Data file header; same_line_as is a dropdown; name/type render in the header.
 const PARAM_SETTINGS_EXCLUDED = new Set<string>(['name', 'type', 'data_source', 'column', 'same_line_as'])
@@ -1025,6 +1026,10 @@ export function SelectedParameterDetails({ parameter, parameterIndex, referenceL
   const renderControl = (key: string) => {
     const value = (parameter as unknown as Record<string, unknown>)[key]
     const field = key as keyof ParameterConfig
+    if (key === 'values') {
+      const values = Array.isArray(value) ? value.map(item => String(item)) : []
+      return <textarea value={values.join('\n')} onChange={event => onUpdateParameter(parameterIndex, field, parseParameterListInput(event.target.value))} />
+    }
     if (PARAM_CHOICE_KEYS.has(key)) {
       const definition = PARAMETER_CHOICE_DEFINITIONS[key as MutableParameterChoiceField]
       return (
@@ -1037,7 +1042,7 @@ export function SelectedParameterDetails({ parameter, parameterIndex, referenceL
       return <input type="checkbox" checked={Boolean(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.checked)} />
     }
     if (PARAM_NUMBER_KEYS.has(key)) {
-      return <input type="number" value={value === '' || value === undefined ? '' : Number(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value === '' ? '' : Number(event.target.value))} />
+      return <input type="number" value={value === '' || value === undefined ? '' : Number(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value === '' ? undefined : Number(event.target.value))} />
     }
     return <input value={String(value ?? '')} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value)} />
   }
@@ -1456,6 +1461,7 @@ const PARAMETER_CHOICE_DEFINITIONS: Record<ParameterChoiceField, ParameterChoice
       { value: 'timestamp', label: 'Timestamp', description: 'Generates a timestamp in a standard format such as Unix, Unix ms, or ISO 8601.' },
       { value: 'counter', label: 'Counter', description: 'Increments from the configured start value by the configured step.' },
       { value: 'current_iteration', label: 'Current Iteration', description: 'Uses the current VUser iteration number, with optional padding and offset settings.' },
+      { value: 'vuser_id', label: 'VUser ID', description: 'Uses the stable one-based identifier of the current virtual user.' },
       { value: 'host', label: 'Host', description: 'Uses the current host value, or a host override list when one is provided.' },
       { value: 'time', label: 'Time', description: 'Formats the current time of day using the configured time layout.' },
       { value: 'random_string', label: 'Random String', description: 'Generates a string using the configured length and optional character set.' },
@@ -1937,15 +1943,19 @@ function ParameterFormatControl({ parameter, onUpdate }: ParameterFormatControlP
   const currentFormat = parameter.format || parameterFormatForType(type, '')
   const selectedPreset = presets.find(preset => preset.value === currentFormat)
   const allowsCustom = type === 'date_time' || type === 'time'
-  const selectValue = selectedPreset ? selectedPreset.value : CUSTOM_PARAMETER_FORMAT_VALUE
+  const [customSelected, setCustomSelected] = useState(false)
+  useEffect(() => setCustomSelected(false), [parameter.name, type])
+  const selectValue = customSelected || !selectedPreset ? CUSTOM_PARAMETER_FORMAT_VALUE : selectedPreset.value
 
   const applyPreset = (value: string) => {
     if (value === CUSTOM_PARAMETER_FORMAT_VALUE) {
+      setCustomSelected(true)
       onUpdate('format', currentFormat || '')
       return
     }
     const preset = presets.find(candidate => candidate.value === value)
     if (!preset) return
+    setCustomSelected(false)
     onUpdate('format', preset.value)
     if (preset.timezone !== undefined) {
       onUpdate('timezone', preset.timezone)
@@ -2379,7 +2389,7 @@ interface ParameterSettingsDialogProps {
 }
 
 function parseParameterListInput(value: string): string[] {
-  return value.split(',').map(entry => entry.trim()).filter(Boolean)
+  return value.split('\n').map(entry => entry.trim()).filter(Boolean)
 }
 
 function numberInputValue(value: number | undefined, fallback: number | ''): number | string {
@@ -2404,7 +2414,7 @@ export function ParameterSettingsBody({
   const parameterName = parameter.name || 'Parameter'
   const parameterType = parameter.type || 'list'
   const isDataBacked = parameterType === 'file' || parameterType === 'list'
-  const isGenerated = ['random_number', 'counter', 'current_iteration', 'random_string', 'uuid'].includes(parameterType)
+  const isGenerated = ['random_number', 'counter', 'current_iteration', 'vuser_id', 'random_string', 'uuid'].includes(parameterType)
   const isTime = parameterType === 'date_time' || parameterType === 'timestamp' || parameterType === 'time'
   const showsDataMapping = isDataBacked || parameterType === 'host'
   const showsOutput = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
@@ -2478,10 +2488,10 @@ export function ParameterSettingsBody({
             {(parameterType === 'list' || parameterType === 'host') && (
               <label className="parameter-settings-wide">
                 <span>{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</span>
-                <input
-                  value={(parameter.values || []).join(', ')}
+                <textarea
+                  value={(parameter.values || []).join('\n')}
                   onChange={event => onUpdate('values', parseParameterListInput(event.target.value))}
-                  placeholder={parameterType === 'host' ? 'host-a, host-b' : 'value1, value2'}
+                  placeholder={parameterType === 'host' ? 'host-a\nhost-b' : 'value1\nvalue2'}
                 />
               </label>
             )}
@@ -2518,6 +2528,7 @@ export function ParameterSettingsBody({
               </>
             )}
             {parameterType === 'uuid' && <p className="parameter-settings-empty">UUID values are generated automatically using the selected update cadence.</p>}
+            {parameterType === 'vuser_id' && <p className="parameter-settings-empty">The current virtual user identifier is supplied automatically.</p>}
             {isTime && (
               <>
                 <div className="parameter-settings-field">
@@ -2570,7 +2581,7 @@ function ParameterSettingsDialog({
   const parameterName = parameter.name || 'Parameter'
   const parameterType = parameter.type || 'list'
   const hasDataMappingSettings = parameterType === 'file' || parameterType === 'list' || parameterType === 'host'
-  const hasGeneratedValueSettings = ['random_number', 'counter', 'current_iteration', 'random_string', 'uuid'].includes(parameterType)
+  const hasGeneratedValueSettings = ['random_number', 'counter', 'current_iteration', 'vuser_id', 'random_string', 'uuid'].includes(parameterType)
   const hasTimeSettings = parameterType === 'date_time' || parameterType === 'timestamp' || parameterType === 'time'
   const hasOutputSettings = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
 
@@ -2634,10 +2645,10 @@ function ParameterSettingsDialog({
                 {(parameterType === 'list' || parameterType === 'host') && (
                   <label className="parameter-settings-wide">
                     <span>{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</span>
-                    <input
-                      value={(parameter.values || []).join(', ')}
+                    <textarea
+                      value={(parameter.values || []).join('\n')}
                       onChange={event => onUpdate('values', parseParameterListInput(event.target.value))}
-                      placeholder={parameterType === 'host' ? 'host-a, host-b' : 'value1, value2'}
+                      placeholder={parameterType === 'host' ? 'host-a\nhost-b' : 'value1\nvalue2'}
                     />
                   </label>
                 )}
@@ -2695,6 +2706,7 @@ function ParameterSettingsDialog({
                   </>
                 )}
                 {parameterType === 'uuid' && <p className="parameter-settings-empty">UUID values are generated automatically using the selected update cadence.</p>}
+                {parameterType === 'vuser_id' && <p className="parameter-settings-empty">The current virtual user identifier is supplied automatically.</p>}
               </div>
             ) : (
               <p className="parameter-settings-empty">This parameter type does not use generated value fields.</p>

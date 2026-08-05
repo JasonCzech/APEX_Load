@@ -1083,6 +1083,8 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 		if test.TimeslotID != nil {
 			slotID = strings.TrimSpace(*test.TimeslotID)
 		}
+		eventSnapshot := cloneManagedTestFieldsLocked(test)
+		compactTerminalManagedTestLocked(test)
 		tr.mu.Unlock()
 		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {
 			slog.Warn("aborted test transition could not refresh scenario occurrence cache", "test_id", test.ID, "error", err)
@@ -1091,7 +1093,7 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 		if releaseErr != nil && slotID != "" {
 			tr.enqueueCapacityReservationReleaseRetry(test.ID, slotID)
 		}
-		tr.broadcastEvent("test_aborted", test)
+		tr.broadcastEvent("test_aborted", eventSnapshot)
 		if advanceErr := tr.advanceExecutionPlanForTest(test, "ABORTED"); advanceErr != nil {
 			return errors.Join(releaseErr, fmt.Errorf("persist aborted execution-plan transition: %w", advanceErr))
 		}
@@ -1967,7 +1969,9 @@ func (tr *TestRunner) failClosedUncertainVUserScale(reservation *vuserScaleReser
 	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 	tr.cancelAllVUserScaleRampsLocked(test)
 	cancel := test.cancel
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
+	tr.broadcastEvent("test_stopping", eventSnapshot)
 
 	var stopErr error
 	if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
@@ -1983,7 +1987,6 @@ func (tr *TestRunner) failClosedUncertainVUserScale(reservation *vuserScaleReser
 	if stopErr != nil {
 		tr.enqueueStopTeardownRetry(test.ID, false)
 	}
-	tr.broadcastEvent("test_stopping", test)
 	var persistWrapped error
 	if persistErr != nil {
 		persistWrapped = fmt.Errorf("persist fail-closed VUser state: %w", persistErr)
@@ -2534,7 +2537,9 @@ func (tr *TestRunner) failClosedUncertainDurationAdjustment(test *ManagedTest, b
 	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 	tr.cancelAllVUserScaleRampsLocked(test)
 	cancel := test.cancel
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
+	tr.broadcastEvent("test_stopping", eventSnapshot)
 
 	var stopErr error
 	if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
@@ -2550,7 +2555,6 @@ func (tr *TestRunner) failClosedUncertainDurationAdjustment(test *ManagedTest, b
 	if stopErr != nil {
 		tr.enqueueStopTeardownRetry(test.ID, false)
 	}
-	tr.broadcastEvent("test_stopping", test)
 	var persistWrapped error
 	if persistErr != nil {
 		persistWrapped = fmt.Errorf("persist fail-closed duration state: %w", persistErr)
@@ -2837,7 +2841,9 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 	persistErr := retryDurableTransition(func() error { return tr.saveManagedTestRecord(test) })
 	tr.cancelAllVUserScaleRampsLocked(test)
 	cancel := test.cancel
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
+	tr.broadcastEvent("test_stopping", eventSnapshot)
 
 	var stopErr error
 	if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
@@ -2853,7 +2859,6 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 	if stopErr != nil {
 		tr.enqueueStopTeardownRetry(test.ID, false)
 	}
-	tr.broadcastEvent("test_stopping", test)
 	var persistWrapped error
 	if persistErr != nil {
 		persistWrapped = fmt.Errorf("persist fail-closed remote control state: %w", persistErr)
@@ -3238,6 +3243,7 @@ func (tr *TestRunner) failTestBeforeRun(test *ManagedTest, message string) error
 	test.cancel = nil
 	test.executionCtx = nil
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
+	compactTerminalManagedTestLocked(test)
 	tr.mu.Unlock()
 	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, "FAILED")
 	if releaseErr != nil && test.TimeslotID != nil {
@@ -3324,6 +3330,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	}
 	terminalSnapshot := buildRunLiveStateSnapshotLocked(test, endTime)
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
+	compactTerminalManagedTestLocked(test)
 	tr.mu.Unlock()
 	if finalStatus == "FAILED" {
 		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {

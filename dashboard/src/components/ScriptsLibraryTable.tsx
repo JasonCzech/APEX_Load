@@ -10,6 +10,7 @@ import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryM
 import ReferenceKeyBadge from './ReferenceKeyBadge'
 import { isAddressableScriptId } from './scriptIdentity'
 import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
+import { scriptContainsSecretReferences } from './scriptSecretReferenceModel'
 
 export interface ScriptLibraryFederation {
   sourceFilter: LibrarySourceFilter
@@ -58,15 +59,6 @@ interface Props {
   onConfigureSecrets?: (script: StoredScript) => void
   onRetrySecretStatus?: (script: StoredScript) => void
   onValidateScriptDetails?: (id: string) => Promise<ScriptValidationResponse>
-}
-
-function scriptContainsSecretReferences(script: StoredScript): boolean {
-  if (!script.script) return false
-  try {
-    return JSON.stringify(script.script).includes('{{secret.')
-  } catch {
-    return false
-  }
 }
 
 function formatDate(value?: string) {

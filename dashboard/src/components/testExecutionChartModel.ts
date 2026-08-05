@@ -935,7 +935,7 @@ export function aggregateByGranularity(points: MetricsHistoryPoint[], bucketSeco
     // and any string fields are retained; overwrite only the averaged metrics.
     const merged: MetricsHistoryPoint = { ...group[0] }
     sums.forEach((agg, key) => {
-      merged[key] = Math.round((agg.total / agg.count) * 10) / 10
+      merged[key] = agg.total / agg.count
     })
     result.push(merged)
     group = []

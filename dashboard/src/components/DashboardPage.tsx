@@ -19,6 +19,7 @@ import { useHasTopbarContributionProvider, useTopbarContribution } from '../hook
 import { useSharedTestList } from '../hooks/useSharedTestList'
 import { DEFAULT_TEST_CATALOG_PAGE_SIZE, loadTestSummaryTail } from './testCatalogPagination'
 import './DashboardPage.css'
+import { aggregateDashboardTpsHistory } from './dashboardAggregateHistory'
 
 interface Props {
   testStatuses: Record<string, string>
@@ -1341,15 +1342,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}`)
   const activeTestIds = useMemo(() => activeTests.map(test => test.id), [activeTests])
   const aggregateHistory = useMemo(() => {
-    if (activeTestIds.length === 0) return []
-    const rows: MetricsHistoryPoint[] = []
-    for (const testId of activeTestIds) {
-      const history = metricsHistory[testId]
-      if (history?.length) rows.push(...history.slice(-60))
-    }
-    return rows
-      .sort((left, right) => (left.timestampMs ?? 0) - (right.timestampMs ?? 0))
-      .slice(-60)
+    return aggregateDashboardTpsHistory(activeTestIds, metricsHistory)
   }, [activeTestIds, metricsHistory])
 
   if (activeApplicationId && (releasesLoading || releasesError)) {

@@ -58,11 +58,14 @@ export function reseedScenarioGroups(
   previousGroups: ScenarioFormGroup[],
 ): ScenarioFormGroup[] {
   const groups = seedGroups && seedGroups.length > 0 ? seedGroups : [{ name: '', vusers: 10 }]
-  return ensureScenarioGroups(groups.map((group, index) => {
+  const seededGroups = groups.map((group, index) => {
     const previous = previousGroups[index]
     return {
       name: group.name || previous?.name || (index === 0 ? '' : `Group ${index + 1}`),
-      script_id: previous?.script_id || previousGroups[0]?.script_id || '',
+      // A newly introduced shape group has no safe script mapping. Reusing the
+      // first group's script silently turns an incomplete shape into an
+      // executable duplicate workload.
+      script_id: previous?.script_id || '',
       role: previous?.role,
       vusers: group.vusers || previous?.vusers || 10,
       ramp_up: group.ramp_up || '',
@@ -73,7 +76,14 @@ export function reseedScenarioGroups(
       runtimeSettings: previous?.runtimeSettings ? structuredClone(previous.runtimeSettings) : undefined,
       assignment: cloneAssignment(previous?.assignment),
     }
+  })
+  const preservedExtraGroups = previousGroups.slice(groups.length).map(group => ({
+    ...group,
+    stages: structuredClone(group.stages || []),
+    runtimeSettings: group.runtimeSettings ? structuredClone(group.runtimeSettings) : undefined,
+    assignment: cloneAssignment(group.assignment),
   }))
+  return ensureScenarioGroups([...seededGroups, ...preservedExtraGroups])
 }
 
 function browserRuntimeFromForm(form: ScenarioFormState) {

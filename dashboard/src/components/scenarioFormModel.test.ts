@@ -1,0 +1,25 @@
+import { describe, expect, it } from 'vitest'
+
+import { reseedScenarioGroups } from './scenarioFormModel'
+
+describe('reseedScenarioGroups', () => {
+  it('preserves groups beyond the selected shape and does not invent script mappings', () => {
+    const previous = [
+      { name: 'Checkout', script_id: 'script-a', vusers: 10, ramp_up: '', ramp_down: '', stages: [], initialization: 'at_runtime' as const },
+      { name: 'Search', script_id: 'script-b', vusers: 20, ramp_up: '', ramp_down: '', stages: [], initialization: 'at_runtime' as const },
+      { name: 'Observe', script_id: 'script-c', vusers: 1, ramp_up: '', ramp_down: '', stages: [], initialization: 'at_runtime' as const, role: 'observer' as const },
+    ]
+
+    const reseeded = reseedScenarioGroups([
+      { name: 'Primary', vusers: 50 },
+      { name: 'Secondary', vusers: 25 },
+      { name: 'New lane', vusers: 5 },
+    ], previous.slice(0, 2))
+    expect(reseeded.map(group => group.script_id)).toEqual(['script-a', 'script-b', ''])
+
+    const narrowed = reseedScenarioGroups([{ name: 'Primary', vusers: 50 }], previous)
+    expect(narrowed).toHaveLength(3)
+    expect(narrowed[1]).toMatchObject({ name: 'Search', script_id: 'script-b' })
+    expect(narrowed[2]).toMatchObject({ name: 'Observe', script_id: 'script-c', role: 'observer' })
+  })
+})

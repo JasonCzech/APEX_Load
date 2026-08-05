@@ -248,13 +248,17 @@ export function mapArchiveResourceSamples(samples: ResourceSample[] | undefined)
         time: new Date(sample.timestamp).toLocaleTimeString(),
         timestampMs: Number.isNaN(timestampMs) ? undefined : timestampMs,
         vusers: sample.active_vusers ?? 0,
-        tps: 0,
-        avgMs: 0,
-        errorPct: 0,
-        p50: 0,
-        p90: 0,
-        p95: 0,
-        p99: 0,
+        // Resource samples are independently downsampled from performance
+        // summaries. NaN keeps unmatched resource-only points out of Recharts
+        // performance lines and KPI/breach calculations without inventing a
+        // zero-throughput/zero-latency interval.
+        tps: Number.NaN,
+        avgMs: Number.NaN,
+        errorPct: Number.NaN,
+        p50: Number.NaN,
+        p90: Number.NaN,
+        p95: Number.NaN,
+        p99: Number.NaN,
         resourceSampleOnly: 1,
         cpuProcess: sample.cpu_process_pct,
         cpuFree: sample.cpu_free_pct,
@@ -559,11 +563,16 @@ export function summarizeExecutionChartData(filteredData: MetricsHistoryPoint[])
     return null
   }
 
-  // Exclude gap-boundary spacer rows inserted by markDataGaps: they carry no
-  // tps/avgMs/errorPct (undefined), so reducing over them yields NaN averages and
-  // inflates the divisor. Average only real, numeric data points.
+  // Exclude gap-boundary spacers and independently sampled resource-only rows.
+  // Resource rows intentionally use NaN for performance values so chart lines
+  // break instead of inventing zero-throughput intervals; NaN still has the
+  // JavaScript type "number", so every averaged field must be finite.
   const realPoints = filteredData.filter(
-    point => !point.isGapBoundary && typeof point.tps === 'number',
+    point => !point.isGapBoundary
+      && point.resourceSampleOnly !== 1
+      && Number.isFinite(point.tps)
+      && Number.isFinite(point.avgMs)
+      && Number.isFinite(point.errorPct),
   )
   if (realPoints.length === 0) {
     return null

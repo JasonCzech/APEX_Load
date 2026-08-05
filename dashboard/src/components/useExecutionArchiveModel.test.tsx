@@ -586,6 +586,10 @@ describe('useExecutionArchiveModel', () => {
     await flushPromises()
 
     expect(readTestId('status-filter')).toBe('500')
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 320))
+    })
+    await flushPromises()
     expect(apiMock.getTestArchiveTransactions).toHaveBeenLastCalledWith('test-1', {
       action: 'Login',
       soap_operation: undefined,

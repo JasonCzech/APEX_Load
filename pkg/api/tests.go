@@ -40,6 +40,9 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 	if ok && (tr.leadership == nil || tr.testStore == nil) {
 		cloned := tr.cloneTestSnapshotLocked(t, includeHistory)
 		tr.mu.RUnlock()
+		if includeHistory {
+			tr.attachStoredTerminalHistory(cloned)
+		}
 		return cloned, true
 	}
 	tr.mu.RUnlock()
@@ -60,6 +63,9 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 			bindingChanged := applyStoredCapacityBindingLocked(current, record)
 			cloned := tr.cloneTestSnapshotLocked(current, includeHistory)
 			tr.mu.Unlock()
+			if includeHistory {
+				tr.attachStoredTerminalHistory(cloned)
+			}
 			if bindingChanged {
 				tr.broadcastCapacityBindingUpdated(cloned)
 			}
@@ -68,12 +74,18 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 		tr.mu.Unlock()
 	}
 	managed := managedTestFromRecord(record)
-	if err := tr.restoreManagedTestRuntimeAndRepair(managed); err != nil {
+	if isTerminalTestStatus(managed.Status) {
+		trimTerminalManagedTestRuntime(managed)
+	} else if err := tr.restoreManagedTestRuntimeAndRepair(managed); err != nil {
 		managed.runtimeHydrationError = err.Error()
 		slog.Error("failed to restore test runtime during durable read", "test_id", managed.ID, "error", err)
 	}
 	if includeHistory {
-		tr.loadStoredTestHistory(managed)
+		if isTerminalTestStatus(managed.Status) {
+			tr.loadStoredTerminalTestSummary(managed)
+		} else {
+			tr.loadStoredTestHistory(managed)
+		}
 	}
 	// Do not publish an archive pointer until the durable identity has won the
 	// final cache race below. loadStoredTestArchive writes tr.archives eagerly and
@@ -97,6 +109,9 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 			forgetRunArchiveCache(managed.ID)
 			deleteGroupMetricsHistoryCache(managed.ID)
 		}
+		if tr.storedHistoryCache != nil {
+			tr.storedHistoryCache.deleteTest(managed.ID)
+		}
 		tr.tests[managed.ID] = managed
 		tr.observeAndIndexRefKeyLocked(managed.RefKey, managed.ID)
 		if managed.Archive != nil {
@@ -110,6 +125,9 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 	// identity. Returning managed here is deliberately fail-closed across tenants.
 	cloned := tr.cloneTestSnapshotLocked(canonical, includeHistory)
 	tr.mu.Unlock()
+	if includeHistory {
+		tr.attachStoredTerminalHistory(cloned)
+	}
 	if bindingChanged {
 		tr.broadcastCapacityBindingUpdated(cloned)
 	}
@@ -763,7 +781,11 @@ func cloneManagedTestSummaryForReadLocked(test *ManagedTest) *ManagedTest {
 	}
 	cloned := cloneManagedTestFieldsLocked(test)
 	cloned.History = nil
-	cloned.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+	if len(test.Sparkline) > 0 {
+		cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
+	} else {
+		cloned.Sparkline = buildManagedTestSparkline(test.History, test.LiveMetrics, defaultManagedTestSparklinePoints)
+	}
 	return cloned
 }
 
@@ -1249,6 +1271,9 @@ func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
 		return false, fmt.Errorf("unexpected durable test delete result %q", result)
 	}
 	deleteGroupMetricsHistoryCache(id)
+	if tr.storedHistoryCache != nil {
+		tr.storedHistoryCache.deleteTest(id)
+	}
 	tr.forgetRunSnapshotWriteStateLocked(id)
 	tr.removeRefKeyLocked(test.RefKey)
 	delete(tr.tests, id)

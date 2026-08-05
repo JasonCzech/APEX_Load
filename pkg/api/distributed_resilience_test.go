@@ -163,6 +163,38 @@ func (c *commitFailingEvacuationClient) CommitWorkAt(context.Context, string, ui
 	return generatorrpc.WorkCommitResult{}, context.DeadlineExceeded
 }
 
+func (c *commitFailingEvacuationClient) ClaimExecutionEpoch(ctx context.Context, generation uint64, owner string, ttl time.Duration) (generatorrpc.ExecutionEpochResult, error) {
+	claiming, ok := c.generatorClient.(executionEpochGeneratorClient)
+	if !ok {
+		return generatorrpc.ExecutionEpochResult{}, errors.New("wrapped generator does not support execution epochs")
+	}
+	return claiming.ClaimExecutionEpoch(ctx, generation, owner, ttl)
+}
+
+func (c *commitFailingEvacuationClient) ClaimTestExecutionEpoch(ctx context.Context, testID string, generation uint64, owner string, ttl time.Duration) (generatorrpc.ExecutionEpochResult, error) {
+	claiming, ok := c.generatorClient.(testExecutionEpochGeneratorClient)
+	if !ok {
+		return generatorrpc.ExecutionEpochResult{}, errors.New("wrapped generator does not support test execution leases")
+	}
+	return claiming.ClaimTestExecutionEpoch(ctx, testID, generation, owner, ttl)
+}
+
+func (c *commitFailingEvacuationClient) StopTestAtGeneration(ctx context.Context, testID string, graceful bool, generation uint64) (generatorrpc.StopResult, error) {
+	stopping, ok := c.generatorClient.(executionGenerationStopClient)
+	if !ok {
+		return generatorrpc.StopResult{}, errors.New("wrapped generator does not support execution-fenced stop")
+	}
+	return stopping.StopTestAtGeneration(ctx, testID, graceful, generation)
+}
+
+func (c *commitFailingEvacuationClient) OpenMetricsStreamWithSetupTimeoutForTestGeneration(ctx context.Context, timeout time.Duration, testID string, generation uint64) (*generatorrpc.MetricsStream, error) {
+	streaming, ok := c.generatorClient.(executionTestSetupMetricsClient)
+	if !ok {
+		return nil, errors.New("wrapped generator does not support test-scoped metrics streams")
+	}
+	return streaming.OpenMetricsStreamWithSetupTimeoutForTestGeneration(ctx, timeout, testID, generation)
+}
+
 func newFaultEvacuationGeneratorClient(target string, active int32) *faultEvacuationGeneratorClient {
 	return &faultEvacuationGeneratorClient{
 		evacuationFakeGeneratorClient: newEvacuationFakeGeneratorClient(target),
@@ -197,6 +229,10 @@ func (c *faultEvacuationGeneratorClient) StopTest(context.Context, string, bool)
 	}
 	c.activeVUsers = 0
 	return generatorrpc.StopResult{Acknowledged: true}, nil
+}
+
+func (c *faultEvacuationGeneratorClient) StopTestAtGeneration(ctx context.Context, testID string, graceful bool, _ uint64) (generatorrpc.StopResult, error) {
+	return c.StopTest(ctx, testID, graceful)
 }
 
 func (c *faultEvacuationGeneratorClient) active() int32 {
@@ -447,6 +483,10 @@ func (c *evacuationFakeGeneratorClient) StopTest(context.Context, string, bool) 
 	c.stops++
 	return generatorrpc.StopResult{Acknowledged: true}, nil
 }
+
+func (c *evacuationFakeGeneratorClient) StopTestAtGeneration(ctx context.Context, testID string, graceful bool, _ uint64) (generatorrpc.StopResult, error) {
+	return c.StopTest(ctx, testID, graceful)
+}
 func (c *evacuationFakeGeneratorClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
 	return nil, nil
 }
@@ -473,6 +513,18 @@ func (c *evacuationFakeGeneratorClient) closeCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.closes
+}
+
+func configureEvacuationExecutionLease(runner *TestRunner, test *ManagedTest, generation uint64, owner string, ttl time.Duration) {
+	leadership := newExecutionLeadership(nil, owner)
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = owner
+	leadership.durableGeneration = generation
+	leadership.localLeaseDeadline = time.Now().Add(ttl)
+	leadership.mu.Unlock()
+	runner.leadership = leadership
+	test.executionGeneration = generation
 }
 
 func TestDistributedEvacuateGeneratorRefusesMergeOntoExistingGroupShard(t *testing.T) {
@@ -690,7 +742,7 @@ func TestFailClosedUncertainEvacuationPreservesStoppedParticipantArchive(t *test
 	}
 }
 
-func TestDistributedEvacuationSourceStopResponseLossStopsWholeRun(t *testing.T) {
+func TestPublicGeneratorLossReasonCannotBypassSourceStopFence(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	replacement, replacementService := newTestGeneratorRPCClient(t, "gen-b", 10)
@@ -709,7 +761,7 @@ func TestDistributedEvacuationSourceStopResponseLossStopsWholeRun(t *testing.T) 
 		Status:     "RUNNING",
 		Duration:   time.Minute,
 		StartedAt:  &started,
-		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: false},
 		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
 		remoteGroupShards: map[string][]GeneratorShardSummary{
 			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
@@ -718,8 +770,13 @@ func TestDistributedEvacuationSourceStopResponseLossStopsWholeRun(t *testing.T) 
 		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+	configureEvacuationExecutionLease(runner, test, 84, "hostile-reason/84", 2*time.Second)
 
-	_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "operator_evacuate")
+	startedEvacuation := time.Now()
+	_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "generator_loss")
+	if elapsed := time.Since(startedEvacuation); elapsed >= time.Second {
+		t.Fatalf("public free-text reason waited for an unauthorized lease-expiry fence: %s", elapsed)
+	}
 	var uncertain *distributedEvacuationUncertainError
 	if !errors.As(err, &uncertain) {
 		t.Fatalf("EvacuateGenerator error = %v, want distributedEvacuationUncertainError", err)
@@ -931,6 +988,7 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	t.Cleanup(hub.Stop)
 	runner := NewTestRunner(1, hub, nil)
 	runner.tests[test.ID] = test
+	configureEvacuationExecutionLease(runner, test, 81, "operator-evacuation/81", 10*time.Second)
 
 	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance window")
 	if err != nil {
@@ -957,10 +1015,11 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	}
 	resumeCtx, resumeCancel := context.WithTimeout(context.Background(), time.Second)
 	resumeResult, resumeErr := replacementClient.SetPaused(resumeCtx, generatorrpc.PauseControl{
-		TestID:            test.ID,
-		Pause:             false,
-		OperationID:       "resume-paused-evacuation",
-		OperationSequence: 1,
+		TestID:              test.ID,
+		ExecutionGeneration: 81,
+		Pause:               false,
+		OperationID:         "resume-paused-evacuation",
+		OperationSequence:   1,
 	})
 	resumeCancel()
 	if resumeErr != nil || !resumeResult.Accepted || resumeResult.CurrentPaused {
@@ -1004,7 +1063,7 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	if got := failedClient.closeCount(); got != 1 {
 		t.Fatalf("archive-only source close count = %d, want 1", got)
 	}
-	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID}); err != nil {
+	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID, ExecutionGeneration: 81}); err != nil {
 		t.Fatalf("cleanup StopTest: %v", err)
 	}
 }
@@ -1015,7 +1074,11 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 	sourceClient, sourceService := newTestGeneratorRPCClient(t, "gen-a", 10)
 	replacementClient, replacementService := newTestGeneratorRPCClient(t, "gen-b", 10)
 
-	const testID = "run-source-terminal-race"
+	const (
+		testID              = "run-source-terminal-race"
+		executionGeneration = uint64(82)
+		executionLeaseOwner = "operator-terminal-race/82"
+	)
 	script := &dsl.Script{ID: "buyers-script", Name: "Buyers", Protocol: "http"}
 	scriptContent, contentHash, dataFiles, err := generatorrpc.PrepareDistributedScript(script)
 	if err != nil {
@@ -1023,30 +1086,41 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 	}
 	setupCtx, setupCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer setupCancel()
-	if _, err := sourceClient.DistributeScript(setupCtx, generatorrpc.Script{ID: script.ID, Content: scriptContent, ContentHash: contentHash}); err != nil {
+	for target, client := range map[string]*generatorrpc.Client{"source": sourceClient, "replacement": replacementClient} {
+		claim, claimErr := client.ClaimExecutionEpoch(setupCtx, executionGeneration, executionLeaseOwner, 10*time.Second)
+		if claimErr != nil || !claim.Accepted {
+			t.Fatalf("claim %s execution epoch = (%+v, %v)", target, claim, claimErr)
+		}
+	}
+	if _, err := sourceClient.DistributeScript(setupCtx, generatorrpc.Script{ID: script.ID, ExecutionGeneration: executionGeneration, Content: scriptContent, ContentHash: contentHash}); err != nil {
 		t.Fatalf("distribute source script: %v", err)
 	}
 	assignment, err := sourceClient.AssignWork(setupCtx, generatorrpc.Assignment{
-		TestID:             testID,
-		GroupName:          "buyers",
-		TargetDuration:     time.Minute,
-		ScriptID:           script.ID,
-		ExpectedScriptHash: contentHash,
-		VUserCount:         2,
-		ShardOrdinal:       0,
-		ShardCount:         1,
-		DataFiles:          dataFiles,
+		TestID:                    testID,
+		ExecutionGeneration:       executionGeneration,
+		RequireTestExecutionLease: true,
+		GroupName:                 "buyers",
+		TargetDuration:            time.Minute,
+		ScriptID:                  script.ID,
+		ExpectedScriptHash:        contentHash,
+		VUserCount:                2,
+		ShardOrdinal:              0,
+		ShardCount:                1,
+		DataFiles:                 dataFiles,
 	})
 	if err != nil || !assignment.Accepted {
 		t.Fatalf("assign source work = (%+v, %v)", assignment, err)
 	}
-	if commit, err := sourceClient.CommitWork(setupCtx, testID, 0); err != nil || !commit.Accepted {
+	if claim, claimErr := sourceClient.ClaimTestExecutionEpoch(setupCtx, testID, executionGeneration, executionLeaseOwner, 8*time.Second); claimErr != nil || !claim.Accepted {
+		t.Fatalf("claim source test execution lease = (%+v, %v)", claim, claimErr)
+	}
+	if commit, err := sourceClient.CommitWork(setupCtx, testID, executionGeneration); err != nil || !commit.Accepted {
 		t.Fatalf("commit source work = (%+v, %v)", commit, err)
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	sourceStream, err := sourceClient.OpenMetricsStreamWithSetupTimeoutForTestGeneration(runCtx, time.Second, testID, 0)
+	sourceStream, err := sourceClient.OpenMetricsStreamWithSetupTimeoutForTestGeneration(runCtx, time.Second, testID, executionGeneration)
 	if err != nil {
 		t.Fatalf("open source metrics stream: %v", err)
 	}
@@ -1083,6 +1157,7 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 		remoteActivated:              true,
 		executionBackend:             backend,
 	}
+	configureEvacuationExecutionLease(runner, test, executionGeneration, executionLeaseOwner, 10*time.Second)
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()
@@ -1204,6 +1279,7 @@ func TestDistributedEvacuationCommitFailureAfterSourceFenceFailsClosed(t *testin
 	t.Cleanup(hub.Stop)
 	runner := NewTestRunner(1, hub, nil)
 	runner.tests[test.ID] = test
+	configureEvacuationExecutionLease(runner, test, 83, "loss-evacuation/83", 10*time.Second)
 
 	_, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "generator_loss")
 	var uncertain *distributedEvacuationUncertainError

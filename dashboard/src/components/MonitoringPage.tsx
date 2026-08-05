@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode, type MouseEvent as ReactMouseEvent } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { formatDatetimeLocalValue } from './newTestScheduleFormat'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useApi } from '../hooks/useApi'
@@ -306,6 +306,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const activeProjectId = activeProject?.id
   const refreshGenerationRef = useRef(0)
   const refreshScopeRef = useRef(activeProjectId)
+  const initializedScopeRef = useRef<string | null>(null)
+  const initialRefreshCompleteRef = useRef(false)
+  const calendarRefreshRangeRef = useRef('')
   const refreshInFlightRef = useRef<Promise<void> | null>(null)
   const queuedRefreshRef = useRef<RefreshWork | null>(null)
   const fleetEventGenerationRef = useRef(0)
@@ -612,60 +615,14 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     if (scheduleHealthRes.ok || runCalendarRes.ok) setLastRefreshed(new Date())
   }), [activeCategoryId, activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, runCoalescedRefresh])
 
-  const refreshAll = useCallback(() => runCoalescedRefresh(async () => {
-    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
-    const generation = refreshGenerationRef.current
-    const projectScope = activeProjectId
-    const [healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes] = await Promise.all([
-      settleApiCall(() => api.getHealth()),
-      settleApiCall(() => api.getSystemInventory()),
-      canManageSystem ? settleApiCall(() => api.getRestartCapabilities()) : Promise.resolve({ ok: false } as const),
-      settleApiCall(() => api.getSystemReadiness()),
-      settleApiCall(() => api.getSystemServices()),
-      settleApiCall(() => api.getScheduleHealth()),
-      settleApiCall(() => api.getRunCalendar({
-        from: calendarRange.from.toISOString(),
-        to: calendarRange.to.toISOString(),
-        project_id: projectScope,
-        capacity: true,
-        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      })),
-      settleApiCall(() => api.getAPMIntegrationProfiles()),
-      settleApiCall(() => api.getInfrastructureMonitorPacks()),
-      settleApiCall(() => api.getFleetAlerts()),
-      canManageSystem ? settleApiCall(() => api.listAuthAuditEvents({ limit: 20 })) : Promise.resolve({ ok: false } as const),
-      settleApiCall(() => api.getFleetCapacity(projectScope ? { project_id: projectScope } : undefined)),
-      settleApiCall(() => api.getFleetProvisioner()),
-    ])
-    if (generation !== refreshGenerationRef.current || projectScope !== refreshScopeRef.current) return
-    if (healthRes.ok) setHealth(healthRes.value)
-    if (inventoryRes.ok) setInventory(inventoryRes.value)
-    if (restartCapsRes.ok) setRestartCapabilities(restartCapsRes.value)
-    if (readinessRes.ok) setSystemReadiness(readinessRes.value)
-    if (servicesRes.ok) setSystemServices(servicesRes.value)
-    if (scheduleHealthRes.ok) setScheduleHealth(scheduleHealthRes.value)
-    if (runCalendarRes.ok) setRunCalendar(runCalendarRes.value)
-    if (apmProfilesRes.ok) setApmProfiles(apmProfilesRes.value)
-    if (monitorPacksRes.ok) setMonitorPacks(monitorPacksRes.value)
-    if (fleetAlertsRes.ok) setFleetAlerts(fleetAlertsRes.value.alerts || [])
-    if (fleetAuditRes.ok) setFleetAuditEvents((fleetAuditRes.value.events || []).filter(isFleetAuditEvent).slice(0, 8))
-    else if (!canManageSystem) setFleetAuditEvents([])
-    if (fleetCapacityRes.ok) setFleetCapacity(fleetCapacityRes.value)
-    if (provisionerRes.ok) setProvisioner(provisionerRes.value)
-    recordCardFreshness([
-      { cardId: 'system-health', ok: healthRes.ok && inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
-      { cardId: 'production-readiness', ok: readinessRes.ok && servicesRes.ok },
-      { cardId: 'generators', ok: inventoryRes.ok && (!canManageSystem || restartCapsRes.ok) },
-      { cardId: 'fleet-alerts', ok: fleetAlertsRes.ok },
-      ...(canManageSystem ? [{ cardId: 'fleet-audit', ok: fleetAuditRes.ok }] : []),
-      { cardId: 'capacity', ok: fleetCapacityRes.ok },
-      { cardId: 'generator-metadata', ok: provisionerRes.ok },
-      { cardId: 'apm-integrations', ok: apmProfilesRes.ok },
-      { cardId: 'monitor-packs', ok: monitorPacksRes.ok },
-      { cardId: 'run-calendar', ok: scheduleHealthRes.ok && runCalendarRes.ok },
-    ])
-    if ([healthRes, inventoryRes, restartCapsRes, readinessRes, servicesRes, scheduleHealthRes, runCalendarRes, apmProfilesRes, monitorPacksRes, fleetAlertsRes, fleetAuditRes, fleetCapacityRes, provisionerRes].some(result => result.ok)) setLastRefreshed(new Date())
-  }), [activeProjectId, api, calendarRange.from, calendarRange.to, canManageSystem, recordCardFreshness, runCoalescedRefresh])
+  const refreshAllCategories = useCallback(async (): Promise<boolean> => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
+    for (const category of ['overview', 'fleet', 'telemetry', 'schedules'] as MonitorCategoryId[]) {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false
+      await refresh(category)
+    }
+    return true
+  }, [refresh])
 
   const toggleFleetAlertAck = useCallback(async (alert: FleetAlert) => {
     if (!alert.id) return
@@ -682,15 +639,38 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   }, [api, refresh])
 
   useEffect(() => {
-    refreshAll()
-  }, [refreshAll])
+    const scope = activeProjectId || ''
+    if (initializedScopeRef.current === scope) return
+    initializedScopeRef.current = scope
+    initialRefreshCompleteRef.current = false
+    void refreshAllCategories().then(completed => {
+      if (completed && initializedScopeRef.current === scope) initialRefreshCompleteRef.current = true
+    })
+  }, [activeProjectId, refreshAllCategories])
+
+  useEffect(() => {
+    const rangeKey = `${calendarRange.from.toISOString()}|${calendarRange.to.toISOString()}`
+    if (!calendarRefreshRangeRef.current) {
+      calendarRefreshRangeRef.current = rangeKey
+      return
+    }
+    if (calendarRefreshRangeRef.current === rangeKey) return
+    calendarRefreshRangeRef.current = rangeKey
+    void refresh('schedules')
+  }, [calendarRange.from, calendarRange.to, refresh])
 
   useEffect(() => {
     const interval = setInterval(refresh, 5000)
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refresh()
+        if (initialRefreshCompleteRef.current) refresh()
+        else {
+          const scope = initializedScopeRef.current
+          void refreshAllCategories().then(completed => {
+            if (completed && initializedScopeRef.current === scope) initialRefreshCompleteRef.current = true
+          })
+        }
       }
     }
 
@@ -704,7 +684,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [refresh])
+  }, [refresh, refreshAllCategories])
 
   useEffect(() => {
     if (fleetEventSignal <= 0) return
@@ -2133,9 +2113,9 @@ function RunCalendarPanel({
         <div className="run-calendar-main">
           {view === 'day' ? (
             <div className="run-calendar-agenda" aria-label={`Runs for ${formatCalendarDate(anchor)}`}>
-              {events.length === 0 ? (
+              {(model.days[0]?.events.length || 0) === 0 ? (
                 <p className="monitor-hint">No runs in this day.</p>
-              ) : events.map(event => (
+              ) : model.days[0].events.map(event => (
                 <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="agenda" onSelect={onSelectEvent} />
               ))}
             </div>
@@ -2148,11 +2128,8 @@ function RunCalendarPanel({
                 const visibleEvents = day.events.slice(0, view === 'month' ? 4 : 7)
                 const hiddenCount = day.events.length - visibleEvents.length
                 const capacityDay = capacityByDate.get(day.key)
-                const scheduleForThisDay = onScheduleForDate
-                  ? (event: ReactMouseEvent<HTMLDivElement>) => {
-                      // Only the empty cell area schedules — clicks on event
-                      // buttons / "+more" keep their own behavior.
-                      if ((event.target as HTMLElement).closest('button')) return
+                const scheduleThisDay = onScheduleForDate
+                  ? () => {
                       const slot = new Date(day.date.getFullYear(), day.date.getMonth(), day.date.getDate(), 9, 0, 0, 0)
                       onScheduleForDate(formatDatetimeLocalValue(slot))
                     }
@@ -2160,13 +2137,21 @@ function RunCalendarPanel({
                 return (
                   <div
                     key={day.key}
-                    className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''} ${scheduleForThisDay ? 'schedulable' : ''}`}
-                    {...(scheduleForThisDay ? interactiveElementProps(event => scheduleForThisDay(event as ReactMouseEvent<HTMLDivElement>), `Schedule a run on ${day.key}`) : {})}
-                    title={scheduleForThisDay ? 'Schedule a run on this day' : undefined}
+                    className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''} ${scheduleThisDay ? 'schedulable' : ''}`}
+                    {...(scheduleThisDay ? interactiveElementProps<HTMLDivElement>(event => {
+                      // Only the empty cell area schedules; child event buttons
+                      // retain their own mouse and keyboard behavior.
+                      if ((event.target as HTMLElement).closest('button')) return
+                      scheduleThisDay()
+                    }, 'Schedule a run on this day') : {})}
+                    title={scheduleThisDay ? 'Schedule a run on this day' : undefined}
                   >
                     <div className="run-calendar-day-header">
                       <span>{formatCalendarDayNumber(day.date, view)}</span>
                       <span className="run-calendar-day-header-meta">
+                        {scheduleThisDay && (
+                          <button type="button" className="btn-icon" aria-label={`Schedule a run on ${day.key}`} onClick={event => { event.stopPropagation(); scheduleThisDay() }}>+</button>
+                        )}
                         {capacityDay && capacityDay.reservation_count > 0 && (
                           <span
                             className={`run-calendar-pressure-pip ${capacityDay.pressure}`}
@@ -2302,11 +2287,12 @@ function RunCalendarMetric({ label, value }: { label: string; value: number }) {
 }
 
 function RunCalendarEventButton({ event, selected, mode, onSelect }: { event: RunCalendarEvent; selected: boolean; mode: 'compact' | 'agenda'; onSelect: (event: RunCalendarEvent) => void }) {
+  const scheduledZoneTime = event.timezone ? formatCalendarTime(event.start_at, event.timezone) : ''
   return (
     <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${formatRunCalendarStatus(event.status)}`}>
-      <span className="run-calendar-event-time">{formatCalendarTime(event.start_at, event.timezone)}</span>
+      <span className="run-calendar-event-time">{formatCalendarTime(event.start_at)}</span>
       <span className="run-calendar-event-title">{event.title}</span>
-      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}</span>
+      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}{scheduledZoneTime ? ` / ${scheduledZoneTime}` : ''}</span>
     </button>
   )
 }

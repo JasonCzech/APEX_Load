@@ -81,7 +81,7 @@ describe('script editor parameter data model', () => {
       ...EMPTY_SCRIPT,
       data_sources: [
         source({ name: 'users', inline_data: 'username\nalice\nbob' }),
-        source({ name: 'passwords', path: 'passwords.csv', inline_data: 'password\nsecret' }),
+        source({ name: 'passwords', path: 'passwords.csv', inline_data: 'password\nsecret\nhunter2' }),
         source({ name: 'accounts', type: 'json', inline_data: '' }),
       ],
       parameters: [
@@ -102,12 +102,66 @@ describe('script editor parameter data model', () => {
       sourceCount: 2,
     })
     expect(result?.script.data_sources?.map(item => item.name)).toEqual(['accounts', 'merged_parameters'])
-    expect(result?.script.data_sources?.[1].inline_data).toBe('username,password\nalice,secret\nbob,')
+    expect(result?.script.data_sources?.[1].inline_data).toBe('username,password\nalice,secret\nbob,hunter2')
     expect(result?.script.parameters).toEqual([
       expect.objectContaining({ name: 'username', data_source: 'merged_parameters', column: 'username' }),
       expect.objectContaining({ name: 'password', data_source: 'merged_parameters', column: 'password' }),
       expect.objectContaining({ name: 'account', data_source: 'accounts', column: 'id' }),
     ])
+  })
+
+  it('refuses merges that would pad rows or orphan direct data-source references', () => {
+    const base: ScriptDefinition = {
+      ...EMPTY_SCRIPT,
+      data_sources: [
+        source({ name: 'users', inline_data: 'username\nalice\nbob' }),
+        source({ name: 'regions', inline_data: 'region\nUS' }),
+      ],
+      parameters: [
+        { name: 'username', type: 'file', data_source: 'users', column: 'username' },
+        { name: 'region', type: 'file', data_source: 'regions', column: 'region' },
+      ],
+    }
+    expect(summarizeParameterSourceMerge(base).canMerge).toBe(false)
+    expect(buildMergedParameterSourceScript(base)).toBeNull()
+
+    const directReference = {
+      ...base,
+      data_sources: base.data_sources?.map(source => ({
+        ...source,
+        inline_data: source.name === 'regions' ? 'region\nUS\nCA' : source.inline_data,
+      })),
+      actions: [{ name: 'lookup', type: 'GET', target: '/{{data.regions.region}}' }],
+    }
+    expect(summarizeParameterSourceMerge(directReference).canMerge).toBe(false)
+    expect(buildMergedParameterSourceScript(directReference)).toBeNull()
+  })
+
+  it('refuses merges that would discard unbound columns or combine incompatible source strategies', () => {
+    const base: ScriptDefinition = {
+      ...EMPTY_SCRIPT,
+      data_sources: [
+        source({ name: 'users', inline_data: 'username,email\nalice,alice@example.test\nbob,bob@example.test' }),
+        source({ name: 'regions', inline_data: 'region\nUS\nCA' }),
+      ],
+      parameters: [
+        { name: 'username', type: 'file', data_source: 'users', column: 'username' },
+        { name: 'region', type: 'file', data_source: 'regions', column: 'region' },
+      ],
+    }
+    expect(summarizeParameterSourceMerge(base).canMerge).toBe(false)
+    expect(buildMergedParameterSourceScript(base)).toBeNull()
+
+    const incompatibleStrategies = {
+      ...base,
+      data_sources: base.data_sources?.map(dataSource => ({
+        ...dataSource,
+        inline_data: dataSource.name === 'users' ? 'username\nalice\nbob' : dataSource.inline_data,
+        strategy: dataSource.name === 'users' ? 'random' : 'sequential',
+      })),
+    }
+    expect(summarizeParameterSourceMerge(incompatibleStrategies).canMerge).toBe(false)
+    expect(buildMergedParameterSourceScript(incompatibleStrategies)).toBeNull()
   })
 
   it('declines source merging until at least two eligible files are represented', () => {

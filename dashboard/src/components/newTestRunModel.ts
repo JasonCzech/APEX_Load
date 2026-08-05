@@ -815,8 +815,8 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
     thinkTimeConfig: runtime.think_time
       ? { ...runtime.think_time, type: canonicalThinkTimeType(runtime.think_time.type) }
       : undefined,
-    continue_on_error: String(Boolean(runtime.continue_on_error)),
-    snapshot_on_error: String(Boolean(runtime.snapshot_on_error)),
+    continue_on_error: runtime.continue_on_error === undefined ? '' : String(runtime.continue_on_error),
+    snapshot_on_error: runtime.snapshot_on_error === undefined ? '' : String(runtime.snapshot_on_error),
     browser_device_profile: runtime.browser?.device_profile || '',
     browser_headless: runtime.browser?.headless === undefined ? '' : String(runtime.browser.headless),
     browser_touch_mode: runtime.browser?.touch_mode === undefined ? '' : String(runtime.browser.touch_mode),

@@ -54,12 +54,13 @@ func isAIGeneratedDraft(script *dsl.Script) bool {
 	}
 	generatedBy := strings.ToLower(strings.TrimSpace(script.GeneratedBy))
 	generatedFrom := strings.ToLower(strings.TrimSpace(script.GeneratedFrom))
-	if strings.Contains(generatedBy, "ai") || strings.Contains(generatedBy, "llm") || strings.Contains(generatedBy, "openai") || generatedFrom == "ai_generated" {
+	if generatedBy == "ai" || generatedBy == "llm" || generatedBy == "openai" ||
+		strings.HasPrefix(generatedBy, "apexload-ai-") || generatedFrom == "ai_generated" || generatedFrom == "ai_repaired" {
 		return true
 	}
 	if script.Metadata != nil && script.Metadata.Import != nil {
 		source := strings.ToLower(strings.TrimSpace(script.Metadata.Import.Source))
-		return source == "ai_generated" || source == "ai" || strings.Contains(source, "llm")
+		return source == "ai_generated" || source == "ai_repaired" || source == "ai" || source == "llm" || strings.HasPrefix(source, "apexload-ai-")
 	}
 	return false
 }

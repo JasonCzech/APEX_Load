@@ -474,18 +474,38 @@ export function ScriptReplayDebuggerView({
                             const conditionEvidenceFor = (p: string, ai: number, sp: string[]) => conditionEvidenceMap[`${p}#${ai}#${sp.join('/')}`]
                             const matchesFilter = (text: string) => !debugRailFilterText || text.toLowerCase().includes(debugRailFilterText)
                             const indentStyle = (depth: number) => depth > 0 ? ({ paddingLeft: `${depth * 14}px` } as React.CSSProperties) : undefined
+                            const rollupByPath = new Map<string, { count: number; failed: boolean }>()
+                            const rollupKey = (phase: string, actionIndex: number, stepPath: string[]) => `${phase}#${actionIndex}#${stepPath.join('/')}`
+                            for (const event of debugEvents) {
+                              if (event.action_index === undefined) continue
+                              const eventPath = event.step_path || []
+                              for (let depth = 0; depth <= eventPath.length; depth += 1) {
+                                const key = rollupKey(event.phase, event.action_index, eventPath.slice(0, depth))
+                                const current = rollupByPath.get(key) || { count: 0, failed: false }
+                                current.count += 1
+                                current.failed ||= !event.success
+                                rollupByPath.set(key, current)
+                              }
+                            }
+                            const childBreakpointsByAction = new Map<string, number>()
+                            for (const breakpoint of debugBreakpoints) {
+                              if (breakpoint.action_index === undefined) continue
+                              if (breakpoint.request_index == null && (!breakpoint.step_path || breakpoint.step_path.length === 0)) continue
+                              const key = `${breakpoint.phase}#${breakpoint.action_index}`
+                              childBreakpointsByAction.set(key, (childBreakpointsByAction.get(key) || 0) + 1)
+                            }
                             const out: React.ReactNode[] = []
                             for (const item of renderRows) {
                               const { phase, actionIndex, action } = item.row
                               if (item.kind === 'container') {
                                 const containerKey = item.key
                                 const isTopLevel = item.stepPath.length === 0
-                                const subtreeEvents = debugEvents.filter(ev => ev.phase === phase && ev.action_index === actionIndex && (isTopLevel || (!!ev.step_path && item.stepPath.every((s, i) => ev.step_path![i] === s))))
-                                const anyFail = subtreeEvents.some(ev => !ev.success)
+                                const subtreeRollup = rollupByPath.get(rollupKey(phase, actionIndex, item.stepPath))
+                                const anyFail = Boolean(subtreeRollup?.failed)
                                 const isCurrent = currentDebugAncestorKeys.has(containerKey)
-                                const rollup = anyFail ? 'fail' : isCurrent ? 'current' : subtreeEvents.length > 0 ? 'pass' : 'pending'
+                                const rollup = anyFail ? 'fail' : isCurrent ? 'current' : subtreeRollup?.count ? 'pass' : 'pending'
                                 const wholeActive = isTopLevel && debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
-                                const childBpCount = isTopLevel ? debugBreakpoints.filter(bp => bp.phase === phase && bp.action_index === actionIndex && (bp.request_index != null || (!!bp.step_path && bp.step_path.length > 0))).length : 0
+                                const childBpCount = isTopLevel ? childBreakpointsByAction.get(`${phase}#${actionIndex}`) || 0 : 0
                                 const gutterState = wholeActive ? 'active' : childBpCount > 0 ? 'partial' : ''
                                 const typeLabel = item.containerType === 'http_sequence' ? 'SEQ' : item.containerType === 'control_if' ? 'IF' : 'LOOP'
                                 const unitWord = item.containerType === 'http_sequence' ? 'request' : 'step'

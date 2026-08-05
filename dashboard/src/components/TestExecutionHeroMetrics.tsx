@@ -22,6 +22,11 @@ interface Props {
 }
 
 export default function TestExecutionHeroMetrics({ archiveReport, summary, metrics }: Props) {
+  const archivedAverageTps = (() => {
+    const points = archiveReport?.summary_timeline?.filter(point => Number.isFinite(point.tps)) || []
+    if (points.length === 0) return undefined
+    return points.reduce((total, point) => total + point.tps, 0) / points.length
+  })()
   return (
     <div className="hero-metrics">
       <div className="hero-card">
@@ -29,7 +34,7 @@ export default function TestExecutionHeroMetrics({ archiveReport, summary, metri
         <span className="hero-label">Max VUsers</span>
       </div>
       <div className="hero-card">
-        <span className="hero-value">{(archiveReport?.overview.peak_tps ?? summary?.avgTps ?? metrics?.tps ?? 0).toFixed(1)}</span>
+        <span className="hero-value">{(summary?.avgTps ?? archivedAverageTps ?? metrics?.tps ?? 0).toFixed(1)}</span>
         <span className="hero-label">Avg TPS</span>
       </div>
       <div className="hero-card">

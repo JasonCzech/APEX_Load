@@ -120,6 +120,26 @@ describe('useExecutionLiveControls', () => {
     expect(showControlFeedback).toHaveBeenCalledWith('Duration adjusted to 15m')
   })
 
+  it('preserves an in-progress duration edit across polling updates', async () => {
+    const test = buildRunningTest()
+    await act(async () => {
+      root.render(<LiveControlsHarness test={test} />)
+    })
+
+    await click('set-duration')
+    expect(readTestId('duration')).toBe('15m')
+
+    await act(async () => {
+      root.render(<LiveControlsHarness test={{ ...test, groups: test.groups.map(group => ({ ...group })) }} />)
+    })
+    expect(readTestId('duration')).toBe('15m')
+
+    await act(async () => {
+      root.render(<LiveControlsHarness test={{ ...test, id: 'test-2', duration: '20m' }} />)
+    })
+    expect(readTestId('duration')).toBe('20m')
+  })
+
   it('caps observer live scaling at 10 while load groups retain larger targets', async () => {
     apiMock.scaleVUsers.mockResolvedValue(undefined)
     await act(async () => {

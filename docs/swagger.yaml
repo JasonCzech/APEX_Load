@@ -3860,7 +3860,7 @@ paths:
   /api/v1/ai/policy:
     get:
       summary: AI Policy
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleAIPolicy
       responses:
         "200":
@@ -3979,7 +3979,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -4381,7 +4381,7 @@ paths:
   /api/v1/ai/review-queue:
     get:
       summary: AI Review Queue
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleAIReviewQueue
       responses:
         "200":
@@ -4506,7 +4506,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: limit
           in: query
@@ -4669,7 +4669,7 @@ paths:
   /api/v1/applications:
     get:
       summary: List Applications
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListApplications
       responses:
         "200":
@@ -4699,7 +4699,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -7880,6 +7880,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: domain_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: limit
           in: query
           description: Handler-defined query parameter.
@@ -7894,6 +7900,12 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: q
           in: query
           description: Handler-defined query parameter.
@@ -8557,7 +8569,7 @@ paths:
   /api/v1/browser-recorder/sessions:
     get:
       summary: List Browser Recordings
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListBrowserRecordings
       responses:
         "200":
@@ -8581,7 +8593,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -12724,7 +12736,7 @@ paths:
   /api/v1/data-pools:
     get:
       summary: List Data Pools
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListDataPools
       responses:
         "200":
@@ -12760,7 +12772,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: include_archived
           in: query
@@ -18777,7 +18789,7 @@ paths:
   /api/v1/library/catalog:
     get:
       summary: Library Catalog
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleLibraryCatalog
       responses:
         "200":
@@ -18909,7 +18921,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: kind
           in: query
@@ -24410,6 +24422,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: tail
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Recorder
       x-handler: handleGetRecording
@@ -24811,7 +24829,7 @@ paths:
   /api/v1/recorder/ca.pem:
     get:
       summary: Recorder CA Cert
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleRecorderCACert
       responses:
         2XX:
@@ -24820,7 +24838,7 @@ paths:
           description: Request, authentication, authorization, resource, or state error.
         5XX:
           description: Controller-side failure.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       tags:
         - Recorder
       x-handler: handleRecorderCACert
@@ -24906,7 +24924,7 @@ paths:
   /api/v1/recorder/status:
     get:
       summary: Recorder Status
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleRecorderStatus
       responses:
         "200":
@@ -24930,7 +24948,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       tags:
         - Recorder
       x-handler: handleRecorderStatus
@@ -46431,7 +46449,7 @@ paths:
   /api/v1/scenarios:
     get:
       summary: List Scenarios
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListScenarios
       responses:
         "200":
@@ -46455,7 +46473,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query
@@ -53816,7 +53834,7 @@ paths:
   /api/v1/scripts:
     get:
       summary: List Scripts
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListScripts
       responses:
         "200":
@@ -53840,7 +53858,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: folder_id
           in: query
@@ -57096,7 +57114,7 @@ paths:
   /api/v1/scripts/authoring/capabilities:
     get:
       summary: Authoring Capabilities
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleAuthoringCapabilities
       responses:
         "200":
@@ -57292,7 +57310,14 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
       tags:
         - Scripts
       x-handler: handleAuthoringCapabilities
@@ -67425,7 +67450,7 @@ paths:
   /api/v1/tests:
     get:
       summary: List Tests
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleListTests
       responses:
         "200":
@@ -67455,7 +67480,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: application_id
           in: query
@@ -95018,7 +95043,7 @@ paths:
   /api/v1/ws:
     get:
       summary: WebSocket
-      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       operationId: handleWebSocket
       responses:
         4XX:
@@ -95037,7 +95062,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; when project_id is supplied, project roles: Viewer, Editor, ProjectAdmin'
       parameters:
         - name: project_id
           in: query

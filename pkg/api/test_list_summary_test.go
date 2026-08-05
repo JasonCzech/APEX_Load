@@ -34,6 +34,29 @@ func TestCloneManagedTestSummaryForReadLockedOmitsHistory(t *testing.T) {
 	}
 }
 
+func TestCloneManagedTestSummaryUsesPreservedTerminalSparkline(t *testing.T) {
+	test := &ManagedTest{
+		ID:          "run-terminal",
+		Status:      "COMPLETE",
+		LiveMetrics: &LiveMetrics{Timestamp: time.Unix(3, 0), TPS: 13},
+		History:     []*LiveMetrics{{Timestamp: time.Unix(3, 0), TPS: 13}},
+		Sparkline: []TestSparklinePoint{
+			{Timestamp: time.Unix(1, 0), TPS: 5},
+			{Timestamp: time.Unix(2, 0), TPS: 9},
+			{Timestamp: time.Unix(3, 0), TPS: 13},
+		},
+	}
+
+	cloned := cloneManagedTestSummaryForReadLocked(test)
+	if cloned.History != nil || len(cloned.Sparkline) != 3 || cloned.Sparkline[0].TPS != 5 {
+		t.Fatalf("terminal summary = history:%#v sparkline:%#v", cloned.History, cloned.Sparkline)
+	}
+	cloned.Sparkline[0].TPS = 99
+	if test.Sparkline[0].TPS != 5 {
+		t.Fatal("terminal summary sparkline aliases canonical state")
+	}
+}
+
 func TestOperationalTestSnapshotsOmitRetainedHistory(t *testing.T) {
 	source := &ManagedTest{
 		ID:     "run-operational",

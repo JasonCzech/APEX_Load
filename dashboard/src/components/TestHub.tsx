@@ -1332,22 +1332,23 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
 
     let cancelled = false
-    setEstimateLoading(true)
     setEstimateError('')
-
-    const draftPayload = buildScenarioDraftPayload()
-    api.estimateTest(buildCreateTestPayload({
-      name: form.name,
-      duration: draftPayload.duration,
-      startDelay: '',
-      scenarioMode: draftPayload.scenario_mode,
-      scriptShakeout: false,
-      resourceBaseline: false,
-      assignment: draftPayload.assignment,
-      groups: form.groups.map(normalizeGroupForPayload),
-      goalConfig: goalConfigFromForm(form),
-      runtimeSettings: runtimeSettingsFromForm(form, showBrowserRuntimeSettings),
-    }))
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      setEstimateLoading(true)
+      const draftPayload = buildScenarioDraftPayload()
+      api.estimateTest(buildCreateTestPayload({
+        name: form.name,
+        duration: draftPayload.duration,
+        startDelay: '',
+        scenarioMode: draftPayload.scenario_mode,
+        scriptShakeout: false,
+        resourceBaseline: false,
+        assignment: draftPayload.assignment,
+        groups: form.groups.map(normalizeGroupForPayload),
+        goalConfig: goalConfigFromForm(form),
+        runtimeSettings: runtimeSettingsFromForm(form, showBrowserRuntimeSettings),
+      }))
       .then((estimate) => {
         if (cancelled) return
         setDraftEstimate(estimate)
@@ -1361,8 +1362,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         if (cancelled) return
         setEstimateLoading(false)
       })
+    }, 300)
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
   }, [api, buildScenarioDraftPayload, form, showBrowserRuntimeSettings, showForm])
 
   const scenarioReleaseOptions = useMemo(() => {

@@ -2325,7 +2325,10 @@ export function ScriptRuntimeSettingsView({
             value={(script.config.web_runtime?.source_ips || []).join('\n')}
             onChange={e => updateField('config.web_runtime', {
               ...script.config.web_runtime,
-              source_ips: e.target.value.split('\n'),
+              source_ips: e.target.value
+                .split('\n')
+                .map(value => value.trim())
+                .filter(Boolean),
             })}
             placeholder={'10.0.0.5\n10.0.0.6'}
           />
