@@ -327,13 +327,23 @@ func (tr *TestRunner) prepareTestForExecutionWithOptionsAndExpectedTerm(id strin
 		}
 	}
 
+	// Snapshot PENDING before shakeout admission runs. The check below exists to
+	// detect a test that admission just queued during THIS start attempt; without
+	// this snapshot it cannot distinguish that from a run that was already PENDING
+	// on entry, and it would swallow an operator's explicit start (returning
+	// success while dispatching nothing). That silently discarded capacity-shortfall
+	// re-approvals: the run stayed PENDING citing the very approval just granted.
+	tr.mu.RLock()
+	pendingBeforeShakeoutAdmission := tr.tests[id] != nil && tr.tests[id].Status == "PENDING"
+	tr.mu.RUnlock()
+
 	shakeoutTest, err := tr.beginScriptShakeoutIfNeededWithExpectedTerm(id, opts, expectedTerm)
 	if err != nil {
 		return nil, err
 	}
 	if shakeoutTest == nil {
 		tr.mu.RLock()
-		queuedByShakeoutAdmission := tr.tests[id] != nil && tr.tests[id].Status == "PENDING"
+		queuedByShakeoutAdmission := tr.tests[id] != nil && tr.tests[id].Status == "PENDING" && !pendingBeforeShakeoutAdmission
 		tr.mu.RUnlock()
 		if queuedByShakeoutAdmission {
 			return nil, nil

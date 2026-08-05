@@ -585,6 +585,17 @@ func (tr *TestRunner) refreshTestCapacityBindingFromStore(id string) error {
 		return fmt.Errorf("%w: test %s durable identity changed before start", errStoredTestTransitionFenced, record.ID)
 	}
 	changed := applyStoredCapacityBindingLocked(current, record)
+	// Adopt a durable ref key this replica does not have yet. sameStoredTestIdentity
+	// above already proved this is the same test, but the start-commit fence
+	// (validateExistingTestStartIdentity) compares ref_key and reads an absent
+	// process-local key as a replaced identity. Without this, a leader can never
+	// start a test whose ref key was minted by another replica: the refresh reports
+	// the same test while the commit rejects it as "replaced". Not a capacity
+	// binding change, so it must not trigger the binding broadcast below.
+	if strings.TrimSpace(current.RefKey) == "" && strings.TrimSpace(record.RefKey) != "" {
+		current.RefKey = record.RefKey
+		tr.observeAndIndexRefKeyLocked(current.RefKey, current.ID)
+	}
 	var snapshot *ManagedTest
 	if changed {
 		snapshot = cloneManagedTestSummaryForReadLocked(current)
