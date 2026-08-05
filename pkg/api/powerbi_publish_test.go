@@ -31,6 +31,8 @@ type fakePowerBI struct {
 	datasets       []powerBIDataset
 	tablesByID     map[string][]string
 	rowsByTable    map[string][][]map[string]any
+	datasetPosts   int
+	createFailure  int // status returned after committing the next dataset create
 	rowPostCount   int
 	rowFailures    map[int]int // 1-based row POST index -> status to return once
 	pushSequence   []string    // table name per successful rows POST, in order
@@ -71,6 +73,7 @@ func newFakePowerBI(t *testing.T) *fakePowerBI {
 	mux.HandleFunc("POST /v1.0/myorg/groups/{gid}/datasets", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		f.datasetPosts++
 		var payload map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		f.createdPayload = payload
@@ -88,6 +91,12 @@ func newFakePowerBI(t *testing.T) *fakePowerBI {
 			}
 		}
 		f.tablesByID[id] = tables
+		if f.createFailure != 0 {
+			status := f.createFailure
+			f.createFailure = 0
+			w.WriteHeader(status)
+			return
+		}
 		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": name})
 	})
 	mux.HandleFunc("GET /v1.0/myorg/groups/{gid}/datasets/{did}/tables", func(w http.ResponseWriter, r *http.Request) {
@@ -197,6 +206,51 @@ func TestPowerBIClientEnsureDatasetCreatesAndReuses(t *testing.T) {
 	}
 }
 
+func TestPowerBIClientEnsureDatasetReconcilesAmbiguousCreateWithoutRetry(t *testing.T) {
+	fake := newFakePowerBI(t)
+	fake.createFailure = http.StatusInternalServerError
+	client := newPowerBIClient(fake.settings(t))
+
+	id, created, err := client.ensureDataset(context.Background())
+	if err != nil {
+		t.Fatalf("ensureDataset should reconcile the committed create: %v", err)
+	}
+	if id != "ds-1" || created {
+		t.Fatalf("reconciled dataset = id %q created %v, want ds-1/false", id, created)
+	}
+	fake.mu.Lock()
+	posts := fake.datasetPosts
+	datasets := len(fake.datasets)
+	fake.mu.Unlock()
+	if posts != 1 || datasets != 1 {
+		t.Fatalf("ambiguous create evidence = posts %d datasets %d, want one mutation and one dataset", posts, datasets)
+	}
+}
+
+func TestPowerBIClientEnsureDatasetDoesNotRetryThrottleAfterCommittedCreate(t *testing.T) {
+	fake := newFakePowerBI(t)
+	// Treat even a nominal throttle response as ambiguous for dataset creation:
+	// this fake commits first to prove the client reconciles instead of issuing a
+	// second non-idempotent create.
+	fake.createFailure = http.StatusTooManyRequests
+	client := newPowerBIClient(fake.settings(t))
+
+	id, created, err := client.ensureDataset(context.Background())
+	if err != nil {
+		t.Fatalf("ensureDataset should reconcile the committed create: %v", err)
+	}
+	if id != "ds-1" || created {
+		t.Fatalf("reconciled dataset = id %q created %v, want ds-1/false", id, created)
+	}
+	fake.mu.Lock()
+	posts := fake.datasetPosts
+	datasets := len(fake.datasets)
+	fake.mu.Unlock()
+	if posts != 1 || datasets != 1 {
+		t.Fatalf("throttled create evidence = posts %d datasets %d, want one mutation and one dataset", posts, datasets)
+	}
+}
+
 func TestPowerBIClientTokenFailure(t *testing.T) {
 	fake := newFakePowerBI(t)
 	fake.failToken = true
@@ -216,7 +270,7 @@ func TestPowerBIClientMissingSecret(t *testing.T) {
 	}
 }
 
-func TestPowerBIClientPushRowsChunksAndRetries(t *testing.T) {
+func TestPowerBIClientPushRowsChunks(t *testing.T) {
 	fake := newFakePowerBI(t)
 	client := newPowerBIClient(fake.settings(t))
 	ctx := context.Background()
@@ -229,10 +283,6 @@ func TestPowerBIClientPushRowsChunksAndRetries(t *testing.T) {
 	for i := range rows {
 		rows[i] = map[string]any{"run_id": "r", "name": fmt.Sprintf("tx-%d", i)}
 	}
-	// First rows POST gets a 429 with Retry-After; the retry must succeed and
-	// chunking must split into two POSTs (10k + 25).
-	fake.rowFailures[1] = http.StatusTooManyRequests
-
 	var progress []int
 	pushed, err := client.pushRows(ctx, id, powerBITransactionsTable, rows, func(p int) { progress = append(progress, p) })
 	if err != nil {
@@ -246,6 +296,84 @@ func TestPowerBIClientPushRowsChunksAndRetries(t *testing.T) {
 	}
 	if len(progress) != 2 || progress[0] != powerBIMaxRowsPerPost || progress[1] != len(rows) {
 		t.Fatalf("unexpected chunk progress: %v", progress)
+	}
+}
+
+func TestPowerBIClientPushRowsDoesNotRetryAmbiguousFailure(t *testing.T) {
+	fake := newFakePowerBI(t)
+	client := newPowerBIClient(fake.settings(t))
+	ctx := context.Background()
+	id, _, err := client.ensureDataset(ctx)
+	if err != nil {
+		t.Fatalf("ensureDataset: %v", err)
+	}
+
+	// A retryable response does not prove that the service failed to commit the
+	// row mutation, so row delivery must stop after the first attempt.
+	fake.rowFailures[1] = http.StatusInternalServerError
+	pushed, err := client.pushRows(ctx, id, powerBITransactionsTable, []map[string]any{{"run_id": "r"}}, nil)
+	if err == nil {
+		t.Fatal("expected ambiguous row push to fail")
+	}
+	if pushed != 0 {
+		t.Fatalf("pushed = %d, want 0", pushed)
+	}
+	fake.mu.Lock()
+	posts := fake.rowPostCount
+	fake.mu.Unlock()
+	if posts != 1 {
+		t.Fatalf("row POST attempts = %d, want 1", posts)
+	}
+}
+
+func TestPowerBIClientPushRowsRefreshesExplicitlyRejectedToken(t *testing.T) {
+	fake := newFakePowerBI(t)
+	client := newPowerBIClient(fake.settings(t))
+	ctx := context.Background()
+	id, _, err := client.ensureDataset(ctx)
+	if err != nil {
+		t.Fatalf("ensureDataset: %v", err)
+	}
+
+	fake.rowFailures[1] = http.StatusUnauthorized
+	pushed, err := client.pushRows(ctx, id, powerBITransactionsTable, []map[string]any{{"run_id": "r"}}, nil)
+	if err != nil {
+		t.Fatalf("pushRows after token refresh: %v", err)
+	}
+	if pushed != 1 || fake.totalRows(powerBITransactionsTable) != 1 {
+		t.Fatalf("row delivery = pushed:%d retained:%d, want one", pushed, fake.totalRows(powerBITransactionsTable))
+	}
+	fake.mu.Lock()
+	posts := fake.rowPostCount
+	tokenRequests := fake.tokenRequests
+	fake.mu.Unlock()
+	if posts != 2 || tokenRequests < 2 {
+		t.Fatalf("retry evidence = posts:%d token_requests:%d, want one rejected attempt and a refreshed token", posts, tokenRequests)
+	}
+}
+
+func TestPowerBIClientPushRowsRetriesExplicitThrottleRejection(t *testing.T) {
+	fake := newFakePowerBI(t)
+	client := newPowerBIClient(fake.settings(t))
+	ctx := context.Background()
+	id, _, err := client.ensureDataset(ctx)
+	if err != nil {
+		t.Fatalf("ensureDataset: %v", err)
+	}
+
+	fake.rowFailures[1] = http.StatusTooManyRequests
+	pushed, err := client.pushRows(ctx, id, powerBITransactionsTable, []map[string]any{{"run_id": "r"}}, nil)
+	if err != nil {
+		t.Fatalf("pushRows after throttle rejection: %v", err)
+	}
+	if pushed != 1 || fake.totalRows(powerBITransactionsTable) != 1 {
+		t.Fatalf("row delivery = pushed:%d retained:%d, want one", pushed, fake.totalRows(powerBITransactionsTable))
+	}
+	fake.mu.Lock()
+	posts := fake.rowPostCount
+	fake.mu.Unlock()
+	if posts != 2 {
+		t.Fatalf("row POST attempts = %d, want one throttled attempt and one retry", posts)
 	}
 }
 

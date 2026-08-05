@@ -452,7 +452,11 @@ func (s *persistentSession) failAndReap(code string) processOutcome {
 	if reaped {
 		s.cleanup()
 	}
-	mergedStderr, stderrCapped := boundedCaptureField(joinDiagnostics(stderr, diagnostics))
+	exitDiagnostic := ""
+	if reaped && s.waitErr != nil {
+		exitDiagnostic = "java_vuser persistent JVM exit: " + s.waitErr.Error()
+	}
+	mergedStderr, stderrCapped := boundedCaptureField(joinDiagnostics(stderr, diagnostics, exitDiagnostic))
 	return processOutcome{
 		errorCode: code, stdout: stdout, stderr: mergedStderr, events: events,
 		stdoutTruncated: stdoutTruncated || !reaped,

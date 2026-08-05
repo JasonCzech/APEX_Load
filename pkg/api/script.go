@@ -964,13 +964,21 @@ func (tr *TestRunner) GetScript(id string) (*StoredScript, bool) {
 	return cloneStoredScriptForReadLocked(s), ok
 }
 
-func (tr *TestRunner) refreshScriptsForHARead() {
+func (tr *TestRunner) refreshScriptsForHARead(force ...bool) {
 	if tr == nil || tr.leadership == nil {
+		return
+	}
+	tr.haScriptRefreshMu.Lock()
+	defer tr.haScriptRefreshMu.Unlock()
+	forceRefresh := len(force) > 0 && force[0]
+	if !forceRefresh && !tr.haScriptRefreshAt.IsZero() && time.Since(tr.haScriptRefreshAt) < haTestRefreshInterval {
 		return
 	}
 	if err := tr.reloadStoredScripts(); err != nil {
 		slog.Warn("failed to refresh scripts for HA read", "error", err)
+		return
 	}
+	tr.haScriptRefreshAt = time.Now()
 }
 
 // GetScriptDurable refreshes from shared storage when available. Approval

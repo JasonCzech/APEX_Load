@@ -60,6 +60,37 @@ func TestMalformedXMLQuotedSensitiveAttributeSuffixFailsClosed(t *testing.T) {
 	}
 }
 
+func TestSensitiveQueryAssignmentDoesNotTreatCredentialSlashAsXMLDelimiter(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "slash is complete credential",
+			input: `password=/>`,
+			want:  `password=` + Redacted + `>`,
+		},
+		{
+			name:  "slash is credential suffix",
+			input: `password=secret/>`,
+			want:  `password=` + Redacted + `>`,
+		},
+		{
+			name:  "already redacted XML self close",
+			input: `password=` + Redacted + `/>`,
+			want:  `password=` + Redacted + `/>`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := redactSensitiveQueryAssignments(test.input, SensitiveName); got != test.want {
+				t.Fatalf("redactSensitiveQueryAssignments(%q) = %q, want %q", test.input, got, test.want)
+			}
+		})
+	}
+}
+
 func TestMalformedJSONQuotedSensitiveSuffixFailsClosed(t *testing.T) {
 	const input = `{"password":"short"secret","safe":"ok"}`
 	const want = `{"password":"` + Redacted + `","safe":"ok"}`

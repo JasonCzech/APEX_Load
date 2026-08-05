@@ -969,4 +969,34 @@ describe('SourceMappingReview', () => {
 
     expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
   })
+
+  it('does not run global review shortcuts while typing in editable content or while hidden', async () => {
+    const reviewMappings = sourceReview.mappings.map(mapping => ({ ...mapping, status: 'review_only' }))
+    await act(async () => {
+      root.render(
+        <div>
+          <div contentEditable="true" data-testid="editor">editing</div>
+          <SourceMappingReview sourceReview={{ ...sourceReview, mappings: reviewMappings }} script={script} />
+        </div>,
+      )
+    })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
+
+    const editor = container.querySelector<HTMLElement>('[data-testid="editor"]')
+    editor?.focus()
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ']' })))
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
+
+    await act(async () => {
+      root.render(
+        <div hidden>
+          <SourceMappingReview sourceReview={{ ...sourceReview, mappings: reviewMappings }} script={script} />
+        </div>,
+      )
+    })
+    await flushPromises()
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: ']' })))
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('homepage')
+  })
 })

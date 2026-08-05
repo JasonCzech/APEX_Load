@@ -17,6 +17,7 @@ const testRunManifestSchemaVersion = "apexload.test_manifest.v1"
 
 const (
 	testRunManifestInitialConfigurationArchiveProvenance = "archive_provenance"
+	testRunManifestInitialConfigurationStoredProvenance  = "stored_initial_provenance"
 	testRunManifestInitialConfigurationStoredTestRecord  = "stored_test_record"
 	testRunManifestInitialConfigurationRetainedRunState  = "retained_run_state"
 )
@@ -310,8 +311,28 @@ func (tr *TestRunner) initialManifestConfiguration(test *ManagedTest, archiveMan
 			Immutable: false,
 		}, []string{"archive predates immutable initial provenance; initial configuration may reflect runtime changes"}
 	}
+	if test != nil && test.initialArchiveProvenance != nil {
+		completedAt := time.Time{}
+		if test.EndedAt != nil {
+			completedAt = *test.EndedAt
+		}
+		return manifestConfigurationFromProvenance(*test.initialArchiveProvenance, test.Status, completedAt), TestRunManifestConfigurationProvenance{
+			Source:    testRunManifestInitialConfigurationStoredProvenance,
+			Immutable: true,
+		}, nil
+	}
 	record, err := tr.storedTestRecord(test.ID)
 	if err == nil && record != nil {
+		if storedInitial := decodeStoredInitialProvenance(record.InitialProvenance); storedInitial != nil {
+			completedAt := time.Time{}
+			if record.EndTime != nil {
+				completedAt = *record.EndTime
+			}
+			return manifestConfigurationFromProvenance(*storedInitial, record.Status, completedAt), TestRunManifestConfigurationProvenance{
+				Source:    testRunManifestInitialConfigurationStoredProvenance,
+				Immutable: true,
+			}, nil
+		}
 		return manifestConfigurationFromTestRecord(record), TestRunManifestConfigurationProvenance{
 			Source:    testRunManifestInitialConfigurationStoredTestRecord,
 			Immutable: false,

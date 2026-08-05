@@ -41,6 +41,7 @@ var apiKeyRateLimitUnsetWarningLogged atomic.Bool
 type authUserContextKey struct{}
 type authServiceAccountContextKey struct{}
 type authorizedProjectContextKey struct{}
+type mutationProjectContextKey struct{}
 
 func bindAuthorizedProjectToRequest(r *http.Request, projectID string) {
 	if r == nil {
@@ -48,6 +49,32 @@ func bindAuthorizedProjectToRequest(r *http.Request, projectID string) {
 	}
 	projectID = normalizeProjectID(projectID)
 	*r = *r.WithContext(context.WithValue(r.Context(), authorizedProjectContextKey{}, projectID))
+}
+
+// bindMutationProjectToRequest records the durable project graph a mutating
+// request can affect. Unlike authorizedProjectContextKey this marker is only a
+// coordination hint: it must not narrow global-admin or auth-bypass semantics.
+func bindMutationProjectToRequest(r *http.Request, projectID string) {
+	if r == nil {
+		return
+	}
+	projectID = normalizeProjectID(projectID)
+	if projectID == "" {
+		return
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), mutationProjectContextKey{}, projectID))
+}
+
+func mutationProjectFromRequest(r *http.Request) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	if projectID, ok := r.Context().Value(mutationProjectContextKey{}).(string); ok && strings.TrimSpace(projectID) != "" {
+		return normalizeProjectID(projectID), true
+	}
+	// Project-role authorization predates the coordinator and already carries
+	// an exact trusted project. Retain it as a safe compatibility fallback.
+	return authorizedProjectFromRequest(r)
 }
 
 // authorizedProjectFromRequest reports the exact project resolved by the RBAC
@@ -188,6 +215,7 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 				return
 			}
 			if isAuthBypassMode(current.Mode) {
+				bindMutationRequirementProjectBestEffort(r, store, requirement)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -254,6 +282,7 @@ func projectScopedAuthMiddleware(settings func() AuthSettings, store storage.Sto
 				return
 			}
 			if isAuthBypassMode(current.Mode) {
+				bindMutationRequirementProjectBestEffort(r, store, requirement)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -412,20 +441,25 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 	}
 
 	if len(requirement.GlobalRoles) > 0 && user.hasGlobalRole(requirement.GlobalRoles...) {
+		bindMutationRequirementProjectBestEffort(r, store, requirement)
 		return grantIfScopeAllows(w, r, resolution)
 	}
 
 	if requirement.AuthenticatedOnly {
+		bindMutationRequirementProjectBestEffort(r, store, requirement)
 		return grantIfScopeAllows(w, r, resolution)
 	}
 
 	if requirement.ProjectLookup != nil {
-		projectID, status, msg := requirement.ProjectLookup(r, store)
-		if status != 0 {
-			status, msg = scopedLookupFailureResponse(status, msg)
-			writeError(w, status, msg)
+		projectID, projectResolved, ok := resolveRequirementProject(w, r, store, requirement)
+		if !ok {
 			return false
 		}
+		if !projectResolved {
+			writeError(w, http.StatusForbidden, "forbidden")
+			return false
+		}
+		bindMutationProjectToRequest(r, projectID)
 		if user.hasProjectRole(projectID, requirement.ProjectRoles...) {
 			allowed := grantIfScopeAllows(w, r, resolution)
 			if allowed {
@@ -461,6 +495,32 @@ func authorizeAccessRequirement(w http.ResponseWriter, r *http.Request, store st
 
 	writeError(w, http.StatusForbidden, "forbidden")
 	return false
+}
+
+func resolveRequirementProject(w http.ResponseWriter, r *http.Request, store storage.Store, requirement accessRequirement) (string, bool, bool) {
+	if requirement.ProjectLookup == nil {
+		return "", false, true
+	}
+	projectID, status, msg := requirement.ProjectLookup(r, store)
+	if status != 0 {
+		status, msg = scopedLookupFailureResponse(status, msg)
+		writeError(w, status, msg)
+		return "", false, false
+	}
+	return normalizeProjectID(projectID), true, true
+}
+
+func bindMutationRequirementProjectBestEffort(r *http.Request, store storage.Store, requirement accessRequirement) {
+	// The binding exists solely for the project mutation coordinator. Resolving
+	// it on reads adds storage I/O to every globally-authorized GET and can make
+	// an otherwise independent read fail inside a best-effort side path.
+	if r == nil || store == nil || !projectMutationAdmissionRequested(r) || !isMutatingHTTPMethod(r.Method) || requirement.ProjectLookup == nil {
+		return
+	}
+	projectID, status, _ := requirement.ProjectLookup(r, store)
+	if status == 0 {
+		bindMutationProjectToRequest(r, projectID)
+	}
 }
 
 func scopedLookupFailureResponse(status int, msg string) (int, string) {

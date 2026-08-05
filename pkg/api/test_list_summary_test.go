@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestCloneManagedTestSummaryForReadLockedOmitsHistory(t *testing.T) {
@@ -58,10 +60,15 @@ func TestCloneManagedTestSummaryUsesPreservedTerminalSparkline(t *testing.T) {
 }
 
 func TestOperationalTestSnapshotsOmitRetainedHistory(t *testing.T) {
+	scheduledAt := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
 	source := &ManagedTest{
-		ID:     "run-operational",
-		Status: "COMPLETE",
-		Groups: []TestGroup{{Name: "group", Protocol: "http", VUsers: 2}},
+		ID:               "run-operational",
+		Status:           "SCHEDULED",
+		Groups:           []TestGroup{{Name: "group", Protocol: "http", VUsers: 2, script: &dsl.Script{ID: "script"}}},
+		Duration:         10 * time.Minute,
+		ScheduledStartAt: &scheduledAt,
+		ResourceBaseline: true,
+		StartDelay:       "45s",
 		LiveMetrics: &LiveMetrics{
 			TPS:          12,
 			Transactions: map[string]*TxMetrics{"checkout": {Count: 3}},
@@ -79,11 +86,24 @@ func TestOperationalTestSnapshotsOmitRetainedHistory(t *testing.T) {
 	if snapshot.History != nil || snapshot.Sparkline != nil {
 		t.Fatalf("operational snapshot retained history-derived data: history=%d sparkline=%d", len(snapshot.History), len(snapshot.Sparkline))
 	}
-	if snapshot.LiveMetrics == source.LiveMetrics || snapshot.LiveMetrics.Transactions["checkout"] == source.LiveMetrics.Transactions["checkout"] {
-		t.Fatal("operational snapshot aliases mutable live metrics")
+	if snapshot.LiveMetrics == source.LiveMetrics || snapshot.LiveMetrics.TPS != 12 {
+		t.Fatal("operational snapshot did not retain independent scalar live metrics")
+	}
+	if snapshot.LiveMetrics.Transactions != nil {
+		t.Fatalf("operational snapshot retained transaction map: %#v", snapshot.LiveMetrics.Transactions)
+	}
+	if !snapshot.ResourceBaseline || snapshot.StartDelay != "45s" {
+		t.Fatalf("operational snapshot launch timing = baseline %v, delay %q", snapshot.ResourceBaseline, snapshot.StartDelay)
+	}
+	wantEnd := launchWindowForTest(source, scheduledAt).EndAt
+	event := runCalendarEventFromTest(snapshot, nil, SystemInventoryResponse{}, nil, scheduledAt)
+	if event.EndAt == nil || !event.EndAt.Equal(wantEnd) {
+		t.Fatalf("calendar end = %v, want launch window end %v", event.EndAt, wantEnd)
+	}
+	if snapshot.Groups[0].script != nil {
+		t.Fatal("operational snapshot retained an executable script graph")
 	}
 	snapshot.Groups[0].VUsers = 99
-	snapshot.LiveMetrics.Transactions["checkout"].Count = 99
 	if source.Groups[0].VUsers != 2 || source.LiveMetrics.Transactions["checkout"].Count != 3 {
 		t.Fatal("mutating operational snapshot changed the live runner state")
 	}

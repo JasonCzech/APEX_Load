@@ -509,9 +509,19 @@ type scenarioScheduleDeleteExecutor interface {
 }
 
 func deleteScenarioScheduleGuardedWithExecutor(executor scenarioScheduleDeleteExecutor, id string) (ScheduleDeleteResult, error) {
+	return deleteScenarioScheduleGuardedIfRevisionWithExecutor(executor, id, 0)
+}
+
+func deleteScenarioScheduleGuardedIfRevisionWithExecutor(executor scenarioScheduleDeleteExecutor, id string, expectedRevision int) (ScheduleDeleteResult, error) {
 	// The no-op write serializes this decision with occurrence inserts on SQLite
 	// and establishes parent-row ownership before the status check on PostgreSQL.
-	locked, err := executor.Exec(`UPDATE scenario_schedules SET updated_at = updated_at WHERE id = ?`, id)
+	lockQuery := `UPDATE scenario_schedules SET updated_at = updated_at WHERE id = ?`
+	lockArgs := []any{id}
+	if expectedRevision > 0 {
+		lockQuery += ` AND COALESCE(revision, 1) = ?`
+		lockArgs = append(lockArgs, expectedRevision)
+	}
+	locked, err := executor.Exec(lockQuery, lockArgs...)
 	if err != nil {
 		return "", err
 	}
@@ -561,6 +571,37 @@ func (s *SQLiteStore) DeleteScenarioScheduleGuarded(id string) (ScheduleDeleteRe
 	}
 	defer tx.Rollback()
 	result, err := deleteScenarioScheduleGuardedWithExecutor(tx, id)
+	if err != nil {
+		return "", err
+	}
+	if result != ScheduleDeleteDeleted {
+		return result, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+// DeleteScenarioScheduleGuardedIfRevision removes a schedule only while the
+// durable row still has the revision written by the caller. It is the rollback
+// primitive for compatibility stores that cannot atomically commit a schedule
+// and its approval. A revision mismatch is reported as missing to the optional
+// caller; in either case no row is changed.
+func (s *SQLiteStore) DeleteScenarioScheduleGuardedIfRevision(id string, expectedRevision int) (ScheduleDeleteResult, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return "", errors.New("scenario schedule id is required")
+	}
+	if expectedRevision < 1 {
+		return "", errors.New("expected scenario schedule revision must be positive")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	result, err := deleteScenarioScheduleGuardedIfRevisionWithExecutor(tx, id, expectedRevision)
 	if err != nil {
 		return "", err
 	}
@@ -918,7 +959,7 @@ func (s *SQLiteStore) GetScenarioScheduleOccurrenceByTestID(testID string) (*Sce
 			return nil, err
 		}
 		if occurrence != nil {
-			return nil, fmt.Errorf("test %q is correlated to more than one scenario schedule occurrence", testID)
+			return nil, fmt.Errorf("%w: test %q", ErrScenarioScheduleOccurrenceCorrelationAmbiguous, testID)
 		}
 		occurrence = current
 	}
@@ -976,6 +1017,29 @@ func (s *SQLiteStore) ListAllScenarioScheduleOccurrences() ([]*ScenarioScheduleO
 	}
 	defer rows.Close()
 	return collectScenarioScheduleOccurrences(rows)
+}
+
+// CountScenarioScheduleOccurrencesByStatus keeps schedule-health reads bounded
+// regardless of retained history size.
+func (s *SQLiteStore) CountScenarioScheduleOccurrencesByStatus() (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT status, COUNT(*) FROM scenario_schedule_occurrences GROUP BY status`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		counts[status] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return counts, nil
 }
 
 func (s *SQLiteStore) ListScenarioScheduleOccurrencesByTimeRange(projectID string, from time.Time, to time.Time) ([]*ScenarioScheduleOccurrence, error) {

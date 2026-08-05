@@ -61,7 +61,12 @@ func (s *metricsSubscriber) enqueue(batch *pb.MetricsBatch) int64 {
 			}
 		}
 		if len(s.queue) >= metricsSubscriberQueueCapacity {
-			for index, queued := range s.queue {
+			// Preserve the oldest contiguous prefix so the consumer establishes
+			// the true sequence baseline. Dropping the newest live window makes
+			// the subsequent terminal sequence expose an observable gap; dropping
+			// the oldest would let a fresh consumer silently baseline after loss.
+			for index := len(s.queue) - 1; index >= 0; index-- {
+				queued := s.queue[index]
 				if isGeneratorTerminalLifecycle(queued.GetLifecycleState()) {
 					continue
 				}
@@ -143,6 +148,7 @@ type metricsBroker struct {
 	nextSubscriberID      int
 
 	terminalBatches map[terminalBatchKey]terminalMetricsTombstone
+	batchSequences  map[terminalBatchKey]uint64
 	terminalMax     int
 	terminalTTL     time.Duration
 
@@ -163,6 +169,7 @@ func newMetricsBroker(maxSubscribers, terminalMax int, terminalTTL time.Duration
 		unscopedSubscriberIDs: make(map[int]struct{}),
 		maxSubscribers:        maxSubscribers,
 		terminalBatches:       make(map[terminalBatchKey]terminalMetricsTombstone),
+		batchSequences:        make(map[terminalBatchKey]uint64),
 		terminalMax:           terminalMax,
 		terminalTTL:           terminalTTL,
 	}
@@ -252,7 +259,16 @@ func (broker *metricsBroker) registerLocked(executionGeneration uint64, testID s
 		if batch == nil || batch.GetExecutionGeneration() != executionGeneration || (testID != "" && batch.GetTestId() != testID) {
 			continue
 		}
-		initial = append(initial, proto.Clone(batch).(*pb.MetricsBatch))
+		clone := proto.Clone(batch).(*pb.MetricsBatch)
+		key := terminalBatchKey{testID: clone.GetTestId(), generation: clone.GetExecutionGeneration()}
+		if current := broker.batchSequences[key]; current > 0 {
+			// The live assignment snapshot is rebuilt from current engine state and
+			// therefore has no publication sequence of its own. Anchor it to the
+			// latest published window so a reconnect cannot reset the controller's
+			// gap-detection baseline to zero.
+			clone.BatchSequence = current
+		}
+		initial = append(initial, clone)
 	}
 	for key, tombstone := range broker.terminalBatches {
 		if key.generation == executionGeneration && (testID == "" || key.testID == testID) && tombstone.batch != nil {
@@ -323,6 +339,7 @@ func (broker *metricsBroker) publishOwnedLocked(batch *pb.MetricsBatch, accept f
 	if batch == nil || (accept != nil && !accept(batch)) {
 		return
 	}
+	broker.assignBatchSequenceLocked(batch)
 	broker.mu.RLock()
 	testIDs := broker.subscriberIDsByTest[batch.GetTestId()]
 	subscribers := make([]*metricsSubscriber, 0, len(testIDs)+len(broker.unscopedSubscriberIDs))
@@ -348,6 +365,33 @@ func (broker *metricsBroker) publishOwnedLocked(batch *pb.MetricsBatch, accept f
 	}
 }
 
+// assignBatchSequenceLocked runs under publishMu and gives every newly
+// published window a stable position in its execution-generation stream.
+// Terminal state ends the sequence's lifetime; the retained terminal clone
+// carries its assigned value for reconnecting subscribers.
+func (broker *metricsBroker) assignBatchSequenceLocked(batch *pb.MetricsBatch) {
+	if broker == nil || batch == nil {
+		return
+	}
+	key := terminalBatchKey{testID: batch.GetTestId(), generation: batch.GetExecutionGeneration()}
+	if batch.GetBatchSequence() != 0 {
+		if isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
+			delete(broker.batchSequences, key)
+		}
+		return
+	}
+	next := broker.batchSequences[key] + 1
+	if next == 0 {
+		next = 1
+	}
+	batch.BatchSequence = next
+	if isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
+		delete(broker.batchSequences, key)
+	} else {
+		broker.batchSequences[key] = next
+	}
+}
+
 func (broker *metricsBroker) publishTerminal(batch *pb.MetricsBatch) {
 	broker.publishTerminalAt(batch, time.Now())
 }
@@ -360,6 +404,17 @@ func (broker *metricsBroker) publishTerminalAt(batch *pb.MetricsBatch, now time.
 	defer broker.publishMu.Unlock()
 	clone := proto.Clone(batch).(*pb.MetricsBatch)
 	key := terminalBatchKey{testID: clone.GetTestId(), generation: clone.GetExecutionGeneration()}
+	// A terminal tombstone is the immutable sequence identity for this
+	// execution generation. Routine completion retries may reconstruct a fresh
+	// zero-sequence batch after the live counter has been reclaimed; reusing the
+	// retained sequence prevents a retry from regressing to sequence 1.
+	broker.mu.RLock()
+	retained := broker.terminalBatches[key]
+	broker.mu.RUnlock()
+	if retained.batch != nil && retained.batch.GetBatchSequence() > 0 {
+		clone.BatchSequence = retained.batch.GetBatchSequence()
+	}
+	broker.assignBatchSequenceLocked(clone)
 	completedAt := time.UnixMilli(clone.GetTimestampUnixMs())
 	if clone.GetTimestampUnixMs() <= 0 {
 		completedAt = now
@@ -443,6 +498,11 @@ func (broker *metricsBroker) deleteTerminalsForTest(testID string) {
 	if broker == nil {
 		return
 	}
+	// Publication owns batchSequences and always acquires publishMu before mu.
+	// Keep that order here so an execution removed without a terminal batch does
+	// not leave one sequence counter resident forever.
+	broker.publishMu.Lock()
+	defer broker.publishMu.Unlock()
 	broker.mu.Lock()
 	for key := range broker.terminalBatches {
 		if key.testID == testID {
@@ -450,6 +510,11 @@ func (broker *metricsBroker) deleteTerminalsForTest(testID string) {
 		}
 	}
 	broker.mu.Unlock()
+	for key := range broker.batchSequences {
+		if key.testID == testID {
+			delete(broker.batchSequences, key)
+		}
+	}
 }
 
 func (broker *metricsBroker) terminalBatch(key terminalBatchKey) *pb.MetricsBatch {

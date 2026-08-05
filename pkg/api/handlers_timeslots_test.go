@@ -170,7 +170,7 @@ func TestLaunchTimeslotRevalidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := server.runner.launchTimeslotRevalidationErrorLocked(tc.test, now)
+			err := launchTimeslotRevalidationWithLoadedEvidenceForTest(t, server.runner, tc.test, now)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
 			}
@@ -179,7 +179,7 @@ func TestLaunchTimeslotRevalidation(t *testing.T) {
 	// Approved + bound but the run now exceeds the reserved capacity -> blocked.
 	big := mkTest("toobig")
 	big.TotalVUsers = 9999
-	if err := server.runner.launchTimeslotRevalidationErrorLocked(big, now); err == nil {
+	if err := launchTimeslotRevalidationWithLoadedEvidenceForTest(t, server.runner, big, now); err == nil {
 		t.Fatal("over-capacity run should block launch")
 	}
 }
@@ -521,6 +521,12 @@ func TestCapacityReservationBindLifecycle(t *testing.T) {
 	if err := store.SaveTest(&storage.TestRecord{ID: "test-other", Name: "other", Status: "PENDING", ProjectID: "proj-other"}); err != nil {
 		t.Fatalf("save other test: %v", err)
 	}
+	// A second same-project, same-window test, used to prove that bind
+	// idempotency never lets a DIFFERENT test claim an occupied reservation.
+	if err := store.SaveTest(&storage.TestRecord{ID: "test-2", Name: "second", Status: "PENDING", ProjectID: "proj-ts",
+		ScheduledStartAt: &scheduled, Duration: int64(30 * time.Minute)}); err != nil {
+		t.Fatalf("save second test: %v", err)
+	}
 
 	create := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots",
 		map[string]any{"project_id": "proj-ts", "start_at": start, "end_at": start.Add(time.Hour)})
@@ -553,9 +559,28 @@ func TestCapacityReservationBindLifecycle(t *testing.T) {
 	if rec := timeslotRequest(t, server, http.MethodPost, bindPath, map[string]any{"test_id": "test-1"}); rec.Code != http.StatusOK {
 		t.Fatalf("bind status = %d, want 200 body=%s", rec.Code, rec.Body.String())
 	}
-	// Second bind is rejected (already bound).
-	if rec := timeslotRequest(t, server, http.MethodPost, bindPath, map[string]any{"test_id": "test-1"}); rec.Code != http.StatusConflict {
-		t.Fatalf("double bind status = %d, want 409 body=%s", rec.Code, rec.Body.String())
+	// Re-binding the SAME test to the SAME reservation is idempotent, not a
+	// conflict: a successful commit can outlive its response, so a retried bind
+	// must converge on the durable answer rather than report a false conflict
+	// (see bindCapacityReservationToTest's reciprocal-pair check). The binding
+	// must still be the original one — idempotency must not rebind or duplicate.
+	rec := timeslotRequest(t, server, http.MethodPost, bindPath, map[string]any{"test_id": "test-1"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("idempotent re-bind status = %d, want 200 body=%s", rec.Code, rec.Body.String())
+	}
+	var rebound struct {
+		BoundTestID string `json:"bound_test_id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &rebound); err != nil {
+		t.Fatalf("decode re-bind response: %v body=%s", err, rec.Body.String())
+	}
+	if rebound.BoundTestID != "test-1" {
+		t.Fatalf("bound_test_id = %q after idempotent re-bind, want %q", rebound.BoundTestID, "test-1")
+	}
+
+	// A DIFFERENT test may never take an already-bound reservation.
+	if rec := timeslotRequest(t, server, http.MethodPost, bindPath, map[string]any{"test_id": "test-2"}); rec.Code == http.StatusOK {
+		t.Fatalf("bind of a second test to an occupied reservation succeeded, want rejection body=%s", rec.Body.String())
 	}
 }
 

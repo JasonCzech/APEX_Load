@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
@@ -868,6 +869,8 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 		var aggregate IntervalSummaryRecord
 		var weightedResponse float64
 		var attempts, bucketTx, bucketErrors int64
+		var durationDigest *engine.TDigest
+		durationDigestComplete := true
 		var sourceThroughputGap float64
 		var sourceThroughputMissed bool
 		for _, record := range windowRecords {
@@ -890,6 +893,16 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			aggregate.Telemetry = mergeRemoteArchiveSummaryTelemetry(aggregate.Telemetry, record.Telemetry)
 			aggregate.TelemetryStatus = mergeRemoteArchiveSummaryTelemetryStatus(aggregate.TelemetryStatus, record.TelemetryStatus)
 			rowAttempts := record.TotalTx + record.TotalErrors
+			if rowAttempts > 0 {
+				if record.DurationDigest == nil || record.DurationDigest.Count <= 0 || record.DurationDigest.Count != rowAttempts {
+					durationDigestComplete = false
+				} else {
+					if durationDigest == nil {
+						durationDigest = engine.NewTDigest(record.DurationDigest.Compression)
+					}
+					durationDigest.Merge(engine.NewTDigestFromSnapshot(*record.DurationDigest))
+				}
+			}
 			attempts += rowAttempts
 			weightedResponse += record.AvgResponseMs * float64(rowAttempts)
 			bucketTx += record.TotalTx
@@ -902,6 +915,12 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 				aggregate.P95Ms = record.P95Ms
 				aggregate.P99Ms = record.P99Ms
 				aggregate.PercentileQuality = archivePercentileQualitySourceGenerator
+			} else if durationDigestComplete && durationDigest != nil && durationDigest.Count() == attempts {
+				aggregate.P50Ms = durationDigest.Quantile(0.50) / float64(time.Millisecond)
+				aggregate.P90Ms = durationDigest.Quantile(0.90) / float64(time.Millisecond)
+				aggregate.P95Ms = durationDigest.Quantile(0.95) / float64(time.Millisecond)
+				aggregate.P99Ms = durationDigest.Quantile(0.99) / float64(time.Millisecond)
+				aggregate.PercentileQuality = archivePercentileQualityMergedDigest
 			} else {
 				aggregate.P50Ms, aggregate.P90Ms, aggregate.P95Ms, aggregate.P99Ms = 0, 0, 0, 0
 				aggregate.PercentileQuality = archivePercentileQualityUnavailable
@@ -1122,6 +1141,7 @@ func mergeRemoteArchiveSummaryTelemetry(current, incoming *TelemetryHealth) *Tel
 	current.DroppedResults += incoming.DroppedResults
 	current.SheddedArrivals += incoming.SheddedArrivals
 	current.DroppedSubscriberBatches += incoming.DroppedSubscriberBatches
+	current.MissingMetricWindows += incoming.MissingMetricWindows
 	if incoming.HistoryPoints > current.HistoryPoints {
 		current.HistoryPoints = incoming.HistoryPoints
 	}

@@ -75,9 +75,13 @@ function parseFraction(digits: string): { value: bigint, scale: bigint } {
   return { value, scale }
 }
 
-function parseDurationTokens(input?: string): ParsedDuration {
+function parseDurationTokens(input?: string, allowZero = false): ParsedDuration {
   const text = input === undefined || input === null ? '' : String(input)
   if (!text) return invalidDuration()
+
+  if (allowZero && (text === '0' || text === '+0')) {
+    return { seconds: 0, nanoseconds: 0n, valid: true }
+  }
 
   let position = text.startsWith('+') ? 1 : 0
   if (position === text.length || text.startsWith('-')) return invalidDuration()
@@ -130,7 +134,7 @@ function parseDurationTokens(input?: string): ParsedDuration {
   return {
     seconds: Number(totalNanoseconds) / Number(durationUnitNanoseconds.s),
     nanoseconds: totalNanoseconds,
-    valid: totalNanoseconds > 0n,
+    valid: totalNanoseconds > 0n || allowZero,
   }
 }
 
@@ -151,6 +155,12 @@ export function parseDurationToNanoseconds(input?: string): bigint | null {
 export function isValidDurationInput(input?: string, allowEmpty = false): boolean {
   if (input === undefined || input === null || input === '') return allowEmpty
   return parseDurationTokens(input).valid
+}
+
+/** Mirrors Go's non-negative duration contract for optional ramp fields. */
+export function isValidNonNegativeDurationInput(input?: string, allowEmpty = false): boolean {
+  if (input === undefined || input === null || input === '') return allowEmpty
+  return parseDurationTokens(input, true).valid
 }
 
 export function serializeDurationFieldValue(value: number | string, unit: DurationUnit): string {

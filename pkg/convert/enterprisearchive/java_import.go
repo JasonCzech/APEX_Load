@@ -155,16 +155,17 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	mappable := collectJavaCombinedMappableEntries(program)
 	overloadWork := analyzeJavaOverloadResolutionWorkForEntries(program, mappable)
 	profile := JavaProfile{Surfaces: map[javaSurface]bool{}}
-	runtimeReachability := javaVuserRuntimeReachability{
-		byOccurrence:      map[string]int{},
-		byStatement:       map[string][]int{},
-		scopeReachability: map[string]javaRuntimeReachableStatement{},
-		evidenceIndex:     newJavaEvidenceIndex(program),
-	}
+	var runtimeReachability javaVuserRuntimeReachability
 	if overloadWork.blocker == "" {
-		profile = classifyJavaArchive(program, projectConfig, files)
 		runtimeReachability = buildJavaVuserRuntimeReachability(program)
+		profile = classifyJavaArchiveWithReachability(program, projectConfig, files, runtimeReachability)
 	} else {
+		runtimeReachability = javaVuserRuntimeReachability{
+			byOccurrence:      map[string]int{},
+			byStatement:       map[string][]int{},
+			scopeReachability: map[string]javaRuntimeReachableStatement{},
+			evidenceIndex:     newJavaEvidenceIndex(program),
+		}
 		// Fail closed before the expensive passes. The source and mappings are
 		// still preserved in the singleton Java draft, while the explicit
 		// unresolved item prevents authoring promotion.

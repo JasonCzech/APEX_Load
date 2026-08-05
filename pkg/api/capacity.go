@@ -11,11 +11,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -72,7 +74,7 @@ func testReservesRuntimeCapacity(test *ManagedTest) bool {
 		return false
 	}
 	switch test.Status {
-	case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING":
+	case "SHAKEOUT", "STARTING", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING":
 		return true
 	default:
 		return false
@@ -119,30 +121,11 @@ func (tr *TestRunner) countActiveVUsersOnPoolForProjectLocked(poolID, projectID 
 	return total
 }
 
-// poolProjectQuota returns the project's quota for a specific fleet pool, if one
-// is configured.
-func (tr *TestRunner) poolProjectQuota(projectID, poolID string) (storage.PoolProjectQuota, bool) {
-	if tr.projectStore == nil || poolID == "" {
-		return storage.PoolProjectQuota{}, false
-	}
-	project, err := tr.projectStore.GetProject(normalizeProjectID(projectID))
-	if err != nil || project == nil {
-		return storage.PoolProjectQuota{}, false
-	}
-	quota, ok := project.Settings.PoolQuotas[poolID]
-	return quota, ok
-}
-
-// evaluatePoolQuotaBlockLocked enforces a project's per-pool quota when a run is
-// pinned to a fleet pool. Additive to the project-wide checks: a pool-assigned
-// run must pass both. Excludes excludeTestID so re-evaluating a running test
-// doesn't count it against itself.
-func (tr *TestRunner) evaluatePoolQuotaBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+func (tr *TestRunner) evaluatePoolQuotaBlockWithQuotaLocked(test *ManagedTest, excludeTestID string, quota storage.PoolProjectQuota, ok bool) (bool, string) {
 	poolID := testAssignedPoolID(test)
 	if poolID == "" {
 		return false, ""
 	}
-	quota, ok := tr.poolProjectQuota(test.ProjectID, poolID)
 	if !ok || (quota.MaxConcurrentTests <= 0 && quota.MaxVUsers <= 0) {
 		return false, ""
 	}
@@ -164,19 +147,87 @@ func (tr *TestRunner) evaluatePoolQuotaBlockLocked(test *ManagedTest, excludeTes
 	return false, ""
 }
 
-func (tr *TestRunner) validateConcurrencyLimitsLocked(projectID string) error {
-	maxConcurrent := tr.settings.General.MaxConcurrentTests
-	if tr.countActiveTestsLocked() >= maxConcurrent {
-		return fmt.Errorf("max concurrent tests (%d) reached", maxConcurrent)
-	}
-	projectMaxConcurrent := tr.projectMaxConcurrentTests(projectID)
-	if projectMaxConcurrent > 0 && tr.countActiveTestsForProjectLocked(projectID) >= projectMaxConcurrent {
-		return fmt.Errorf("project max concurrent tests (%d) reached", projectMaxConcurrent)
-	}
-	return nil
+// projectQuotaSnapshot is the immutable subset of project settings consumed by
+// admission. Keeping the per-pool value (rather than the settings map) makes a
+// snapshot safe to carry across the unlocked storage-read / locked-install
+// boundary without retaining mutable store-owned maps.
+type projectQuotaSnapshot struct {
+	maxConcurrentTests int
+	maxVUsers          int
+	maxVUsersPerTest   int
+	maxTestDuration    int
+	redactionRules     []engine.RedactionRule
+	poolQuota          storage.PoolProjectQuota
+	hasPoolQuota       bool
 }
 
-func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+func projectQuotaSnapshotFromProject(project *storage.Project, poolID string) projectQuotaSnapshot {
+	if project == nil {
+		return projectQuotaSnapshot{}
+	}
+	snapshot := projectQuotaSnapshot{
+		maxConcurrentTests: project.Settings.MaxConcurrentTests,
+		maxVUsers:          project.Settings.MaxVUsers,
+		maxVUsersPerTest:   project.Settings.MaxVUsersPerTest,
+		maxTestDuration:    project.Settings.MaxTestDurationMinutes,
+		redactionRules:     cloneRedactionRules(project.Settings.RedactionRules),
+	}
+	if poolID != "" {
+		snapshot.poolQuota, snapshot.hasPoolQuota = project.Settings.PoolQuotas[poolID]
+	}
+	return snapshot
+}
+
+type projectQuotaEvidence struct {
+	projectID       string
+	poolID          string
+	quota           projectQuotaSnapshot
+	updatedAt       time.Time
+	storeConfigured bool
+	projectResolved bool
+	loaded          bool
+	err             error
+}
+
+func loadProjectQuotaEvidence(store projectPersistence, projectID, poolID string) projectQuotaEvidence {
+	projectID = normalizeProjectID(projectID)
+	poolID = strings.TrimSpace(poolID)
+	evidence := projectQuotaEvidence{
+		projectID: projectID, poolID: poolID, storeConfigured: store != nil,
+		projectResolved: store == nil, loaded: true,
+	}
+	if store == nil {
+		return evidence
+	}
+	project, err := store.GetProject(projectID)
+	if err != nil {
+		evidence.err = err
+		return evidence
+	}
+	// A few lightweight compatibility stores historically represent an
+	// unconfigured project catalog as (nil, nil). Treat that as an available
+	// zero-quota projection; production SQL reports sql.ErrNoRows and therefore
+	// remains fail-closed for a genuinely deleted/missing durable project.
+	evidence.projectResolved = true
+	evidence.quota = projectQuotaSnapshotFromProject(project, poolID)
+	if project != nil {
+		evidence.updatedAt = project.UpdatedAt
+	}
+	return evidence
+}
+
+func (e projectQuotaEvidence) quotaFor(test *ManagedTest) (projectQuotaSnapshot, bool) {
+	if test == nil {
+		return projectQuotaSnapshot{}, true
+	}
+	return e.quota, e.loaded && e.err == nil && (!e.storeConfigured || e.projectResolved) && e.projectID == normalizeProjectID(test.ProjectID) && e.poolID == testAssignedPoolID(test)
+}
+
+func (e projectQuotaEvidence) quotaForProject(projectID string) (projectQuotaSnapshot, bool) {
+	return e.quota, e.loaded && e.err == nil && (!e.storeConfigured || e.projectResolved) && e.projectID == normalizeProjectID(projectID)
+}
+
+func (tr *TestRunner) evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test *ManagedTest, excludeTestID string, now time.Time, activeSlots []*storage.CapacityReservation, reservationErr error, quota projectQuotaSnapshot) (bool, string) {
 	if test == nil {
 		return false, ""
 	}
@@ -196,24 +247,33 @@ func (tr *TestRunner) evaluateQuotaBlockLocked(test *ManagedTest, excludeTestID 
 	if maxConcurrent > 0 && globalActiveTests >= maxConcurrent {
 		return true, fmt.Sprintf("waiting for a global test slot (%d max concurrent tests)", maxConcurrent)
 	}
-	projectMaxConcurrent := tr.projectMaxConcurrentTests(test.ProjectID)
+	projectMaxConcurrent := quota.maxConcurrentTests
 	if projectMaxConcurrent > 0 && projectActiveTests >= projectMaxConcurrent {
 		return true, fmt.Sprintf("waiting for a project test slot (%d max concurrent tests)", projectMaxConcurrent)
 	}
-	projectMaxVUsers := tr.projectMaxVUsers(test.ProjectID)
+	projectMaxVUsers := quota.maxVUsers
 	if projectMaxVUsers > 0 && nonNegativeSumExceedsLimit(projectActiveVUsers, test.TotalVUsers, projectMaxVUsers) && !hasApprovedExecutionPlanQuotaBurst(test) {
 		return true, fmt.Sprintf("waiting for project VUser capacity (%d max vusers)", projectMaxVUsers)
 	}
-	if blocked, reason := tr.evaluatePoolQuotaBlockLocked(test, excludeTestID); blocked {
+	if blocked, reason := tr.evaluatePoolQuotaBlockWithQuotaLocked(test, excludeTestID, quota.poolQuota, quota.hasPoolQuota); blocked {
 		return true, reason
 	}
-	if blocked, reason := tr.evaluateReservedCapacityBlockLocked(test, excludeTestID); blocked {
+	if blocked, reason := tr.evaluateReservedCapacityBlockWithTimeslotsLocked(test, excludeTestID, now, activeSlots, reservationErr); blocked {
 		return true, reason
 	}
-	if blocked, reason := tr.evaluatePoolReservedCapacityBlockLocked(test, excludeTestID); blocked {
+	if blocked, reason := tr.evaluatePoolReservedCapacityBlockWithTimeslotsLocked(test, excludeTestID, now, activeSlots, reservationErr); blocked {
 		return true, reason
 	}
 	return false, ""
+}
+
+func (tr *TestRunner) evaluateQuotaBlockWithLaunchEvidenceLocked(test *ManagedTest, excludeTestID string, now time.Time, evidence launchWindowEvidence) (bool, string) {
+	quota, ok := evidence.projectQuota.quotaFor(test)
+	if !ok {
+		return true, "waiting for project quota evidence to be refreshed"
+	}
+	activeSlots, reservationErr := boundTimeslotsActiveAtFromEvidence(evidence, now)
+	return tr.evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test, excludeTestID, now, activeSlots, reservationErr, quota)
 }
 
 func hasApprovedExecutionPlanQuotaBurst(test *ManagedTest) bool {
@@ -248,7 +308,7 @@ func approvedExecutionPlanPeakForTest(test *ManagedTest) int {
 // admitting it would push shared-pool usage past the shared capacity, so a
 // non-reserving (or over-reserving) project cannot starve the teams that
 // reserved capacity. Reservations also still drive fair-share queue priority.
-func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+func (tr *TestRunner) evaluateReservedCapacityBlockWithTimeslotsLocked(test *ManagedTest, excludeTestID string, now time.Time, activeSlots []*storage.CapacityReservation, reservationErr error) (bool, string) {
 	if test == nil {
 		return false, ""
 	}
@@ -259,9 +319,7 @@ func (tr *TestRunner) evaluateReservedCapacityBlockLocked(test *ManagedTest, exc
 	if testAssignedPoolID(test) != "" {
 		return false, ""
 	}
-	now := time.Now()
-	activeSlots, err := tr.boundTimeslotsActiveAtLocked(now)
-	if err != nil {
+	if reservationErr != nil {
 		// Fail closed: hold the test rather than admit it into capacity that a
 		// bound reservation may be protecting but we could not read.
 		return true, "waiting for reservation state to become available"
@@ -496,34 +554,15 @@ func (tr *TestRunner) projectMaxVUsersStrict(projectID string) (int, error) {
 	return project.Settings.MaxVUsers, nil
 }
 
-func (tr *TestRunner) projectSettings(projectID string) (storage.ProjectSettings, bool) {
-	if tr.projectStore == nil {
-		return storage.ProjectSettings{}, false
-	}
-	project, err := tr.projectStore.GetProject(normalizeProjectID(projectID))
-	if err != nil || project == nil {
-		return storage.ProjectSettings{}, false
-	}
-	return project.Settings, true
-}
-
-// enforceTestQuotaLocked applies per-test hard caps (VUser ceiling, max
-// duration) configured on the owning project. Unlike the aggregate concurrency
-// quotas (which queue), these reject outright at creation so a single oversized
-// test cannot be admitted. DRAFT tests are exempt — they are never executed.
-func (tr *TestRunner) enforceTestQuotaLocked(projectID string, totalVUsers int, dur time.Duration, status string) error {
+func enforceTestQuotaWithProjectQuota(quota projectQuotaSnapshot, totalVUsers int, dur time.Duration, status string) error {
 	if status == "DRAFT" {
 		return nil
 	}
-	settings, ok := tr.projectSettings(projectID)
-	if !ok {
-		return nil
+	if quota.maxVUsersPerTest > 0 && totalVUsers > quota.maxVUsersPerTest {
+		return fmt.Errorf("test exceeds project per-test VUser cap (%d requested, %d max)", totalVUsers, quota.maxVUsersPerTest)
 	}
-	if settings.MaxVUsersPerTest > 0 && totalVUsers > settings.MaxVUsersPerTest {
-		return fmt.Errorf("test exceeds project per-test VUser cap (%d requested, %d max)", totalVUsers, settings.MaxVUsersPerTest)
-	}
-	if settings.MaxTestDurationMinutes > 0 {
-		maxDur, ok := checkedDuration(settings.MaxTestDurationMinutes, time.Minute)
+	if quota.maxTestDuration > 0 {
+		maxDur, ok := checkedDuration(quota.maxTestDuration, time.Minute)
 		if !ok {
 			return fmt.Errorf("project max test duration is invalid")
 		}
@@ -553,10 +592,76 @@ type pendingFairShareRank struct {
 	id              string
 }
 
-func (tr *TestRunner) sortPendingTestsForFairShareLocked(pending []*ManagedTest) {
+type pendingQueueMetadataState struct {
+	test                  *ManagedTest
+	status                string
+	projectID             string
+	poolID                string
+	totalVUsers           int
+	recommendedGenerators int
+	pendingSinceUnixNano  int64
+	createdAtUnixNano     int64
+	approvalID            string
+	approvalPlanID        string
+	approvalContentHash   string
+	approvalStatus        string
+	approvalPolicy        string
+	approvedPeakVUsers    int
+}
+
+// loadPendingProjectQuotaEvidence resolves each distinct pending project once,
+// outside tr.mu, then materializes per-test scalar evidence. Project persistence
+// currently has no cross-controller revision probe, so the complete in-memory
+// queue snapshot is revalidated before install and the next refresh reconciles a
+// concurrent project-settings edit.
+func loadPendingProjectQuotaEvidence(store projectPersistence, state map[string]pendingQueueMetadataState) map[*ManagedTest]projectQuotaEvidence {
+	evidence := make(map[*ManagedTest]projectQuotaEvidence)
+	type projectLoadResult struct {
+		project *storage.Project
+		err     error
+	}
+	projects := make(map[string]projectLoadResult)
+	loaded := make(map[string]struct{})
+	for _, entry := range state {
+		if entry.test == nil || entry.status != "PENDING" {
+			continue
+		}
+		projectID := normalizeProjectID(entry.projectID)
+		if _, ok := loaded[projectID]; !ok {
+			var result projectLoadResult
+			if store != nil {
+				result.project, result.err = store.GetProject(projectID)
+			}
+			projects[projectID] = result
+			loaded[projectID] = struct{}{}
+		}
+		result := projects[projectID]
+		updatedAt := time.Time{}
+		if result.project != nil {
+			updatedAt = result.project.UpdatedAt
+		}
+		evidence[entry.test] = projectQuotaEvidence{
+			projectID:       projectID,
+			poolID:          entry.poolID,
+			quota:           projectQuotaSnapshotFromProject(result.project, entry.poolID),
+			updatedAt:       updatedAt,
+			storeConfigured: store != nil,
+			projectResolved: store == nil || result.project != nil,
+			loaded:          true,
+			err:             result.err,
+		}
+	}
+	return evidence
+}
+
+func (tr *TestRunner) sortPendingTestsForFairShareWithTimeslotsLocked(pending []*ManagedTest, now time.Time, activeSlots []*storage.CapacityReservation) {
+	ranks := make(map[*ManagedTest]pendingFairShareRank, len(pending))
+	for _, test := range pending {
+		ranks[test] = tr.pendingFairShareRankWithTimeslotsLocked(test, now, activeSlots)
+	}
 	sort.Slice(pending, func(i, j int) bool {
-		left := tr.pendingFairShareRankLocked(pending[i])
-		right := tr.pendingFairShareRankLocked(pending[j])
+		left := ranks[pending[i]]
+		right := ranks[pending[j]]
 		if left.reservationTier != right.reservationTier {
 			return left.reservationTier < right.reservationTier
 		}
@@ -576,17 +681,12 @@ func (tr *TestRunner) sortPendingTestsForFairShareLocked(pending []*ManagedTest)
 	})
 }
 
-func (tr *TestRunner) pendingFairShareRankLocked(test *ManagedTest) pendingFairShareRank {
+func (tr *TestRunner) pendingFairShareRankWithTimeslotsLocked(test *ManagedTest, now time.Time, activeSlots []*storage.CapacityReservation) pendingFairShareRank {
 	if test == nil {
 		return pendingFairShareRank{reservationTier: 1, id: ""}
 	}
 	projectID := normalizeProjectID(test.ProjectID)
 	reservationTier := 1
-	now := time.Now()
-	// Fair-share ranking is queue priority, not an admission grant; on a lookup
-	// error (already logged at the source) degrade to settings-only reservations
-	// rather than block ordering.
-	activeSlots, _ := tr.boundTimeslotsActiveAtLocked(now)
 	_, projectReserved := reservationTotalsWithTimeslots(tr.settings, projectID, now, activeSlots)
 	if projectReserved > 0 && tr.countActiveRecommendedGeneratorsForProjectLocked(projectID) < projectReserved {
 		reservationTier = 0
@@ -643,7 +743,91 @@ func runLogicGoalSnapshot(script *dsl.Script) *RunLogicGoalSnapshot {
 	return &goals
 }
 
-func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
+func (tr *TestRunner) pendingQueueMetadataStateLocked() map[string]pendingQueueMetadataState {
+	state := make(map[string]pendingQueueMetadataState, len(tr.tests))
+	for id, test := range tr.tests {
+		if test == nil {
+			state[id] = pendingQueueMetadataState{}
+			continue
+		}
+		entry := pendingQueueMetadataState{
+			test: test, status: test.Status, projectID: normalizeProjectID(test.ProjectID),
+			poolID: testAssignedPoolID(test), totalVUsers: test.TotalVUsers,
+			createdAtUnixNano: test.CreatedAt.UnixNano(),
+		}
+		if test.PendingSince != nil {
+			entry.pendingSinceUnixNano = test.PendingSince.UnixNano()
+		}
+		if test.CapacityAdvisory != nil {
+			entry.recommendedGenerators = test.CapacityAdvisory.RecommendedGenerators
+		}
+		if test.ExecutionPlanApproval != nil {
+			entry.approvalID = test.ExecutionPlanApproval.ID
+			entry.approvalPlanID = test.ExecutionPlanApproval.PlanID
+			entry.approvalContentHash = test.ExecutionPlanApproval.PlanContentHash
+			entry.approvalStatus = test.ExecutionPlanApproval.Status
+			entry.approvalPolicy = test.ExecutionPlanApproval.Policy
+			entry.approvedPeakVUsers = test.ExecutionPlanApproval.ApprovedPeakVUsers
+		}
+		state[id] = entry
+	}
+	return state
+}
+
+func samePendingQueueMetadataState(left, right map[string]pendingQueueMetadataState) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for id, expected := range left {
+		if current, ok := right[id]; !ok || current != expected {
+			return false
+		}
+	}
+	return true
+}
+
+// refreshPendingQueueMetadata loads durable reservation evidence without tr.mu,
+// then installs metadata only if the complete queue/capacity input snapshot is
+// unchanged. A bounded retry prevents a stalled store from applying evidence to
+// a different queue generation while keeping read/reconcile paths non-blocking.
+func (tr *TestRunner) refreshPendingQueueMetadata() {
+	if tr == nil {
+		return
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		tr.mu.RLock()
+		expected := tr.pendingQueueMetadataStateLocked()
+		projectStore := tr.projectStore
+		hasPending := false
+		for _, entry := range expected {
+			if entry.status == "PENDING" {
+				hasPending = true
+				break
+			}
+		}
+		tr.mu.RUnlock()
+
+		now := time.Now()
+		var activeSlots []*storage.CapacityReservation
+		var reservationErr error
+		if hasPending {
+			activeSlots, reservationErr = tr.loadBoundTimeslotsActiveAt(now)
+		}
+		projectQuotas := loadPendingProjectQuotaEvidence(projectStore, expected)
+
+		tr.mu.Lock()
+		if !samePendingQueueMetadataState(expected, tr.pendingQueueMetadataStateLocked()) {
+			tr.mu.Unlock()
+			continue
+		}
+		tr.refreshPendingQueueMetadataWithTimeslotsLocked(now, activeSlots, reservationErr, projectQuotas)
+		tr.mu.Unlock()
+		return
+	}
+	slog.Debug("pending queue changed continuously while metadata evidence was loaded; leaving the previous projection for the next refresh")
+}
+
+func (tr *TestRunner) refreshPendingQueueMetadataWithTimeslotsLocked(now time.Time, activeSlots []*storage.CapacityReservation, reservationErr error, projectQuotas map[*ManagedTest]projectQuotaEvidence) {
 	pending := make([]*ManagedTest, 0)
 	for _, test := range tr.tests {
 		if test.Status != "PENDING" {
@@ -657,10 +841,15 @@ func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
 		}
 		pending = append(pending, test)
 	}
-	tr.sortPendingTestsForFairShareLocked(pending)
+	tr.sortPendingTestsForFairShareWithTimeslotsLocked(pending, now, activeSlots)
 	for index, test := range pending {
 		test.QueuePosition = index + 1
-		blocked, reason := tr.evaluateQuotaBlockLocked(test, "")
+		projectQuota, quotaOK := projectQuotas[test].quotaFor(test)
+		blocked := !quotaOK
+		reason := "waiting for project quota evidence to become available"
+		if quotaOK {
+			blocked, reason = tr.evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test, "", now, activeSlots, reservationErr, projectQuota)
+		}
 		if blocked {
 			test.PendingReason = reason
 		} else if !pendingPromotionReasonMustRemainVisible(test.PendingReason) {

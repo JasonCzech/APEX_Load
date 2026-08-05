@@ -141,6 +141,81 @@ func TestDistributedMetricsDuplicateAndStaleWindowsDoNotAdvanceP99Samples(t *tes
 	}
 }
 
+func TestDistributedMetricsSequenceGapIsRetainedInTelemetry(t *testing.T) {
+	runner, testRun, backend := newDistributedThresholdTestRunner(t)
+	const target = "generator-a"
+	first := distributedP99Batch(testRun.ID, 1_000, 100)
+	first.BatchSequence = 1
+	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, first) {
+		t.Fatal("first sequence was not accepted")
+	}
+
+	third := distributedP99Batch(testRun.ID, 3_000, 100)
+	third.BatchSequence = 3
+	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, third) {
+		t.Fatal("third sequence was not accepted")
+	}
+	runner.mu.RLock()
+	stored := testRun.remoteMetricsBatchesByTarget[target]
+	runner.mu.RUnlock()
+	if stored.Telemetry == nil || stored.Telemetry.MissingMetricWindows != 1 {
+		t.Fatalf("gap telemetry = %#v, want one missing window", stored.Telemetry)
+	}
+
+	fourth := distributedP99Batch(testRun.ID, 4_000, 100)
+	fourth.BatchSequence = 4
+	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, fourth) {
+		t.Fatal("fourth sequence was not accepted")
+	}
+	runner.mu.RLock()
+	stored = testRun.remoteMetricsBatchesByTarget[target]
+	runner.mu.RUnlock()
+	if stored.Telemetry == nil || stored.Telemetry.MissingMetricWindows != 1 {
+		t.Fatalf("cumulative gap telemetry = %#v, want one missing window", stored.Telemetry)
+	}
+
+	duplicate := distributedP99Batch(testRun.ID, 5_000, 100)
+	duplicate.BatchSequence = fourth.BatchSequence
+	if backend.storeRemoteMetricsBatchOnly(runner, testRun, target, duplicate) {
+		t.Fatal("duplicate batch sequence was accepted because its timestamp was newer")
+	}
+	staleTerminal := duplicate
+	staleTerminal.LifecycleState = "COMPLETE"
+	staleTerminal.BatchSequence = third.BatchSequence
+	if backend.storeRemoteMetricsBatchOnly(runner, testRun, target, staleTerminal) {
+		t.Fatal("stale terminal batch sequence was accepted")
+	}
+}
+
+func TestDistributedTerminalMetricsRetainBrokerOverflowGap(t *testing.T) {
+	runner, testRun, backend := newDistributedThresholdTestRunner(t)
+	const target = "generator-a"
+	// The generator subscriber retains sequences 1..15 when its 16-entry
+	// queue admits terminal sequence 17 by evicting sequence 16.
+	const terminalSequence uint64 = 17
+
+	for sequence := uint64(1); sequence < terminalSequence-1; sequence++ {
+		batch := distributedP99Batch(testRun.ID, int64(sequence*1_000), 100)
+		batch.BatchSequence = sequence
+		if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, batch) {
+			t.Fatalf("sequence %d was not accepted", sequence)
+		}
+	}
+	terminal := distributedP99Batch(testRun.ID, int64(terminalSequence*1_000), 100)
+	terminal.BatchSequence = terminalSequence
+	terminal.LifecycleState = "COMPLETE"
+	if !backend.storeRemoteMetricsBatchOnly(runner, testRun, target, terminal) {
+		t.Fatal("terminal sequence was not accepted")
+	}
+
+	runner.mu.RLock()
+	stored := testRun.remoteMetricsBatchesByTarget[target]
+	runner.mu.RUnlock()
+	if stored.LifecycleState != "COMPLETE" || stored.Telemetry == nil || stored.Telemetry.MissingMetricWindows != 1 {
+		t.Fatalf("terminal gap telemetry = state %q telemetry %#v, want COMPLETE with one missing window", stored.LifecycleState, stored.Telemetry)
+	}
+}
+
 func TestDistributedMetricsDelayedFlushDoesNotReplayP99Samples(t *testing.T) {
 	runner, testRun, backend := newDistributedThresholdTestRunner(t)
 	const target = "generator-a"

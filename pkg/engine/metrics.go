@@ -171,7 +171,7 @@ type TelemetryMetrics struct {
 }
 
 type SystemResources struct {
-	CPUProcessPct                     float64            `json:"cpu_process_pct"`               // CPU used by vuser processes (fleet average in distributed runs)
+	CPUProcessPct                     float64            `json:"cpu_process_pct"`               // interval CPU used by vuser processes, normalized to allocated/available cores (fleet average in distributed runs)
 	CPUProcessPctMax                  float64            `json:"cpu_process_pct_max,omitempty"` // worst-pod process CPU% across the fleet (distributed only)
 	CPUFreePct                        float64            `json:"cpu_free_pct"`                  // CPU headroom
 	MemProcessMb                      float64            `json:"mem_process_mb"`                // Memory used by vuser processes

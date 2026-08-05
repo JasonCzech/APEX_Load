@@ -217,13 +217,15 @@ Dev preview headers are honored only in dev mode and ignored by trusted-header/O
 
 Production reference deployment uses:
 
-- two or more controller replicas behind a service
+- two or more controller replicas behind a service, with `APEXLOAD_CONTROLLER_HA=true`
 - PostgreSQL 16 or newer for metadata and leases
 - Redis/Valkey for live state, request coordination, and WebSocket fanout
 - object storage for immutable archives
 - Prometheus scraping and optional remote-write to Mimir, Thanos, or managed Prometheus
 - generator StatefulSets with autoscaling signals and region/capability metadata
 - readiness probes on `/api/v1/system/readiness`
+
+Controller replicas are safe only with the complete HA contract: PostgreSQL for shared metadata and execution leases, Redis/Valkey for coordination and WebSocket fanout, shared object storage for archives/import assets, and identical auth/secret-provider configuration. Merely scaling the Deployment without enabling HA and those shared services is unsupported.
 
 Examples live under `deployments/k8s/`, including production data-platform settings, monitoring manifests, HA controller deployment, and Redis/Valkey reference manifests.
 

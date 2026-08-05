@@ -97,17 +97,16 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	mge, err := tr.buildRunEngine(test, artifacts.resultSink())
 	if err != nil {
-		tr.failTestBeforeRunAndLog(test, err.Error())
+		if tr.beforeLocalBuildFailureFinalize != nil {
+			tr.beforeLocalBuildFailureFinalize()
+		}
+		tr.finalizeLocalBuildFailure(test, artifacts, err)
 		return
 	}
 
 	ctx, metricsDone, metricsStopped, started, startErr := tr.startManagedTestRun(test, mge, artifacts)
 	if startErr != nil {
-		endTime := time.Now()
-		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
-		_, _, finalError := artifacts.finalize(test, "FAILED", endTime, startErr.Error())
-		tr.failTestBeforeRunAndLog(test, finalError)
-		unlockArchiveCommit()
+		tr.finalizeLocalBuildFailure(test, artifacts, startErr)
 		return
 	}
 	if !started {
@@ -185,6 +184,56 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	)
 }
 
+// finalizeLocalBuildFailure serializes the archive outcome with Stop/Abort.
+// Engine compilation happens asynchronously, so an operator can make ABORTED
+// durable while compilation is in progress. The lifecycle gate decides which
+// transition won before the immutable manifest is written; a stale builder must
+// never publish FAILED evidence for a run whose terminal state is ABORTED.
+func (tr *TestRunner) finalizeLocalBuildFailure(test *ManagedTest, artifacts *runArtifacts, buildErr error) {
+	if tr == nil || test == nil || artifacts == nil || buildErr == nil {
+		return
+	}
+	unlockLifecycle, err := tr.lockTestLifecycleControl(context.Background(), test.ID)
+	if err != nil {
+		tr.failTestBeforeRunAndLog(test, buildErr.Error())
+		return
+	}
+	defer unlockLifecycle()
+
+	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+	defer unlockArchiveCommit()
+
+	endTime := time.Now().UTC()
+	finalStatus := "FAILED"
+	finalError := buildErr.Error()
+	tr.mu.RLock()
+	current := tr.tests[test.ID]
+	if current != test {
+		tr.mu.RUnlock()
+		return
+	}
+	status := strings.ToUpper(strings.TrimSpace(current.Status))
+	if status != "INITIALIZING" {
+		if !isTerminalTestStatus(status) {
+			tr.mu.RUnlock()
+			return
+		}
+		finalStatus = status
+		finalError = current.Error
+		if current.EndedAt != nil {
+			endTime = current.EndedAt.UTC()
+		}
+	}
+	tr.mu.RUnlock()
+
+	archiveRecord, finalStatus, finalError := artifacts.finalize(test, finalStatus, endTime, finalError)
+	if status == "INITIALIZING" {
+		if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, endTime, finalError, archiveRecord); err != nil {
+			slog.Error("local pre-run terminal transition remains retryable", "test_id", test.ID, "error", err)
+		}
+	}
+}
+
 func localExecutionRunError(ctx context.Context, runErr error) error {
 	if runErr != nil || ctx == nil {
 		return runErr
@@ -209,7 +258,14 @@ func localExecutionFinalState(testStatus, testError string, runErr error) (strin
 }
 
 func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
-	recorder, err := newRunArchiveWriter(test, buildRunArchiveProvenance(tr, test))
+	initialProvenance := maskRunArchiveProvenance(buildRunArchiveProvenance(tr, test))
+	// Local runs must cross the same immutable provenance boundary as
+	// distributed runs before any runtime mutation or archive write can occur.
+	authoritativeInitial, err := tr.persistInitialArchiveProvenance(test, &initialProvenance)
+	if err != nil {
+		return nil, fmt.Errorf("persist initial archive provenance: %w", err)
+	}
+	recorder, err := newRunArchiveWriter(test, authoritativeInitial)
 	if err != nil {
 		return nil, err
 	}

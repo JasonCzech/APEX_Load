@@ -228,6 +228,15 @@ export function describeCron(expr: string): string {
   if (parts.length !== 5) return ''
   const [minute, hour, dom, month, dow] = parts
 
+  const minuteStep = /^\*\/(\d+)$/.exec(minute)
+  if (minuteStep && Number(minuteStep[1]) > 0 && hour === '*' && dom === '*' && month === '*' && dow === '*') {
+    return `Every ${Number(minuteStep[1])} minutes`
+  }
+  const hourStep = /^\*\/(\d+)$/.exec(hour)
+  if (hourStep && Number(hourStep[1]) > 0 && /^\d+$/.test(minute) && dom === '*' && month === '*' && dow === '*') {
+    return `Every ${Number(hourStep[1])} hours at minute ${Number(minute)}`
+  }
+
   const dowNames: Record<string, string> = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat', '7': 'Sun' }
   const monthNames: Record<string, string> = { '1': 'Jan', '2': 'Feb', '3': 'Mar', '4': 'Apr', '5': 'May', '6': 'Jun', '7': 'Jul', '8': 'Aug', '9': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec' }
 

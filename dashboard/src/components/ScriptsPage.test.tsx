@@ -7,7 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import ScriptsPage from './ScriptsPage'
+import ScriptsPage, {
+  beginScriptSecretStatusRequest,
+  isLatestScriptSecretStatusRequest,
+} from './ScriptsPage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -260,6 +263,29 @@ describe('ScriptsPage', () => {
   let container: HTMLDivElement
   let root: Root
 
+  it('orders automatic and retry secret checks through one per-script token', async () => {
+    const tokens = new Map<string, number>()
+    const automatic = deferred<'stale automatic'>()
+    const retry = deferred<'ready retry'>()
+    let visibleStatus = ''
+
+    const automaticToken = beginScriptSecretStatusRequest(tokens, 'script-1')
+    const automaticApply = automatic.promise.then(status => {
+      if (isLatestScriptSecretStatusRequest(tokens, 'script-1', automaticToken)) visibleStatus = status
+    })
+    const retryToken = beginScriptSecretStatusRequest(tokens, 'script-1')
+    const retryApply = retry.promise.then(status => {
+      if (isLatestScriptSecretStatusRequest(tokens, 'script-1', retryToken)) visibleStatus = status
+    })
+
+    retry.resolve('ready retry')
+    await retryApply
+    automatic.resolve('stale automatic')
+    await automaticApply
+
+    expect(visibleStatus).toBe('ready retry')
+  })
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -462,6 +488,75 @@ describe('ScriptsPage', () => {
     const stillPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 2'))
     expect(readyRow?.textContent).not.toContain('Checking secrets')
     expect(stillPendingRow?.textContent).toContain('1 secret missing')
+  })
+
+  it('preserves cached secret readiness when an unchanged library refresh replaces the scripts array', async () => {
+    const secretScript = {
+      ...scriptRecord('script-cache', 'Cached Secret Script', 'project-1'),
+      script: {
+        name: 'Cached Secret Script',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: '' },
+        actions: [{ name: 'Call', type: 'http', target: '/', headers: { Authorization: 'Bearer {{secret.CACHED_TOKEN}}' } }],
+      },
+    }
+    apiMock.listScripts.mockResolvedValue({ scripts: [secretScript], count: 1 })
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({
+      project_id: 'project-1',
+      secrets: [{ name: 'CACHED_TOKEN', configured: true }],
+      capabilities: { provider: 'encrypted_database', writable: true },
+    })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    await flushPromises()
+    await clickButton('Delete')
+    await flushPromises()
+
+    expect(apiMock.listScripts).toHaveBeenCalledTimes(2)
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Checking secrets')
+    confirmSpy.mockRestore()
+  })
+
+  it('retries only the failed script secret check', async () => {
+    const scripts = ['ALPHA_TOKEN', 'BETA_TOKEN'].map((secretName, index) => ({
+      ...scriptRecord(`script-${index + 1}`, index === 0 ? 'Alpha Script' : 'Beta Script', 'project-1'),
+      script: {
+        name: index === 0 ? 'Alpha Script' : 'Beta Script',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: '' },
+        actions: [{ name: 'Call', type: 'http', target: '/', headers: { Authorization: `Bearer {{secret.${secretName}}}` } }],
+      },
+    }))
+    apiMock.listScripts.mockResolvedValueOnce({ scripts, count: scripts.length })
+    apiMock.getProjectSecretStatuses
+      .mockRejectedValueOnce(new Error('status unavailable'))
+      .mockResolvedValueOnce({
+        project_id: 'project-1',
+        secrets: [{ name: 'ALPHA_TOKEN', configured: true }],
+        capabilities: { provider: 'encrypted_database', writable: true },
+      })
+
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    await flushPromises()
+
+    const alphaRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Alpha Script'))
+    const retry = Array.from(alphaRow?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Retry secret check')
+    expect(retry).toBeDefined()
+    await act(async () => retry?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenNthCalledWith(1, 'project-1', ['ALPHA_TOKEN', 'BETA_TOKEN'])
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenNthCalledWith(2, 'project-1', ['ALPHA_TOKEN'])
+    expect(alphaRow?.textContent).not.toContain('Secret status unavailable')
+    const betaRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Beta Script'))
+    expect(betaRow?.textContent).toContain('Secret status unavailable')
   })
 
   it('canonicalizes every backend-valid secret reference before readiness lookup', async () => {
@@ -2188,6 +2283,13 @@ describe('ScriptsPage', () => {
 
     expect(container.textContent).toContain('Guided Correlation Repair')
     expect(container.textContent).toContain('2 actions available')
+
+    const producer = container.querySelector('select[aria-label="Correlation producer for HAR token repair"]') as HTMLSelectElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(producer, '1')
+      producer.dispatchEvent(new Event('change', { bubbles: true }))
+    })
 
     const previewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Preview Repair'))
     expect(previewButton).toBeDefined()

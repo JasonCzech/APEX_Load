@@ -11,6 +11,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "lint": "eslint .",
     "test": "node --test test/*.test.js",
     "sbom": "node scripts/sbom.js --output sbom.cdx.json"
   },
@@ -28,5 +29,10 @@
     "socks-proxy-agent": "8.0.5",
     "tar-stream": "3.1.7",
     "ws": "8.21.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.27.0",
+    "globals": "^17.7.0"
   }
 }

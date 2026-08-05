@@ -165,7 +165,7 @@ describe('scriptDraftFactories', () => {
       expect(draft.parameters).toEqual(component.parameters)
     })
 
-    it('folds init, actions, and teardown into a single actions array in order', () => {
+    it('preserves init, actions, and teardown as distinct execution phases', () => {
       const component: AuthoringComponent = {
         id: 'mixed',
         kind: 'request_group',
@@ -179,7 +179,9 @@ describe('scriptDraftFactories', () => {
 
       const draft = composeComponentDraft(component)
 
-      expect(draft.actions.map(action => action.name)).toEqual(['Acquire Token', 'Main Call', 'Logout'])
+      expect(draft.init?.map(action => action.name)).toEqual(['Acquire Token'])
+      expect(draft.actions.map(action => action.name)).toEqual(['Main Call'])
+      expect(draft.teardown?.map(action => action.name)).toEqual(['Logout'])
     })
 
     it('merges component config onto the base draft config', () => {

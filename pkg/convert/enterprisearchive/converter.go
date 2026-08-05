@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -12,6 +13,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+const trailingRequestContributorsMetadataKey = "trailing_request_contributors"
 
 // ConvertResult holds the output of an enterprise script archive to APEX Load DSL conversion.
 type ConvertResult struct {
@@ -804,6 +807,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			appendSourceReviewMapping(result, sourceReviewMappingForFunction(fn, "metadata.import.preserved.unsupported_functions", fn.Name, "unsupported", "review_only", "No executable APEX Load mapping exists for this source function yet."))
 		}
 	}
+	preserveTrailingRequestContributors(
+		result,
+		pendingExtractors,
+		pendingAssertions,
+		pendingHeaders,
+		pendingSourceMappings,
+	)
 
 	appendCSourceParseFailureGates(result, actions)
 	structureSourceControlFlow(result)
@@ -865,6 +875,72 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	}
 
 	return result, nil
+}
+
+func preserveTrailingRequestContributors(
+	result *ConvertResult,
+	extractors []dsl.Extractor,
+	assertions []dsl.Assertion,
+	headers map[string]string,
+	mappings []SourceReviewMapping,
+) {
+	if result == nil || len(extractors)+len(assertions)+len(headers) == 0 {
+		return
+	}
+	preserved := ensureEnterpriseArchiveImportPreserved(result.Script)
+	preserved[trailingRequestContributorsMetadataKey] = map[string]int{
+		"extractors": len(extractors),
+		"assertions": len(assertions),
+		"headers":    len(headers),
+	}
+	result.Warnings = append(result.Warnings,
+		"source response contributors or one-shot headers appear after the final request; they were preserved for review and block promotion because there is no response/request to bind them to")
+
+	if result.Stats.Extractors >= len(extractors) {
+		result.Stats.Extractors -= len(extractors)
+	}
+	seenFunctions := make(map[string]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		originalSupportMode := SourceFunctionSupportMode(mapping.SupportMode)
+		mapping.TargetPath = "metadata.import.preserved." + trailingRequestContributorsMetadataKey
+		mapping.Status = "review_only"
+		mapping.SupportMode = string(SourceFunctionSupportReviewOnly)
+		mapping.Notes = "Preserved for review: this contributor appeared after the final request and cannot be bound without changing source semantics."
+		appendSourceReviewMapping(result, mapping)
+
+		key := strings.ToLower(strings.TrimSpace(mapping.SourceFile)) + ":" + strconv.Itoa(mapping.StartLine) + ":" + strings.ToLower(strings.TrimSpace(mapping.Function))
+		if _, seen := seenFunctions[key]; seen {
+			continue
+		}
+		seenFunctions[key] = struct{}{}
+		moveSourceFunctionSupportToReview(&result.Stats, originalSupportMode)
+	}
+}
+
+func moveSourceFunctionSupportToReview(stats *ConvertStats, original SourceFunctionSupportMode) {
+	if stats == nil || original == SourceFunctionSupportReviewOnly {
+		return
+	}
+	switch original {
+	case SourceFunctionSupportExecutable, SourceFunctionSupportNativeNoop:
+		if stats.NativeFunctions == 0 {
+			return
+		}
+		stats.NativeFunctions--
+	case SourceFunctionSupportExternalRequired:
+		if stats.ExternalRequiredFunctions == 0 {
+			return
+		}
+		stats.ExternalRequiredFunctions--
+	case SourceFunctionSupportCustomReview:
+		if stats.CustomCallFunctions == 0 {
+			return
+		}
+		stats.CustomCallFunctions--
+	default:
+		return
+	}
+	stats.ReviewOnlyFunctions++
 }
 
 func stringSlicesEqual(left, right []string) bool {

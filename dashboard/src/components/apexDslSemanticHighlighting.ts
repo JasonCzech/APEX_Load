@@ -1,6 +1,6 @@
 import { jsonLanguage } from '@codemirror/lang-json'
-import { type Extension, StateField } from '@codemirror/state'
-import { Decoration, type DecorationSet, EditorView } from '@codemirror/view'
+import { type Extension, StateEffect, StateField } from '@codemirror/state'
+import { Decoration, type DecorationSet, EditorView, ViewPlugin } from '@codemirror/view'
 
 export type ApexDslSemanticKind =
   | 'sectionKey'
@@ -375,6 +375,7 @@ function classNameForKind(kind: ApexDslSemanticKind) {
  * CodeMirror's built-in JSON syntax highlighting still applies.
  */
 export const APEX_DSL_SEMANTIC_MAX_DOC_CHARS = 200_000
+export const APEX_DSL_SEMANTIC_REBUILD_DELAY_MS = 120
 
 export function buildApexDslSemanticDecorations(state: EditorView['state']): DecorationSet {
   if (state.doc.length > APEX_DSL_SEMANTIC_MAX_DOC_CHARS) return Decoration.none
@@ -408,15 +409,43 @@ export function buildApexDslSemanticDecorations(state: EditorView['state']): Dec
   )
 }
 
+const setApexDslSemanticDecorations = StateEffect.define<DecorationSet>()
+
+const apexDslSemanticHighlightPlugin = ViewPlugin.fromClass(class {
+  private rebuildTimer: ReturnType<typeof globalThis.setTimeout> | null = null
+
+  constructor(private readonly view: EditorView) {}
+
+  update(update: { docChanged: boolean }) {
+    if (!update.docChanged) return
+    if (this.rebuildTimer !== null) globalThis.clearTimeout(this.rebuildTimer)
+    this.rebuildTimer = globalThis.setTimeout(() => {
+      this.rebuildTimer = null
+      this.view.dispatch({
+        effects: setApexDslSemanticDecorations.of(buildApexDslSemanticDecorations(this.view.state)),
+      })
+    }, APEX_DSL_SEMANTIC_REBUILD_DELAY_MS)
+  }
+
+  destroy() {
+    if (this.rebuildTimer !== null) globalThis.clearTimeout(this.rebuildTimer)
+  }
+})
+
 const apexDslSemanticHighlightField = StateField.define<DecorationSet>({
   create: state => buildApexDslSemanticDecorations(state),
   update(decorations, tr) {
-    if (tr.docChanged) {
-      return buildApexDslSemanticDecorations(tr.state)
+    for (const effect of tr.effects) {
+      if (effect.is(setApexDslSemanticDecorations)) {
+        return effect.value
+      }
     }
     return decorations.map(tr.changes)
   },
-  provide: field => EditorView.decorations.from(field),
+  provide: field => [
+    EditorView.decorations.from(field),
+    apexDslSemanticHighlightPlugin,
+  ],
 })
 
 export function apexDslSemanticHighlighting(): Extension {

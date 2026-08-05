@@ -27,7 +27,12 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	loadLocalDotEnv()
+	logLevel, logLevelErr := config.ResolveLogLevel(os.Getenv)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
+	if logLevelErr != nil {
+		slog.Warn("invalid log-level configuration; using info", "err", logLevelErr)
+	}
 	if err := runController(); err != nil {
 		slog.Error("controller stopped with an error", "err", err)
 		os.Exit(1)

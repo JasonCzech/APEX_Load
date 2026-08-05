@@ -47,6 +47,7 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   vi.clearAllMocks()
+  vi.useRealTimers()
 })
 
 async function flush() {
@@ -431,6 +432,75 @@ describe('FleetPoolsCard', () => {
 
     expect(fleetApiMock.cancelProvisionRequest).toHaveBeenCalledWith('req-active')
     expect(container.textContent).toContain('operator cancelled')
+  })
+
+  it('refreshes active provisioning requests until they reach a terminal status', async () => {
+    vi.useFakeTimers()
+    const activeRequest = {
+      id: 'req-refresh', fleet_pool_id: 'pool-1', status: 'provisioning', desired_count: 2,
+      created_at: '', updated_at: '2026-08-05T10:00:00Z',
+    }
+    const completedRequest = {
+      ...activeRequest, status: 'success', updated_at: '2026-08-05T10:00:05Z',
+    }
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({})], count: 1 })
+    fleetApiMock.listProvisionRequests
+      .mockResolvedValueOnce({ provisioning_requests: [activeRequest], count: 1 })
+      .mockResolvedValue({ provisioning_requests: [completedRequest], count: 1 })
+
+    await act(async () => { root.render(<FleetPoolsCard canManage />) })
+    await flush()
+    expect(container.textContent).toContain('provisioning')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Cancel')).toBe(true)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    await flush()
+
+    expect(fleetApiMock.listProvisionRequests).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('success')
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Cancel')).toBe(false)
+  })
+
+  it('coalesces a slow provisioning poll instead of invalidating its response', async () => {
+    vi.useFakeTimers()
+    const activeRequest = {
+      id: 'req-slow-refresh', fleet_pool_id: 'pool-1', status: 'provisioning', desired_count: 2,
+      created_at: '', updated_at: '2026-08-05T10:00:00Z',
+    }
+    const completedRequest = {
+      ...activeRequest, status: 'success', updated_at: '2026-08-05T10:00:11Z',
+    }
+    fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [pool({})], count: 1 })
+    fleetApiMock.listProvisionRequests
+      .mockResolvedValueOnce({ provisioning_requests: [activeRequest], count: 1 })
+      .mockImplementationOnce(() => new Promise(resolve => {
+        window.setTimeout(() => resolve({ provisioning_requests: [completedRequest], count: 1 }), 6_000)
+      }))
+      .mockResolvedValue({ provisioning_requests: [completedRequest], count: 1 })
+
+    await act(async () => { root.render(<FleetPoolsCard canManage />) })
+    await flush()
+    expect(container.textContent).toContain('provisioning')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(fleetApiMock.listProvisionRequests).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(fleetApiMock.listProvisionRequests).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000)
+    })
+    await flush()
+
+    expect(fleetApiMock.listProvisionRequests).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('success')
   })
 
   it('keeps an authoritative pool update when reconciliation fails', async () => {

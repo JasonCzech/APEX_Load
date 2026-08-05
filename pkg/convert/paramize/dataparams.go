@@ -94,17 +94,18 @@ func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBu
 		return nil
 	}
 	query := action.Target[queryStart+1:]
-	matches, err := budget.findAllSubmatches(queryPairPattern, query)
+	matches, err := budget.findAllSubmatchIndexes(queryPairPattern, query)
 	if err != nil {
 		return err
 	}
 	for _, match := range matches {
-		key, value := match[1], match[2]
+		key, value := query[match[2]:match[3]], query[match[4]:match[5]]
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
 		}
+		search, buildReplace := delimitedPairReplacement(action.Target, queryStart+1+match[0], queryStart+1+match[1], key)
 		collector.add(key, value, "query parameter", section, index, action,
-			"target", key+"="+value, func(template string) string { return key + "=" + template })
+			"target", search, buildReplace)
 	}
 	return nil
 }
@@ -155,19 +156,37 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 		return nil
 	}
 	// Form-encoded bodies reuse the query-pair shape.
-	matches, err := budget.findAllSubmatches(queryPairPattern, action.Body)
+	matches, err := budget.findAllSubmatchIndexes(queryPairPattern, action.Body)
 	if err != nil {
 		return err
 	}
 	for _, match := range matches {
-		key, value := match[1], match[2]
+		key, value := action.Body[match[2]:match[3]], action.Body[match[4]:match[5]]
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
 		}
+		search, buildReplace := delimitedPairReplacement(action.Body, match[0], match[1], key)
 		collector.add(key, value, "form field", section, index, action,
-			"body", key+"="+value, func(template string) string { return key + "=" + template })
+			"body", search, buildReplace)
 	}
 	return nil
+}
+
+func delimitedPairReplacement(value string, pairStart, pairEnd int, key string) (string, func(string) string) {
+	searchStart := pairStart
+	if searchStart > 0 && (value[searchStart-1] == '?' || value[searchStart-1] == '&') {
+		searchStart--
+	}
+	searchEnd := pairEnd
+	if searchEnd < len(value) && (value[searchEnd] == '&' || value[searchEnd] == '#') {
+		searchEnd++
+	}
+	prefix := value[searchStart:pairStart]
+	suffix := value[pairEnd:searchEnd]
+	search := value[searchStart:searchEnd]
+	return search, func(template string) string {
+		return prefix + key + "=" + template + suffix
+	}
 }
 
 // collectFillParams treats browser fill values as parameterizable when the

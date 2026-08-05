@@ -4,12 +4,14 @@ import type {
   JsonRequestBody,
   JsonSuccessResponseBody,
 } from './generated/openapi'
+import type { BrowserReplayStartRequest } from './replay'
 
 type StartBody = JsonRequestBody<'handleStartScriptDebugScript'>
 type StepBody = JsonRequestBody<'handleStepScriptDebugSession'>
 type BreakpointsBody = JsonRequestBody<'handleUpdateScriptDebugBreakpoints'>
 type OptionsBody = JsonRequestBody<'handleUpdateScriptDebugOptions'>
 type StepSuccessBody = JsonSuccessResponseBody<'handleStepScriptDebugSession', '200'>
+type BrowserReplayBody = JsonRequestBody<'handleStartBrowserReplayDraftScript'>
 
 const startFixture = {
   group_name: 'checkout-debug',
@@ -45,7 +47,7 @@ const successFixture = {
 } satisfies StepSuccessBody
 
 describe('generated OpenAPI transport helpers', () => {
-  it('resolve script-debug contracts to concrete object shapes', () => {
+	it('resolve script-debug contracts to concrete object shapes', () => {
     expectTypeOf<StartBody>().not.toBeAny()
     expectTypeOf<'group_name'>().toMatchTypeOf<keyof StartBody>()
     expectTypeOf<StartBody>().toMatchTypeOf<{ group_name?: string; start_paused?: boolean }>()
@@ -66,7 +68,7 @@ describe('generated OpenAPI transport helpers', () => {
 
     expectTypeOf<StepSuccessBody>().not.toBeAny()
     expectTypeOf<'session'>().toMatchTypeOf<keyof StepSuccessBody>()
-    expectTypeOf<StepSuccessBody>().toMatchTypeOf<{ session?: { id?: string } }>()
+    expectTypeOf<StepSuccessBody>().toMatchTypeOf<{ session?: { id?: string } | null }>()
 
     expect({
       startFixture,
@@ -104,5 +106,11 @@ describe('generated OpenAPI transport helpers', () => {
         },
       },
     })
+  })
+
+  it('keeps the handwritten browser replay request aligned with the generated contract', () => {
+    expectTypeOf<keyof BrowserReplayStartRequest>().toEqualTypeOf<keyof BrowserReplayBody>()
+    expectTypeOf<'redaction_rules'>().toMatchTypeOf<keyof BrowserReplayStartRequest>()
+    expectTypeOf<'log_level'>().not.toMatchTypeOf<keyof BrowserReplayStartRequest>()
   })
 })

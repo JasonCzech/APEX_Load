@@ -372,6 +372,22 @@ func TestCapacityBindingQueriesRemainPostgresLockAndPlaceholderSafe(t *testing.T
 	}
 }
 
+func TestCapacityBindingWindowSpanComparisonUsesBackendPrecision(t *testing.T) {
+	startAt := time.Unix(1_000, 1_500).UTC()
+	endAt := startAt.Add(10*time.Minute + 900*time.Nanosecond)
+	retryStartAt := startAt.Add(17 * time.Second)
+
+	if capacityBindingWindowSpansMatch(storeDialectSQLite, startAt, endAt, retryStartAt, retryStartAt.Add(10*time.Minute)) {
+		t.Fatal("SQLite comparison ignored a representable 900ns duration change")
+	}
+	if !capacityBindingWindowSpansMatch(storeDialectPostgres, startAt, endAt, retryStartAt, retryStartAt.Add(10*time.Minute)) {
+		t.Fatal("PostgreSQL comparison rejected an unrepresentable sub-microsecond duration change")
+	}
+	if capacityBindingWindowSpansMatch(storeDialectPostgres, startAt, endAt, retryStartAt, retryStartAt.Add(10*time.Minute+2*time.Microsecond)) {
+		t.Fatal("PostgreSQL comparison ignored a representable duration change")
+	}
+}
+
 func assertReciprocalCapacityBinding(t *testing.T, store *SQLiteStore, slotID, testID string) {
 	t.Helper()
 	reservation, err := store.GetCapacityReservation(slotID)

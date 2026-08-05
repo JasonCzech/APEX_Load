@@ -19,7 +19,7 @@ import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus } from '..
 import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestGroupParametersUpdateResult, TestGroupRuntimeSettingsUpdateResult, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
-import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
+import type { ExecutionChartTimeRange, ExecutionChartZoomAnchor } from './testExecutionChartZoomModel'
 import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
@@ -944,6 +944,10 @@ export default function CommandCenterPrototype({
   const discoveringRuns = runDiscoveryState.scopeKey === discoveryScopeKey && runDiscoveryState.discovering
   const discoveryGenerationRef = useRef(0)
   const testId = testIdProp || autoSelectedTestId || undefined
+  const scopedThresholdAlerts = useMemo(
+    () => testId ? thresholdAlerts.filter(alert => alert.testId === testId) : [],
+    [testId, thresholdAlerts],
+  )
   const [variant, setVariant] = useState<VariantId>('ops')
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
@@ -1748,7 +1752,7 @@ export default function CommandCenterPrototype({
           onOpenResults={onOpenResults}
         />
       )}
-      <ThresholdAlertStrip alerts={thresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
+      <ThresholdAlertStrip alerts={scopedThresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
 
       {variant === 'ops' && (
         <OpsCockpitView
@@ -2069,8 +2073,8 @@ interface CommonViewProps {
   chartData: MetricsHistoryPoint[]
   expandedChart: string | null
   onExpandedChartChange: (value: string | null) => void
-  onChartMouseDown: (activeLabel?: string | number) => void
-  onChartMouseMove: (activeLabel?: string | number) => void
+  onChartMouseDown: (anchor?: ExecutionChartZoomAnchor) => void
+  onChartMouseMove: (anchor?: ExecutionChartZoomAnchor) => void
   onZoom: () => void
   onResetZoom: () => void
   showRefArea: boolean
@@ -3381,8 +3385,8 @@ interface CommandRuntimeGraphsProps {
   importedDashboardsError?: string
   expandedChart: string | null
   onExpandedChartChange: (value: string | null) => void
-  onChartMouseDown: (activeLabel?: string | number) => void
-  onChartMouseMove: (activeLabel?: string | number) => void
+  onChartMouseDown: (anchor?: ExecutionChartZoomAnchor) => void
+  onChartMouseMove: (anchor?: ExecutionChartZoomAnchor) => void
   onZoom: () => void
   onResetZoom: () => void
   showRefArea: boolean

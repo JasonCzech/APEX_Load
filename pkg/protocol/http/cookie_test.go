@@ -70,19 +70,19 @@ func TestBoundedCookieJarSnapshotsAcceptedReplacementsWithoutGrowingHistory(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	jar.SetCookies(target, []*http.Cookie{{Name: "opaque", Value: "first"}})
-	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"first"}) {
+	jar.SetCookies(target, []*http.Cookie{{Name: "opaque", Value: "first-cookie-value"}})
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"first-cookie-value"}) {
 		t.Fatalf("first accepted values = %#v", got)
 	}
 	jar.SetCookies(target, []*http.Cookie{
-		{Name: "opaque", Value: "second"},
-		{Name: "opaque", Value: "second"},
+		{Name: "opaque", Value: "second-cookie-value"},
+		{Name: "opaque", Value: "second-cookie-value"},
 	})
-	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"second"}) {
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"second-cookie-value"}) {
 		t.Fatalf("replacement accepted values = %#v", got)
 	}
 	jar.SetCookies(target, []*http.Cookie{{Name: "opaque", Value: "", MaxAge: -1}})
-	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"second"}) {
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"second-cookie-value"}) {
 		t.Fatalf("conservative deleted-cookie snapshot = %#v, want prior bounded value", got)
 	}
 	if got := jar.Cookies(target); len(got) != 0 {
@@ -97,6 +97,25 @@ func TestBoundedCookieJarSnapshotsAcceptedReplacementsWithoutGrowingHistory(t *t
 	constrained.SetCookies(target, []*http.Cookie{{Name: "rejected", Value: "not-retained"}})
 	if got := constrained.runtimeCredentialValuesSnapshot(); len(got) != 0 {
 		t.Fatalf("rejected cookie produced runtime credential values = %#v", got)
+	}
+}
+
+func TestBoundedCookieJarRuntimeSnapshotProtectsShortApplicationDefinedCookies(t *testing.T) {
+	target, _ := url.Parse("https://example.test/app")
+	jar, err := newBoundedCookieJarWithBudget(&responseCaptureBudget{limit: maxHTTPProcessCookieBytes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar.SetCookies(target, []*http.Cookie{
+		{Name: "locale", Value: "en"},
+		{Name: "cookieconsent", Value: "true"},
+		{Name: "session_token", Value: "sensitive-session-token"},
+	})
+	if got := jar.runtimeCredentialValuesSnapshot(); !reflect.DeepEqual(got, []string{"en", "sensitive-session-token", "true"}) {
+		t.Fatalf("runtime credential snapshot = %#v", got)
+	}
+	if got := jar.Cookies(target); len(got) != 3 {
+		t.Fatalf("ordinary cookies must still be retained for transport: %#v", got)
 	}
 }
 

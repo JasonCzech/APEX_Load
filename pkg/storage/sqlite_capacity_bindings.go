@@ -263,12 +263,32 @@ func (s *SQLiteStore) bindCapacityReservationToTest(reservationID, testID string
 		}
 		return CapacityBindingFenced, err
 	}
-	if !windowStartAt.IsZero() || !windowEndAt.IsZero() {
+	requestedWindow := !windowStartAt.IsZero() || !windowEndAt.IsZero()
+	if requestedWindow {
 		if windowStartAt.IsZero() || windowEndAt.IsZero() || !windowEndAt.After(windowStartAt) {
 			return CapacityBindingWindowMismatch, nil
 		}
 		windowStartAt = windowStartAt.UTC()
 		windowEndAt = windowEndAt.UTC()
+	}
+	// A successful commit can outlive its response (or the API's verification
+	// reads). Treat an exact reciprocal pair as the durable answer so retrying the
+	// same standalone bind converges. Immediate-launch retries naturally have a
+	// shifted start timestamp, so compare their stable window span rather than
+	// exact wall-clock endpoints. A materially different requested span is a new
+	// intent and must not be reported as the already-committed operation.
+	if reservation.BoundTestID != nil && strings.TrimSpace(*reservation.BoundTestID) == test.ID &&
+		test.TimeslotID != nil && strings.TrimSpace(*test.TimeslotID) == reservation.ID {
+		durableWindow := test.CapacityWindowStartAt != nil && !test.CapacityWindowStartAt.IsZero() &&
+			test.CapacityWindowEndAt != nil && !test.CapacityWindowEndAt.IsZero()
+		if requestedWindow != durableWindow ||
+			(requestedWindow && !capacityBindingWindowSpansMatch(s.db.dialect,
+				test.CapacityWindowStartAt.UTC(), test.CapacityWindowEndAt.UTC(), windowStartAt, windowEndAt)) {
+			return CapacityBindingWindowMismatch, nil
+		}
+		return CapacityBindingBound, nil
+	}
+	if requestedWindow {
 		test.CapacityWindowStartAt = &windowStartAt
 		test.CapacityWindowEndAt = &windowEndAt
 	}
@@ -305,6 +325,22 @@ func (s *SQLiteStore) bindCapacityReservationToTest(reservationID, testID string
 		return CapacityBindingFenced, err
 	}
 	return CapacityBindingBound, nil
+}
+
+func capacityBindingWindowSpansMatch(dialect storeDialect, firstStartAt, firstEndAt, secondStartAt, secondEndAt time.Time) bool {
+	return capacityBindingDurationMatches(dialect,
+		firstEndAt.UTC().Sub(firstStartAt.UTC()), secondEndAt.UTC().Sub(secondStartAt.UTC()))
+}
+
+func capacityBindingDurationMatches(dialect storeDialect, first, second time.Duration) bool {
+	delta := first - second
+	if dialect != storeDialectPostgres {
+		return delta == 0
+	}
+	// PostgreSQL timestamps retain microsecond precision, so independently
+	// persisted endpoints can shift a sub-microsecond span by at most one
+	// microsecond. Treat only that unrepresentable difference as equivalent.
+	return delta >= -time.Microsecond && delta <= time.Microsecond
 }
 
 func validateCapacityBinding(reservation *CapacityReservation, test *TestRecord, boundAt time.Time, allowRequestedTimeslot bool) CapacityBindingResult {

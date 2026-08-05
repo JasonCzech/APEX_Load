@@ -310,18 +310,39 @@ func lockRWMutexWithContext(ctx context.Context, mu *sync.RWMutex) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	for {
-		if mu.TryLock() {
-			return nil
-		}
-		timer := time.NewTimer(10 * time.Millisecond)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	acquired := make(chan struct{})
+	abandon := make(chan struct{})
+	go func() {
+		// A blocking writer records writer intent in sync.RWMutex, preventing
+		// a continuous stream of new readers from starving leadership-loss
+		// cleanup.
+		mu.Lock()
+		// Transfer ownership only while the caller is still waiting. Once the
+		// caller abandons the acquisition, this same goroutine releases the late
+		// lock; no second cleanup goroutine or leaked ownership is needed.
 		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return ctx.Err()
-		case <-timer.C:
+		case acquired <- struct{}{}:
+		case <-abandon:
+			mu.Unlock()
 		}
+	}()
+	select {
+	case <-acquired:
+		// Cancellation and acquisition can become ready together. Recheck after
+		// ownership transfer so a randomly selected acquire case cannot make a
+		// deadline-expired caller continue shutdown work while holding the lock.
+		if err := ctx.Err(); err != nil {
+			mu.Unlock()
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		// sync.RWMutex cannot retract a queued writer. Tell the acquisition
+		// goroutine to release immediately after the existing readers drain.
+		close(abandon)
+		return ctx.Err()
 	}
 }

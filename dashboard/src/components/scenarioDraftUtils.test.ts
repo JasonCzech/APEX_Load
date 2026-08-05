@@ -206,6 +206,29 @@ describe('scenarioDraftUtils', () => {
 	  })
 	})
 
+	it('preserves a root fleet-pool placement restriction without adding one to groups', () => {
+	  const draft = buildScenarioDraftFromTest({
+	    id: 'test-pool',
+	    name: 'EU Pool Run',
+	    status: 'QUEUED',
+	    total_vusers: 10,
+	    duration: '5m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    assignment: { mode: 'auto', pool_id: 'pool-eu-west' },
+	    groups: [{
+	      name: 'HTTP',
+	      script_id: 'script-1',
+	      protocol: 'http',
+	      vusers: 10,
+	      initialization: 'at_runtime',
+	      assignment: { mode: 'auto' },
+	    }],
+	  } as never)
+
+	  expect(draft.assignment).toMatchObject({ mode: 'auto', pool_id: 'pool-eu-west' })
+	  expect(draft.groups[0].assignment).toEqual({ mode: 'auto', selected_targets: [] })
+	})
+
 	it('preserves web_runtime source IPs (IP spoofing) when mapping a test summary into a draft', () => {
 	  const draft = buildScenarioDraftFromTest({
 	    id: 'test-1',

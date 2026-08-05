@@ -366,6 +366,12 @@ describe('BrowserReplayProgress', () => {
     expect(onComplete).not.toHaveBeenCalled()
     for (let attempt = 0; attempt < 4; attempt += 1) {
       await act(async () => {
+        root.render(
+          <BrowserReplayProgress
+            replaySessionId="rep-never-accepted"
+            onComplete={(nextReport, events) => onComplete(nextReport, events)}
+          />,
+        )
         vi.advanceTimersByTime(1500)
         await Promise.resolve()
       })

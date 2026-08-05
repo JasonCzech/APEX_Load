@@ -444,6 +444,40 @@ func ciRunNeedsStart(test *ManagedTest) bool {
 	return test != nil && strings.EqualFold(strings.TrimSpace(test.Status), "QUEUED") && test.StartedAt == nil
 }
 
+func retryableCIRunStartError(err error) bool {
+	return errors.Is(err, errNotExecutionLeader) ||
+		errors.Is(err, errRunnerShuttingDown) ||
+		errors.Is(err, errStartAdmissionEvidenceStale) ||
+		retryableStartSecretRequirement(err)
+}
+
+func ciRunStartStateAdoptable(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	if test.StartedAt != nil {
+		return true
+	}
+	switch strings.ToUpper(strings.TrimSpace(test.Status)) {
+	case "PENDING", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING",
+		"SHAKEOUT_REVIEW", "COMPLETED", "FAILED", "ABORTED", "CANCELLED":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) ciRunShakeoutActivelyOwned(id string) bool {
+	if s == nil || s.runner == nil {
+		return false
+	}
+	s.runner.mu.RLock()
+	defer s.runner.mu.RUnlock()
+	test := s.runner.tests[id]
+	return test != nil && strings.EqualFold(strings.TrimSpace(test.Status), "SHAKEOUT") &&
+		test.pendingScriptShakeoutOutcome == nil && test.executionCtx != nil && test.executionCtx.Err() == nil
+}
+
 // startOrAdoptCIRun makes every exact-retry path idempotent across the final
 // QUEUED->start race. If another request starts or otherwise transitions the
 // same validated materialization first, its current state wins and both callers
@@ -461,7 +495,19 @@ func (s *Server) startOrAdoptCIRun(test *ManagedTest, projectID string, metadata
 		return test, true, nil
 	}
 	current, ok := s.runner.GetTest(test.ID)
-	if ok && validateExistingCIRun(current, projectID, metadata) == nil && !ciRunNeedsStart(current) {
+	// A retryable error belongs to this start attempt and must never be hidden
+	// merely because it durably entered SHAKEOUT or another intermediate state.
+	// In particular, a retained completed outcome still needs the recovery
+	// worker to finish its write, and a lost lease term must be surfaced to the
+	// caller rather than adopted by a successor operation.
+	if retryableCIRunStartError(startErr) {
+		if ok {
+			return current, false, startErr
+		}
+		return test, false, startErr
+	}
+	if ok && validateExistingCIRun(current, projectID, metadata) == nil &&
+		(ciRunStartStateAdoptable(current) || s.ciRunShakeoutActivelyOwned(current.ID)) {
 		return current, false, nil
 	}
 	return test, false, startErr
@@ -507,16 +553,36 @@ func (s *Server) respondFailedCIRunStart(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusInternalServerError, "failed to persist CI run start failure")
 		return
 	}
-	if errors.Is(startErr, errNotExecutionLeader) {
+	if retryableCIRunStartError(startErr) {
+		if term, err := s.runner.captureExecutionLeaseTerm(); err == nil {
+			s.runner.enqueueQueuedCIRecoveryRetryForManagedTestWithTerm(test, term)
+		}
 		writeError(w, http.StatusServiceUnavailable, startErr.Error())
 		return
 	}
+	if errors.Is(startErr, errStoredTestMissing) {
+		writeError(w, http.StatusNotFound, "CI run no longer exists")
+		return
+	}
+	if errors.Is(startErr, errStoredTestTransitionFenced) {
+		writeError(w, http.StatusConflict, "CI run identity changed before start")
+		return
+	}
+	identity, ok := queuedStartRecoveryIdentityForTest(test)
+	if !ok {
+		writeError(w, http.StatusConflict, "CI run identity changed before start failure could be recorded")
+		return
+	}
 	message := strings.TrimSpace(prefix) + ": " + startErr.Error()
-	if err := s.runner.failCIRunBeforeExecution(test.ID, message); err != nil {
+	if err := s.runner.failCIRunBeforeExecutionForIdentityWithTerm(test.ID, message, true, nil, &identity); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist CI run start failure: "+err.Error())
 		return
 	}
 	latest, ok := s.runner.GetTest(test.ID)
+	if ok && !identity.matches(latest) {
+		writeError(w, http.StatusConflict, "CI run identity changed before start failure could be recorded")
+		return
+	}
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "failed CI run is unavailable")
 		return

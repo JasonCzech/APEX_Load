@@ -1416,24 +1416,58 @@ func newEnterpriseArchiveReviewResult(detected DetectedProtocol, files map[strin
 
 // findFile looks up a file in the map by base name, handling path variations.
 func findFile(files map[string]string, name string) (string, bool) {
+	_, content, ok := findFileEntry(files, name)
+	return content, ok
+}
+
+// findFileEntry resolves an archive member without depending on Go map order.
+// Ambiguous case-folded/basename matches fail closed unless every candidate has
+// byte-identical content, in which case the lexicographically first path is a
+// deterministic provenance representative.
+func findFileEntry(files map[string]string, name string) (string, string, bool) {
 	name = cleanConfigValue(name)
 	// Direct match
 	if content, ok := files[name]; ok {
-		return content, true
+		return name, content, true
 	}
-	for key, content := range files {
+	keys := make([]string, 0, len(files))
+	for key := range files {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var matches []string
+	for _, key := range keys {
 		if strings.EqualFold(key, name) {
-			return content, true
+			matches = append(matches, key)
 		}
+	}
+	if key, content, ok := uniqueArchiveFileMatch(files, matches); ok {
+		return key, content, true
+	} else if len(matches) > 0 {
+		return "", "", false
 	}
 	// Try base name match
 	baseName := filepath.Base(name)
-	for key, content := range files {
+	matches = matches[:0]
+	for _, key := range keys {
 		if filepath.Base(key) == baseName || strings.EqualFold(filepath.Base(key), baseName) {
-			return content, true
+			matches = append(matches, key)
 		}
 	}
-	return "", false
+	return uniqueArchiveFileMatch(files, matches)
+}
+
+func uniqueArchiveFileMatch(files map[string]string, matches []string) (string, string, bool) {
+	if len(matches) == 0 {
+		return "", "", false
+	}
+	content := files[matches[0]]
+	for _, key := range matches[1:] {
+		if files[key] != content {
+			return "", "", false
+		}
+	}
+	return matches[0], content, true
 }
 
 func normalizeRuntimeArchivePath(name string) string {

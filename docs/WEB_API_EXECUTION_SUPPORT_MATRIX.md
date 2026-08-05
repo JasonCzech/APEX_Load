@@ -134,6 +134,10 @@ Document/literal operations can be exact. RPC/encoded ambiguity and sensitive mi
 
 ## Planning Envelopes
 
+Bruno collections are importable and executable through the version-pinned Bruno 3.5.2
+compatibility runner. Execution is disabled until the runner and project egress policy are
+configured; it does not share the high-density native HTTP envelope.
+
 The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`. These are design/planning targets, not measured benchmark results.
 
 | Protocol | Default envelope |
@@ -144,7 +148,7 @@ The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENT
 | WebSocket | 6,000 VUsers / generator |
 | SOAP | 5,000 VUsers / generator |
 | JMS / Solace / IBM MQ | 3,000 VUsers / generator |
-| Browser canaries | 20-40 VUsers / generator |
+| Browser canaries | 1-5 VUsers / generator (2 recommended) |
 
 These are conservative planning envelopes unless a deployment publishes local benchmark evidence with hardware, generator profile, script complexity, VUsers, TPS, and archive evidence.
 

@@ -72,7 +72,7 @@ The current controller can run in either local or distributed mode without chang
 ## Requirements
 
 - Go `1.26+`
-- Node.js `18+` (recommended for dashboard builds)
+- Node.js `22.22.0` (pinned by `.nvmrc`, CI, the production builder, and dashboard `engines`)
 - Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
 ## Quick Start
@@ -118,7 +118,11 @@ go run ./cmd/controller
 Start one generator per target address:
 
 ```bash
-go run ./cmd/generator
+# Terminal 1
+APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:9090 go run ./cmd/generator
+
+# Terminal 2
+APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:9091 go run ./cmd/generator
 ```
 
 ### 2. Open the dashboard
@@ -202,6 +206,8 @@ Controller runtime configuration:
 - `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend. `dns://host:port` entries enable dynamic discovery of a Kubernetes headless service
 - `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`: re-resolve interval for `dns://` generator entries (default `15s`)
 - `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
+- `APEXLOAD_GENERATOR_LISTEN_ADDR`: generator gRPC bind address (default `:9090`); each local generator process needs a distinct address
+- `APEXLOAD_LOG_LEVEL`: structured controller/generator log level: `debug`, `info`, `warn`, or `error` (default `info`; legacy `LOG_LEVEL` is accepted when the prefixed variable is unset)
 - `APEXLOAD_GRPC_TLS_CERT`/`APEXLOAD_GRPC_TLS_KEY`/`APEXLOAD_GRPC_TLS_CA`: TLS/mTLS for the controller↔generator gRPC channel (symmetric contract: cert/key = this process's identity, CA = trust for the peer; setting the CA on the generator requires verified client certs). `APEXLOAD_GRPC_TLS_SERVER_NAME` overrides certificate verification when targets are pod IPs from `dns://` discovery
 - `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies. When distributed targets are configured in `production`/`prod`, controller and generator startup fail closed unless the channel uses mTLS or verified TLS plus this token; token-only client authentication requires at least 32 bytes (generate 32 random bytes, commonly encoded as 64 hex characters).
 - `APEXLOAD_METRICS_ADDR`: when set (e.g. `:9091`), serves `GET /metrics` on a dedicated listener instead of the API port, so network policy can scope Prometheus access separately from API access
@@ -443,7 +449,7 @@ examples/            # Sample scripts and HAR files
 **Add a new API endpoint:**
 1. Define handler in `pkg/api/handlers.go`
 2. Register route in `pkg/api/server.go`
-3. Add REST tests in `pkg/api/handlers_test.go`
+3. Add REST tests in the matching `pkg/api/handlers_*_test.go` file for the endpoint's domain
 4. Register access requirements in `pkg/api/route_catalog.go` when the route is under `/api/v1`
 5. Regenerate API docs with `go generate ./pkg/api`
 6. Run `go test ./pkg/api`

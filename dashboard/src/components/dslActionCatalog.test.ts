@@ -103,7 +103,10 @@ describe('dslActionTypesForProtocol', () => {
 
     const jmsTypes = dslActionTypesForProtocol('jms-solace').map(spec => spec.type)
     expect(jmsTypes).toContain('jms_publish')
-    expect(jmsTypes).not.toContain('source_transaction')
+    expect(jmsTypes).toContain('source_transaction')
+
+    const kafkaTypes = dslActionTypesForProtocol('kafka').map(spec => spec.type)
+    expect(kafkaTypes).toContain('source_transaction')
   })
 
   it('returns empty without a catalog', () => {

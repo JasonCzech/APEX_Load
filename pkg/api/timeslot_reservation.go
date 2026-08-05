@@ -19,17 +19,27 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// validateAndBindTimeslotLocked performs an early, user-friendly validation and
-// records the requested slot on the in-memory test. The authoritative validation
-// and both durable writes happen later in saveNewManagedTestRecord's single
-// transaction. Caller holds tr.mu.
-func (tr *TestRunner) validateAndBindTimeslotLocked(timeslotID string, test *ManagedTest) error {
+// loadCapacityTimeslotEvidence performs the durable half of create-time
+// timeslot validation. Callers load it before taking tr.mu; the authoritative
+// validation and both durable writes still happen later in
+// saveNewManagedTestRecord's single transaction.
+func (tr *TestRunner) loadCapacityTimeslotEvidence(timeslotID string) (*storage.CapacityReservation, error) {
 	if tr.reservationStore == nil {
-		return fmt.Errorf("capacity timeslots are not available")
+		return nil, fmt.Errorf("capacity timeslots are not available")
 	}
 	reservation, err := tr.reservationStore.GetCapacityReservation(timeslotID)
 	if err != nil || reservation == nil {
-		return fmt.Errorf("timeslot %s not found", timeslotID)
+		return nil, fmt.Errorf("timeslot %s not found", timeslotID)
+	}
+	return reservation, nil
+}
+
+// validateAndApplyTimeslotEvidenceLocked validates immutable reservation
+// evidence against the candidate and records the requested slot. Caller holds
+// tr.mu, but this function performs no storage or network I/O.
+func validateAndApplyTimeslotEvidenceLocked(reservation *storage.CapacityReservation, test *ManagedTest) error {
+	if reservation == nil {
+		return fmt.Errorf("timeslot not found")
 	}
 	if reservation.ApprovalState != "approved" {
 		return fmt.Errorf("timeslot must be approved before it can be bound")
@@ -97,6 +107,41 @@ func (tr *TestRunner) saveNewManagedTestRecord(test *ManagedTest) error {
 }
 
 var errTestIdentityCollision = errors.New("test identity is already owned by another materialization")
+var errDurableActiveTestRequiresReconciliation = errors.New("durable active test requires leader reconciliation")
+
+func hasExpectedTestParentRevision(record *storage.TestRecord) bool {
+	return record != nil && (!record.ExpectedProjectUpdatedAt.IsZero() ||
+		!record.ExpectedApplicationUpdatedAt.IsZero() ||
+		!record.ExpectedReleaseUpdatedAt.IsZero())
+}
+
+// adoptDurableManagedTest replaces a rebuilt retry candidate with the exact row
+// that already owns its deterministic materialization. RefKey and immutable
+// group/runtime snapshots must come from storage after a prior commit wins.
+func (tr *TestRunner) adoptDurableManagedTest(candidate *ManagedTest, record *storage.TestRecord) error {
+	if candidate == nil || record == nil {
+		return nil
+	}
+	executionFence := candidate.executionFence
+	adopted := managedTestFromRecord(record)
+	switch strings.ToUpper(strings.TrimSpace(adopted.Status)) {
+	case "STARTING", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
+		// A cache-miss retry cannot safely attach a durable active row without its
+		// live execution handles. Leave it to the normal HA reload path, which
+		// claims the current execution fence and terminalizes interrupted work.
+		return fmt.Errorf("%w: test %s is %s", errDurableActiveTestRequiresReconciliation, adopted.ID, adopted.Status)
+	}
+	adopted.executionFence = executionFence
+	adopted.creationAdopted = true
+	if isTerminalTestStatus(adopted.Status) {
+		trimTerminalManagedTestRuntime(adopted)
+	} else if err := tr.restoreManagedTestRuntimeAndRepair(adopted); err != nil {
+		adopted.runtimeHydrationError = err.Error()
+		slog.Error("failed to restore adopted durable test runtime", "test_id", adopted.ID, "error", err)
+	}
+	*candidate = *adopted
+	return nil
+}
 
 func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseTerm executionLeaseTerm) error {
 	if test == nil {
@@ -128,7 +173,7 @@ func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseT
 				}
 				stored, lookupErr := tr.testStore.GetTest(test.ID)
 				if lookupErr == nil && sameTestMaterialization(stored, record) {
-					return nil
+					return tr.adoptDurableManagedTest(test, stored)
 				}
 				if lookupErr == nil && stored != nil {
 					return fmt.Errorf("%w: test %s", errTestIdentityCollision, test.ID)
@@ -148,11 +193,42 @@ func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseT
 		if tr.durableExecutionFence {
 			return fmt.Errorf("test persistence does not support atomic create-only insertion")
 		}
-		// Compatibility for lightweight, single-controller test stores. tr.mu
-		// serializes this fallback; production SQLite/PostgreSQL stores implement
-		// the atomic interface above. Several narrow test doubles deliberately do
-		// not implement durable lookup semantics, so retain their historical save.
-		return tr.testStore.SaveTest(record)
+		// A full-row SaveTest cannot atomically validate off-lock parent evidence.
+		// Production SQLite/PostgreSQL implement the create-only contract above;
+		// fail closed rather than silently accepting stale quota/release authority.
+		if hasExpectedTestParentRevision(record) {
+			return fmt.Errorf("test persistence does not support atomic parent-revision validation")
+		}
+		// Lightweight single-controller stores retain a compatibility path. A
+		// dedicated mutex replaces the old (and now invalid) assumption that tr.mu
+		// covered storage I/O, and the lookup prevents a concurrent same-ID save
+		// from overwriting another materialization.
+		tr.compatCreateMu.Lock()
+		defer tr.compatCreateMu.Unlock()
+		stored, lookupErr := tr.testStore.GetTest(record.ID)
+		if lookupErr == nil && stored != nil {
+			if sameTestMaterialization(stored, record) {
+				return tr.adoptDurableManagedTest(test, stored)
+			}
+			return fmt.Errorf("%w: test %s", errTestIdentityCollision, record.ID)
+		}
+		if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+			return fmt.Errorf("check compatibility test identity: %w", lookupErr)
+		}
+		saveErr := tr.testStore.SaveTest(record)
+		if saveErr == nil {
+			return nil
+		}
+		// A compatibility store may commit and lose its response. Resolve that
+		// ambiguity before the caller compensates secrets for a row that exists.
+		stored, lookupErr = tr.testStore.GetTest(record.ID)
+		if lookupErr == nil && sameTestMaterialization(stored, record) {
+			return tr.adoptDurableManagedTest(test, stored)
+		}
+		if lookupErr == nil && stored != nil {
+			return fmt.Errorf("%w: test %s", errTestIdentityCollision, record.ID)
+		}
+		return errors.Join(saveErr, lookupErr)
 	}
 	store, ok := tr.reservationStore.(atomicCapacityBindingPersistence)
 	if !ok || tr.testStore == nil || !sameStoreInstance(store, tr.testStore) {
@@ -183,8 +259,13 @@ func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseT
 			result, lastErr = store.CreateTestAndBindCapacityReservation(record, slotID, now)
 		}
 		if lastErr == nil && (result == storage.CapacityBindingBound || result == storage.CapacityBindingTestExists) {
-			materialized, verifyErr := tr.capacityBindingMaterialized(record, slotID)
+			stored, materialized, verifyErr := tr.capacityBindingMaterialized(record, slotID)
 			if materialized {
+				if stored != nil && (result == storage.CapacityBindingTestExists || stored.RefKey != record.RefKey) {
+					if err := tr.adoptDurableManagedTest(test, stored); err != nil {
+						return err
+					}
+				}
 				return nil
 			}
 			if errors.Is(verifyErr, errTestIdentityCollision) {
@@ -209,24 +290,27 @@ func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseT
 // already present. This makes a retry safe when the original transaction
 // committed but its response was lost: the durable test identity and the
 // reservation ownership must both match before creation is treated as complete.
-func (tr *TestRunner) capacityBindingMaterialized(intended *storage.TestRecord, slotID string) (bool, error) {
+func (tr *TestRunner) capacityBindingMaterialized(intended *storage.TestRecord, slotID string) (*storage.TestRecord, bool, error) {
 	stored, storedErr := tr.testStore.GetTest(intended.ID)
 	reservation, reservationErr := tr.reservationStore.GetCapacityReservation(slotID)
 	if storedErr == nil && stored != nil && !sameTestMaterialization(stored, intended) {
-		return false, fmt.Errorf("%w: test %s", errTestIdentityCollision, intended.ID)
+		return stored, false, fmt.Errorf("%w: test %s", errTestIdentityCollision, intended.ID)
 	}
 	if storedErr != nil || reservationErr != nil {
-		return false, errors.Join(storedErr, reservationErr)
+		return stored, false, errors.Join(storedErr, reservationErr)
 	}
 	if stored == nil || reservation == nil || !sameTestMaterialization(stored, intended) ||
 		reservation.BoundTestID == nil || strings.TrimSpace(*reservation.BoundTestID) != intended.ID {
-		return false, fmt.Errorf("test %s and timeslot %s were not durably materialized together", intended.ID, slotID)
+		return stored, false, fmt.Errorf("test %s and timeslot %s were not durably materialized together", intended.ID, slotID)
 	}
-	return true, nil
+	return stored, true, nil
 }
 
 func sameTestMaterialization(stored, intended *storage.TestRecord) bool {
 	if stored == nil || intended == nil || stored.ID != intended.ID {
+		return false
+	}
+	if normalizeProjectID(stored.ProjectID) != normalizeProjectID(intended.ProjectID) {
 		return false
 	}
 	if key := strings.TrimSpace(intended.MaterializationKey); key != "" {
@@ -236,8 +320,9 @@ func sameTestMaterialization(stored, intended *storage.TestRecord) bool {
 }
 
 // BindCapacityTimeslot is the standalone bind operation used by the REST
-// endpoint. It serializes with local test deletion under tr.mu and delegates the
-// authoritative test/reservation locks and lease check to one store transaction.
+// endpoint. It serializes with local test deletion through the per-test archive
+// commit fence and delegates authoritative test/reservation locks and the lease
+// check to one store transaction without holding tr.mu across storage I/O.
 func (tr *TestRunner) BindCapacityTimeslot(timeslotID, requestedTestID string) (*storage.CapacityReservation, storage.CapacityBindingResult, error) {
 	if !tr.isExecutionLeader() {
 		return nil, storage.CapacityBindingFenced, errNotExecutionLeader
@@ -257,21 +342,51 @@ func (tr *TestRunner) BindCapacityTimeslot(timeslotID, requestedTestID string) (
 	timeslotID = strings.TrimSpace(timeslotID)
 	requestedTestID = strings.TrimSpace(requestedTestID)
 
-	tr.mu.Lock()
+	tr.mu.RLock()
 	resolvedID := tr.resolveRefKeyLocked(requestedTestID)
+	tr.mu.RUnlock()
+	// Test deletion already owns this per-test fence across its durable metadata
+	// transaction. Reusing it prevents a successful bind from rehydrating a test
+	// that was deleted while the global runner mutex was deliberately released.
+	unlockArchiveCommit := tr.lockArchiveCommitFence(resolvedID)
+	defer func() { unlockArchiveCommit() }()
+
 	record, err := tr.testStore.GetTest(resolvedID)
 	if err != nil {
-		tr.mu.Unlock()
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, storage.CapacityBindingTestMissing, nil
 		}
 		return nil, storage.CapacityBindingFenced, err
 	}
 	if record == nil {
-		tr.mu.Unlock()
 		return nil, storage.CapacityBindingTestMissing, nil
 	}
-	resolvedID = record.ID
+	canonicalID := strings.TrimSpace(record.ID)
+	if canonicalID == "" {
+		return nil, storage.CapacityBindingFenced, fmt.Errorf("capacity binding test has no durable identity")
+	}
+	if canonicalID != resolvedID {
+		// GetTest accepts either an ID or ref key. A ref created by another
+		// replica may not be present in this runner's in-memory ref index, so the
+		// first fence can be keyed by the authored ref. Hand off to the canonical
+		// ID and re-read under that fence before any mutation; deletion uses this
+		// same canonical key.
+		unlockArchiveCommit()
+		resolvedID = canonicalID
+		unlockArchiveCommit = tr.lockArchiveCommitFence(resolvedID)
+		record, err = tr.testStore.GetTest(resolvedID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, storage.CapacityBindingTestMissing, nil
+			}
+			return nil, storage.CapacityBindingFenced, err
+		}
+		if record == nil || strings.TrimSpace(record.ID) != resolvedID {
+			return nil, storage.CapacityBindingTestMissing, nil
+		}
+	} else {
+		resolvedID = canonicalID
+	}
 	now := time.Now().UTC()
 	managed := managedTestFromRecord(record)
 	start := now
@@ -286,32 +401,52 @@ func (tr *TestRunner) BindCapacityTimeslot(timeslotID, requestedTestID string) (
 		result, err = windowStore.BindCapacityReservationToTestWithWindow(timeslotID, resolvedID, now, window.StartAt, window.EndAt)
 	}
 	if err != nil || result != storage.CapacityBindingBound {
-		tr.mu.Unlock()
 		if err == nil && result == storage.CapacityBindingFenced {
 			err = errNotExecutionLeader
 		}
 		return nil, result, err
 	}
-	slotID := timeslotID
-	record.TimeslotID = &slotID
-	record.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
-	record.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
-	if current := tr.tests[resolvedID]; current != nil {
-		current.TimeslotID = &slotID
-		current.CapacityWindowStartAt = cloneTimePtr(&window.StartAt)
-		current.CapacityWindowEndAt = cloneTimePtr(&window.EndAt)
-	} else {
-		managed := managedTestFromRecord(record)
-		managed.TimeslotID = &slotID
-		tr.tests[resolvedID] = managed
-		tr.observeAndIndexRefKeyLocked(managed.RefKey, managed.ID)
-	}
-	tr.mu.Unlock()
-
 	reservation, err := tr.reservationStore.GetCapacityReservation(timeslotID)
 	if err != nil {
 		return nil, storage.CapacityBindingBound, err
 	}
+	refreshedRecord, err := tr.testStore.GetTest(resolvedID)
+	if err != nil {
+		return reservation, storage.CapacityBindingBound, err
+	}
+	if refreshedRecord == nil || refreshedRecord.TimeslotID == nil || strings.TrimSpace(*refreshedRecord.TimeslotID) != timeslotID ||
+		reservation == nil || reservation.BoundTestID == nil || strings.TrimSpace(*reservation.BoundTestID) != resolvedID {
+		return reservation, storage.CapacityBindingBound, fmt.Errorf("test %s and timeslot %s were not durably bound together", resolvedID, timeslotID)
+	}
+	// A test created by another replica may not exist in this runner's cache.
+	// Rebuild its process-private engine state before publishing it: installing a
+	// bare durable projection would make the now-bound queued test impossible to
+	// start until a later HA refresh happened to repair it. Hydration may consult
+	// durable scripts or persist a narrow legacy snapshot repair, so it must stay
+	// outside tr.mu.
+	hydrated := managedTestFromRecord(refreshedRecord)
+	if isTerminalTestStatus(hydrated.Status) {
+		trimTerminalManagedTestRuntime(hydrated)
+	} else if err := tr.restoreManagedTestRuntimeAndRepair(hydrated); err != nil {
+		hydrated.runtimeHydrationError = err.Error()
+		slog.Error("failed to restore timeslot-bound test runtime", "test_id", hydrated.ID, "error", err)
+	}
+	tr.mu.Lock()
+	if current := tr.tests[resolvedID]; current != nil {
+		// The transaction bound the durable identity loaded above. A peer can
+		// delete and recreate a terminal test with the same requested ID while
+		// this replica still has the old object cached. Never project the new
+		// row's binding onto that stale runtime identity.
+		if sameStoredTestIdentity(current, refreshedRecord) {
+			current.TimeslotID = cloneStringPtr(refreshedRecord.TimeslotID)
+			current.CapacityWindowStartAt = cloneTimePtr(refreshedRecord.CapacityWindowStartAt)
+			current.CapacityWindowEndAt = cloneTimePtr(refreshedRecord.CapacityWindowEndAt)
+		}
+	} else {
+		tr.tests[resolvedID] = hydrated
+		tr.observeAndIndexRefKeyLocked(hydrated.RefKey, hydrated.ID)
+	}
+	tr.mu.Unlock()
 	return reservation, storage.CapacityBindingBound, nil
 }
 
@@ -420,9 +555,18 @@ func (tr *TestRunner) refreshTestCapacityBindingFromStore(id string) error {
 	if tr == nil || tr.testStore == nil || strings.TrimSpace(id) == "" {
 		return nil
 	}
-	record, err := tr.testStore.GetTest(strings.TrimSpace(id))
+	id = strings.TrimSpace(id)
+	tr.mu.RLock()
+	candidate := tr.tests[id]
+	tr.mu.RUnlock()
+	record, err := tr.testStore.GetTest(id)
 	if err != nil {
-		return fmt.Errorf("refresh test capacity binding: %w", err)
+		refreshErr := fmt.Errorf("refresh test capacity binding: %w", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			tr.evictMissingManagedTestIdentity(id, candidate)
+			return fmt.Errorf("%w: %s", errStoredTestMissing, id)
+		}
+		return errors.Join(errStartAdmissionEvidenceStale, refreshErr)
 	}
 	// A few focused compatibility stores return (nil, nil) for lookups. Their
 	// runners have no cross-replica durable identity to reconcile.
@@ -437,7 +581,8 @@ func (tr *TestRunner) refreshTestCapacityBindingFromStore(id string) error {
 	}
 	if !sameStoredTestIdentity(current, record) {
 		tr.mu.Unlock()
-		return fmt.Errorf("test %s durable identity changed before start", record.ID)
+		tr.evictMissingManagedTestIdentity(record.ID, candidate)
+		return fmt.Errorf("%w: test %s durable identity changed before start", errStoredTestTransitionFenced, record.ID)
 	}
 	changed := applyStoredCapacityBindingLocked(current, record)
 	var snapshot *ManagedTest
@@ -449,6 +594,40 @@ func (tr *TestRunner) refreshTestCapacityBindingFromStore(id string) error {
 		tr.broadcastCapacityBindingUpdated(snapshot)
 	}
 	return nil
+}
+
+// evictMissingManagedTestIdentity removes only the exact process-local object
+// observed before the durable read. A concurrent reload/recreation installs a
+// different pointer and therefore cannot be erased by a stale not-found result.
+func (tr *TestRunner) evictMissingManagedTestIdentity(id string, candidate *ManagedTest) bool {
+	if tr == nil || candidate == nil {
+		return false
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.evictMissingManagedTestIdentityLocked(id, candidate)
+}
+
+func (tr *TestRunner) evictMissingManagedTestIdentityLocked(id string, candidate *ManagedTest) bool {
+	if tr == nil || candidate == nil {
+		return false
+	}
+	if tr.tests[id] != candidate {
+		return false
+	}
+	if candidate.cancel != nil {
+		candidate.cancel()
+	}
+	tr.removeRefKeyLocked(candidate.RefKey)
+	tr.forgetRunSnapshotWriteStateLocked(id)
+	if tr.storedHistoryCache != nil {
+		tr.storedHistoryCache.deleteTest(id)
+	}
+	delete(tr.tests, id)
+	delete(tr.archives, id)
+	forgetRunArchiveCache(id)
+	deleteGroupMetricsHistoryCache(id)
+	return true
 }
 
 type testCapacityBindingListPersistence interface {
@@ -542,14 +721,7 @@ func (tr *TestRunner) reconcileCapacityBindingsForHAListRead(reader testCapacity
 	return nil
 }
 
-// launchTimeslotRevalidationErrorLocked re-checks a run's bound capacity timeslot
-// at the actual launch instant. A timeslot is validated and bound at create time,
-// but between then and launch it can be rejected, re-bound, resized, or the run's
-// effective window can drift — so trusting the bind-time fit lets a run launch
-// into capacity it no longer holds. Returns a non-nil error (blocking the start)
-// when the bound slot is gone, no longer approved, no longer bound to this run, or
-// no longer fits. Runs without a bound timeslot are unaffected.
-func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, now time.Time) error {
+func (tr *TestRunner) launchTimeslotRevalidationErrorWithEvidenceLocked(test *ManagedTest, now time.Time, evidence launchWindowEvidence) error {
 	if test == nil || test.TimeslotID == nil || tr.reservationStore == nil {
 		return nil
 	}
@@ -557,8 +729,19 @@ func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, n
 	if slotID == "" {
 		return nil
 	}
-	reservation, err := tr.reservationStore.GetCapacityReservation(slotID)
-	if err != nil || reservation == nil {
+	var reservation *storage.CapacityReservation
+	if evidence.reservationErr != nil {
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load bound capacity timeslot %q: %w", slotID, evidence.reservationErr))
+	}
+	if evidence.reservationErr == nil {
+		for _, candidate := range evidence.boundTimeslots {
+			if candidate != nil && strings.TrimSpace(candidate.ID) == slotID {
+				reservation = candidate
+				break
+			}
+		}
+	}
+	if reservation == nil {
 		return fmt.Errorf("bound capacity timeslot %q is no longer available", slotID)
 	}
 	if reservation.ApprovalState != "approved" {
@@ -576,6 +759,9 @@ func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, n
 	// ScheduledStartAt would let it consume capacity before the reservation begins.
 	// Creation/binding already validates the planned window separately.
 	window := launchWindowForTest(test, launchStart)
+	if !evidence.covers(window) {
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("bound capacity timeslot evidence is stale because the run window changed"))
+	}
 	if err := reservationFitError(reservation, window.StartAt, window.EndAt, test.TotalVUsers); err != nil {
 		return fmt.Errorf("bound capacity timeslot %q no longer fits this run: %w", slotID, err)
 	}
@@ -691,8 +877,8 @@ func (tr *TestRunner) enqueueCapacityReservationReleaseRetry(testID, slotID stri
 
 // reservationFitError reports why a run with the given window and VUser count does
 // not fit a reservation (nil if it fits). Both bind paths — create-time
-// (validateAndBindTimeslotLocked) and the standalone bind endpoint — call it so
-// they enforce identical window-fit and capacity invariants.
+// evidence validation and the standalone bind endpoint — call it so they
+// enforce identical window-fit and capacity invariants.
 func reservationFitError(reservation *storage.CapacityReservation, start, end time.Time, totalVUsers int) error {
 	if start.Before(reservation.StartAt) || end.After(reservation.EndAt) {
 		return fmt.Errorf("the run window does not fit within the reserved timeslot")
@@ -704,12 +890,14 @@ func reservationFitError(reservation *storage.CapacityReservation, start, end ti
 	return nil
 }
 
-// boundTimeslotsActiveAtLocked returns the approved, bound timeslots whose window
-// contains the instant `at`. Caller holds tr.mu. The error is propagated (not
-// swallowed) so admission can fail CLOSED: silently treating a lookup failure as
-// "no reservations" would drop every timeslot's protection and let other tenants
-// into reserved capacity.
-func (tr *TestRunner) boundTimeslotsActiveAtLocked(at time.Time) ([]*storage.CapacityReservation, error) {
+// loadBoundTimeslotsActiveAt performs the durable reservation lookup without
+// requiring tr.mu. Admission paths that already own the runner lock must drop
+// it, load this immutable evidence, and then revalidate their in-memory
+// candidate before using the result.
+func (tr *TestRunner) loadBoundTimeslotsActiveAt(at time.Time) ([]*storage.CapacityReservation, error) {
+	if tr == nil {
+		return nil, nil
+	}
 	if tr.reservationStore == nil {
 		return nil, nil
 	}
@@ -728,31 +916,6 @@ func (tr *TestRunner) boundTimeslotsActiveAtLocked(at time.Time) ([]*storage.Cap
 		out = append(out, ts)
 	}
 	return out, nil
-}
-
-// boundTimeslotBoundariesInWindowLocked returns the start/end instants of the
-// approved, bound timeslots overlapping the launch window. They are fed into the
-// launch-window sample set so the reservation-aware capacity check is evaluated
-// at the exact instants a timeslot's capacity hold begins or ends, rather than
-// only at fixed event/window boundaries. A lookup failure degrades to no extra
-// boundaries — the per-sample reservation check still fails closed on its own.
-func (tr *TestRunner) boundTimeslotBoundariesInWindowLocked(window LaunchWindow) []time.Time {
-	if tr.reservationStore == nil {
-		return nil
-	}
-	slots, err := tr.reservationStore.ListCapacityReservationsByTimeRange("", window.StartAt, window.EndAt)
-	if err != nil {
-		slog.Warn("launch window: bound-timeslot boundary lookup failed", "error", err)
-		return nil
-	}
-	out := make([]time.Time, 0, len(slots)*2)
-	for _, ts := range slots {
-		if ts == nil || ts.ApprovalState != "approved" || ts.BoundTestID == nil || strings.TrimSpace(*ts.BoundTestID) == "" {
-			continue
-		}
-		out = append(out, ts.StartAt.UTC(), ts.EndAt.UTC())
-	}
-	return out
 }
 
 // reservationTotalsWithTimeslots returns (totalReserved, projectReserved)

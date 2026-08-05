@@ -852,6 +852,20 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusInternalServerError, "failed to renew JMeter import receipt after recovery: "+renewErr.Error())
 			return
 		}
+		if fenceErr := s.fenceDirectImportAssetAdoption(
+			attempt,
+			projectID,
+			deterministicScriptIDs(preparedScripts),
+			scenarioID,
+		); fenceErr != nil {
+			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
+				w.Header().Set("Retry-After", "2")
+				writeError(w, http.StatusConflict, "the prior JMeter import transaction is still finalizing; retry the save")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to inspect prior JMeter import transaction: "+fenceErr.Error())
+			}
+			return
+		}
 		storedScripts, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
 			projectID,
 			deterministicScriptIDs(preparedScripts),

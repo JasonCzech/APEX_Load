@@ -93,7 +93,7 @@ Current backend evidence:
 - `pkg/api/ai_assistance.go`
 - `pkg/api/ai_assistance_test.go`
 - `pkg/api/authoring_ai_guardrails.go`
-- `pkg/api/c4_analysis_integrations.go`
+- `pkg/api/c4_analysis_integrations_test.go`
 
 Run:
 

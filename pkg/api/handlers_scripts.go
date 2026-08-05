@@ -241,6 +241,11 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type scriptExportRequest struct {
+	OutputDir string `json:"output_dir,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+}
+
 // handleExportScript handles POST /api/v1/scripts/{id}/export
 // Exports a script as a JSON DSL file to disk.
 func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
@@ -255,10 +260,7 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optional: specify output directory via request body
-	var req struct {
-		OutputDir string `json:"output_dir,omitempty"`
-		Filename  string `json:"filename,omitempty"`
-	}
+	var req scriptExportRequest
 	if r.Body != nil {
 		json.NewDecoder(r.Body).Decode(&req)
 	}

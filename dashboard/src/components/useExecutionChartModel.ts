@@ -6,6 +6,7 @@ import {
   executionChartZoomReducer,
   getExecutionChartRefArea,
   initialExecutionChartZoomState,
+  type ExecutionChartZoomAnchor,
 } from './testExecutionChartZoomModel'
 import {
   buildExecutionChartData,
@@ -54,31 +55,35 @@ export function useExecutionChartModel({
     return summarizeExecutionChartData(filteredData)
   }, [filteredData])
 
-  const { showRefArea, refAreaEnd } = getExecutionChartRefArea(chartZoomState)
+  const { showRefArea, refAreaLeft, refAreaEnd } = getExecutionChartRefArea(chartZoomState)
 
   return {
     filteredData,
     summary,
     timeRange: chartZoomState.timeRange,
-    refAreaLeft: chartZoomState.refAreaLeft,
+    refAreaLeft,
     refAreaEnd,
     showRefArea,
     onTimeRangeChange: (value: typeof chartZoomState.timeRange) => {
       if (value === 'custom' && !chartZoomState.zoomRange && chartData.length > 2) {
         const half = Math.floor(chartData.length / 2)
-        dispatchChartZoom({
-          type: 'setZoomRange',
-          zoomRange: {
-            left: chartData[half].time,
-            right: chartData[chartData.length - 1].time,
-          },
-        })
+        const startTimestampMs = chartData[half].timestampMs
+        const endTimestampMs = chartData[chartData.length - 1].timestampMs
+        if (typeof startTimestampMs === 'number' && typeof endTimestampMs === 'number') {
+          dispatchChartZoom({
+            type: 'setZoomRange',
+            zoomRange: {
+              startTimestampMs: Math.min(startTimestampMs, endTimestampMs),
+              endTimestampMs: Math.max(startTimestampMs, endTimestampMs),
+            },
+          })
+        }
       } else {
         dispatchChartZoom({ type: 'setTimeRange', value })
       }
     },
-    onChartMouseDown: (activeLabel?: string | number) => dispatchChartZoom({ type: 'beginSelection', activeLabel }),
-    onChartMouseMove: (activeLabel?: string | number) => dispatchChartZoom({ type: 'updateSelection', activeLabel }),
+    onChartMouseDown: (anchor?: ExecutionChartZoomAnchor) => dispatchChartZoom({ type: 'beginSelection', anchor }),
+    onChartMouseMove: (anchor?: ExecutionChartZoomAnchor) => dispatchChartZoom({ type: 'updateSelection', anchor }),
     onZoom: () => dispatchChartZoom({ type: 'applySelection' }),
     onResetZoom: () => dispatchChartZoom({ type: 'setZoomRange', zoomRange: null }),
   }

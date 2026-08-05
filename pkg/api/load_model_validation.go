@@ -33,9 +33,6 @@ type LoadModelValidationItem struct {
 }
 
 func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*LoadModelValidationReport, error) {
-	tr.mu.RLock()
-	defer tr.mu.RUnlock()
-
 	// Apply the same canonical binding defaults and duplicate/enum checks as a
 	// scenario save before any pool lookup. This also gives the ownership gate a
 	// normalized pool ID/alias set and prevents validation from becoming a row
@@ -45,16 +42,14 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 		return nil, err
 	}
 	req.DataPools = bindings
+
 	testReq := createTestRequestFromScenarioDraft(req)
-	preview, err := tr.buildManagedTestLocked(testReq, "draft-load-model-validation", "DRAFT")
+	preview, snapshot, buildRevision, err := tr.buildManagedTestFromSnapshot(testReq, "draft-load-model-validation", "DRAFT")
 	if err != nil {
 		return nil, err
 	}
-	if err := tr.validateDataPoolProjectsLocked(preview.ProjectID, bindings); err != nil {
-		return nil, err
-	}
 
-	recommendation := tr.buildAssignmentRecommendation(preview)
+	recommendation := snapshot.buildAssignmentRecommendation(preview)
 	report := &LoadModelValidationReport{
 		Items:                    make([]LoadModelValidationItem, 0, 8),
 		TotalVUsers:              preview.TotalVUsers,
@@ -69,10 +64,27 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 	report.Items = append(report.Items, validateCapacityAdvisory(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateBrowserCanaryDemand(preview.CapacityAdvisory)...)
 	report.Items = append(report.Items, validateAssignmentPlacement(preview, recommendation)...)
-	report.Items = append(report.Items, tr.validateGroupPlacementLocked(preview)...)
-	dataSourceItems, peakTPS := tr.validateLoadModelDataSourcesLocked(req.DataPools, preview.Groups)
+	snapshot.mu.RLock()
+	report.Items = append(report.Items, snapshot.validateGroupPlacementLocked(preview)...)
+	poolStore := snapshot.dataPoolStore
+	snapshot.mu.RUnlock()
+	if !tr.managedTestBuildFenceCurrent(buildRevision) {
+		return nil, fmt.Errorf("controller content changed while load-model validation was being compiled; retry")
+	}
+
+	// Pool ownership and row reads are durable I/O and may wait on a remote SQL
+	// transaction. The compiled preview above is request-local, so release the
+	// global runner lock before touching the store while preserving the security
+	// rule that ownership is checked before any row is read.
+	if err := validateDataPoolProjects(poolStore, preview.ProjectID, bindings); err != nil {
+		return nil, err
+	}
+	dataSourceItems, peakTPS := validateLoadModelDataSources(poolStore, req.DataPools, preview.Groups)
 	report.PeakTargetTPS = peakTPS
 	report.Items = append(report.Items, dataSourceItems...)
+	if !tr.managedTestBuildFenceCurrent(buildRevision) {
+		return nil, fmt.Errorf("controller content changed while load-model validation was being evaluated; retry")
+	}
 
 	finalizeLoadModelValidationReport(report)
 	return report, nil
@@ -254,9 +266,9 @@ func (tr *TestRunner) validateGroupPlacementLocked(test *ManagedTest) []LoadMode
 	return items
 }
 
-func (tr *TestRunner) validateLoadModelDataSourcesLocked(bindings []storage.ScenarioDataPoolBinding, groups []TestGroup) ([]LoadModelValidationItem, float64) {
+func validateLoadModelDataSources(poolStore dataPoolPersistence, bindings []storage.ScenarioDataPoolBinding, groups []TestGroup) ([]LoadModelValidationItem, float64) {
 	items := make([]LoadModelValidationItem, 0)
-	sharedSources, poolItems, poolRowCounts := tr.validateLoadModelDataPoolBindingsLocked(bindings)
+	sharedSources, poolItems, poolRowCounts := validateLoadModelDataPoolBindings(poolStore, bindings)
 	items = append(items, poolItems...)
 
 	peakTPS := 0.0
@@ -320,14 +332,14 @@ func dataPoolStrategyVUsers(group TestGroup) int {
 	return vusers
 }
 
-func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, []LoadModelValidationItem, map[string]int) {
+func validateLoadModelDataPoolBindings(poolStore dataPoolPersistence, bindings []storage.ScenarioDataPoolBinding) ([]dsl.DataSource, []LoadModelValidationItem, map[string]int) {
 	if len(bindings) == 0 {
 		return nil, nil, nil
 	}
 	sources := make([]dsl.DataSource, 0, len(bindings))
 	items := make([]LoadModelValidationItem, 0, len(bindings))
 	rowCounts := make(map[string]int, len(bindings))
-	if tr.dataPoolStore == nil {
+	if poolStore == nil {
 		return nil, []LoadModelValidationItem{{Dimension: "data_pool_rows", Status: "blocked", Summary: "Data pool storage is not configured for this controller."}}, nil
 	}
 	for _, binding := range bindings {
@@ -335,7 +347,7 @@ func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage
 		if alias == "" {
 			alias = strings.TrimSpace(binding.PoolID)
 		}
-		pool, err := tr.dataPoolStore.GetDataPool(binding.PoolID)
+		pool, err := poolStore.GetDataPool(binding.PoolID)
 		if err != nil {
 			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not load data pool: %v", err)})
 			continue
@@ -344,7 +356,7 @@ func (tr *TestRunner) validateLoadModelDataPoolBindingsLocked(bindings []storage
 			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: "Data pool is archived; restore it before running this scenario."})
 			continue
 		}
-		rows, err := tr.dataPoolStore.ListDataPoolRows(binding.PoolID)
+		rows, err := poolStore.ListDataPoolRows(binding.PoolID)
 		if err != nil {
 			items = append(items, LoadModelValidationItem{Dimension: "data_pool_rows", Group: alias, Status: "blocked", Summary: fmt.Sprintf("Could not load data pool rows: %v", err)})
 			continue

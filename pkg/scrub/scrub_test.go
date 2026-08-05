@@ -888,6 +888,74 @@ func TestHARBase64BodiesScrubTextAndPreserveBinary(t *testing.T) {
 	}
 }
 
+func TestHARKnownBinaryMIMEPreservesPrintableBase64Body(t *testing.T) {
+	const printableBinary = "access_token=printable-binary-secret"
+	encoded := base64.StdEncoding.EncodeToString([]byte(printableBinary))
+	input := fmt.Sprintf(`{"log":{"entries":[{"request":{"url":"https://example.test"},"response":{"content":{"mimeType":"application/octet-stream","text":%q,"encoding":"base64"}}}]}}`, encoded)
+
+	scrubbed, err := HAR([]byte(input), Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(scrubbed, &doc); err != nil {
+		t.Fatal(err)
+	}
+	entries := doc["log"].(map[string]any)["entries"].([]any)
+	content := entries[0].(map[string]any)["response"].(map[string]any)["content"].(map[string]any)
+	if got := content["text"]; got != encoded {
+		t.Fatalf("printable octet-stream body changed: got %q, want %q", got, encoded)
+	}
+}
+
+func TestHARKnownBinaryMIMERedactsMalformedSensitiveBase64(t *testing.T) {
+	const malformed = "access_token=visible-secret%%%%"
+	input := fmt.Sprintf(`{"log":{"entries":[{"request":{"url":"https://example.test"},"response":{"content":{"mimeType":"application/octet-stream","text":%q,"encoding":"base64"}}}]}}`, malformed)
+
+	scrubbed, err := HAR([]byte(input), Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(scrubbed, &doc); err != nil {
+		t.Fatal(err)
+	}
+	entries := doc["log"].(map[string]any)["entries"].([]any)
+	entry := entries[0].(map[string]any)
+	content := entry["response"].(map[string]any)["content"].(map[string]any)
+	decoded, err := base64.StdEncoding.DecodeString(content["text"].(string))
+	if err != nil || string(decoded) != Redacted {
+		t.Fatalf("malformed sensitive binary MIME body = %q decoded=%q err=%v", content["text"], decoded, err)
+	}
+	if diagnostics, ok := entry["_apexloadScrubDiagnostics"].([]any); !ok || len(diagnostics) != 1 {
+		t.Fatalf("missing malformed-body diagnostic: %#v", entry)
+	}
+}
+
+func TestHARKnownTextMIMEDoesNotDependOnPrintableHeuristic(t *testing.T) {
+	body := []byte("access_token=text-secret\x00\x01\x02\x03\x04")
+	encoded := base64.StdEncoding.EncodeToString(body)
+	input := fmt.Sprintf(`{"log":{"entries":[{"request":{"url":"https://example.test","postData":{"mimeType":"text/plain","text":%q,"encoding":"base64"}},"response":{}}]}}`, encoded)
+
+	scrubbed, err := HAR([]byte(input), Policy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(scrubbed, &doc); err != nil {
+		t.Fatal(err)
+	}
+	entries := doc["log"].(map[string]any)["entries"].([]any)
+	postData := entries[0].(map[string]any)["request"].(map[string]any)["postData"].(map[string]any)
+	decoded, err := base64.StdEncoding.DecodeString(postData["text"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(decoded), "text-secret") || !strings.Contains(string(decoded), Redacted) {
+		t.Fatalf("known textual MIME body was not scrubbed: %q", decoded)
+	}
+}
+
 // TestHARPreservesURLHostAndHashedPaths locks in that scrubbing a HAR does not
 // corrupt request URLs: multi-label hosts and content-hashed asset paths (both
 // JWT/high-entropy look-alikes) must survive, while sensitive query params are

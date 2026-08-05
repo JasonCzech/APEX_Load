@@ -2,22 +2,63 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type flakyPendingProjectStore struct {
+	mu        sync.Mutex
+	project   *storage.Project
+	remaining int
+	err       error
+}
+
+type missingPendingProjectStore struct {
+	runner      *TestRunner
+	testID      string
+	replacement *ManagedTest
+}
+
+func (s *missingPendingProjectStore) GetProject(string) (*storage.Project, error) {
+	if s.replacement != nil {
+		s.runner.mu.Lock()
+		s.runner.tests[s.testID] = s.replacement
+		s.runner.mu.Unlock()
+	}
+	return nil, sql.ErrNoRows
+}
+
+func (s *flakyPendingProjectStore) GetProject(id string) (*storage.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.remaining > 0 {
+		s.remaining--
+		return nil, s.err
+	}
+	if s.project == nil || normalizeProjectID(s.project.ID) != normalizeProjectID(id) {
+		return nil, nil
+	}
+	clone := *s.project
+	return &clone, nil
+}
 
 type blockingPendingPromotionProtocol struct {
 	entered     chan<- struct{}
 	release     <-chan struct{}
 	enteredOnce *sync.Once
+	executions  *atomic.Int32
 }
 
 func (p *blockingPendingPromotionProtocol) Name() string { return "pending-promotion-blocking" }
@@ -25,6 +66,9 @@ func (p *blockingPendingPromotionProtocol) Name() string { return "pending-promo
 func (p *blockingPendingPromotionProtocol) Init(context.Context, map[string]any) error { return nil }
 
 func (p *blockingPendingPromotionProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if p.executions != nil {
+		p.executions.Add(1)
+	}
 	p.enteredOnce.Do(func() { p.entered <- struct{}{} })
 	select {
 	case <-p.release:
@@ -36,6 +80,249 @@ func (p *blockingPendingPromotionProtocol) Execute(ctx context.Context, action *
 
 func (p *blockingPendingPromotionProtocol) Teardown(context.Context) error    { return nil }
 func (p *blockingPendingPromotionProtocol) HealthCheck(context.Context) error { return nil }
+
+func TestPendingPromotionRetriesTransientProjectEvidenceWithoutAnotherTrigger(t *testing.T) {
+	const projectID = "pending-retry-project"
+	policy := ciRunSourceTestPolicy()
+	runner := NewTestRunner(2, NewHub(), nil)
+	storePreflightScript(runner, "pending-retry-policy-script", projectID)
+	metadata, err := encodeCIRunMetadata(ciRunMetadata{
+		SchemaVersion: ciRunSchemaVersion, Source: ciTestRunSource("1"), ScriptIdentity: "script_id:pending-retry-policy-script",
+		PolicyRevision: policy.Revision, IdempotencySHA: sha256String("pending-retry-policy"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := runner.CreateTest(CreateTestRequest{
+		Name: "Pending transient project read", ProjectID: projectID, ScriptID: "pending-retry-policy-script",
+		VUsers: 1, Duration: "1m", MaterializationKey: metadata,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	pendingSince := time.Now().UTC().Add(-time.Minute)
+	runner.mu.Lock()
+	runner.tests[pending.ID].Status = "PENDING"
+	runner.tests[pending.ID].PendingSince = &pendingSince
+	runner.tests[pending.ID].PendingReason = "waiting for capacity"
+	runner.mu.Unlock()
+	runner.projectStore = &flakyPendingProjectStore{
+		remaining: 1, err: errors.New("temporary project store outage"),
+		project: &storage.Project{
+			ID: projectID, Name: "Pending retry", UpdatedAt: time.Now().UTC(),
+			Settings: storage.ProjectSettings{GitHub: storage.GitHubProjectPolicy{Actions: policy}},
+		},
+	}
+	backend := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+
+	runner.promotePendingTests()
+	select {
+	case startedID := <-backend.called:
+		if startedID != pending.ID {
+			t.Fatalf("backend started %q, want %q", startedID, pending.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("term-bound pending retry did not recover the lone row after project evidence stabilized")
+	}
+}
+
+func TestMissingPendingProjectEvictsOnlyObservedTestIdentity(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		name := "evict stale identity"
+		if replace {
+			name = "preserve concurrent replacement"
+		}
+		t.Run(name, func(t *testing.T) {
+			runner := NewTestRunner(2, NewHub(), nil)
+			storePreflightScript(runner, "missing-pending-project-script", "missing-pending-project")
+			pending, err := runner.CreateTest(CreateTestRequest{
+				Name: "missing pending project", ProjectID: "missing-pending-project",
+				ScriptID: "missing-pending-project-script", VUsers: 1, Duration: "1m",
+			})
+			if err != nil {
+				t.Fatalf("CreateTest: %v", err)
+			}
+			pendingSince := time.Now().UTC().Add(-time.Minute)
+			runner.mu.Lock()
+			old := runner.tests[pending.ID]
+			old.Status = "PENDING"
+			old.PendingSince = &pendingSince
+			old.PendingReason = "waiting for capacity"
+			runner.mu.Unlock()
+
+			var replacement *ManagedTest
+			if replace {
+				replacement = &ManagedTest{
+					ID: pending.ID, Name: "replacement identity", Status: "QUEUED", ProjectID: old.ProjectID,
+					CreatedAt: time.Now().UTC(), TotalVUsers: 1,
+				}
+			}
+			runner.projectStore = &missingPendingProjectStore{runner: runner, testID: pending.ID, replacement: replacement}
+			runner.promotePendingTests()
+
+			runner.mu.RLock()
+			retained, exists := runner.tests[pending.ID]
+			runner.mu.RUnlock()
+			if replace {
+				if !exists || retained != replacement {
+					t.Fatalf("concurrent replacement = %#v, want exact pointer preserved", retained)
+				}
+			} else if exists {
+				t.Fatalf("deleted-project pending ghost remained process-local: %#v", retained)
+			}
+		})
+	}
+}
+
+func TestUnversionedPendingShakeoutEvidenceDefersOnlyThatRow(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	storePreflightScript(runner, "pending-unversioned-first", storage.DefaultProjectID)
+	storePreflightScript(runner, "pending-unversioned-second", storage.DefaultProjectID)
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name: "older unversioned shakeout evidence", ScriptID: "pending-unversioned-first", VUsers: 1, Duration: "1m", ScriptShakeout: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first): %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{
+		Name: "later promotable row", ScriptID: "pending-unversioned-second", VUsers: 1, Duration: "1m",
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second): %v", err)
+	}
+	now := time.Now().UTC()
+	firstPendingSince := now.Add(-2 * time.Minute)
+	secondPendingSince := now.Add(-time.Minute)
+	runner.mu.Lock()
+	firstCurrent := runner.tests[first.ID]
+	firstCurrent.Status = "PENDING"
+	firstCurrent.PendingSince = &firstPendingSince
+	firstCurrent.PendingReason = "waiting for capacity"
+	firstCurrent.StartAuthorization = &QueuedStartAuthorization{ScriptShakeoutPass: &ScriptShakeoutPassEvidence{
+		PassedAt: now.Add(-3 * time.Minute), EvidenceSHA256: sha256String("unversioned-shakeout-proof"), ReusableAfterRestart: false,
+	}}
+	firstCurrent.validatedScriptShakeoutPass = ""
+	secondCurrent := runner.tests[second.ID]
+	secondCurrent.Status = "PENDING"
+	secondCurrent.PendingSince = &secondPendingSince
+	secondCurrent.PendingReason = "waiting for capacity"
+	runner.mu.Unlock()
+	backend := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+
+	runner.promotePendingTests()
+	select {
+	case startedID := <-backend.called:
+		if startedID != second.ID {
+			t.Fatalf("backend started %q, want later promotable row %q", startedID, second.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("unversioned first row stranded a valid later pending row")
+	}
+	deferred, ok := runner.GetTest(first.ID)
+	if !ok || deferred.Status != "PENDING" {
+		t.Fatalf("unversioned row = %#v, want retained PENDING", deferred)
+	}
+	if !strings.HasPrefix(deferred.PendingReason, pendingScriptShakeoutManualReviewReasonPrefix) {
+		t.Fatalf("pending reason = %q, want explicit no-replay/rematerialization review", deferred.PendingReason)
+	}
+}
+
+func TestNonRetryablePendingShakeoutFingerprintFailureDoesNotStrandLaterRow(t *testing.T) {
+	runner := NewTestRunner(2, NewHub(), nil)
+	storePreflightScript(runner, "pending-conflicting-overlays", storage.DefaultProjectID)
+	storePreflightScript(runner, "pending-after-conflicting-overlays", storage.DefaultProjectID)
+	first, err := runner.CreateTest(CreateTestRequest{
+		Name: "conflicting shakeout overlays", Duration: "1m", ScriptShakeout: true,
+		Groups: []CreateGroupEntry{
+			{Name: "first", ScriptID: "pending-conflicting-overlays", VUsers: 1},
+			{Name: "second", ScriptID: "pending-conflicting-overlays", VUsers: 1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first): %v", err)
+	}
+	second, err := runner.CreateTest(CreateTestRequest{
+		Name: "later valid row", ScriptID: "pending-after-conflicting-overlays", VUsers: 1, Duration: "1m",
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second): %v", err)
+	}
+	now := time.Now().UTC()
+	firstPendingSince := now.Add(-2 * time.Minute)
+	secondPendingSince := now.Add(-time.Minute)
+	runner.mu.Lock()
+	firstCurrent := runner.tests[first.ID]
+	firstCurrent.Status = "PENDING"
+	firstCurrent.PendingSince = &firstPendingSince
+	firstCurrent.PendingReason = "waiting for capacity"
+	firstCurrent.Groups[0].runtimeSecretValues = map[string]string{"TOKEN": "first-value"}
+	firstCurrent.Groups[1].runtimeSecretValues = map[string]string{"TOKEN": "different-value"}
+	secondCurrent := runner.tests[second.ID]
+	secondCurrent.Status = "PENDING"
+	secondCurrent.PendingSince = &secondPendingSince
+	secondCurrent.PendingReason = "waiting for capacity"
+	runner.mu.Unlock()
+	backend := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+
+	runner.promotePendingTests()
+	select {
+	case startedID := <-backend.called:
+		if startedID != second.ID {
+			t.Fatalf("backend started %q, want later valid row %q", startedID, second.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("non-retryable fingerprint failure stranded a valid later row")
+	}
+	failed, ok := runner.GetTest(first.ID)
+	if !ok || failed.Status != "FAILED" {
+		t.Fatalf("conflicting-overlay row = %#v, want terminal FAILED", failed)
+	}
+	if !strings.Contains(failed.Error, "conflicting executable values") {
+		t.Fatalf("failure detail = %q, want conflicting executable value evidence", failed.Error)
+	}
+}
+
+func TestPendingPromotionRetriesProjectRevisionCASWithoutAnotherTrigger(t *testing.T) {
+	records, err := storage.NewSQLiteStore(t.TempDir() + "/pending-retry-cas.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = records.Close() })
+	runner := NewTestRunner(2, NewHub(), records)
+	storePreflightScript(runner, "pending-retry-cas-script", storage.DefaultProjectID)
+	pending, err := runner.CreateTest(CreateTestRequest{
+		Name: "Pending start CAS churn", ScriptID: "pending-retry-cas-script", VUsers: 1, Duration: "1m",
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	pendingSince := time.Now().UTC().Add(-time.Minute)
+	runner.mu.Lock()
+	runner.tests[pending.ID].Status = "PENDING"
+	runner.tests[pending.ID].PendingSince = &pendingSince
+	runner.tests[pending.ID].PendingReason = "waiting for capacity"
+	runner.mu.Unlock()
+	runner.testStore = &scriptedTestPersistence{
+		testPersistence: records,
+		err:             storage.ErrTestProjectRevisionChanged,
+		failSaveCalls:   map[int]bool{1: true},
+	}
+	backend := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+
+	runner.promotePendingTests()
+	select {
+	case startedID := <-backend.called:
+		if startedID != pending.ID {
+			t.Fatalf("backend started %q, want %q", startedID, pending.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("term-bound pending retry did not recover the lone row after start CAS churn")
+	}
+}
 
 func TestPendingPromotionRechecksQuotaAfterShakeout(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
@@ -641,6 +928,17 @@ func TestPendingPromotionRevalidatesRequiredSecrets(t *testing.T) {
 		t.Fatalf("backend launched pending test %q after required secret removal", id)
 	default:
 	}
+	if err := os.Setenv(secretEnvironmentName, "restored-without-controller-signal"); err != nil {
+		t.Fatalf("Setenv(%s): %v", secretEnvironmentName, err)
+	}
+	select {
+	case id := <-started:
+		if id != pending.ID {
+			t.Fatalf("backend launched %q, want %q", id, pending.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("term-bound retry cadence did not observe the repaired external secret")
+	}
 }
 
 func TestPendingPromotionRevalidatesRequiredSecretsAfterShakeout(t *testing.T) {
@@ -648,16 +946,21 @@ func TestPendingPromotionRevalidatesRequiredSecretsAfterShakeout(t *testing.T) {
 		projectID  = "pending-shakeout-secret-project"
 		secretName = "SESSION_TOKEN"
 	)
-	secretEnvironmentName := engine.ProjectSecretEnvironmentName(projectID, secretName)
-	t.Setenv(secretEnvironmentName, "available-at-shakeout-start")
+	secretStore := &versionedShakeoutSecretStore{
+		value: "available-at-shakeout-start",
+		metadata: secretstore.Metadata{
+			ProjectID: projectID, Name: secretName, Provider: "versioned-test", UpdatedAt: time.Now().UTC(),
+		},
+	}
 
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 	var enteredOnce sync.Once
+	var executions atomic.Int32
 	protocolName := registerRunnerTestProtocol(t, "pending-shakeout-secret", func() protocol.Protocol {
-		return &blockingPendingPromotionProtocol{entered: entered, release: release, enteredOnce: &enteredOnce}
+		return &blockingPendingPromotionProtocol{entered: entered, release: release, enteredOnce: &enteredOnce, executions: &executions}
 	})
-	runner := NewTestRunner(1, NewHub(), nil)
+	runner := NewTestRunner(1, NewHub(), nil, WithProjectSecretStore(secretStore))
 	runner.StoreScript(&dsl.Script{
 		ID:        "pending-shakeout-secret-script",
 		Name:      "Pending shakeout secret race",
@@ -704,9 +1007,9 @@ func TestPendingPromotionRevalidatesRequiredSecretsAfterShakeout(t *testing.T) {
 	// The action already resolved and used the secret to enter the protocol.
 	// Remove it while shakeout is outside tr.mu; the post-shakeout check must
 	// observe the removal before INITIALIZING.
-	if err := os.Unsetenv(secretEnvironmentName); err != nil {
-		t.Fatalf("Unsetenv(%s): %v", secretEnvironmentName, err)
-	}
+	secretStore.mu.Lock()
+	secretStore.value = ""
+	secretStore.mu.Unlock()
 	close(release)
 	select {
 	case <-done:
@@ -714,20 +1017,33 @@ func TestPendingPromotionRevalidatesRequiredSecretsAfterShakeout(t *testing.T) {
 		t.Fatal("pending promotion did not finish after shakeout release")
 	}
 
-	deferred, ok := runner.GetTest(pending.ID)
-	if !ok {
-		t.Fatalf("pending test %s disappeared", pending.ID)
+	runner.mu.RLock()
+	deferred := runner.tests[pending.ID]
+	verificationPending := deferred != nil && deferred.Status == "SHAKEOUT" && deferred.executionCtx == nil &&
+		deferred.pendingScriptShakeoutOutcome != nil && deferred.pendingScriptShakeoutOutcome.VerificationPending &&
+		deferred.pendingScriptShakeoutOutcome.PassStatus == "PENDING"
+	unverifiedPassPublished := deferred != nil && deferred.StartAuthorization != nil &&
+		scriptShakeoutPassAllows(deferred.StartAuthorization.ScriptShakeoutPass)
+	runner.mu.RUnlock()
+	if !verificationPending {
+		t.Fatalf("post-action secret outage state = %#v, want private SHAKEOUT verification-pending outcome", deferred)
 	}
-	if deferred.Status != "PENDING" {
-		t.Fatalf("status = %q, want PENDING after correctable secret removal during shakeout", deferred.Status)
+	if unverifiedPassPublished {
+		t.Fatalf("unverified post-action fingerprint was published as a reusable pass: %#v", deferred.StartAuthorization)
 	}
-	if !strings.Contains(deferred.PendingReason, "secret requirements are no longer satisfied") || !strings.Contains(deferred.PendingReason, secretName) {
-		t.Fatalf("pending reason = %q, want durable post-shakeout secret preflight detail", deferred.PendingReason)
-	}
+	secretStore.mu.Lock()
+	secretStore.value = "available-at-shakeout-start"
+	secretStore.mu.Unlock()
 	select {
 	case id := <-started:
-		t.Fatalf("backend launched pending test %q after shakeout-time secret removal", id)
-	default:
+		if id != pending.ID {
+			t.Fatalf("backend launched %q, want %q", id, pending.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("term-bound retry cadence did not resume promotion after the secret was restored")
+	}
+	if got := executions.Load(); got != 1 {
+		t.Fatalf("shakeout action executions after secret-gate retry = %d, want one", got)
 	}
 }
 

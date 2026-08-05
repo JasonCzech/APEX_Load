@@ -446,6 +446,38 @@ http:
 	}
 }
 
+func TestInspectNativeComposedURLCredentialCountsValuelessDuplicate(t *testing.T) {
+	const sourcePart = "query-composed-after-flag"
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Composed query after flag, uid: composed-query-after-flag, type: http}
+variables:
+  - {name: neutralValue, value: ` + sourcePart + `}
+http:
+  method: GET
+  url: "https://example.test/search?token&token=Bearer-{{neutralValue}}"
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := result.Scripts[0]
+	target := candidate.Script.Actions[0].Target
+	if strings.Contains(target, "Bearer-") ||
+		!strings.Contains(target, "?token&token={{secret.") ||
+		len(candidate.SecretRequirements) != 1 ||
+		candidate.SecretRequirements[0].Value != "Bearer-"+sourcePart {
+		t.Fatalf("composed query candidate = %#v", candidate)
+	}
+	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+	for _, leaked := range []string{sourcePart, "Bearer-{{neutralValue}}"} {
+		if bytes.Contains(sanitized, []byte(leaked)) {
+			t.Fatalf("sanitized composed query retained %q:\n%s", leaked, sanitized)
+		}
+	}
+}
+
 func TestInspectNativeSeparatesComposedQueryAndPathParameterCredentials(t *testing.T) {
 	const sourcePart = "shared-url-component"
 	result, err := Inspect(Input{

@@ -18,7 +18,10 @@ import (
 	grpcStatus "google.golang.org/grpc/status"
 )
 
-const maxDistributedTargetsPerRun = 256
+const (
+	maxDistributedTargetsPerRun       = 256
+	maxStartupRollbackStopConcurrency = 16
+)
 
 func validateDistributedRunTargetCount(targets []string) error {
 	if len(targets) > maxDistributedTargetsPerRun {
@@ -691,34 +694,32 @@ func (tr *TestRunner) enrichGeneratorTargetSpecsWithLabels(specs []generatorTarg
 	}
 	out := make([]generatorTargetSpec, len(specs))
 	copy(out, specs)
-	if tr == nil || tr.fleetStore == nil {
+	if tr == nil {
 		for i := range out {
 			out[i].Labels = cloneStringMap(out[i].Labels)
 		}
 		return out
 	}
-	metadata, err := tr.fleetStore.ListGeneratorMetadata(0, 0)
-	if err != nil || len(metadata) == 0 {
+	inventory := tr.cachedGeneratorInventory()
+	if len(inventory) == 0 {
 		for i := range out {
 			out[i].Labels = cloneStringMap(out[i].Labels)
 		}
 		return out
 	}
-	// Index fleet tags under BOTH the metadata Target and GeneratorID so capability
-	// labels attach whenever EITHER equals the generator's dial address (the only
-	// join key available pre-probe). Tags recorded against a generator whose metadata
-	// has neither Target nor GeneratorID equal to its configured dial address cannot
-	// be correlated here — operators must record capability tags keyed by dial address.
-	labelsByTarget := make(map[string]map[string]string, len(metadata))
-	for _, item := range metadata {
-		if item == nil || len(item.Tags) == 0 {
+	// The inventory refresh path already joins durable fleet metadata into each
+	// heartbeat entry. Consume that immutable cache here: placement/start gates
+	// call this helper while holding tr.mu and must never perform fleet-store I/O.
+	labelsByTarget := make(map[string]map[string]string, len(inventory))
+	for _, item := range inventory {
+		if len(item.Labels) == 0 {
 			continue
 		}
 		if target := strings.TrimSpace(item.Target); target != "" {
-			labelsByTarget[target] = mergeStringMaps(labelsByTarget[target], item.Tags)
+			labelsByTarget[target] = mergeStringMaps(labelsByTarget[target], item.Labels)
 		}
 		if id := strings.TrimSpace(item.GeneratorID); id != "" {
-			labelsByTarget[id] = mergeStringMaps(labelsByTarget[id], item.Tags)
+			labelsByTarget[id] = mergeStringMaps(labelsByTarget[id], item.Labels)
 		}
 	}
 	for i := range out {
@@ -761,7 +762,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	// is staged. The stored snapshot survives controller restart/failover and is
 	// never replaced by later scale, duration, or runtime-control mutations.
 	initialProvenance := maskRunArchiveProvenance(buildRunArchiveProvenance(tr, test))
-	if persistInitialErr := tr.persistInitialArchiveProvenance(test, &initialProvenance); persistInitialErr != nil {
+	if _, persistInitialErr := tr.persistInitialArchiveProvenance(test, &initialProvenance); persistInitialErr != nil {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("persist initial archive provenance: %v", persistInitialErr))
 		return
 	}
@@ -809,15 +810,27 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			stopInitialLeaseKeeper = nil
 		}
 		if stopStarted {
+			stopJobs := make(chan generatorClient, len(startedTargets))
 			for target := range startedTargets {
-				client := clientsByTarget[target]
-				if client == nil {
-					continue
+				if client := clientsByTarget[target]; client != nil {
+					stopJobs <- client
 				}
-				stopCtx, stopCancel := context.WithTimeout(context.Background(), b.timeout)
-				_, _ = stopGeneratorTest(stopCtx, client, test.ID, false, executionGeneration)
-				stopCancel()
 			}
+			close(stopJobs)
+			var stopWorkers sync.WaitGroup
+			workerCount := min(len(stopJobs), maxStartupRollbackStopConcurrency)
+			for range workerCount {
+				stopWorkers.Add(1)
+				go func() {
+					defer stopWorkers.Done()
+					for client := range stopJobs {
+						stopCtx, stopCancel := context.WithTimeout(context.Background(), b.timeout)
+						_, _ = stopGeneratorTest(stopCtx, client, test.ID, false, executionGeneration)
+						stopCancel()
+					}
+				}()
+			}
+			stopWorkers.Wait()
 		}
 		for _, stream := range streamsByTarget {
 			_ = stream.CloseSend()

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
 )
@@ -93,6 +94,85 @@ func TestCPUShapePercent(t *testing.T) {
 
 	if !floatClose(user, 10/34.0*100) || !floatClose(system, 5/34.0*100) || !floatClose(iowait, 3/34.0*100) || !floatClose(steal, 1/34.0*100) {
 		t.Fatalf("cpu shape = %v/%v/%v/%v, want deltas over total", user, system, iowait, steal)
+	}
+}
+
+func TestProcessCPUPercentUsesIntervalAndAvailableCapacity(t *testing.T) {
+	tests := []struct {
+		name          string
+		cpuSeconds    float64
+		wallSeconds   float64
+		capacityCores float64
+		want          float64
+	}{
+		{name: "two cores at three quarters", cpuSeconds: 3, wallSeconds: 2, capacityCores: 2, want: 75},
+		{name: "fractional container quota", cpuSeconds: 0.5, wallSeconds: 1, capacityCores: 0.5, want: 100},
+		{name: "idle interval", cpuSeconds: 0, wallSeconds: 2, capacityCores: 2, want: 0},
+		{name: "invalid wall interval", cpuSeconds: 1, wallSeconds: 0, capacityCores: 2, want: 0},
+		{name: "unknown capacity", cpuSeconds: 1, wallSeconds: 1, capacityCores: 0, want: 0},
+		{name: "counter rollback", cpuSeconds: -1, wallSeconds: 1, capacityCores: 2, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := processCPUPercent(tt.cpuSeconds, tt.wallSeconds, tt.capacityCores); !floatClose(got, tt.want) {
+				t.Fatalf("processCPUPercent(%v, %v, %v) = %v, want %v", tt.cpuSeconds, tt.wallSeconds, tt.capacityCores, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessCPUSampleDeltaSpansMissedCollections(t *testing.T) {
+	previousAt := time.Unix(100, 0)
+	cpuSeconds, wallSeconds, ok := processCPUSampleDelta(
+		cpu.TimesStat{User: 10, System: 5},
+		cpu.TimesStat{User: 13, System: 8},
+		previousAt,
+		previousAt.Add(3*time.Second),
+	)
+	if !ok {
+		t.Fatal("valid samples were rejected")
+	}
+	if !floatClose(cpuSeconds, 6) || !floatClose(wallSeconds, 3) {
+		t.Fatalf("sample delta = %v CPU seconds over %v wall seconds, want 6 over 3", cpuSeconds, wallSeconds)
+	}
+	if got := processCPUPercent(cpuSeconds, wallSeconds, 2); !floatClose(got, 100) {
+		t.Fatalf("process CPU after a missed collection = %v%%, want 100%%", got)
+	}
+}
+
+func TestProcessCPUSampleDeltaDoesNotCountBlockedIOAsCPU(t *testing.T) {
+	previousAt := time.Unix(100, 0)
+	cpuSeconds, wallSeconds, ok := processCPUSampleDelta(
+		cpu.TimesStat{User: 2, System: 1, Iowait: 5},
+		cpu.TimesStat{User: 2.5, System: 1.5, Iowait: 25},
+		previousAt,
+		previousAt.Add(time.Second),
+	)
+	if !ok {
+		t.Fatal("valid samples were rejected")
+	}
+	if !floatClose(cpuSeconds, 1) || !floatClose(wallSeconds, 1) {
+		t.Fatalf("sample delta = %v CPU seconds over %v wall seconds, want 1 over 1; I/O wait must be excluded", cpuSeconds, wallSeconds)
+	}
+}
+
+func TestEffectiveCPUCapacityUsesAvailableMinimum(t *testing.T) {
+	tests := []struct {
+		name         string
+		cgroupLimit  float64
+		runtimeCPUs  int
+		wantCapacity float64
+	}{
+		{name: "quota is tighter", cgroupLimit: 0.5, runtimeCPUs: 4, wantCapacity: 0.5},
+		{name: "runtime capacity is tighter", cgroupLimit: 8, runtimeCPUs: 2, wantCapacity: 2},
+		{name: "unlimited cgroup", cgroupLimit: 0, runtimeCPUs: 6, wantCapacity: 6},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := effectiveCPUCapacity(tt.cgroupLimit, tt.runtimeCPUs); !floatClose(got, tt.wantCapacity) {
+				t.Fatalf("effectiveCPUCapacity(%v, %d) = %v, want %v", tt.cgroupLimit, tt.runtimeCPUs, got, tt.wantCapacity)
+			}
+		})
 	}
 }
 

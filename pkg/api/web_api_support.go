@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 )
@@ -19,11 +20,15 @@ type webAPIExecutionSupportEntry struct {
 }
 
 type webAPIBenchmarkEnvelope struct {
-	Protocol          string `json:"protocol"`
-	RecommendedVUsers int    `json:"recommended_vusers_per_generator"`
-	Envelope          string `json:"envelope"`
-	CalibrationSource string `json:"calibration_source"`
-	Notes             string `json:"notes,omitempty"`
+	Protocol                string `json:"protocol"`
+	RecommendedVUsers       int    `json:"recommended_vusers_per_generator"`
+	Envelope                string `json:"envelope"`
+	CalibrationSource       string `json:"calibration_source"`
+	CompatibilityConfidence string `json:"compatibility_confidence"`
+	Measured                bool   `json:"measured"`
+	BenchmarkEvidence       string `json:"benchmark_evidence,omitempty"`
+	CalibratedAt            string `json:"calibrated_at,omitempty"`
+	Notes                   string `json:"notes,omitempty"`
 }
 
 type webAPIDiagnosticSurface struct {
@@ -52,13 +57,25 @@ func (s *Server) handleWebAPIExecutionSupportMatrix(w http.ResponseWriter, r *ht
 		"notes": []string{
 			"Browser VUsers remain diagnostic canaries, not HTTP-density load generators.",
 			"Imported OpenAPI, Postman, WSDL, DevWeb, JMeter, HAR, and enterprise script archive assets are review artifacts until validation and replay evidence are attached.",
-			"Density envelopes are conservative defaults and should be recalibrated with local generator benchmarks before production capacity reservations.",
+			"benchmark_envelopes contains design/planning targets unless compatibility_confidence and measured explicitly identify a calibrated result; current defaults are not measured benchmark results.",
 		},
 	})
 }
 
 func webAPIExecutionSupportMatrix() []webAPIExecutionSupportEntry {
 	return []webAPIExecutionSupportEntry{
+		{
+			ID:                  "bruno-runtime",
+			Category:            "Compatibility Runner",
+			Capability:          "Bruno collection import and governed execution",
+			Status:              "supported",
+			ExecutionStatus:     "external_runner_required",
+			Importance:          "high",
+			SupportedInputs:     []string{"Bruno collections and environments"},
+			RuntimeCoverage:     []string{"version-pinned Bruno 3.5.2 runner", "environment projection", "request execution", "egress policy enforcement"},
+			RemainingGaps:       []string{"runner and egress policy must be configured explicitly"},
+			RecommendedWorkflow: "Inspect and approve the collection, configure the pinned runner, replay, then promote.",
+		},
 		{
 			ID:                  "http-web",
 			Category:            "Native Protocol",
@@ -200,15 +217,27 @@ func webAPIStatusCounts(matrix []webAPIExecutionSupportEntry) map[string]int {
 }
 
 func webAPIBenchmarkEnvelopes() []webAPIBenchmarkEnvelope {
-	return []webAPIBenchmarkEnvelope{
+	browserEnvelope := browserDiagnosticCanaryEnvelope()
+	envelopes := []webAPIBenchmarkEnvelope{
 		{Protocol: "http", RecommendedVUsers: 10000, Envelope: "10k VUsers/generator on 4 vCPU / 8 GB", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md", Notes: "Primary density load protocol."},
 		{Protocol: "grpc", RecommendedVUsers: 12000, Envelope: "12k gRPC VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
 		{Protocol: "websocket", RecommendedVUsers: 6000, Envelope: "6k socket VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
 		{Protocol: "soap", RecommendedVUsers: 5000, Envelope: "5k SOAP VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
 		{Protocol: "java_http", RecommendedVUsers: 7000, Envelope: "7k Java-over-HTTP VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
 		{Protocol: "jms-solace", RecommendedVUsers: 3000, Envelope: "3k JMS VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
-		{Protocol: "browser", RecommendedVUsers: 40, Envelope: "20-40 browser canary VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md", Notes: "Diagnostic canary capacity only."},
+		{
+			Protocol:          "browser",
+			RecommendedVUsers: browserEnvelope.RecommendedCanaryVUsersPerGenerator,
+			Envelope:          fmt.Sprintf("1-%d browser canary VUsers/generator", browserEnvelope.MaximumClaimedVUsersPerGenerator),
+			CalibrationSource: "browserDiagnosticCanaryEnvelope",
+			Notes:             browserEnvelope.ClaimRule,
+		},
 	}
+	for index := range envelopes {
+		envelopes[index].CompatibilityConfidence = "design_target"
+		envelopes[index].Measured = false
+	}
+	return envelopes
 }
 
 func webAPIDiagnostics() []webAPIDiagnosticSurface {

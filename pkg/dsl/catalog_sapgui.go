@@ -18,7 +18,7 @@ func validateSAPGUIActionIssues(index int, action Action) []string {
 
 func sapGUIActionSpecs() []ActionSpec {
 	controlKinds := []string{"text", "combo", "checkbox", "radio", "button", "grid", "table", "tree", "menu", "shell", "unknown"}
-	return []ActionSpec{
+	specs := []ActionSpec{
 		{
 			Type:      "sapgui_connect",
 			Protocols: []string{"sap_gui"},
@@ -154,6 +154,11 @@ func sapGUIActionSpecs() []ActionSpec {
 			},
 		},
 	}
+	for index := range specs {
+		specs[index].ExecutionPosture = "external_runner_required"
+		specs[index].ExecutionNote = "Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load."
+	}
+	return specs
 }
 
 func sapGUIFamilySpec(actionType string, methods []string) ActionSpec {

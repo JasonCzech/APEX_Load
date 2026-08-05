@@ -41,6 +41,8 @@ describe('TestExecutionStatusPanels', () => {
             max_error_count: 25,
             server_processing_breached: true,
             transfer_breached: false,
+            lcp_breached: true,
+            partition_skew_breached: false,
             breach_active: true,
             breach_duration_sec: 45,
             stop_triggered: true,
@@ -62,6 +64,8 @@ describe('TestExecutionStatusPanels', () => {
               max_avg_server_processing_ms: 450,
               max_avg_transfer_ms: 120,
               max_error_count: 25,
+              max_lcp_ms: 2500,
+              max_partition_skew_pct: 5,
               min_vusers: 20,
               max_vusers: 50,
               stop_on_sla_breach: true,
@@ -93,6 +97,9 @@ describe('TestExecutionStatusPanels', () => {
     expect(container.textContent).toContain('sla breach')
     expect(container.textContent).toContain('Server processing breached')
     expect(container.textContent).toContain('Transfer healthy')
+    expect(container.textContent).toContain('LCP breached')
+    expect(container.textContent).toContain('Partition skew healthy')
+    expect(container.textContent).not.toContain('Dead-letter rate')
   })
 
   it('renders telemetry freshness and websocket health details when available', async () => {

@@ -7,16 +7,24 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/api/testexec"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"github.com/jasonczech/apexload/pkg/telemetry"
 	"go.opentelemetry.io/otel"
@@ -205,77 +213,353 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 		tr.annotateTestLifecycleSpan(span, id, startErr)
 		span.End()
 	}()
+	if expectedTerm == nil && tr != nil && tr.durableExecutionFence {
+		// Public starts must first pass the admission gate, then retain the exact
+		// durable lease term for the complete operation. A same-process loss and
+		// reacquisition may never let an old start adopt the successor term.
+		if !tr.isExecutionLeader() {
+			return errNotExecutionLeader
+		}
+		capturedTerm, err := tr.captureExecutionLeaseTerm()
+		if err != nil {
+			return err
+		}
+		expectedTerm = &capturedTerm
+	}
 	return tr.startTestWithOptionsAndExpectedTermCore(id, opts, expectedTerm)
 }
 
 func (tr *TestRunner) startTestWithOptionsAndExpectedTermCore(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) error {
-	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
-		return err
-	}
-	if err := tr.validateCIRunPolicyForStart(id); err != nil {
-		return err
-	}
-	tr.mu.Lock()
-	id = tr.resolveRefKeyLocked(id)
-	tr.mu.Unlock()
-	if err := tr.refreshTestCapacityBindingFromStore(id); err != nil {
-		return err
-	}
-	tr.mu.Lock()
-	blocked, err := tr.preflightStartBlocksLockedWithExpectedTerm(id, opts, expectedTerm)
-	tr.mu.Unlock()
+	test, err := tr.prepareTestForExecutionWithOptionsAndExpectedTerm(id, opts, expectedTerm)
 	if err != nil {
 		return err
 	}
-	if blocked {
+	if test != nil {
+		go tr.runTest(test)
+	}
+	return nil
+}
+
+func validateExpectedStartRecoveryIdentityLocked(test *ManagedTest, opts StartTestOptions) error {
+	if opts.expectedRecoveryIdentity == nil {
 		return nil
 	}
+	if !opts.expectedRecoveryIdentity.matches(test) {
+		return storage.ErrTestStartIdentityChanged
+	}
+	return nil
+}
+
+// prepareTestForExecutionWithOptionsAndExpectedTerm runs the complete start
+// pipeline through the durable INITIALIZING/PENDING/SHAKEOUT boundary without
+// dispatching the execution backend. Ordinary starts dispatch the returned
+// test immediately; recurring schedules first commit their occurrence and
+// parent-schedule projections, then dispatch the same prepared runtime. Keeping
+// this as one shared pipeline prevents scheduled runs from bypassing secret
+// resolution, script shakeout, or revision-fenced admission evidence.
+func (tr *TestRunner) prepareTestForExecutionWithOptionsAndExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (*ManagedTest, error) {
+	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+		return nil, err
+	}
+	tr.mu.Lock()
+	id = tr.resolveRefKeyLocked(id)
+	if err := validateExpectedStartRecoveryIdentityLocked(tr.tests[id], opts); err != nil {
+		tr.mu.Unlock()
+		return nil, err
+	}
+	tr.mu.Unlock()
+	// A completed shakeout may still be waiting for its durable outcome write
+	// after a transient storage interruption. Finish that transition before any
+	// new admission work so retrying Start never replays external actions.
+	if err := tr.resumePendingScriptShakeoutOutcomeForIdentity(id, expectedTerm, opts.expectedRecoveryIdentity); err != nil {
+		return nil, err
+	}
+	if err := tr.validateCIRunPolicyForStart(id); err != nil {
+		return nil, err
+	}
+	if err := tr.refreshTestCapacityBindingFromStore(id); err != nil {
+		return nil, err
+	}
+	var blocked bool
+	var err error
+	for attempt := 0; attempt < startAdmissionPhaseAttempts; attempt++ {
+		if err = tr.validateExpectedStartTerm(expectedTerm); err != nil {
+			return nil, err
+		}
+		preflightAt := time.Now().UTC()
+		preflightEvidence, evidenceErr := tr.loadStartLaunchEvidence(id, preflightAt)
+		if evidenceErr != nil {
+			return nil, evidenceErr
+		}
+		if err = tr.validateCIRunPolicyForStartAtProjectRevision(id, preflightEvidence.launchWindow.projectQuota.updatedAt); err != nil {
+			if errors.Is(err, errStartAdmissionEvidenceStale) {
+				continue
+			}
+			return nil, err
+		}
+		if err = tr.validateExpectedStartTerm(expectedTerm); err != nil {
+			return nil, err
+		}
+		tr.mu.Lock()
+		blocked, err = tr.preflightStartBlocksLockedWithExpectedTermAndEvidence(id, opts, expectedTerm, preflightAt, preflightEvidence)
+		tr.mu.Unlock()
+		if !errors.Is(err, errStartAdmissionEvidenceStale) {
+			break
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, nil
+	}
 	if err := tr.validateStartSecretRequirements(id); err != nil {
-		return err
+		return nil, err
+	}
+	if _, err := tr.validateScriptShakeoutPassForStart(id, opts, expectedTerm); err != nil {
+		return nil, err
+	}
+	shakeoutInputFingerprint := scriptShakeoutInputFingerprint{}
+	if tr.scriptShakeoutRequiredForStart(id, opts) {
+		shakeoutInputFingerprint, err = tr.scriptShakeoutExecutableFingerprint(id)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	shakeoutTest, err := tr.beginScriptShakeoutIfNeededWithExpectedTerm(id, opts, expectedTerm)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	if shakeoutTest == nil {
+		tr.mu.RLock()
+		queuedByShakeoutAdmission := tr.tests[id] != nil && tr.tests[id].Status == "PENDING"
+		tr.mu.RUnlock()
+		if queuedByShakeoutAdmission {
+			return nil, nil
+		}
 	}
 	if shakeoutTest != nil {
-		report := tr.runScriptShakeoutReport(shakeoutTest)
+		report, operationErr := tr.runScriptShakeoutReport(shakeoutTest)
+		if operationErr != nil {
+			if termErr := tr.validateExpectedStartTerm(expectedTerm); termErr != nil {
+				return nil, termErr
+			}
+			return nil, operationErr
+		}
+		if report.Passed {
+			currentSHA256, fingerprintErr := tr.scriptShakeoutExecutableFingerprint(id)
+			switch {
+			case fingerprintErr != nil:
+				if retryableStartSecretRequirement(fingerprintErr) {
+					return nil, tr.markScriptShakeoutVerificationPendingWithExpectedTerm(
+						id, report, shakeoutInputFingerprint, "QUEUED", nil, "", expectedTerm, fingerprintErr,
+						!opts.deferPostShakeoutRecoveryEnqueue,
+					)
+				}
+				report.Passed = false
+				report.Summary = "Script shakeout completed, but its executable input evidence could not be verified; full load test has not started."
+				report.Results = append(report.Results, ScriptShakeoutResult{GroupName: "executable inputs", Status: "failed", Error: fingerprintErr.Error()})
+			case currentSHA256 != shakeoutInputFingerprint:
+				report.Passed = false
+				report.Summary = "Script shakeout inputs changed while the check was running; full load test has not started."
+				report.Results = append(report.Results, ScriptShakeoutResult{GroupName: "executable inputs", Status: "failed", Error: "the executable snapshot or a versioned secret source changed during shakeout"})
+			default:
+				shakeoutInputFingerprint = currentSHA256
+			}
+		}
 		if !report.Passed {
-			return tr.markScriptShakeoutReview(id, report)
+			return nil, tr.markScriptShakeoutReviewWithExpectedTerm(id, report, expectedTerm)
 		}
-		if err := tr.markScriptShakeoutPassed(id, report); err != nil {
-			return err
+		if err := tr.markScriptShakeoutPassedWithExpectedTermAndFingerprint(id, report, shakeoutInputFingerprint, expectedTerm); err != nil {
+			return nil, err
 		}
 	}
-	// Shakeout can take tens of seconds. Revalidate the HA lease immediately
-	// before the durable INITIALIZING transition so a stale controller cannot
-	// overwrite takeover reconciliation.
-	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
-		return err
-	}
-	if err := tr.validateCIRunPolicyForStart(id); err != nil {
-		return err
-	}
-	if err := tr.refreshTestCapacityBindingFromStore(id); err != nil {
-		return err
-	}
-
-	tr.mu.Lock()
-	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+	// Shakeout can take tens of seconds. Retry only this evidence/commit phase so
+	// admission churn never replays already-executed shakeout actions.
+	var test *ManagedTest
+	for attempt := 0; attempt < startAdmissionPhaseAttempts; attempt++ {
+		if err = tr.validateExpectedStartTerm(expectedTerm); err != nil {
+			return nil, err
+		}
+		if err = tr.refreshTestCapacityBindingFromStore(id); err != nil {
+			return nil, err
+		}
+		prepareAt := time.Now().UTC()
+		prepareEvidence, evidenceErr := tr.loadStartLaunchEvidence(id, prepareAt)
+		if evidenceErr != nil {
+			return nil, evidenceErr
+		}
+		if err = tr.validateCIRunPolicyForStartAtProjectRevision(id, prepareEvidence.launchWindow.projectQuota.updatedAt); err != nil {
+			if errors.Is(err, errStartAdmissionEvidenceStale) {
+				continue
+			}
+			return nil, err
+		}
+		if err = tr.validateExpectedStartTerm(expectedTerm); err != nil {
+			return nil, err
+		}
+		tr.mu.Lock()
+		if expectedTerm == nil || tr.executionLeaseTermLocallyCurrent(*expectedTerm) {
+			test, err = tr.prepareTestStartLockedWithExpectedTermAndEvidence(id, opts, expectedTerm, prepareAt, prepareEvidence)
+		} else {
+			err = errNotExecutionLeader
+		}
 		tr.mu.Unlock()
-		return err
+		if !errors.Is(err, errStartAdmissionEvidenceStale) {
+			break
+		}
 	}
-	test, err := tr.prepareTestStartLockedWithExpectedTerm(id, opts, expectedTerm)
-	tr.mu.Unlock()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if test == nil {
+	return test, nil
+}
+
+const startAdmissionPhaseAttempts = 3
+
+// startLaunchEvidence combines durable launch-window state with the static
+// Java/runtime-placement decision evaluated against one immutable admission
+// snapshot. The fence is rechecked under tr.mu immediately before the
+// capacity-reserving transition.
+type startLaunchEvidence struct {
+	launchWindow           launchWindowEvidence
+	admissionFence         managedTestBuildFence
+	startAdmissionRevision int64
+	runtimeGatesLoaded     bool
+	javaConflicts          []LaunchConflict
+	placementConflicts     []LaunchConflict
+}
+
+var errStartAdmissionEvidenceStale = errors.New("controller admission state changed while start evidence was being evaluated; retry")
+
+type startAdmissionRevisionPersistence interface {
+	StartAdmissionRevision() (int64, error)
+}
+
+// loadStartLaunchEvidence snapshots the start candidate and capacity-relevant
+// controller state under a short runner lock, then performs durable reads and
+// potentially slow Java approval/runtime checks after releasing tr.mu.
+func (tr *TestRunner) loadStartLaunchEvidence(id string, start time.Time) (startLaunchEvidence, error) {
+	revisionStore := tr.startAdmissionRevisionStore
+	if revisionStore == nil {
+		if candidate, ok := tr.testStore.(startAdmissionRevisionPersistence); ok {
+			revisionStore = candidate
+		}
+	}
+	if revisionStore == nil {
+		if tr.testStore != nil && !tr.testOnlyAllowUnfencedDeploymentLeaseStart {
+			return startLaunchEvidence{}, fmt.Errorf("durable start admission revision fence is unavailable")
+		}
+		return tr.loadStartLaunchEvidenceOnce(id, start)
+	}
+	for attempt := 0; attempt < startAdmissionPhaseAttempts; attempt++ {
+		before, err := revisionStore.StartAdmissionRevision()
+		if err != nil {
+			return startLaunchEvidence{}, errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load start admission revision: %w", err))
+		}
+		// Scenario projections and global admission settings are process caches.
+		// Refresh both inside the database revision seqlock so a remote write can
+		// never pair a fresh revision with stale cached launch authority.
+		if err := tr.refreshSchedulerContentForHASweep(); err != nil {
+			return startLaunchEvidence{}, errors.Join(errStartAdmissionEvidenceStale, err)
+		}
+		if err := tr.refreshSystemSettingsForStartAdmission(); err != nil {
+			return startLaunchEvidence{}, errors.Join(errStartAdmissionEvidenceStale, err)
+		}
+		evidence, err := tr.loadStartLaunchEvidenceOnce(id, start)
+		if err != nil {
+			return startLaunchEvidence{}, err
+		}
+		after, err := revisionStore.StartAdmissionRevision()
+		if err != nil {
+			return startLaunchEvidence{}, errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("reload start admission revision: %w", err))
+		}
+		if before == after {
+			evidence.startAdmissionRevision = before
+			return evidence, nil
+		}
+	}
+	return startLaunchEvidence{}, errStartAdmissionEvidenceStale
+}
+
+func (tr *TestRunner) refreshSystemSettingsForStartAdmission() error {
+	if tr == nil || tr.settingsStore == nil {
 		return nil
 	}
-
-	go tr.runTest(test)
+	tr.refreshSystemSettingsFromStore(true)
+	raw, err := tr.settingsStore.GetSetting(systemSettingsStoreKey)
+	if err != nil {
+		return fmt.Errorf("load system settings for start admission: %w", err)
+	}
+	tr.settingsRefreshMu.Lock()
+	applied := tr.systemSettingsRaw == raw
+	tr.settingsRefreshMu.Unlock()
+	if !applied {
+		return fmt.Errorf("durable system settings could not be applied coherently")
+	}
 	return nil
+}
+
+func (tr *TestRunner) loadStartLaunchEvidenceOnce(id string, start time.Time) (startLaunchEvidence, error) {
+	tr.mu.Lock()
+	// CapacityAdvisory is a derived, in-memory projection and is not stored in
+	// the durable test row. A freshly reloaded queued run therefore has no
+	// advisory until its first start-gate evaluation. Normalize it before
+	// capturing the admission fence; otherwise evaluateStartGatesLocked refreshes
+	// the advisory moments later and makes the start attempt appear to conflict
+	// with itself. The derivation is already designed to run under tr.mu and does
+	// not perform durable storage reads.
+	if candidate := tr.tests[id]; candidate != nil {
+		tr.refreshCapacityAdvisoryLocked(candidate)
+	}
+	snapshot, _, fence := tr.managedTestBuildSnapshotLocked(CreateTestRequest{RevisionSourceTestID: id})
+	projection := snapshot.tests[id]
+	if projection == nil {
+		tr.mu.Unlock()
+		return startLaunchEvidence{}, fmt.Errorf("test not found: %s", id)
+	}
+	timeslotID := ""
+	if projection.TimeslotID != nil {
+		timeslotID = *projection.TimeslotID
+	}
+	window := launchWindowForTestAt(projection, start.UTC(), start.UTC())
+	tr.mu.Unlock()
+	evidence := startLaunchEvidence{
+		launchWindow:       tr.loadLaunchWindowEvidenceWithBoundTimeslotForProject(window, timeslotID, projection.ProjectID, testAssignedPoolID(projection)),
+		admissionFence:     fence,
+		runtimeGatesLoaded: true,
+		javaConflicts:      snapshot.javaVuserRunnerLaunchConflictsForManagedTestLocked(projection),
+	}
+	if groupsUseJavaVuserProtocol(projection.Groups) {
+		evidence.placementConflicts = snapshot.generatorPlacementLaunchConflictsLocked(projection)
+	}
+	return evidence, nil
+}
+
+func (tr *TestRunner) loadRuntimeLaunchEvidence(id string, now time.Time, update func(*ManagedTest)) (launchWindowEvidence, error) {
+	tr.mu.RLock()
+	test := tr.tests[id]
+	if test == nil {
+		tr.mu.RUnlock()
+		return launchWindowEvidence{}, fmt.Errorf("test not found: %s", id)
+	}
+	projection := *test
+	projection.Groups = append([]TestGroup(nil), test.Groups...)
+	timeslotID := ""
+	if test.TimeslotID != nil {
+		timeslotID = *test.TimeslotID
+	}
+	if update != nil {
+		update(&projection)
+	}
+	start := calendarTestStart(&projection)
+	if start.IsZero() {
+		start = now
+	}
+	window := launchWindowForTestAt(&projection, start.UTC(), now.UTC())
+	tr.mu.RUnlock()
+	return tr.loadLaunchWindowEvidenceWithBoundTimeslotForProject(window, timeslotID, projection.ProjectID, testAssignedPoolID(&projection)), nil
 }
 
 type startSecretRequirementError struct {
@@ -394,11 +678,29 @@ func (tr *TestRunner) validateExpectedStartTerm(expectedTerm *executionLeaseTerm
 // broadcasts the change. Shared by the start-gate evaluators so the pending
 // transition semantics live in one place. The caller must hold tr.mu.
 func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) error {
+	return tr.markTestPendingLockedWithExpectedTerm(test, reason, nil)
+}
+
+func (tr *TestRunner) markTestPendingLockedWithExpectedTerm(test *ManagedTest, reason string, expectedTerm *executionLeaseTerm) error {
+	if test == nil {
+		return errors.New("test is required")
+	}
+	claimed, err := tr.claimPassiveExecutionFenceLocked(test, expectedTerm)
+	if err != nil {
+		return err
+	}
+	if claimed {
+		defer releasePassiveExecutionFenceLocked(test)
+	}
+	operationExecutionFence := test.executionFence
+	operationExecutionGeneration := test.executionGeneration
+	operationIdentity, _ := queuedStartRecoveryIdentityForTest(test)
 	previousStatus := test.Status
 	previousPendingSince := cloneTimePtr(test.PendingSince)
 	previousPendingReason := test.PendingReason
 	previousQueuePosition := test.QueuePosition
 	previousError := test.Error
+	previousStatusForCAS := strings.ToUpper(strings.TrimSpace(previousStatus))
 	now := time.Now()
 	test.Status = "PENDING"
 	if test.PendingSince == nil || test.PendingSince.IsZero() {
@@ -407,16 +709,152 @@ func (tr *TestRunner) markTestPendingLocked(test *ManagedTest, reason string) er
 	test.PendingReason = reason
 	test.QueuePosition = 0
 	test.Error = ""
-	if err := tr.saveManagedTestRecord(test); err != nil {
+	rollback := func() {
 		test.Status = previousStatus
 		test.PendingSince = previousPendingSince
 		test.PendingReason = previousPendingReason
 		test.QueuePosition = previousQueuePosition
 		test.Error = previousError
-		return fmt.Errorf("persist pending test state: %w", err)
 	}
+	if previousStatusForCAS == "PENDING" {
+		// pending_reason and queue position are process-local projections today;
+		// pending_since is already durable. Do not issue another durable lifecycle
+		// CAS with the revision captured by the original QUEUED->PENDING decision,
+		// which would retry forever after unrelated admission content advances.
+		tr.broadcastEvent("test_pending", test)
+		return nil
+	}
+	if tr.testStore != nil {
+		pendingStore, ok := tr.testStore.(interface {
+			TransitionTestToPending(storage.TestPendingTransition) (storage.TestStatusTransitionResult, error)
+		})
+		if !ok {
+			rollback()
+			return errors.New("test persistence does not support identity-fenced pending transitions")
+		}
+		transition := storage.TestPendingTransition{
+			ID:                             test.ID,
+			RefKey:                         test.RefKey,
+			ProjectID:                      test.ProjectID,
+			StartTime:                      test.CreatedAt,
+			ExpectedStatus:                 previousStatusForCAS,
+			PendingSince:                   *test.PendingSince,
+			StartAuthorization:             startAuthorizationForStorage(test.StartAuthorization),
+			StartedBySubject:               test.StartedBySubject,
+			StartedByDisplayName:           test.StartedByDisplayName,
+			ExpectedStartAdmissionRevision: test.expectedStartAdmissionRevision,
+		}
+		if tr.durableExecutionFence {
+			transition.ExecutionLeaseName = executionLeaseName
+			transition.ExecutionLeaseOwnerID = test.executionFence
+			transition.ExecutionLeaseGeneration = test.executionGeneration
+		}
+		operationToken := test.passiveOperationToken
+		// The targeted transition is guarded by the passive-operation token and
+		// durable identity/lease CAS, so storage latency must not hold tr.mu.
+		tr.mu.Unlock()
+		result, persistErr := pendingStore.TransitionTestToPending(transition)
+		var appliedPendingRecord *storage.TestRecord
+		if persistErr == nil && result == storage.TestStatusTransitionUnchanged {
+			stored, readErr := tr.testStore.GetTest(test.ID)
+			if errors.Is(readErr, sql.ErrNoRows) {
+				result = storage.TestStatusTransitionMissing
+			} else if readErr != nil {
+				persistErr = readErr
+			} else if stored == nil || stored.ID != transition.ID || strings.TrimSpace(stored.RefKey) != transition.RefKey ||
+				!strings.EqualFold(strings.TrimSpace(stored.Status), "PENDING") || stored.PendingSince == nil {
+				result = storage.TestStatusTransitionFenced
+			} else {
+				appliedPendingRecord = stored
+			}
+		}
+		tr.mu.Lock()
+		if tr.tests[test.ID] != test || test.passiveOperationToken != operationToken ||
+			!strings.EqualFold(strings.TrimSpace(test.Status), "PENDING") {
+			// The transition may already be durable even though a successor-term
+			// reload changed this process-local incarnation/fence while the storage
+			// response was in flight. Retire any token we still own and force the
+			// successor to inspect durable state; otherwise its acquire-time scan may
+			// have skipped this row while the token was present.
+			if tr.tests[test.ID] == test && test.passiveOperationToken == operationToken {
+				test.passiveOperationToken = ""
+				if tr.durableExecutionFence && !tr.executionLeaseTermLocallyCurrent(executionLeaseTerm{
+					ownerID: operationExecutionFence, generation: operationExecutionGeneration,
+				}) {
+					test.executionFence = ""
+					test.executionGeneration = 0
+				}
+			}
+			tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, operationExecutionFence, operationExecutionGeneration)
+			return errors.Join(errStartAdmissionEvidenceStale, persistErr)
+		}
+		if persistErr != nil {
+			rollback()
+			if claimed {
+				releasePassiveExecutionFenceLocked(test)
+			}
+			tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, operationExecutionFence, operationExecutionGeneration)
+			if errors.Is(persistErr, storage.ErrTestStartAdmissionRevisionChanged) {
+				return errStartAdmissionEvidenceStale
+			}
+			return classifyStartTransitionPersistenceError(fmt.Errorf("persist pending test state: %w", persistErr))
+		}
+		switch result {
+		case storage.TestStatusTransitionUpdated:
+			// The local projection already carries the requested state.
+		case storage.TestStatusTransitionUnchanged:
+			// The original write committed but its response was lost. Adopt the
+			// authoritative server-generated timestamp before publishing so local
+			// and durable queue state converge exactly.
+			test.PendingSince = cloneTimePtr(appliedPendingRecord.PendingSince)
+			test.StartAuthorization = decodeStoredStartAuthorization(appliedPendingRecord.StartAuthorization)
+			test.StartedBySubject = strings.TrimSpace(appliedPendingRecord.StartedBySubject)
+			test.StartedByDisplayName = strings.TrimSpace(appliedPendingRecord.StartedByDisplayName)
+		case storage.TestStatusTransitionMissing:
+			rollback()
+			tr.evictMissingManagedTestIdentityLocked(test.ID, test)
+			tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, operationExecutionFence, operationExecutionGeneration)
+			return fmt.Errorf("%w: test %s disappeared before pending transition", errStoredTestMissing, test.ID)
+		default:
+			rollback()
+			if claimed {
+				releasePassiveExecutionFenceLocked(test)
+			}
+			tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, operationExecutionFence, operationExecutionGeneration)
+			return errStartAdmissionEvidenceStale
+		}
+	}
+	tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, operationExecutionFence, operationExecutionGeneration)
 	tr.broadcastEvent("test_pending", test)
 	return nil
+}
+
+// claimPassiveExecutionFenceLocked gives a single state-transition operation
+// exclusive ownership of a row that has no live runtime. The durable lease
+// token identifies a controller term, not an individual goroutine, so an
+// already-present same-term token must be treated as busy rather than adopted:
+// another terminalization may be persisting outside tr.mu with that token.
+func (tr *TestRunner) claimPassiveExecutionFenceLocked(test *ManagedTest, expectedTerm *executionLeaseTerm) (bool, error) {
+	if tr == nil || test == nil {
+		return false, nil
+	}
+	if test.passiveOperationToken != "" || (tr.durableExecutionFence && test.executionFence != "") {
+		return false, errStartAdmissionEvidenceStale
+	}
+	test.passiveOperationToken = uuid.NewString()
+	if !tr.durableExecutionFence {
+		return true, nil
+	}
+	var err error
+	if expectedTerm == nil {
+		err = tr.claimTestExecutionFence(test)
+	} else {
+		err = tr.claimTestExecutionFenceWithTerm(test, *expectedTerm)
+	}
+	if err != nil {
+		test.passiveOperationToken = ""
+	}
+	return err == nil, err
 }
 
 // markTestInitializingLocked transitions test to INITIALIZING, clears its pending
@@ -433,19 +871,21 @@ func (tr *TestRunner) markTestInitializingLockedWithExpectedTerm(test *ManagedTe
 	if test.runtimeHydrationError != "" {
 		return fmt.Errorf("test runtime could not be restored: %s", test.runtimeHydrationError)
 	}
-	var err error
-	if expectedTerm == nil {
-		err = tr.claimTestExecutionFence(test)
-	} else {
-		err = tr.claimTestExecutionFenceWithTerm(test, *expectedTerm)
-	}
+	previousExecutionFence := test.executionFence
+	previousExecutionGeneration := test.executionGeneration
+	previousPassiveOperationToken := test.passiveOperationToken
+	claimed, err := tr.claimPassiveExecutionFenceLocked(test, expectedTerm)
 	if err != nil {
 		return err
 	}
-	if expectedTerm != nil && expectedTerm.valid() {
-		test.executionGeneration = expectedTerm.generation
+	if err := tr.installTestExecutionContextLocked(test, expectedTerm); err != nil {
+		if claimed {
+			test.executionFence = previousExecutionFence
+			test.executionGeneration = previousExecutionGeneration
+			test.passiveOperationToken = previousPassiveOperationToken
+		}
+		return err
 	}
-	test.executionCtx, test.cancel = tr.executionOperationContext(context.Background())
 	test.Status = "INITIALIZING"
 	test.PendingSince = nil
 	test.PendingReason = ""
@@ -489,6 +929,388 @@ func scriptShakeoutStartAuthorizationAllows(authorization *ScriptShakeoutStartAu
 	return authorization != nil && !authorization.ApprovedAt.IsZero() && strings.TrimSpace(authorization.ReviewEvidenceSHA256) != ""
 }
 
+func scriptShakeoutPassAllows(evidence *ScriptShakeoutPassEvidence) bool {
+	return evidence != nil && !evidence.PassedAt.IsZero() && strings.TrimSpace(evidence.EvidenceSHA256) != ""
+}
+
+func applyScriptShakeoutPass(test *ManagedTest, fingerprint scriptShakeoutInputFingerprint, report ScriptShakeoutReport, term executionLeaseTerm) {
+	if test == nil {
+		return
+	}
+	authorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	if authorization == nil {
+		authorization = &QueuedStartAuthorization{}
+	}
+	passedAt := report.EndedAt.UTC()
+	if passedAt.IsZero() {
+		passedAt = time.Now().UTC()
+	}
+	authorization.ScriptShakeoutPass = &ScriptShakeoutPassEvidence{
+		PassedAt:             passedAt,
+		EvidenceSHA256:       strings.TrimSpace(fingerprint.EvidenceSHA256),
+		ReusableAfterRestart: fingerprint.ReusableAfterRestart,
+	}
+	test.StartAuthorization = authorization
+	test.validatedScriptShakeoutPass = strings.TrimSpace(fingerprint.ProcessSHA256)
+	test.validatedScriptShakeoutTerm = term
+}
+
+type scriptShakeoutInputFingerprint struct {
+	EvidenceSHA256       string
+	ProcessSHA256        string
+	ReusableAfterRestart bool
+}
+
+type scriptShakeoutExecutableSnapshot struct {
+	Version            int                               `json:"version"`
+	ProjectID          string                            `json:"project_id"`
+	ScenarioMode       string                            `json:"scenario_mode,omitempty"`
+	Groups             any                               `json:"groups"`
+	DataPools          []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	RuntimeSettings    *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
+	RuntimeSecretNames [][]string                        `json:"runtime_secret_names,omitempty"`
+	SecretSources      []scriptShakeoutSecretSource      `json:"secret_sources,omitempty"`
+}
+
+type scriptShakeoutSecretSource struct {
+	ProjectID     string `json:"project_id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider,omitempty"`
+	UpdatedAtNano int64  `json:"updated_at_unix_nano,omitempty"`
+}
+
+type scriptShakeoutPrivateSnapshot struct {
+	Version             int                               `json:"version"`
+	ProjectID           string                            `json:"project_id"`
+	ScenarioMode        string                            `json:"scenario_mode,omitempty"`
+	Groups              any                               `json:"groups"`
+	DataPools           []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	RuntimeSettings     *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
+	RuntimeSecretValues []map[string]string               `json:"runtime_secret_values,omitempty"`
+	ResolvedSecrets     []scriptShakeoutResolvedSecret    `json:"resolved_secrets,omitempty"`
+}
+
+type scriptShakeoutResolvedSecret struct {
+	ProjectID string `json:"project_id"`
+	Name      string `json:"name"`
+	Value     string `json:"value"`
+}
+
+// scriptShakeoutExecutableFingerprint produces two proofs. EvidenceSHA256 is a
+// disclosure-safe durable digest over masked executable inputs, authored secret
+// names, and value-free provider versions. ProcessSHA256 is an HMAC over the
+// exact inputs and resolved values using an ephemeral controller key. Thus an
+// unversioned env/runtime secret can proceed in one live term without exposing
+// a password oracle, while only fully versioned evidence is reusable after a
+// restart or takeover.
+func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShakeoutInputFingerprint, error) {
+	tr.mu.RLock()
+	id = tr.resolveRefKeyLocked(id)
+	test := tr.tests[id]
+	if test == nil {
+		tr.mu.RUnlock()
+		return scriptShakeoutInputFingerprint{}, fmt.Errorf("test not found: %s", id)
+	}
+	groups := decodeStoredGroups(encodeStoredGroups(test.Groups))
+	runtimeSecretValues := make([]map[string]string, len(test.Groups))
+	runtimeSecretNames := make([][]string, len(test.Groups))
+	for index, group := range test.Groups {
+		runtimeSecretValues[index] = cloneRuntimeSecretValues(group.runtimeSecretValues)
+		for name := range group.runtimeSecretValues {
+			runtimeSecretNames[index] = append(runtimeSecretNames[index], strings.TrimSpace(name))
+		}
+		sort.Strings(runtimeSecretNames[index])
+	}
+	projectID := normalizeProjectID(test.ProjectID)
+	scenarioMode := test.ScenarioMode
+	dataPools := cloneScenarioDataPoolBindings(test.DataPools)
+	runtimeSettings := cloneRuntimeSettings(test.RuntimeSettings)
+	secretStore := tr.projectSecretStore
+	fingerprintKey := tr.scriptShakeoutFingerprintKey
+	tr.mu.RUnlock()
+
+	publicGroups := decodeStoredGroups(encodeStoredGroups(groups))
+	for index := range publicGroups {
+		publicGroups[index].RuntimeSettings = maskRuntimeSettings(publicGroups[index].RuntimeSettings)
+		publicGroups[index].script = maskScriptSecrets(publicGroups[index].script)
+		publicGroups[index].baseScript = maskScriptSecrets(publicGroups[index].baseScript)
+		if len(publicGroups[index].sharedDataSources) > 0 {
+			masked := maskScriptSecrets(&dsl.Script{DataSources: cloneDataSources(publicGroups[index].sharedDataSources)})
+			if masked != nil {
+				publicGroups[index].sharedDataSources = masked.DataSources
+			}
+		}
+	}
+	publicSnapshot := scriptShakeoutExecutableSnapshot{
+		Version:            2,
+		ProjectID:          projectID,
+		ScenarioMode:       scenarioMode,
+		Groups:             encodeStoredGroups(publicGroups),
+		DataPools:          dataPools,
+		RuntimeSettings:    maskRuntimeSettings(runtimeSettings),
+		RuntimeSecretNames: runtimeSecretNames,
+	}
+	privateSnapshot := scriptShakeoutPrivateSnapshot{
+		Version:             2,
+		ProjectID:           projectID,
+		ScenarioMode:        scenarioMode,
+		Groups:              encodeStoredGroups(groups),
+		DataPools:           dataPools,
+		RuntimeSettings:     runtimeSettings,
+		RuntimeSecretValues: runtimeSecretValues,
+	}
+
+	refsByProject := make(map[string]map[string]struct{})
+	overlayByProject := make(map[string]map[string]string)
+	for index, group := range groups {
+		groupProjectID := projectID
+		if group.script != nil && strings.TrimSpace(group.script.ProjectID) != "" {
+			groupProjectID = normalizeProjectID(group.script.ProjectID)
+		}
+		if refsByProject[groupProjectID] == nil {
+			refsByProject[groupProjectID] = make(map[string]struct{})
+		}
+		if overlayByProject[groupProjectID] == nil {
+			overlayByProject[groupProjectID] = make(map[string]string)
+		}
+		if group.script != nil {
+			names, err := engine.ReferencedSecretNames(group.script)
+			if err != nil {
+				return scriptShakeoutInputFingerprint{}, fmt.Errorf("collect executable secret references for group %q: %w", group.Name, err)
+			}
+			for _, name := range names {
+				refsByProject[groupProjectID][strings.TrimSpace(name)] = struct{}{}
+			}
+		}
+		if index < len(runtimeSecretValues) {
+			for name, value := range runtimeSecretValues[index] {
+				name = strings.TrimSpace(name)
+				refsByProject[groupProjectID][name] = struct{}{}
+				if prior, exists := overlayByProject[groupProjectID][name]; exists && prior != value {
+					return scriptShakeoutInputFingerprint{}, fmt.Errorf("runtime secret %q has conflicting executable values", name)
+				}
+				overlayByProject[groupProjectID][name] = value
+			}
+		}
+	}
+
+	reusable := true
+	projectIDs := make([]string, 0, len(refsByProject))
+	for sourceProjectID, names := range refsByProject {
+		if len(names) > 0 {
+			projectIDs = append(projectIDs, sourceProjectID)
+		}
+	}
+	sort.Strings(projectIDs)
+	for _, sourceProjectID := range projectIDs {
+		names := make([]string, 0, len(refsByProject[sourceProjectID]))
+		for name := range refsByProject[sourceProjectID] {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			value, hasOverlay := overlayByProject[sourceProjectID][name]
+			metadataProvider := ""
+			metadataUpdatedAt := time.Time{}
+			if secretStore != nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				storedValue, metadata, getErr := secretStore.Get(ctx, sourceProjectID, name)
+				cancel()
+				if getErr == nil {
+					metadataProvider = strings.TrimSpace(metadata.Provider)
+					metadataUpdatedAt = metadata.UpdatedAt.UTC()
+					if hasOverlay {
+						// Provider version metadata only attests to the provider's own
+						// value. A same-name execution overlay must not borrow that
+						// provenance unless it is exactly the attested value.
+						if !hmac.Equal([]byte(value), []byte(storedValue)) {
+							metadataUpdatedAt = time.Time{}
+						}
+					} else {
+						value = storedValue
+					}
+				} else if !errors.Is(getErr, secretstore.ErrNotFound) {
+					// An execution overlay can run without the provider value, but its
+					// reusable evidence still depends on knowing whether that value is
+					// the exact provider-attested version. Treat provider outages as
+					// incomplete evidence even when an overlay is present; otherwise a
+					// post-action outage looks like a real version rotation and falsely
+					// turns a completed one-shot check into review.
+					return scriptShakeoutInputFingerprint{}, &startSecretRequirementError{
+						message:   fmt.Sprintf("resolve secret source %q in project %q: %v", name, sourceProjectID, getErr),
+						retryable: true,
+						cause:     getErr,
+					}
+				}
+			}
+			if value == "" {
+				ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
+				resolved, ok := engine.ResolveSecret(ctx, tr.secretResolverForProject(sourceProjectID), name)
+				cancel()
+				if !ok {
+					return scriptShakeoutInputFingerprint{}, &startSecretRequirementError{
+						message:   fmt.Sprintf("resolve executable secret %q in project %q", name, sourceProjectID),
+						retryable: true,
+					}
+				}
+				value = resolved
+			}
+			if metadataUpdatedAt.IsZero() {
+				reusable = false
+				if metadataProvider == "" && secretStore != nil {
+					metadataProvider = strings.TrimSpace(secretStore.Provider())
+				}
+			}
+			updatedAtNano := int64(0)
+			if !metadataUpdatedAt.IsZero() {
+				updatedAtNano = metadataUpdatedAt.UnixNano()
+			}
+			publicSnapshot.SecretSources = append(publicSnapshot.SecretSources, scriptShakeoutSecretSource{
+				ProjectID: sourceProjectID, Name: name, Provider: metadataProvider, UpdatedAtNano: updatedAtNano,
+			})
+			privateSnapshot.ResolvedSecrets = append(privateSnapshot.ResolvedSecrets, scriptShakeoutResolvedSecret{
+				ProjectID: sourceProjectID, Name: name, Value: value,
+			})
+		}
+	}
+
+	publicEncoded, err := json.Marshal(publicSnapshot)
+	if err != nil {
+		return scriptShakeoutInputFingerprint{}, fmt.Errorf("encode disclosure-safe script shakeout snapshot: %w", err)
+	}
+	privateEncoded, err := json.Marshal(privateSnapshot)
+	if err != nil {
+		return scriptShakeoutInputFingerprint{}, fmt.Errorf("encode private script shakeout snapshot: %w", err)
+	}
+	mac := hmac.New(sha256.New, fingerprintKey[:])
+	_, _ = mac.Write(privateEncoded)
+	processSHA256 := hex.EncodeToString(mac.Sum(nil))
+	clear(privateEncoded)
+	for index := range privateSnapshot.RuntimeSecretValues {
+		clearRuntimeSecretValueMap(privateSnapshot.RuntimeSecretValues[index])
+	}
+	for index := range privateSnapshot.ResolvedSecrets {
+		privateSnapshot.ResolvedSecrets[index].Value = ""
+	}
+	return scriptShakeoutInputFingerprint{
+		EvidenceSHA256:       sha256String(string(publicEncoded)),
+		ProcessSHA256:        processSHA256,
+		ReusableAfterRestart: reusable,
+	}, nil
+}
+
+func (tr *TestRunner) validateScriptShakeoutPassForStart(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (bool, error) {
+	tr.mu.RLock()
+	test := tr.tests[id]
+	if err := validateExpectedStartRecoveryIdentityLocked(test, opts); err != nil {
+		tr.mu.RUnlock()
+		return false, err
+	}
+	var evidence *ScriptShakeoutPassEvidence
+	validatedProcessSHA256 := ""
+	validatedTerm := executionLeaseTerm{}
+	if test != nil && test.StartAuthorization != nil && test.StartAuthorization.ScriptShakeoutPass != nil {
+		copy := *test.StartAuthorization.ScriptShakeoutPass
+		evidence = &copy
+		validatedProcessSHA256 = test.validatedScriptShakeoutPass
+		validatedTerm = test.validatedScriptShakeoutTerm
+	}
+	tr.mu.RUnlock()
+	if tr.durableExecutionFence && (expectedTerm == nil || validatedTerm != *expectedTerm) {
+		validatedProcessSHA256 = ""
+	}
+	if !scriptShakeoutPassAllows(evidence) {
+		return false, nil
+	}
+	if validatedProcessSHA256 == "" && !evidence.ReusableAfterRestart {
+		tr.mu.RLock()
+		overrideAllowed := startOptionsWithAuthorization(tr.tests[id], opts).OverrideScriptShakeoutError
+		tr.mu.RUnlock()
+		if overrideAllowed {
+			tr.mu.Lock()
+			if current := tr.tests[id]; current != nil {
+				if err := validateExpectedStartRecoveryIdentityLocked(current, opts); err != nil {
+					tr.mu.Unlock()
+					return false, err
+				}
+				clearScriptShakeoutPass(current)
+			}
+			tr.mu.Unlock()
+			return false, nil
+		}
+		report := ScriptShakeoutReport{
+			Passed:  false,
+			Summary: "A prior script shakeout used an unversioned secret source and cannot be trusted after controller restart or takeover. Continue explicitly or run a newly materialized test; shakeout actions were not replayed.",
+		}
+		return false, &ScriptShakeoutGateError{TestID: id, Report: &report}
+	}
+	fingerprint, err := tr.scriptShakeoutExecutableFingerprint(id)
+	if err != nil {
+		return false, err
+	}
+
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test = tr.tests[id]
+	if err := validateExpectedStartRecoveryIdentityLocked(test, opts); err != nil {
+		return false, err
+	}
+	if test == nil || test.StartAuthorization == nil || test.StartAuthorization.ScriptShakeoutPass == nil {
+		return false, nil
+	}
+	current := test.StartAuthorization.ScriptShakeoutPass
+	if current.PassedAt != evidence.PassedAt || current.EvidenceSHA256 != evidence.EvidenceSHA256 || current.ReusableAfterRestart != evidence.ReusableAfterRestart {
+		return false, errStartAdmissionEvidenceStale
+	}
+	if fingerprint.EvidenceSHA256 != strings.TrimSpace(current.EvidenceSHA256) ||
+		(validatedProcessSHA256 != "" && fingerprint.ProcessSHA256 != validatedProcessSHA256) {
+		clearScriptShakeoutAuthorizations(test)
+		return false, nil
+	}
+	test.validatedScriptShakeoutPass = fingerprint.ProcessSHA256
+	if expectedTerm != nil {
+		test.validatedScriptShakeoutTerm = *expectedTerm
+	} else {
+		test.validatedScriptShakeoutTerm = executionLeaseTerm{}
+	}
+	return true, nil
+}
+
+func clearScriptShakeoutPass(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	if test.StartAuthorization != nil {
+		authorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+		authorization.ScriptShakeoutPass = nil
+		if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil {
+			test.StartAuthorization = nil
+		} else {
+			test.StartAuthorization = authorization
+		}
+	}
+	test.validatedScriptShakeoutPass = ""
+	test.validatedScriptShakeoutTerm = executionLeaseTerm{}
+}
+
+func clearScriptShakeoutAuthorizations(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	if test.StartAuthorization != nil {
+		authorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+		authorization.ScriptShakeout = nil
+		authorization.ScriptShakeoutPass = nil
+		if authorization.CapacityShortfall == nil {
+			test.StartAuthorization = nil
+		} else {
+			test.StartAuthorization = authorization
+		}
+	}
+	test.validatedScriptShakeoutPass = ""
+	test.validatedScriptShakeoutTerm = executionLeaseTerm{}
+}
+
 // applyRequestedStartAuthorizations captures only choices made on the current
 // API/start attempt. Promotion reconstructs options from this snapshot but never
 // refreshes its approval time or expands its bounds on behalf of the operator.
@@ -522,7 +1344,7 @@ func applyRequestedStartAuthorizations(test *ManagedTest, opts StartTestOptions,
 			ReviewEvidenceSHA256:  sha256String(strings.TrimSpace(test.Error)),
 		}
 	}
-	if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil {
+	if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil && authorization.ScriptShakeoutPass == nil {
 		return
 	}
 	test.StartAuthorization = authorization
@@ -547,6 +1369,14 @@ func startAuthorizationActor(test *ManagedTest, actor testCreationActor) (string
 // test to PENDING) when a quota block applies, or an error when a gate rejects the
 // start outright. The caller must hold tr.mu and have already validated startability.
 func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opts StartTestOptions) (bool, error) {
+	now := time.Now().UTC()
+	window := launchWindowForTestAt(test, now, now)
+	return tr.evaluateStartGatesLockedWithEvidence(id, test, opts, nil, now, startLaunchEvidence{
+		launchWindow: tr.loadLaunchWindowEvidenceForProject(window, test.ProjectID, testAssignedPoolID(test)),
+	})
+}
+
+func (tr *TestRunner) evaluateStartGatesLockedWithEvidence(id string, test *ManagedTest, opts StartTestOptions, expectedTerm *executionLeaseTerm, now time.Time, evidence startLaunchEvidence) (bool, error) {
 	for index, group := range test.groupSpecs {
 		if issues := launchReviewGateIssues(group.Script); len(issues) > 0 {
 			return false, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
@@ -561,22 +1391,30 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 	// or scheduled test was created. Revalidate at the actual start boundary so
 	// an approved combined Java script never launches on a phase-only runner, or
 	// because an unrelated capable generator exists outside its assignment.
-	if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(test); len(conflicts) > 0 {
-		conflict := conflicts[0]
+	javaConflicts, placementConflicts, err := tr.startRuntimeGateConflictsLocked(test, evidence)
+	if err != nil {
+		return false, err
+	}
+	if len(javaConflicts) > 0 {
+		conflict := javaConflicts[0]
 		return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+	}
+	if len(placementConflicts) > 0 {
+		conflict := placementConflicts[0]
+		return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+	}
+	// Unavailable durable evidence is neither quota pressure nor an
+	// authoritative launch conflict. Return the typed retry signal before any
+	// PENDING transition so callers install the appropriate recovery worker.
+	if err := startLaunchEvidenceRetryError(test, now, evidence.launchWindow); err != nil {
+		return false, err
 	}
 	// The Java runner gate above checks one group at a time. Project placement
 	// across every group as a second step so two individually-valid groups
 	// cannot both claim the same advertised JVM process slots. Re-run this at
 	// StartTest because generator occupancy may have changed since preflight.
-	if groupsUseJavaVuserProtocol(test.Groups) {
-		if conflicts := tr.generatorPlacementLaunchConflictsLocked(test); len(conflicts) > 0 {
-			conflict := conflicts[0]
-			return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
-		}
-	}
 	if !opts.SkipLaunchWindowPreflight {
-		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id, ""); err != nil {
+		if err := tr.launchStartWindowErrorWithEvidenceLocked(test, now, id, "", evidence.launchWindow); err != nil {
 			return false, err
 		}
 	}
@@ -584,14 +1422,14 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 	// the launch-window preflight is skipped: the binding can be invalidated
 	// (rejected/re-bound/resized) between create and start, and a scheduled run's
 	// window can drift, so the bind-time fit can no longer hold.
-	if err := tr.launchTimeslotRevalidationErrorLocked(test, time.Now().UTC()); err != nil {
+	if err := tr.launchTimeslotRevalidationErrorWithEvidenceLocked(test, now, evidence.launchWindow); err != nil {
 		return false, err
 	}
-	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(test, "", now, evidence.launchWindow); blocked {
 		authorizationSnapshot := cloneQueuedStartAuthorization(test.StartAuthorization)
 		actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 		applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
-		if err := tr.markTestPendingLocked(test, reason); err != nil {
+		if err := tr.markTestPendingLockedWithExpectedTerm(test, reason, expectedTerm); err != nil {
 			test.StartAuthorization = authorizationSnapshot
 			if actorChanged {
 				restoreTestStartedByActor(test, actorSnapshot)
@@ -603,17 +1441,63 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 	return false, nil
 }
 
+// startRuntimeGateConflictsLocked consumes preloaded Java/session/runtime
+// evidence for live start paths. Legacy callers that operate on an already
+// private runner snapshot leave runtimeGatesLoaded false and evaluate directly;
+// no live global mutex or unrelated API request is blocked in that case.
+func (tr *TestRunner) startRuntimeGateConflictsLocked(test *ManagedTest, evidence startLaunchEvidence) ([]LaunchConflict, []LaunchConflict, error) {
+	if err := tr.validateStartLaunchEvidenceFenceLocked(evidence); err != nil {
+		return nil, nil, err
+	}
+	if evidence.runtimeGatesLoaded {
+		return evidence.javaConflicts, evidence.placementConflicts, nil
+	}
+	javaConflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(test)
+	var placementConflicts []LaunchConflict
+	if groupsUseJavaVuserProtocol(test.Groups) {
+		placementConflicts = tr.generatorPlacementLaunchConflictsLocked(test)
+	}
+	return javaConflicts, placementConflicts, nil
+}
+
+// validateStartLaunchEvidenceFenceLocked is deliberately side-effect free.
+// Call it before claiming an execution epoch so a stale off-lock snapshot can
+// never stamp a still-queued row with a lease token that a successor cannot
+// reclaim. Callers may repeat it later as defense in depth while retaining the
+// same runner lock.
+func (tr *TestRunner) validateStartLaunchEvidenceFenceLocked(evidence startLaunchEvidence) error {
+	if evidence.runtimeGatesLoaded && !tr.managedTestBuildFenceCurrentLocked(evidence.admissionFence) {
+		return errStartAdmissionEvidenceStale
+	}
+	return nil
+}
+
 func (tr *TestRunner) preflightStartBlocksLocked(id string, opts StartTestOptions) (bool, error) {
 	return tr.preflightStartBlocksLockedWithExpectedTerm(id, opts, nil)
 }
 
 func (tr *TestRunner) preflightStartBlocksLockedWithExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (bool, error) {
+	now := time.Now().UTC()
+	test := tr.tests[id]
+	if test == nil {
+		return false, fmt.Errorf("test not found: %s", id)
+	}
+	window := launchWindowForTestAt(test, now, now)
+	return tr.preflightStartBlocksLockedWithExpectedTermAndEvidence(id, opts, expectedTerm, now, startLaunchEvidence{
+		launchWindow: tr.loadLaunchWindowEvidenceForProject(window, test.ProjectID, testAssignedPoolID(test)),
+	})
+}
+
+func (tr *TestRunner) preflightStartBlocksLockedWithExpectedTermAndEvidence(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm, now time.Time, evidence startLaunchEvidence) (bool, error) {
 	if err := tr.shutdownErrorLocked(); err != nil {
 		return false, err
 	}
 	test, ok := tr.tests[id]
 	if !ok {
 		return false, fmt.Errorf("test not found: %s", id)
+	}
+	if err := validateExpectedStartRecoveryIdentityLocked(test, opts); err != nil {
+		return false, err
 	}
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return false, testexec.StartableTestStatusError(test.Status)
@@ -624,28 +1508,276 @@ func (tr *TestRunner) preflightStartBlocksLockedWithExpectedTerm(id string, opts
 	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
 		return false, err
 	}
-	// Starting is the ownership boundary for a durable queued/scheduled row that
-	// may have been loaded after failover. Claim the current epoch explicitly;
-	// lower-level persistence never adopts an empty fence on a caller's behalf.
-	var claimErr error
-	if expectedTerm == nil {
-		claimErr = tr.claimTestExecutionFence(test)
-	} else {
-		claimErr = tr.claimTestExecutionFenceWithTerm(test, *expectedTerm)
+	if err := tr.validateStartLaunchEvidenceFenceLocked(evidence); err != nil {
+		return false, err
 	}
-	if claimErr != nil {
-		return false, claimErr
+	// Carry the exact project policy/quota revision into the transactional
+	// SHAKEOUT/INITIALIZING save. The storage layer rechecks it while holding the
+	// project row, closing the cross-replica read-to-commit race.
+	test.expectedProjectUpdatedAt = evidence.launchWindow.projectQuota.updatedAt
+	test.expectedStartAdmissionRevision = evidence.startAdmissionRevision
+	// Preflight is side-effect free unless a quota block must be durably queued.
+	// That transition claims its own exclusive passive-row fence immediately
+	// around the save; do not stamp a term token merely to inspect admission.
+	return tr.evaluateStartGatesLockedWithEvidence(id, test, opts, expectedTerm, now, evidence)
+}
+
+func releasePassiveExecutionFenceLocked(test *ManagedTest) {
+	if !passiveExecutionFenceReleasable(test) {
+		return
 	}
-	return tr.evaluateStartGatesLocked(id, test, opts)
+	test.passiveOperationToken = ""
+	test.executionFence = ""
+	test.executionGeneration = 0
+}
+
+func releasePassiveOperationTokenLocked(test *ManagedTest) {
+	if test != nil {
+		test.passiveOperationToken = ""
+	}
+}
+
+// schedulePassiveTransitionRescanAfterTermChangeLocked closes a narrow
+// same-process HA handoff race. Acquire-time reload may have skipped a row while
+// an old callback still carried its passive token; once that callback retires,
+// a successor-term rescan is required because leaders intentionally do not run
+// follower read-refreshes. The caller holds tr.mu; the goroutine cannot inspect
+// the map until the caller publishes/clears the token and unlocks.
+func (tr *TestRunner) schedulePassiveTransitionRescanAfterTermChangeLocked(testID string, identity queuedStartRecoveryIdentity, ownerID string, generation uint64) {
+	if tr == nil || !identity.valid || !tr.durableExecutionFence || strings.TrimSpace(ownerID) == "" || generation == 0 ||
+		tr.executionLeaseTermLocallyCurrent(executionLeaseTerm{ownerID: ownerID, generation: generation}) ||
+		!tr.holdsExecutionLeadership() {
+		return
+	}
+	go func() {
+		if tr.beforePassiveTransitionRescan != nil {
+			tr.beforePassiveTransitionRescan(testID)
+		}
+		var lastErr error
+		for attempt := 0; attempt < durableTransitionAttempts; attempt++ {
+			if !tr.holdsExecutionLeadership() {
+				return
+			}
+			if err := tr.reloadStoredTests(); err == nil {
+				term, termErr := tr.captureExecutionLeaseTerm()
+				if termErr != nil {
+					return
+				}
+				tr.mu.Lock()
+				current := tr.tests[testID]
+				if !identity.matches(current) {
+					tr.mu.Unlock()
+					return
+				}
+				status := ""
+				if current != nil {
+					adoptDurablePendingShakeoutOutcomeLocked(current)
+					status = strings.ToUpper(strings.TrimSpace(current.Status))
+				}
+				tr.mu.Unlock()
+				switch status {
+				case "QUEUED", "SHAKEOUT", "SHAKEOUT_REVIEW":
+					// Explicitly re-arm the exact retired identity. Startup covers CI
+					// and correlated scheduled retries, but this post-token rescan also
+					// closes a same-process handoff that the acquisition scan skipped.
+					// Review is included because an ambiguous rejected shakeout may
+					// have committed just before term turnover; recovery must publish
+					// its CI failure or recurring-schedule correlation without replay.
+					tr.enqueueQueuedCIRecoveryRetryForIdentityWithTerm(testID, identity, term)
+				case "PENDING":
+					tr.promotePendingTests()
+				}
+				return
+			} else {
+				lastErr = err
+			}
+			if attempt+1 < durableTransitionAttempts {
+				time.Sleep(durableTransitionRetryDelay)
+			}
+		}
+		slog.Warn("successor term could not rescan a retired passive transition", "error", lastErr)
+	}()
+}
+
+// adoptDurablePendingShakeoutOutcomeLocked retires process-private outcome
+// state when a successor reload has already adopted that outcome's exact
+// durable destination. This is the lost-response case: the actions and write
+// both completed, so attempting to persist or execute them again is incorrect.
+func adoptDurablePendingShakeoutOutcomeLocked(test *ManagedTest) {
+	if test == nil || test.pendingScriptShakeoutOutcome == nil {
+		return
+	}
+	outcome := test.pendingScriptShakeoutOutcome
+	desiredStatus := "SHAKEOUT_REVIEW"
+	if outcome.Report.Passed {
+		desiredStatus = strings.ToUpper(strings.TrimSpace(outcome.PassStatus))
+		if desiredStatus == "" {
+			desiredStatus = "QUEUED"
+		}
+	}
+	if !strings.EqualFold(strings.TrimSpace(test.Status), desiredStatus) {
+		return
+	}
+	test.pendingScriptShakeoutOutcome = nil
+	clearScriptShakeoutContextLocked(test)
+	releasePassiveExecutionFenceLocked(test)
+}
+
+// retireCommittedStagedStartLocked removes process-private ownership after the
+// durable SHAKEOUT/INITIALIZING commit succeeded but this process may no longer
+// publish or dispatch it. The durable row is intentionally left untouched; a
+// successor-term reload can now adopt and reconcile it instead of skipping a
+// permanently tokened STARTING handle.
+func retireCommittedStagedStartLocked(test *ManagedTest, durableStatus string) {
+	if test == nil {
+		return
+	}
+	if test.cancel != nil {
+		test.cancel()
+	}
+	test.cancel = nil
+	test.executionCtx = nil
+	test.executionBackend = nil
+	test.Status = durableStatus
+	test.passiveOperationToken = ""
+	test.executionFence = ""
+	test.executionGeneration = 0
+}
+
+// persistManagedTestStartOutsideLockLocked stages a process-local STARTING
+// reservation, persists the immutable execution-capable state without tr.mu,
+// then publishes it only while the exact row pointer and passive-operation
+// token still own the transition. The caller must hold tr.mu on entry; this
+// helper always returns with tr.mu held. owned=false means a concurrent reload
+// or leadership transition displaced the staged identity and the caller must
+// not roll fields back on that pointer.
+func (tr *TestRunner) persistManagedTestStartOutsideLockLocked(test *ManagedTest, durableStatus string) (owned bool, err error) {
+	if tr == nil || test == nil || strings.TrimSpace(test.passiveOperationToken) == "" {
+		return true, errors.New("start persistence requires an owned passive operation")
+	}
+	durableStatus = strings.ToUpper(strings.TrimSpace(durableStatus))
+	if durableStatus != "SHAKEOUT" && durableStatus != "INITIALIZING" {
+		return true, fmt.Errorf("unsupported durable start status %q", durableStatus)
+	}
+	snapshot := newManagedTestStartPersistenceSnapshot(test)
+	operationToken := test.passiveOperationToken
+	executionFence := test.executionFence
+	executionGeneration := test.executionGeneration
+	operationIdentity, _ := queuedStartRecoveryIdentityForTest(test)
+	test.Status = "STARTING"
+
+	tr.mu.Unlock()
+	persistErr := tr.saveManagedTestStartSnapshot(snapshot)
+	tr.mu.Lock()
+
+	if tr.tests[test.ID] != test {
+		// A reload/delete-recreate displaced this process-private handle while
+		// storage waited. It can no longer be controlled through tr.tests, so
+		// retire its context before returning the stale result.
+		retireCommittedStagedStartLocked(test, durableStatus)
+		return false, errStartAdmissionEvidenceStale
+	}
+	if test.passiveOperationToken != operationToken ||
+		test.executionFence != executionFence || test.executionGeneration != executionGeneration ||
+		!strings.EqualFold(strings.TrimSpace(test.Status), "STARTING") {
+		return false, errStartAdmissionEvidenceStale
+	}
+	if persistErr != nil {
+		if errors.Is(persistErr, storage.ErrTestStartIdentityChanged) {
+			// The durable row was deleted or replaced while storage waited. Remove
+			// only the exact stale pointer, then synchronously reload so a leader
+			// (which does not run follower refreshes) cannot remain pinned to it.
+			tr.evictMissingManagedTestIdentityLocked(test.ID, test)
+			tr.mu.Unlock()
+			reloadErr := tr.reloadStoredTests()
+			tr.mu.Lock()
+			if reloadErr != nil {
+				return false, errors.Join(persistErr, fmt.Errorf("reload test after start identity change: %w", reloadErr))
+			}
+			return false, persistErr
+		}
+		return true, persistErr
+	}
+	if tr.shuttingDown {
+		// The durable state committed, but shutdown may have canceled the staged
+		// runtime while storage was blocked. Do not publish or dispatch it in this
+		// process; make the handle reloadable so startup reconciliation can recover
+		// the committed row.
+		retireCommittedStagedStartLocked(test, durableStatus)
+		return false, errRunnerShuttingDown
+	}
+	if tr.durableExecutionFence && !tr.executionLeaseTermLocallyCurrent(executionLeaseTerm{
+		ownerID: executionFence, generation: executionGeneration,
+	}) {
+		// The durable transaction committed in the old epoch, but this process
+		// may no longer publish or dispatch it. Retire the old staged handle so
+		// acquisition recovery can adopt the committed row under the successor
+		// term even when loss and reacquisition happen in the same process.
+		retireCommittedStagedStartLocked(test, durableStatus)
+		tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, executionFence, executionGeneration)
+		return false, errNotExecutionLeader
+	}
+	test.Status = durableStatus
+	return true, nil
+}
+
+func passiveExecutionFenceReleasable(test *ManagedTest) bool {
+	return test != nil && test.executionCtx == nil && test.cancel == nil && testexec.IsStartableTestStatus(test.Status)
 }
 
 func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptions) (*ManagedTest, error) {
 	return tr.beginScriptShakeoutIfNeededWithExpectedTerm(id, opts, nil)
 }
 
+func (tr *TestRunner) scriptShakeoutRequiredForStart(id string, opts StartTestOptions) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	test := tr.tests[id]
+	if test == nil || !test.ScriptShakeout {
+		return false
+	}
+	if test.StartAuthorization != nil && scriptShakeoutPassAllows(test.StartAuthorization.ScriptShakeoutPass) &&
+		test.validatedScriptShakeoutPass != "" {
+		return false
+	}
+	return !startOptionsWithAuthorization(test, opts).OverrideScriptShakeoutError
+}
+
 func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (*ManagedTest, error) {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
+	if !tr.scriptShakeoutRequiredForStart(id, opts) {
+		return nil, nil
+	}
+	for attempt := 0; attempt < startAdmissionPhaseAttempts; attempt++ {
+		if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+			return nil, err
+		}
+		shakeoutAt := time.Now().UTC()
+		evidence, err := tr.loadStartLaunchEvidence(id, shakeoutAt)
+		if err != nil {
+			return nil, err
+		}
+		if err := tr.validateCIRunPolicyForStartAtProjectRevision(id, evidence.launchWindow.projectQuota.updatedAt); err != nil {
+			return nil, err
+		}
+		if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+			return nil, err
+		}
+		tr.mu.Lock()
+		shakeout, err := tr.beginScriptShakeoutWithEvidenceLocked(id, opts, expectedTerm, shakeoutAt, evidence)
+		tr.mu.Unlock()
+		if errors.Is(err, errStartAdmissionEvidenceStale) {
+			continue
+		}
+		return shakeout, err
+	}
+	return nil, errStartAdmissionEvidenceStale
+}
+
+// beginScriptShakeoutWithEvidenceLocked atomically revalidates local active
+// capacity/inventory and installs the SHAKEOUT reservation. Secret resolution
+// and fingerprinting can take provider-scale time; without this final fence two
+// starts can both execute one-shot actions from the same earlier snapshot.
+func (tr *TestRunner) beginScriptShakeoutWithEvidenceLocked(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm, now time.Time, evidence startLaunchEvidence) (*ManagedTest, error) {
 	if err := tr.shutdownErrorLocked(); err != nil {
 		return nil, err
 	}
@@ -654,7 +1786,14 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
+	if err := validateExpectedStartRecoveryIdentityLocked(test, opts); err != nil {
+		return nil, err
+	}
 	if !test.ScriptShakeout {
+		return nil, nil
+	}
+	if test.StartAuthorization != nil && scriptShakeoutPassAllows(test.StartAuthorization.ScriptShakeoutPass) &&
+		test.validatedScriptShakeoutPass != "" {
 		return nil, nil
 	}
 	if startOptionsWithAuthorization(test, opts).OverrideScriptShakeoutError {
@@ -666,14 +1805,29 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
 		return nil, err
 	}
-	var claimErr error
-	if expectedTerm == nil {
-		claimErr = tr.claimTestExecutionFence(test)
-	} else {
-		claimErr = tr.claimTestExecutionFenceWithTerm(test, *expectedTerm)
+	if err := tr.validateStartLaunchEvidenceFenceLocked(evidence); err != nil {
+		return nil, err
 	}
+	test.expectedProjectUpdatedAt = evidence.launchWindow.projectQuota.updatedAt
+	test.expectedStartAdmissionRevision = evidence.startAdmissionRevision
+	blocked, err := tr.evaluateStartGatesLockedWithEvidence(id, test, opts, expectedTerm, now, evidence)
+	if err != nil || blocked {
+		return nil, err
+	}
+	previousExecutionFence := test.executionFence
+	previousExecutionGeneration := test.executionGeneration
+	previousPassiveOperationToken := test.passiveOperationToken
+	claimed, claimErr := tr.claimPassiveExecutionFenceLocked(test, expectedTerm)
 	if claimErr != nil {
 		return nil, claimErr
+	}
+	if err := tr.installTestExecutionContextLocked(test, expectedTerm); err != nil {
+		if claimed {
+			test.executionFence = previousExecutionFence
+			test.executionGeneration = previousExecutionGeneration
+			test.passiveOperationToken = previousPassiveOperationToken
+		}
+		return nil, err
 	}
 
 	previousStatus := test.Status
@@ -681,29 +1835,204 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 	previousPendingReason := test.PendingReason
 	previousQueuePosition := test.QueuePosition
 	previousError := test.Error
+	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
 	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
+	// SHAKEOUT reserves runtime capacity before executing one-shot actions. The
+	// exact bounded operator authorizations that admitted this attempt must be
+	// durable with that reservation, so post-action verification recovery can
+	// continue with empty process-local options after an outage or failover.
+	applyRequestedStartAuthorizations(test, opts, now)
 	test.Status = "SHAKEOUT"
 	test.PendingSince = nil
 	test.PendingReason = ""
 	test.QueuePosition = 0
 	test.Error = ""
-	if err := tr.saveManagedTestStartRecord(test); err != nil {
-		test.Status = previousStatus
-		test.PendingSince = previousPendingSince
-		test.PendingReason = previousPendingReason
-		test.QueuePosition = previousQueuePosition
-		test.Error = previousError
-		if actorChanged {
-			restoreTestStartedByActor(test, actorSnapshot)
+	if owned, err := tr.persistManagedTestStartOutsideLockLocked(test, "SHAKEOUT"); err != nil {
+		if owned {
+			clearScriptShakeoutContextLocked(test)
+			test.executionFence = previousExecutionFence
+			test.executionGeneration = previousExecutionGeneration
+			test.passiveOperationToken = previousPassiveOperationToken
+			test.Status = previousStatus
+			test.PendingSince = previousPendingSince
+			test.PendingReason = previousPendingReason
+			test.QueuePosition = previousQueuePosition
+			test.Error = previousError
+			test.StartAuthorization = previousStartAuthorization
+			if actorChanged {
+				restoreTestStartedByActor(test, actorSnapshot)
+			}
 		}
 		return nil, fmt.Errorf("persist script shakeout state: %w", err)
 	}
+	releasePassiveOperationTokenLocked(test)
 	tr.broadcastEvent("script_shakeout_started", test)
 
 	return test, nil
 }
 
-func (tr *TestRunner) markScriptShakeoutPassed(id string, _ ScriptShakeoutReport) error {
+func (tr *TestRunner) installTestExecutionContextLocked(test *ManagedTest, expectedTerm *executionLeaseTerm) error {
+	if test == nil {
+		return fmt.Errorf("test is required")
+	}
+	ctx, cancel := tr.executionOperationContext(context.Background())
+	if ctx.Err() != nil {
+		cancel()
+		return errNotExecutionLeader
+	}
+	if tr.durableExecutionFence {
+		contextTerm, ok := executionLeaseTermFromContext(ctx)
+		if !ok || (expectedTerm != nil && contextTerm != *expectedTerm) {
+			cancel()
+			return errNotExecutionLeader
+		}
+		test.executionGeneration = contextTerm.generation
+	}
+	test.executionCtx = ctx
+	test.cancel = cancel
+	return nil
+}
+
+func clearScriptShakeoutContextLocked(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	if test.cancel != nil {
+		test.cancel()
+	}
+	test.cancel = nil
+	test.executionCtx = nil
+}
+
+func (tr *TestRunner) markScriptShakeoutPassed(id string, report ScriptShakeoutReport) error {
+	fingerprint, err := tr.scriptShakeoutExecutableFingerprint(id)
+	if err != nil {
+		return err
+	}
+	return tr.markScriptShakeoutPassedWithExpectedTermAndFingerprint(id, report, fingerprint, nil)
+}
+
+func (tr *TestRunner) markScriptShakeoutPassedWithExpectedTerm(id string, report ScriptShakeoutReport, expectedTerm *executionLeaseTerm) error {
+	fingerprint, err := tr.scriptShakeoutExecutableFingerprint(id)
+	if err != nil {
+		return err
+	}
+	return tr.markScriptShakeoutPassedWithExpectedTermAndFingerprint(id, report, fingerprint, expectedTerm)
+}
+
+func (tr *TestRunner) markScriptShakeoutPassedWithExpectedTermAndFingerprint(id string, report ScriptShakeoutReport, fingerprint scriptShakeoutInputFingerprint, expectedTerm *executionLeaseTerm) error {
+	return tr.markScriptShakeoutOutcome(id, pendingScriptShakeoutOutcome{
+		Report:                cloneScriptShakeoutReport(report),
+		ExecutableFingerprint: fingerprint,
+		PassStatus:            "QUEUED",
+	}, expectedTerm)
+}
+
+func (tr *TestRunner) markPendingScriptShakeoutPassedWithExpectedTerm(id string, report ScriptShakeoutReport, fingerprint scriptShakeoutInputFingerprint, pendingSince time.Time, expectedTerm *executionLeaseTerm) error {
+	return tr.markScriptShakeoutOutcome(id, pendingScriptShakeoutOutcome{
+		Report:                cloneScriptShakeoutReport(report),
+		ExecutableFingerprint: fingerprint,
+		PassStatus:            "PENDING",
+		PendingSince:          cloneTimePtr(&pendingSince),
+		PendingReason:         "awaiting capacity after script shakeout",
+	}, expectedTerm)
+}
+
+// markScriptShakeoutVerificationPendingWithExpectedTerm records that the
+// one-shot actions completed, but their post-action executable fingerprint
+// could not be read. The private outcome is deliberately not persisted as a
+// pass: retries re-read and compare the fingerprint without executing actions.
+func (tr *TestRunner) markScriptShakeoutVerificationPendingWithExpectedTerm(
+	id string,
+	report ScriptShakeoutReport,
+	fingerprint scriptShakeoutInputFingerprint,
+	passStatus string,
+	pendingSince *time.Time,
+	pendingReason string,
+	expectedTerm *executionLeaseTerm,
+	verificationErr error,
+	enqueueRecovery bool,
+) error {
+	if verificationErr == nil {
+		verificationErr = errors.New("post-action executable input evidence is unavailable")
+	}
+	outcome := pendingScriptShakeoutOutcome{
+		Report:                cloneScriptShakeoutReport(report),
+		ExecutableFingerprint: fingerprint,
+		PassStatus:            passStatus,
+		PendingSince:          cloneTimePtr(pendingSince),
+		PendingReason:         pendingReason,
+		VerificationPending:   true,
+	}
+	var recoveryIdentity queuedStartRecoveryIdentity
+	if enqueueRecovery && !strings.EqualFold(strings.TrimSpace(passStatus), "PENDING") {
+		tr.mu.RLock()
+		recoveryIdentity, _ = queuedStartRecoveryIdentityForTest(tr.tests[id])
+		tr.mu.RUnlock()
+	}
+	if err := tr.markScriptShakeoutOutcome(id, outcome, expectedTerm); err != nil {
+		return err
+	}
+	// A manual/API start has no CI handler to arrange a second attempt. Once the
+	// one-shot actions have completed, schedule bounded background verification
+	// so a temporary secret-provider outage cannot reserve SHAKEOUT capacity
+	// indefinitely. PENDING promotion owns its own term-bound retry sweep.
+	if enqueueRecovery && !strings.EqualFold(strings.TrimSpace(passStatus), "PENDING") {
+		term := executionLeaseTerm{}
+		if expectedTerm != nil {
+			term = *expectedTerm
+		} else if captured, err := tr.captureExecutionLeaseTerm(); err == nil {
+			term = captured
+		}
+		tr.enqueueQueuedCIRecoveryRetryForIdentityWithTerm(id, recoveryIdentity, term)
+	}
+	return errors.Join(
+		errStartAdmissionEvidenceStale,
+		fmt.Errorf("verify completed script shakeout executable inputs: %w", verificationErr),
+	)
+}
+
+func (tr *TestRunner) markScriptShakeoutReview(id string, report ScriptShakeoutReport) error {
+	return tr.markScriptShakeoutReviewWithExpectedTerm(id, report, nil)
+}
+
+func (tr *TestRunner) markScriptShakeoutReviewWithExpectedTerm(id string, report ScriptShakeoutReport, expectedTerm *executionLeaseTerm) error {
+	return tr.markScriptShakeoutOutcome(id, pendingScriptShakeoutOutcome{
+		Report: cloneScriptShakeoutReport(report),
+	}, expectedTerm)
+}
+
+func cloneScriptShakeoutReport(report ScriptShakeoutReport) ScriptShakeoutReport {
+	cloned := report
+	cloned.Results = append([]ScriptShakeoutResult(nil), report.Results...)
+	return cloned
+}
+
+// markScriptShakeoutOutcome installs the completed result before attempting
+// durability. If every bounded write fails, the outcome remains process-local
+// and the row remains SHAKEOUT so a retry can finish the write without running
+// the one-shot actions again.
+func (tr *TestRunner) markScriptShakeoutOutcome(id string, outcome pendingScriptShakeoutOutcome, expectedTerm *executionLeaseTerm) error {
+	if outcome.Report.Passed && (strings.TrimSpace(outcome.ExecutableFingerprint.EvidenceSHA256) == "" ||
+		strings.TrimSpace(outcome.ExecutableFingerprint.ProcessSHA256) == "") {
+		return errors.New("successful script shakeout is missing its executable input fingerprint")
+	}
+	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+		return err
+	}
+	var capturedTerm executionLeaseTerm
+	if tr.durableExecutionFence && expectedTerm == nil {
+		var err error
+		capturedTerm, err = tr.captureExecutionLeaseTerm()
+		if err != nil {
+			return err
+		}
+		expectedTerm = &capturedTerm
+	}
+	if expectedTerm != nil {
+		outcome.ExecutionTerm = *expectedTerm
+	}
+
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
@@ -714,41 +2043,282 @@ func (tr *TestRunner) markScriptShakeoutPassed(id string, _ ScriptShakeoutReport
 	if test.Status != "SHAKEOUT" {
 		return fmt.Errorf("test is %s, shakeout result no longer applies", test.Status)
 	}
-	previousStatus := test.Status
-	previousError := test.Error
-	test.Status = "QUEUED"
-	test.Error = ""
-	if err := tr.saveManagedTestRecord(test); err != nil {
-		test.Status = previousStatus
-		test.Error = previousError
-		return fmt.Errorf("persist successful script shakeout: %w", err)
+	if test.passiveOperationToken != "" {
+		return errStartAdmissionEvidenceStale
 	}
-	tr.broadcastEvent("script_shakeout_passed", test)
-	return nil
+	if expectedTerm != nil && tr.durableExecutionFence &&
+		(test.executionFence != expectedTerm.ownerID || test.executionGeneration != expectedTerm.generation) {
+		return errNotExecutionLeader
+	}
+	test.pendingScriptShakeoutOutcome = &outcome
+	if outcome.VerificationPending {
+		// External actions are complete. Cancel their execution context while
+		// retaining the execution fence and private outcome so neither a retry nor
+		// a concurrent start can execute the one-shot actions again.
+		clearScriptShakeoutContextLocked(test)
+		return nil
+	}
+	return tr.persistPendingScriptShakeoutOutcomeLocked(test)
 }
 
-func (tr *TestRunner) markScriptShakeoutReview(id string, report ScriptShakeoutReport) error {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
+func (tr *TestRunner) resumePendingScriptShakeoutOutcome(id string, expectedTerm *executionLeaseTerm) error {
+	return tr.resumePendingScriptShakeoutOutcomeForIdentity(id, expectedTerm, nil)
+}
 
+func (tr *TestRunner) resumePendingScriptShakeoutOutcomeForIdentity(id string, expectedTerm *executionLeaseTerm, expectedIdentity *queuedStartRecoveryIdentity) error {
+	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+		return err
+	}
+	var capturedTerm executionLeaseTerm
+	if tr.durableExecutionFence && expectedTerm == nil {
+		var err error
+		capturedTerm, err = tr.captureExecutionLeaseTerm()
+		if err != nil {
+			return err
+		}
+		expectedTerm = &capturedTerm
+	}
+
+	tr.mu.Lock()
 	test, ok := tr.tests[id]
 	if !ok {
-		return fmt.Errorf("test not found: %s", id)
+		tr.mu.Unlock()
+		return nil
+	}
+	if expectedIdentity != nil && !expectedIdentity.matches(test) {
+		tr.mu.Unlock()
+		return storage.ErrTestStartIdentityChanged
+	}
+	if test.pendingScriptShakeoutOutcome == nil {
+		tr.mu.Unlock()
+		return nil
+	}
+	if test.passiveOperationToken != "" {
+		tr.mu.Unlock()
+		return errStartAdmissionEvidenceStale
 	}
 	if test.Status != "SHAKEOUT" {
-		return fmt.Errorf("test is %s, shakeout review no longer applies", test.Status)
+		tr.mu.Unlock()
+		return fmt.Errorf("test is %s, pending shakeout outcome no longer applies", test.Status)
 	}
+	if expectedTerm != nil && tr.durableExecutionFence &&
+		(test.executionFence != expectedTerm.ownerID || test.executionGeneration != expectedTerm.generation) {
+		tr.mu.Unlock()
+		return errNotExecutionLeader
+	}
+	outcome := test.pendingScriptShakeoutOutcome
+	if !outcome.VerificationPending {
+		defer tr.mu.Unlock()
+		return tr.persistPendingScriptShakeoutOutcomeLocked(test)
+	}
+	// Keep the shared pointer only as an identity token. Everything used while
+	// the mutex is released must be copied so concurrent recovery attempts cannot
+	// race with the winner that finalizes and clears the private outcome.
+	expectedFingerprint := outcome.ExecutableFingerprint
+	reportSnapshot := cloneScriptShakeoutReport(outcome.Report)
+	tr.mu.Unlock()
+
+	// Secret providers can involve network I/O. Compare outside tr.mu while the
+	// exact outcome pointer and execution fence retain ownership of the result.
+	currentFingerprint, fingerprintErr := tr.scriptShakeoutExecutableFingerprint(id)
+	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+		return err
+	}
+	if fingerprintErr != nil && retryableStartSecretRequirement(fingerprintErr) {
+		return errors.Join(
+			errStartAdmissionEvidenceStale,
+			fmt.Errorf("verify completed script shakeout executable inputs: %w", fingerprintErr),
+		)
+	}
+
+	report := reportSnapshot
+	if fingerprintErr != nil {
+		report.Passed = false
+		report.Summary = "Script shakeout completed, but its executable input evidence could not be verified; full load test has not started."
+		report.Results = append(report.Results, ScriptShakeoutResult{GroupName: "executable inputs", Status: "failed", Error: fingerprintErr.Error()})
+	} else if currentFingerprint != expectedFingerprint {
+		report.Passed = false
+		report.Summary = "Script shakeout inputs changed while the check was running; full load test has not started."
+		report.Results = append(report.Results, ScriptShakeoutResult{GroupName: "executable inputs", Status: "failed", Error: "the executable snapshot or a versioned secret source changed during shakeout"})
+	}
+
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test = tr.tests[id]
+	if test == nil {
+		return nil
+	}
+	if test.pendingScriptShakeoutOutcome != outcome {
+		// A concurrent retry may already have finalized this exact result.
+		if test.pendingScriptShakeoutOutcome == nil && test.Status != "SHAKEOUT" {
+			return nil
+		}
+		return errStartAdmissionEvidenceStale
+	}
+	if test.Status != "SHAKEOUT" {
+		return fmt.Errorf("test is %s, pending shakeout outcome no longer applies", test.Status)
+	}
+	if expectedTerm != nil && tr.durableExecutionFence &&
+		(test.executionFence != expectedTerm.ownerID || test.executionGeneration != expectedTerm.generation) {
+		return errNotExecutionLeader
+	}
+	outcome.Report = report
+	outcome.VerificationPending = false
+	if report.Passed {
+		outcome.ExecutableFingerprint = currentFingerprint
+	}
+	return tr.persistPendingScriptShakeoutOutcomeLocked(test)
+}
+
+// persistPendingScriptShakeoutOutcomeLocked makes the completed outcome
+// durable and publishes it exactly once. The caller must hold tr.mu.
+func (tr *TestRunner) persistPendingScriptShakeoutOutcomeLocked(test *ManagedTest) error {
+	if test == nil || test.pendingScriptShakeoutOutcome == nil {
+		return nil
+	}
+	outcome := test.pendingScriptShakeoutOutcome
+	if outcome.VerificationPending {
+		return errors.Join(errStartAdmissionEvidenceStale, errors.New("script shakeout executable input verification is still pending"))
+	}
+	if test.passiveOperationToken != "" {
+		return errStartAdmissionEvidenceStale
+	}
+	test.passiveOperationToken = uuid.NewString()
+	operationToken := test.passiveOperationToken
+	executionFence := test.executionFence
+	executionGeneration := test.executionGeneration
+	operationIdentity, _ := queuedStartRecoveryIdentityForTest(test)
 	previousStatus := test.Status
+	previousPendingSince := cloneTimePtr(test.PendingSince)
+	previousPendingReason := test.PendingReason
+	previousQueuePosition := test.QueuePosition
 	previousError := test.Error
-	test.Status = "SHAKEOUT_REVIEW"
-	test.Error = formatScriptShakeoutEvidence(report)
-	if err := tr.saveManagedTestRecord(test); err != nil {
-		test.Status = previousStatus
-		test.Error = previousError
-		return fmt.Errorf("persist script shakeout review: %w", err)
+	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	previousValidatedPass := test.validatedScriptShakeoutPass
+	previousValidatedTerm := test.validatedScriptShakeoutTerm
+
+	if outcome.Report.Passed {
+		test.Status = outcome.PassStatus
+		if test.Status == "" {
+			test.Status = "QUEUED"
+		}
+		test.PendingSince = cloneTimePtr(outcome.PendingSince)
+		test.PendingReason = outcome.PendingReason
+		test.QueuePosition = 0
+		test.Error = ""
+		applyScriptShakeoutPass(test, outcome.ExecutableFingerprint, outcome.Report, outcome.ExecutionTerm)
+	} else {
+		test.Status = "SHAKEOUT_REVIEW"
+		test.PendingSince = nil
+		test.PendingReason = ""
+		test.QueuePosition = 0
+		test.Error = formatScriptShakeoutEvidence(outcome.Report)
+	}
+	durableRecord := buildManagedTestRecord(test)
+	durableTransition := storage.TestShakeoutTransition{
+		ID:                 durableRecord.ID,
+		RefKey:             durableRecord.RefKey,
+		ProjectID:          durableRecord.ProjectID,
+		StartTime:          durableRecord.StartTime,
+		Status:             durableRecord.Status,
+		PendingSince:       cloneTimePtr(durableRecord.PendingSince),
+		Error:              durableRecord.Error,
+		StartAuthorization: durableRecord.StartAuthorization,
+	}
+	if tr.durableExecutionFence {
+		durableTransition.ExecutionLeaseName = executionLeaseName
+		durableTransition.ExecutionLeaseOwnerID = executionFence
+		durableTransition.ExecutionLeaseGeneration = executionGeneration
+	}
+	desiredStatus := test.Status
+	desiredPendingSince := cloneTimePtr(test.PendingSince)
+	desiredPendingReason := test.PendingReason
+	desiredQueuePosition := test.QueuePosition
+	desiredError := test.Error
+	desiredStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	desiredValidatedPass := test.validatedScriptShakeoutPass
+	desiredValidatedTerm := test.validatedScriptShakeoutTerm
+
+	// Keep the uncommitted outcome private while storage waits. SHAKEOUT remains
+	// capacity-reserving, and the operation token excludes another lifecycle
+	// mutation without freezing unrelated API reads behind tr.mu.
+	test.Status = previousStatus
+	test.PendingSince = previousPendingSince
+	test.PendingReason = previousPendingReason
+	test.QueuePosition = previousQueuePosition
+	test.Error = previousError
+	test.StartAuthorization = previousStartAuthorization
+	test.validatedScriptShakeoutPass = previousValidatedPass
+	test.validatedScriptShakeoutTerm = previousValidatedTerm
+
+	tr.mu.Unlock()
+	persistErr := retryDurableTransition(func() error {
+		return tr.persistManagedTestShakeoutTransition(durableTransition)
+	})
+	tr.mu.Lock()
+	if tr.tests[test.ID] != test || test.pendingScriptShakeoutOutcome != outcome ||
+		test.passiveOperationToken != operationToken || test.executionFence != executionFence ||
+		test.executionGeneration != executionGeneration || test.Status != previousStatus {
+		// A committed transition can be adopted by the successor while this
+		// callback is still awaiting its response. Its acquire scan may have seen
+		// the operation token and intentionally skipped recovery, so explicitly
+		// retire any token/context still owned here and re-arm a durable rescan.
+		if tr.tests[test.ID] == test && test.passiveOperationToken == operationToken {
+			test.passiveOperationToken = ""
+			clearScriptShakeoutContextLocked(test)
+			if strings.EqualFold(strings.TrimSpace(test.Status), "QUEUED") ||
+				strings.EqualFold(strings.TrimSpace(test.Status), "SHAKEOUT_REVIEW") {
+				// reloadStoredTests adopted the durable result while preserving
+				// process-private runtime fields. The retained pointer is now stale
+				// evidence, not unfinished work.
+				test.pendingScriptShakeoutOutcome = nil
+			}
+			if tr.durableExecutionFence && !tr.executionLeaseTermLocallyCurrent(executionLeaseTerm{
+				ownerID: executionFence, generation: executionGeneration,
+			}) {
+				test.executionFence = ""
+				test.executionGeneration = 0
+			}
+		}
+		tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, executionFence, executionGeneration)
+		return errors.Join(errStartAdmissionEvidenceStale, persistErr)
+	}
+
+	if persistErr != nil {
+		// The actions have finished, so cancel their context even though the
+		// outcome write remains retryable. Retain the execution fence and the
+		// private outcome to exclude another operation and prevent a replay.
+		test.passiveOperationToken = ""
+		clearScriptShakeoutContextLocked(test)
+		if tr.durableExecutionFence && !tr.executionLeaseTermLocallyCurrent(executionLeaseTerm{
+			ownerID: executionFence, generation: executionGeneration,
+		}) {
+			test.executionFence = ""
+			test.executionGeneration = 0
+		}
+		tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, executionFence, executionGeneration)
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("persist completed script shakeout outcome: %w", persistErr))
+	}
+
+	report := cloneScriptShakeoutReport(outcome.Report)
+	test.Status = desiredStatus
+	test.PendingSince = desiredPendingSince
+	test.PendingReason = desiredPendingReason
+	test.QueuePosition = desiredQueuePosition
+	test.Error = desiredError
+	test.StartAuthorization = desiredStartAuthorization
+	test.validatedScriptShakeoutPass = desiredValidatedPass
+	test.validatedScriptShakeoutTerm = desiredValidatedTerm
+	test.pendingScriptShakeoutOutcome = nil
+	clearScriptShakeoutContextLocked(test)
+	releasePassiveExecutionFenceLocked(test)
+	tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, executionFence, executionGeneration)
+	if report.Passed {
+		tr.broadcastEvent("script_shakeout_passed", test)
+		return nil
 	}
 	tr.broadcastEvent("script_shakeout_failed", test)
-	return &ScriptShakeoutGateError{TestID: id, Report: &report}
+	return &ScriptShakeoutGateError{TestID: test.ID, Report: &report}
 }
 
 func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (*ManagedTest, error) {
@@ -756,6 +2326,18 @@ func (tr *TestRunner) prepareTestStartLocked(id string, opts StartTestOptions) (
 }
 
 func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (*ManagedTest, error) {
+	now := time.Now().UTC()
+	test := tr.tests[id]
+	if test == nil {
+		return nil, fmt.Errorf("test not found: %s", id)
+	}
+	window := launchWindowForTestAt(test, now, now)
+	return tr.prepareTestStartLockedWithExpectedTermAndEvidence(id, opts, expectedTerm, now, startLaunchEvidence{
+		launchWindow: tr.loadLaunchWindowEvidenceForProject(window, test.ProjectID, testAssignedPoolID(test)),
+	})
+}
+
+func (tr *TestRunner) prepareTestStartLockedWithExpectedTermAndEvidence(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm, now time.Time, evidence startLaunchEvidence) (*ManagedTest, error) {
 	if err := tr.shutdownErrorLocked(); err != nil {
 		return nil, err
 	}
@@ -763,14 +2345,19 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
+	if err := validateExpectedStartRecoveryIdentityLocked(test, opts); err != nil {
+		return nil, err
+	}
 	if !testexec.IsStartableTestStatus(test.Status) {
 		return nil, testexec.StartableTestStatusError(test.Status)
 	}
 	if err := tr.projectDeletionErrorLocked(test.ProjectID); err != nil {
 		return nil, err
 	}
+	test.expectedProjectUpdatedAt = evidence.launchWindow.projectQuota.updatedAt
+	test.expectedStartAdmissionRevision = evidence.startAdmissionRevision
 
-	if blocked, err := tr.evaluateStartGatesLocked(id, test, opts); err != nil {
+	if blocked, err := tr.evaluateStartGatesLockedWithEvidence(id, test, opts, expectedTerm, now, evidence); err != nil {
 		return nil, err
 	} else if blocked {
 		return nil, nil
@@ -784,6 +2371,10 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 	previousExecutionCtx := test.executionCtx
 	previousCancel := test.cancel
 	previousBackend := test.executionBackend
+	previousExecutionFence := test.executionFence
+	previousExecutionGeneration := test.executionGeneration
+	previousPassiveOperationToken := test.passiveOperationToken
+	previousExpectedStartAdmissionRevision := test.expectedStartAdmissionRevision
 	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
 	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 	applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
@@ -806,27 +2397,34 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 			initializingCancel()
 		}
 	}
-	if err := tr.saveManagedTestStartRecord(test); err != nil {
-		if test.cancel != nil {
-			test.cancel()
-		}
-		test.Status = previousStatus
-		test.PendingSince = previousPendingSince
-		test.PendingReason = previousPendingReason
-		test.QueuePosition = previousQueuePosition
-		test.Error = previousError
-		test.executionCtx = previousExecutionCtx
-		test.cancel = previousCancel
-		test.executionBackend = previousBackend
-		test.StartAuthorization = previousStartAuthorization
-		if actorChanged {
-			restoreTestStartedByActor(test, actorSnapshot)
+	if owned, err := tr.persistManagedTestStartOutsideLockLocked(test, "INITIALIZING"); err != nil {
+		if owned {
+			if test.cancel != nil {
+				test.cancel()
+			}
+			test.Status = previousStatus
+			test.PendingSince = previousPendingSince
+			test.PendingReason = previousPendingReason
+			test.QueuePosition = previousQueuePosition
+			test.Error = previousError
+			test.executionCtx = previousExecutionCtx
+			test.cancel = previousCancel
+			test.executionBackend = previousBackend
+			test.executionFence = previousExecutionFence
+			test.executionGeneration = previousExecutionGeneration
+			test.passiveOperationToken = previousPassiveOperationToken
+			test.expectedStartAdmissionRevision = previousExpectedStartAdmissionRevision
+			test.StartAuthorization = previousStartAuthorization
+			if actorChanged {
+				restoreTestStartedByActor(test, actorSnapshot)
+			}
 		}
 		return nil, fmt.Errorf("persist initializing test state: %w", err)
 	}
 	if previousCancel != nil {
 		previousCancel()
 	}
+	releasePassiveOperationTokenLocked(test)
 	return test, nil
 }
 
@@ -850,9 +2448,7 @@ func (tr *TestRunner) ReconcilePendingTests() {
 		return
 	}
 	tr.promotePendingTests()
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	tr.refreshPendingQueueMetadataLocked()
+	tr.refreshPendingQueueMetadata()
 }
 
 func (tr *TestRunner) reconcilePendingTestsDuringAcquire() error {
@@ -864,9 +2460,7 @@ func (tr *TestRunner) reconcilePendingTestsDuringAcquire() error {
 	}
 	// Promotion starts execution and therefore waits for admission to open. The
 	// onAdmit callback calls ReconcilePendingTests after reconciling is cleared.
-	tr.mu.Lock()
-	tr.refreshPendingQueueMetadataLocked()
-	tr.mu.Unlock()
+	tr.refreshPendingQueueMetadata()
 	// During the leadership callback admission remains closed and onAdmit will
 	// perform promotion after recovery completes. Direct callers that already
 	// hold an admitted lease (including recovery retries) can promote now.
@@ -1001,6 +2595,15 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx cont
 	if !ok {
 		tr.mu.Unlock()
 		return fmt.Errorf("test not found: %s", id)
+	}
+	if test.passiveOperationToken != "" {
+		// A pending/start/shakeout transition is persisting this passive row with
+		// tr.mu released. Its storage operation owns an identity/status CAS; a
+		// concurrent Stop must not mutate the local projection or race a second
+		// durable lifecycle write. The caller may retry after the short operation
+		// finishes.
+		tr.mu.Unlock()
+		return errors.Join(errStartAdmissionEvidenceStale, errors.New("test lifecycle transition is already in progress"))
 	}
 	if test.remoteFinalizing {
 		// The distributed completion path owns remote teardown once finalization
@@ -1550,6 +3153,14 @@ func (tr *TestRunner) startVUserScaleRamp(parent context.Context, id string, gro
 	if rampDuration <= 0 {
 		return nil, fmt.Errorf("ramp duration must be positive")
 	}
+	tr.mu.RLock()
+	resolvedID := tr.resolveRefKeyLocked(id)
+	tr.mu.RUnlock()
+	now := time.Now().UTC()
+	evidence, err := tr.loadRuntimeLaunchEvidence(resolvedID, now, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	tr.mu.Lock()
 	if !tr.isExecutionLeader() {
@@ -1581,7 +3192,7 @@ func (tr *TestRunner) startVUserScaleRamp(parent context.Context, id string, gro
 	// target here as well so an impossible ramp is rejected synchronously rather
 	// than being accepted and failing minutes later. Concurrent capacity changes
 	// are still caught by the per-step recheck.
-	if _, err := tr.vuserScaleProposalLocked(test, groupName, targetVUsers); err != nil {
+	if _, err := tr.vuserScaleProposalWithEvidenceLocked(test, groupName, targetVUsers, now, evidence); err != nil {
 		tr.mu.Unlock()
 		return nil, err
 	}
@@ -1641,21 +3252,16 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 		close(ramp.done)
 	}()
 
-	delta := targetVUsers - currentVUsers
-	steps := testexec.AbsInt(delta)
-	if steps == 0 {
+	targets := vuserRampTargets(currentVUsers, targetVUsers)
+	if len(targets) == 0 {
 		return
 	}
-	direction := 1
-	if delta < 0 {
-		direction = -1
-	}
-	interval := rampDuration / time.Duration(steps)
+	interval := rampDuration / time.Duration(len(targets))
 	if interval <= 0 {
 		interval = time.Nanosecond
 	}
 
-	for step := 1; step <= steps; step++ {
+	for _, nextTarget := range targets {
 		if !tr.waitTestActiveDuration(ctx, id, interval) {
 			result = ctx.Err()
 			if result == nil {
@@ -1664,7 +3270,6 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 			return
 		}
 
-		nextTarget := currentVUsers + direction*step
 		for {
 			err := tr.scaleVUsersNow(id, groupName, nextTarget, false)
 			if err == nil {
@@ -1678,6 +3283,27 @@ func (tr *TestRunner) runVUserScaleRamp(ctx context.Context, ramp *vuserScaleRam
 			return
 		}
 	}
+}
+
+// A gradual scale used to persist one full test row per VUser. Large changes
+// therefore generated thousands of writes and could occupy the lifecycle lock
+// for most of the requested ramp. Keep the fine-grained behavior for ordinary
+// changes, but bound large ramps while retaining monotonic, exact endpoints.
+const maxVUserRampSteps = 100
+
+func vuserRampTargets(current, target int) []int {
+	delta := target - current
+	distance := testexec.AbsInt(delta)
+	if distance == 0 {
+		return nil
+	}
+	steps := min(distance, maxVUserRampSteps)
+	targets := make([]int, 0, steps)
+	for step := 1; step <= steps; step++ {
+		next := int(int64(current) + int64(delta)*int64(step)/int64(steps))
+		targets = append(targets, next)
+	}
+	return targets
 }
 
 const executionClockPollInterval = 10 * time.Millisecond
@@ -1864,6 +3490,11 @@ func (tr *TestRunner) scaleVUsersNowWithAdmissionGuard(id string, groupName stri
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
+	now := time.Now().UTC()
+	evidence, err := tr.loadRuntimeLaunchEvidence(resolvedID, now, nil)
+	if err != nil {
+		return err
+	}
 
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
@@ -1873,7 +3504,7 @@ func (tr *TestRunner) scaleVUsersNowWithAdmissionGuard(id string, groupName stri
 			return err
 		}
 	}
-	reservation, err := tr.reserveVUserScaleLocked(id, groupName, targetVUsers)
+	reservation, err := tr.reserveVUserScaleLockedWithEvidence(id, groupName, targetVUsers, now, evidence)
 	if err != nil {
 		tr.mu.Unlock()
 		return err
@@ -2008,10 +3639,7 @@ type vuserScaleReservation struct {
 	oldAdvisory *CapacityAdvisory
 }
 
-// vuserScaleProposalLocked builds and validates the exact post-scale state.
-// Caller holds tr.mu. It is the shared admission chokepoint for immediate API
-// scales, gradual-ramp steps, stage transitions, and autonomous goal scaling.
-func (tr *TestRunner) vuserScaleProposalLocked(test *ManagedTest, groupName string, targetVUsers int) (*ManagedTest, error) {
+func (tr *TestRunner) vuserScaleProposalWithEvidenceLocked(test *ManagedTest, groupName string, targetVUsers int, now time.Time, evidence launchWindowEvidence) (*ManagedTest, error) {
 	if test == nil {
 		return nil, fmt.Errorf("test is required")
 	}
@@ -2033,7 +3661,7 @@ func (tr *TestRunner) vuserScaleProposalLocked(test *ManagedTest, groupName stri
 	if err := tr.distributedActivationErrorLocked(test); err != nil {
 		return nil, err
 	}
-	if !tr.testLoadReadyLocked(test, time.Now().UTC()) {
+	if !tr.testLoadReadyLocked(test, now) {
 		return nil, fmt.Errorf("%w; retry after start delay and resource baseline complete", errTestLoadNotReady)
 	}
 	proposal := *test
@@ -2059,13 +3687,17 @@ func (tr *TestRunner) vuserScaleProposalLocked(test *ManagedTest, groupName stri
 	}
 	proposal.TotalVUsers = capacityVUsersForGroups(proposal.Groups)
 	tr.refreshCapacityAdvisoryLocked(&proposal)
-	if err := tr.enforceTestQuotaLocked(proposal.ProjectID, proposal.TotalVUsers, proposal.Duration, proposal.Status); err != nil {
+	projectQuota, quotaOK := evidence.projectQuota.quotaFor(&proposal)
+	if !quotaOK {
+		return nil, fmt.Errorf("project quota evidence changed while VUser scale admission was evaluated; retry")
+	}
+	if err := enforceTestQuotaWithProjectQuota(projectQuota, proposal.TotalVUsers, proposal.Duration, proposal.Status); err != nil {
 		return nil, err
 	}
-	if blocked, reason := tr.evaluateQuotaBlockLocked(&proposal, test.ID); blocked {
+	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(&proposal, test.ID, now, evidence); blocked {
 		return nil, fmt.Errorf("VUser scale admission blocked: %s", reason)
 	}
-	if err := tr.launchTimeslotRevalidationErrorLocked(&proposal, time.Now().UTC()); err != nil {
+	if err := tr.launchTimeslotRevalidationErrorWithEvidenceLocked(&proposal, now, evidence); err != nil {
 		return nil, err
 	}
 	// Persisted tests created by the normal API always carry an advisory. Some
@@ -2076,7 +3708,7 @@ func (tr *TestRunner) vuserScaleProposalLocked(test *ManagedTest, groupName stri
 			return nil, err
 		}
 	}
-	if err := tr.runtimeAdjustmentWindowErrorLocked(&proposal, time.Now().UTC()); err != nil {
+	if err := tr.runtimeAdjustmentWindowErrorWithEvidenceLocked(&proposal, now, evidence); err != nil {
 		return nil, err
 	}
 	return &proposal, nil
@@ -2094,12 +3726,12 @@ func capacityVUsersForGroups(groups []TestGroup) int {
 	return total
 }
 
-func (tr *TestRunner) reserveVUserScaleLocked(id, groupName string, targetVUsers int) (*vuserScaleReservation, error) {
+func (tr *TestRunner) reserveVUserScaleLockedWithEvidence(id, groupName string, targetVUsers int, now time.Time, evidence launchWindowEvidence) (*vuserScaleReservation, error) {
 	test, ok := tr.tests[id]
 	if !ok {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
-	proposal, err := tr.vuserScaleProposalLocked(test, groupName, targetVUsers)
+	proposal, err := tr.vuserScaleProposalWithEvidenceLocked(test, groupName, targetVUsers, now, evidence)
 	if err != nil {
 		return nil, err
 	}
@@ -2170,11 +3802,7 @@ func (tr *TestRunner) rollbackVUserScaleReservation(reservation *vuserScaleReser
 	return nil
 }
 
-// runtimeAdjustmentWindowErrorLocked validates only the remaining runtime
-// window. It avoids re-litigating capacity in the already elapsed portion of a
-// run while still covering future schedules, reservations, maintenance and
-// availability windows through the proposed end.
-func (tr *TestRunner) runtimeAdjustmentWindowErrorLocked(test *ManagedTest, now time.Time) error {
+func (tr *TestRunner) runtimeAdjustmentWindowErrorWithEvidenceLocked(test *ManagedTest, now time.Time, evidence launchWindowEvidence) error {
 	if test == nil {
 		return nil
 	}
@@ -2183,14 +3811,22 @@ func (tr *TestRunner) runtimeAdjustmentWindowErrorLocked(test *ManagedTest, now 
 	if originalStart.IsZero() {
 		originalStart = start
 	}
-	full := launchWindowForTest(test, originalStart.UTC())
+	// A distributed run transitions to RUNNING before its coordinated commit
+	// barrier. During that short interval StartedAt is legitimately in the
+	// future, so the remaining runtime cannot begin at the earlier wall clock.
+	// Keeping the validation window inside the evidence window also preserves
+	// the stale-evidence fence for genuine concurrent duration changes.
+	if originalStart.After(start) {
+		start = originalStart.UTC()
+	}
+	full := launchWindowForTestAt(test, originalStart.UTC(), now.UTC())
 	if !full.EndAt.After(start) {
 		return nil
 	}
 	window := full
 	window.StartAt = start
 	window.DurationSeconds = int(window.EndAt.Sub(window.StartAt).Seconds())
-	conflicts := tr.launchWindowConflictsLocked(test, window, start, test.ID, "")
+	conflicts := tr.launchWindowConflictsWithEvidenceLocked(test, window, start, test.ID, "", evidence)
 	if len(conflicts) == 0 {
 		return nil
 	}
@@ -2369,6 +4005,14 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	if newDuration <= 0 {
 		return fmt.Errorf("duration must be positive")
 	}
+	now := time.Now().UTC()
+	evidence, err := tr.loadRuntimeLaunchEvidence(id, now, func(test *ManagedTest) {
+		test.Duration = newDuration
+		test.DurationStr = newDuration.String()
+	})
+	if err != nil {
+		return err
+	}
 
 	tr.mu.Lock()
 	test, ok := tr.tests[id]
@@ -2398,11 +4042,16 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 	proposal.Duration = newDuration
 	proposal.DurationStr = newDuration.String()
 	tr.refreshCapacityAdvisoryLocked(&proposal)
-	if err := tr.enforceTestQuotaLocked(proposal.ProjectID, proposal.TotalVUsers, proposal.Duration, proposal.Status); err != nil {
+	projectQuota, quotaOK := evidence.projectQuota.quotaFor(&proposal)
+	if !quotaOK {
+		tr.mu.Unlock()
+		return fmt.Errorf("project quota evidence changed while duration admission was evaluated; retry")
+	}
+	if err := enforceTestQuotaWithProjectQuota(projectQuota, proposal.TotalVUsers, proposal.Duration, proposal.Status); err != nil {
 		tr.mu.Unlock()
 		return err
 	}
-	if err := tr.launchTimeslotRevalidationErrorLocked(&proposal, time.Now().UTC()); err != nil {
+	if err := tr.launchTimeslotRevalidationErrorWithEvidenceLocked(&proposal, now, evidence); err != nil {
 		tr.mu.Unlock()
 		return err
 	}
@@ -2412,7 +4061,7 @@ func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error
 			return err
 		}
 	}
-	if err := tr.runtimeAdjustmentWindowErrorLocked(&proposal, time.Now().UTC()); err != nil {
+	if err := tr.runtimeAdjustmentWindowErrorWithEvidenceLocked(&proposal, now, evidence); err != nil {
 		tr.mu.Unlock()
 		return err
 	}
@@ -2686,6 +4335,22 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
+	now := time.Now().UTC()
+	evidence, err := tr.loadRuntimeLaunchEvidence(id, now, func(test *ManagedTest) {
+		pausedAt := now
+		if test.PausedAt != nil && !test.PausedAt.IsZero() {
+			pausedAt = test.PausedAt.UTC()
+		}
+		pauseDelta := now.Sub(pausedAt)
+		if pauseDelta > 0 {
+			test.CumulativePause += pauseDelta
+		}
+		test.Status = "RUNNING"
+		test.PausedAt = nil
+	})
+	if err != nil {
+		return err
+	}
 
 	tr.mu.Lock()
 	test, ok := tr.tests[id]
@@ -2707,7 +4372,6 @@ func (tr *TestRunner) ResumeTest(id string) error {
 		tr.mu.Unlock()
 		return err
 	}
-	now := time.Now().UTC()
 	pausedAt := now
 	if test.PausedAt != nil && !test.PausedAt.IsZero() {
 		pausedAt = test.PausedAt.UTC()
@@ -2722,7 +4386,7 @@ func (tr *TestRunner) ResumeTest(id string) error {
 	proposal.CumulativePause += pauseDelta
 	proposal.PausedAt = nil
 	tr.refreshCapacityAdvisoryLocked(&proposal)
-	if err := tr.launchTimeslotRevalidationErrorLocked(&proposal, now); err != nil {
+	if err := tr.launchTimeslotRevalidationErrorWithEvidenceLocked(&proposal, now, evidence); err != nil {
 		tr.mu.Unlock()
 		return err
 	}
@@ -2732,11 +4396,11 @@ func (tr *TestRunner) ResumeTest(id string) error {
 			return err
 		}
 	}
-	if blocked, reason := tr.evaluateQuotaBlockLocked(&proposal, test.ID); blocked {
+	if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(&proposal, test.ID, now, evidence); blocked {
 		tr.mu.Unlock()
 		return fmt.Errorf("resume admission blocked: %s", reason)
 	}
-	if err := tr.runtimeAdjustmentWindowErrorLocked(&proposal, now); err != nil {
+	if err := tr.runtimeAdjustmentWindowErrorWithEvidenceLocked(&proposal, now, evidence); err != nil {
 		tr.mu.Unlock()
 		return err
 	}
@@ -2963,14 +4627,28 @@ func (tr *TestRunner) runScenarioScheduledTestWithTerm(test *ManagedTest, leaseT
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
 		return
 	}
+	// The scheduler releases its preparation gate only after both correlation
+	// commits. Reacquire that same gate at the dispatch boundary so a Stop that
+	// was already waiting wins before any backend call; without this handoff,
+	// runner-mutex scheduling could let dispatch overtake the queued lifecycle
+	// operation after the gate was released.
+	unlockLifecycle, err := tr.lockTestLifecycleControl(context.Background(), test.ID)
+	if err != nil {
+		return
+	}
 	tr.mu.RLock()
 	current := tr.tests[test.ID]
 	startable := current == test && test.executionGeneration == leaseTerm.generation &&
 		test.executionCtx != nil && test.executionCtx.Err() == nil
 	tr.mu.RUnlock()
 	if !startable || !tr.executionLeaseTermCurrent(leaseTerm) {
+		unlockLifecycle()
 		return
 	}
+	// Owning the gate through this revalidation establishes dispatch as the
+	// lifecycle winner. Release before Run because execution backends are
+	// intentionally long-lived and Stop must remain able to control them.
+	unlockLifecycle()
 	tr.runTest(test)
 }
 
@@ -3038,6 +4716,7 @@ func applyGoalControllerUpdateWithScaler(tr *TestRunner, test *ManagedTest, live
 
 	targets := distributeTargetVUsersForGoal(groups, groupVUsers, update.TargetTotal, targetStatuses)
 	scaledAny := false
+	appliedTargets := make(map[string]int)
 	scaleFailureReason := ""
 	for _, group := range groups {
 		target, exists := targets[group.Name]
@@ -3067,19 +4746,22 @@ func applyGoalControllerUpdateWithScaler(tr *TestRunner, test *ManagedTest, live
 			break
 		}
 		groupVUsers[group.Name] = target
+		appliedTargets[group.Name] = target
 		scaledAny = true
 	}
 
 	now := live.Timestamp
 	tr.mu.Lock()
-	// Keep the durable/controller-side group configuration aligned with every
-	// successfully applied backend scale. This is also required for standalone
-	// controller tests and extension backends where scaleVUsersNow is not the
-	// callback performing the mutation.
+	// Keep standalone/extension backends aligned only for groups this round
+	// actually scaled. Writing every value from the pre-scale snapshot can undo
+	// a concurrent operator scale on a group whose goal target was unchanged.
 	for i := range test.Groups {
-		if current, ok := groupVUsers[test.Groups[i].Name]; ok {
+		if current, ok := appliedTargets[test.Groups[i].Name]; ok {
 			test.Groups[i].VUsers = current
 		}
+	}
+	for _, group := range test.Groups {
+		groupVUsers[group.Name] = groupCurrentVUsers(group)
 	}
 	if test.goalControl == nil {
 		// Defense-in-depth: the distributed path may reach a scale decision
@@ -3299,16 +4981,21 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	// WebSocket events, usage snapshots, and queue promotion.
 	switch test.Status {
 	case "COMPLETE", "FAILED", "ABORTED":
+		releasePassiveOperationTokenLocked(test)
 		tr.mu.Unlock()
 		return nil
 	}
 	if err := tr.persistStoredTestStatus(test.ID, test.executionFence, finalStatus, &endTime, finalError); err != nil {
-		tr.mu.Unlock()
 		if isStoredTestTransitionCancelled(err) {
 			// Deletion is a durable tombstone. Treat it as cancellation of this stale
-			// completion, not as a successful terminal commit.
+			// completion, not as a successful terminal commit. Drop only this
+			// process-local claim before reload convergence; the row identity is still
+			// protected by tr.mu and the caller's exact ManagedTest pointer check above.
+			releasePassiveOperationTokenLocked(test)
+			tr.mu.Unlock()
 			return nil
 		}
+		tr.mu.Unlock()
 		retryErr := fmt.Errorf("persist terminal test state: %w", err)
 		slog.Error("failed to persist terminal test state; terminal side effects deferred", "test_id", test.ID, "status", finalStatus, "error", retryErr)
 		tr.enqueueTestCompletionRetry(test, finalStatus, endTime, finalError, archiveRecord)
@@ -3323,6 +5010,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	test.EndedAt = &endTime
 	test.cancel = nil
 	test.executionCtx = nil
+	releasePassiveOperationTokenLocked(test)
 	clearDistributedRunSecretSnapshotsLocked(test)
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
@@ -3380,8 +5068,90 @@ func (tr *TestRunner) promotePendingTests() {
 		return
 	}
 	if err := tr.promotePendingTestsWithTerm(leaseTerm); err != nil && !errors.Is(err, errNotExecutionLeader) {
+		if errors.Is(err, errStartAdmissionEvidenceStale) {
+			tr.enqueuePendingPromotionRetryWithTerm(leaseTerm)
+		}
 		slog.Warn("pending test promotion failed", "error", err)
 	}
+}
+
+const (
+	pendingPromotionRetryInitialBackoff = 25 * time.Millisecond
+	pendingPromotionRetryMaxBackoff     = time.Second
+)
+
+func (tr *TestRunner) enqueuePendingPromotionRetryWithTerm(term executionLeaseTerm) {
+	if tr == nil || !tr.executionLeaseTermCurrent(term) {
+		return
+	}
+	tr.mu.Lock()
+	if tr.shuttingDown || (tr.pendingPromotionRetryActive && tr.pendingPromotionRetryTerm == term) {
+		tr.mu.Unlock()
+		return
+	}
+	tr.pendingPromotionRetryActive = true
+	tr.pendingPromotionRetryTerm = term
+	tr.mu.Unlock()
+	go tr.runPendingPromotionRetry(term)
+}
+
+func (tr *TestRunner) runPendingPromotionRetry(term executionLeaseTerm) {
+	ctx, cancel := tr.executionOperationContext(nil)
+	defer cancel()
+	if tr.durableExecutionFence {
+		contextTerm, ok := executionLeaseTermFromContext(ctx)
+		if !ok || contextTerm != term {
+			tr.finishPendingPromotionRetry(term)
+			return
+		}
+	}
+	defer tr.finishPendingPromotionRetry(term)
+
+	backoff := pendingPromotionRetryInitialBackoff
+	for {
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		if !tr.executionLeaseTermCurrent(term) {
+			return
+		}
+		tr.mu.RLock()
+		shuttingDown := tr.shuttingDown
+		hasPending := false
+		for _, test := range tr.tests {
+			if test != nil && (strings.EqualFold(strings.TrimSpace(test.Status), "PENDING") ||
+				(strings.EqualFold(strings.TrimSpace(test.Status), "SHAKEOUT") && test.pendingScriptShakeoutOutcome != nil &&
+					test.pendingScriptShakeoutOutcome.PassStatus == "PENDING")) {
+				hasPending = true
+				break
+			}
+		}
+		tr.mu.RUnlock()
+		if shuttingDown || !hasPending {
+			return
+		}
+		err := tr.promotePendingTestsWithTerm(term)
+		if err == nil || !errors.Is(err, errStartAdmissionEvidenceStale) {
+			if err != nil && !errors.Is(err, errNotExecutionLeader) {
+				slog.Warn("pending test promotion retry failed permanently", "error", err)
+			}
+			return
+		}
+		backoff = min(backoff*2, pendingPromotionRetryMaxBackoff)
+	}
+}
+
+func (tr *TestRunner) finishPendingPromotionRetry(term executionLeaseTerm) {
+	tr.mu.Lock()
+	if tr.pendingPromotionRetryActive && tr.pendingPromotionRetryTerm == term {
+		tr.pendingPromotionRetryActive = false
+		tr.pendingPromotionRetryTerm = executionLeaseTerm{}
+	}
+	tr.mu.Unlock()
 }
 
 // promotePendingTestsWithTerm promotes fair-share queue entries under one
@@ -3392,6 +5162,55 @@ func (tr *TestRunner) promotePendingTests() {
 func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) error {
 	deferredPending := make(map[string]struct{})
 	for {
+		if !tr.executionLeaseTermLocallyCurrent(leaseTerm) {
+			return errNotExecutionLeader
+		}
+		// A completed pending-row shakeout can remain in SHAKEOUT only while its
+		// outcome write is retryable. Finish that exact result before selecting
+		// more queue work; never execute the one-shot actions a second time.
+		tr.mu.RLock()
+		pendingOutcomeID := ""
+		for id, test := range tr.tests {
+			if test != nil && test.Status == "SHAKEOUT" && test.pendingScriptShakeoutOutcome != nil &&
+				test.pendingScriptShakeoutOutcome.PassStatus == "PENDING" {
+				pendingOutcomeID = id
+				break
+			}
+		}
+		tr.mu.RUnlock()
+		if pendingOutcomeID != "" {
+			if err := tr.resumePendingScriptShakeoutOutcome(pendingOutcomeID, &leaseTerm); err != nil {
+				var gateErr *ScriptShakeoutGateError
+				if !errors.As(err, &gateErr) {
+					return err
+				}
+			}
+			continue
+		}
+		tr.mu.RLock()
+		selectionState := tr.pendingQueueMetadataStateLocked()
+		projectStore := tr.projectStore
+		tr.mu.RUnlock()
+		selectionAt := time.Now().UTC()
+		activeSlots, reservationErr := tr.loadBoundTimeslotsActiveAt(selectionAt)
+		projectQuotas := loadPendingProjectQuotaEvidence(projectStore, selectionState)
+		if reservationErr != nil {
+			return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load pending capacity reservations: %w", reservationErr))
+		}
+		removedMissingTest := false
+		for test, evidence := range projectQuotas {
+			if evidence.err != nil {
+				if errors.Is(evidence.err, sql.ErrNoRows) {
+					tr.evictMissingManagedTestIdentity(test.ID, test)
+					removedMissingTest = true
+					continue
+				}
+				return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load pending project %q quota for test %q: %w", evidence.projectID, test.ID, evidence.err))
+			}
+		}
+		if removedMissingTest {
+			continue
+		}
 		if !tr.executionLeaseTermCurrent(leaseTerm) {
 			return errNotExecutionLeader
 		}
@@ -3400,14 +5219,29 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			return nil
 		}
-		pending := tr.nextPromotablePendingTestExcludingLocked(deferredPending)
-		if pending == nil {
+		if !tr.executionLeaseTermLocallyCurrent(leaseTerm) {
 			tr.mu.Unlock()
+			return errNotExecutionLeader
+		}
+		if !samePendingQueueMetadataState(selectionState, tr.pendingQueueMetadataStateLocked()) {
+			tr.mu.Unlock()
+			continue
+		}
+		pending := tr.nextPromotablePendingTestExcludingWithTimeslotsLocked(deferredPending, selectionAt, activeSlots, reservationErr, projectQuotas)
+		if pending == nil {
+			awaitingSecretRepair := tr.pendingSecretRepairAwaitedLocked()
+			tr.mu.Unlock()
+			if awaitingSecretRepair {
+				return errStartAdmissionEvidenceStale
+			}
 			return nil
 		}
 		pendingID := pending.ID
 		tr.mu.Unlock()
 		if policyErr := tr.validateCIRunPolicyForStart(pendingID); policyErr != nil {
+			if errors.Is(policyErr, errStartAdmissionEvidenceStale) {
+				return policyErr
+			}
 			message := "controller refused pending CI run before execution: " + policyErr.Error()
 			if terminalErr := tr.failCIRunBeforeExecutionDuringPromotion(pendingID, message); terminalErr != nil {
 				return terminalErr
@@ -3430,8 +5264,53 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			}
 			continue
 		}
+		if _, err := tr.validateScriptShakeoutPassForStart(pendingID, StartTestOptions{}, &leaseTerm); err != nil {
+			var gateErr *ScriptShakeoutGateError
+			if errors.As(err, &gateErr) || retryableStartSecretRequirement(err) {
+				messagePrefix := pendingScriptShakeoutManualReviewReasonPrefix
+				if retryableStartSecretRequirement(err) {
+					messagePrefix = pendingRetryableShakeoutEvidenceReasonPrefix
+				}
+				message := messagePrefix + " " + err.Error()
+				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+					return deferErr
+				}
+				deferredPending[pendingID] = struct{}{}
+				continue
+			}
+			return err
+		}
 		if err := tr.refreshTestCapacityBindingFromStore(pendingID); err != nil {
 			return err
+		}
+		shakeoutInputFingerprint := scriptShakeoutInputFingerprint{}
+		shakeoutEvidence := startLaunchEvidence{}
+		shakeoutEvidenceLoaded := false
+		if tr.scriptShakeoutRequiredForStart(pendingID, StartTestOptions{}) {
+			fingerprint, fingerprintErr := tr.scriptShakeoutExecutableFingerprint(pendingID)
+			if fingerprintErr != nil {
+				if retryableStartSecretRequirement(fingerprintErr) {
+					message := pendingRetryableShakeoutEvidenceReasonPrefix + " " + fingerprintErr.Error()
+					if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+						return deferErr
+					}
+					deferredPending[pendingID] = struct{}{}
+					continue
+				}
+				message := "pending test script shakeout inputs could not be fingerprinted; no shakeout actions were executed: " + fingerprintErr.Error()
+				if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, message, leaseTerm); terminalErr != nil {
+					return terminalErr
+				}
+				continue
+			}
+			shakeoutInputFingerprint = fingerprint
+			shakeoutAt := time.Now().UTC()
+			var evidenceErr error
+			shakeoutEvidence, evidenceErr = tr.loadStartLaunchEvidence(pendingID, shakeoutAt)
+			if evidenceErr != nil {
+				return evidenceErr
+			}
+			shakeoutEvidenceLoaded = true
 		}
 		tr.mu.Lock()
 		pending = tr.tests[pendingID]
@@ -3439,14 +5318,39 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			continue
 		}
-		// Queue promotion is the ownership boundary for pending rows recovered by
-		// a successor controller. Fail closed before any shakeout/status write.
-		if err := tr.claimTestExecutionFenceWithTerm(pending, leaseTerm); err != nil {
-			tr.mu.Unlock()
-			slog.Warn("pending test promotion could not claim execution epoch", "test_id", pending.ID, "error", err)
-			return err
-		}
-		if pending.ScriptShakeout && !startOptionsWithAuthorization(pending, StartTestOptions{}).OverrideScriptShakeoutError {
+		shakeoutAlreadyPassed := pending.StartAuthorization != nil && scriptShakeoutPassAllows(pending.StartAuthorization.ScriptShakeoutPass) &&
+			pending.validatedScriptShakeoutPass != ""
+		if pending.ScriptShakeout && !shakeoutAlreadyPassed && !startOptionsWithAuthorization(pending, StartTestOptions{}).OverrideScriptShakeoutError {
+			if !shakeoutEvidenceLoaded {
+				tr.mu.Unlock()
+				return errStartAdmissionEvidenceStale
+			}
+			if err := tr.validateStartLaunchEvidenceFenceLocked(shakeoutEvidence); err != nil {
+				tr.mu.Unlock()
+				return err
+			}
+			// SHAKEOUT is an execution-capable durable state, so claim only at
+			// the transition that persists it. Passive PENDING rows retain no token.
+			previousExecutionFence := pending.executionFence
+			previousExecutionGeneration := pending.executionGeneration
+			previousPassiveOperationToken := pending.passiveOperationToken
+			previousExpectedProjectUpdatedAt := pending.expectedProjectUpdatedAt
+			previousExpectedStartAdmissionRevision := pending.expectedStartAdmissionRevision
+			claimed, err := tr.claimPassiveExecutionFenceLocked(pending, &leaseTerm)
+			if err != nil {
+				tr.mu.Unlock()
+				slog.Warn("pending test promotion could not claim execution epoch", "test_id", pending.ID, "error", err)
+				return err
+			}
+			if err := tr.installTestExecutionContextLocked(pending, &leaseTerm); err != nil {
+				if claimed {
+					pending.executionFence = previousExecutionFence
+					pending.executionGeneration = previousExecutionGeneration
+					pending.passiveOperationToken = previousPassiveOperationToken
+				}
+				tr.mu.Unlock()
+				return err
+			}
 			previousStatus := pending.Status
 			previousPendingSince := cloneTimePtr(pending.PendingSince)
 			previousPendingReason := pending.PendingReason
@@ -3457,61 +5361,87 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			pending.PendingReason = ""
 			pending.QueuePosition = 0
 			pending.Error = ""
-			if err := tr.saveManagedTestStartRecord(pending); err != nil {
-				pending.Status = previousStatus
-				pending.PendingSince = previousPendingSince
-				pending.PendingReason = previousPendingReason
-				pending.QueuePosition = previousQueuePosition
-				pending.Error = previousError
+			pending.expectedProjectUpdatedAt = shakeoutEvidence.launchWindow.projectQuota.updatedAt
+			pending.expectedStartAdmissionRevision = shakeoutEvidence.startAdmissionRevision
+			if owned, err := tr.persistManagedTestStartOutsideLockLocked(pending, "SHAKEOUT"); err != nil {
+				if owned {
+					clearScriptShakeoutContextLocked(pending)
+					pending.executionFence = previousExecutionFence
+					pending.executionGeneration = previousExecutionGeneration
+					pending.passiveOperationToken = previousPassiveOperationToken
+					pending.expectedProjectUpdatedAt = previousExpectedProjectUpdatedAt
+					pending.expectedStartAdmissionRevision = previousExpectedStartAdmissionRevision
+					pending.Status = previousStatus
+					pending.PendingSince = previousPendingSince
+					pending.PendingReason = previousPendingReason
+					pending.QueuePosition = previousQueuePosition
+					pending.Error = previousError
+				}
 				tr.mu.Unlock()
 				slog.Warn("pending test promotion could not persist shakeout", "test_id", pending.ID, "error", err)
 				return err
 			}
+			releasePassiveOperationTokenLocked(pending)
 			tr.broadcastEvent("script_shakeout_started", pending)
 			tr.mu.Unlock()
 
-			report := tr.runScriptShakeoutReport(pending)
+			report, operationErr := tr.runScriptShakeoutReport(pending)
+			if operationErr != nil {
+				if !tr.executionLeaseTermCurrent(leaseTerm) {
+					return errNotExecutionLeader
+				}
+				return operationErr
+			}
+			if report.Passed {
+				currentSHA256, fingerprintErr := tr.scriptShakeoutExecutableFingerprint(pending.ID)
+				switch {
+				case fingerprintErr != nil:
+					if retryableStartSecretRequirement(fingerprintErr) {
+						pendingSince := time.Now().UTC()
+						return tr.markScriptShakeoutVerificationPendingWithExpectedTerm(
+							pending.ID,
+							report,
+							shakeoutInputFingerprint,
+							"PENDING",
+							&pendingSince,
+							"awaiting capacity after script shakeout",
+							&leaseTerm,
+							fingerprintErr,
+							false,
+						)
+					}
+					report.Passed = false
+					report.Summary = "Script shakeout completed, but its executable input evidence could not be verified; full load test has not started."
+					report.Results = append(report.Results, ScriptShakeoutResult{GroupName: "executable inputs", Status: "failed", Error: fingerprintErr.Error()})
+				case currentSHA256 != shakeoutInputFingerprint:
+					report.Passed = false
+					report.Summary = "Script shakeout inputs changed while the check was running; full load test has not started."
+					report.Results = append(report.Results, ScriptShakeoutResult{GroupName: "executable inputs", Status: "failed", Error: "the executable snapshot or a versioned secret source changed during shakeout"})
+				default:
+					shakeoutInputFingerprint = currentSHA256
+				}
+			}
 			if !report.Passed {
-				if err := tr.markScriptShakeoutReview(pending.ID, report); err != nil {
+				if err := tr.markScriptShakeoutReviewWithExpectedTerm(pending.ID, report, &leaseTerm); err != nil {
 					var gateErr *ScriptShakeoutGateError
 					if !errors.As(err, &gateErr) {
 						slog.Warn("pending test promotion could not persist shakeout review", "test_id", pending.ID, "error", err)
+						return err
 					}
 				}
 				tr.recordSystemTestAudit("test.script_shakeout.review", "blocked", pending, map[string]any{"report": report})
 				continue
 			}
 
-			tr.mu.Lock()
-			current, ok := tr.tests[pending.ID]
-			if !ok || current.Status != "SHAKEOUT" || !tr.executionLeaseTermCurrent(leaseTerm) {
-				tr.mu.Unlock()
-				return errNotExecutionLeader
-			}
-			pending = current
-			// Return to a durable retryable state before attempting INITIALIZING.
-			// If that second transition cannot be saved, a later reconciliation can
-			// safely rerun the deterministic shakeout instead of stranding SHAKEOUT.
-			shakeoutStatus := pending.Status
-			shakeoutError := pending.Error
-			now := time.Now()
-			pending.Status = "PENDING"
-			pending.PendingSince = &now
-			pending.PendingReason = "awaiting capacity after script shakeout"
-			pending.QueuePosition = 0
-			pending.Error = ""
-			if err := tr.saveManagedTestRecord(pending); err != nil {
-				pending.Status = shakeoutStatus
-				pending.PendingSince = nil
-				pending.PendingReason = ""
-				pending.Error = shakeoutError
-				tr.mu.Unlock()
+			now := time.Now().UTC()
+			if err := tr.markPendingScriptShakeoutPassedWithExpectedTerm(pending.ID, report, shakeoutInputFingerprint, now, &leaseTerm); err != nil {
 				slog.Warn("pending test promotion could not persist successful shakeout", "test_id", pending.ID, "error", err)
 				return err
 			}
-			tr.broadcastEvent("script_shakeout_passed", pending)
-			tr.mu.Unlock()
 			if policyErr := tr.validateCIRunPolicyForStart(pendingID); policyErr != nil {
+				if errors.Is(policyErr, errStartAdmissionEvidenceStale) {
+					return policyErr
+				}
 				message := "controller refused pending CI run after script shakeout: " + policyErr.Error()
 				if terminalErr := tr.failCIRunBeforeExecutionDuringPromotion(pendingID, message); terminalErr != nil {
 					return terminalErr
@@ -3548,7 +5478,32 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 		}
 		sourceScheduleID, sourceScheduleErr := tr.scenarioScheduleIDForTest(pendingID)
 		if sourceScheduleErr != nil {
-			return fmt.Errorf("resolve pending test source schedule: %w", sourceScheduleErr)
+			if errors.Is(sourceScheduleErr, storage.ErrScenarioScheduleOccurrenceCorrelationAmbiguous) {
+				message := "pending test has ambiguous scenario occurrence correlation: " + sourceScheduleErr.Error()
+				if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, message, leaseTerm); terminalErr != nil {
+					return terminalErr
+				}
+				continue
+			}
+			return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("resolve pending test source schedule: %w", sourceScheduleErr))
+		}
+		promotionAt := time.Now().UTC()
+		promotionEvidence, evidenceErr := tr.loadStartLaunchEvidence(pendingID, promotionAt)
+		if evidenceErr != nil {
+			return evidenceErr
+		}
+		if policyErr := tr.validateCIRunPolicyForStartAtProjectRevision(pendingID, promotionEvidence.launchWindow.projectQuota.updatedAt); policyErr != nil {
+			if errors.Is(policyErr, errStartAdmissionEvidenceStale) {
+				return policyErr
+			}
+			message := "controller refused pending CI run before execution: " + policyErr.Error()
+			if terminalErr := tr.failCIRunBeforeExecutionDuringPromotion(pendingID, message); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return errNotExecutionLeader
 		}
 		tr.mu.Lock()
 		pending = tr.tests[pendingID]
@@ -3556,13 +5511,12 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			continue
 		}
-		if !tr.executionLeaseTermCurrent(leaseTerm) {
+		if !tr.executionLeaseTermLocallyCurrent(leaseTerm) {
 			tr.mu.Unlock()
 			return errNotExecutionLeader
 		}
-		if err := tr.claimTestExecutionFenceWithTerm(pending, leaseTerm); err != nil {
+		if err := tr.validateStartLaunchEvidenceFenceLocked(promotionEvidence); err != nil {
 			tr.mu.Unlock()
-			slog.Warn("pending test promotion lost execution leadership after secret revalidation", "test_id", pending.ID, "error", err)
 			return err
 		}
 		// Candidate selection above is deliberately optimistic: CI policy and an
@@ -3572,7 +5526,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 		// its bound capacity timeslot. Re-run every time-sensitive gate while holding
 		// tr.mu immediately before INITIALIZING so the admission decision and the
 		// capacity-reserving state transition are one atomic controller operation.
-		if !tr.executionLeaseTermCurrent(leaseTerm) {
+		if !tr.executionLeaseTermLocallyCurrent(leaseTerm) {
 			tr.mu.Unlock()
 			return errNotExecutionLeader
 		}
@@ -3593,8 +5547,13 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			}
 			continue
 		}
-		if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(pending); len(conflicts) > 0 {
-			conflict := conflicts[0]
+		javaConflicts, placementConflicts, runtimeEvidenceErr := tr.startRuntimeGateConflictsLocked(pending, promotionEvidence)
+		if runtimeEvidenceErr != nil {
+			tr.mu.Unlock()
+			return runtimeEvidenceErr
+		}
+		if len(javaConflicts) > 0 {
+			conflict := javaConflicts[0]
 			tr.mu.Unlock()
 			message := "pending test promotion Java Vuser launch gate failed: " + conflict.Code + ": " + conflict.Message
 			if conflict.Code == "java_vuser_runner_required" {
@@ -3607,23 +5566,25 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			}
 			continue
 		}
-		if groupsUseJavaVuserProtocol(pending.Groups) {
-			if conflicts := tr.generatorPlacementLaunchConflictsLocked(pending); len(conflicts) > 0 {
-				conflict := conflicts[0]
-				tr.mu.Unlock()
-				message := "pending test promotion Java Vuser placement gate failed: " + conflict.Code + ": " + conflict.Message
-				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
-					return deferErr
-				}
-				deferredPending[pendingID] = struct{}{}
-				continue
+		if len(placementConflicts) > 0 {
+			conflict := placementConflicts[0]
+			tr.mu.Unlock()
+			message := "pending test promotion Java Vuser placement gate failed: " + conflict.Code + ": " + conflict.Message
+			if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+				return deferErr
 			}
+			deferredPending[pendingID] = struct{}{}
+			continue
 		}
-		if blocked, reason := tr.evaluateQuotaBlockLocked(pending, ""); blocked {
+		if err := startLaunchEvidenceRetryError(pending, promotionAt, promotionEvidence.launchWindow); err != nil {
+			tr.mu.Unlock()
+			return err
+		}
+		if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(pending, "", promotionAt, promotionEvidence.launchWindow); blocked {
 			// Quota pressure is transient. Keep the row durably queued with the
 			// current reason; a later completion/reconciliation will retry it.
 			if pending.PendingReason != reason {
-				if err := tr.markTestPendingLocked(pending, reason); err != nil {
+				if err := tr.markTestPendingLockedWithExpectedTerm(pending, reason, &leaseTerm); err != nil {
 					tr.mu.Unlock()
 					return err
 				}
@@ -3631,19 +5592,19 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			continue
 		}
-		now := time.Now().UTC()
+		now := promotionAt
 		// A queued scenario occurrence is already represented by its parent
 		// recurring schedule in the projected launch window. Exclude that source
 		// schedule while revalidating the occurrence so it cannot conflict with
 		// itself after transient quota pressure clears.
-		if err := tr.launchStartWindowErrorLocked(pending, now, pending.ID, sourceScheduleID); err != nil {
+		if err := tr.launchStartWindowErrorWithEvidenceLocked(pending, now, pending.ID, sourceScheduleID, promotionEvidence.launchWindow); err != nil {
 			tr.mu.Unlock()
 			if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, "pending test promotion launch window is no longer valid: "+err.Error(), leaseTerm); terminalErr != nil {
 				return terminalErr
 			}
 			continue
 		}
-		if err := tr.launchTimeslotRevalidationErrorLocked(pending, now); err != nil {
+		if err := tr.launchTimeslotRevalidationErrorWithEvidenceLocked(pending, now, promotionEvidence.launchWindow); err != nil {
 			tr.mu.Unlock()
 			if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, "pending test promotion capacity reservation is no longer valid: "+err.Error(), leaseTerm); terminalErr != nil {
 				return terminalErr
@@ -3658,23 +5619,41 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 		previousExecutionCtx := pending.executionCtx
 		previousCancel := pending.cancel
 		previousBackend := pending.executionBackend
+		previousExecutionFence := pending.executionFence
+		previousExecutionGeneration := pending.executionGeneration
+		previousPassiveOperationToken := pending.passiveOperationToken
+		previousExpectedProjectUpdatedAt := pending.expectedProjectUpdatedAt
+		previousExpectedStartAdmissionRevision := pending.expectedStartAdmissionRevision
+		// Every non-active gate has passed. Claim the exact term only at the
+		// INITIALIZING transition so a passive queue row never pins an epoch.
+		pending.expectedProjectUpdatedAt = promotionEvidence.launchWindow.projectQuota.updatedAt
+		pending.expectedStartAdmissionRevision = promotionEvidence.startAdmissionRevision
 		if err := tr.markTestInitializingLockedWithExpectedTerm(pending, &leaseTerm); err != nil {
+			pending.expectedProjectUpdatedAt = previousExpectedProjectUpdatedAt
+			pending.expectedStartAdmissionRevision = previousExpectedStartAdmissionRevision
 			tr.mu.Unlock()
 			slog.Warn("pending test promotion lost execution leadership", "test_id", pending.ID, "error", err)
 			return err
 		}
-		if err := tr.saveManagedTestStartRecord(pending); err != nil {
-			if pending.cancel != nil {
-				pending.cancel()
+		if owned, err := tr.persistManagedTestStartOutsideLockLocked(pending, "INITIALIZING"); err != nil {
+			if owned {
+				if pending.cancel != nil {
+					pending.cancel()
+				}
+				pending.Status = previousStatus
+				pending.PendingSince = previousPendingSince
+				pending.PendingReason = previousPendingReason
+				pending.QueuePosition = previousQueuePosition
+				pending.Error = previousError
+				pending.executionCtx = previousExecutionCtx
+				pending.cancel = previousCancel
+				pending.executionBackend = previousBackend
+				pending.executionFence = previousExecutionFence
+				pending.executionGeneration = previousExecutionGeneration
+				pending.passiveOperationToken = previousPassiveOperationToken
+				pending.expectedProjectUpdatedAt = previousExpectedProjectUpdatedAt
+				pending.expectedStartAdmissionRevision = previousExpectedStartAdmissionRevision
 			}
-			pending.Status = previousStatus
-			pending.PendingSince = previousPendingSince
-			pending.PendingReason = previousPendingReason
-			pending.QueuePosition = previousQueuePosition
-			pending.Error = previousError
-			pending.executionCtx = previousExecutionCtx
-			pending.cancel = previousCancel
-			pending.executionBackend = previousBackend
 			tr.mu.Unlock()
 			slog.Warn("pending test promotion could not persist initializing state", "test_id", pending.ID, "error", err)
 			return err
@@ -3682,6 +5661,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 		if previousCancel != nil {
 			previousCancel()
 		}
+		releasePassiveOperationTokenLocked(pending)
 		tr.mu.Unlock()
 		if err := tr.syncScenarioScheduleLifecycleForTest(pending.ID); err != nil {
 			// The INITIALIZING row and its correlated occurrence/schedule fields
@@ -3711,7 +5691,7 @@ func (tr *TestRunner) failPendingPromotionGateWithTerm(id, message string, lease
 		tr.mu.Unlock()
 		return nil
 	}
-	if err := tr.claimTestExecutionFenceWithTerm(test, leaseTerm); err != nil {
+	if _, err := tr.claimPassiveExecutionFenceLocked(test, &leaseTerm); err != nil {
 		tr.mu.Unlock()
 		return err
 	}
@@ -3721,6 +5701,25 @@ func (tr *TestRunner) failPendingPromotionGateWithTerm(id, message string, lease
 
 const pendingSecretRequirementsReasonPrefix = "pending test promotion secret requirements are no longer satisfied:"
 const pendingCapacityAuthorizationReasonPrefix = "pending test promotion requires a new capacity-shortfall approval:"
+const pendingRetryableShakeoutEvidenceReasonPrefix = "pending test promotion script shakeout evidence is temporarily unavailable:"
+const pendingScriptShakeoutManualReviewReasonPrefix = "pending test promotion requires script shakeout override or re-materialization; shakeout actions were not replayed:"
+
+func (tr *TestRunner) pendingSecretRepairAwaitedLocked() bool {
+	if tr == nil {
+		return false
+	}
+	for _, test := range tr.tests {
+		if test == nil || !strings.EqualFold(strings.TrimSpace(test.Status), "PENDING") {
+			continue
+		}
+		reason := strings.TrimSpace(test.PendingReason)
+		if strings.HasPrefix(reason, pendingSecretRequirementsReasonPrefix) ||
+			strings.HasPrefix(reason, pendingRetryableShakeoutEvidenceReasonPrefix) {
+			return true
+		}
+	}
+	return false
+}
 
 // deferPendingPromotionGateWithTerm retains a correctable admission failure in
 // the durable queue. Missing values and resolver outages can be repaired by an
@@ -3737,13 +5736,10 @@ func (tr *TestRunner) deferPendingPromotionGateWithTerm(id, message string, leas
 	if test == nil || test.Status != "PENDING" {
 		return nil
 	}
-	if err := tr.claimTestExecutionFenceWithTerm(test, leaseTerm); err != nil {
-		return err
-	}
 	if test.PendingReason == reason {
 		return nil
 	}
-	return tr.markTestPendingLocked(test, reason)
+	return tr.markTestPendingLockedWithExpectedTerm(test, reason, &leaseTerm)
 }
 
 func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *ManagedTest, details map[string]any) {
@@ -3767,11 +5763,7 @@ func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *
 	}
 }
 
-func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
-	return tr.nextPromotablePendingTestExcludingLocked(nil)
-}
-
-func (tr *TestRunner) nextPromotablePendingTestExcludingLocked(excluded map[string]struct{}) *ManagedTest {
+func (tr *TestRunner) nextPromotablePendingTestExcludingWithTimeslotsLocked(excluded map[string]struct{}, now time.Time, activeSlots []*storage.CapacityReservation, reservationErr error, projectQuotas map[*ManagedTest]projectQuotaEvidence) *ManagedTest {
 	pending := make([]*ManagedTest, 0)
 	for _, test := range tr.tests {
 		if test.Status == "PENDING" {
@@ -3784,13 +5776,18 @@ func (tr *TestRunner) nextPromotablePendingTestExcludingLocked(excluded map[stri
 	if len(pending) == 0 {
 		return nil
 	}
-	tr.sortPendingTestsForFairShareLocked(pending)
+	tr.sortPendingTestsForFairShareWithTimeslotsLocked(pending, now, activeSlots)
 	for _, test := range pending {
 		if tr.projectDeletionErrorLocked(test.ProjectID) != nil {
 			continue
 		}
 		tr.refreshCapacityAdvisoryLocked(test)
-		if blocked, _ := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		projectQuota, quotaOK := projectQuotas[test].quotaFor(test)
+		blocked := !quotaOK
+		if quotaOK {
+			blocked, _ = tr.evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test, "", now, activeSlots, reservationErr, projectQuota)
+		}
+		if blocked {
 			continue
 		}
 		return test
@@ -3798,14 +5795,24 @@ func (tr *TestRunner) nextPromotablePendingTestExcludingLocked(excluded map[stri
 	return nil
 }
 
-func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutReport {
+func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) (ScriptShakeoutReport, error) {
 	report := ScriptShakeoutReport{
 		Passed:    true,
 		StartedAt: time.Now().UTC(),
 		Results:   make([]ScriptShakeoutResult, 0, len(test.groupSpecs)),
 	}
+	tr.mu.RLock()
+	operationCtx := test.executionCtx
+	tr.mu.RUnlock()
+	if operationCtx == nil {
+		operationCtx = context.Background()
+	}
 	projectResolvers := make(map[string]engine.SecretResolver)
 	for index, group := range test.groupSpecs {
+		if err := operationCtx.Err(); err != nil {
+			report.EndedAt = time.Now().UTC()
+			return report, err
+		}
 		result := ScriptShakeoutResult{
 			GroupName: group.Name,
 			Status:    "passed",
@@ -3823,7 +5830,7 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutR
 		shakeoutScript := *group.Script
 		shakeoutScript.Config.RunLogic.Iterations = 1
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(operationCtx, 30*time.Second)
 		projectID := shakeoutScript.ProjectID
 		if strings.TrimSpace(projectID) == "" {
 			projectID = test.ProjectID
@@ -3838,6 +5845,10 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutR
 		}
 		err := engine.RunScriptShakeoutWithSecretResolver(ctx, group.Name, &shakeoutScript, resolver)
 		cancel()
+		if operationErr := operationCtx.Err(); operationErr != nil {
+			report.EndedAt = time.Now().UTC()
+			return report, operationErr
+		}
 		if err != nil {
 			result.Status = "failed"
 			result.Error = err.Error()
@@ -3852,7 +5863,7 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutR
 	} else {
 		report.Summary = "Script shakeout failed; full load test has not started. Review the evidence and choose Continue or Cancel."
 	}
-	return report
+	return report, nil
 }
 
 func formatScriptShakeoutEvidence(report ScriptShakeoutReport) string {

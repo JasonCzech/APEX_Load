@@ -14,8 +14,9 @@
 //	func (p *MyProtocol) Name() string { return "myproto" }
 //	// ... implement Execute, Init, etc.
 //
-//	// pkg/protocol/registry.go
-//	RegisterProtocol(new(myproto.MyProtocol))
+//	func init() {
+//	    protocol.Register("myproto", func() protocol.Protocol { return &MyProtocol{} })
+//	}
 package protocol
 
 import (

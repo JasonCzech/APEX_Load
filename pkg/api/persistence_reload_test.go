@@ -19,6 +19,27 @@ type serialScriptReloadStore struct {
 	releaseFirst  chan struct{}
 }
 
+type countingScriptReloadStore struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *countingScriptReloadStore) SaveScript(*dsl.Script) error     { return nil }
+func (s *countingScriptReloadStore) DeleteScript(string) error        { return nil }
+func (s *countingScriptReloadStore) MoveScript(string, *string) error { return nil }
+func (s *countingScriptReloadStore) ListScripts(string, *string) ([]*dsl.Script, error) {
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+	return []*dsl.Script{{ID: "script", Name: "script"}}, nil
+}
+
+func (s *countingScriptReloadStore) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
 func (s *serialScriptReloadStore) SaveScript(*dsl.Script) error     { return nil }
 func (s *serialScriptReloadStore) DeleteScript(string) error        { return nil }
 func (s *serialScriptReloadStore) MoveScript(string, *string) error { return nil }
@@ -44,6 +65,70 @@ type scriptReloadRaceStore struct {
 type scenarioReloadRaceStore struct {
 	storage.Store
 	inject func()
+}
+
+type schedulerVersionStore struct {
+	storage.Store
+	mu            sync.Mutex
+	version       string
+	scriptLists   int
+	scenarioLists int
+}
+
+type churningSchedulerVersionStore struct {
+	schedulerVersionStore
+	versionCalls int
+}
+
+type locallyFencedSchedulerVersionStore struct {
+	schedulerVersionStore
+	injectOnce sync.Once
+	inject     func()
+}
+
+func (s *churningSchedulerVersionStore) SchedulerContentVersion() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.versionCalls++
+	return string(rune('a' + s.versionCalls)), nil
+}
+
+func (s *schedulerVersionStore) SchedulerContentVersion() (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.version, nil
+}
+
+func (s *schedulerVersionStore) ListScripts(string, *string) ([]*dsl.Script, error) {
+	s.mu.Lock()
+	s.scriptLists++
+	s.mu.Unlock()
+	return nil, nil
+}
+
+func (s *locallyFencedSchedulerVersionStore) ListScripts(string, *string) ([]*dsl.Script, error) {
+	s.mu.Lock()
+	s.scriptLists++
+	s.mu.Unlock()
+	s.injectOnce.Do(func() {
+		if s.inject != nil {
+			s.inject()
+		}
+	})
+	return []*dsl.Script{{ID: "external", Name: "External", Protocol: "http"}}, nil
+}
+
+func (s *schedulerVersionStore) ListScenarios() ([]*storage.Scenario, error) {
+	s.mu.Lock()
+	s.scenarioLists++
+	s.mu.Unlock()
+	return nil, nil
+}
+
+func (s *schedulerVersionStore) counts() (int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.scriptLists, s.scenarioLists
 }
 
 func (s *scenarioReloadRaceStore) ListScenarios() ([]*storage.Scenario, error) {
@@ -300,6 +385,34 @@ func TestConcurrentScriptReloadsAreSerialized(t *testing.T) {
 	}
 }
 
+func TestHAReadScriptRefreshCoalescesRequestBurst(t *testing.T) {
+	store := &countingScriptReloadStore{}
+	runner := &TestRunner{
+		scripts:     map[string]*StoredScript{},
+		refKeyIndex: map[string]string{},
+		scriptStore: store,
+		leadership:  &executionLeadership{},
+	}
+	const callers = 20
+	var group sync.WaitGroup
+	group.Add(callers)
+	for range callers {
+		go func() {
+			defer group.Done()
+			runner.refreshScriptsForHARead()
+		}()
+	}
+	group.Wait()
+	if got := store.callCount(); got != 1 {
+		t.Fatalf("ListScripts calls = %d, want one coalesced refresh", got)
+	}
+
+	runner.refreshScriptsForHARead(true)
+	if got := store.callCount(); got != 2 {
+		t.Fatalf("ListScripts calls after forced refresh = %d, want 2", got)
+	}
+}
+
 func TestReloadStoredScenariosDoesNotOverwriteConcurrentMutation(t *testing.T) {
 	tr := &TestRunner{scripts: map[string]*StoredScript{}, scenarios: map[string]*StoredScenario{}, refKeyIndex: map[string]string{}}
 	concurrent := &StoredScenario{ID: "new", Name: "concurrent"}
@@ -316,5 +429,90 @@ func TestReloadStoredScenariosDoesNotOverwriteConcurrentMutation(t *testing.T) {
 	}
 	if tr.scenarios[concurrent.ID] != concurrent || tr.scenarios["old"] != nil {
 		t.Fatalf("stale reload replaced concurrent scenario mutation: %#v", tr.scenarios)
+	}
+}
+
+func TestSchedulerContentRefreshSkipsUnchangedCatalog(t *testing.T) {
+	store := &schedulerVersionStore{version: "v1"}
+	runner := &TestRunner{
+		scripts:            map[string]*StoredScript{},
+		scenarios:          map[string]*StoredScenario{},
+		refKeyIndex:        map[string]string{},
+		privateCISnapshots: map[string]int{},
+		scriptStore:        store,
+		scenarioStore:      store,
+	}
+	if err := runner.refreshSchedulerContentForHASweep(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.refreshSchedulerContentForHASweep(); err != nil {
+		t.Fatal(err)
+	}
+	if scripts, scenarios := store.counts(); scripts != 1 || scenarios != 1 {
+		t.Fatalf("unchanged refresh lists = scripts:%d scenarios:%d, want 1 each", scripts, scenarios)
+	}
+	store.mu.Lock()
+	store.version = "v2"
+	store.mu.Unlock()
+	if err := runner.refreshSchedulerContentForHASweep(); err != nil {
+		t.Fatal(err)
+	}
+	if scripts, scenarios := store.counts(); scripts != 2 || scenarios != 2 {
+		t.Fatalf("changed refresh lists = scripts:%d scenarios:%d, want 2 each", scripts, scenarios)
+	}
+}
+
+func TestSchedulerContentRefreshRejectsContinuouslyChangingCatalog(t *testing.T) {
+	store := &churningSchedulerVersionStore{}
+	runner := &TestRunner{
+		scripts:            map[string]*StoredScript{},
+		scenarios:          map[string]*StoredScenario{},
+		refKeyIndex:        map[string]string{},
+		privateCISnapshots: map[string]int{},
+		scriptStore:        store,
+		scenarioStore:      store,
+	}
+	if err := runner.refreshSchedulerContentForHASweep(); err == nil {
+		t.Fatal("continuously changing scheduler content was accepted as a coherent sweep snapshot")
+	}
+	if runner.schedulerContentKnown {
+		t.Fatal("continuously changing scheduler content was marked authoritative")
+	}
+	if scripts, scenarios := store.counts(); scripts != 2 || scenarios != 2 {
+		t.Fatalf("changing refresh attempts = scripts:%d scenarios:%d, want two bounded attempts", scripts, scenarios)
+	}
+}
+
+func TestSchedulerContentRefreshDoesNotCacheTokenAfterLocallyFencedReload(t *testing.T) {
+	store := &locallyFencedSchedulerVersionStore{}
+	store.version = "v2"
+	runner := &TestRunner{
+		scripts:            map[string]*StoredScript{},
+		scenarios:          map[string]*StoredScenario{},
+		refKeyIndex:        map[string]string{},
+		privateCISnapshots: map[string]int{},
+		scriptStore:        store,
+		scenarioStore:      store,
+	}
+	store.inject = func() {
+		// A private CI snapshot add/remove is process-local and intentionally does
+		// not advance the database trigger token. It still fences the in-flight
+		// script snapshot, so the scheduler must retry before caching v2.
+		runner.mu.Lock()
+		runner.contentRevision++
+		runner.mu.Unlock()
+	}
+
+	if err := runner.refreshSchedulerContentForHASweep(); err != nil {
+		t.Fatal(err)
+	}
+	if !runner.schedulerContentKnown || runner.schedulerContentToken != "v2" {
+		t.Fatalf("scheduler content cache = known:%v token:%q, want authoritative v2", runner.schedulerContentKnown, runner.schedulerContentToken)
+	}
+	if scripts, scenarios := store.counts(); scripts != 2 || scenarios != 2 {
+		t.Fatalf("locally fenced refresh lists = scripts:%d scenarios:%d, want a complete retry", scripts, scenarios)
+	}
+	if got := runner.scripts["external"]; got == nil || got.Name != "External" {
+		t.Fatalf("external database update was not installed before token caching: %#v", runner.scripts)
 	}
 }

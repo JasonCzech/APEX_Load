@@ -513,6 +513,46 @@ export default function TestExecutionStatusPanels({
             <span className={`goal-flag ${goalStatus?.error_count_breached ? 'alert' : ''}`}>
               Error count {goalStatus?.error_count_breached ? 'breached' : 'healthy'}
             </span>
+            {test.goal_config?.max_lcp_ms !== undefined && (
+              <span className={`goal-flag ${goalStatus?.lcp_breached ? 'alert' : ''}`}>
+                LCP {goalStatus?.lcp_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_inp_ms !== undefined && (
+              <span className={`goal-flag ${goalStatus?.inp_breached ? 'alert' : ''}`}>
+                INP {goalStatus?.inp_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_cls !== undefined && (
+              <span className={`goal-flag ${goalStatus?.cls_breached ? 'alert' : ''}`}>
+                CLS {goalStatus?.cls_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_throttled_requests !== undefined && (
+              <span className={`goal-flag ${goalStatus?.throttled_requests_breached ? 'alert' : ''}`}>
+                Throttled requests {goalStatus?.throttled_requests_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_end_to_end_latency_ms !== undefined && (
+              <span className={`goal-flag ${goalStatus?.end_to_end_latency_breached ? 'alert' : ''}`}>
+                End-to-end latency {goalStatus?.end_to_end_latency_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_partition_skew_pct !== undefined && (
+              <span className={`goal-flag ${goalStatus?.partition_skew_breached ? 'alert' : ''}`}>
+                Partition skew {goalStatus?.partition_skew_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_redelivery_rate_pct !== undefined && (
+              <span className={`goal-flag ${goalStatus?.redelivery_rate_breached ? 'alert' : ''}`}>
+                Redelivery rate {goalStatus?.redelivery_rate_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
+            {test.goal_config?.max_dead_letter_rate_pct !== undefined && (
+              <span className={`goal-flag ${goalStatus?.dead_letter_rate_breached ? 'alert' : ''}`}>
+                Dead-letter rate {goalStatus?.dead_letter_rate_breached ? 'breached' : 'healthy'}
+              </span>
+            )}
             <span className="goal-flag neutral">
               Stop on breach {test.goal_config?.stop_on_sla_breach ? 'enabled' : 'disabled'}
             </span>

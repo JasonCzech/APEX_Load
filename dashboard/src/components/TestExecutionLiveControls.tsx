@@ -3,7 +3,7 @@ import { Area, AreaChart, CartesianGrid, Legend, Line, ReferenceArea, Responsive
 import { TestGroup, TestSummary } from '../types'
 import { LiveControlPreview, VUserGroupAction } from './testExecutionLiveControlModel'
 import { formatTimeLong, isValidDurationInput } from '../utils/timeUtils'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
 import DurationField from './DurationField'
 import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 
@@ -272,12 +272,13 @@ export default function TestExecutionLiveControls({
                       label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
                     />
                     <Tooltip
+                      itemSorter={preserveChartItemOrder}
                       labelFormatter={(value) => formatTimeLong(Number(value))}
                       contentStyle={chartTooltipContentStyle}
                       labelStyle={chartTooltipLabelStyle}
                       formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total' : name ?? '']}
                     />
-                    <Legend verticalAlign="top" height={28} />
+                    <Legend verticalAlign="top" height={28} itemSorter={preserveChartItemOrder} />
                     {(test.groups || []).map((group, index) => (
                       <Area
                         key={group.name}

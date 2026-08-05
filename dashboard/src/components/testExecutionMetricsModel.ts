@@ -1,7 +1,11 @@
 import { IntervalSummaryRecord, LiveMetrics, MetricsHistoryPoint, ResourceSample, TestStatus } from '../types'
 import { resourceImpactHistoryValues } from './generatorImpact'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
-import { executionChartMinuteRangeValue, type ExecutionChartTimeRange } from './testExecutionChartZoomModel'
+import {
+  executionChartMinuteRangeValue,
+  type ExecutionChartTimeRange,
+  type ExecutionChartZoomRange,
+} from './testExecutionChartZoomModel'
 
 export interface ExecutionChartSummary {
   avgTps: number
@@ -527,14 +531,58 @@ function addRelativeRunTime(points: MetricsHistoryPoint[]): MetricsHistoryPoint[
 export function filterExecutionChartData(
   chartData: MetricsHistoryPoint[],
   timeRange: ExecutionChartTimeRange,
-  zoomRange: { left: string | number; right: string | number } | null,
+  zoomRange: ExecutionChartZoomRange | null,
 ): MetricsHistoryPoint[] {
-  if (timeRange === 'custom' && zoomRange) {
-    const left = chartData.findIndex((point) => point.time === zoomRange.left)
-    const right = chartData.findIndex((point) => point.time === zoomRange.right)
-    if (left !== -1 && right !== -1) {
-      return chartData.slice(Math.min(left, right), Math.max(left, right) + 1)
+  if (timeRange === 'custom') {
+    if (!zoomRange || chartData.length === 0) return chartData
+
+    // Timestamp bounds are unique across repeated display labels (multi-day
+    // runs and DST folds) and are already normalized chronologically by the
+    // zoom reducer. Retention naturally clamps an evicted edge to the oldest
+    // or newest surviving point.
+    const firstTimestampIndex = chartData.findIndex(point => typeof point.timestampMs === 'number')
+    let lastTimestampIndex = -1
+    for (let index = chartData.length - 1; index >= 0; index -= 1) {
+      if (typeof chartData[index].timestampMs === 'number') {
+        lastTimestampIndex = index
+        break
+      }
     }
+    if (firstTimestampIndex === -1 || lastTimestampIndex === -1) return chartData
+    const oldestTimestampMs = chartData[firstTimestampIndex].timestampMs!
+    const newestTimestampMs = chartData[lastTimestampIndex].timestampMs!
+    if (zoomRange.endTimestampMs < oldestTimestampMs) {
+      return chartData.slice(firstTimestampIndex, firstTimestampIndex + 1)
+    }
+    if (zoomRange.startTimestampMs > newestTimestampMs) {
+      return chartData.slice(lastTimestampIndex, lastTimestampIndex + 1)
+    }
+
+    const start = chartData.findIndex(point => (
+      typeof point.timestampMs === 'number' && point.timestampMs >= zoomRange.startTimestampMs
+    ))
+    let end = -1
+    for (let index = chartData.length - 1; index >= 0; index -= 1) {
+      const timestampMs = chartData[index].timestampMs
+      if (typeof timestampMs === 'number' && timestampMs <= zoomRange.endTimestampMs) {
+        end = index
+        break
+      }
+    }
+    if (start === -1 || end === -1) return chartData
+    if (start > end) {
+      const midpoint = zoomRange.startTimestampMs + (zoomRange.endTimestampMs - zoomRange.startTimestampMs) / 2
+      let nearest = firstTimestampIndex
+      for (let index = firstTimestampIndex + 1; index <= lastTimestampIndex; index += 1) {
+        const timestampMs = chartData[index].timestampMs
+        if (typeof timestampMs === 'number'
+          && Math.abs(timestampMs - midpoint) < Math.abs(chartData[nearest].timestampMs! - midpoint)) {
+          nearest = index
+        }
+      }
+      return chartData.slice(nearest, nearest + 1)
+    }
+    return chartData.slice(start, end + 1)
   }
 
   if (timeRange === 'all') {

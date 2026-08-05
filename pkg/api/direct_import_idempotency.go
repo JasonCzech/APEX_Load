@@ -27,6 +27,8 @@ const (
 	directImportScriptDigestDomain    = "apexload:direct-import:script:v1"
 )
 
+var errDirectImportAssetsClaimed = errors.New("direct import assets remain fenced by an uncommitted transaction")
+
 // A stale receipt owner must never be replaced while its write-ahead library
 // claims may still be live. Otherwise the retry can adopt deterministic assets
 // and a later claim recovery can mistake those committed assets for the old
@@ -340,6 +342,30 @@ func (attempt *directImportAttempt) renew() error {
 	return nil
 }
 
+func (attempt *directImportAttempt) release() error {
+	if attempt == nil {
+		return nil
+	}
+	releaser, ok := attempt.store.(storage.DirectImportReceiptReleaseStore)
+	if !ok {
+		// Retaining the owned receipt until its lease expires is slower but safe:
+		// its stable ID remains available for later stale reconciliation.
+		return nil
+	}
+	released, err := releaser.ReleaseDirectImportReceipt(
+		attempt.receipt.ID,
+		attempt.ownerToken,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return err
+	}
+	if !released {
+		return errors.New("direct import receipt ownership was lost before release")
+	}
+	return nil
+}
+
 // rollback owns the receipt fence before compensating deterministic assets.
 // If ownership has moved to a stale-retry healer, this request must not delete
 // anything the newer owner may already have adopted.
@@ -350,6 +376,12 @@ func (attempt *directImportAttempt) rollback(transaction *createImportTransactio
 		}
 		return transaction.rollback()
 	}
+	if transaction != nil {
+		// Stop only the process-local heartbeat here. Expiring durable claims
+		// before the receipt fence is checked lets a healer compensate assets
+		// while this owner is about to renew and roll them back itself.
+		transaction.stopClaimHeartbeat()
+	}
 	owned, err := attempt.store.RenewDirectImportReceipt(
 		attempt.receipt.ID,
 		attempt.ownerToken,
@@ -357,27 +389,126 @@ func (attempt *directImportAttempt) rollback(transaction *createImportTransactio
 		directImportReceiptLease(),
 	)
 	if err != nil {
-		return err
+		var claimResolutionErr error
+		if transaction != nil {
+			// Renewal failure leaves ownership ambiguous. Keep the durable claim
+			// lease intact after a possible write so it expires naturally before
+			// the longer receipt lease. A transaction that never started a write is
+			// a terminal no-op and must not expose identical peer assets to recovery.
+			if !transaction.mutationStarted {
+				claimResolutionErr = transaction.commitUnmutatedClaims()
+			}
+			transaction.closeWithoutAssetCompensation()
+		}
+		return errors.Join(claimResolutionErr, err)
 	}
 	if !owned {
-		return errors.New("direct import receipt ownership moved; compensation skipped")
-	}
-	if transaction != nil {
-		if err := transaction.rollback(); err != nil {
-			return err
+		var claimReleaseErr error
+		if transaction != nil {
+			if transaction.mutationStarted {
+				// Ownership is known to have moved after a possible asset write, so
+				// expose the old claims to the stale-retry healer without touching
+				// assets under the newer receipt fence.
+				claimReleaseErr = transaction.releaseClaims()
+			} else {
+				// No write began. Make these claims a terminal no-op; expiring them
+				// could make recovery delete an identical asset completed by the
+				// newer receipt owner.
+				claimReleaseErr = transaction.commitUnmutatedClaims()
+			}
+			transaction.closeWithoutAssetCompensation()
 		}
+		return errors.Join(claimReleaseErr, errors.New("direct import receipt ownership moved; compensation skipped"))
+	}
+	var rollbackErr error
+	if transaction != nil {
+		// Receipt ownership is fenced through compensation. transaction.rollback
+		// releases durable claims only after its journal has run.
+		rollbackErr = transaction.rollback()
+	}
+	if errors.Is(rollbackErr, errCreateImportAssetCompensation) {
+		// An unresolved deterministic asset must retain its receipt identity.
+		// Releasing (rather than deleting) the row lets a retry recover the
+		// claims and reuse the same IDs instead of orphaning the old asset.
+		return errors.Join(rollbackErr, attempt.release())
 	}
 	abandoned, err := attempt.store.AbandonDirectImportReceipt(
 		attempt.receipt.ID,
 		attempt.ownerToken,
 	)
 	if err != nil {
-		return err
+		return errors.Join(rollbackErr, err)
 	}
 	if !abandoned {
-		return errors.New("direct import receipt was not abandoned by its current owner")
+		return errors.Join(rollbackErr, errors.New("direct import receipt was not abandoned by its current owner"))
 	}
-	return nil
+	return rollbackErr
+}
+
+// fenceDirectImportAssetAdoption prevents a stale receipt owner from adopting
+// exact deterministic assets that an older request still owns through its
+// write-ahead claims. Claims are checked after expired-claim recovery and the
+// takeover receipt renewal. Any remaining uncommitted matching claim is either
+// actively heartbeating or concurrently owned by a healer, so the retry must
+// release its receipt and wait for that transaction to reach a terminal state.
+func (s *Server) fenceDirectImportAssetAdoption(
+	attempt *directImportAttempt,
+	projectID string,
+	scriptIDs []string,
+	scenarioID string,
+) error {
+	claimed, err := s.hasUncommittedDirectImportAssetClaims(
+		projectID,
+		scriptIDs,
+		scenarioID,
+	)
+	if err != nil {
+		return err
+	}
+	if !claimed {
+		return nil
+	}
+	// Preserve the receipt row and its deterministic identity. The old owner
+	// may commit its claims after this observation; deleting the receipt here
+	// would orphan those assets and let the next retry derive different IDs.
+	return errors.Join(errDirectImportAssetsClaimed, attempt.release())
+}
+
+func (s *Server) hasUncommittedDirectImportAssetClaims(
+	projectID string,
+	scriptIDs []string,
+	scenarioID string,
+) (bool, error) {
+	expected := make(map[string]struct{}, len(scriptIDs)+1)
+	for _, id := range scriptIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			expected["script\x00"+id] = struct{}{}
+		}
+	}
+	if id := strings.TrimSpace(scenarioID); id != "" {
+		expected["scenario\x00"+id] = struct{}{}
+	}
+	if len(expected) == 0 {
+		return false, nil
+	}
+	claims, err := s.loadLibraryImportClaims()
+	if err != nil {
+		return false, fmt.Errorf("load direct import asset claims: %w", err)
+	}
+	projectID = normalizeProjectID(projectID)
+	for _, claim := range claims {
+		if claim.Committed || normalizeProjectID(claim.ProjectID) != projectID ||
+			!strings.HasPrefix(strings.TrimSpace(claim.RemoteID), "direct-import:") {
+			continue
+		}
+		kind := normalizeLibraryKind(claim.Kind)
+		for _, id := range []string{claim.LocalItemID, claim.SourceItemID} {
+			if _, found := expected[kind+"\x00"+strings.TrimSpace(id)]; found {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (s *Server) loadDirectImportReceiptAssets(

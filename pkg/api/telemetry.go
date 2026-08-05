@@ -37,6 +37,12 @@ func buildTelemetryDiagnostic(test *ManagedTest, live *LiveMetrics, thresholds T
 			signatureParts = append(signatureParts, "generator_stream_drops")
 			severity = maxDiagnosticSeverity(severity, "danger")
 		}
+		if live.Telemetry.MissingMetricWindows > 0 {
+			conditions = append(conditions, "generator_stream_gaps")
+			summaries = append(summaries, fmt.Sprintf("generator stream is missing %d live metrics windows", live.Telemetry.MissingMetricWindows))
+			signatureParts = append(signatureParts, "generator_stream_gaps")
+			severity = maxDiagnosticSeverity(severity, "danger")
+		}
 		if live.Telemetry.WebsocketDroppedMessages > 0 || live.Telemetry.WebsocketDroppedEvents > 0 {
 			conditions = append(conditions, "websocket_drops")
 			summaries = append(summaries, fmt.Sprintf("websocket dropped %d client messages and %d broadcast events", live.Telemetry.WebsocketDroppedMessages, live.Telemetry.WebsocketDroppedEvents))

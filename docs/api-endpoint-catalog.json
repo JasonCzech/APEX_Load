@@ -1,7 +1,17 @@
 {
   "version": 1,
-  "source": "server.go",
+  "source": "pkg/api/server.go",
   "routes": [
+    {
+      "method": "GET",
+      "path": "/.well-known/apexload-ci",
+      "operationId": "handleCIWellKnown",
+      "summary": "CI Well Known",
+      "category": ".well Known",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
     {
       "method": "GET",
       "path": "/api/v1/ai/authoring/contract",
@@ -511,6 +521,28 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; service-account scope: service_accounts:manage"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/bridge/pair",
+      "operationId": "handlePair",
+      "summary": "Pair",
+      "category": "Bridge",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)",
+      "server": "Local recording-agent bridge (address selected during agent pairing)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/bridge/status",
+      "operationId": "handleStatus",
+      "summary": "Status",
+      "category": "Bridge",
+      "public": false,
+      "authenticated": true,
+      "access": "Recording-agent bridge token and session via X-APEXLoad-Bridge-Token and X-APEXLoad-Bridge-Session",
+      "server": "Local recording-agent bridge (address selected during agent pairing)"
     },
     {
       "method": "GET",
@@ -1160,7 +1192,8 @@
       "category": "System \u0026 Distribution",
       "public": false,
       "authenticated": true,
-      "access": "Requires authentication; service-account scope: write"
+      "access": "Requires authentication; service-account scope: write",
+      "conditional": "Available only when the controller is running with desktop capabilities enabled."
     },
     {
       "method": "GET",
@@ -5034,13 +5067,36 @@
     },
     {
       "method": "GET",
+      "path": "/desktop/bootstrap",
+      "operationId": "handleDesktopBrowserBootstrap",
+      "summary": "Desktop Browser Bootstrap",
+      "category": "System \u0026 Distribution",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)",
+      "conditional": "Available only when the controller is running with desktop capabilities enabled."
+    },
+    {
+      "method": "GET",
+      "path": "/desktop/download",
+      "operationId": "handleDesktopBrowserDownload",
+      "summary": "Desktop Browser Download",
+      "category": "System \u0026 Distribution",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)",
+      "conditional": "Available only when the controller is running with desktop capabilities enabled."
+    },
+    {
+      "method": "GET",
       "path": "/metrics",
       "operationId": "handlePrometheusMetricsWithAuth",
       "summary": "Prometheus Metrics With Auth",
       "category": "Operations \u0026 Observability",
       "public": true,
       "authenticated": false,
-      "access": "Public when no metrics token is configured; otherwise requires the metrics Bearer token"
+      "access": "Public when no metrics token is configured; otherwise requires the metrics Bearer token",
+      "conditional": "Served on the controller API address only when APEXLOAD_METRICS_ADDR is unset; otherwise use the dedicated metrics listener."
     }
   ]
 }

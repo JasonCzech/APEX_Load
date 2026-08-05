@@ -38,14 +38,33 @@ describe('scenarioWizardUtils', () => {
 
     const start = preview.points.find(point => point.elapsedSeconds === 0)
     const rampComplete = preview.points.find(point => point.elapsedSeconds === 120)
-    const rampDownStart = preview.points.find(point => point.elapsedSeconds === 540)
-    const end = preview.points.find(point => point.elapsedSeconds === 600)
+    const configuredEnd = preview.points.find(point => point.elapsedSeconds === 600)
+    const end = preview.points.find(point => point.elapsedSeconds === 660)
 
     expect(start?.totalVusers).toBe(0)
     expect(rampComplete?.group_0_vusers).toBe(10)
-    expect(rampDownStart?.totalVusers).toBe(10)
+    expect(configuredEnd?.totalVusers).toBe(10)
     expect(end?.totalVusers).toBe(0)
     expect(preview.peakVusers).toBe(10)
+    expect(preview.durationSeconds).toBe(660)
+  })
+
+  it('stops zero-ramp-down groups at the steady boundary while other groups drain', () => {
+    const preview = buildScenarioModelPreview({
+      duration: '2m',
+      groups: [
+        { name: 'Immediate stop', vusers: 8 },
+        { name: 'Draining', vusers: 12, ramp_down: '1m' },
+      ],
+    })
+
+    const configuredEnd = preview.points.find(point => point.elapsedSeconds === 120)
+    const drainEnd = preview.points.find(point => point.elapsedSeconds === 180)
+
+    expect(configuredEnd?.group_0_vusers).toBe(0)
+    expect(configuredEnd?.group_1_vusers).toBe(12)
+    expect(configuredEnd?.totalVusers).toBe(12)
+    expect(drainEnd?.totalVusers).toBe(0)
   })
 
   it('builds staged VUser and TPS model points', () => {

@@ -38,6 +38,26 @@ func (s *scriptedTestPersistence) SaveTest(test *storage.TestRecord) error {
 	return s.testPersistence.SaveTest(test)
 }
 
+func (s *scriptedTestPersistence) TransitionTestFromShakeout(transition storage.TestShakeoutTransition) (storage.TestStatusTransitionResult, error) {
+	s.mu.Lock()
+	s.saveCalls++
+	call := s.saveCalls
+	fail := s.failSaveCalls[call]
+	s.mu.Unlock()
+	if fail {
+		return storage.TestStatusTransitionFenced, s.err
+	}
+	if target, ok := s.testPersistence.(interface {
+		TransitionTestFromShakeout(storage.TestShakeoutTransition) (storage.TestStatusTransitionResult, error)
+	}); ok {
+		return target.TransitionTestFromShakeout(transition)
+	}
+	// Lightweight lifecycle tests without a backing store model a successful
+	// durable write. Keep that behavior while exposing the same conditional
+	// transition capability as production persistence.
+	return storage.TestStatusTransitionUpdated, nil
+}
+
 func (s *scriptedTestPersistence) SaveTestStartIfNoDeploymentLease(test *storage.TestRecord, _ string, _ string, _ string) error {
 	return s.SaveTest(test)
 }
@@ -424,7 +444,7 @@ func TestStartupActiveTestReconciliationRetriesUnmappedTimeslotRelease(t *testin
 func TestScenarioSchedulerTerminalPersistenceFailureReconcilesPreparedRun(t *testing.T) {
 	store := &metricsStoreSpy{}
 	hub := NewHub()
-	runner := NewTestRunner(2, hub, store)
+	runner := NewTestRunner(2, hub, store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	runner.StoreScript(&dsl.Script{
 		ID: "script-scheduler-durable", Name: "Scheduler", Protocol: "http", Version: "1.0.0",
 		Config: dsl.ScriptConfig{BaseURL: "https://example.com"}, Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
@@ -481,9 +501,64 @@ func TestScenarioSchedulerTerminalPersistenceFailureReconcilesPreparedRun(t *tes
 	}
 }
 
+func TestScheduledTerminalPersistenceRetryDoesNotFailReplacementIncarnation(t *testing.T) {
+	wantErr := errors.New("test row unavailable")
+	store := &scriptedTestPersistence{
+		err: wantErr, failSaveCalls: map[int]bool{1: true},
+	}
+	runner := NewTestRunner(1, NewHub(), nil, withUnfencedDeploymentLeaseStartForFaultInjection())
+	runner.testStore = store
+	now := time.Date(2026, time.August, 5, 20, 0, 0, 0, time.UTC)
+	original := &ManagedTest{
+		ID: "scheduled-terminal-retry-incarnation", RefKey: "RUN-ORIGINAL", ProjectID: storage.DefaultProjectID,
+		Status: "QUEUED", CreatedAt: now, MaterializationKey: "original-materialization",
+	}
+	runner.mu.Lock()
+	runner.tests[original.ID] = original
+	failed, err := runner.failScheduledTestBeforeLaunchIfStatusAndTermLocked(
+		original, now, "scheduled preparation failed", "QUEUED", nil,
+	)
+	if !failed || !errors.Is(err, wantErr) {
+		runner.mu.Unlock()
+		t.Fatalf("initial failure transition = (%v, %v), want (true, persistence error)", failed, err)
+	}
+	replacement := &ManagedTest{
+		ID: original.ID, RefKey: "RUN-REPLACEMENT", ProjectID: storage.DefaultProjectID,
+		Status: "QUEUED", CreatedAt: now.Add(time.Second), MaterializationKey: "replacement-materialization",
+	}
+	runner.tests[original.ID] = replacement
+	runner.mu.Unlock()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runner.terminalRetryMu.Lock()
+		_, retrying := runner.terminalRetrying[original.ID]
+		runner.terminalRetryMu.Unlock()
+		if !retrying {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("scheduled terminal retry did not retire after observing replacement")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	runner.mu.RLock()
+	current := runner.tests[original.ID]
+	runner.mu.RUnlock()
+	if current != replacement || current.Status != "QUEUED" || current.Error != "" || current.EndedAt != nil {
+		t.Fatalf("stale terminal retry changed replacement: %#v", current)
+	}
+	store.mu.Lock()
+	saveCalls := store.saveCalls
+	store.mu.Unlock()
+	if saveCalls != 1 {
+		t.Fatalf("stale terminal retry reached persistence %d times, want only the original failed write", saveCalls)
+	}
+}
+
 func TestScenarioSchedulerRejectsSplitTimeslotPersistence(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	runner.StoreScript(&dsl.Script{
 		ID: "script-scheduled-release", Name: "Scheduler", Protocol: "http", Version: "1.0.0",
 		Config: dsl.ScriptConfig{BaseURL: "https://example.com"}, Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},

@@ -90,4 +90,16 @@ runtime:
     resolveText?.('info:\n  type: http\n')
     await expect(older).resolves.toBeNull()
   })
+
+  it('sniffs JavaScript-family files before falling back to the k6 importer', async () => {
+    const devWeb = new File(['load.initialize(() => {}); load.WebRequest({ url: "/orders" });'], 'orders.js')
+    const playwright = new File(["import { test } from '@playwright/test'; test('orders', async ({ page }) => page.goto('/orders'));"], 'orders.ts')
+    const k6 = new File(["import http from 'k6/http'; export default () => http.get('https://example.com');"], 'load.js')
+    const ambiguous = new File(['console.log("plain JavaScript")'], 'plain.js')
+
+    await expect(nativeImportTargetForFile(devWeb)).resolves.toEqual({ launcher: 'devweb' })
+    await expect(nativeImportTargetForFile(playwright)).resolves.toEqual({ launcher: 'recorder_export' })
+    await expect(nativeImportTargetForFile(k6)).resolves.toEqual({ launcher: 'k6' })
+    await expect(nativeImportTargetForFile(ambiguous)).resolves.toEqual({ launcher: 'k6' })
+  })
 })

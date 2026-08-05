@@ -245,7 +245,7 @@ func capacityWeightedShardsForGroup(group TestGroup, targets []string, loadByTar
 			return nil
 		}
 	}
-	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	plan := javaVuserCapacityPlanForGroup(group)
 	if !plan.RequiresPersistentLifecycle() {
 		return capacityWeightedShards(group.Name, group.VUsers, targets, loadByTarget, strategy)
 	}
@@ -349,7 +349,7 @@ func capacityWeightedShardsForGroupIncludingZero(group TestGroup, targets []stri
 			return nil
 		}
 	}
-	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	plan := javaVuserCapacityPlanForGroup(group)
 	if !plan.RequiresPersistentLifecycle() {
 		return capacityWeightedShardsIncludingZero(group.Name, group.VUsers, targets, loadByTarget, strategy)
 	}
@@ -424,13 +424,20 @@ func javaVuserOccupancyModeForGroup(group TestGroup) string {
 	if !strings.EqualFold(protocolName, "java_vuser") {
 		return ""
 	}
-	if engine.NewJavaVuserCapacityPlan(group.script).RequiresPersistentLifecycle() {
+	if javaVuserCapacityPlanForGroup(group).RequiresPersistentLifecycle() {
 		return generatorrpc.RuntimeOccupancyModePersistent
 	}
 	// A java_vuser script without phase methods uses the backward-compatible
 	// one-shot runner path. Invalid/empty Java scripts are classified
 	// conservatively and will still fail normal script validation.
 	return generatorrpc.RuntimeOccupancyModeLegacy
+}
+
+func javaVuserCapacityPlanForGroup(group TestGroup) engine.JavaVuserCapacityPlan {
+	if group.javaVuserCapacityPlanKnown {
+		return group.javaVuserCapacityPlan
+	}
+	return engine.NewJavaVuserCapacityPlan(group.script)
 }
 
 func protocolRuntimeOccupancyMode(snapshot generatorLoadSnapshot, protocolName string) (string, bool) {
@@ -502,7 +509,7 @@ func runtimeCapacityAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot,
 	if !runtimeOccupancyAllowsGroup(group, snapshot) {
 		return false
 	}
-	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	plan := javaVuserCapacityPlanForGroup(group)
 	if !plan.RequiresPersistentLifecycle() {
 		return true
 	}
@@ -518,7 +525,7 @@ func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGrou
 	if occupancyMode == "" {
 		return
 	}
-	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	plan := javaVuserCapacityPlanForGroup(group)
 	demand := plan.Demand(vusers)
 	for index := range snapshot.RuntimeCapacities {
 		if !strings.EqualFold(strings.TrimSpace(snapshot.RuntimeCapacities[index].Protocol), "java_vuser") {
@@ -542,7 +549,7 @@ func restoreGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGrou
 	if snapshot == nil {
 		return
 	}
-	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	plan := javaVuserCapacityPlanForGroup(group)
 	if !plan.RequiresPersistentLifecycle() {
 		return
 	}
@@ -697,7 +704,7 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 }
 
 func groupRequiredRuntimeFeature(group TestGroup) string {
-	if groupRequiresJavaVuserPhaseLifecycle(group) {
+	if javaVuserCapacityPlanForGroup(group).RequiresPersistentLifecycle() {
 		return protocol.FeatureJavaVuserPersistentLifecycleV1
 	}
 	return ""

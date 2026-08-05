@@ -419,7 +419,11 @@ jobs:
         run: ./scripts/release/build-artifacts.sh release/assets "$RELEASE_VERSION" "$RELEASE_COMMIT" "$RELEASE_BUILD_TIME"
 
       - name: Verify App Service launcher
-        run: node --test deployments/azure/appservice/launcher.test.js
+        working-directory: deployments/azure/appservice
+        run: |
+          npm ci --ignore-scripts
+          npm run lint
+          npm test
 
       - name: Upload core release assets
         uses: ./.github/actions/upload-artifact

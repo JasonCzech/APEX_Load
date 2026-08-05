@@ -561,7 +561,9 @@ jobs:
 
       - name: Test compatibility runner
         working-directory: runners/bruno
-        run: pnpm test
+        run: |
+          pnpm lint
+          pnpm test
 
       - name: Verify generated CycloneDX manifest
         working-directory: runners/bruno
@@ -631,6 +633,18 @@ jobs:
         with:
           ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+
+      - name: Validate App Service launcher
+        working-directory: deployments/azure/appservice
+        run: |
+          npm ci --ignore-scripts
+          npm run lint
+          npm test
 
       - name: Install verified deployment CLIs
         env:
@@ -730,10 +744,14 @@ jobs:
             mv "$partial" "$destination"
           done
 
-      - name: Validate every Kustomize overlay
+      - name: Validate every standalone Kustomize overlay
         run: |
           set -euo pipefail
           while IFS= read -r overlay; do
+            if grep -Eq '^[[:space:]]*kind:[[:space:]]*Component([[:space:]]*(#.*)?)?$' "${overlay}/kustomization.yaml"; then
+              echo "Skipping non-standalone Kustomize component: ${overlay}"
+              continue
+            fi
             output="${RUNNER_TEMP}/kustomize-$(printf '%s' "${overlay}" | tr '/' '-').yaml"
             kubectl kustomize "${overlay}" >"${output}"
             "${RUNNER_TEMP}/bin/kubeconform" -strict \

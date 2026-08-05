@@ -216,6 +216,30 @@ describe('MonitoringCollectorsCard', () => {
     expect(container.textContent).toContain('collector refresh unavailable')
   })
 
+  it('keeps a one-time token visible and explains how to copy it when clipboard access fails', async () => {
+    collectorsApiMock.listCollectors.mockResolvedValue({ collectors: [collector({ name: 'edge-eu' })], count: 1 })
+    collectorsApiMock.rotateCollectorToken.mockResolvedValue({ token: 'rotated-token' })
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => false) })
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    })
+    await act(async () => { root.render(<MonitoringCollectorsCard projectId="proj-a" canManage />) })
+    await flush()
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Rotate token')?.click()
+    })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Copy')?.click()
+    })
+    await flush()
+
+    expect(container.textContent).toContain('rotated-token')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Select the token and copy it manually')
+  })
+
 	it('guards a dirty collector registration before closing the editor', async () => {
 		collectorsApiMock.listCollectors.mockResolvedValue({ collectors: [], count: 0 })
 		await act(async () => {

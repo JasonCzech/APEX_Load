@@ -32,7 +32,7 @@ func networkActionSpecs() []ActionSpec {
 			Summary:   "Resolves a DNS record.",
 			Fields: []FieldSpec{
 				{Name: "target", Required: true, Kind: FieldKindString, Doc: "Hostname to resolve."},
-				{Name: "params.record_type", Kind: FieldKindEnum, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"}, Doc: "DNS record type; defaults to A."},
+				{Name: "params.record_type", Kind: FieldKindEnum, Enum: []string{"A", "AAAA", "CNAME", "MX", "NS", "TXT"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "DNS record type; defaults to A."},
 			},
 			Validate: func(index int, action Action) []string {
 				label := fmt.Sprintf("actions[%d] %q", index, action.Name)

@@ -321,8 +321,11 @@ export default function ScriptImportReview({
       request.handler?.()
     }
   }
-  const preview = previewJSON(previewData ?? { script })
-  const previewPane = (
+  const preview = useMemo(
+    () => showPreview ? previewJSON(previewData ?? { script }) : null,
+    [previewData, script, showPreview],
+  )
+  const previewPane = preview ? (
     <details className="script-import-review-preview" open>
       <summary>
         <h4>{previewTitle}</h4>
@@ -334,7 +337,7 @@ export default function ScriptImportReview({
       )}
       <pre>{preview.text}</pre>
     </details>
-  )
+  ) : null
   const sortedReviewSections = [...reviewSections].sort((a, b) => {
     const left = severityRank[String(a.severity || '').toLowerCase()] ?? 3
     const right = severityRank[String(b.severity || '').toLowerCase()] ?? 3

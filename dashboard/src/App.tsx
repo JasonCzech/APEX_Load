@@ -3213,13 +3213,7 @@ function AppShell({
                   }
                   applicationId={activeApplication?.id}
                   projectId={activeProject?.id}
-                  thresholdAlerts={
-                    view.testId
-                      ? thresholdAlerts.filter(
-                          (alert) => alert.testId === view.testId,
-                        )
-                      : []
-                  }
+                  thresholdAlerts={thresholdAlerts}
                   onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
                   onOpenExecution={navigateToTest}
                   onOpenArchive={openCompletedRun}

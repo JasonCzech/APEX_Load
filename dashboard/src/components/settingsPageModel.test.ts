@@ -9,6 +9,7 @@ import {
   settingsIssuesBySection,
   settingsIssuesForField,
   splitListDraft,
+  updateNotificationWebhookDraft,
   usesDefaultGeneratorCapacity,
   validateOptionalPositiveInteger,
   validateProjectQuotaField,
@@ -20,6 +21,20 @@ describe('settingsPageModel', () => {
   it('splitListDraft trims comma-separated values and drops blanks', () => {
     expect(splitListDraft('a, b ,,  ,d')).toEqual(['a', 'b', 'd'])
     expect(splitListDraft('   ')).toEqual([])
+  })
+
+  it('invalidates an opaque Dynatrace token only when its destination changes', () => {
+    const webhook = {
+      name: 'Dynatrace', enabled: true, url: 'https://old.example/api/v2/events/ingest',
+      format: 'dynatrace' as const, events: [], api_token: '', has_api_token: true,
+    }
+
+    expect(updateNotificationWebhookDraft(webhook, { name: 'Renamed' }).has_api_token).toBe(true)
+    expect(updateNotificationWebhookDraft(webhook, { url: 'https://new.example/api/v2/events/ingest' }).has_api_token).toBe(false)
+    expect(updateNotificationWebhookDraft(webhook, { format: 'slack' }).has_api_token).toBe(false)
+    expect(updateNotificationWebhookDraft(webhook, {
+      url: 'https://new.example/api/v2/events/ingest', api_token: 'replacement-token',
+    }).has_api_token).toBe(true)
   })
 
   it('validateOptionalPositiveInteger accepts blank and positives, rejects others', () => {
@@ -153,12 +168,13 @@ describe('settingsPageModel', () => {
         generator: { ...DEFAULT_SETTINGS.capacity_planning.generator, cpu_cores: 0 },
         availability: { source: 'configured', configured_available_generators: 0 },
       },
-      archive_retention: { ...DEFAULT_SETTINGS.archive_retention, default_retention_days: 0 },
+      archive_retention: { ...DEFAULT_SETTINGS.archive_retention, default_retention_days: 0, har_retention_days: 0 },
     })
     const capacityIssues = issues.filter(issue => issue.section === 'capacity')
     expect(capacityIssues.map(issue => issue.subsection)).toEqual(
       expect.arrayContaining(['generator', 'availability', 'retention']),
     )
+    expect(capacityIssues.map(issue => issue.field)).toContain('archive_retention.har_retention_days')
   })
 
   it('validateSettings keeps the flat message list in sync with detailed issues', () => {

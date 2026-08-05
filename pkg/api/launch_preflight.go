@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -86,6 +88,173 @@ type launchCapacityEvent struct {
 	ApprovedQuotaBurst bool
 }
 
+// launchWindowEvidence is the durable state needed by a launch-window
+// evaluation. It is loaded before taking tr.mu so a slow SQLite/PostgreSQL
+// query cannot stall unrelated runner reads and lifecycle updates.
+type launchWindowEvidence struct {
+	window         LaunchWindow
+	occurrenceKeys map[string]struct{}
+	occurrenceErr  error
+	boundTimeslots []*storage.CapacityReservation
+	reservationErr error
+	projectQuota   projectQuotaEvidence
+}
+
+func (tr *TestRunner) loadLaunchWindowEvidence(window LaunchWindow) launchWindowEvidence {
+	window.StartAt = window.StartAt.UTC()
+	window.EndAt = window.EndAt.UTC()
+	evidence := launchWindowEvidence{
+		window:         window,
+		occurrenceKeys: make(map[string]struct{}),
+	}
+	if tr == nil {
+		return evidence
+	}
+	if store := tr.scenarioStore; store != nil {
+		var occurrences []*storage.ScenarioScheduleOccurrence
+		var err error
+		if windowStore, ok := store.(scenarioScheduleOccurrenceWindowStore); ok {
+			// Projection starts one minute before the candidate window so it can
+			// include the cron minute containing a non-minute-aligned start.
+			occurrences, err = windowStore.ListScenarioScheduleOccurrencesByTimeRange("", window.StartAt.Add(-time.Minute), window.EndAt)
+		} else {
+			occurrences, err = store.ListAllScenarioScheduleOccurrences()
+		}
+		if err != nil {
+			evidence.occurrenceErr = err
+			slog.Warn("launch window: schedule-occurrence lookup failed", "error", err)
+		} else {
+			for _, occurrence := range occurrences {
+				if occurrence != nil {
+					evidence.occurrenceKeys[runCalendarOccurrenceKey(occurrence.ScheduleID, occurrence.PlannedAt)] = struct{}{}
+				}
+			}
+		}
+	}
+	if store := tr.reservationStore; store != nil {
+		evidence.boundTimeslots, evidence.reservationErr = store.ListCapacityReservationsByTimeRange("", window.StartAt, window.EndAt)
+		if evidence.reservationErr != nil {
+			slog.Warn("launch window: bound-timeslot lookup failed; failing closed", "error", evidence.reservationErr)
+		}
+	}
+	return evidence
+}
+
+func (tr *TestRunner) loadLaunchWindowEvidenceForProject(window LaunchWindow, projectID, poolID string) launchWindowEvidence {
+	evidence := tr.loadLaunchWindowEvidence(window)
+	evidence.projectQuota = loadProjectQuotaEvidence(tr.projectStore, projectID, poolID)
+	return evidence
+}
+
+// loadLaunchWindowEvidenceWithBoundTimeslot also pins the run's named
+// reservation. An actual-time launch can intentionally fall outside a future
+// planned slot; the window query alone would then omit that row and collapse a
+// precise "no longer fits" result into the misleading "no longer available".
+func (tr *TestRunner) loadLaunchWindowEvidenceWithBoundTimeslot(window LaunchWindow, timeslotID string) launchWindowEvidence {
+	evidence := tr.loadLaunchWindowEvidence(window)
+	timeslotID = strings.TrimSpace(timeslotID)
+	if tr == nil || tr.reservationStore == nil || timeslotID == "" {
+		return evidence
+	}
+	for _, reservation := range evidence.boundTimeslots {
+		if reservation != nil && strings.TrimSpace(reservation.ID) == timeslotID {
+			return evidence
+		}
+	}
+	reservation, err := tr.reservationStore.GetCapacityReservation(timeslotID)
+	if err != nil {
+		// A successful range read followed by a named-row miss is authoritative:
+		// the binding was deleted. Other lookup failures leave the evidence
+		// incomplete and must be retried rather than reported as a deletion.
+		if evidence.reservationErr == nil && !errors.Is(err, sql.ErrNoRows) {
+			evidence.reservationErr = err
+		}
+		return evidence
+	}
+	if reservation != nil {
+		evidence.boundTimeslots = append(evidence.boundTimeslots, reservation)
+	}
+	return evidence
+}
+
+func (tr *TestRunner) loadLaunchWindowEvidenceWithBoundTimeslotForProject(window LaunchWindow, timeslotID, projectID, poolID string) launchWindowEvidence {
+	evidence := tr.loadLaunchWindowEvidenceWithBoundTimeslot(window, timeslotID)
+	evidence.projectQuota = loadProjectQuotaEvidence(tr.projectStore, projectID, poolID)
+	return evidence
+}
+
+// covers reports whether the durable query range contains every instant needed
+// by a later in-memory evaluation. Callers snapshot the candidate under a read
+// lock, load evidence without tr.mu, then verify coverage after taking the
+// write lock. A concurrent duration/config edit therefore causes a retry/error
+// instead of silently evaluating the expanded window with incomplete data.
+func (evidence launchWindowEvidence) covers(window LaunchWindow) bool {
+	if evidence.window.StartAt.IsZero() || evidence.window.EndAt.IsZero() {
+		return false
+	}
+	return !window.StartAt.UTC().Before(evidence.window.StartAt) &&
+		!window.EndAt.UTC().After(evidence.window.EndAt)
+}
+
+// startLaunchEvidenceRetryError separates unavailable/incoherent storage
+// evidence from an authoritative admission rejection. Callers must retain and
+// retry queued work for these errors; a successfully-read missing row or real
+// capacity conflict remains a permanent gate result.
+func startLaunchEvidenceRetryError(test *ManagedTest, start time.Time, evidence launchWindowEvidence) error {
+	if test == nil {
+		return nil
+	}
+	window := launchWindowForTest(test, start.UTC())
+	if !evidence.covers(window) {
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("launch evidence no longer covers the run window"))
+	}
+	if evidence.occurrenceErr != nil {
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load scheduled-run evidence: %w", evidence.occurrenceErr))
+	}
+	if evidence.reservationErr != nil {
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load capacity reservation evidence: %w", evidence.reservationErr))
+	}
+	if evidence.projectQuota.err != nil {
+		if errors.Is(evidence.projectQuota.err, sql.ErrNoRows) {
+			return fmt.Errorf("project %q no longer exists", evidence.projectQuota.projectID)
+		}
+		return errors.Join(errStartAdmissionEvidenceStale, fmt.Errorf("load project quota evidence: %w", evidence.projectQuota.err))
+	}
+	return nil
+}
+
+func boundTimeslotBoundariesFromEvidence(evidence launchWindowEvidence) []time.Time {
+	if evidence.reservationErr != nil {
+		return nil
+	}
+	out := make([]time.Time, 0, len(evidence.boundTimeslots)*2)
+	for _, timeslot := range evidence.boundTimeslots {
+		if !launchEvidenceTimeslotBound(timeslot) {
+			continue
+		}
+		out = append(out, timeslot.StartAt.UTC(), timeslot.EndAt.UTC())
+	}
+	return out
+}
+
+func boundTimeslotsActiveAtFromEvidence(evidence launchWindowEvidence, at time.Time) ([]*storage.CapacityReservation, error) {
+	if evidence.reservationErr != nil {
+		return nil, evidence.reservationErr
+	}
+	out := make([]*storage.CapacityReservation, 0)
+	for _, timeslot := range evidence.boundTimeslots {
+		if !launchEvidenceTimeslotBound(timeslot) || at.Before(timeslot.StartAt) || !at.Before(timeslot.EndAt) {
+			continue
+		}
+		out = append(out, timeslot)
+	}
+	return out, nil
+}
+
+func launchEvidenceTimeslotBound(timeslot *storage.CapacityReservation) bool {
+	return timeslot != nil && timeslot.ApprovalState == "approved" && timeslot.BoundTestID != nil && strings.TrimSpace(*timeslot.BoundTestID) != ""
+}
+
 func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPreflightResponse, error) {
 	now := time.Now().UTC()
 	start := now
@@ -98,17 +267,19 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if scheduledRequested {
 		createReq.ScheduledStartAt = cloneTimePtr(req.ScheduledStartAt)
 	}
-
-	tr.mu.RLock()
-	preview, err := tr.buildManagedTestLocked(createReq, "launch-preflight", "DRAFT")
+	preview, buildSnapshot, buildRevision, err := tr.buildManagedTestFromSnapshot(createReq, "launch-preflight", "DRAFT")
 	if err != nil {
-		tr.mu.RUnlock()
 		return nil, err
 	}
 	window := launchWindowForTest(preview, start)
 	blocking := make([]LaunchConflict, 0)
 	warnings := make([]LaunchConflict, 0)
 
+	// All static launch checks run against the immutable request snapshot. Java
+	// approval verification can read the authoring-session store and a cold local
+	// runtime check can launch a JVM health probe; neither is safe under the live
+	// runner mutex. Generator placement uses the same snapshot's capacity rows and
+	// cached inventory, which are fenced again below before the result is returned.
 	if preview.CapacityAdvisory != nil && preview.CapacityAdvisory.RequiresOverride {
 		blocking = append(blocking, LaunchConflict{
 			Code:                "capacity_shortfall",
@@ -125,29 +296,43 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if conflicts := externalRunnerLaunchConflicts(preview.Groups); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
-	if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(preview); len(conflicts) > 0 {
-		blocking = append(blocking, conflicts...)
-	}
 	if conflicts := importPromotionLaunchConflicts(preview.Groups); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
-	if conflicts := tr.generatorPlacementLaunchConflictsLocked(preview); len(conflicts) > 0 {
+
+	// Durable occurrence/reservation reads can block on another transaction.
+	// Keep them completely outside the global runner lock, then evaluate the
+	// in-memory projection against the request-scoped snapshot below.
+	evidence := tr.loadLaunchWindowEvidenceForProject(window, preview.ProjectID, testAssignedPoolID(preview))
+	poolEvidence := tr.loadPoolReadinessEvidence(preview)
+	// Evaluate short-TTL runtime and generator-health evidence last so a slow
+	// durable query cannot consume most of its freshness window before the fence.
+	if conflicts := buildSnapshot.javaVuserRunnerLaunchConflictsForManagedTestLocked(preview); len(conflicts) > 0 {
+		blocking = append(blocking, conflicts...)
+	}
+	if conflicts := buildSnapshot.generatorPlacementLaunchConflictsLocked(preview); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
 
-	if poolBlocking, poolWarnings := tr.poolReadinessLaunchConflictsLocked(preview); len(poolBlocking) > 0 || len(poolWarnings) > 0 {
+	tr.mu.RLock()
+	if !tr.managedTestBuildFenceCurrentLocked(buildRevision) {
+		tr.mu.RUnlock()
+		return nil, fmt.Errorf("controller content changed while launch preflight was being compiled; retry")
+	}
+
+	if poolBlocking, poolWarnings := poolReadinessLaunchConflicts(preview, poolEvidence); len(poolBlocking) > 0 || len(poolWarnings) > 0 {
 		blocking = append(blocking, poolBlocking...)
 		warnings = append(warnings, poolWarnings...)
 	}
 
-	if conflicts := tr.launchWindowConflictsLocked(preview, window, now, "", ""); len(conflicts) > 0 {
+	if conflicts := tr.launchWindowConflictsWithEvidenceLocked(preview, window, now, "", "", evidence); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
 
 	currentBlocked := false
 	currentReason := ""
 	if !scheduledRequested {
-		if blocked, reason := tr.evaluateQuotaBlockLocked(preview, ""); blocked {
+		if blocked, reason := tr.evaluateQuotaBlockWithLaunchEvidenceLocked(preview, "", now, evidence); blocked {
 			currentBlocked = true
 			currentReason = reason
 			warnings = append(warnings, LaunchConflict{
@@ -158,14 +343,13 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 			})
 		}
 	}
-	// When blocked, surface a recommended assignment (same helper the estimate API
-	// uses) so the operator sees how much capacity the run needs. Computed under
-	// the read lock before release.
+	tr.mu.RUnlock()
+	// When blocked, surface a recommended assignment using the same immutable
+	// snapshot rather than extending the live lock over placement projection.
 	var recommendation *AssignmentRecommendation
 	if len(blocking) > 0 {
-		recommendation = tr.buildAssignmentRecommendation(preview)
+		recommendation = buildSnapshot.buildAssignmentRecommendation(preview)
 	}
-	tr.mu.RUnlock()
 
 	startNowAllowed := !scheduledRequested && len(blocking) == 0 && !currentBlocked
 	scheduleAllowed := scheduledRequested && len(blocking) == 0
@@ -415,7 +599,68 @@ func generatorPlacementLaunchConflict(message string) LaunchConflict {
 	}
 }
 
-// poolReadinessLaunchConflictsLocked makes fleet-pool state visible to preflight:
+// poolReadinessEvidence is loaded before PreflightLaunch takes tr.mu. Fleet
+// persistence can block behind another transaction and must not turn the global
+// runner lock into a storage serialization boundary.
+type poolReadinessEvidence struct {
+	configured bool
+	poolID     string
+	pool       *storage.FleetPool
+	members    []string
+	err        error
+}
+
+func (tr *TestRunner) loadPoolReadinessEvidence(test *ManagedTest) poolReadinessEvidence {
+	evidence := poolReadinessEvidence{}
+	if test == nil || test.Assignment == nil || tr == nil || tr.fleetStore == nil {
+		return evidence
+	}
+	poolID := strings.TrimSpace(test.Assignment.PoolID)
+	if poolID == "" {
+		return evidence
+	}
+	evidence.configured = true
+	evidence.poolID = poolID
+	evidence.pool, evidence.err = tr.fleetStore.GetFleetPool(poolID)
+	if evidence.err != nil || evidence.pool == nil {
+		return evidence
+	}
+	seen := make(map[string]struct{})
+	add := func(raw string) {
+		target := strings.TrimSpace(raw)
+		if target == "" {
+			return
+		}
+		seen[target] = struct{}{}
+	}
+	members, err := tr.fleetStore.ListFleetPoolMembers(poolID)
+	if err != nil {
+		evidence.err = err
+		return evidence
+	}
+	for _, member := range members {
+		if member != nil {
+			add(member.Target)
+		}
+	}
+	metadata, err := tr.fleetStore.ListGeneratorMetadata(0, 0)
+	if err != nil {
+		evidence.err = err
+		return evidence
+	}
+	for _, item := range metadata {
+		if item != nil && item.FleetPoolID != nil && strings.TrimSpace(*item.FleetPoolID) == poolID {
+			add(item.Target)
+		}
+	}
+	for target := range seen {
+		evidence.members = append(evidence.members, target)
+	}
+	sort.Strings(evidence.members)
+	return evidence
+}
+
+// poolReadinessLaunchConflicts makes fleet-pool state visible to preflight:
 // a pool-scoped assignment whose pool is missing, suspended, or empty blocks the
 // launch (rather than failing lazily at Run time), and a pool with fewer live
 // members than the run is sized for yields a non-blocking shortfall warning.
@@ -425,23 +670,23 @@ func generatorPlacementLaunchConflict(message string) LaunchConflict {
 // re-evaluate them (matching its pre-existing blindness to pool-scoped
 // reservations), so a scheduled pool run over its pool quota is caught and queued
 // by the authoritative start-time gate rather than blocked in preflight.
-func (tr *TestRunner) poolReadinessLaunchConflictsLocked(test *ManagedTest) (blocking, warnings []LaunchConflict) {
-	if test == nil || test.Assignment == nil || tr.fleetStore == nil {
+func poolReadinessLaunchConflicts(test *ManagedTest, evidence poolReadinessEvidence) (blocking, warnings []LaunchConflict) {
+	if test == nil || test.Assignment == nil || !evidence.configured {
 		return nil, nil
 	}
 	poolID := strings.TrimSpace(test.Assignment.PoolID)
 	if poolID == "" {
 		return nil, nil
 	}
-	pool, err := tr.fleetStore.GetFleetPool(poolID)
-	if err != nil || pool == nil {
+	if evidence.poolID != poolID || evidence.err != nil || evidence.pool == nil {
 		return []LaunchConflict{poolReadinessConflict(poolID, fmt.Sprintf("Assigned generator pool %q was not found.", poolID))}, nil
 	}
+	pool := evidence.pool
 	poolLabel := firstNonEmpty(pool.Name, poolID)
 	if status := strings.ToLower(strings.TrimSpace(pool.Status)); status != "" && status != "active" {
 		return []LaunchConflict{poolReadinessConflict(poolID, fmt.Sprintf("Generator pool %q is %s; activate it or pick another pool before launching.", poolLabel, status))}, nil
 	}
-	members := tr.poolMemberTargets(poolID)
+	members := evidence.members
 	if len(members) == 0 {
 		return []LaunchConflict{poolReadinessConflict(poolID, fmt.Sprintf("Generator pool %q has no available members.", poolLabel))}, nil
 	}
@@ -542,7 +787,23 @@ func maxGroupRampDown(groups []TestGroup) time.Duration {
 	return maxRamp
 }
 
-func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string) []LaunchConflict {
+func (tr *TestRunner) launchWindowConflictsWithEvidenceLocked(test *ManagedTest, window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string, evidence launchWindowEvidence) []LaunchConflict {
+	if !evidence.covers(window) {
+		return []LaunchConflict{{
+			Code:     "launch_evidence_stale",
+			Severity: "blocking",
+			Source:   "controller",
+			Message:  "The run window changed while launch evidence was being loaded; retry the operation.",
+		}}
+	}
+	if evidence.occurrenceErr != nil {
+		return []LaunchConflict{{
+			Code:     "launch_occurrence_evidence_unavailable",
+			Severity: "blocking",
+			Source:   "scheduler",
+			Message:  "Scheduled-run evidence is temporarily unavailable; retry the launch after storage recovers.",
+		}}
+	}
 	conflicts := make([]LaunchConflict, 0)
 	conflicts = append(conflicts, tr.launchGovernanceWindowConflictsLocked(test, window)...)
 
@@ -561,22 +822,22 @@ func (tr *TestRunner) launchWindowConflictsLocked(test *ManagedTest, window Laun
 		proposal.Generators = 1
 	}
 
-	events := tr.launchCapacityEventsLocked(window, now, excludeTestID, excludeScheduleID)
-	sampleTimes := launchSampleTimes(window, events, tr.settings.CapacityPlanning.Reservations, tr.boundTimeslotBoundariesInWindowLocked(window))
+	events := tr.launchCapacityEventsWithOccurrencesLocked(window, now, excludeTestID, excludeScheduleID, evidence.occurrenceKeys)
+	sampleTimes := launchSampleTimes(window, events, tr.settings.CapacityPlanning.Reservations, boundTimeslotBoundariesFromEvidence(evidence))
 	ignoredImmediateConflicts := map[string]struct{}{}
 	if excludeScheduleID == "" && !window.StartAt.After(now.Add(time.Second)) {
-		for _, conflict := range tr.launchCapacityConflictsAtLocked(proposal, overlappingLaunchEvents(events, window.StartAt), window.StartAt) {
+		for _, conflict := range tr.launchCapacityConflictsAtWithEvidenceLocked(proposal, overlappingLaunchEvents(events, window.StartAt), window.StartAt, evidence) {
 			ignoredImmediateConflicts[launchConflictProjectionKey(conflict)] = struct{}{}
 		}
 	}
 	for _, sample := range sampleTimes {
 		overlapping := overlappingLaunchEvents(events, sample)
-		for _, conflict := range tr.launchCapacityConflictsAtLocked(proposal, overlapping, sample) {
+		for _, conflict := range tr.launchCapacityConflictsAtWithEvidenceLocked(proposal, overlapping, sample, evidence) {
 			// Immediate launches use the authoritative current-capacity gate to
 			// decide start-versus-queue. Suppress only an unchanged projection of
 			// that baseline conflict; continue evaluating later checks so a new
 			// reservation or availability change is still surfaced.
-			if _, ignored := ignoredImmediateConflicts[launchConflictProjectionKey(conflict)]; ignored {
+			if _, ignored := ignoredImmediateConflicts[launchConflictProjectionKey(conflict)]; ignored && conflict.Code != "project_quota_evidence_unavailable" {
 				continue
 			}
 			conflicts = append(conflicts, conflict)
@@ -590,7 +851,7 @@ func launchConflictProjectionKey(conflict LaunchConflict) string {
 	return fmt.Sprintf("%s|%s|%s|%d|%d", conflict.Code, conflict.Source, conflict.ResourceID, conflict.RequiredGenerators, conflict.AvailableGenerators)
 }
 
-func (tr *TestRunner) launchCapacityEventsLocked(window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string) []launchCapacityEvent {
+func (tr *TestRunner) launchCapacityEventsWithOccurrencesLocked(window LaunchWindow, now time.Time, excludeTestID string, excludeScheduleID string, occurrences map[string]struct{}) []launchCapacityEvent {
 	events := make([]launchCapacityEvent, 0)
 	for id, test := range tr.tests {
 		if test == nil || id == excludeTestID {
@@ -603,16 +864,6 @@ func (tr *TestRunner) launchCapacityEventsLocked(window LaunchWindow, now time.T
 		events = append(events, event)
 	}
 
-	occurrences := map[string]struct{}{}
-	if tr.scenarioStore != nil {
-		if storedOccurrences, err := tr.scenarioStore.ListAllScenarioScheduleOccurrences(); err == nil {
-			for _, occurrence := range storedOccurrences {
-				if occurrence != nil {
-					occurrences[runCalendarOccurrenceKey(occurrence.ScheduleID, occurrence.PlannedAt)] = struct{}{}
-				}
-			}
-		}
-	}
 	for _, schedule := range tr.listAllScenarioSchedulesLocked() {
 		if schedule == nil || !schedule.Enabled || schedule.NextRequiredAction == "approval_required" || strings.TrimSpace(schedule.ConflictSummary) != "" {
 			continue
@@ -800,6 +1051,10 @@ func (tr *TestRunner) launchCapacityConflictAtLocked(proposal launchCapacityEven
 }
 
 func (tr *TestRunner) launchCapacityConflictsAtLocked(proposal launchCapacityEvent, existing []launchCapacityEvent, sample time.Time) []LaunchConflict {
+	return tr.launchCapacityConflictsAtWithEvidenceLocked(proposal, existing, sample, tr.loadLaunchWindowEvidenceForProject(LaunchWindow{StartAt: sample, EndAt: sample.Add(time.Nanosecond)}, proposal.ProjectID, ""))
+}
+
+func (tr *TestRunner) launchCapacityConflictsAtWithEvidenceLocked(proposal launchCapacityEvent, existing []launchCapacityEvent, sample time.Time, evidence launchWindowEvidence) []LaunchConflict {
 	availability := resolveCapacityAvailabilityAt(tr.settings, sample).EffectiveAvailableGenerators
 	if availability < 1 {
 		availability = tr.settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators
@@ -825,23 +1080,27 @@ func (tr *TestRunner) launchCapacityConflictsAtLocked(proposal launchCapacityEve
 	if tr.settings.General.MaxConcurrentTests > 0 && globalTests > tr.settings.General.MaxConcurrentTests {
 		conflicts = append(conflicts, *launchConflictAt("global_concurrency_window", "controller", "", fmt.Sprintf("Window would exceed global max concurrent tests (%d).", tr.settings.General.MaxConcurrentTests), sample, totalGenerators, availability))
 	}
-	if maxConcurrent := tr.projectMaxConcurrentTests(proposal.ProjectID); maxConcurrent > 0 && projectTests > maxConcurrent {
+	projectQuota, quotaOK := evidence.projectQuota.quotaForProject(proposal.ProjectID)
+	if !quotaOK {
+		conflicts = append(conflicts, *launchConflictAt("project_quota_evidence_unavailable", "project", proposal.ProjectID, "Project quota evidence changed while the launch window was evaluated; retry.", sample, totalGenerators, availability))
+	}
+	if maxConcurrent := projectQuota.maxConcurrentTests; quotaOK && maxConcurrent > 0 && projectTests > maxConcurrent {
 		conflicts = append(conflicts, *launchConflictAt("project_concurrency_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project max concurrent tests (%d).", maxConcurrent), sample, totalGenerators, availability))
 	}
-	if maxVUsers := tr.projectMaxVUsers(proposal.ProjectID); maxVUsers > 0 && projectVUsers > maxVUsers && !proposal.ApprovedQuotaBurst {
+	if maxVUsers := projectQuota.maxVUsers; quotaOK && maxVUsers > 0 && projectVUsers > maxVUsers && !proposal.ApprovedQuotaBurst {
 		conflicts = append(conflicts, *launchConflictAt("project_vuser_window", "project", proposal.ProjectID, fmt.Sprintf("Window would exceed project VUser capacity (%d max VUsers).", maxVUsers), sample, totalGenerators, availability))
 	}
 	if existingGenerators > 0 && totalGenerators > availability {
 		conflicts = append(conflicts, *launchConflictAt("generator_capacity_window", "controller", "", fmt.Sprintf("Window needs %d generators but only %d are available at %s.", totalGenerators, availability, sample.Format(time.RFC3339)), sample, totalGenerators, availability))
 	}
-	if conflict := tr.launchReservationConflictAtLocked(proposal, byProject, sample, availability); conflict != nil {
+	if conflict := tr.launchReservationConflictAtWithEvidenceLocked(proposal, byProject, sample, availability, evidence); conflict != nil {
 		conflicts = append(conflicts, *conflict)
 	}
 	return conflicts
 }
 
-func (tr *TestRunner) launchReservationConflictAtLocked(proposal launchCapacityEvent, byProject map[string]int, sample time.Time, availability int) *LaunchConflict {
-	activeSlots, err := tr.boundTimeslotsActiveAtLocked(sample)
+func (tr *TestRunner) launchReservationConflictAtWithEvidenceLocked(proposal launchCapacityEvent, byProject map[string]int, sample time.Time, availability int, evidence launchWindowEvidence) *LaunchConflict {
+	activeSlots, err := boundTimeslotsActiveAtFromEvidence(evidence, sample)
 	if err != nil {
 		// Fail closed: report a transient conflict rather than clearing the launch
 		// when reservation state cannot be read.
@@ -1105,7 +1364,19 @@ func (tr *TestRunner) launchStartWindowErrorLocked(test *ManagedTest, start time
 		return nil
 	}
 	window := launchWindowForTest(test, start.UTC())
-	conflicts := tr.launchWindowConflictsLocked(test, window, start.UTC(), excludeTestID, excludeScheduleID)
+	evidence := tr.loadLaunchWindowEvidenceForProject(window, test.ProjectID, testAssignedPoolID(test))
+	return tr.launchStartWindowErrorWithEvidenceLocked(test, start, excludeTestID, excludeScheduleID, evidence)
+}
+
+func (tr *TestRunner) launchStartWindowErrorWithEvidenceLocked(test *ManagedTest, start time.Time, excludeTestID string, excludeScheduleID string, evidence launchWindowEvidence) error {
+	if test == nil {
+		return nil
+	}
+	if err := startLaunchEvidenceRetryError(test, start, evidence); err != nil {
+		return err
+	}
+	window := launchWindowForTest(test, start.UTC())
+	conflicts := tr.launchWindowConflictsWithEvidenceLocked(test, window, start.UTC(), excludeTestID, excludeScheduleID, evidence)
 	if len(conflicts) == 0 {
 		return nil
 	}

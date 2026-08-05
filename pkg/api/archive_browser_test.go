@@ -596,6 +596,37 @@ func TestBuildRunArchiveReportAggregatesSOAPFaults(t *testing.T) {
 	}
 }
 
+func TestMergeArchiveSOAPFaultTimelineKeepsDimensionsWritableUntilFinalization(t *testing.T) {
+	timestamp := time.Date(2026, time.May, 15, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name   string
+		first  protocol.ServerTelemetry
+		second protocol.ServerTelemetry
+	}{
+		{
+			name:   "category then code",
+			first:  protocol.ServerTelemetry{SOAPFaultCategory: "client"},
+			second: protocol.ServerTelemetry{SOAPFaultCode: "env:Sender"},
+		},
+		{
+			name:   "code then category",
+			first:  protocol.ServerTelemetry{SOAPFaultCode: "env:Receiver"},
+			second: protocol.ServerTelemetry{SOAPFaultCategory: "server"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			buckets := map[time.Time]*RunArchiveSOAPFaultTimelineBucket{}
+			mergeArchiveSOAPFaultTimelineBucket(buckets, TransactionEvent{Timestamp: timestamp, ServerTelemetry: &test.first})
+			mergeArchiveSOAPFaultTimelineBucket(buckets, TransactionEvent{Timestamp: timestamp.Add(10 * time.Second), ServerTelemetry: &test.second})
+			bucket := buckets[timestamp.Truncate(time.Minute)]
+			if bucket == nil || bucket.Total != 2 || len(bucket.ByCode) != 1 || len(bucket.ByCategory) != 1 {
+				t.Fatalf("merged bucket = %#v, want both dimensions", bucket)
+			}
+		})
+	}
+}
+
 func TestBuildRunArchiveReportAggregatesSOAPPayloadTimeline(t *testing.T) {
 	tempDir := t.TempDir()
 	manifest := RunArchiveManifest{

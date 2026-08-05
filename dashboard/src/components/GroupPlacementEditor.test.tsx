@@ -43,14 +43,32 @@ function Harness({ availableLabels, availableTargets, protocol }: {
   )
 }
 
-function AssignmentHarness({ initialAssignment, availableTargets = [], generatorInventory, scope = 'group' }: { initialAssignment: GeneratorAssignmentSettings, availableTargets?: string[], generatorInventory?: SystemInventoryGenerator[], scope?: 'group' | 'scenario' }) {
+function AssignmentHarness({ initialAssignment, availableTargets = [], generatorInventory, protocol, scope = 'group' }: { initialAssignment: GeneratorAssignmentSettings, availableTargets?: string[], generatorInventory?: SystemInventoryGenerator[], protocol?: string, scope?: 'group' | 'scenario' }) {
   const [assignment, setAssignment] = useState<GeneratorAssignmentSettings | undefined>(initialAssignment)
   return (
     <>
-      <GroupPlacementEditor assignment={assignment} onChange={setAssignment} availableTargets={availableTargets} generatorInventory={generatorInventory} allowInherit scope={scope} />
+      <GroupPlacementEditor assignment={assignment} onChange={setAssignment} availableTargets={availableTargets} generatorInventory={generatorInventory} protocol={protocol} allowInherit scope={scope} />
       <output data-testid="assignment-json">{JSON.stringify(assignment)}</output>
     </>
   )
+}
+
+function runtimeCapacityGenerator(runtimeCapacities: NonNullable<SystemInventoryGenerator['runtime_capacities']>): SystemInventoryGenerator {
+  return {
+    target: 'gen-a',
+    generator_id: 'gen-a',
+    status: 'connected',
+    supported_protocols: ['http', 'bruno'],
+    runtime_capacities: runtimeCapacities,
+    available_capacity: 100,
+    active_vusers: 0,
+    cpu_percent: 0,
+    memory_bytes: 0,
+    goroutine_count: 0,
+    cpu_limit_cores: 4,
+    memory_limit_bytes: 1024,
+    max_vusers: 100,
+  }
 }
 
 function radio(text: string): HTMLInputElement {
@@ -103,6 +121,150 @@ describe('GroupPlacementEditor', () => {
       boxes[1].click()
     })
     expect(container.textContent).toContain('capacity weighted')
+    expect(container.textContent).toContain('capacity unknown')
+    expect(container.textContent).toContain('Selected VUser capacity unknown')
+  })
+
+  it('reports the protocol runtime ceiling instead of overstating aggregate capacity', () => {
+    const generator: SystemInventoryGenerator = {
+      target: 'gen-a',
+      generator_id: 'gen-a',
+      status: 'connected',
+      supported_protocols: ['http', 'bruno'],
+      runtime_capacities: [{ protocol: 'bruno', available: true, max_vusers: 16, available_vusers: 8 }],
+      available_capacity: 100,
+      active_vusers: 0,
+      cpu_percent: 0,
+      memory_bytes: 0,
+      goroutine_count: 0,
+      cpu_limit_cores: 4,
+      memory_limit_bytes: 1024,
+      max_vusers: 100,
+    }
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: ['gen-a'] }}
+        generatorInventory={[generator]}
+        protocol="bruno"
+      />,
+    ))
+
+    const option = container.querySelector('.new-test-generator-option')
+    expect(option?.textContent).toContain('8 capacity')
+    expect(option?.textContent).not.toContain('100 capacity')
+    expect(container.textContent).toContain('8 selected VUser capacity')
+  })
+
+  it('rejects an advertised runtime whose maximum VUser capacity is zero', () => {
+    const generator = runtimeCapacityGenerator([
+      { protocol: 'bruno', available: true, max_vusers: 0, available_vusers: 8 },
+    ])
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: [] }}
+        generatorInventory={[generator]}
+        protocol="bruno"
+      />,
+    ))
+
+    const option = container.querySelector('.new-test-generator-option')
+    expect(option?.querySelector<HTMLInputElement>('input[type=checkbox]')?.disabled).toBe(true)
+    expect(option?.textContent).toContain('No available bruno runtime capacity')
+  })
+
+  it('caps advertised available runtime VUsers at the runtime maximum', () => {
+    const generator = runtimeCapacityGenerator([
+      { protocol: 'bruno', available: true, max_vusers: 4, available_vusers: 8 },
+    ])
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: ['gen-a'] }}
+        generatorInventory={[generator]}
+        protocol="bruno"
+      />,
+    ))
+
+    const option = container.querySelector('.new-test-generator-option')
+    expect(option?.textContent).toContain('4 capacity')
+    expect(option?.textContent).not.toContain('8 capacity')
+    expect(container.textContent).toContain('4 selected VUser capacity')
+  })
+
+  it('uses the minimum capacity when duplicate runtime advertisements exist', () => {
+    const generator = runtimeCapacityGenerator([
+      { protocol: 'BRUNO', available: true, max_vusers: 16, available_vusers: 12 },
+      { protocol: 'bruno', available: true, max_vusers: 16, available_vusers: 3 },
+    ])
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: ['gen-a'] }}
+        generatorInventory={[generator]}
+        protocol="bruno"
+      />,
+    ))
+
+    const option = container.querySelector('.new-test-generator-option')
+    expect(option?.textContent).toContain('3 capacity')
+    expect(option?.textContent).not.toContain('12 capacity')
+    expect(container.textContent).toContain('3 selected VUser capacity')
+  })
+
+  it('disables a host when its protocol-specific runtime has no capacity', () => {
+    const generator: SystemInventoryGenerator = {
+      target: 'gen-a',
+      generator_id: 'gen-a',
+      status: 'connected',
+      supported_protocols: ['http', 'bruno'],
+      runtime_capacities: [{ protocol: 'bruno', available: true, max_vusers: 16, available_vusers: 0 }],
+      available_capacity: 100,
+      active_vusers: 0,
+      cpu_percent: 0,
+      memory_bytes: 0,
+      goroutine_count: 0,
+      cpu_limit_cores: 4,
+      memory_limit_bytes: 1024,
+      max_vusers: 100,
+    }
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: [] }}
+        generatorInventory={[generator]}
+        protocol="bruno"
+      />,
+    ))
+
+    const option = container.querySelector('.new-test-generator-option')
+    expect(option?.querySelector<HTMLInputElement>('input[type=checkbox]')?.disabled).toBe(true)
+    expect(option?.textContent).toContain('No available bruno runtime capacity')
+  })
+
+  it('disables a host when generator-wide capacity is exhausted despite available protocol runtime capacity', () => {
+    const generator: SystemInventoryGenerator = {
+      target: 'gen-a',
+      generator_id: 'gen-a',
+      status: 'connected',
+      supported_protocols: ['http', 'bruno'],
+      runtime_capacities: [{ protocol: 'bruno', available: true, max_vusers: 16, available_vusers: 8 }],
+      available_capacity: 0,
+      active_vusers: 100,
+      cpu_percent: 0,
+      memory_bytes: 0,
+      goroutine_count: 0,
+      cpu_limit_cores: 4,
+      memory_limit_bytes: 1024,
+      max_vusers: 100,
+    }
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: [] }}
+        generatorInventory={[generator]}
+        protocol="bruno"
+      />,
+    ))
+
+    const option = container.querySelector('.new-test-generator-option')
+    expect(option?.querySelector<HTMLInputElement>('input[type=checkbox]')?.disabled).toBe(true)
+    expect(option?.textContent).toContain('No available capacity')
   })
 
   it('inherit clears the per-group assignment', () => {

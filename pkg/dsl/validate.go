@@ -743,7 +743,7 @@ func fileDataSourceHasContent(source DataSource) bool {
 // those runtimes and the dashboard editor both support.
 func extractorSourceTypeAllowlistApplies(protocol string) bool {
 	switch ProtocolFamily(protocol) {
-	case "browser", "websocket", "grpc", "database", "network", "sap_gui", "java_vuser", "jms", "kafka", "eventhubs":
+	case "browser", "bruno", "websocket", "grpc", "database", "network", "sap_gui", "java_vuser", "jms", "kafka", "eventhubs":
 		return false
 	}
 	return true
@@ -771,7 +771,11 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] on_miss must be \"\", \"ignore\", \"empty\", or \"fail\" (got %q)", label, i, ext.OnMiss))
 		}
 		switch ext.Mode {
-		case "", "all":
+		case "":
+		case "all":
+			if !enforceSourceType {
+				issues = append(issues, fmt.Sprintf("%s: extractors[%d] mode \"all\" is supported only by HTTP-family protocols", label, i))
+			}
 		default:
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] mode must be \"\" or \"all\" (got %q)", label, i, ext.Mode))
 		}

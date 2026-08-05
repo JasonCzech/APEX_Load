@@ -14,6 +14,10 @@ import (
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
+// DefaultDialogWaitMS is shared with the DSL action catalog so the authoring
+// contract and runtime cannot advertise different implicit dialog budgets.
+const DefaultDialogWaitMS = 1000
+
 func (b *Browser) dispatchAction(ctx context.Context, action *protocol.Action, result *protocol.Result) (error, bool) {
 	switch action.Type {
 	case "browser_navigate":
@@ -290,7 +294,7 @@ func (b *Browser) dispatchHandleDialog(action *protocol.Action, result *protocol
 		expectedType:    actionParamString(action.Params, "dialog_type", ""),
 		matchMode:       actionParamString(action.Params, "match_mode", "exact"),
 		promptText:      actionParamString(action.Params, "prompt_text", ""),
-		wait:            time.Duration(positiveActionParamInt(action.Params, "wait_ms", 1000)) * time.Millisecond,
+		wait:            time.Duration(positiveActionParamInt(action.Params, "wait_ms", DefaultDialogWaitMS)) * time.Millisecond,
 		// Strict by default (the dialog is expected on the next action). Scripts
 		// that arm the handler ahead of the triggering action pass
 		// expect_immediate:false so intermediate actions are not failed.

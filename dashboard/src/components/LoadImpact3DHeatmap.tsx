@@ -380,7 +380,7 @@ export default function LoadImpact3DHeatmap({
       const heightValue = 0.14 + item.cell.intensity * 2.7
       const geometry = new THREE.BoxGeometry(0.68, heightValue, 0.54)
       const material = new THREE.MeshStandardMaterial({
-        color: colorForIntensity(item.cell.intensity, item.cellKey === selectedCellKey),
+        color: colorForIntensity(item.cell.intensity, false),
         roughness: 0.55,
         metalness: 0.04,
       })
@@ -429,7 +429,19 @@ export default function LoadImpact3DHeatmap({
     if (hoveredKey) {
       setHoveredCell(sceneCells.find(item => item.cellKey === hoveredKey)?.cell ?? null)
     }
-  }, [model, sceneCells, selectedCellKey])
+  }, [model, sceneCells])
+
+  useEffect(() => {
+    // Selection changes only recolor existing bars. Rebuilding every geometry,
+    // label texture, and material for a click caused a visible hitch and needless
+    // GPU allocation churn on larger surfaces.
+    meshesRef.current.forEach(mesh => {
+      const data = meshUserData(mesh)
+      if (!data || Array.isArray(mesh.material)) return
+      const material = mesh.material as THREE.MeshStandardMaterial
+      material.color.copy(colorForIntensity(data.cell.intensity, data.cellKey === selectedCellKey))
+    })
+  }, [sceneCells, selectedCellKey])
 
   const activeCell = hoveredCell ?? selectedCell
 

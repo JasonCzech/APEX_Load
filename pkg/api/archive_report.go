@@ -330,7 +330,14 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			if bucket == nil {
 				continue
 			}
-			report.SOAPFaultTimeline = append(report.SOAPFaultTimeline, *bucket)
+			finalized := *bucket
+			if len(finalized.ByCode) == 0 {
+				finalized.ByCode = nil
+			}
+			if len(finalized.ByCategory) == 0 {
+				finalized.ByCategory = nil
+			}
+			report.SOAPFaultTimeline = append(report.SOAPFaultTimeline, finalized)
 		}
 		sort.Slice(report.SOAPFaultTimeline, func(left, right int) bool {
 			return report.SOAPFaultTimeline[left].Timestamp.Before(report.SOAPFaultTimeline[right].Timestamp)

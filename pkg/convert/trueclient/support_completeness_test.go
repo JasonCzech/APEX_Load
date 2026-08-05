@@ -21,7 +21,7 @@ var publishedTruClientSteps = map[string]struct {
 	"Mouse Up":          {"mouse_button", ScopeReviewOnly},
 	"Mouse Over":        {"hover", ScopeSupported},
 	"Click":             {"click", ScopeSupported},
-	"Double Click":      {"click", ScopeSupported},
+	"Double Click":      {"double_click", ScopeSupported},
 	"Drag":              {"drag_and_drop", ScopeSupported},
 	"Drag To":           {"drag_and_drop", ScopeSupported},
 	"Get Property":      {"get_property", ScopeReviewOnly},
@@ -138,7 +138,7 @@ func TestConvertMappableStepsEmitExpectedActions(t *testing.T) {
 	}{
 		{"Navigate", truArg("Location", "https://example.test/x"), "browser_navigate"},
 		{"Click", truArg("Selector", "#a"), "browser_click"},
-		{"Double Click", truArg("Selector", "#a"), "browser_click"},
+		{"Double Click", truArg("Selector", "#a"), "browser_dblclick"},
 		{"Hover", truArg("Selector", "#a"), "browser_hover"},
 		{"Mouse Over", truArg("Selector", "#a"), "browser_hover"},
 		{"Set", truArg("Selector", "#a", "Value", "hello"), "browser_fill"},
@@ -175,6 +175,17 @@ func TestConvertMappableStepsEmitExpectedActions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCoordinateOnlyDoubleClickIsReviewGated(t *testing.T) {
+	result := convertTruClientSteps(t, truNavigateAnchor+"\n"+truStepXML("Double Click", truArg("X", "20", "Y", "30")))
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want navigate plus review marker", result.Script.Actions)
+	}
+	action := result.Script.Actions[1]
+	if action.Type != "browser_evaluate_js" || action.Metadata["review_reason"] != "double_click_requires_selector" || action.Metadata["review_required"] != true {
+		t.Fatalf("coordinate-only double click = %#v, want review-gated marker", action)
 	}
 }
 

@@ -139,6 +139,13 @@ func TestSQLiteStorePersistsScenarioSchedules(t *testing.T) {
 	if len(bySchedule) != 1 || bySchedule[0].ID != occurrence.ID {
 		t.Fatalf("schedule occurrences = %#v, want %s", bySchedule, occurrence.ID)
 	}
+	statusCounts, err := store.CountScenarioScheduleOccurrencesByStatus()
+	if err != nil {
+		t.Fatalf("CountScenarioScheduleOccurrencesByStatus returned error: %v", err)
+	}
+	if statusCounts["materialized"] != 1 || len(statusCounts) != 1 {
+		t.Fatalf("occurrence status counts = %#v, want materialized=1", statusCounts)
+	}
 	missingOccurrence, err := store.GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, nextRun.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("GetScenarioScheduleOccurrenceByScheduleAndPlannedAt missing returned error: %v", err)

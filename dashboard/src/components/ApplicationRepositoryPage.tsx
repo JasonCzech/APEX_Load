@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 
 import {
   Application,
@@ -33,6 +34,10 @@ import {
   summarizeRepositoryRows,
 } from './repositoryCatalogUtils'
 import { drainBoundedOffsetCatalog } from './catalogPagination'
+import {
+  createRepositoryCatalogTaskLimiter,
+  type RepositoryCatalogTaskLimiter,
+} from './applicationRepositoryConcurrency'
 
 interface Props {
   domains: Domain[]
@@ -92,6 +97,8 @@ type ReleaseCreationDraft = {
 type ReconciliationTarget = 'repository' | 'projects'
 
 const UNCATEGORIZED_ID = '__uncategorized__'
+const REPOSITORY_CATALOG_VIRTUALIZE_THRESHOLD = 100
+const REPOSITORY_CATALOG_INITIAL_WINDOW = 20
 
 const CATALOG_TABS: Array<{ id: RepositoryCatalogTab; label: string; kind?: RepositoryAssetKind }> = [
   { id: 'all', label: 'All' },
@@ -160,10 +167,11 @@ async function loadProjectAssets<T>(
   projects: Project[],
   label: string,
   loader: (project: Project) => Promise<T[]>,
+  limitTask: RepositoryCatalogTaskLimiter = createRepositoryCatalogTaskLimiter(),
 ): Promise<ProjectAssetResult<T>> {
   const results = await Promise.all(projects.map(async project => {
     try {
-      return { projectId: project.id, items: await loader(project) }
+      return { projectId: project.id, items: await limitTask(() => loader(project)) }
     } catch (err) {
       return { projectId: project.id, items: [] as T[], error: getErrorMessage(err) }
     }
@@ -320,19 +328,20 @@ export default function ApplicationRepositoryPage({
       }
     }
 
+    const limitTask = createRepositoryCatalogTaskLimiter()
     const [releases, scripts, scenarios, tests, dataPools] = await Promise.all([
       loadProjectAssets(scopedProjects, 'Releases', async project => {
         const response = await repositoryApi.listProjectReleases(project.id, true)
         return response.releases || []
-      }),
+      }, limitTask),
       loadProjectAssets(scopedProjects, 'Scripts', async project => {
         const response = await scriptApi.listScripts(project.id)
         return response.scripts || []
-      }),
+      }, limitTask),
       loadProjectAssets(scopedProjects, 'Scenarios', async project => {
         const response = await scriptApi.listScenarios(project.id)
         return response.scenarios || []
-      }),
+      }, limitTask),
       loadProjectAssets(scopedProjects, 'Tests', async project => {
         return drainBoundedOffsetCatalog(
           async (limit, offset) => {
@@ -348,11 +357,11 @@ export default function ApplicationRepositoryPage({
           test => test.id,
           `Tests for project ${project.id}`,
         )
-      }),
+      }, limitTask),
       loadProjectAssets(scopedProjects, 'Data Pools', async project => {
         const response = await scriptApi.listDataPools(project.id, true)
         return response.data_pools || []
-      }),
+      }, limitTask),
     ])
 
     return { releases, scripts, scenarios, tests, dataPools }
@@ -477,6 +486,36 @@ export default function ApplicationRepositoryPage({
   )
 
   const visibleRows = useMemo(() => sortRepositoryRows(filteredRows, sort), [filteredRows, sort])
+  const catalogTableScrollRef = useRef<HTMLDivElement | null>(null)
+  const virtualizeCatalogRows = visibleRows.length > REPOSITORY_CATALOG_VIRTUALIZE_THRESHOLD
+  const catalogRowVirtualizer = useVirtualizer({
+    count: visibleRows.length,
+    getScrollElement: () => catalogTableScrollRef.current,
+    estimateSize: () => 82,
+    overscan: 10,
+    enabled: virtualizeCatalogRows,
+    initialRect: { width: 1240, height: 720 },
+    getItemKey: index => visibleRows[index] ? repositoryRowKey(visibleRows[index]) : index,
+  })
+  const virtualCatalogRows = virtualizeCatalogRows ? catalogRowVirtualizer.getVirtualItems() : []
+  const renderedCatalogRows = virtualizeCatalogRows
+    ? (virtualCatalogRows.length > 0
+        ? virtualCatalogRows.flatMap(item => {
+            const row = visibleRows[item.index]
+            return row ? [{ row, virtualIndex: item.index }] : []
+          })
+        : visibleRows.slice(0, REPOSITORY_CATALOG_INITIAL_WINDOW).map((row, index) => ({ row, virtualIndex: index })))
+    : visibleRows.map(row => ({ row, virtualIndex: null }))
+  const catalogPaddingTop = virtualCatalogRows[0]?.start || 0
+  const catalogPaddingBottom = virtualCatalogRows.length > 0
+    ? Math.max(0, catalogRowVirtualizer.getTotalSize() - virtualCatalogRows[virtualCatalogRows.length - 1].end)
+    : (virtualizeCatalogRows
+        ? Math.max(0, (visibleRows.length - REPOSITORY_CATALOG_INITIAL_WINDOW) * 82)
+        : 0)
+  useEffect(() => {
+    if (catalogTableScrollRef.current) catalogTableScrollRef.current.scrollTop = 0
+    if (virtualizeCatalogRows) catalogRowVirtualizer.scrollToOffset(0)
+  }, [activeTab, catalogRowVirtualizer, filters, sort, virtualizeCatalogRows])
   const selectableVisibleRows = useMemo(
     () => activeTab === 'structure' ? [] : visibleRows,
     [activeTab, visibleRows],
@@ -1293,7 +1332,11 @@ export default function ApplicationRepositoryPage({
             </div>
           </div>
         ) : (
-          <div className="data-table repository-asset-table">
+          <div
+            ref={catalogTableScrollRef}
+            className={`data-table repository-asset-table${virtualizeCatalogRows ? ' repository-asset-table-virtualized' : ''}`}
+            data-table-pagination={virtualizeCatalogRows ? 'off' : undefined}
+          >
             <table>
               <thead>
                 <tr>
@@ -1319,8 +1362,19 @@ export default function ApplicationRepositoryPage({
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map(row => (
-                  <tr key={repositoryRowKey(row)}>
+                {virtualizeCatalogRows && catalogPaddingTop > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={9} style={{ height: catalogPaddingTop, padding: 0, border: 0 }} />
+                  </tr>
+                )}
+                {renderedCatalogRows.map(({ row, virtualIndex }) => (
+                  <tr
+                    key={repositoryRowKey(row)}
+                    data-index={virtualIndex ?? undefined}
+                    ref={node => {
+                      if (node && virtualIndex !== null) catalogRowVirtualizer.measureElement(node)
+                    }}
+                  >
                     <td className="repository-select-cell">
                       <input
                         type="checkbox"
@@ -1372,6 +1426,11 @@ export default function ApplicationRepositoryPage({
                     <td>{renderRowAction(row)}</td>
                   </tr>
                 ))}
+                {virtualizeCatalogRows && catalogPaddingBottom > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={9} style={{ height: catalogPaddingBottom, padding: 0, border: 0 }} />
+                  </tr>
+                )}
                 {visibleRows.length === 0 && (
                   <tr className="no-hover">
                     <td colSpan={9}>

@@ -40,11 +40,46 @@ function labelSummary(labels?: Record<string, string>) {
   return entries.map(([key, value]) => `${key}=${value}`).join(', ')
 }
 
+function protocolRuntimeCapacities(generator: SystemInventoryGenerator, protocol?: string) {
+  const wanted = protocol?.trim().toLowerCase()
+  if (!wanted) return []
+  return (generator.runtime_capacities || []).filter(capacity => capacity.protocol.trim().toLowerCase() === wanted)
+}
+
+function protocolRuntimeAvailableVUsers(generator: SystemInventoryGenerator, protocol?: string): number | undefined {
+  const capacities = protocolRuntimeCapacities(generator, protocol)
+  if (capacities.length === 0) return undefined
+  return capacities.reduce((available, capacity) => {
+    const candidate = capacity.available && capacity.max_vusers > 0 && capacity.available_vusers > 0
+      ? Math.min(capacity.available_vusers, capacity.max_vusers)
+      : 0
+    return Math.min(available, candidate)
+  }, Number.POSITIVE_INFINITY)
+}
+
+function generatorCapacityForProtocol(generator: SystemInventoryGenerator, protocol?: string): number | null {
+  // Configured fallback rows are target names without a live inventory sample.
+  // Zero would falsely claim exhaustion, so keep their capacity explicitly unknown.
+  if (generator.status === 'configured') return null
+  const overall = Math.max(0, generator.available_capacity ?? 0)
+  const runtimeAvailable = protocolRuntimeAvailableVUsers(generator, protocol)
+  if (runtimeAvailable === undefined) return overall
+  return Math.min(overall, runtimeAvailable)
+}
+
+function generatorCapacityLabel(generator: SystemInventoryGenerator, protocol?: string): string {
+  const capacity = generatorCapacityForProtocol(generator, protocol)
+  return capacity === null ? 'capacity unknown' : `${capacity} capacity`
+}
+
 function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string) {
   const drainActive = !generator.drain_state || generator.drain_state === 'active'
   const compatible = !generator.compatibility_state || generator.compatibility_state === 'compatible' || generator.compatibility_state === 'unknown'
   const protocols = generator.supported_protocols || []
-  const protocolSupported = !protocol || protocols.length === 0 || protocols.includes(protocol)
+  const runtimeAvailable = protocolRuntimeAvailableVUsers(generator, protocol)
+  const protocolSupported = runtimeAvailable !== undefined
+    ? runtimeAvailable > 0
+    : !protocol || protocols.length === 0 || protocols.includes(protocol)
   // Synthetic fallback rows (no live inventory) carry status 'configured' with no
   // capacity/health data — keep them selectable so recommendation hostnames remain
   // pinnable when /system/inventory is empty or unavailable (M3).
@@ -52,13 +87,19 @@ function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string)
     return drainActive && compatible && protocolSupported
   }
   const connected = ['connected', 'healthy', 'ready'].includes(generator.status)
-  return drainActive && connected && compatible && protocolSupported && (generator.available_capacity ?? 0) > 0
+  const capacityAvailable = (generator.available_capacity ?? 0) > 0
+    && (runtimeAvailable === undefined || runtimeAvailable > 0)
+  return drainActive && connected && compatible && protocolSupported && capacityAvailable
 }
 
 function generatorDisabledReason(generator: SystemInventoryGenerator, protocol?: string) {
   if (generator.drain_state && generator.drain_state !== 'active') return `Host is ${generator.drain_state}`
   if (generator.compatibility_state && generator.compatibility_state !== 'compatible' && generator.compatibility_state !== 'unknown') return generator.compatibility_issues?.[0] || `Compatibility is ${generator.compatibility_state}`
   const protocols = generator.supported_protocols || []
+  const runtimeCapacities = protocolRuntimeCapacities(generator, protocol)
+  const runtimeAvailable = protocolRuntimeAvailableVUsers(generator, protocol)
+  if (runtimeCapacities.some(capacity => !capacity.available)) return `${protocol} runtime is unavailable`
+  if (runtimeAvailable !== undefined && runtimeAvailable <= 0) return `No available ${protocol} runtime capacity`
   if (protocol && protocols.length > 0 && !protocols.includes(protocol)) return `Does not support ${protocol}`
   // Fallback rows have no live status/capacity to report on once the above
   // configuration checks pass.
@@ -159,7 +200,14 @@ export default function GroupPlacementEditor({
   const labelKeys = Object.keys(availableLabels || {}).sort()
   const matchingLabelHosts = generatorInventory?.filter(generator => generatorCanRun(generator, protocol) && labelsMatch(generator, requiredLabels)).length ?? 0
   const selectedTargetSet = new Set(selectedTargets)
-  const selectedCapacity = rows.reduce((total, generator) => selectedTargetSet.has(generator.target) ? total + (generator.available_capacity || 0) : total, 0)
+  const selectedRows = rows.filter(generator => selectedTargetSet.has(generator.target))
+  const selectedCapacity = selectedRows.reduce((total, generator) => total + (generatorCapacityForProtocol(generator, protocol) ?? 0), 0)
+  const selectedUnknownCapacityCount = selectedRows.filter(generator => generatorCapacityForProtocol(generator, protocol) === null).length
+  const selectedCapacitySummary = selectedUnknownCapacityCount === 0
+    ? `${selectedCapacity} selected VUser capacity`
+    : selectedCapacity > 0
+      ? `${selectedCapacity} known selected VUser capacity · ${selectedUnknownCapacityCount} host${selectedUnknownCapacityCount === 1 ? '' : 's'} unknown`
+      : 'Selected VUser capacity unknown'
   const lossTolerance = scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}
   const regionKeys = Array.from(new Set((generatorInventory || []).map(generator => generator.region?.trim()).filter((value): value is string => Boolean(value)))).sort()
   const loadZoneKeys = Array.from(new Set((generatorInventory || []).map(generator => (
@@ -390,7 +438,7 @@ export default function GroupPlacementEditor({
                 />
                 <span>
                   <strong>{generator.target}</strong>
-                  <em>{generator.region || generator.pool_name || 'default'} · {generator.available_capacity || 0} capacity · {generator.status}{recommended ? ' · recommended' : ''}</em>
+                  <em>{generator.region || generator.pool_name || 'default'} · {generatorCapacityLabel(generator, protocol)} · {generator.status}{recommended ? ' · recommended' : ''}</em>
                   {disabledReason && <em className="warning">{disabledReason}</em>}
                 </span>
               </label>
@@ -401,7 +449,7 @@ export default function GroupPlacementEditor({
           )}
           <div className="new-test-placement-summary">
             <strong>{formatHostSelectionSummary(selectedTargets)}</strong>
-            <span>{selectedCapacity} selected VUser capacity</span>
+            <span>{selectedCapacitySummary}</span>
           </div>
           {selectedTargets.every(target => !target.trim()) && <p className="settings-error-inline" role="alert">Select at least one load generator host.</p>}
         </div>

@@ -1,4 +1,5 @@
 import type { ClientMetrics } from './metrics'
+import type { RedactionRule } from './runtimeSettings'
 import type { BrowserConfig, ReplayPreflight, ScriptDefinition } from './scripts'
 
 /** Transport and view contracts for browser replay and script debugging. */
@@ -205,9 +206,9 @@ export interface BrowserReplayStartRequest {
   project_id?: string
   replay_session_id?: string
   variables?: Record<string, string>
+  redaction_rules?: RedactionRule[]
   start_paused?: boolean
   breakpoints?: number[]
-  log_level?: ScriptDebugLogLevel
   browser?: BrowserConfig
   ignore_think_time?: boolean
   script?: ScriptDefinition

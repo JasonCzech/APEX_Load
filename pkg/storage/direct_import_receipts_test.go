@@ -102,3 +102,47 @@ func TestDirectImportReceiptAbandonRequiresCurrentOwner(t *testing.T) {
 		t.Fatalf("owner abandon = %t, %v; want true", abandoned, err)
 	}
 }
+
+func TestDirectImportReceiptReleasePreservesIdentityForImmediateRetry(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "receipts.db"))
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	first, err := store.ClaimDirectImportReceipt(
+		DefaultProjectID, "jmeter", "operation-hash", "request-hash",
+		"owner-one", now, time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("claim first receipt: %v", err)
+	}
+	if released, err := store.ReleaseDirectImportReceipt(
+		first.Receipt.ID,
+		"other-owner",
+		now.Add(time.Second),
+	); err != nil || released {
+		t.Fatalf("foreign release = %t, %v; want false", released, err)
+	}
+	if released, err := store.ReleaseDirectImportReceipt(
+		first.Receipt.ID,
+		"owner-one",
+		now.Add(time.Second),
+	); err != nil || !released {
+		t.Fatalf("owner release = %t, %v; want true", released, err)
+	}
+
+	retry, err := store.ClaimDirectImportReceipt(
+		DefaultProjectID, "jmeter", "operation-hash", "request-hash",
+		"owner-two", now.Add(2*time.Second), time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("claim released receipt: %v", err)
+	}
+	if retry.Created || retry.Replay || retry.Receipt.ID != first.Receipt.ID {
+		t.Fatalf("released receipt retry = %+v, want same pending identity %s", retry, first.Receipt.ID)
+	}
+	if abandoned, err := store.AbandonDirectImportReceipt(retry.Receipt.ID, "owner-two"); err != nil || !abandoned {
+		t.Fatalf("clean up retry receipt = %t, %v", abandoned, err)
+	}
+}

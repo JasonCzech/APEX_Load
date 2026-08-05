@@ -400,12 +400,12 @@ flowchart LR
 
 - **There isn't one.** No file in `pkg/convert/` emits Go; every converter goes
   *foreign-format → DSL*, never *DSL → Go*.
-- The analogue of a compiled test is the **engine binary** (`pkg/generator` /
-  `pkg/controller` embedding `pkg/engine`), which is built once and runs every test.
+- The analogue of a compiled test is the controller/generator binary (`cmd/controller` /
+  `cmd/generator`, both embedding `pkg/engine`), which is built once and runs every test.
 - A test's behavior is entirely a **`dsl.Script` value** the engine reads. Dispatch is by
   `action.Type` string through a `switch` (`vuser.go`) and the protocol registry — resolved
   at *runtime*, not compile time.
-- This is deliberate (see `CLAUDE.md`): "JSON DSL scripts — no proprietary language",
+- This is deliberate (see `AGENTS.md`): "JSON DSL scripts — no proprietary language",
   "Protocol plugins compiled in (not Go runtime plugins)".
 
 ---

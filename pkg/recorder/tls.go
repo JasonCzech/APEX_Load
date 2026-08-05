@@ -3,6 +3,7 @@ package recorder
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -632,7 +633,69 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 
 // connectTunnelIdleTimeout bounds how long a hijacked CONNECT/MITM tunnel may sit
 // idle between requests before it is closed, reclaiming the goroutine + fd.
-const connectTunnelIdleTimeout = 120 * time.Second
+const (
+	connectTunnelIdleTimeout              = 120 * time.Second
+	recorderUpstreamBodyInactivityTimeout = 30 * time.Second
+)
+
+// inactivityTimeoutBody bounds a single stalled body read without imposing a
+// total lifetime on responses that continue to make progress. It is applied
+// only after streaming responses have been identified and routed away to the
+// intentionally long-lived streaming path.
+type inactivityTimeoutBody struct {
+	body    io.ReadCloser
+	timeout time.Duration
+	cancel  context.CancelFunc
+}
+
+func (b *inactivityTimeoutBody) Read(p []byte) (int, error) {
+	if b == nil || b.body == nil {
+		return 0, io.EOF
+	}
+	if b.timeout <= 0 {
+		return b.body.Read(p)
+	}
+	timeoutFinished := make(chan struct{})
+	timer := time.AfterFunc(b.timeout, func() {
+		// Go's HTTP/1 response body serializes Read and Close with the same
+		// mutex, so Close alone cannot reliably interrupt a blocked Read. Cancel
+		// the owning request; the transport then closes the connection and
+		// releases the read. The handler retains sole ownership of the eventual
+		// Body.Close call so the timer callback cannot race its deferred cleanup.
+		if b.cancel != nil {
+			b.cancel()
+		} else {
+			// A cancel function is always supplied by recorder request paths. Keep
+			// the wrapper useful for standalone readers by falling back to Close
+			// when no owning request exists.
+			_ = b.body.Close()
+		}
+		close(timeoutFinished)
+	})
+	n, err := b.body.Read(p)
+	if !timer.Stop() {
+		// Wait for the timeout action to finish before returning ownership to
+		// the caller. In particular, this prevents a fallback Close from running
+		// concurrently with the caller's deferred Close.
+		<-timeoutFinished
+		return n, fmt.Errorf("upstream response body made no progress for %s: %w", b.timeout, context.DeadlineExceeded)
+	}
+	return n, err
+}
+
+func (b *inactivityTimeoutBody) Close() error {
+	if b == nil || b.body == nil {
+		return nil
+	}
+	return b.body.Close()
+}
+
+func (r *Recorder) responseBodyInactivityTimeout() time.Duration {
+	if r != nil && r.upstreamBodyInactivityTimeout > 0 {
+		return r.upstreamBodyInactivityTimeout
+	}
+	return recorderUpstreamBodyInactivityTimeout
+}
 
 func peekConnectTunnelByte(conn net.Conn, reader *bufio.Reader) (byte, error) {
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
@@ -719,7 +782,9 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 	// Build the upstream URL using the full host:port from the CONNECT request.
 	targetURL := "https://" + host + clientReq.URL.RequestURI()
 
-	upstreamReq, err := http.NewRequest(clientReq.Method, targetURL, upstreamBody)
+	upstreamCtx, cancelUpstream := context.WithCancel(clientReq.Context())
+	defer cancelUpstream()
+	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, clientReq.Method, targetURL, upstreamBody)
 	if err != nil {
 		slog.Debug("failed to create upstream request", "err", recorderLogError(err))
 		writeHTTPError(tlsConn, http.StatusBadGateway, "proxy error: "+err.Error())
@@ -774,7 +839,12 @@ func (r *Recorder) forwardHTTPS(tlsConn net.Conn, clientReader *bufio.Reader, cl
 		responseWriter = chunked
 		closeResponseWriter = chunked.Close
 	}
-	respBody, respBodySize, respBodyTruncated, copyErr := copyAndCaptureBody(responseWriter, resp.Body, responseCaptureLimit(session))
+	boundedBody := &inactivityTimeoutBody{
+		body:    resp.Body,
+		timeout: r.responseBodyInactivityTimeout(),
+		cancel:  cancelUpstream,
+	}
+	respBody, respBodySize, respBodyTruncated, copyErr := copyAndCaptureBody(responseWriter, boundedBody, responseCaptureLimit(session))
 	closeResponseWriter()
 	// When the response was framed with a fixed Content-Length but the upstream
 	// body came up short (connection reset mid-body, or the server lied about the

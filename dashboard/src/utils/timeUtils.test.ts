@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isValidDurationInput, parseDurationToNanoseconds, parseDurationToSeconds, serializeDurationFieldValue, splitDurationInput } from './timeUtils'
+import { isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToNanoseconds, parseDurationToSeconds, serializeDurationFieldValue, splitDurationInput } from './timeUtils'
 
 describe('timeUtils', () => {
   it.each([
@@ -58,6 +58,16 @@ describe('timeUtils', () => {
     expect(isValidDurationInput('', true)).toBe(true)
     expect(isValidDurationInput(undefined, true)).toBe(true)
     expect(isValidDurationInput(' ', true)).toBe(false)
+  })
+
+  it('accepts explicit zero only for non-negative duration fields', () => {
+    expect(isValidDurationInput('0s')).toBe(false)
+    expect(isValidNonNegativeDurationInput('0')).toBe(true)
+    expect(isValidNonNegativeDurationInput('+0')).toBe(true)
+    expect(isValidNonNegativeDurationInput('0s')).toBe(true)
+    expect(isValidNonNegativeDurationInput('+0s')).toBe(true)
+    expect(isValidNonNegativeDurationInput('-1s')).toBe(false)
+    expect(isValidNonNegativeDurationInput('later')).toBe(false)
   })
 
   it('splits and serializes duration field values', () => {

@@ -441,6 +441,8 @@ describe('ApplicationRepositoryPage', () => {
     expect(testApiMock.listTests).toHaveBeenNthCalledWith(1, { project_id: project.id, limit: 100, offset: 0 })
     expect(testApiMock.listTests).toHaveBeenNthCalledWith(2, { project_id: project.id, limit: 100, offset: 100 })
     expect(container.textContent).toContain('Late Page Run')
+    expect(container.querySelector('.repository-asset-table-virtualized')?.getAttribute('data-table-pagination')).toBe('off')
+    expect(container.querySelectorAll('.repository-asset-table tbody tr:not([aria-hidden="true"])').length).toBeLessThan(101)
   })
 
   it('keeps repository test Open on archive navigation and adds Run Dashboard', async () => {

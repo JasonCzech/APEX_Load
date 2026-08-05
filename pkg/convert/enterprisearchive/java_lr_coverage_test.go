@@ -44,12 +44,21 @@ func TestJavaLRCoverageDoesNotOverclaimExitContinuationSemantics(t *testing.T) {
 		if row.SupportMode != string(SourceFunctionSupportReviewOnly) {
 			t.Fatalf("lr_exit support mode = %q, want review_only until engine continuation semantics have integration coverage", row.SupportMode)
 		}
-		if row.Target != "authoring/fidelity review" {
-			t.Fatalf("lr_exit target = %q, want authoring/fidelity review", row.Target)
+		if row.Target != "source_runtime action" {
+			t.Fatalf("lr_exit target = %q, want source_runtime action", row.Target)
 		}
 		return
 	}
 	t.Fatal("lr_exit missing from Java LR coverage")
+}
+
+func TestJavaLRCoverageUsesDetailedTargets(t *testing.T) {
+	for _, row := range JavaLRFunctionCoverage() {
+		detail := javaLRCoverageDetail[row.Function]
+		if detail.target != "" && row.Target != detail.target {
+			t.Errorf("%s target = %q, want detailed target %q", row.Function, row.Target, detail.target)
+		}
+	}
 }
 
 func TestJavaLRExecutableCoverageHasVerifiedBytecodeDescriptors(t *testing.T) {

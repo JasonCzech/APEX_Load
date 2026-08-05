@@ -76,6 +76,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | DevWeb import | Supported for import-review scope | `/api/v1/scripts/import/devweb`, `/api/v1/scripts/import/devweb/support-matrix` | Dynamic JavaScript runtime compatibility is review-only. |
 | HAR import | Supported | `/api/v1/scripts/import/sample`, `pkg/convert/har` | More guided repair affordances. |
 | Raw HTTP / cURL / REST samples | Supported | `/api/v1/scripts/import/sample`, `pkg/convert/sample` | Expand canonical sample projects. |
+| Bruno collections | Supported for governed execution | `/api/v1/scripts/import/bruno/*`, `pkg/protocol/bruno`, `runners/bruno` | Requires the version-pinned runner and an approved egress policy. |
 | k6 script import/export | Supported for constrained HTTP subset | `/api/v1/scripts/import/k6`, `/api/v1/scripts/export/k6`, `/api/v1/scripts/import/k6/support-matrix` | Broader fixture coverage; APEX Load does not run k6 JavaScript. |
 | k6 result import | Supported for summary ingestion | `/api/v1/results/import` | Richer trend overlays after script conversion work. |
 | Gatling result import | Supported for summary ingestion | `/api/v1/results/import` | Gatling-specific fixture packs. |
@@ -89,6 +90,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | REST / OpenAPI | Supported | Supported | Supported | `/api/v1/scripts/import/openapi` | Dashboard guided create flow. |
 | SOAP / WSDL | Supported | Via HTTP scripting | Supported | `pkg/protocol/soap`, `pkg/convert/wsdl` | Complex XSD generation is scaffolded. |
 | Java-over-HTTP | Supported | Not primary | Enterprise coverage | `pkg/protocol/java_http` | Enterprise fixtures on demand. |
+| Bruno collections | Supported via governed compatibility runner | N/A | Varies | `pkg/protocol/bruno`, `runners/bruno` | Version-pinned runner and egress policy required. |
 | JMS / broker | Partial (Solace and Azure Service Bus real adapters opt-in) | Extensions | Enterprise | `pkg/protocol/jms` | IBM MQ real adapter remains review-only; Service Bus requires `-tags jms_servicebus_real`. |
 | Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
@@ -176,7 +178,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 | --- | --- | --- | --- |
 | Offline analysis depth | Archive report/comparison plus merged graph and transaction drilldown (`/api/v1/tests/{id}/archive/analysis`); still lighter than Analysis | Analysis: graph merge, page diagnostics, deep drill-down | **▼** |
 | Multi-run trending | Release trend cards; `GET /api/v1/releases/{id}/trend` | Rich trend reports | **▼** |
-| Report output | HTML + archive comparison + baseline pin; no PDF | HTML/PDF/Word, custom templates | **▼** |
+| Report output | HTML + archive comparison + baseline pin + executive/engineer PDF; no Word export | HTML/PDF/Word, custom templates | **▼** |
 | Open results format | Parquet/JSONL | Proprietary .lrr/.lra | **▲** |
 | Root-cause | Deterministic correlation summary | APM-correlated diagnostics | **▼** |
 
@@ -352,7 +354,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 
 **Evidence:** `/metrics`, `/api/v1/integrations/apm/profiles`, `/api/v1/monitoring/packs`, `pkg/api/notifications.go`
 
-**Remaining:** Deepen vendor-specific causal scoring. Real OTel span instrumentation (spans + exporter) is deferred.
+**Remaining:** Deepen vendor-specific causal scoring. OTLP span export is implemented for controller HTTP, lifecycle/orchestration, sampled actions, and controller↔generator gRPC; OpenTelemetry metrics/log export and desktop OTLP export remain deferred.
 
 ---
 
@@ -569,6 +571,7 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | **Web / API** | HTTP/HTTPS, WebSocket, gRPC | Supported | Go generator (Linux) |
 | **Web / API** | SOAP/WSDL | Supported | Go generator (Linux) |
 | **Web / API** | Java-over-HTTP | Supported (bounded codec) | Go generator (Linux) |
+| **Web / API** | Bruno collections | Supported (version-pinned compatibility runner; policy-gated) | Governed Node runner (Linux/Windows) |
 | **Web / API** | JMS (Solace, IBM MQ, Azure Service Bus) | Partial (Service Bus real adapter opt-in via `-tags jms_servicebus_real`; transactions/no-op ack parity documented) | Go generator (Linux) |
 | **Web / API** | Kafka (event streaming) | Supported (mock default; real adapter opt-in via `-tags kafka_real`) | Go generator (Linux) |
 | **Database (DB1)** | SQL / ODBC-style (database/sql) | Supported | Go generator (Linux) |
@@ -577,9 +580,10 @@ Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 | **Network (NET1)** | MAPI, Tuxedo | Review-only | Client-runner candidate |
 | **Oracle E-Business (OEB1)** | Oracle-Web, Siebel-Web (via HTTP + correlation pack) | Supported for HTTP + review pack | Go generator (Linux) |
 | **Oracle E-Business (OEB1)** | Oracle NCA | External-runner / review artifact | Client runner TBD |
-| **Oracle E-Business (OEB1)** | DevWeb, JMeter, Gatling (import paths) | Supported | Go generator (Linux) |
+| **Oracle E-Business (OEB1)** | DevWeb and JMeter import paths | Supported | Go generator (Linux) |
+| **Oracle E-Business (OEB1)** | Gatling script migration | Review-only classification; result-summary ingestion is supported separately | Import review |
 | **Templates (TPL1)** | C/C#/VB.NET/Java Template VUsers | Review artifact; worker SDK planned | Sandboxed external worker |
-| **SAP (SAP1)** | SAP-Web / Fiori (via HTTP/browser canary) | Partial | Go generator (Linux) |
+| **SAP (SAP1)** | SAP-Web / Fiori (via HTTP/browser canary) | Supported for HTTP load plus browser-canary evidence | Go generator (Linux) |
 | **SAP (SAP1)** | SAP GUI desktop | Foundation entitlement + runner architecture planned | Windows SAP GUI runner pool |
 
 **Entitlement model:** Project governance controls protocol entitlements independently of runtime availability. The scheduler places protocols on appropriate runner pools (Linux Go generators vs. Windows/client runners) based on bundle, OS, client prerequisites, and drain state.

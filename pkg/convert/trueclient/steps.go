@@ -330,12 +330,19 @@ func convertSetFilesStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.A
 
 func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.Action, error) {
 	actionName := strings.TrimSpace(step.Action)
+	doubleClick := isDoubleClickStep(actionName)
 	selector, err := parseFirstArgumentValue(step.Arguments, "Selector", "selector", "Target", "target", "Element", "element")
 	if err != nil {
 		return dsl.Action{}, fmt.Errorf("parse TruClient %s step arguments: %w", actionName, err)
 	}
 	selector = resolveSelector(step, descriptors, trimQuotedValue(selector))
 	if selector == "" {
+		if doubleClick {
+			// Coordinate-only clicks have no faithful browser_dblclick runtime
+			// shape. Preserve them for review instead of silently executing a
+			// single click.
+			return unresolvedBrowserStepAction(step, actionName, "double_click_requires_selector"), nil
+		}
 		if x, y, ok := stepCoordinates(step); ok {
 			return coordinateClickAction(step, actionName, x, y), nil
 		}
@@ -351,9 +358,10 @@ func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.
 	metadata := map[string]any{
 		"source": "truclient_" + stableActionToken(actionName),
 	}
+	if doubleClick {
+		action.Type = "browser_dblclick"
+	}
 	switch strings.ToLower(strings.ReplaceAll(actionName, "-", " ")) {
-	case "double click", "doubleclick":
-		params["click_count"] = 2
 	case "check", "select checkbox", "checkbox", "select radio", "radio":
 		params["checked"] = true
 	case "uncheck":
@@ -366,6 +374,11 @@ func convertClickLikeStep(step truXMLStep, descriptors []ObjectDescriptor) (dsl.
 	}
 	action.Metadata = metadata
 	return action, nil
+}
+
+func isDoubleClickStep(actionName string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(actionName), "-", " "))
+	return normalized == "double click" || normalized == "doubleclick"
 }
 
 func unresolvedClickAction(step truXMLStep, actionName string) dsl.Action {
@@ -390,6 +403,8 @@ func reviewGatedClickWarning(step truXMLStep, metadata map[string]any) string {
 	actionName := firstNonEmptyString(strings.TrimSpace(step.Action), "Click")
 	displayName := stepDisplayName(step, "Click")
 	switch stringFromAny(metadata["review_reason"]) {
+	case "double_click_requires_selector":
+		return fmt.Sprintf("TruClient %s step %q has only coordinate evidence, which cannot be replayed faithfully as a double click; a review-gated placeholder was preserved", actionName, displayName)
 	case "selectorless_coordinate_click":
 		return fmt.Sprintf("TruClient %s step %q was converted as a review-gated coordinate click because no selector was available", actionName, displayName)
 	case "missing_selector":

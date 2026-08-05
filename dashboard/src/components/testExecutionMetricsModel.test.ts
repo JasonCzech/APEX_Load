@@ -392,10 +392,10 @@ describe('testExecutionMetricsModel', () => {
 
   it('filters custom zoom ranges and summarizes the resulting slice', () => {
     const filtered = filterExecutionChartData([
-      { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
-      { time: '10:00:01', vusers: 4, tps: 2, avgMs: 120, errorPct: 1, p50: 100, p90: 140, p99: 180 },
-      { time: '10:00:02', vusers: 6, tps: 3, avgMs: 140, errorPct: 2, p50: 110, p90: 150, p99: 190 },
-    ], 'custom', { left: '10:00:01', right: '10:00:02' })
+      { time: '10:00:00', timestampMs: 0, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
+      { time: '10:00:01', timestampMs: 1, vusers: 4, tps: 2, avgMs: 120, errorPct: 1, p50: 100, p90: 140, p99: 180 },
+      { time: '10:00:02', timestampMs: 2, vusers: 6, tps: 3, avgMs: 140, errorPct: 2, p50: 110, p90: 150, p99: 190 },
+    ], 'custom', { startTimestampMs: 1, endTimestampMs: 2 })
 
     expect(filtered).toHaveLength(2)
     expect(summarizeExecutionChartData(filtered)).toEqual({
@@ -404,6 +404,35 @@ describe('testExecutionMetricsModel', () => {
       avgError: 1.5,
       maxVusers: 6,
     })
+  })
+
+  it('keeps custom zoom mode stable when live retention evicts its anchors', () => {
+    const chartData = [
+      { time: '10:00:01', timestampMs: 1, vusers: 1, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
+      { time: '10:00:02', timestampMs: 2, vusers: 2, tps: 2, avgMs: 110, errorPct: 0, p50: 95, p90: 125, p99: 155 },
+      { time: '10:00:03', timestampMs: 3, vusers: 3, tps: 3, avgMs: 120, errorPct: 0, p50: 100, p90: 130, p99: 160 },
+    ]
+
+    expect(filterExecutionChartData(chartData, 'custom', { startTimestampMs: 0, endTimestampMs: 2 }))
+      .toEqual(chartData.slice(0, 2))
+    expect(filterExecutionChartData(chartData, 'custom', { startTimestampMs: 2, endTimestampMs: 4 }))
+      .toEqual(chartData.slice(1))
+    expect(filterExecutionChartData(chartData, 'custom', { startTimestampMs: -2, endTimestampMs: -1 }))
+      .toEqual(chartData.slice(0, 1))
+    expect(filterExecutionChartData(chartData, 'custom', { startTimestampMs: 4, endTimestampMs: 5 }))
+      .toEqual(chartData.slice(-1))
+    expect(filterExecutionChartData(chartData, 'custom', null)).toBe(chartData)
+  })
+
+  it('uses timestamp anchors when display labels repeat', () => {
+    const chartData = [
+      { time: '01:30:00', timestampMs: 1, vusers: 1, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
+      { time: '01:30:00', timestampMs: 2, vusers: 2, tps: 2, avgMs: 110, errorPct: 0, p50: 95, p90: 125, p99: 155 },
+      { time: '01:30:01', timestampMs: 3, vusers: 3, tps: 3, avgMs: 120, errorPct: 0, p50: 100, p90: 130, p99: 160 },
+    ]
+
+    expect(filterExecutionChartData(chartData, 'custom', { startTimestampMs: 2, endTimestampMs: 3 }))
+      .toEqual(chartData.slice(1))
   })
 
   it('filters relative display windows across the full minute slider range', () => {

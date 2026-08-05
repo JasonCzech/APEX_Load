@@ -74,6 +74,7 @@ export default function DesktopHome({
     if (!onDropFiles) return
     void filesFromDroppedPaths(paths).then(files => {
       if (files.length > 0) onDropFiles(files)
+      else if (paths.length > 0) onDropError?.('The dropped selection did not contain a supported import file.')
     }).catch(error => onDropError?.(nativeFileReadErrorMessage(error)))
   }, desktop && typeof onDropFiles === 'function')
 

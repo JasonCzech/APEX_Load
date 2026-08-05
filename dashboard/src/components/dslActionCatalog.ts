@@ -86,8 +86,6 @@ export function dslSpecForActionType(
   return null
 }
 
-const ENGINE_EXCLUDED_FAMILIES = new Set(['jms', 'kafka'])
-
 /** Action specs usable for a script protocol, engine actions included where valid. */
 export function dslActionTypesForProtocol(
   protocol: string,
@@ -96,7 +94,7 @@ export function dslActionTypesForProtocol(
   if (!catalog) return []
   const family = dslProtocolFamily(protocol)
   return catalog.actions.filter(action => {
-    if (action.protocols.includes('*')) return !ENGINE_EXCLUDED_FAMILIES.has(family)
+    if (action.protocols.includes('*')) return true
     return action.protocols.includes(family)
   })
 }

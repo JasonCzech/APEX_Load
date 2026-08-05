@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { StoredScript, TestSummary } from '../types'
-import { useScriptsLibraryModel } from './useScriptsLibraryModel'
+import { SCRIPT_RUN_CATALOG_CACHE_TTL_MS, useScriptsLibraryModel } from './useScriptsLibraryModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -24,11 +24,14 @@ function LibraryHarness({ scripts, api, projectId = 'project-1' }: LibraryHarnes
       <span data-testid="expanded-script">{model.expandedScriptId || 'none'}</span>
       <span data-testid="loading-runs">{model.loadingRunsFor || 'none'}</span>
       <span data-testid="run-count">{String(model.scriptRuns['script-1']?.length || 0)}</span>
+      <span data-testid="second-run-count">{String(model.scriptRuns['script-2']?.length || 0)}</span>
       <span data-testid="run-error">{model.scriptRunErrors['script-1'] || 'none'}</span>
       <span data-testid="first-run">{model.getSortedInnerRuns(model.scriptRuns['script-1'] || [])[0]?.name || 'none'}</span>
       <button data-testid="sort-created" onClick={() => model.onSort('created_at')}>sort-created</button>
       <button data-testid="expand-runs" onClick={() => void model.onToggleScriptRuns(scripts[0])}>expand-runs</button>
+      <button data-testid="expand-second-runs" onClick={() => void model.onToggleScriptRuns(scripts[1])}>expand-second-runs</button>
       <button data-testid="retry-runs" onClick={() => void model.onRetryScriptRuns(scripts[0])}>retry-runs</button>
+      <button data-testid="sort-duration" onClick={() => model.onInnerSort('duration')}>sort-duration</button>
     </div>
   )
 }
@@ -49,9 +52,10 @@ describe('useScriptsLibraryModel', () => {
     })
     container.remove()
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
-  it('sorts scripts and loads cached linked runs for the selected script', async () => {
+  it('sorts scripts and reuses the project run catalog when a script is reopened', async () => {
     const api = {
       listTests: vi.fn().mockResolvedValue({
         tests: [
@@ -124,6 +128,93 @@ describe('useScriptsLibraryModel', () => {
     expect(api.listTests).toHaveBeenNthCalledWith(2, { limit: 1000, offset: 1, project_id: 'project-1', summary: true })
     expect(readTestId('run-count')).toBe('2')
     expect(readTestId('first-run')).toBe('Newer Run')
+  })
+
+  it('reuses the project run catalog when expanding a different script', async () => {
+    const api = {
+      listTests: vi.fn().mockResolvedValue({
+        tests: [
+          buildRun('run-one', 'First Script Run', 'script-1', '2026-05-12T20:00:00Z'),
+          buildRun('run-two', 'Newly Completed Run', 'script-2', '2026-05-12T20:01:00Z'),
+        ],
+      }),
+    }
+    const scripts = [
+      buildScript('script-1', 'First', '2026-05-12T20:00:00Z'),
+      buildScript('script-2', 'Second', '2026-05-12T20:00:00Z'),
+    ]
+    await act(async () => root.render(<LibraryHarness scripts={scripts} api={api} />))
+
+    await click('expand-runs')
+    await flushPromises()
+    await click('expand-second-runs')
+    await flushPromises()
+
+    expect(api.listTests).toHaveBeenCalledTimes(1)
+    expect(readTestId('run-count')).toBe('0')
+    expect(readTestId('second-run-count')).toBe('1')
+  })
+
+  it('refreshes the bounded project run cache after its TTL expires', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-12T20:00:00Z'))
+    const api = {
+      listTests: vi.fn()
+        .mockResolvedValueOnce({ tests: [buildRun('run-one', 'First Script Run', 'script-1', '2026-05-12T20:00:00Z')] })
+        .mockResolvedValueOnce({ tests: [buildRun('run-two', 'Second Script Run', 'script-2', '2026-05-12T20:01:00Z')] }),
+    }
+    const scripts = [
+      buildScript('script-1', 'First', '2026-05-12T20:00:00Z'),
+      buildScript('script-2', 'Second', '2026-05-12T20:00:00Z'),
+    ]
+    await act(async () => root.render(<LibraryHarness scripts={scripts} api={api} />))
+
+    await click('expand-runs')
+    await flushPromises()
+    vi.advanceTimersByTime(SCRIPT_RUN_CATALOG_CACHE_TTL_MS + 1)
+    await click('expand-second-runs')
+    await flushPromises()
+
+    expect(api.listTests).toHaveBeenCalledTimes(2)
+    expect(readTestId('second-run-count')).toBe('1')
+  })
+
+  it('explicitly refreshes a successful project run cache on retry', async () => {
+    const api = {
+      listTests: vi.fn()
+        .mockResolvedValueOnce({ tests: [buildRun('run-one', 'Original Run', 'script-1', '2026-05-12T20:00:00Z')] })
+        .mockResolvedValueOnce({ tests: [buildRun('run-two', 'Refreshed Run', 'script-1', '2026-05-12T20:01:00Z')] }),
+    }
+    const scripts = [buildScript('script-1', 'Script', '2026-05-12T20:00:00Z')]
+    await act(async () => root.render(<LibraryHarness scripts={scripts} api={api} />))
+
+    await click('expand-runs')
+    await flushPromises()
+    expect(readTestId('first-run')).toBe('Original Run')
+
+    await click('retry-runs')
+    await flushPromises()
+
+    expect(api.listTests).toHaveBeenCalledTimes(2)
+    expect(readTestId('first-run')).toBe('Refreshed Run')
+  })
+
+  it('sorts run durations by parsed elapsed time rather than display text', async () => {
+    const api = {
+      listTests: vi.fn().mockResolvedValue({
+        tests: [
+          { ...buildRun('two-minutes', 'Two Minutes', 'script-1', '2026-05-12T20:00:00Z'), duration: '2m' },
+          { ...buildRun('ninety-seconds', 'Ninety Seconds', 'script-1', '2026-05-12T20:01:00Z'), duration: '90s' },
+        ],
+      }),
+    }
+    const scripts = [buildScript('script-1', 'Script', '2026-05-12T20:00:00Z')]
+    await act(async () => root.render(<LibraryHarness scripts={scripts} api={api} />))
+    await click('expand-runs')
+    await flushPromises()
+    await click('sort-duration')
+
+    expect(readTestId('first-run')).toBe('Ninety Seconds')
   })
 
   it('drops cached and in-flight linked runs when the active project changes', async () => {

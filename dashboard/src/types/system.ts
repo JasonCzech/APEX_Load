@@ -49,6 +49,25 @@ export interface SystemInventoryController {
   execution_mode: 'local' | 'distributed'
 }
 
+export interface SystemInventoryRuntimeCapacity {
+  protocol: string
+  available: boolean
+  max_vusers: number
+  available_vusers: number
+  features?: string[]
+  occupancy_mode?: 'idle' | 'persistent' | 'legacy' | string
+}
+
+export interface DataPlatformInventory {
+  metadata_store: string
+  archive_backend: string
+  archive_uri_prefix?: string
+  cache_backend: string
+  cache_key_prefix?: string
+  cache_fanout?: string
+  metrics_retention: string
+}
+
 export interface SystemInventoryGenerator {
   target: string
   generator_id: string
@@ -61,10 +80,13 @@ export interface SystemInventoryGenerator {
   status: 'connected' | 'healthy' | 'ready' | 'unreachable' | string
   version?: string
   supported_protocols?: string[]
+  compatible_features?: string[]
+  runtime_capacities?: SystemInventoryRuntimeCapacity[]
   labels?: Record<string, string>
   compatibility_state?: string
   compatibility_issues?: string[]
   drain_state?: 'active' | 'cordoned' | 'draining' | string
+  cordoned?: boolean
   capacity_state?: 'available' | 'constrained' | 'saturated' | 'unavailable' | 'unknown' | string
   health_score?: number
   available_capacity: number
@@ -106,6 +128,7 @@ export interface SystemInventoryResponse {
   execution_mode: 'local' | 'distributed'
   controller: SystemInventoryController
   generators: SystemInventoryGenerator[]
+  data_platform: DataPlatformInventory
 }
 
 export interface SystemRestartCapabilities {

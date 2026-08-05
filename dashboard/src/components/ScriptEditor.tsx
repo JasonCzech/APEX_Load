@@ -69,6 +69,7 @@ import {
   type ScriptRepairSuggestion,
 } from './scriptAuthoringAssist'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
+import { loadObjectRefSuggestions } from './scriptObjectRefCatalog'
 import {
   defaultAssertionForProtocol,
   defaultExtractorForProtocol,
@@ -216,6 +217,10 @@ import {
   SelectedParameterDetails,
   type JsonParameterOccurrenceReviewState,
 } from './ScriptEditorParameterFeatures'
+import {
+  ParameterDataCellDraftProvider,
+  type ParameterDataCellDraftChange,
+} from './ScriptEditorParameterDataSources'
 import {
   buildMergedParameterSourceScript,
   summarizeParameterSourceMerge,
@@ -567,6 +572,41 @@ interface ReplayWSMessage extends WSMessage {
 type DataSourceConfig = ScriptDataSource
 type ParameterConfig = ScriptParameterDefinition
 
+type PendingParameterDataCellEdit = Omit<ParameterDataCellDraftChange, 'value'> & { value: string }
+
+function parameterDataCellEditKey(edit: Omit<ParameterDataCellDraftChange, 'value'>): string {
+  return `${edit.sourceIndex}:${edit.rowIndex}:${edit.columnIndex}`
+}
+
+function applyPendingParameterDataCellEdits(
+  currentScript: ScriptData,
+  edits: PendingParameterDataCellEdit[],
+): ScriptData {
+  if (edits.length === 0) return currentScript
+  const dataSources = [...(currentScript.data_sources || [])]
+  const editsBySource = new Map<number, PendingParameterDataCellEdit[]>()
+  edits.forEach((edit) => {
+    editsBySource.set(edit.sourceIndex, [...(editsBySource.get(edit.sourceIndex) || []), edit])
+  })
+
+  editsBySource.forEach((sourceEdits, sourceIndex) => {
+    const source = dataSources[sourceIndex]
+    if (!source) return
+    const { columns, rows } = parseInlineData(source)
+    const nextRows = rows.map(row => [...row])
+    sourceEdits.forEach((edit) => {
+      while (nextRows.length <= edit.rowIndex) nextRows.push(Array(columns.length).fill(''))
+      while (nextRows[edit.rowIndex].length < columns.length) nextRows[edit.rowIndex].push('')
+      nextRows[edit.rowIndex][edit.columnIndex] = edit.value
+    })
+    dataSources[sourceIndex] = {
+      ...source,
+      inline_data: stringifyInlineData(source, columns, nextRows),
+    }
+  })
+  return { ...currentScript, data_sources: dataSources }
+}
+
 
 interface ActionEditorParameterRequest {
   selectedText: string
@@ -642,16 +682,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   useEffect(() => {
     if (!projectId || typeof api.listObjectRepositories !== 'function') { setObjectRefSuggestions([]); return }
     let cancelled = false
-    void api.listObjectRepositories({ project_id: projectId })
-      .then(res => {
+    void loadObjectRefSuggestions(projectId, api.listObjectRepositories)
+      .then(suggestions => {
         if (cancelled) return
-        const names = new Set<string>()
-        for (const repo of res.object_repositories || []) {
-          for (const object of repo.objects || []) {
-            if (object.logical_name) names.add(object.logical_name)
-          }
-        }
-        setObjectRefSuggestions(Array.from(names).sort())
+        setObjectRefSuggestions(suggestions)
       })
       .catch(() => { if (!cancelled) setObjectRefSuggestions([]) })
     return () => { cancelled = true }
@@ -947,7 +981,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const actionRowsToRender: Array<{ item: DebugRailRenderRow; virtualItem: VirtualItem | null }> = virtualizeActions
     ? actionListVirtualizer.getVirtualItems().map(virtualItem => ({ item: authorRenderRows[virtualItem.index], virtualItem }))
     : authorRenderRows.map(item => ({ item, virtualItem: null }))
-  const httpConversionReview = buildBrowserHTTPConversionReview(script, replayReport, browserReplaySession)
+  const httpConversionReview = useMemo(
+    () => buildBrowserHTTPConversionReview(script, replayReport, browserReplaySession),
+    [browserReplaySession, replayReport, script],
+  )
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
@@ -1243,6 +1280,26 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const validationRequestRef = useRef(0)
   const saveRequestRef = useRef(0)
   const saveInFlightScopeRef = useRef<object | null>(null)
+  const pendingParameterDataCellEditsRef = useRef(new Map<string, PendingParameterDataCellEdit>())
+  const parameterDataEditGenerationRef = useRef(0)
+  const [pendingParameterDataCellEditCount, setPendingParameterDataCellEditCount] = useState(0)
+  const stageParameterDataCellEdit = useCallback((change: ParameterDataCellDraftChange) => {
+    const key = parameterDataCellEditKey(change)
+    const edits = pendingParameterDataCellEditsRef.current
+    const previousSize = edits.size
+    if (change.value === null) {
+      edits.delete(key)
+    } else {
+      edits.set(key, { ...change, value: change.value })
+      parameterDataEditGenerationRef.current += 1
+    }
+    if (edits.size !== previousSize) setPendingParameterDataCellEditCount(edits.size)
+  }, [])
+  const clearPendingParameterDataCellEdits = useCallback(() => {
+    if (pendingParameterDataCellEditsRef.current.size === 0) return
+    pendingParameterDataCellEditsRef.current.clear()
+    setPendingParameterDataCellEditCount(0)
+  }, [])
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
   const editorResourceScopeVersionRef = useRef(0)
   if (
@@ -1255,8 +1312,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     editorResourceScopeVersionRef.current += 1
   }
   const validationDocumentKey = useMemo(
-    () => jsonParseMessage ? null : formatScriptJson(currentDraftScript),
-    [currentDraftScript, jsonParseMessage],
+    () => jsonParseMessage ? null : jsonDirty ? formatScriptJson(currentDraftScript) : formattedScriptJson,
+    [currentDraftScript, formattedScriptJson, jsonDirty, jsonParseMessage],
   )
   const validationDocumentKeyRef = useRef<string | null>(null)
   validationDocumentKeyRef.current = validationDocumentKey
@@ -1267,6 +1324,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     validationRequestRef.current += 1
     saveRequestRef.current += 1
     saveInFlightScopeRef.current = null
+    clearPendingParameterDataCellEdits()
     replayStartInFlightRef.current = null
     replayStartAttemptRef.current = null
     setValidating(false)
@@ -1295,6 +1353,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     initialScript,
     projectId,
     scriptId,
+    clearPendingParameterDataCellEdits,
     setActiveReplaySessionId,
     setBrowserReplaySession,
     setError,
@@ -2446,7 +2505,35 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     })
   }
 
-  const scriptEditorDirty = initialSaveRequired || jsonDirty || formattedScriptJson !== baselineJsonRef.current
+  const flushPendingParameterDataCellEdits = (baseScript: ScriptData): {
+    script: ScriptData
+    editGeneration: number
+  } => {
+    const edits = Array.from(pendingParameterDataCellEditsRef.current.values())
+    const editGeneration = parameterDataEditGenerationRef.current
+    if (edits.length === 0) return { script: baseScript, editGeneration }
+
+    const nextScript = applyPendingParameterDataCellEdits(baseScript, edits)
+    const affectedSourceIndexes = Array.from(new Set(edits.map(edit => edit.sourceIndex)))
+    setDataSourceHistory(history => {
+      const nextHistory = { ...history }
+      affectedSourceIndexes.forEach((sourceIndex) => {
+        const previousSource = baseScript.data_sources?.[sourceIndex]
+        if (!previousSource) return
+        const entry = nextHistory[sourceIndex] || { past: [], future: [] }
+        nextHistory[sourceIndex] = {
+          past: [...entry.past, cloneDataSource(previousSource)].slice(-100),
+          future: [],
+        }
+      })
+      return nextHistory
+    })
+    clearPendingParameterDataCellEdits()
+    commitJsonDraft(nextScript)
+    return { script: nextScript, editGeneration }
+  }
+
+  const scriptEditorDirty = initialSaveRequired || jsonDirty || pendingParameterDataCellEditCount > 0 || formattedScriptJson !== baselineJsonRef.current
   const saveScriptDisabled = saving || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
   const saveScriptTitle = saving
     ? 'Saving script'
@@ -2485,7 +2572,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setValidationEditableActionsKey(null)
     setValidationReplayPreflight(null)
     try {
-      const currentScript = resolveCurrentScript()
+      const resolvedScript = resolveCurrentScript()
+      const {
+        script: currentScript,
+        editGeneration: parameterDataEditGenerationAtSave,
+      } = flushPendingParameterDataCellEdits(resolvedScript)
       // A new Java Vuser script with executable runner actions cannot be created
       // through POST /scripts — the backend answers 409 and requires governed
       // review. Save it as an authoring session and stop there; approval is a
@@ -2502,7 +2593,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           idempotency_key: authoringSessionIdempotencyKey('script-editor-java-vuser', currentScript),
         })
         if (!requestIsCurrent()) return true
-        commitJsonDraft(currentScript)
+        if (parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave) {
+          commitJsonDraft(currentScript)
+        }
         // Deliberately not markBaseline/setInitialSaveRequired(false): no library
         // script exists yet, so the editor must keep treating this as unsaved
         // work and keep guarding navigation until an approval creates one.
@@ -2516,7 +2609,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         savedScript = await api.createScript(currentScript, projectId, folderId)
       }
       if (!requestIsCurrent()) return true
-      commitJsonDraft(currentScript)
+      if (parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave) {
+        commitJsonDraft(currentScript)
+      }
       markBaseline(currentScript)
       setInitialSaveRequired(false)
       setSuccess('Script saved successfully!')
@@ -3122,16 +3217,23 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const retryScriptRecordingStatus = () => {
     setScriptRecordingStatusRetryGeneration(generation => generation + 1)
   }
-  const replayVariableDiffs = replayReport
-    ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
-    : []
-  const replayConfiguredVariables = safeParseReplayVariables(replayOptions.variablesText)
+  const replayVariableDiffs = useMemo(
+    () => replayReport ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events) : [],
+    [replayReport, replaySeedVariables],
+  )
+  const replayConfiguredVariables = useMemo(
+    () => safeParseReplayVariables(replayOptions.variablesText),
+    [replayOptions.variablesText],
+  )
   // Raw JSON is an executable draft even before the user applies it back to the
   // structured authoring controls. Never reuse an older server/session preflight
   // for that draft: derive requirements from the exact valid script that the Run
   // handler will parse and send.
-  const unreconciledReplayPreflight = (!jsonDirty && (browserReplaySession?.preflight || validationReplayPreflight))
-    || buildLocalReplayPreflight(currentDraftScript, replayConfiguredVariables)
+  const unreconciledReplayPreflight = useMemo(
+    () => (!jsonDirty && (browserReplaySession?.preflight || validationReplayPreflight))
+      || buildLocalReplayPreflight(currentDraftScript, replayConfiguredVariables),
+    [browserReplaySession?.preflight, currentDraftScript, jsonDirty, replayConfiguredVariables, validationReplayPreflight],
+  )
   const requiredProjectSecretNames = Array.from(new Set([
     ...(unreconciledReplayPreflight.required_secrets || []),
     ...(!jsonDirty && scriptSecretStatus
@@ -6407,8 +6509,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           )}
 
           {centerTabPanelElements['parameter-data'] && createPortal(
-            renderStructuredCenterDocument('Parameter Data', (
-              <ParameterDataDialog
+            <ParameterDataCellDraftProvider onDraftChange={stageParameterDataCellEdit}>
+              {renderStructuredCenterDocument('Parameter Data', (
+                <ParameterDataDialog
               dataEditorMode={dataEditorMode}
               dataSourceHistory={dataSourceHistory}
               onAddDataColumn={addDataColumn}
@@ -6439,9 +6542,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
               selectedParameterIdx={selectedParameterIdx}
               onSelectParameter={selectParameterData}
               script={script}
-              variant="document"
-            />
-            )), centerTabPanelElements['parameter-data'])}
+                variant="document"
+              />
+              ))}
+            </ParameterDataCellDraftProvider>, centerTabPanelElements['parameter-data'])}
 
           {replayScreenshotSelection && (
             <ReplayScreenshotDialog

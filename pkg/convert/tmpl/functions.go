@@ -75,13 +75,20 @@ func translateJMeterFunction(name string, rawArgs string, c *diag.Collector, loc
 		}
 		return "{{fn.random_string(" + length + ")}}", true
 	case "__counter":
+		global := len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "false")
 		key := "jmeter_counter"
-		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
-			key = sanitizeName(args[1])
+		if global {
+			key = "jmeter_global_counter"
 		}
-		return "{{var." + key + "}}", true
+		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
+			key += "_" + sanitizeName(args[1])
+		}
+		if global {
+			addWarning(c, "JMeter dynamic function", location, token+" uses a cross-thread counter; APEX preserved it as an explicitly review-gated counter because the runtime counter is per VUser")
+		}
+		return "{{param." + key + "}}", true
 	case "__threadnum":
-		return "{{var.jmeter_thread_num}}", true
+		return "{{param.jmeter_thread_num}}", true
 	default:
 		return "", false
 	}
@@ -134,9 +141,8 @@ func cleanNumericArg(value string, fallback string) string {
 func sanitizeName(value string) string {
 	value = strings.TrimSpace(value)
 	value = strings.Trim(value, "{}")
-	value = strings.ReplaceAll(value, "-", "_")
-	value = strings.ReplaceAll(value, ".", "_")
-	value = strings.ReplaceAll(value, " ", "_")
+	value = regexp.MustCompile(`[^A-Za-z0-9_]+`).ReplaceAllString(value, "_")
+	value = strings.Trim(value, "_")
 	if value == "" {
 		return "jmeter_counter"
 	}

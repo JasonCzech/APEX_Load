@@ -1112,6 +1112,28 @@ func TestLaunchScheduleAvailabilityHandlesOvernightAndDSTWindows(t *testing.T) {
 	})
 }
 
+func TestRuntimeAdjustmentWindowAllowsFutureCoordinatedStartEvidence(t *testing.T) {
+	now := time.Date(2026, time.July, 15, 12, 0, 0, 0, time.UTC)
+	startedAt := now.Add(2 * time.Second)
+	test := &ManagedTest{
+		ID:          "future-coordinated-start",
+		Name:        "Future coordinated start",
+		Status:      "RUNNING",
+		ProjectID:   storage.DefaultProjectID,
+		Duration:    45 * time.Second,
+		DurationStr: "45s",
+		CreatedAt:   now,
+		StartedAt:   &startedAt,
+	}
+	runner := NewTestRunner(1, NewHub(), nil)
+	evidenceWindow := launchWindowForTestAt(test, startedAt, now)
+	evidence := runner.loadLaunchWindowEvidenceForProject(evidenceWindow, test.ProjectID, testAssignedPoolID(test))
+
+	if err := runner.runtimeAdjustmentWindowErrorWithEvidenceLocked(test, now, evidence); err != nil {
+		t.Fatalf("future coordinated start rejected matching launch evidence: %v", err)
+	}
+}
+
 func TestPreflightLaunchBlocksMaintenanceWindow(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(10, NewHub(), store)

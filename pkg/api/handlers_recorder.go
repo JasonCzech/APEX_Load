@@ -35,18 +35,7 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 
 	projectID := normalizeProjectID(req.ProjectID)
 	notify := func(evt recorder.SessionEvent) {
-		var safeRequest *recorder.RecordedRequest
-		if evt.Request != nil {
-			request := sanitizeRecordedRequestForResponse(*evt.Request)
-			safeRequest = &request
-		}
-		s.hub.BroadcastScopedJSON("", projectID, map[string]any{
-			"type":       evt.Type,
-			"project_id": projectID,
-			"session_id": evt.SessionID,
-			"request":    safeRequest,
-			"session":    sanitizeRecorderSessionForResponse(evt.Session),
-		})
+		s.broadcastRecorderSessionEvent(projectID, evt)
 	}
 
 	filters := recorder.SessionFilters{
@@ -80,6 +69,25 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (s *Server) broadcastRecorderSessionEvent(projectID string, evt recorder.SessionEvent) {
+	var safeRequest *recorder.RecordedRequest
+	if evt.Request != nil {
+		request := sanitizeRecordedRequestForResponse(*evt.Request)
+		safeRequest = &request
+	}
+	payload := map[string]any{
+		"type":       evt.Type,
+		"project_id": projectID,
+		"session_id": evt.SessionID,
+		"request":    safeRequest,
+		"session":    sanitizeRecorderSessionForResponse(evt.Session),
+	}
+	if evt.Warning != "" {
+		payload["warning"] = scrub.Value(evt.Warning, scrub.Policy{})
+	}
+	s.hub.BroadcastScopedJSON("", projectID, payload)
 }
 
 func (s *Server) handlePauseRecording(w http.ResponseWriter, r *http.Request) {
@@ -229,14 +237,18 @@ func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Ses
 		return nil
 	}
 	clone := &recorder.Session{
-		ID:           session.ID,
-		Name:         session.Name,
-		ProjectID:    session.ProjectID,
-		Status:       session.Status,
-		StartedAt:    session.StartedAt,
-		BaseURL:      scrub.ValueURL(session.BaseURL, scrub.Policy{}),
-		RequestCount: session.RequestCount,
-		LastSeq:      session.LastSeq,
+		ID:                       session.ID,
+		Name:                     session.Name,
+		ProjectID:                session.ProjectID,
+		Status:                   session.Status,
+		StartedAt:                session.StartedAt,
+		BaseURL:                  scrub.ValueURL(session.BaseURL, scrub.Policy{}),
+		RequestCount:             session.RequestCount,
+		LastSeq:                  session.LastSeq,
+		DroppedRequests:          session.DroppedRequests,
+		DroppedWebSocketMessages: session.DroppedWebSocketMessages,
+		Truncated:                session.Truncated,
+		Warnings:                 sanitizeRecorderWarningsForResponse(session.Warnings),
 		Filters: recorder.SessionFilters{
 			ExcludeStatic:         session.Filters.ExcludeStatic,
 			ExcludeStaticSet:      session.Filters.ExcludeStaticSet,
@@ -258,6 +270,17 @@ func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Ses
 		}
 	}
 	return clone
+}
+
+func sanitizeRecorderWarningsForResponse(warnings []string) []string {
+	if warnings == nil {
+		return nil
+	}
+	safeWarnings := make([]string, len(warnings))
+	for index, warning := range warnings {
+		safeWarnings[index] = scrub.Value(warning, scrub.Policy{})
+	}
+	return safeWarnings
 }
 
 func sanitizeRecordedRequestForResponse(request recorder.RecordedRequest) recorder.RecordedRequest {

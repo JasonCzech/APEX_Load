@@ -1829,6 +1829,8 @@ export interface BrowserDeviceLiveMetrics extends BrowserLiveMetrics {
 export interface TelemetryHealth {
   dropped_results?: number
   shedded_arrivals?: number
+  dropped_subscriber_batches?: number
+  missing_metric_windows?: number
   history_points?: number
   websocket_clients?: number
   websocket_dropped_messages?: number
@@ -2110,6 +2112,7 @@ export interface AuthoringSession {
 
 export interface AuthoringCorrelationPreviewRequest {
   name: string
+  expected_updated_at: string
   source?: string
   type?: string
   expression: string

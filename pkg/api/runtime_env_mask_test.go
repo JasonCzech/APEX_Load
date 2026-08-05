@@ -7,6 +7,32 @@ import (
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
+func TestMaskURLUserinfoDoesNotClassifyBareAtSignAsCredential(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "email", raw: "alice@example.com", want: "alice@example.com"},
+		{name: "mailto URI", raw: "mailto:alice@example.com", want: "mailto:alice@example.com"},
+		{name: "url path", raw: "https://api.example.test/users/@me", want: "https://api.example.test/users/@me"},
+		{name: "credential shape in path", raw: "/users/alice:password@example.com", want: "/users/alice:password@example.com"},
+		{name: "missing host", raw: "alice:password@/path", want: "alice:password@/path"},
+		{name: "scheme-less userinfo", raw: "alice:password@example.com", want: scrub.Redacted},
+		{name: "parsed userinfo", raw: "https://alice:password@example.com/path", want: "https://%5BREDACTED%5D@example.com/path"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := maskURLUserinfo(tc.raw); got != tc.want {
+				t.Fatalf("maskURLUserinfo(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+	if sensitiveEnvValue("ops@example.com") {
+		t.Fatal("bare email was classified as credential-shaped")
+	}
+}
+
 func TestMaskRunArchiveManifestClonesAndMasksInitialProvenance(t *testing.T) {
 	const secret = "initial-provenance-secret"
 	initial := RunArchiveProvenance{

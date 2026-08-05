@@ -241,6 +241,7 @@ export default function SourceMappingReview({
   const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
   const [approvedMappingIds, setApprovedMappingIds] = useState<Set<string>>(new Set())
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
+  const reviewRootRef = useRef<HTMLElement | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const lastAppliedFocusRequestRef = useRef<number | null>(null)
   const lastTableScrollFocusRequestRef = useRef<number | null>(null)
@@ -483,7 +484,14 @@ export default function SourceMappingReview({
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+      if (reviewRootRef.current?.closest('[hidden], [aria-hidden="true"]')) {
+        return
+      }
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (
+        activeElement?.isContentEditable ||
+        activeElement?.closest('input, textarea, select, [contenteditable="true"]')
+      ) {
         return
       }
 
@@ -571,7 +579,7 @@ export default function SourceMappingReview({
   ]
 
   return (
-    <section id={id} className="source-map-review">
+    <section ref={reviewRootRef} id={id} className="source-map-review">
       <div className={`source-map-header ${showTitle ? '' : 'title-hidden'}`}>
         {showTitle && (
           <div>

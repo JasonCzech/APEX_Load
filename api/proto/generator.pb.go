@@ -1144,8 +1144,12 @@ type MetricsBatch struct {
 	BrowserMetrics        *BrowserMetrics         `protobuf:"bytes,16,opt,name=browser_metrics,json=browserMetrics,proto3" json:"browser_metrics,omitempty"`
 	BrowserDeviceMetrics  []*BrowserDeviceMetrics `protobuf:"bytes,17,rep,name=browser_device_metrics,json=browserDeviceMetrics,proto3" json:"browser_device_metrics,omitempty"`
 	ExecutionGeneration   uint64                  `protobuf:"varint,18,opt,name=execution_generation,json=executionGeneration,proto3" json:"execution_generation,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// batch_sequence is monotonic for one test execution generation. Zero means
+	// unknown (an older generator). Controllers use gaps to mark live windows
+	// that a bounded subscriber queue could not deliver.
+	BatchSequence uint64 `protobuf:"varint,19,opt,name=batch_sequence,json=batchSequence,proto3" json:"batch_sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MetricsBatch) Reset() {
@@ -1300,6 +1304,13 @@ func (x *MetricsBatch) GetBrowserDeviceMetrics() []*BrowserDeviceMetrics {
 func (x *MetricsBatch) GetExecutionGeneration() uint64 {
 	if x != nil {
 		return x.ExecutionGeneration
+	}
+	return 0
+}
+
+func (x *MetricsBatch) GetBatchSequence() uint64 {
+	if x != nil {
+		return x.BatchSequence
 	}
 	return 0
 }
@@ -3175,8 +3186,9 @@ func (x *ProtocolRuntimeCapacity) GetOccupancyMode() string {
 }
 
 type HeartbeatPong struct {
-	state              protoimpl.MessageState     `protogen:"open.v1"`
-	GeneratorId        string                     `protobuf:"bytes,3,opt,name=generator_id,json=generatorId,proto3" json:"generator_id,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	GeneratorId string                 `protobuf:"bytes,3,opt,name=generator_id,json=generatorId,proto3" json:"generator_id,omitempty"`
+	// Millisecond generator wall-clock sample retained for rolling compatibility.
 	TimestampUnixMs    int64                      `protobuf:"varint,1,opt,name=timestamp_unix_ms,json=timestampUnixMs,proto3" json:"timestamp_unix_ms,omitempty"`
 	ActiveTestIds      []string                   `protobuf:"bytes,2,rep,name=active_test_ids,json=activeTestIds,proto3" json:"active_test_ids,omitempty"`
 	Stats              *GeneratorStats            `protobuf:"bytes,4,opt,name=stats,proto3" json:"stats,omitempty"`
@@ -3188,8 +3200,12 @@ type HeartbeatPong struct {
 	SupportedProtocols []string                   `protobuf:"bytes,10,rep,name=supported_protocols,json=supportedProtocols,proto3" json:"supported_protocols,omitempty"`
 	CompatibleFeatures []string                   `protobuf:"bytes,11,rep,name=compatible_features,json=compatibleFeatures,proto3" json:"compatible_features,omitempty"`
 	RuntimeCapacities  []*ProtocolRuntimeCapacity `protobuf:"bytes,12,rep,name=runtime_capacities,json=runtimeCapacities,proto3" json:"runtime_capacities,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Actual generator wall-clock sample taken immediately before the heartbeat
+	// response is built. Controllers use the request/response midpoint to
+	// estimate the generator clock domain for coordinated start barriers.
+	TimestampUnixNano int64 `protobuf:"varint,13,opt,name=timestamp_unix_nano,json=timestampUnixNano,proto3" json:"timestamp_unix_nano,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *HeartbeatPong) Reset() {
@@ -3304,6 +3320,13 @@ func (x *HeartbeatPong) GetRuntimeCapacities() []*ProtocolRuntimeCapacity {
 		return x.RuntimeCapacities
 	}
 	return nil
+}
+
+func (x *HeartbeatPong) GetTimestampUnixNano() int64 {
+	if x != nil {
+		return x.TimestampUnixNano
+	}
+	return 0
 }
 
 type ScriptPayload struct {
@@ -3707,7 +3730,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x14execution_generation\x18\x03 \x01(\x04R\x13executionGeneration\"T\n" +
 	"\aStopAck\x12\"\n" +
 	"\facknowledged\x18\x01 \x01(\bR\facknowledged\x12%\n" +
-	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\x98\b\n" +
+	"\x0epending_vusers\x18\x02 \x01(\x05R\rpendingVusers\"\xbf\b\n" +
 	"\fMetricsBatch\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12!\n" +
 	"\fgenerator_id\x18\x02 \x01(\tR\vgeneratorId\x12*\n" +
@@ -3727,7 +3750,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\rfleet_metrics\x18\x0f \x01(\v2\x1c.apexload.v1.MetricAggregateR\ffleetMetrics\x12D\n" +
 	"\x0fbrowser_metrics\x18\x10 \x01(\v2\x1b.apexload.v1.BrowserMetricsR\x0ebrowserMetrics\x12W\n" +
 	"\x16browser_device_metrics\x18\x11 \x03(\v2!.apexload.v1.BrowserDeviceMetricsR\x14browserDeviceMetrics\x121\n" +
-	"\x14execution_generation\x18\x12 \x01(\x04R\x13executionGeneration\"\x98\x03\n" +
+	"\x14execution_generation\x18\x12 \x01(\x04R\x13executionGeneration\x12%\n" +
+	"\x0ebatch_sequence\x18\x13 \x01(\x04R\rbatchSequence\"\x98\x03\n" +
 	"\x15MetricsBatchTelemetry\x12'\n" +
 	"\x0fdropped_results\x18\x01 \x01(\x03R\x0edroppedResults\x12/\n" +
 	"\x14collected_at_unix_ms\x18\x02 \x01(\x03R\x11collectedAtUnixMs\x12/\n" +
@@ -3926,7 +3950,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"max_vusers\x18\x03 \x01(\x03R\tmaxVusers\x12)\n" +
 	"\x10available_vusers\x18\x04 \x01(\x03R\x0favailableVusers\x12\x1a\n" +
 	"\bfeatures\x18\x05 \x03(\tR\bfeatures\x12%\n" +
-	"\x0eoccupancy_mode\x18\x06 \x01(\tR\roccupancyMode\"\xae\x04\n" +
+	"\x0eoccupancy_mode\x18\x06 \x01(\tR\roccupancyMode\"\xde\x04\n" +
 	"\rHeartbeatPong\x12!\n" +
 	"\fgenerator_id\x18\x03 \x01(\tR\vgeneratorId\x12*\n" +
 	"\x11timestamp_unix_ms\x18\x01 \x01(\x03R\x0ftimestampUnixMs\x12&\n" +
@@ -3941,7 +3965,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x13supported_protocols\x18\n" +
 	" \x03(\tR\x12supportedProtocols\x12/\n" +
 	"\x13compatible_features\x18\v \x03(\tR\x12compatibleFeatures\x12S\n" +
-	"\x12runtime_capacities\x18\f \x03(\v2$.apexload.v1.ProtocolRuntimeCapacityR\x11runtimeCapacities\"\x9c\x01\n" +
+	"\x12runtime_capacities\x18\f \x03(\v2$.apexload.v1.ProtocolRuntimeCapacityR\x11runtimeCapacities\x12.\n" +
+	"\x13timestamp_unix_nano\x18\r \x01(\x03R\x11timestampUnixNano\"\x9c\x01\n" +
 	"\rScriptPayload\x12\x1b\n" +
 	"\tscript_id\x18\x01 \x01(\tR\bscriptId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\fR\acontent\x12!\n" +

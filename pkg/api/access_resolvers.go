@@ -301,7 +301,7 @@ func resolveTestProjectID(r *http.Request, store storage.Store) (string, int, st
 		return "", http.StatusServiceUnavailable, "test storage is not configured"
 	}
 	test, err := store.GetTest(r.PathValue("id"))
-	if err != nil {
+	if err != nil || test == nil {
 		return "", http.StatusNotFound, "test not found"
 	}
 	return normalizeProjectID(test.ProjectID), 0, ""

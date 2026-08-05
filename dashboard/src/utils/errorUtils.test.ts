@@ -71,6 +71,12 @@ describe('error diagnostics', () => {
     expect(diagnostic.nextSteps.join(' ')).toContain('selected importer')
   })
 
+  it('does not infer an import failure from words that merely contain import tokens', () => {
+    expect(diagnoseError('shared dashboard graph unavailable', 'Unable to load dashboard').category).not.toBe('import')
+    expect(diagnoseError('chart data is unavailable', 'Unable to load chart').category).not.toBe('import')
+    expect(diagnoseError('The .har import failed validation', 'Import failed').category).toBe('import')
+  })
+
   it('classifies validation failures from status codes', () => {
     const diagnostic = diagnoseError({ message: 'Bad Request', status: 400, payload: { field: 'schedule.cron' } }, 'Unable to save schedule')
 

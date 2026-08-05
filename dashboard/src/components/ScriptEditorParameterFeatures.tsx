@@ -69,6 +69,14 @@ function getDataSourceFileName(source?: DataSourceConfig | null): string | null 
   return extension === 'csv' || extension === 'dat' ? `${sourceName}.${extension}` : sourceName
 }
 
+function getExternalDataSourceReference(source?: DataSourceConfig | null): string | null {
+  if (!source || source.inline_data?.trim()) return null
+  return source.path?.trim()
+    || source.storage_ref?.trim()
+    || source.staged_asset?.trim()
+    || null
+}
+
 function getSelectedParameterHeaderDetails(
   script: ScriptData,
   selectedParameter: ParameterConfig | null,
@@ -182,6 +190,7 @@ export function ParameterDataDialog({
     onClose,
   })
   const selectedParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] || null : null
+  const previousSelectedSourceRef = useRef<{ index: number; source: string } | null>(null)
   const headerDetails = useMemo(
     () => getSelectedParameterHeaderDetails(script, selectedParameter, selectedParameterIdx),
     [script, selectedParameter, selectedParameterIdx],
@@ -189,14 +198,29 @@ export function ParameterDataDialog({
   useEffect(() => {
     if (openDataEditor === null) return
     const sourceName = script.data_sources?.[openDataEditor]?.name
+    const currentParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] : null
+    const currentSource = normalizeParameterDataLookup(currentParameter?.data_source)
+    const previousSource = previousSelectedSourceRef.current
+    previousSelectedSourceRef.current = selectedParameterIdx === null
+      ? null
+      : { index: selectedParameterIdx, source: currentSource }
+
+    // A data-source edit belongs to the currently selected parameter. Keep that
+    // selection and move the open data editor with it; otherwise the old source
+    // effect selects that source's first parameter and appears to undo the edit.
+    if (currentParameter && previousSource?.index === selectedParameterIdx && previousSource.source !== currentSource) {
+      const nextSourceIndex = findDataSourceIndexByName(script.data_sources, currentParameter.data_source)
+      if (nextSourceIndex !== null && nextSourceIndex !== openDataEditor) onSelectDataSource(nextSourceIndex)
+      return
+    }
+
     const parameterIndex = findFirstParameterIndexByDataSource(script.parameters, sourceName)
     if (parameterIndex === null) return
-    const currentParameter = selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx] : null
     if (currentParameter && normalizeParameterDataLookup(currentParameter.data_source) === normalizeParameterDataLookup(sourceName)) {
       return
     }
     onSelectParameter(parameterIndex)
-  }, [onSelectParameter, openDataEditor, script.data_sources, script.parameters, selectedParameterIdx])
+  }, [onSelectDataSource, onSelectParameter, openDataEditor, script.data_sources, script.parameters, selectedParameterIdx])
   useEffect(() => {
     if (selectedParameterIdx === null) return
     if (script.parameters?.[selectedParameterIdx]) return
@@ -360,6 +384,7 @@ function ParameterDataDetail({
   const selectedSourceSummary = selectedSource ? summarizeInlineData(selectedSource) : null
   const selectedSourceWarnings = selectedSource ? validateInlineData(selectedSource) : []
   const selectedColumnIndexes = selectedParsed ? getParameterDataColumnIndexes(selectedParameter, selectedParsed.columns) : []
+  const externalSourceReference = getExternalDataSourceReference(selectedSource)
   const hasInlineListValues = parameterType === 'list' && (selectedParameter.values?.length || 0) > 0 && !selectedParameter.data_source?.trim()
 
   const renderDataSourceDetail = () => {
@@ -382,6 +407,13 @@ function ParameterDataDetail({
       return (
         <div className="parameter-empty-state">
           The mapped data source for {parameterName} could not be found. Update the Data Source field above.
+        </div>
+      )
+    }
+    if (externalSourceReference) {
+      return (
+        <div className="parameter-empty-state">
+          Data lives in <span className="cell-mono">{externalSourceReference}</span>; contents are not available for preview.
         </div>
       )
     }
@@ -514,6 +546,7 @@ function ParameterInfoPanel({
   const showsOutput = parameterType === 'counter' || parameterType === 'current_iteration' || parameterType === 'random_number' || parameter.seed !== undefined
   const hasSource = Boolean(selectedSource && selectedSourceIndex !== null)
   const showsStats = isDataBacked && hasSource && Boolean(parsed && summary)
+  const statsUnavailable = Boolean(getExternalDataSourceReference(selectedSource))
   const uniqueCount = parsed ? countUniqueColumnValues(parsed, columnIndexes) : 0
   const mappedColumnLabel = parsed && columnIndexes.length
     ? columnIndexes.map(idx => formatDataSourceColumnLabel(parsed.columns[idx], idx)).join(', ')
@@ -529,7 +562,7 @@ function ParameterInfoPanel({
   const columnOptions = currentColumn && !columnNames.includes(currentColumn)
     ? [currentColumn, ...columnNames]
     : columnNames
-  const sourceFileLabel = selectedSource?.path || selectedSource?.name || currentDataSource || '—'
+  const sourceFileLabel = selectedSource?.path || selectedSource?.storage_ref || selectedSource?.staged_asset || selectedSource?.name || currentDataSource || '—'
   const sameLineOptions = getSameLineParameterOptions(parameters, selectedParameterIdx)
   const sameLineSelectOptions = getSameLineParameterSelectOptions(parameter, sameLineOptions)
   const selectionControlValue = getParameterSelectionControlValue(parameter)
@@ -809,9 +842,9 @@ function ParameterInfoPanel({
           <h5 className="parameter-info-group-title">Data Statistics</h5>
           <table className="parameter-info-table parameter-info-stats-table">
             <tbody>
-              <tr><th scope="row">Record Count</th><td className="cell-mono parameter-info-stat-value">{summary?.rows ?? 0}</td></tr>
-              <tr><th scope="row">Unique Records</th><td className="cell-mono parameter-info-stat-value">{uniqueCount}</td></tr>
-              <tr><th scope="row">Columns</th><td className="cell-mono parameter-info-stat-value">{summary?.columns ?? 0}</td></tr>
+              <tr><th scope="row">Record Count</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : (summary?.rows ?? 0)}</td></tr>
+              <tr><th scope="row">Unique Records</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : uniqueCount}</td></tr>
+              <tr><th scope="row">Columns</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : (summary?.columns ?? 0)}</td></tr>
               <tr><th scope="row">Mapped Column</th><td className="cell-mono">{mappedColumnLabel}</td></tr>
             </tbody>
           </table>

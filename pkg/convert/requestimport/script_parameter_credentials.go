@@ -98,8 +98,9 @@ func credentialDataSourceDelimiterCandidates(source dsl.DataSource) []rune {
 // ReconcileProtectedScriptCredentialSources upgrades requirements created by
 // an earlier conversion pass before source parameters were attached. It keeps
 // stable requirement identities and targets while moving any now-provable
-// static source value into the protected requirement and removing its public
-// parameter/data-source representation.
+// static source value into the protected requirement. Its public
+// parameter/data-source representation is removed only when no authored
+// non-credential surface still references it.
 //
 // Requirement.Value remains protected material. Callers must not serialize or
 // log the returned slice.
@@ -342,6 +343,7 @@ func parameterUsesCredentialDataBinding(
 func removeCredentialDataSourceColumns(
 	script *dsl.Script,
 	bindings []scriptCredentialDataBinding,
+	retainedBindings []scriptCredentialDataBinding,
 ) {
 	if script == nil || len(bindings) == 0 {
 		return
@@ -367,6 +369,11 @@ func removeCredentialDataSourceColumns(
 			referenced[source] = struct{}{}
 		}
 	}
+	for _, binding := range retainedBindings {
+		if source := strings.ToLower(strings.TrimSpace(binding.source)); source != "" {
+			referenced[source] = struct{}{}
+		}
+	}
 	unusable := make(map[string]struct{})
 	keptSources := script.DataSources[:0]
 	for index := range script.DataSources {
@@ -384,6 +391,17 @@ func removeCredentialDataSourceColumns(
 		}
 		filtered, ok := filterCredentialDataSourceColumns(source, columns)
 		if !ok {
+			// A source that also supplies a still-executable binding cannot be
+			// surgically rewritten when its format is opaque or malformed. Preserve
+			// the whole source rather than turning that retained {{data.*}} or
+			// {{param.*}} reference into a dangling runtime token.
+			if scriptCredentialDataBindingOverlapsAny(
+				scriptCredentialDataBinding{source: source.Name},
+				retainedBindings,
+			) {
+				keptSources = append(keptSources, source)
+				continue
+			}
 			// External/opaque or malformed sources cannot be safely rewritten.
 			// Remove the source and any parameters that depended on it.
 			unusable[sourceName] = struct{}{}

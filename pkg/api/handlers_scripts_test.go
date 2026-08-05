@@ -5159,6 +5159,94 @@ func TestApprovedAuthoringRetryReturnsCurrentDurableScriptWithoutRevertingEdits(
 	}
 }
 
+func withAuthoringSessionRevision(t *testing.T, body string, updatedAt time.Time) []byte {
+	t.Helper()
+	payload := map[string]json.RawMessage{}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("decode authoring correlation request fixture: %v", err)
+	}
+	revision, err := json.Marshal(updatedAt)
+	if err != nil {
+		t.Fatalf("encode authoring session revision: %v", err)
+	}
+	payload["expected_updated_at"] = revision
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode authoring correlation request fixture: %v", err)
+	}
+	return encoded
+}
+
+func TestAuthoringCorrelationRequiresCurrentSessionRevision(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	seedAuthoringScriptProjects(t, store, "project-authoring")
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+
+	createdAt := time.Now().UTC().Add(-time.Minute)
+	session := &storage.AuthoringSession{
+		ID: "correlation-revision-fence", ProjectID: "project-authoring", Source: "test", Name: "Revision fence", Status: "reviewing",
+		Draft: &dsl.Script{
+			ID: authoringApprovalScriptID("correlation-revision-fence"), Name: "Revision fence", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"},
+			Actions: []dsl.Action{
+				{Name: "New first action", Type: "request", Target: "/new-first"},
+				{Name: "Original producer moved", Type: "request", Target: "/producer"},
+			},
+		},
+		CreatedAt: createdAt, UpdatedAt: createdAt, LastAccessedAt: createdAt,
+	}
+	if err := store.SaveAuthoringSession(session); err != nil {
+		t.Fatalf("SaveAuthoringSession: %v", err)
+	}
+	persistedSession, err := store.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("GetAuthoringSession after save: %v", err)
+	}
+	currentRevision := persistedSession.UpdatedAt
+	staleRevision := currentRevision.Add(-time.Second)
+
+	tests := []struct {
+		name           string
+		apply          bool
+		expectedAt     *time.Time
+		expectedStatus int
+	}{
+		{name: "preview requires revision", expectedStatus: http.StatusBadRequest},
+		{name: "apply requires revision", apply: true, expectedStatus: http.StatusBadRequest},
+		{name: "preview rejects stale revision", expectedAt: &staleRevision, expectedStatus: http.StatusConflict},
+		{name: "apply rejects stale revision", apply: true, expectedAt: &staleRevision, expectedStatus: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"name":"corr_token","expression":"$.token","found_action_index":1,"apply":%t}`, test.apply)
+			requestBody := []byte(body)
+			if test.expectedAt != nil {
+				requestBody = withAuthoringSessionRevision(t, body, *test.expectedAt)
+			}
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, httptest.NewRequest(
+				http.MethodPost,
+				"/api/v1/scripts/authoring/sessions/"+session.ID+"/correlations/preview",
+				bytes.NewReader(requestBody),
+			))
+			if response.Code != test.expectedStatus {
+				t.Fatalf("status = %d body=%s, want %d", response.Code, response.Body.String(), test.expectedStatus)
+			}
+			persisted, err := store.GetAuthoringSession(session.ID)
+			if err != nil {
+				t.Fatalf("GetAuthoringSession: %v", err)
+			}
+			if !persisted.UpdatedAt.Equal(currentRevision) || persisted.Draft.Actions[0].Name != "New first action" || len(persisted.Draft.Actions[0].Extractors) != 0 {
+				t.Fatalf("revision rejection mutated current draft: %#v", persisted)
+			}
+		})
+	}
+}
+
 func TestAuthoringMutationsAreFencedWhileApprovalIsInProgress(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -5183,7 +5271,7 @@ func TestAuthoringMutationsAreFencedWhileApprovalIsInProgress(t *testing.T) {
 	requests := []*http.Request{
 		httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+session.ID, strings.NewReader(`{"source":"test","draft":{"name":"Changed","protocol":"http","project_id":"project-authoring"}}`)),
 		httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+session.ID, nil),
-		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/correlations/preview", strings.NewReader(`{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"apply":true}`)),
+		httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+session.ID+"/correlations/preview", bytes.NewReader(withAuthoringSessionRevision(t, `{"name":"token","type":"regex","expression":"(.*)","found_action_index":0,"apply":true}`, session.UpdatedAt))),
 	}
 	for _, request := range requests {
 		response := httptest.NewRecorder()
@@ -5232,7 +5320,7 @@ func TestAuthoringCorrelationApplyCannotMutateApprovalStates(t *testing.T) {
 				}
 
 				response := httptest.NewRecorder()
-				request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+id+"/correlations/preview", strings.NewReader(body))
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+id+"/correlations/preview", bytes.NewReader(withAuthoringSessionRevision(t, body, session.UpdatedAt)))
 				server.mux.ServeHTTP(response, request)
 				if response.Code != http.StatusConflict {
 					t.Fatalf("status = %d body=%s, want 409", response.Code, response.Body.String())
@@ -5278,14 +5366,14 @@ func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
 		t.Fatalf("unmarshal created session: %v", err)
 	}
 
-	previewBody := []byte(`{
+	previewBody := withAuthoringSessionRevision(t, `{
 		"name":"corr_session",
 		"source":"body",
 		"type":"jsonpath",
 		"expression":"$.sessionId",
 		"sample_value":"abc12345",
 		"found_action_index":1
-	}`)
+	}`, created.UpdatedAt)
 	previewReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(previewBody))
 	previewResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(previewResp, previewReq)
@@ -5326,6 +5414,80 @@ func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
 	}
 }
 
+func TestPreviewAuthoringCorrelationHonorsExplicitEmptyConsumerSelection(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	createBody := []byte(`{
+		"project_id":"project-authoring",
+		"source":"har",
+		"name":"Empty correlation consumer selection",
+		"status":"reviewing",
+		"draft":{
+			"name":"Correlated Flow",
+			"version":"1.0.0",
+			"protocol":"http",
+			"config":{"base_url":"https://example.test"},
+			"actions":[
+				{"name":"Before producer","type":"request","method":"GET","target":"/before?order_ref=abc12345"},
+				{"name":"Producer","type":"request","method":"POST","target":"/login"},
+				{"name":"After producer","type":"request","method":"GET","target":"/after?order_ref=abc12345"}
+			]
+		}
+	}`)
+	createResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(createResp, httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(createBody)))
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d body=%s", createResp.Code, http.StatusCreated, createResp.Body.String())
+	}
+	var created storage.AuthoringSession
+	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal created session: %v", err)
+	}
+
+	previewBody := withAuthoringSessionRevision(t, `{
+		"name":"corr_session",
+		"expression":"$.sessionId",
+		"sample_value":"abc12345",
+		"found_action_index":2,
+		"used_action_indexes":[]
+	}`, created.UpdatedAt)
+	previewResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(previewResp, httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview",
+		bytes.NewReader(previewBody),
+	))
+	if previewResp.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d body=%s", previewResp.Code, http.StatusOK, previewResp.Body.String())
+	}
+	var preview authoringCorrelationPreviewResponse
+	if err := json.Unmarshal(previewResp.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("unmarshal preview response: %v", err)
+	}
+	if got := preview.Draft.Actions[0].Target; got != "/before?order_ref=abc12345" {
+		t.Fatalf("earlier action target = %q, want unchanged", got)
+	}
+	if got := preview.Draft.Actions[2].Target; got != "/after?order_ref=abc12345" {
+		t.Fatalf("later unselected action target = %q, want unchanged", got)
+	}
+	if len(preview.Draft.Actions[1].Extractors) != 1 || preview.Draft.Actions[1].Extractors[0].Name != "corr_session" {
+		t.Fatalf("producer extractors = %#v, want corr_session", preview.Draft.Actions[1].Extractors)
+	}
+	if len(preview.Changes) != 1 || preview.Changes[0].Kind != "extractor_added" {
+		t.Fatalf("changes = %#v, want only extractor addition", preview.Changes)
+	}
+}
+
+func TestResolveCorrelationUsedActionIndexesOnlyReturnsLaterActions(t *testing.T) {
+	actions := make([]dsl.Action, 4)
+	requested := []int{1, 2, 3, 4, 4, 5, 0}
+	got := resolveCorrelationUsedActionIndexes(actions, 1, authoringCorrelationPreviewRequest{
+		UsedActionIndexes: &requested,
+	})
+	if !reflect.DeepEqual(got, []int{2, 3}) {
+		t.Fatalf("resolved indexes = %#v, want only zero-based later indexes [2 3]", got)
+	}
+}
+
 func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -5361,13 +5523,13 @@ func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
 		t.Fatalf("unmarshal created session: %v", err)
 	}
 
-	applyBody := []byte(`{
+	applyBody := withAuthoringSessionRevision(t, `{
 		"name":"corr_session",
 		"expression":"$.sessionId",
 		"sample_value":"abc12345",
 		"found_action":"Login",
 		"apply":true
-	}`)
+	}`, created.UpdatedAt)
 	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
 	applyResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(applyResp, applyReq)
@@ -5433,14 +5595,14 @@ func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *te
 		t.Fatalf("unmarshal created session: %v", err)
 	}
 
-	applyBody := []byte(`{
+	applyBody := withAuthoringSessionRevision(t, `{
 		"apply": true,
 		"auto_apply_high_confidence": true,
 		"repairs": [
 			{"name":"corr_checkout","expression":"$.checkout_ref","sample_value":"high-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.91,"severity":"error"},
 			{"name":"corr_order","expression":"$.order","sample_value":"medium-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.62,"severity":"error"}
 		]
-	}`)
+	}`, created.UpdatedAt)
 	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
 	applyResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(applyResp, applyReq)

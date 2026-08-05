@@ -17,6 +17,7 @@ func kafkaActionSpecs() []ActionSpec {
 				{Name: "params.topic", Kind: FieldKindString, Doc: "Topic alternative to target."},
 				{Name: "params.key", Kind: FieldKindString, Doc: "Record key (drives key-hash partitioning)."},
 				{Name: "params.partition", Kind: FieldKindInt, Doc: "Explicit partition (with partition_strategy: explicit)."},
+				{Name: "params.correlation_id", Kind: FieldKindString, Doc: "Explicit record correlation ID; when omitted kafka_request_reply generates one."},
 			},
 		},
 		{
@@ -26,6 +27,7 @@ func kafkaActionSpecs() []ActionSpec {
 			Fields: []FieldSpec{
 				{Name: "target", Kind: FieldKindString, Doc: "Topic; falls back to config.kafka.topic or params.topic."},
 				{Name: "params.topic", Kind: FieldKindString, Doc: "Topic alternative to target."},
+				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group override; falls back to config.kafka.consumer_group."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Consume timeout in milliseconds; falls back to config.kafka.timeout_ms."},
 			},
 		},
@@ -38,6 +40,7 @@ func kafkaActionSpecs() []ActionSpec {
 				{Name: "body", Kind: FieldKindString, Doc: "Request record value."},
 				{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 				{Name: "params.reply_to", Required: true, Kind: FieldKindString, Doc: "Reply topic."},
+				{Name: "params.correlation_id", Kind: FieldKindString, Doc: "Explicit request correlation ID; generated automatically when omitted."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Doc: "Reply timeout in milliseconds."},
 			},
 		},
@@ -45,12 +48,16 @@ func kafkaActionSpecs() []ActionSpec {
 			Type:      "kafka_commit",
 			Protocols: []string{"kafka"},
 			Summary:   "Commits consumer group offsets.",
+			Fields: []FieldSpec{
+				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group identity; falls back to config.kafka.consumer_group."},
+			},
 		},
 		{
 			Type:      "kafka_seek",
 			Protocols: []string{"kafka"},
 			Summary:   "Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; the real adapter does not yet support seek).",
 			Fields: []FieldSpec{
+				{Name: "params.consumer_group", Kind: FieldKindString, Doc: "Consumer group override; falls back to config.kafka.consumer_group."},
 				{Name: "params.offset", Kind: FieldKindAny, Doc: "Target offset: a number, \"earliest\", or \"latest\"."},
 				{Name: "params.partition", Kind: FieldKindInt, Doc: "Reserved: not yet honored at runtime — seek repositions the whole (topic, group) cursor, not a single partition."},
 			},

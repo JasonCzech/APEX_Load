@@ -33,7 +33,7 @@ func TestPersistInitialArchiveProvenanceDoesNotOverwriteLifecycleState(t *testin
 	runner.mu.Unlock()
 
 	provenance := &RunArchiveProvenance{ProjectID: storage.DefaultProjectID, TotalVUsers: 3, Duration: "3m"}
-	if err := runner.persistInitialArchiveProvenance(test, provenance); err != nil {
+	if _, err := runner.persistInitialArchiveProvenance(test, provenance); err != nil {
 		t.Fatalf("persistInitialArchiveProvenance: %v", err)
 	}
 	stored, err := store.GetTest(test.ID)

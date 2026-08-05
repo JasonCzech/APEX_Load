@@ -579,6 +579,34 @@ func TestRequiredAggregationEnforcesEventSpecificResults(t *testing.T) {
 	}
 }
 
+func TestDeploymentArtifactsKustomizeValidationSkipsComponents(t *testing.T) {
+	content, err := os.ReadFile("../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	workflow := string(content)
+	start := strings.Index(workflow, "      - name: Validate every standalone Kustomize overlay\n")
+	if start < 0 {
+		t.Fatal("standalone Kustomize validation step not found")
+	}
+	end := strings.Index(workflow[start:], "      - name: Validate the AKS renderer\n")
+	if end < 0 {
+		t.Fatal("AKS renderer step not found after Kustomize validation")
+	}
+	step := workflow[start : start+end]
+	for _, required := range []string{
+		"kind:[[:space:]]*Component",
+		"Skipping non-standalone Kustomize component",
+		"continue",
+		"kubectl kustomize",
+		"kubeconform",
+	} {
+		if !strings.Contains(step, required) {
+			t.Errorf("Kustomize validation step missing %q", required)
+		}
+	}
+}
+
 func TestArtifactUploadWrapperIncludesHiddenEvidence(t *testing.T) {
 	content, err := os.ReadFile("../.github/actions/upload-artifact/action.yml")
 	if err != nil {
@@ -852,7 +880,71 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read dashboard package.json: %v", err)
 	}
-	if !strings.Contains(string(packageJSON), `"playwright-core-go": "npm:playwright-core@1.57.0"`) {
-		t.Fatal("dashboard lockfile inputs must pin the Go Playwright driver package")
+	moduleDirCommand := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/mxschmitt/playwright-go")
+	moduleDirCommand.Dir = ".."
+	moduleDirOutput, err := moduleDirCommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve playwright-go module directory: %v\n%s", err, moduleDirOutput)
+	}
+	moduleDir := strings.TrimSpace(string(moduleDirOutput))
+	driverSource, err := os.ReadFile(filepath.Join(moduleDir, "run.go"))
+	if err != nil {
+		t.Fatalf("read playwright-go driver source: %v", err)
+	}
+	driverVersionMatch := regexp.MustCompile(`(?m)^\s*playwrightCliVersion\s*=\s*"([^"]+)"`).FindSubmatch(driverSource)
+	if len(driverVersionMatch) != 2 {
+		t.Fatal("playwright-go driver source does not declare playwrightCliVersion")
+	}
+	wantDriverVersion := string(driverVersionMatch[1])
+
+	dockerVersionMatch := regexp.MustCompile(`(?m)^ARG PLAYWRIGHT_DRIVER_VERSION=([^[:space:]]+)$`).FindStringSubmatch(dockerfile)
+	gotDockerVersion := ""
+	if len(dockerVersionMatch) == 2 {
+		gotDockerVersion = dockerVersionMatch[1]
+	}
+	if gotDockerVersion != wantDriverVersion {
+		t.Fatalf("Docker Playwright driver version = %q, playwright-go requires %q", gotDockerVersion, wantDriverVersion)
+	}
+
+	var dashboardManifest struct {
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(packageJSON, &dashboardManifest); err != nil {
+		t.Fatalf("decode dashboard package.json: %v", err)
+	}
+	wantDriverAlias := "npm:playwright-core@" + wantDriverVersion
+	if got := dashboardManifest.DevDependencies["playwright-core-go"]; got != wantDriverAlias {
+		t.Fatalf("dashboard Playwright driver alias = %q, want %q", got, wantDriverAlias)
+	}
+
+	packageLock, err := os.ReadFile("../dashboard/package-lock.json")
+	if err != nil {
+		t.Fatalf("read dashboard package-lock.json: %v", err)
+	}
+	var dashboardLock struct {
+		Packages map[string]struct {
+			Version string `json:"version"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(packageLock, &dashboardLock); err != nil {
+		t.Fatalf("decode dashboard package-lock.json: %v", err)
+	}
+	if got := dashboardLock.Packages["node_modules/playwright-core-go"].Version; got != wantDriverVersion {
+		t.Fatalf("locked Playwright driver version = %q, playwright-go requires %q", got, wantDriverVersion)
+	}
+
+	moduleVersionCommand := exec.Command("go", "list", "-m", "-f", "{{.Version}}", "github.com/mxschmitt/playwright-go")
+	moduleVersionCommand.Dir = ".."
+	moduleVersionOutput, err := moduleVersionCommand.CombinedOutput()
+	if err != nil {
+		t.Fatalf("resolve playwright-go module version: %v\n%s", err, moduleVersionOutput)
+	}
+	workflow, err := os.ReadFile("../.github/workflows/ci.yml")
+	if err != nil {
+		t.Fatalf("read CI workflow: %v", err)
+	}
+	wantInstaller := "github.com/mxschmitt/playwright-go/cmd/playwright@" + strings.TrimSpace(string(moduleVersionOutput)) + " install"
+	if !strings.Contains(string(workflow), wantInstaller) {
+		t.Fatalf("CI Playwright installer must match go.mod module version: missing %q", wantInstaller)
 	}
 }

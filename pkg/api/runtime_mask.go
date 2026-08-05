@@ -278,19 +278,52 @@ func maskURLUserinfo(raw string) string {
 	}
 	parsed, err := url.Parse(trimmed)
 	if err != nil {
-		if strings.Contains(trimmed, "@") {
+		if hasSchemeLessURLUserinfo(trimmed) {
 			return scrub.Redacted
 		}
 		return raw
 	}
 	if parsed.User == nil {
-		if strings.Contains(trimmed, "@") {
+		if hasSchemeLessURLUserinfo(trimmed) {
 			return scrub.Redacted
 		}
 		return raw
 	}
 	parsed.User = url.User(scrub.Redacted)
 	return parsed.String()
+}
+
+// url.Parse treats a scheme-less value as a path, so recognize only the
+// credential shape user:password@host. A bare '@' is common in email addresses
+// and URL paths and is not evidence that the whole value is secret.
+func hasSchemeLessURLUserinfo(raw string) bool {
+	at := strings.LastIndex(raw, "@")
+	if at <= 0 || at == len(raw)-1 {
+		return false
+	}
+	colon := strings.Index(raw[:at], ":")
+	if colon <= 0 || colon >= at-1 {
+		return false
+	}
+	// Opaque URI schemes can legitimately contain an email address after their
+	// colon. They are not scheme-less authorities and must remain visible.
+	switch strings.ToLower(raw[:colon]) {
+	case "mailto", "tel", "urn", "data":
+		return false
+	}
+	// In an absolute URL, the colon belongs to the scheme rather than a
+	// username/password pair (for example /users/@me after https://host).
+	if strings.HasPrefix(raw[colon+1:], "//") {
+		return false
+	}
+	// Userinfo belongs to an authority, so it cannot contain path, query, or
+	// fragment delimiters and it must be followed by a real host. Parsing with
+	// a synthetic authority prefix also validates bracketed IPv6 and ports.
+	if strings.ContainsAny(raw[:at], "/?# \t\r\n") {
+		return false
+	}
+	parsed, err := url.Parse("//" + raw)
+	return err == nil && parsed.User != nil && parsed.User.Username() != "" && parsed.Hostname() != ""
 }
 
 // maskURLSecrets redacts both authority userinfo and credential-shaped query or

@@ -97,6 +97,14 @@ describe('Script JSON draft model', () => {
       statusMessage: 'Invalid JSON',
       currentScript: { name: 'structured' },
     })
+    // Clean JSON is a projection of structured state. It is not reparsed on every
+    // structured edit, even during the brief render before its text synchronizes.
+    expect(deriveScriptJsonDraftState('{stale-invalid', false, structured)).toMatchObject({
+      status: 'synced',
+      parseMessage: '',
+      currentScript: { name: 'structured' },
+      parseResult: { ok: true, script: { name: 'structured' } },
+    })
   })
 })
 

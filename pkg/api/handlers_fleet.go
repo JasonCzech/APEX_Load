@@ -113,7 +113,11 @@ type GeneratorDrainRequest struct {
 func (s *Server) handleGetFleetAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts := buildFleetAlerts(s.systemInventory(r.Context()), s.runner.GetSystemSettings().Thresholds)
 	s.applyFleetAlertAcknowledgements(alerts)
-	s.routeFleetAlertNotifications(alerts)
+	// A follower may serve the read, but only the execution leader owns external
+	// notification side effects.
+	if s.runner.isExecutionLeader() {
+		s.routeFleetAlertNotifications(alerts)
+	}
 	writeJSON(w, http.StatusOK, FleetAlertsResponse{Alerts: alerts, Count: len(alerts), UnacknowledgedCount: countUnacknowledgedFleetAlerts(alerts)})
 }
 
@@ -162,7 +166,7 @@ func (s *Server) handleAckFleetAlert(w http.ResponseWriter, r *http.Request) {
 		}
 		s.recordAuditEvent(r, "fleet.alert.unack", "success", "fleet_alert", alertID, "", map[string]any{"alert_type": current.Type, "target": current.Target})
 		s.broadcastFleetEvent("fleet_alert_unacknowledged", map[string]any{"alert_id": alertID, "alert_type": current.Type, "target": current.Target})
-		s.dispatchFleetAlertNotification("fleet_alert_unacknowledged", *current)
+		s.dispatchFleetAlertNotification("fleet_alert_unacknowledged", *current, time.Now().UTC())
 		current.Acknowledged = false
 		writeJSON(w, http.StatusOK, current)
 		return
@@ -188,7 +192,7 @@ func (s *Server) handleAckFleetAlert(w http.ResponseWriter, r *http.Request) {
 	applyFleetAlertAck(current, ack)
 	s.recordAuditEvent(r, "fleet.alert.ack", "success", "fleet_alert", alertID, "", map[string]any{"alert_type": current.Type, "target": current.Target})
 	s.broadcastFleetEvent("fleet_alert_acknowledged", map[string]any{"alert_id": alertID, "alert_type": current.Type, "target": current.Target, "severity": current.Severity})
-	s.dispatchFleetAlertNotification("fleet_alert_acknowledged", *current)
+	s.dispatchFleetAlertNotification("fleet_alert_acknowledged", *current, time.Now().UTC())
 	writeJSON(w, http.StatusOK, current)
 }
 
@@ -445,76 +449,241 @@ func countUnacknowledgedFleetAlerts(alerts []FleetAlert) int {
 }
 
 type fleetAlertNotificationState struct {
-	Routed map[string]string `json:"routed,omitempty"`
+	Routed        map[string]string                      `json:"routed,omitempty"`
+	Claims        map[string]fleetAlertNotificationClaim `json:"claims,omitempty"`
+	InactiveSince map[string]time.Time                   `json:"inactive_since,omitempty"`
+}
+
+type fleetAlertNotificationClaim struct {
+	Owner     string    `json:"owner"`
+	ClaimedAt time.Time `json:"claimed_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+const (
+	fleetAlertNotificationClaimTTL      = 5 * time.Minute
+	fleetAlertNotificationInactiveGrace = 2 * defaultExecutionLeaseTTL
+	fleetAlertNotificationCASAttempts   = 8
+)
+
+type fleetAlertNotificationCASStore interface {
+	GetSetting(string) (string, error)
+	CompareAndSwapSetting(string, string, string) (bool, error)
 }
 
 func (s *Server) routeFleetAlertNotifications(alerts []FleetAlert) {
 	if s == nil || s.store == nil || s.runner == nil {
 		return
 	}
-	state := loadFleetAlertNotificationState(s.store)
-	if state.Routed == nil {
-		state.Routed = map[string]string{}
+	s.fleetAlertNotificationMu.Lock()
+	defer s.fleetAlertNotificationMu.Unlock()
+	store, ok := s.store.(fleetAlertNotificationCASStore)
+	if !ok {
+		slog.Warn("fleet alert notification state does not support durable CAS; routing is disabled")
+		return
 	}
+	now := time.Now().UTC()
 	activeIDs := make(map[string]struct{}, len(alerts))
-	changed := false
 	for _, alert := range alerts {
 		if strings.TrimSpace(alert.ID) == "" {
 			continue
 		}
 		activeIDs[alert.ID] = struct{}{}
 	}
-	for id := range state.Routed {
-		if _, ok := activeIDs[id]; !ok {
-			delete(state.Routed, id)
-			changed = true
-		}
+	if err := reconcileFleetAlertNotificationState(store, activeIDs, now); err != nil {
+		slog.Warn("failed to reconcile fleet alert notification state", "error", err)
+		return
 	}
 	settings := s.runner.currentNotificationSettings()
 	if !fleetNotificationConfigured(settings, "fleet_alert") {
-		if changed {
-			if encoded, err := json.Marshal(state); err == nil {
-				if err := s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded)); err != nil {
-					slog.Warn("failed to persist fleet alert notification state", "error", err)
-				}
-			}
-		}
 		return
 	}
-	now := time.Now().UTC()
 	for _, alert := range alerts {
 		if strings.TrimSpace(alert.ID) == "" || alert.Acknowledged {
 			continue
 		}
-		if _, alreadyRouted := state.Routed[alert.ID]; alreadyRouted {
+		claim, acquired, err := claimFleetAlertNotification(store, alert.ID, s.controllerID, now)
+		if err != nil {
+			slog.Warn("failed to claim fleet alert notification", "alert_id", alert.ID, "error", err)
 			continue
 		}
-		s.dispatchFleetAlertNotification("fleet_alert", alert)
-		state.Routed[alert.ID] = now.Format(time.RFC3339Nano)
-		changed = true
-	}
-	if changed {
-		if encoded, err := json.Marshal(state); err == nil {
-			if err := s.store.SaveSetting(fleetAlertNotificationStateStoreKey, string(encoded)); err != nil {
-				slog.Warn("failed to persist fleet alert notification state", "error", err)
-			}
+		if !acquired {
+			continue
+		}
+		admitted := s.dispatchFleetAlertNotification("fleet_alert", alert, claim.ClaimedAt)
+		if err := finishFleetAlertNotificationClaim(store, alert.ID, claim, admitted); err != nil {
+			slog.Warn("failed to finalize fleet alert notification claim", "alert_id", alert.ID, "admitted", admitted, "error", err)
 		}
 	}
 }
 
-func loadFleetAlertNotificationState(store settingsPersistence) fleetAlertNotificationState {
-	if store == nil {
-		return fleetAlertNotificationState{}
+func decodeFleetAlertNotificationState(raw string) (fleetAlertNotificationState, error) {
+	state := fleetAlertNotificationState{
+		Routed:        map[string]string{},
+		Claims:        map[string]fleetAlertNotificationClaim{},
+		InactiveSince: map[string]time.Time{},
 	}
-	raw, err := store.GetSetting(fleetAlertNotificationStateStoreKey)
-	if err != nil || strings.TrimSpace(raw) == "" {
-		return fleetAlertNotificationState{}
+	if strings.TrimSpace(raw) == "" {
+		return state, nil
 	}
-	var state fleetAlertNotificationState
 	if err := json.Unmarshal([]byte(raw), &state); err != nil {
-		return fleetAlertNotificationState{}
+		return fleetAlertNotificationState{}, fmt.Errorf("decode fleet alert notification state: %w", err)
 	}
-	return state
+	if state.Routed == nil {
+		state.Routed = map[string]string{}
+	}
+	if state.Claims == nil {
+		state.Claims = map[string]fleetAlertNotificationClaim{}
+	}
+	if state.InactiveSince == nil {
+		state.InactiveSince = map[string]time.Time{}
+	}
+	return state, nil
+}
+
+func compareAndSwapFleetAlertNotificationState(store fleetAlertNotificationCASStore, raw string, state fleetAlertNotificationState) (bool, error) {
+	encoded, err := json.Marshal(state)
+	if err != nil {
+		return false, err
+	}
+	return store.CompareAndSwapSetting(fleetAlertNotificationStateStoreKey, raw, string(encoded))
+}
+
+func reconcileFleetAlertNotificationState(store fleetAlertNotificationCASStore, activeIDs map[string]struct{}, now time.Time) error {
+	now = now.UTC()
+	for attempt := 0; attempt < fleetAlertNotificationCASAttempts; attempt++ {
+		raw, err := store.GetSetting(fleetAlertNotificationStateStoreKey)
+		if err != nil {
+			return err
+		}
+		state, err := decodeFleetAlertNotificationState(raw)
+		if err != nil {
+			return err
+		}
+		changed := false
+		for id := range activeIDs {
+			if _, markedInactive := state.InactiveSince[id]; markedInactive {
+				delete(state.InactiveSince, id)
+				changed = true
+			}
+		}
+		inactiveCandidates := make(map[string]struct{}, len(state.Routed)+len(state.Claims))
+		for id := range state.Routed {
+			inactiveCandidates[id] = struct{}{}
+		}
+		for id := range state.Claims {
+			inactiveCandidates[id] = struct{}{}
+		}
+		for id := range inactiveCandidates {
+			if _, active := activeIDs[id]; active {
+				continue
+			}
+			inactiveSince, markedInactive := state.InactiveSince[id]
+			if !markedInactive || inactiveSince.IsZero() {
+				state.InactiveSince[id] = now
+				changed = true
+				continue
+			}
+			if now.Before(inactiveSince.Add(fleetAlertNotificationInactiveGrace)) {
+				continue
+			}
+			if _, routed := state.Routed[id]; routed {
+				delete(state.Routed, id)
+				changed = true
+			}
+			if claim, claimed := state.Claims[id]; claimed && !claim.ExpiresAt.After(now) {
+				delete(state.Claims, id)
+				changed = true
+			}
+			if _, routed := state.Routed[id]; !routed {
+				if _, claimed := state.Claims[id]; !claimed {
+					delete(state.InactiveSince, id)
+				}
+			}
+		}
+		for id := range state.InactiveSince {
+			if _, routed := state.Routed[id]; routed {
+				continue
+			}
+			if _, claimed := state.Claims[id]; claimed {
+				continue
+			}
+			delete(state.InactiveSince, id)
+			changed = true
+		}
+		if !changed {
+			return nil
+		}
+		if updated, err := compareAndSwapFleetAlertNotificationState(store, raw, state); err != nil {
+			return err
+		} else if updated {
+			return nil
+		}
+	}
+	return fmt.Errorf("fleet alert notification state changed continuously during reconciliation")
+}
+
+func claimFleetAlertNotification(store fleetAlertNotificationCASStore, alertID, owner string, now time.Time) (fleetAlertNotificationClaim, bool, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return fleetAlertNotificationClaim{}, false, fmt.Errorf("controller identity is required")
+	}
+	for attempt := 0; attempt < fleetAlertNotificationCASAttempts; attempt++ {
+		raw, err := store.GetSetting(fleetAlertNotificationStateStoreKey)
+		if err != nil {
+			return fleetAlertNotificationClaim{}, false, err
+		}
+		state, err := decodeFleetAlertNotificationState(raw)
+		if err != nil {
+			return fleetAlertNotificationClaim{}, false, err
+		}
+		if _, routed := state.Routed[alertID]; routed {
+			return fleetAlertNotificationClaim{}, false, nil
+		}
+		claim, claimed := state.Claims[alertID]
+		if claimed && claim.ExpiresAt.After(now) {
+			return fleetAlertNotificationClaim{}, false, nil
+		}
+		if claim.ClaimedAt.IsZero() {
+			claim.ClaimedAt = now
+		}
+		claim.Owner = owner
+		claim.ExpiresAt = now.Add(fleetAlertNotificationClaimTTL)
+		state.Claims[alertID] = claim
+		if updated, err := compareAndSwapFleetAlertNotificationState(store, raw, state); err != nil {
+			return fleetAlertNotificationClaim{}, false, err
+		} else if updated {
+			return claim, true, nil
+		}
+	}
+	return fleetAlertNotificationClaim{}, false, fmt.Errorf("fleet alert notification claim changed continuously")
+}
+
+func finishFleetAlertNotificationClaim(store fleetAlertNotificationCASStore, alertID string, claim fleetAlertNotificationClaim, admitted bool) error {
+	for attempt := 0; attempt < fleetAlertNotificationCASAttempts; attempt++ {
+		raw, err := store.GetSetting(fleetAlertNotificationStateStoreKey)
+		if err != nil {
+			return err
+		}
+		state, err := decodeFleetAlertNotificationState(raw)
+		if err != nil {
+			return err
+		}
+		current, found := state.Claims[alertID]
+		if !found || current.Owner != claim.Owner || !current.ClaimedAt.Equal(claim.ClaimedAt) {
+			return nil
+		}
+		delete(state.Claims, alertID)
+		if admitted {
+			state.Routed[alertID] = claim.ClaimedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if updated, err := compareAndSwapFleetAlertNotificationState(store, raw, state); err != nil {
+			return err
+		} else if updated {
+			return nil
+		}
+	}
+	return fmt.Errorf("fleet alert notification claim changed continuously during finalization")
 }
 
 func fleetNotificationConfigured(settings NotificationsSettings, eventType string) bool {
@@ -526,11 +695,11 @@ func fleetNotificationConfigured(settings NotificationsSettings, eventType strin
 	return false
 }
 
-func (s *Server) dispatchFleetAlertNotification(eventType string, alert FleetAlert) {
+func (s *Server) dispatchFleetAlertNotification(eventType string, alert FleetAlert, timestamp time.Time) bool {
 	if s == nil || s.runner == nil || s.runner.notifier == nil {
-		return
+		return false
 	}
-	s.runner.notifier.Dispatch(s.runner.currentNotificationSettings(), NotificationEvent{
+	return s.runner.notifier.Dispatch(s.runner.currentNotificationSettings(), NotificationEvent{
 		Type:       eventType,
 		TestID:     alert.ID,
 		TestName:   firstNonEmpty(alert.Target, "Fleet"),
@@ -538,7 +707,7 @@ func (s *Server) dispatchFleetAlertNotification(eventType string, alert FleetAle
 		Severity:   alert.Severity,
 		Summary:    alert.Summary,
 		Conditions: []string{firstNonEmpty(alert.Region, "unscoped")},
-		Timestamp:  time.Now().UTC(),
+		Timestamp:  timestamp.UTC(),
 	})
 }
 

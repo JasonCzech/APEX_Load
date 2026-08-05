@@ -27,6 +27,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -587,8 +588,12 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 	// A test rehydrated after a restart/failover has no claimed execution
 	// epoch yet; claim it only after the client's revision wins so a stale
 	// request cannot mutate even execution-fence bookkeeping.
-	if err := tr.claimTestExecutionFence(test); err != nil {
+	claimedFence, err := tr.claimPassiveExecutionFenceLocked(test, nil)
+	if err != nil {
 		return nil, err
+	}
+	if claimedFence {
+		defer releasePassiveExecutionFenceLocked(test)
 	}
 	if !oldGroup.IterationOverrideKnown {
 		return nil, fmt.Errorf("group %q lacks runtime-override provenance; revise the queued run from the scenario editor instead", oldGroup.Name)
@@ -613,6 +618,14 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 		}, nil
 	}
 
+	iterations := cloneIntPtr(oldGroup.IterationOverride)
+	if slices.Contains(normalizedFields, "iterations") {
+		if value, present := runtimeSettingsIterationValue(merged); present {
+			iterations = &value
+		} else {
+			iterations = nil
+		}
+	}
 	entry := CreateGroupEntry{
 		Name:               oldGroup.Name,
 		ScriptID:           oldGroup.ScriptID,
@@ -621,7 +634,7 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 		RampUp:             oldGroup.RampUp,
 		RampDown:           oldGroup.RampDown,
 		Stages:             cloneLoadStages(oldGroup.Stages),
-		Iterations:         cloneIntPtr(oldGroup.IterationOverride),
+		Iterations:         iterations,
 		RuntimeSettings:    merged,
 		Assignment:         cloneGeneratorAssignmentSettings(oldGroup.Assignment),
 		InitStrategy:       oldGroup.Initialization,
@@ -691,15 +704,22 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 	previousSpecs := test.groupSpecs
 	previousReview := test.RuntimeSettingsReview
 	previousAdvisory := test.CapacityAdvisory
+	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	previousValidatedShakeoutPass := test.validatedScriptShakeoutPass
+	previousValidatedShakeoutTerm := test.validatedScriptShakeoutTerm
 	test.Groups = candidateGroups
 	test.groupSpecs = candidateSpecs
 	test.RuntimeSettingsReview = cloneRuntimeSettingsReview(review)
+	clearScriptShakeoutAuthorizations(test)
 	tr.refreshCapacityAdvisoryLocked(test)
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		test.Groups = previousGroups
 		test.groupSpecs = previousSpecs
 		test.RuntimeSettingsReview = previousReview
 		test.CapacityAdvisory = previousAdvisory
+		test.StartAuthorization = previousStartAuthorization
+		test.validatedScriptShakeoutPass = previousValidatedShakeoutPass
+		test.validatedScriptShakeoutTerm = previousValidatedShakeoutTerm
 		return nil, fmt.Errorf("%w: %v", errTestGroupSettingsPersist, err)
 	}
 
@@ -857,8 +877,12 @@ func (tr *TestRunner) UpdateTestGroupParameters(id string, groupName string, exp
 	}
 	// Claim the durable execution fence only after optimistic concurrency has
 	// admitted the request.
-	if err := tr.claimTestExecutionFence(test); err != nil {
+	claimedFence, err := tr.claimPassiveExecutionFenceLocked(test, nil)
+	if err != nil {
 		return nil, err
+	}
+	if claimedFence {
+		defer releasePassiveExecutionFenceLocked(test)
 	}
 	// The Java Vuser authoring-approval gate pins the approved script's content
 	// hash, which includes parameters. Rewriting them here would silently
@@ -932,6 +956,9 @@ func (tr *TestRunner) UpdateTestGroupParameters(id string, groupName string, exp
 
 	previousScript := group.script
 	previousBase := group.baseScript
+	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	previousValidatedShakeoutPass := test.validatedScriptShakeoutPass
+	previousValidatedShakeoutTerm := test.validatedScriptShakeoutTerm
 	var previousSpecScript *dsl.Script
 	group.script = newScript
 	if newBase != nil {
@@ -941,12 +968,16 @@ func (tr *TestRunner) UpdateTestGroupParameters(id string, groupName string, exp
 		previousSpecScript = test.groupSpecs[index].Script
 		test.groupSpecs[index].Script = newScript
 	}
+	clearScriptShakeoutAuthorizations(test)
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		group.script = previousScript
 		group.baseScript = previousBase
 		if index < len(test.groupSpecs) {
 			test.groupSpecs[index].Script = previousSpecScript
 		}
+		test.StartAuthorization = previousStartAuthorization
+		test.validatedScriptShakeoutPass = previousValidatedShakeoutPass
+		test.validatedScriptShakeoutTerm = previousValidatedShakeoutTerm
 		return nil, fmt.Errorf("%w: %v", errTestGroupSettingsPersist, err)
 	}
 

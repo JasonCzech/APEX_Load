@@ -82,12 +82,14 @@ type Protocol interface {
 - **SOAP**: Reuses the HTTP transport with SOAP-specific defaults, namespaces, and fault-handling semantics
 - **Java over HTTP** (`java_http`): Reuses the HTTP transport with the bounded `java_serialized_object_base64` codec for opaque serialized payloads
 - **Java Vuser** (`java_vuser`): External-runner sidecar bridge for JVM Vuser scripts; governed and disabled unless runner config enables it
+- **Bruno** (`bruno`): Version-pinned compatibility runner for imported Bruno collections; policy-gated and disabled until configured
 - **WebSocket**: Connect, send/receive, configurable timeouts and max message size
 - **gRPC**: Reflection-based dynamic protobuf marshaling, TLS, metadata, streaming
 - **JMS (Solace)** (`jms-solace`): Message queue protocol
 - **JMS (IBM MQ)** (`jms-ibmmq`): Message queue protocol
 - **JMS (Azure Service Bus)** (`jms-servicebus`): Message queue protocol; real adapter opt-in via `-tags jms_servicebus_real`
 - **Kafka**: produce/consume/request-reply; in-memory mock broker by default, real franz-go network adapter opt-in via `-tags kafka_real`
+- **Azure Event Hubs** (`eventhubs`): Native producer-first protocol with observer consumption; real AMQP adapter opt-in via `-tags eventhubs_real`
 - **database**: SQL query/exec/transactions
 - **network**: DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP
 - **browser**: Playwright replay + canary diagnostics (FCP/LCP/CLS/INP/TTFB)
@@ -98,8 +100,8 @@ The controller, generator, and `apexctl` binaries bundle all of the above throug
 **Adding a New Protocol:**
 1. Create `pkg/protocol/myproto/` package
 2. Implement the `Protocol` interface
-3. Register in `pkg/protocol/registry.go`: `RegisterProtocol(new(myProto.MyProtocol))`
-4. Import it from `pkg/protocol/builtin` if it must be executable from the standard binaries
+3. Register a per-VUser factory from the protocol package's `init`: `protocol.Register("myproto", func() protocol.Protocol { return &MyProtocol{} })`
+4. Import the package from `pkg/protocol/builtin` if it must be executable from the standard binaries
 
 ### `pkg/dsl`
 
@@ -183,7 +185,7 @@ HTTP and JMS results now also stamp first-class correlation IDs plus dependency 
 Those sampled `telemetry_diagnostic` events now also include bounded slow/error transaction hotspot samples derived from live transaction rollups, so the Monitoring page can show protocol-aware problem transactions without expanding the main `metrics_update` envelope.
 Typed interval-summary rows now carry an explicit schema version in SQLite, and store initialization backfills legacy typed summary plus archive rows so telemetry-family migrations can evolve without depending on implicit column shape alone. The latest interval-summary schema version also persists distributed lag-stage timestamps so stored execution history matches the live telemetry model.
 
-### `pkg/engine/metrics`
+### `pkg/engine` metrics (`pkg/engine/metrics.go`)
 
 **Metrics aggregation** with streaming percentiles.
 
@@ -248,7 +250,7 @@ dashboard/
 ### Styling
 
 - **CSS Variables**: `--bg-primary`, `--text`, `--border`, `--danger` (defined in `index.css`)
-- **DaisyUI**: TailwindCSS-based UI kit for buttons, modals, badges
+- **Handwritten CSS**: component styles and theme tokens are implemented directly with the CSS variables in `dashboard/src/index.css`; Tailwind and DaisyUI are not dependencies
 - **Recharts**: Time-series charting for metrics visualization
 
 ## API Documentation
@@ -321,9 +323,9 @@ npm run dev
 
 ### Enterprise npm and network defaults
 
-- `dashboard/.npmrc` now points npm at the ATT Artifactory registry used in the legacy agentic pipeline repo.
-- `.env.example` carries forward the non-secret proxy, CA-path, and local endpoint defaults that are relevant to this repo.
-- The Go binaries, helper scripts, and MCP client read process environment directly; they do not auto-load `.env.example`, so export the values into your shell or CI job before running `go`, `npm`, Docker, or MCP commands.
+- `dashboard/.npmrc` is an optional, local-only file (gitignored) for an enterprise npm registry; create it only when your environment requires one.
+- `.env.example` is intentionally not published in this public repository. Create a local env file from your organization's approved non-secret proxy, CA-path, and endpoint defaults.
+- The Go binaries, helper scripts, and MCP client read process environment directly; they do not auto-load local env files, so export values into your shell or CI job before running `go`, `npm`, Docker, or MCP commands.
 
 ### 2. Making Changes
 
@@ -463,11 +465,16 @@ func TestPacing(t *testing.T) {
 ## Useful Commands
 
 ```bash
-# Profile CPU/memory during test
-go run ./cmd/controller -cpuprofile=cpu.prof -memprofile=mem.prof
+# Start the opt-in loopback-only pprof listener
+APEXLOAD_PPROF_ADDR=127.0.0.1:6060 go run ./cmd/controller
+
+# From another terminal, capture a 30-second CPU profile and a heap snapshot
+curl -fsS -o cpu.prof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+curl -fsS -o heap.prof 'http://127.0.0.1:6060/debug/pprof/heap'
 
 # Analyze profile
 go tool pprof cpu.prof
+go tool pprof heap.prof
 
 # Run linter
 golangci-lint run ./...

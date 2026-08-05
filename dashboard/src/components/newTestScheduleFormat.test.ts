@@ -44,6 +44,11 @@ describe('describeCron', () => {
   it('describes every-minute wildcards', () => {
     expect(describeCron('* * * * *')).toBe('Every minute')
   })
+
+  it('describes stepped minute and hour schedules', () => {
+    expect(describeCron('*/15 * * * *')).toBe('Every 15 minutes')
+    expect(describeCron('5 */4 * * *')).toBe('Every 4 hours at minute 5')
+  })
 })
 
 describe('datetimeLocalToISO', () => {

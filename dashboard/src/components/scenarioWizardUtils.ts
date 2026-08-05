@@ -660,16 +660,16 @@ function tpsSeriesKey(index: number) {
 function simpleGroupValue(group: ScenarioModelGroupInput, elapsedSeconds: number, durationSeconds: number): number {
   const target = Math.max(0, Number(group.vusers) || 0)
   const rampUpSeconds = Math.min(parseDurationSeconds(group.ramp_up, 0), durationSeconds)
-  const rampDownSeconds = Math.min(parseDurationSeconds(group.ramp_down, 0), durationSeconds)
-  const rampDownStart = Math.max(rampUpSeconds, durationSeconds - rampDownSeconds)
+  const rampDownSeconds = parseDurationSeconds(group.ramp_down, 0)
 
   if (rampUpSeconds > 0 && elapsedSeconds < rampUpSeconds) {
     return target * (elapsedSeconds / rampUpSeconds)
   }
-  if (rampDownSeconds > 0 && elapsedSeconds > rampDownStart) {
-    return Math.max(0, target * (1 - ((elapsedSeconds - rampDownStart) / rampDownSeconds)))
+  if (elapsedSeconds < durationSeconds) return target
+  if (rampDownSeconds > 0 && elapsedSeconds < durationSeconds + rampDownSeconds) {
+    return Math.max(0, target * (1 - ((elapsedSeconds - durationSeconds) / rampDownSeconds)))
   }
-  return target
+  return 0
 }
 
 function stagedValue(stages: LoadStageDraft[], elapsedSeconds: number, valueKey: 'target_vusers' | 'target_tps'): number {
@@ -703,26 +703,26 @@ function stageTimelineSeconds(stages: LoadStageDraft[]): number[] {
   return timeline
 }
 
-function collectTimeline(durationSeconds: number, groups: ScenarioModelGroupInput[]): number[] {
-  const step = Math.max(1, Math.ceil(durationSeconds / 24))
-  const values = new Set<number>([0, durationSeconds])
-  for (let second = step; second < durationSeconds; second += step) {
+function collectTimeline(steadySeconds: number, totalSeconds: number, groups: ScenarioModelGroupInput[]): number[] {
+  const step = Math.max(1, Math.ceil(totalSeconds / 24))
+  const values = new Set<number>([0, steadySeconds, totalSeconds])
+  for (let second = step; second < totalSeconds; second += step) {
     values.add(second)
   }
   groups.forEach((group) => {
     const rampUpSeconds = parseDurationSeconds(group.ramp_up, 0)
     if (rampUpSeconds > 0) {
-      values.add(Math.min(durationSeconds, rampUpSeconds))
+      values.add(Math.min(steadySeconds, rampUpSeconds))
     }
     const rampDownSeconds = parseDurationSeconds(group.ramp_down, 0)
     if (rampDownSeconds > 0) {
-      values.add(Math.max(0, durationSeconds - rampDownSeconds))
+      values.add(steadySeconds + rampDownSeconds)
     }
     if (group.stages?.length) {
-      stageTimelineSeconds(group.stages).forEach(second => values.add(Math.min(durationSeconds, second)))
+      stageTimelineSeconds(group.stages).forEach(second => values.add(Math.min(steadySeconds, second)))
     }
   })
-  return Array.from(values).filter(second => second >= 0 && second <= durationSeconds).sort((left, right) => left - right)
+  return Array.from(values).filter(second => second >= 0 && second <= totalSeconds).sort((left, right) => left - right)
 }
 
 export function buildScenarioModelPreview(params: {
@@ -730,9 +730,14 @@ export function buildScenarioModelPreview(params: {
   groups: ScenarioModelGroupInput[]
   goalTargetTps?: number
 }): ScenarioModelPreview {
-  const durationSeconds = parseDurationSeconds(params.duration, 60)
+  const steadySeconds = parseDurationSeconds(params.duration, 60)
   const groups = params.groups.length > 0 ? params.groups : [{ vusers: 0 }]
-  const timeline = collectTimeline(durationSeconds, groups)
+  const maxRampDownSeconds = groups.reduce(
+    (max, group) => group.stages?.length ? max : Math.max(max, parseDurationSeconds(group.ramp_down, 0)),
+    0,
+  )
+  const durationSeconds = steadySeconds + maxRampDownSeconds
+  const timeline = collectTimeline(steadySeconds, durationSeconds, groups)
   const groupSeries: ScenarioModelSeries[] = groups.map((group, index) => ({
     key: safeSeriesKey(index),
     label: group.name || `Group ${index + 1}`,
@@ -756,13 +761,13 @@ export function buildScenarioModelPreview(params: {
       const groupKey = safeSeriesKey(index)
       const tpsKey = tpsSeriesKey(index)
       const value = group.stages?.length
-        ? stagedValue(group.stages, elapsedSeconds, 'target_vusers')
-        : simpleGroupValue(group, elapsedSeconds, durationSeconds)
+        ? (elapsedSeconds < steadySeconds ? stagedValue(group.stages, elapsedSeconds, 'target_vusers') : 0)
+        : simpleGroupValue(group, elapsedSeconds, steadySeconds)
       point[groupKey] = Math.round(value * 100) / 100
       point.totalVusers += value
 
       if (group.stages?.some(stage => Number(stage.target_tps) > 0)) {
-        const tps = stagedValue(group.stages, elapsedSeconds, 'target_tps')
+        const tps = elapsedSeconds < steadySeconds ? stagedValue(group.stages, elapsedSeconds, 'target_tps') : 0
         point[tpsKey] = Math.round(tps * 100) / 100
         point.totalTps = (point.totalTps || 0) + tps
       }

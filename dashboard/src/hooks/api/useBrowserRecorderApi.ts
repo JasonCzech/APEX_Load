@@ -214,6 +214,11 @@ export function useBrowserRecorderApi() {
     [recorderRequest],
   )
 
+  const getRawBrowserRecording = useCallback(
+    (id: string) => recorderRequest<BrowserRecorderSessionEnvelope>(`/browser-recorder/sessions/${id}?raw=true`),
+    [recorderRequest],
+  )
+
   const listBrowserRecordings = useCallback(
     (projectId?: string) => {
       const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
@@ -438,6 +443,7 @@ export function useBrowserRecorderApi() {
       clearBrowserRecorderBridge: clearBrowserRecorderBridgeConnection,
       startBrowserRecording,
       getBrowserRecording,
+      getRawBrowserRecording,
       listBrowserRecordings,
       deleteBrowserRecording,
       stopBrowserRecording,
@@ -472,6 +478,7 @@ export function useBrowserRecorderApi() {
       clearBrowserRecorderBridgeConnection,
       startBrowserRecording,
       getBrowserRecording,
+      getRawBrowserRecording,
       listBrowserRecordings,
       deleteBrowserRecording,
       stopBrowserRecording,

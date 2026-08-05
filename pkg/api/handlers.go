@@ -284,6 +284,15 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if errors.Is(err, errStartAdmissionEvidenceStale) || retryableStartSecretRequirement(err) {
+			w.Header().Set("Retry-After", "1")
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error":   err.Error(),
+				"code":    "start_admission_temporarily_unavailable",
+				"test_id": id,
+			})
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

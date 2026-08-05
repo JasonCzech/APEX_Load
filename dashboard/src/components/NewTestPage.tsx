@@ -6,8 +6,8 @@ import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 import { getErrorMessage } from '../utils/errorUtils'
-import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { formatTimeCompact, isValidDurationInput, isValidNonNegativeDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
+import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
 import { listAllCapacityTimeslots } from './schedulingCatalogModel'
 import { SortIndicator } from './SortIndicator'
 import {
@@ -564,6 +564,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scheduleDraftBaseline, setScheduleDraftBaseline] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [schedulePreview, setSchedulePreview] = useState<{ occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
   const [runName, setRunName] = useState('')
+  const runNameScenarioRef = useRef('')
   const [newReleaseName, setNewReleaseName] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('')
@@ -786,7 +787,6 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   useEffect(() => {
     if (!initialScenarioId || !scenarios.some(item => item.id === initialScenarioId)) return
     setScenarioId(prev => prev === initialScenarioId ? prev : initialScenarioId)
-    setRunName('')
   }, [initialScenarioId, scenarios])
   useEffect(() => {
     const emptyDefaults = buildEmptyRunDefaultOverrides()
@@ -995,6 +995,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       label: editingGroup.name || editingGroup.script_name || 'Script group',
     }) || ''
   }, [editingGroup, editingGroupStagePeak, groupEditDraft.vusers])
+  const defaultDurationInvalid = editingDefaultKey === 'duration'
+    && defaultEditDraft.value.trim().length > 0
+    && !isValidDurationInput(defaultEditDraft.value.trim())
+  const groupRampUpInvalid = groupEditDraft.ramp_up.trim().length > 0
+    && !isValidNonNegativeDurationInput(groupEditDraft.ramp_up.trim())
+  const groupRampDownInvalid = groupEditDraft.ramp_down.trim().length > 0
+    && !isValidNonNegativeDurationInput(groupEditDraft.ramp_down.trim())
   const generatorByTarget = useMemo(() => new Map(generatorInventory.map(generator => [generator.target, generator])), [generatorInventory])
   const availableLabels = useMemo(() => {
     const labels = new Map<string, Set<string>>()
@@ -1171,10 +1178,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
   )
   const scheduledStartISO = useMemo(() => datetimeLocalToISO(scheduledStartLocal), [scheduledStartLocal])
+  const runNameScenarioIdentity = scenario ? `${activeProjectID}:${scenario.id}` : ''
+  const runNameScenarioDefault = scenario?.name || ''
 
   useEffect(() => {
-    if (scenario && !runName) setRunName(scenario.name)
-  }, [scenario, runName])
+    if (runNameScenarioRef.current === runNameScenarioIdentity) return
+    runNameScenarioRef.current = runNameScenarioIdentity
+    setRunName(runNameScenarioDefault)
+  }, [runNameScenarioDefault, runNameScenarioIdentity])
   useEffect(() => {
     if (!scenarioId) {
       setExpandedScenarioId('')
@@ -1628,6 +1639,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         setError('Duration is required for a run override.')
         return false
       }
+      if (!isValidDurationInput(duration)) {
+        setError('Run duration must be a positive Go duration such as 30s, 5m, or 1h30m.')
+        return false
+      }
       next.duration = duration
     } else if (key === 'iterations') {
       setRuntimeOverride('iterations', defaultEditDraft.value ? Number(defaultEditDraft.value) : null)
@@ -1664,7 +1679,15 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       return (
         <label>
           <span>Run duration</span>
-          <input className="settings-input" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))} placeholder="30m0s" />
+          <input
+            className="settings-input"
+            value={defaultEditDraft.value}
+            aria-invalid={defaultDurationInvalid}
+            aria-describedby={defaultDurationInvalid ? 'new-test-run-duration-error' : undefined}
+            onChange={event => { setError(''); setDefaultEditDraft(prev => ({ ...prev, value: event.target.value })) }}
+            placeholder="30m0s"
+          />
+          {defaultDurationInvalid && <small id="new-test-run-duration-error" className="new-test-group-field-error">Use a duration such as 30s, 5m, or 1h30m.</small>}
         </label>
       )
     }
@@ -1941,6 +1964,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     else if (groupEditChanges.vusers) nextOverride.vusers = vusers
     const rampUp = groupEditDraft.ramp_up.trim()
     const rampDown = groupEditDraft.ramp_down.trim()
+    if (rampUp && !isValidNonNegativeDurationInput(rampUp)) {
+      setError('Ramp up must be a non-negative Go duration such as 0s, 30s, or 5m.')
+      return false
+    }
+    if (rampDown && !isValidNonNegativeDurationInput(rampDown)) {
+      setError('Ramp down must be a non-negative Go duration such as 0s, 30s, or 5m.')
+      return false
+    }
     if (groupEditChanges.ramp_up) nextOverride.ramp_up = rampUp
     if (groupEditChanges.ramp_down) nextOverride.ramp_down = rampDown
     if (groupEditChanges.initialization) {
@@ -3088,6 +3119,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                       <XAxis
                         dataKey="second"
+                        type="number"
+                        domain={[0, 'dataMax']}
                         tickFormatter={(value) => formatTimeCompact(Number(value))}
                         stroke="var(--text-muted)"
                         fontSize={10}
@@ -3104,6 +3137,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 10 }}
                       />
                       <Tooltip
+                        itemSorter={preserveChartItemOrder}
                         labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
                         contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8, fontSize: '12px' }}
                         labelStyle={chartTooltipLabelStyle}
@@ -3315,11 +3349,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     </label>
                     <label className={changedFieldClass(groupEditChanges.ramp_up)}>
                       <span>Ramp up <ChangedBadge changed={groupEditChanges.ramp_up} /></span>
-                      <input className="settings-input" value={groupEditDraft.ramp_up} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_up: event.target.value }))} placeholder="Scenario default" />
+                      <input className="settings-input" value={groupEditDraft.ramp_up} aria-invalid={groupRampUpInvalid} aria-describedby={groupRampUpInvalid ? 'new-test-group-ramp-up-error' : undefined} onChange={event => { setError(''); setGroupEditDraft(prev => ({ ...prev, ramp_up: event.target.value })) }} placeholder="Scenario default" />
+                      {groupRampUpInvalid && <small id="new-test-group-ramp-up-error" className="new-test-group-field-error">Use a duration such as 30s, 5m, or 1h30m.</small>}
                     </label>
                     <label className={changedFieldClass(groupEditChanges.ramp_down)}>
                       <span>Ramp down <ChangedBadge changed={groupEditChanges.ramp_down} /></span>
-                      <input className="settings-input" value={groupEditDraft.ramp_down} onChange={event => setGroupEditDraft(prev => ({ ...prev, ramp_down: event.target.value }))} placeholder="Scenario default" />
+                      <input className="settings-input" value={groupEditDraft.ramp_down} aria-invalid={groupRampDownInvalid} aria-describedby={groupRampDownInvalid ? 'new-test-group-ramp-down-error' : undefined} onChange={event => { setError(''); setGroupEditDraft(prev => ({ ...prev, ramp_down: event.target.value })) }} placeholder="Scenario default" />
+                      {groupRampDownInvalid && <small id="new-test-group-ramp-down-error" className="new-test-group-field-error">Use a duration such as 30s, 5m, or 1h30m.</small>}
                     </label>
                   </div>
                 </section>

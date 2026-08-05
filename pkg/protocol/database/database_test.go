@@ -289,6 +289,33 @@ func TestDatabaseProtocolEvidenceSamplesRatherThanDuplicatesRows(t *testing.T) {
 	}
 }
 
+func TestDatabaseSQLFailureKeepsRootCauseAheadOfAssertions(t *testing.T) {
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver": "sqlite",
+		"database_dsn":    ":memory:",
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer db.Teardown(context.Background())
+	result, err := db.Execute(context.Background(), &protocol.Action{
+		Name:   "missing table",
+		Type:   "db_query",
+		Target: "SELECT * FROM missing_orders",
+		Assertions: []protocol.Assertion{{
+			Type:     "body_contains",
+			Expected: "order",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "missing_orders") ||
+		strings.Contains(result.ErrorMessage, "body_contains assertion failed") {
+		t.Fatalf("database failure = %#v, want original SQL error", result)
+	}
+}
+
 func TestDatabaseProtocolTransactionsAndRollback(t *testing.T) {
 	db := &Database{}
 	if err := db.Init(context.Background(), map[string]any{

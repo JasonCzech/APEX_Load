@@ -24,7 +24,7 @@ func TestConvertWSDLPreservesSensitiveSchemaLiteralsAndEnvelopeBytes(t *testing.
   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
   xmlns:tns="urn:login">
-  <types><xsd:schema targetNamespace="urn:login">
+  <types><xsd:schema targetNamespace="urn:login" elementFormDefault="qualified">
     <xsd:element name="LoginRequest">
       <xsd:complexType><xsd:sequence>
         <xsd:element name="note" type="xsd:string" fixed="safe&amp;stable"/>
@@ -133,7 +133,7 @@ func TestConvertWSDLScrubsCredentialInUnusedSchemaBranch(t *testing.T) {
   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
   xmlns:tns="urn:review">
-  <types><xsd:schema targetNamespace="urn:review">
+  <types><xsd:schema targetNamespace="urn:review" elementFormDefault="qualified">
     <xsd:element name="password" type="xsd:string" fixed="` + unusedCanary + `"/>
   </xsd:schema></types>
   <message name="PingInput"/>
@@ -495,7 +495,7 @@ func TestConvertWSDLIncompleteSkeletonsAreDurablyBlocked(t *testing.T) {
   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema"
   xmlns:tns="urn:test">
-  <types><xsd:schema targetNamespace="urn:test"><xsd:import namespace="urn:missing" schemaLocation="missing.xsd"/></xsd:schema></types>
+  <types><xsd:schema targetNamespace="urn:test" elementFormDefault="qualified"><xsd:import namespace="urn:missing" schemaLocation="missing.xsd"/></xsd:schema></types>
   <message name="Input"><part name="value" type="xsd:string"/></message>
   <portType name="TestPortType"><operation name="Call"><input message="tns:Input"/></operation></portType>
   <binding name="TestBinding" type="tns:TestPortType">

@@ -159,6 +159,9 @@ func TestHandleGetBrowserBenchmarkEvidenceReturnsProfilesAndClaimPolicy(t *testi
 		if profile.HighDensityClaimAllowed {
 			t.Fatalf("profile %s allows high-density claims: %#v", profile.ID, profile)
 		}
+		if profile.Status == "baseline_artifact_published" || profile.MeasuredBaselineAvailable {
+			t.Fatalf("profile %s overstates unavailable measured evidence: %#v", profile.ID, profile)
+		}
 		if profile.Acceptance.LaunchP50TargetMs == 0 || profile.Acceptance.ActionOverheadTargetMs == 0 {
 			t.Fatalf("profile %s missing acceptance targets: %#v", profile.ID, profile.Acceptance)
 		}

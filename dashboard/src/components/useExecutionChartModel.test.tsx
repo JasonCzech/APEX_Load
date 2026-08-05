@@ -42,8 +42,8 @@ function ChartHarness({
       <span data-testid="ref-left">{String(model.refAreaLeft)}</span>
       <span data-testid="ref-end">{String(model.refAreaEnd)}</span>
       <button data-testid="set-3m" onClick={() => model.onTimeRangeChange('3m')}>set-3m</button>
-      <button data-testid="begin" onClick={() => model.onChartMouseDown('10:00:00')}>begin</button>
-      <button data-testid="move" onClick={() => model.onChartMouseMove('10:00:01')}>move</button>
+      <button data-testid="begin" onClick={() => model.onChartMouseDown({ label: '10:00:00', timestampMs: 0 })}>begin</button>
+      <button data-testid="move" onClick={() => model.onChartMouseMove({ label: '10:00:01', timestampMs: 1 })}>move</button>
       <button data-testid="zoom" onClick={() => model.onZoom()}>zoom</button>
       <button data-testid="reset" onClick={() => model.onResetZoom()}>reset</button>
     </div>
@@ -272,9 +272,9 @@ describe('useExecutionChartModel', () => {
         <ChartHarness
           test={{ status: 'RUNNING', history: [] }}
           history={[
-            { time: '10:00:00', vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
-            { time: '10:00:01', vusers: 4, tps: 2, avgMs: 120, errorPct: 1, p50: 100, p90: 140, p99: 180 },
-            { time: '10:00:02', vusers: 6, tps: 3, avgMs: 140, errorPct: 2, p50: 110, p90: 150, p99: 190 },
+            { time: '10:00:00', timestampMs: 0, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 90, p90: 120, p99: 150 },
+            { time: '10:00:01', timestampMs: 1, vusers: 4, tps: 2, avgMs: 120, errorPct: 1, p50: 100, p90: 140, p99: 180 },
+            { time: '10:00:02', timestampMs: 2, vusers: 6, tps: 3, avgMs: 140, errorPct: 2, p50: 110, p90: 150, p99: 190 },
           ]}
           localMetricsHistory={[]}
         />,

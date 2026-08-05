@@ -176,6 +176,14 @@ func schemaCreateTableStatements() []string {
 			expires_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS scheduler_content_revision (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			revision BIGINT NOT NULL CHECK (revision > 0)
+		)`,
+		`CREATE TABLE IF NOT EXISTS start_admission_revision (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			revision BIGINT NOT NULL CHECK (revision > 0)
+		)`,
 		`CREATE TABLE IF NOT EXISTS replay_session_leases (
 			session_id TEXT PRIMARY KEY,
 			owner_token TEXT NOT NULL,
@@ -1421,6 +1429,12 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
+		return err
+	}
+	if err := s.ensureSchedulerContentRevisionTracking(); err != nil {
+		return err
+	}
+	if err := s.ensureStartAdmissionRevisionTracking(); err != nil {
 		return err
 	}
 	// The legacy paging-state backfill counts and probes rows by pool. Create

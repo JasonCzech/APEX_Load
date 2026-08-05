@@ -17,6 +17,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+var errCIGitHubCheckStoreRead = errors.New("read GitHub Check link storage")
+
 const ciGitHubCheckName = "APEX Load / Performance Gate"
 
 const (
@@ -594,7 +596,7 @@ func storedCIGitHubCheck(store storage.GitHubEnterpriseStore, testID string) (*s
 	linkID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:"+testID)).String()
 	link, err := store.GetGitHubCheckLink(linkID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(errCIGitHubCheckStoreRead, err)
 	}
 	if link == nil {
 		return nil, nil

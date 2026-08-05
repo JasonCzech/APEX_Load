@@ -92,15 +92,17 @@ type BindingChoiceSummary struct {
 }
 
 type definitions struct {
-	XMLName         xml.Name     `xml:"definitions"`
-	Name            string       `xml:"name,attr"`
-	TargetNamespace string       `xml:"targetNamespace,attr"`
-	Services        []service    `xml:"service"`
-	PortTypes       []portType   `xml:"portType"`
-	Bindings        []binding    `xml:"binding"`
-	Messages        []message    `xml:"message"`
-	Types           []types      `xml:"types"`
-	Imports         []wsdlImport `xml:"import"`
+	XMLName           xml.Name          `xml:"definitions"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Name              string            `xml:"name,attr"`
+	TargetNamespace   string            `xml:"targetNamespace,attr"`
+	Services          []service         `xml:"service"`
+	PortTypes         []portType        `xml:"portType"`
+	Bindings          []binding         `xml:"binding"`
+	Messages          []message         `xml:"message"`
+	Types             []types           `xml:"types"`
+	Imports           []wsdlImport      `xml:"import"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type wsdlImport struct {
@@ -113,13 +115,17 @@ type types struct {
 }
 
 type xsdSchema struct {
-	TargetNamespace    string           `xml:"targetNamespace,attr"`
-	ElementFormDefault string           `xml:"elementFormDefault,attr"`
-	Imports            []xsdImport      `xml:"import"`
-	Includes           []xsdInclude     `xml:"include"`
-	Elements           []xsdElement     `xml:"element"`
-	SimpleTypes        []xsdSimpleType  `xml:"simpleType"`
-	ComplexTypes       []xsdComplexType `xml:"complexType"`
+	Attrs              []xml.Attr        `xml:",any,attr"`
+	TargetNamespace    string            `xml:"targetNamespace,attr"`
+	ElementFormDefault string            `xml:"elementFormDefault,attr"`
+	Imports            []xsdImport       `xml:"import"`
+	Includes           []xsdInclude      `xml:"include"`
+	Elements           []xsdElement      `xml:"element"`
+	SimpleTypes        []xsdSimpleType   `xml:"simpleType"`
+	ComplexTypes       []xsdComplexType  `xml:"complexType"`
+	NamespaceBindings  map[string]string `xml:"-"`
+	ResolvedSchemas    []xsdSchema       `xml:"-"`
+	IncludedFromSchema bool              `xml:"-"`
 }
 
 type xsdImport struct {
@@ -132,16 +138,19 @@ type xsdInclude struct {
 }
 
 type xsdElement struct {
-	Name        string          `xml:"name,attr"`
-	Type        string          `xml:"type,attr"`
-	Ref         string          `xml:"ref,attr"`
-	MinOccurs   string          `xml:"minOccurs,attr"`
-	MaxOccurs   string          `xml:"maxOccurs,attr"`
-	Nillable    string          `xml:"nillable,attr"`
-	Default     string          `xml:"default,attr"`
-	Fixed       string          `xml:"fixed,attr"`
-	ComplexType *xsdComplexType `xml:"complexType"`
-	SimpleType  *xsdSimpleType  `xml:"simpleType"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Name              string            `xml:"name,attr"`
+	Type              string            `xml:"type,attr"`
+	Ref               string            `xml:"ref,attr"`
+	Form              string            `xml:"form,attr"`
+	MinOccurs         string            `xml:"minOccurs,attr"`
+	MaxOccurs         string            `xml:"maxOccurs,attr"`
+	Nillable          string            `xml:"nillable,attr"`
+	Default           string            `xml:"default,attr"`
+	Fixed             string            `xml:"fixed,attr"`
+	ComplexType       *xsdComplexType   `xml:"complexType"`
+	SimpleType        *xsdSimpleType    `xml:"simpleType"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type xsdSimpleType struct {
@@ -169,23 +178,31 @@ type xsdUnion struct {
 }
 
 type xsdComplexType struct {
-	Name       string         `xml:"name,attr"`
-	Sequence   *xsdSequence   `xml:"sequence"`
-	All        *xsdAll        `xml:"all"`
-	Choice     *xsdChoice     `xml:"choice"`
-	Attributes []xsdAttribute `xml:"attribute"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Name              string            `xml:"name,attr"`
+	Sequence          *xsdSequence      `xml:"sequence"`
+	All               *xsdAll           `xml:"all"`
+	Choice            *xsdChoice        `xml:"choice"`
+	Attributes        []xsdAttribute    `xml:"attribute"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type xsdSequence struct {
-	Elements []xsdElement `xml:"element"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Elements          []xsdElement      `xml:"element"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type xsdAll struct {
-	Elements []xsdElement `xml:"element"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Elements          []xsdElement      `xml:"element"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type xsdChoice struct {
-	Elements []xsdElement `xml:"element"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Elements          []xsdElement      `xml:"element"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type xsdAttribute struct {
@@ -196,25 +213,32 @@ type xsdAttribute struct {
 }
 
 type message struct {
-	Name  string        `xml:"name,attr"`
-	Parts []messagePart `xml:"part"`
+	Attrs               []xml.Attr    `xml:",any,attr"`
+	Name                string        `xml:"name,attr"`
+	Parts               []messagePart `xml:"part"`
+	DefinitionNamespace string        `xml:"-"`
 }
 
 type messagePart struct {
-	Name    string `xml:"name,attr"`
-	Element string `xml:"element,attr"`
-	Type    string `xml:"type,attr"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Name              string            `xml:"name,attr"`
+	Element           string            `xml:"element,attr"`
+	Type              string            `xml:"type,attr"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type service struct {
-	Name  string `xml:"name,attr"`
-	Ports []port `xml:"port"`
+	Attrs []xml.Attr `xml:",any,attr"`
+	Name  string     `xml:"name,attr"`
+	Ports []port     `xml:"port"`
 }
 
 type port struct {
-	Name      string        `xml:"name,attr"`
-	Binding   string        `xml:"binding,attr"`
-	Addresses []soapAddress `xml:"address"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Name              string            `xml:"name,attr"`
+	Binding           string            `xml:"binding,attr"`
+	Addresses         []soapAddress     `xml:"address"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type soapAddress struct {
@@ -223,25 +247,34 @@ type soapAddress struct {
 }
 
 type portType struct {
-	Name       string          `xml:"name,attr"`
-	Operations []wsdlOperation `xml:"operation"`
+	Attrs               []xml.Attr        `xml:",any,attr"`
+	Name                string            `xml:"name,attr"`
+	Operations          []wsdlOperation   `xml:"operation"`
+	DefinitionNamespace string            `xml:"-"`
+	NamespaceBindings   map[string]string `xml:"-"`
 }
 
 type wsdlOperation struct {
+	Attrs  []xml.Attr        `xml:",any,attr"`
 	Name   string            `xml:"name,attr"`
 	Input  *operationMessage `xml:"input"`
 	Output *operationMessage `xml:"output"`
 }
 
 type operationMessage struct {
-	Message string `xml:"message,attr"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	Message           string            `xml:"message,attr"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type binding struct {
-	Name         string             `xml:"name,attr"`
-	Type         string             `xml:"type,attr"`
-	SOAPBindings []soapBinding      `xml:"binding"`
-	Operations   []bindingOperation `xml:"operation"`
+	Attrs               []xml.Attr         `xml:",any,attr"`
+	Name                string             `xml:"name,attr"`
+	Type                string             `xml:"type,attr"`
+	SOAPBindings        []soapBinding      `xml:"binding"`
+	Operations          []bindingOperation `xml:"operation"`
+	DefinitionNamespace string             `xml:"-"`
+	NamespaceBindings   map[string]string  `xml:"-"`
 }
 
 type soapBinding struct {
@@ -251,12 +284,14 @@ type soapBinding struct {
 }
 
 type bindingOperation struct {
+	Attrs          []xml.Attr      `xml:",any,attr"`
 	Name           string          `xml:"name,attr"`
 	SOAPOperations []soapOperation `xml:"operation"`
 	Input          *bindingMessage `xml:"input"`
 }
 
 type bindingMessage struct {
+	Attrs   []xml.Attr          `xml:",any,attr"`
 	Bodies  []soapBodyBinding   `xml:"body"`
 	Headers []soapHeaderBinding `xml:"header"`
 }
@@ -271,11 +306,13 @@ type soapBodyBinding struct {
 // soapHeaderBinding is a soap:header declaration inside a binding input,
 // pointing at the message/part that must travel in the SOAP envelope header.
 type soapHeaderBinding struct {
-	XMLName   xml.Name `xml:"header"`
-	Message   string   `xml:"message,attr"`
-	Part      string   `xml:"part,attr"`
-	Use       string   `xml:"use,attr"`
-	Namespace string   `xml:"namespace,attr"`
+	Attrs             []xml.Attr        `xml:",any,attr"`
+	XMLName           xml.Name          `xml:"header"`
+	Message           string            `xml:"message,attr"`
+	Part              string            `xml:"part,attr"`
+	Use               string            `xml:"use,attr"`
+	Namespace         string            `xml:"namespace,attr"`
+	NamespaceBindings map[string]string `xml:"-"`
 }
 
 type soapOperation struct {
@@ -369,6 +406,7 @@ func prepareWSDLDocument(req ImportRequest, diagnostics *diag.Collector) (defini
 	if err := xml.Unmarshal([]byte(content), &doc); err != nil {
 		return definitions{}, "", sourceFileName, sourceFiles, fmt.Errorf("invalid WSDL document: %w", err)
 	}
+	initializeDefinitionNamespaceContexts(&doc)
 	resolveLocalWSDLImports(&doc, sourceFileName, sourceFiles, diagnostics, map[string]bool{})
 	return doc, content, sourceFileName, sourceFiles, nil
 }
@@ -451,6 +489,7 @@ func resolveLocalWSDLImports(doc *definitions, sourceFile string, files map[stri
 			unresolved = append(unresolved, item)
 			continue
 		}
+		initializeDefinitionNamespaceContexts(&imported)
 		resolveLocalWSDLImports(&imported, resolved, files, diagnostics, seen)
 		mergeDefinitions(doc, imported)
 		diagnostics.Add(diag.Info, "WSDL import", "definitions", "resolved local WSDL import "+location)
@@ -480,7 +519,7 @@ func resolveLocalSchemaImports(schema *xsdSchema, sourceFile string, files map[s
 			unresolvedImports = append(unresolvedImports, item)
 			continue
 		}
-		mergeSchemas(schema, imported)
+		schema.ResolvedSchemas = append(schema.ResolvedSchemas, imported)
 		diagnostics.Add(diag.Info, "XSD import", "types/schema", "resolved local XSD import "+location)
 	}
 	schema.Imports = unresolvedImports
@@ -498,10 +537,34 @@ func resolveLocalSchemaImports(schema *xsdSchema, sourceFile string, files map[s
 			unresolvedIncludes = append(unresolvedIncludes, item)
 			continue
 		}
-		mergeSchemas(schema, included)
+		included.IncludedFromSchema = true
+		adoptIncludedSchemaNamespace(&included, schema.TargetNamespace)
+		schema.ResolvedSchemas = append(schema.ResolvedSchemas, included)
 		diagnostics.Add(diag.Info, "XSD include", "types/schema", "resolved local XSD include "+location)
 	}
 	schema.Includes = unresolvedIncludes
+}
+
+// adoptIncludedSchemaNamespace applies XML Schema's chameleon-include rule to
+// the whole include-only subtree. parseBundleSchema resolves a child schema's
+// own includes before its parent namespace is known, so assigning only the
+// immediate child would leave transitive no-namespace types unresolvable.
+// Imported schemas are deliberately not traversed or rewritten.
+func adoptIncludedSchemaNamespace(schema *xsdSchema, inheritedNamespace string) {
+	if schema == nil {
+		return
+	}
+	effectiveNamespace := strings.TrimSpace(schema.TargetNamespace)
+	if effectiveNamespace == "" {
+		effectiveNamespace = strings.TrimSpace(inheritedNamespace)
+		schema.TargetNamespace = effectiveNamespace
+	}
+	for index := range schema.ResolvedSchemas {
+		if !schema.ResolvedSchemas[index].IncludedFromSchema {
+			continue
+		}
+		adoptIncludedSchemaNamespace(&schema.ResolvedSchemas[index], effectiveNamespace)
+	}
 }
 
 func parseBundleSchema(sourceFile string, files map[string]string, diagnostics *diag.Collector, seen map[string]bool) (xsdSchema, bool) {
@@ -515,6 +578,7 @@ func parseBundleSchema(sourceFile string, files map[string]string, diagnostics *
 		diagnostics.Add(diag.Warning, "XSD import", "types/schema", "referenced XSD "+sourceFile+" could not be parsed: "+err.Error())
 		return xsdSchema{}, false
 	}
+	initializeSchemaNamespaceContext(&schema, nil)
 	resolveLocalSchemaImports(&schema, sourceFile, files, diagnostics, seen)
 	return schema, true
 }
@@ -528,12 +592,128 @@ func mergeDefinitions(dst *definitions, src definitions) {
 	dst.Imports = append(dst.Imports, src.Imports...)
 }
 
-func mergeSchemas(dst *xsdSchema, src xsdSchema) {
-	dst.Elements = append(dst.Elements, src.Elements...)
-	dst.SimpleTypes = append(dst.SimpleTypes, src.SimpleTypes...)
-	dst.ComplexTypes = append(dst.ComplexTypes, src.ComplexTypes...)
-	dst.Imports = append(dst.Imports, src.Imports...)
-	dst.Includes = append(dst.Includes, src.Includes...)
+func initializeDefinitionNamespaceContexts(doc *definitions) {
+	if doc == nil {
+		return
+	}
+	doc.NamespaceBindings = mergeNamespaceBindings(nil, doc.Attrs)
+	definitionNamespace := strings.TrimSpace(doc.TargetNamespace)
+	for typeIndex := range doc.Types {
+		for schemaIndex := range doc.Types[typeIndex].Schemas {
+			initializeSchemaNamespaceContext(&doc.Types[typeIndex].Schemas[schemaIndex], doc.NamespaceBindings)
+		}
+	}
+	for messageIndex := range doc.Messages {
+		message := &doc.Messages[messageIndex]
+		message.DefinitionNamespace = definitionNamespace
+		messageNamespaces := mergeNamespaceBindings(doc.NamespaceBindings, message.Attrs)
+		for partIndex := range message.Parts {
+			message.Parts[partIndex].NamespaceBindings = mergeNamespaceBindings(messageNamespaces, message.Parts[partIndex].Attrs)
+		}
+	}
+	for serviceIndex := range doc.Services {
+		service := &doc.Services[serviceIndex]
+		serviceNamespaces := mergeNamespaceBindings(doc.NamespaceBindings, service.Attrs)
+		for portIndex := range service.Ports {
+			service.Ports[portIndex].NamespaceBindings = mergeNamespaceBindings(serviceNamespaces, service.Ports[portIndex].Attrs)
+		}
+	}
+	for portTypeIndex := range doc.PortTypes {
+		portType := &doc.PortTypes[portTypeIndex]
+		portType.DefinitionNamespace = definitionNamespace
+		portType.NamespaceBindings = mergeNamespaceBindings(doc.NamespaceBindings, portType.Attrs)
+		for operationIndex := range portType.Operations {
+			operation := &portType.Operations[operationIndex]
+			operationNamespaces := mergeNamespaceBindings(portType.NamespaceBindings, operation.Attrs)
+			if operation.Input != nil {
+				operation.Input.NamespaceBindings = mergeNamespaceBindings(operationNamespaces, operation.Input.Attrs)
+			}
+			if operation.Output != nil {
+				operation.Output.NamespaceBindings = mergeNamespaceBindings(operationNamespaces, operation.Output.Attrs)
+			}
+		}
+	}
+	for bindingIndex := range doc.Bindings {
+		binding := &doc.Bindings[bindingIndex]
+		binding.DefinitionNamespace = definitionNamespace
+		binding.NamespaceBindings = mergeNamespaceBindings(doc.NamespaceBindings, binding.Attrs)
+		for operationIndex := range binding.Operations {
+			operation := &binding.Operations[operationIndex]
+			operationNamespaces := mergeNamespaceBindings(binding.NamespaceBindings, operation.Attrs)
+			if operation.Input == nil {
+				continue
+			}
+			inputNamespaces := mergeNamespaceBindings(operationNamespaces, operation.Input.Attrs)
+			for headerIndex := range operation.Input.Headers {
+				header := &operation.Input.Headers[headerIndex]
+				header.NamespaceBindings = mergeNamespaceBindings(inputNamespaces, header.Attrs)
+			}
+		}
+	}
+}
+
+func initializeSchemaNamespaceContext(schema *xsdSchema, inherited map[string]string) {
+	if schema == nil {
+		return
+	}
+	schema.NamespaceBindings = mergeNamespaceBindings(inherited, schema.Attrs)
+	initializeXSDElementNamespaceContexts(schema.Elements, schema.NamespaceBindings)
+	for index := range schema.ComplexTypes {
+		initializeXSDComplexTypeElementContexts(&schema.ComplexTypes[index], schema.NamespaceBindings)
+	}
+}
+
+func initializeXSDElementNamespaceContexts(elements []xsdElement, inherited map[string]string) {
+	for index := range elements {
+		element := &elements[index]
+		element.NamespaceBindings = mergeNamespaceBindings(inherited, element.Attrs)
+		if element.ComplexType != nil {
+			initializeXSDComplexTypeElementContexts(element.ComplexType, element.NamespaceBindings)
+		}
+	}
+}
+
+func initializeXSDComplexTypeElementContexts(complexType *xsdComplexType, inherited map[string]string) {
+	if complexType == nil {
+		return
+	}
+	complexType.NamespaceBindings = mergeNamespaceBindings(inherited, complexType.Attrs)
+	if complexType.Sequence != nil {
+		complexType.Sequence.NamespaceBindings = mergeNamespaceBindings(complexType.NamespaceBindings, complexType.Sequence.Attrs)
+		initializeXSDElementNamespaceContexts(complexType.Sequence.Elements, complexType.Sequence.NamespaceBindings)
+	}
+	if complexType.All != nil {
+		complexType.All.NamespaceBindings = mergeNamespaceBindings(complexType.NamespaceBindings, complexType.All.Attrs)
+		initializeXSDElementNamespaceContexts(complexType.All.Elements, complexType.All.NamespaceBindings)
+	}
+	if complexType.Choice != nil {
+		complexType.Choice.NamespaceBindings = mergeNamespaceBindings(complexType.NamespaceBindings, complexType.Choice.Attrs)
+		initializeXSDElementNamespaceContexts(complexType.Choice.Elements, complexType.Choice.NamespaceBindings)
+	}
+}
+
+func mergeNamespaceBindings(inherited map[string]string, attrs []xml.Attr) map[string]string {
+	bindings := cloneNamespaceBindings(inherited)
+	for _, attr := range attrs {
+		switch {
+		case attr.Name.Space == "xmlns":
+			bindings[attr.Name.Local] = strings.TrimSpace(attr.Value)
+		case attr.Name.Space == "" && attr.Name.Local == "xmlns":
+			bindings[""] = strings.TrimSpace(attr.Value)
+		}
+	}
+	return bindings
+}
+
+func cloneNamespaceBindings(source map[string]string) map[string]string {
+	if len(source) == 0 {
+		return map[string]string{}
+	}
+	clone := make(map[string]string, len(source))
+	for prefix, namespace := range source {
+		clone[prefix] = namespace
+	}
+	return clone
 }
 
 func resolveBundleFile(sourceFile string, location string, files map[string]string) (string, bool) {
@@ -857,6 +1037,7 @@ type operationInfo struct {
 	Name                     string
 	SOAPAction               string
 	InputMessage             string
+	InputMessageNamespaces   map[string]string
 	Style                    string
 	BodyUse                  string
 	BodyNamespace            string
@@ -916,7 +1097,7 @@ func collectBindingChoices(doc definitions, opts ConvertOptions, diagnostics *di
 	choices := []bindingChoice{}
 	for _, svc := range doc.Services {
 		for _, p := range svc.Ports {
-			b, ok := findBinding(doc, p.Binding)
+			b, ok := findBinding(doc, p.Binding, p.NamespaceBindings)
 			if !ok {
 				if strings.TrimSpace(p.Binding) != "" {
 					diagnostics.Add(diag.Warning, "WSDL port binding", "service "+svc.Name, "port "+p.Name+" references binding "+p.Binding+" which could not be resolved")
@@ -995,7 +1176,7 @@ func bindingChoiceFor(doc definitions, opts ConvertOptions, serviceName, portNam
 
 func collectBindingOperations(doc definitions, b binding, filter []string, defaultStyle string, defaultUse string, diagnostics *diag.Collector) []operationInfo {
 	allowed := stringSet(filter)
-	pt, ok := findPortType(doc, b.Type)
+	pt, ok := findPortType(doc, b.Type, b.NamespaceBindings)
 	if !ok {
 		if strings.TrimSpace(b.Type) != "" {
 			diagnostics.Add(diag.Warning, "WSDL binding", "binding "+b.Name, "portType "+b.Type+" could not be resolved")
@@ -1017,6 +1198,7 @@ func collectBindingOperations(doc definitions, b binding, filter []string, defau
 		info := operationInfo{Name: name, Style: defaultStyle, BodyUse: defaultUse}
 		if ptOp.Input != nil {
 			info.InputMessage = strings.TrimSpace(ptOp.Input.Message)
+			info.InputMessageNamespaces = cloneNamespaceBindings(ptOp.Input.NamespaceBindings)
 		}
 		if bindingOp, ok := bindingOps[name]; ok {
 			info.BindingOperationResolved = true
@@ -1057,26 +1239,58 @@ func collectBindingOperations(doc definitions, b binding, filter []string, defau
 	return operations
 }
 
-func findBinding(doc definitions, bindingRef string) (binding, bool) {
-	name := localName(bindingRef)
+func findBinding(doc definitions, bindingRef string, namespaceContexts ...map[string]string) (binding, bool) {
+	name, namespace, qualified, resolved := resolveWSDLQName(bindingRef, firstNamespaceContext(namespaceContexts))
 	if name == "" && len(doc.Bindings) == 1 {
 		return doc.Bindings[0], true
 	}
+	if name == "" {
+		return binding{}, false
+	}
+	if qualified && !resolved {
+		// Some otherwise usable WSDLs refer to tns:* without declaring tns.
+		// Preserve tolerant import only when the local declaration is unique;
+		// namespace collisions must remain unresolved rather than selecting by
+		// document order.
+		var match binding
+		matches := 0
+		for _, candidate := range doc.Bindings {
+			if candidate.Name == name {
+				match = candidate
+				matches++
+			}
+		}
+		return match, matches == 1
+	}
 	for _, b := range doc.Bindings {
-		if b.Name == name {
+		if b.Name == name && (!qualified || strings.TrimSpace(b.DefinitionNamespace) == namespace) {
 			return b, true
 		}
 	}
 	return binding{}, false
 }
 
-func findPortType(doc definitions, portTypeRef string) (portType, bool) {
-	name := localName(portTypeRef)
+func findPortType(doc definitions, portTypeRef string, namespaceContexts ...map[string]string) (portType, bool) {
+	name, namespace, qualified, resolved := resolveWSDLQName(portTypeRef, firstNamespaceContext(namespaceContexts))
 	if name == "" && len(doc.PortTypes) == 1 {
 		return doc.PortTypes[0], true
 	}
+	if name == "" {
+		return portType{}, false
+	}
+	if qualified && !resolved {
+		var match portType
+		matches := 0
+		for _, candidate := range doc.PortTypes {
+			if candidate.Name == name {
+				match = candidate
+				matches++
+			}
+		}
+		return match, matches == 1
+	}
 	for _, pt := range doc.PortTypes {
-		if pt.Name == name {
+		if pt.Name == name && (!qualified || strings.TrimSpace(pt.DefinitionNamespace) == namespace) {
 			return pt, true
 		}
 	}
@@ -1118,6 +1332,7 @@ func collectPortTypeOperations(pt portType, filter []string) []operationInfo {
 		info := operationInfo{Name: name, Style: "document", BodyUse: "literal"}
 		if op.Input != nil {
 			info.InputMessage = strings.TrimSpace(op.Input.Message)
+			info.InputMessageNamespaces = cloneNamespaceBindings(op.Input.NamespaceBindings)
 		}
 		operations = append(operations, info)
 	}
@@ -1211,9 +1426,9 @@ func soapActionTarget(baseURL string) string {
 }
 
 func soapEnvelope(doc definitions, op operationInfo, soapVersion string, diagnostics *diag.Collector) string {
-	namespace := convertutil.FirstNonEmpty(op.BodyNamespace, doc.TargetNamespace, "urn:service")
-	body := soapBodySkeleton(doc, op, diagnostics)
-	header := soapHeaderSkeleton(doc, op, diagnostics)
+	namespace := soapEnvelopeNamespace(doc, op)
+	body := soapBodySkeleton(doc, op, diagnostics, namespace)
+	header := soapHeaderSkeleton(doc, op, diagnostics, namespace)
 	return fmt.Sprintf(`<soapenv:Envelope xmlns:soapenv="%s" xmlns:tns="%s">
 %s
   <soapenv:Body>
@@ -1222,17 +1437,37 @@ func soapEnvelope(doc definitions, op operationInfo, soapVersion string, diagnos
 </soapenv:Envelope>`, soapEnvelopeURI(soapVersion), namespace, header, body)
 }
 
+func soapEnvelopeNamespace(doc definitions, op operationInfo) string {
+	if namespace := strings.TrimSpace(op.BodyNamespace); namespace != "" {
+		return namespace
+	}
+	parts := inputMessageParts(doc, op.InputMessage, op.InputMessageNamespaces)
+	if len(op.BodyParts) > 0 {
+		parts = filterMessageParts(parts, op.BodyParts)
+	}
+	for _, part := range parts {
+		if strings.TrimSpace(part.Element) == "" {
+			continue
+		}
+		_, schema, found := findXSDElementWithSchema(doc, part.Element, part.NamespaceBindings)
+		if found && strings.TrimSpace(schema.TargetNamespace) != "" {
+			return strings.TrimSpace(schema.TargetNamespace)
+		}
+	}
+	return convertutil.FirstNonEmpty(doc.TargetNamespace, "urn:service")
+}
+
 // soapHeaderSkeleton renders the soap:header parts declared on the binding's
 // input message into the envelope header, so required headers (sessions,
 // credentials, routing) are visible and editable instead of silently dropped.
-func soapHeaderSkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector) string {
+func soapHeaderSkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector, envelopeNamespace string) string {
 	if len(op.Headers) == 0 {
 		return "  <soapenv:Header/>"
 	}
 	location := "operation " + op.Name
 	lines := make([]string, 0, len(op.Headers))
 	for _, headerBinding := range op.Headers {
-		part, ok := messagePartByName(doc, headerBinding.Message, headerBinding.Part)
+		part, ok := messagePartByName(doc, headerBinding.Message, headerBinding.Part, headerBinding.NamespaceBindings)
 		if !ok {
 			diagnostics.Add(diag.Warning, "WSDL SOAP header", location,
 				"soap:header part "+convertutil.FirstNonEmpty(headerBinding.Part, headerBinding.Message)+" could not be resolved; add the header manually before replay")
@@ -1242,16 +1477,17 @@ func soapHeaderSkeleton(doc definitions, op operationInfo, diagnostics *diag.Col
 		if headerName == "" {
 			continue
 		}
-		if element, found := findXSDElement(doc, headerName); found {
-			if fields, ok := xsdFieldsForElement(doc, element); ok {
-				lines = append(lines, "    <tns:"+headerName+">")
-				lines = append(lines, renderXSDFieldSet(doc, fields, diagnostics, location, 3))
-				lines = append(lines, "    </tns:"+headerName+">")
+		if element, schema, found := findXSDElementWithSchema(doc, part.Element, part.NamespaceBindings); found {
+			if fields, ok := xsdFieldsForElementInSchema(doc, element, schema); ok {
+				lines = append(lines, renderXMLElementInNamespace(doc, headerName, fields, diagnostics, location, 2, schema.TargetNamespace, envelopeNamespace))
 				diagnostics.Add(diag.Info, "WSDL SOAP header", location, "soap:header "+headerName+" was rendered into the envelope header")
 				continue
 			}
+			lines = append(lines, renderPlaceholderElement(headerName, placeholderForXSDType(doc, part.Type, headerName, part.NamespaceBindings), 2, schema.TargetNamespace, envelopeNamespace))
+			diagnostics.Add(diag.Info, "WSDL SOAP header", location, "soap:header "+headerName+" was rendered with a placeholder value")
+			continue
 		}
-		lines = append(lines, "    <tns:"+headerName+">"+placeholderForXSDType(doc, part.Type, headerName)+"</tns:"+headerName+">")
+		lines = append(lines, renderPlaceholderElement(headerName, placeholderForXSDType(doc, part.Type, headerName, part.NamespaceBindings), 2))
 		diagnostics.Add(diag.Info, "WSDL SOAP header", location, "soap:header "+headerName+" was rendered with a placeholder value")
 	}
 	if len(lines) == 0 {
@@ -1262,13 +1498,13 @@ func soapHeaderSkeleton(doc definitions, op operationInfo, diagnostics *diag.Col
 
 // messagePartByName resolves a message part referenced by a soap:header
 // binding. An empty part name selects the message's first part.
-func messagePartByName(doc definitions, messageRef, partName string) (messagePart, bool) {
-	name := localName(messageRef)
-	if name == "" {
+func messagePartByName(doc definitions, messageRef, partName string, namespaceContexts ...map[string]string) (messagePart, bool) {
+	name, namespace, qualified, resolved := resolveWSDLQName(messageRef, firstNamespaceContext(namespaceContexts))
+	if name == "" || (qualified && !resolved) {
 		return messagePart{}, false
 	}
 	for _, msg := range doc.Messages {
-		if msg.Name != name || len(msg.Parts) == 0 {
+		if msg.Name != name || (qualified && strings.TrimSpace(msg.DefinitionNamespace) != namespace) || len(msg.Parts) == 0 {
 			continue
 		}
 		if strings.TrimSpace(partName) == "" {
@@ -1283,9 +1519,9 @@ func messagePartByName(doc definitions, messageRef, partName string) (messagePar
 	return messagePart{}, false
 }
 
-func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector) string {
+func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Collector, envelopeNamespace string) string {
 	location := "operation " + op.Name
-	parts := inputMessageParts(doc, op.InputMessage)
+	parts := inputMessageParts(doc, op.InputMessage, op.InputMessageNamespaces)
 	if len(op.BodyParts) > 0 {
 		parts = filterMessageParts(parts, op.BodyParts)
 	}
@@ -1299,19 +1535,19 @@ func soapBodySkeleton(doc definitions, op operationInfo, diagnostics *diag.Colle
 	if strings.EqualFold(op.Style, "rpc") {
 		lines := []string{"    <tns:" + op.Name + ">"}
 		for _, part := range parts {
-			lines = append(lines, renderMessagePart(doc, part, diagnostics, location, 3, true))
+			lines = append(lines, renderMessagePart(doc, part, diagnostics, location, 3, true, envelopeNamespace))
 		}
 		lines = append(lines, "    </tns:"+op.Name+">")
 		return strings.Join(lines, "\n")
 	}
 	lines := make([]string, 0, len(parts))
 	for _, part := range parts {
-		lines = append(lines, renderMessagePart(doc, part, diagnostics, location, 2, false))
+		lines = append(lines, renderMessagePart(doc, part, diagnostics, location, 2, false, envelopeNamespace))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func renderMessagePart(doc definitions, part messagePart, diagnostics *diag.Collector, location string, depth int, rpc bool) string {
+func renderMessagePart(doc definitions, part messagePart, diagnostics *diag.Collector, location string, depth int, rpc bool, envelopeNamespace string) string {
 	bodyName := localName(convertutil.FirstNonEmpty(part.Element, part.Name))
 	if bodyName == "" {
 		bodyName = "parameters"
@@ -1319,40 +1555,40 @@ func renderMessagePart(doc definitions, part messagePart, diagnostics *diag.Coll
 	if rpc {
 		bodyName = localName(convertutil.FirstNonEmpty(part.Name, part.Element, "parameters"))
 	}
-	if element, found := findXSDElement(doc, bodyName); found && !rpc {
-		if fields, ok := xsdFieldsForElement(doc, element); ok {
-			return renderXMLElement(doc, bodyName, fields, diagnostics, location, depth)
+	if element, schema, found := findXSDElementWithSchema(doc, part.Element, part.NamespaceBindings); found && !rpc {
+		if fields, ok := xsdFieldsForElementInSchema(doc, element, schema); ok {
+			return renderXMLElementInNamespace(doc, bodyName, fields, diagnostics, location, depth, schema.TargetNamespace, envelopeNamespace)
 		}
 		diagnostics.Add(diag.Warning, "WSDL XSD type", location, "element "+bodyName+" has no supported complexType model; generated a placeholder SOAP body")
-		return renderPlaceholderElement(bodyName, "", depth)
+		return renderPlaceholderElement(bodyName, "", depth, schema.TargetNamespace, envelopeNamespace)
 	}
 	if part.Type != "" {
-		if fields, ok := xsdFieldsForType(doc, localName(part.Type)); ok {
-			return renderXMLElement(doc, bodyName, fields, diagnostics, location, depth)
+		if fields, ok := xsdFieldsForType(doc, part.Type, part.NamespaceBindings); ok {
+			return renderXMLElementInNamespace(doc, bodyName, fields, diagnostics, location, depth, envelopeNamespace, envelopeNamespace)
 		}
-		if isKnownXSDSimpleType(part.Type) || hasNamedXSDSimpleType(doc, part.Type) {
-			return renderPlaceholderElement(bodyName, placeholderForXSDType(doc, part.Type, bodyName), depth)
+		if isKnownXSDSimpleType(part.Type) || hasNamedXSDSimpleType(doc, part.Type, part.NamespaceBindings) {
+			return renderPlaceholderElement(bodyName, placeholderForXSDType(doc, part.Type, bodyName, part.NamespaceBindings), depth)
 		}
 	}
 	diagnostics.Add(diag.Warning, "WSDL XSD element", location, "message part "+bodyName+" has no inlined XSD element/type; generated a placeholder SOAP body")
-	return renderPlaceholderElement(bodyName, placeholderForXSDType(doc, part.Type, bodyName), depth)
+	return renderPlaceholderElement(bodyName, placeholderForXSDType(doc, part.Type, bodyName, part.NamespaceBindings), depth)
 }
 
-func inputMessagePart(doc definitions, messageRef string) (messagePart, bool) {
-	parts := inputMessageParts(doc, messageRef)
+func inputMessagePart(doc definitions, messageRef string, namespaceContexts ...map[string]string) (messagePart, bool) {
+	parts := inputMessageParts(doc, messageRef, namespaceContexts...)
 	if len(parts) == 0 {
 		return messagePart{}, false
 	}
 	return parts[0], true
 }
 
-func inputMessageParts(doc definitions, messageRef string) []messagePart {
-	name := localName(messageRef)
-	if name == "" {
+func inputMessageParts(doc definitions, messageRef string, namespaceContexts ...map[string]string) []messagePart {
+	name, namespace, qualified, resolved := resolveWSDLQName(messageRef, firstNamespaceContext(namespaceContexts))
+	if name == "" || (qualified && !resolved) {
 		return nil
 	}
 	for _, msg := range doc.Messages {
-		if msg.Name != name || len(msg.Parts) == 0 {
+		if msg.Name != name || (qualified && strings.TrimSpace(msg.DefinitionNamespace) != namespace) || len(msg.Parts) == 0 {
 			continue
 		}
 		return append([]messagePart(nil), msg.Parts...)
@@ -1375,43 +1611,125 @@ func filterMessageParts(parts []messagePart, allowed []string) []messagePart {
 }
 
 func findXSDElement(doc definitions, name string) (xsdElement, bool) {
-	name = localName(name)
-	for _, t := range doc.Types {
-		for _, schema := range t.Schemas {
-			for _, element := range schema.Elements {
-				if localName(convertutil.FirstNonEmpty(element.Name, element.Ref)) == name {
-					return element, true
-				}
+	element, _, found := findXSDElementWithSchema(doc, name)
+	return element, found
+}
+
+func findXSDElementWithSchemaInContext(doc definitions, name string, namespaces map[string]string) (xsdElement, xsdSchema, bool) {
+	local, namespace, qualified, resolved := resolveWSDLQName(name, namespaces)
+	if local == "" || (qualified && !resolved) {
+		return xsdElement{}, xsdSchema{}, false
+	}
+	for _, schema := range allXSDSchemas(doc) {
+		if qualified && strings.TrimSpace(schema.TargetNamespace) != namespace {
+			continue
+		}
+		for _, element := range schema.Elements {
+			if localName(convertutil.FirstNonEmpty(element.Name, element.Ref)) == local {
+				return element, schema, true
 			}
 		}
 	}
-	return xsdElement{}, false
+	return xsdElement{}, xsdSchema{}, false
+}
+
+func findXSDElementWithSchema(doc definitions, name string, namespaceContexts ...map[string]string) (xsdElement, xsdSchema, bool) {
+	var namespaces map[string]string
+	if len(namespaceContexts) > 0 {
+		namespaces = namespaceContexts[0]
+	}
+	return findXSDElementWithSchemaInContext(doc, name, namespaces)
+}
+
+func allXSDSchemas(doc definitions) []xsdSchema {
+	var schemas []xsdSchema
+	var appendSchema func(xsdSchema)
+	appendSchema = func(schema xsdSchema) {
+		schemas = append(schemas, schema)
+		for _, resolved := range schema.ResolvedSchemas {
+			appendSchema(resolved)
+		}
+	}
+	for _, item := range doc.Types {
+		for _, schema := range item.Schemas {
+			appendSchema(schema)
+		}
+	}
+	return schemas
+}
+
+func resolveWSDLQName(value string, namespaces map[string]string) (local string, namespace string, qualified bool, resolved bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", "", false, false
+	}
+	prefix, local, hasPrefix := strings.Cut(value, ":")
+	if !hasPrefix {
+		return value, "", false, true
+	}
+	if prefix == "" || local == "" {
+		return local, "", true, false
+	}
+	namespace, ok := namespaces[prefix]
+	return local, strings.TrimSpace(namespace), true, ok && strings.TrimSpace(namespace) != ""
 }
 
 type xsdFieldSet struct {
-	Elements   []xsdElement
-	Model      string
-	ChoiceName string
-	Attributes []xsdAttribute
+	Elements           []xsdElement
+	Model              string
+	ChoiceName         string
+	Attributes         []xsdAttribute
+	Namespace          string
+	NamespaceBindings  map[string]string
+	ElementFormDefault string
 }
 
 func xsdFieldsForElement(doc definitions, element xsdElement) (xsdFieldSet, bool) {
+	if _, schema, found := findXSDElementWithSchema(
+		doc,
+		localName(convertutil.FirstNonEmpty(element.Name, element.Ref)),
+	); found {
+		return xsdFieldsForElementInSchema(doc, element, schema)
+	}
+	return xsdFieldsForElementInSchema(doc, element, xsdSchema{})
+}
+
+func xsdFieldsForElementInSchema(doc definitions, element xsdElement, schema xsdSchema) (xsdFieldSet, bool) {
+	elementNamespaces := xsdElementNamespaceBindings(element, schema.NamespaceBindings)
 	if element.ComplexType != nil {
-		return xsdFieldsForComplexType(*element.ComplexType)
+		elementSchema := schema
+		elementSchema.NamespaceBindings = elementNamespaces
+		return xsdFieldsForComplexTypeInSchema(*element.ComplexType, elementSchema)
 	}
 	if element.Type != "" {
-		return xsdFieldsForType(doc, localName(element.Type))
+		return xsdFieldsForType(doc, element.Type, elementNamespaces)
 	}
 	return xsdFieldSet{}, false
 }
 
-func xsdFieldsForType(doc definitions, typeName string) (xsdFieldSet, bool) {
-	for _, t := range doc.Types {
-		for _, schema := range t.Schemas {
-			for _, ct := range schema.ComplexTypes {
-				if ct.Name == typeName {
-					return xsdFieldsForComplexType(ct)
-				}
+func xsdElementNamespaceBindings(element xsdElement, inherited map[string]string) map[string]string {
+	if element.NamespaceBindings != nil {
+		return element.NamespaceBindings
+	}
+	return mergeNamespaceBindings(inherited, element.Attrs)
+}
+
+func xsdFieldsForType(doc definitions, typeName string, namespaceContexts ...map[string]string) (xsdFieldSet, bool) {
+	var namespaces map[string]string
+	if len(namespaceContexts) > 0 {
+		namespaces = namespaceContexts[0]
+	}
+	local, namespace, qualified, resolved := resolveWSDLQName(typeName, namespaces)
+	if local == "" || (qualified && !resolved) {
+		return xsdFieldSet{}, false
+	}
+	for _, schema := range allXSDSchemas(doc) {
+		if qualified && strings.TrimSpace(schema.TargetNamespace) != namespace {
+			continue
+		}
+		for _, ct := range schema.ComplexTypes {
+			if ct.Name == local {
+				return xsdFieldsForComplexTypeInSchema(ct, schema)
 			}
 		}
 	}
@@ -1419,16 +1737,45 @@ func xsdFieldsForType(doc definitions, typeName string) (xsdFieldSet, bool) {
 }
 
 func xsdFieldsForComplexType(ct xsdComplexType) (xsdFieldSet, bool) {
-	set := xsdFieldSet{Model: "sequence", Attributes: ct.Attributes}
+	return xsdFieldsForComplexTypeInSchema(ct, xsdSchema{})
+}
+
+func xsdFieldsForComplexTypeInSchema(ct xsdComplexType, schema xsdSchema) (xsdFieldSet, bool) {
+	complexTypeNamespaces := ct.NamespaceBindings
+	if complexTypeNamespaces == nil {
+		complexTypeNamespaces = mergeNamespaceBindings(schema.NamespaceBindings, ct.Attrs)
+	}
+	set := xsdFieldSet{
+		Model:              "sequence",
+		Attributes:         ct.Attributes,
+		Namespace:          strings.TrimSpace(schema.TargetNamespace),
+		NamespaceBindings:  cloneNamespaceBindings(complexTypeNamespaces),
+		ElementFormDefault: strings.ToLower(strings.TrimSpace(schema.ElementFormDefault)),
+	}
 	switch {
 	case ct.Sequence != nil:
 		set.Elements = ct.Sequence.Elements
+		if ct.Sequence.NamespaceBindings != nil {
+			set.NamespaceBindings = cloneNamespaceBindings(ct.Sequence.NamespaceBindings)
+		} else {
+			set.NamespaceBindings = mergeNamespaceBindings(complexTypeNamespaces, ct.Sequence.Attrs)
+		}
 	case ct.All != nil:
 		set.Elements = ct.All.Elements
 		set.Model = "all"
+		if ct.All.NamespaceBindings != nil {
+			set.NamespaceBindings = cloneNamespaceBindings(ct.All.NamespaceBindings)
+		} else {
+			set.NamespaceBindings = mergeNamespaceBindings(complexTypeNamespaces, ct.All.Attrs)
+		}
 	case ct.Choice != nil:
 		set.Elements = firstChoiceElement(ct.Choice.Elements)
 		set.Model = "choice"
+		if ct.Choice.NamespaceBindings != nil {
+			set.NamespaceBindings = cloneNamespaceBindings(ct.Choice.NamespaceBindings)
+		} else {
+			set.NamespaceBindings = mergeNamespaceBindings(complexTypeNamespaces, ct.Choice.Attrs)
+		}
 		if len(set.Elements) > 0 {
 			set.ChoiceName = localName(convertutil.FirstNonEmpty(set.Elements[0].Name, set.Elements[0].Ref))
 		}
@@ -1447,9 +1794,13 @@ func firstChoiceElement(elements []xsdElement) []xsdElement {
 	return nil
 }
 
-func renderXSDFieldSet(doc definitions, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int) string {
+func renderXSDFieldSet(doc definitions, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int, inheritedNamespaces ...string) string {
 	addXSDModelDiagnostics(set, diagnostics, location)
-	return renderXSDFields(doc, set.Elements, diagnostics, location, depth)
+	inheritedNamespace := ""
+	if len(inheritedNamespaces) > 0 {
+		inheritedNamespace = inheritedNamespaces[0]
+	}
+	return renderXSDFields(doc, set, diagnostics, location, depth, inheritedNamespace)
 }
 
 func addXSDModelDiagnostics(set xsdFieldSet, diagnostics *diag.Collector, location string) {
@@ -1493,8 +1844,8 @@ func xsdAttributeNames(attributes []xsdAttribute) string {
 // cycles. The cap is high enough that real schemas are unaffected.
 const maxXSDRenderDepth = 64
 
-func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Collector, location string, depth int) string {
-	if len(fields) == 0 {
+func renderXSDFields(doc definitions, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int, inheritedNamespace string) string {
+	if len(set.Elements) == 0 {
 		return ""
 	}
 	if depth >= maxXSDRenderDepth {
@@ -1502,59 +1853,131 @@ func renderXSDFields(doc definitions, fields []xsdElement, diagnostics *diag.Col
 		return ""
 	}
 	indent := strings.Repeat("  ", depth)
-	lines := make([]string, 0, len(fields))
-	for _, field := range fields {
+	lines := make([]string, 0, len(set.Elements))
+	for _, field := range set.Elements {
 		name := localName(convertutil.FirstNonEmpty(field.Name, field.Ref))
 		if name == "" {
 			continue
 		}
+		fieldNamespaces := xsdElementNamespaceBindings(field, set.NamespaceBindings)
+		var refElement xsdElement
+		var refSchema xsdSchema
+		refFound := false
+		if strings.TrimSpace(field.Ref) != "" {
+			refElement, refSchema, refFound = findXSDElementWithSchema(doc, field.Ref, fieldNamespaces)
+		}
+		tag, tagNamespace := renderXSDFieldTag(field, name, set, fieldNamespaces, refSchema, refFound)
+		namespaceDeclaration := ""
+		if tagNamespace != "" && tagNamespace != inheritedNamespace {
+			namespaceDeclaration = xsdNamespaceDeclaration(tagNamespace)
+		}
+		childInheritedNamespace := inheritedNamespace
+		if tagNamespace != "" {
+			childInheritedNamespace = tagNamespace
+		}
 		addXSDOccurrenceDiagnostics(field, diagnostics, location)
 		if field.ComplexType != nil {
-			nested, ok := xsdFieldsForComplexType(*field.ComplexType)
+			nested, ok := xsdFieldsForComplexTypeInSchema(*field.ComplexType, xsdSchema{
+				TargetNamespace:    set.Namespace,
+				NamespaceBindings:  fieldNamespaces,
+				ElementFormDefault: set.ElementFormDefault,
+			})
 			if !ok {
 				diagnostics.Add(diag.Warning, "WSDL XSD type", location, "inline complexType for child element "+name+" has no supported content model; generated an empty SOAP element")
-				lines = append(lines, indent+"<tns:"+name+"></tns:"+name+">")
+				lines = append(lines, indent+"<"+tag+namespaceDeclaration+"></"+tag+">")
 				continue
 			}
-			lines = append(lines, indent+"<tns:"+name+renderXSDAttributes(nested.Attributes)+">")
-			lines = append(lines, renderXSDFieldSet(doc, nested, diagnostics, location, depth+1))
-			lines = append(lines, indent+"</tns:"+name+">")
+			lines = append(lines, indent+"<"+tag+namespaceDeclaration+renderXSDAttributes(nested.Attributes)+">")
+			lines = append(lines, renderXSDFieldSet(doc, nested, diagnostics, location, depth+1, childInheritedNamespace))
+			lines = append(lines, indent+"</"+tag+">")
 			continue
 		}
-		if refElement, ok := findXSDElement(doc, field.Ref); ok && strings.TrimSpace(field.Ref) != "" {
-			if nested, ok := xsdFieldsForElement(doc, refElement); ok {
-				lines = append(lines, indent+"<tns:"+name+renderXSDAttributes(nested.Attributes)+">")
-				lines = append(lines, renderXSDFieldSet(doc, nested, diagnostics, location, depth+1))
-				lines = append(lines, indent+"</tns:"+name+">")
+		if refFound {
+			if nested, ok := xsdFieldsForElementInSchema(doc, refElement, refSchema); ok {
+				lines = append(lines, indent+"<"+tag+namespaceDeclaration+renderXSDAttributes(nested.Attributes)+">")
+				lines = append(lines, renderXSDFieldSet(doc, nested, diagnostics, location, depth+1, childInheritedNamespace))
+				lines = append(lines, indent+"</"+tag+">")
 				continue
 			}
 		}
-		if fieldsForType, ok := xsdFieldsForType(doc, localName(field.Type)); ok {
-			lines = append(lines, indent+"<tns:"+name+renderXSDAttributes(fieldsForType.Attributes)+">")
-			lines = append(lines, renderXSDFieldSet(doc, fieldsForType, diagnostics, location, depth+1))
-			lines = append(lines, indent+"</tns:"+name+">")
+		if fieldsForType, ok := xsdFieldsForType(doc, field.Type, fieldNamespaces); ok {
+			lines = append(lines, indent+"<"+tag+namespaceDeclaration+renderXSDAttributes(fieldsForType.Attributes)+">")
+			lines = append(lines, renderXSDFieldSet(doc, fieldsForType, diagnostics, location, depth+1, childInheritedNamespace))
+			lines = append(lines, indent+"</"+tag+">")
 			continue
 		}
 		if strings.TrimSpace(field.Ref) != "" {
 			diagnostics.Add(diag.Warning, "WSDL XSD ref", location, "referenced child element "+field.Ref+" was represented with a placeholder value")
 		}
-		lines = append(lines, indent+"<tns:"+name+">"+placeholderForXSDElement(doc, field, name)+"</tns:"+name+">")
+		lines = append(lines, indent+"<"+tag+namespaceDeclaration+">"+placeholderForXSDElement(doc, field, name, fieldNamespaces)+"</"+tag+">")
 	}
 	return strings.Join(lines, "\n")
 }
 
-func renderXMLElement(doc definitions, name string, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int) string {
-	indent := strings.Repeat("  ", depth)
-	children := renderXSDFieldSet(doc, set, diagnostics, location, depth+1)
-	if strings.TrimSpace(children) == "" {
-		return indent + "<tns:" + name + renderXSDAttributes(set.Attributes) + "></tns:" + name + ">"
+func renderXSDFieldTag(field xsdElement, name string, set xsdFieldSet, fieldNamespaces map[string]string, refSchema xsdSchema, refFound bool) (string, string) {
+	if strings.TrimSpace(field.Ref) != "" {
+		namespace := strings.TrimSpace(set.Namespace)
+		if refFound && strings.TrimSpace(refSchema.TargetNamespace) != "" {
+			namespace = strings.TrimSpace(refSchema.TargetNamespace)
+		} else if _, resolvedNamespace, qualified, resolved := resolveWSDLQName(field.Ref, fieldNamespaces); qualified && resolved {
+			namespace = resolvedNamespace
+		}
+		return "tns:" + name, namespace
 	}
-	return indent + "<tns:" + name + renderXSDAttributes(set.Attributes) + ">\n" + children + "\n" + indent + "</tns:" + name + ">"
+	switch strings.ToLower(strings.TrimSpace(field.Form)) {
+	case "qualified":
+		return "tns:" + name, strings.TrimSpace(set.Namespace)
+	case "unqualified":
+		return name, ""
+	}
+	if strings.EqualFold(strings.TrimSpace(set.ElementFormDefault), "qualified") {
+		return "tns:" + name, strings.TrimSpace(set.Namespace)
+	}
+	return name, ""
 }
 
-func renderPlaceholderElement(name string, value string, depth int) string {
+func renderXMLElement(doc definitions, name string, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int) string {
+	return renderXMLElementInNamespace(doc, name, set, diagnostics, location, depth, set.Namespace, "")
+}
+
+func renderXMLElementInNamespace(doc definitions, name string, set xsdFieldSet, diagnostics *diag.Collector, location string, depth int, elementNamespace string, inheritedNamespace string) string {
 	indent := strings.Repeat("  ", depth)
-	return indent + "<tns:" + name + ">" + value + "</tns:" + name + ">"
+	elementNamespace = strings.TrimSpace(elementNamespace)
+	namespaceDeclaration := ""
+	if elementNamespace != "" && elementNamespace != inheritedNamespace {
+		namespaceDeclaration = xsdNamespaceDeclaration(elementNamespace)
+	}
+	childInheritedNamespace := inheritedNamespace
+	if elementNamespace != "" {
+		childInheritedNamespace = elementNamespace
+	}
+	children := renderXSDFieldSet(doc, set, diagnostics, location, depth+1, childInheritedNamespace)
+	if strings.TrimSpace(children) == "" {
+		return indent + "<tns:" + name + namespaceDeclaration + renderXSDAttributes(set.Attributes) + "></tns:" + name + ">"
+	}
+	return indent + "<tns:" + name + namespaceDeclaration + renderXSDAttributes(set.Attributes) + ">\n" + children + "\n" + indent + "</tns:" + name + ">"
+}
+
+func renderPlaceholderElement(name string, value string, depth int, namespaces ...string) string {
+	indent := strings.Repeat("  ", depth)
+	namespaceDeclaration := ""
+	if len(namespaces) > 0 && strings.TrimSpace(namespaces[0]) != "" {
+		inheritedNamespace := ""
+		if len(namespaces) > 1 {
+			inheritedNamespace = strings.TrimSpace(namespaces[1])
+		}
+		if strings.TrimSpace(namespaces[0]) != inheritedNamespace {
+			namespaceDeclaration = xsdNamespaceDeclaration(namespaces[0])
+		}
+	}
+	return indent + "<tns:" + name + namespaceDeclaration + ">" + value + "</tns:" + name + ">"
+}
+
+func xsdNamespaceDeclaration(namespace string) string {
+	if strings.TrimSpace(namespace) == "" {
+		return ""
+	}
+	return ` xmlns:tns="` + xmlEscape(strings.TrimSpace(namespace)) + `"`
 }
 
 func renderXSDAttributes(attributes []xsdAttribute) string {
@@ -1576,7 +1999,8 @@ func renderXSDAttributes(attributes []xsdAttribute) string {
 	return " " + strings.Join(parts, " ")
 }
 
-func placeholderForXSDElement(doc definitions, field xsdElement, fieldName string) string {
+func placeholderForXSDElement(doc definitions, field xsdElement, fieldName string, namespaceContexts ...map[string]string) string {
+	namespaces := firstNamespaceContext(namespaceContexts)
 	if field.Fixed != "" {
 		return xmlEscape(field.Fixed)
 	}
@@ -1584,11 +2008,11 @@ func placeholderForXSDElement(doc definitions, field xsdElement, fieldName strin
 		return xmlEscape(field.Default)
 	}
 	if field.SimpleType != nil {
-		if value, ok := placeholderForSimpleType(*field.SimpleType, doc, fieldName); ok {
+		if value, ok := placeholderForSimpleTypeDepth(*field.SimpleType, doc, fieldName, 0, namespaces); ok {
 			return value
 		}
 	}
-	return placeholderForXSDType(doc, field.Type, fieldName)
+	return placeholderForXSDType(doc, field.Type, fieldName, namespaces)
 }
 
 // maxSimpleTypeDepth bounds simpleType placeholder resolution. A cyclic or
@@ -1599,8 +2023,8 @@ func placeholderForXSDElement(doc definitions, field xsdElement, fieldName strin
 // fall back to the generic data-driven placeholder rather than recursing.
 const maxSimpleTypeDepth = 32
 
-func placeholderForXSDType(doc definitions, typeName string, fieldName string) string {
-	return placeholderForXSDTypeDepth(doc, typeName, fieldName, 0)
+func placeholderForXSDType(doc definitions, typeName string, fieldName string, namespaceContexts ...map[string]string) string {
+	return placeholderForXSDTypeDepth(doc, typeName, fieldName, 0, firstNamespaceContext(namespaceContexts))
 }
 
 func isKnownXSDSimpleType(typeName string) bool {
@@ -1619,29 +2043,37 @@ func isKnownXSDSimpleType(typeName string) bool {
 	}
 }
 
-func hasNamedXSDSimpleType(doc definitions, typeName string) bool {
-	name := localName(typeName)
-	if name == "" {
-		return false
+func hasNamedXSDSimpleType(doc definitions, typeName string, namespaceContexts ...map[string]string) bool {
+	_, _, found := findNamedXSDSimpleType(doc, typeName, firstNamespaceContext(namespaceContexts))
+	return found
+}
+
+func findNamedXSDSimpleType(doc definitions, typeName string, namespaces map[string]string) (xsdSimpleType, xsdSchema, bool) {
+	name, namespace, qualified, resolved := resolveWSDLQName(typeName, namespaces)
+	if name == "" || (qualified && !resolved) {
+		return xsdSimpleType{}, xsdSchema{}, false
 	}
-	for _, t := range doc.Types {
-		for _, schema := range t.Schemas {
-			for _, simple := range schema.SimpleTypes {
-				if simple.Name == name {
-					return true
-				}
+	for _, schema := range allXSDSchemas(doc) {
+		if qualified && strings.TrimSpace(schema.TargetNamespace) != namespace {
+			continue
+		}
+		for _, simple := range schema.SimpleTypes {
+			if simple.Name == name {
+				return simple, schema, true
 			}
 		}
 	}
-	return false
+	return xsdSimpleType{}, xsdSchema{}, false
 }
 
-func placeholderForXSDTypeDepth(doc definitions, typeName string, fieldName string, depth int) string {
+func placeholderForXSDTypeDepth(doc definitions, typeName string, fieldName string, depth int, namespaces map[string]string) string {
 	if depth > maxSimpleTypeDepth {
 		return "{{data.wsdl." + sanitizeName(fieldName) + "}}"
 	}
-	if value, ok := placeholderForNamedSimpleTypeDepth(doc, localName(typeName), fieldName, depth); ok {
-		return value
+	if simple, schema, ok := findNamedXSDSimpleType(doc, typeName, namespaces); ok {
+		if value, ok := placeholderForSimpleTypeDepth(simple, doc, fieldName, depth, schema.NamespaceBindings); ok {
+			return value
+		}
 	}
 	switch strings.ToLower(localName(typeName)) {
 	case "int", "integer", "long", "short", "decimal", "double", "float":
@@ -1658,30 +2090,24 @@ func placeholderForXSDTypeDepth(doc definitions, typeName string, fieldName stri
 }
 
 func placeholderForNamedSimpleType(doc definitions, typeName string, fieldName string) (string, bool) {
-	return placeholderForNamedSimpleTypeDepth(doc, typeName, fieldName, 0)
+	return placeholderForNamedSimpleTypeDepth(doc, typeName, fieldName, 0, nil)
 }
 
-func placeholderForNamedSimpleTypeDepth(doc definitions, typeName string, fieldName string, depth int) (string, bool) {
+func placeholderForNamedSimpleTypeDepth(doc definitions, typeName string, fieldName string, depth int, namespaces map[string]string) (string, bool) {
 	if typeName == "" {
 		return "", false
 	}
-	for _, t := range doc.Types {
-		for _, schema := range t.Schemas {
-			for _, simple := range schema.SimpleTypes {
-				if simple.Name == typeName {
-					return placeholderForSimpleTypeDepth(simple, doc, fieldName, depth)
-				}
-			}
-		}
+	if simple, schema, ok := findNamedXSDSimpleType(doc, typeName, namespaces); ok {
+		return placeholderForSimpleTypeDepth(simple, doc, fieldName, depth, schema.NamespaceBindings)
 	}
 	return "", false
 }
 
 func placeholderForSimpleType(simple xsdSimpleType, doc definitions, fieldName string) (string, bool) {
-	return placeholderForSimpleTypeDepth(simple, doc, fieldName, 0)
+	return placeholderForSimpleTypeDepth(simple, doc, fieldName, 0, nil)
 }
 
-func placeholderForSimpleTypeDepth(simple xsdSimpleType, doc definitions, fieldName string, depth int) (string, bool) {
+func placeholderForSimpleTypeDepth(simple xsdSimpleType, doc definitions, fieldName string, depth int, namespaces map[string]string) (string, bool) {
 	if depth > maxSimpleTypeDepth {
 		return "{{data.wsdl." + sanitizeName(fieldName) + "}}", true
 	}
@@ -1689,18 +2115,25 @@ func placeholderForSimpleTypeDepth(simple xsdSimpleType, doc definitions, fieldN
 		if len(simple.Restriction.Enumerations) > 0 {
 			return xmlEscape(simple.Restriction.Enumerations[0].Value), true
 		}
-		return placeholderForXSDTypeDepth(doc, simple.Restriction.Base, fieldName, depth+1), true
+		return placeholderForXSDTypeDepth(doc, simple.Restriction.Base, fieldName, depth+1, namespaces), true
 	}
 	if simple.List != nil {
-		return placeholderForXSDTypeDepth(doc, simple.List.ItemType, fieldName, depth+1), true
+		return placeholderForXSDTypeDepth(doc, simple.List.ItemType, fieldName, depth+1, namespaces), true
 	}
 	if simple.Union != nil {
 		types := strings.Fields(simple.Union.MemberTypes)
 		if len(types) > 0 {
-			return placeholderForXSDTypeDepth(doc, types[0], fieldName, depth+1), true
+			return placeholderForXSDTypeDepth(doc, types[0], fieldName, depth+1, namespaces), true
 		}
 	}
 	return "", false
+}
+
+func firstNamespaceContext(contexts []map[string]string) map[string]string {
+	if len(contexts) == 0 {
+		return nil
+	}
+	return contexts[0]
 }
 
 func addXSDOccurrenceDiagnostics(field xsdElement, diagnostics *diag.Collector, location string) {
@@ -1754,14 +2187,12 @@ func addImportDiagnostics(doc definitions, diagnostics *diag.Collector) {
 	for _, item := range doc.Imports {
 		diagnostics.Add(diag.Warning, "WSDL import", "definitions", "referenced WSDL import "+convertutil.FirstNonEmpty(item.Location, item.Namespace)+" was not followed; inline or import it separately")
 	}
-	for _, t := range doc.Types {
-		for _, schema := range t.Schemas {
-			for _, item := range schema.Imports {
-				diagnostics.Add(diag.Warning, "XSD import", "types/schema", "referenced XSD import "+convertutil.FirstNonEmpty(item.SchemaLocation, item.Namespace)+" was not followed; inline or import it separately")
-			}
-			for _, item := range schema.Includes {
-				diagnostics.Add(diag.Warning, "XSD include", "types/schema", "referenced XSD include "+item.SchemaLocation+" was not followed; inline or import it separately")
-			}
+	for _, schema := range allXSDSchemas(doc) {
+		for _, item := range schema.Imports {
+			diagnostics.Add(diag.Warning, "XSD import", "types/schema", "referenced XSD import "+convertutil.FirstNonEmpty(item.SchemaLocation, item.Namespace)+" was not followed; inline or import it separately")
+		}
+		for _, item := range schema.Includes {
+			diagnostics.Add(diag.Warning, "XSD include", "types/schema", "referenced XSD include "+item.SchemaLocation+" was not followed; inline or import it separately")
 		}
 	}
 }

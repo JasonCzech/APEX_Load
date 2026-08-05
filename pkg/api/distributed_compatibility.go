@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
-	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -289,7 +288,7 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 			continue
 		}
 		if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
-			demand := engine.NewJavaVuserCapacityPlan(group.script).Demand(group.VUsers)
+			demand := javaVuserCapacityPlanForGroup(group).Demand(group.VUsers)
 			if demand > available {
 				reasons = append(reasons, fmt.Sprintf(
 					"%s has %d available java_vuser runtime slots for demand %d",

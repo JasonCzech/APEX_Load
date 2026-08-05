@@ -210,6 +210,40 @@ func TestObjectRepositoryObjectsFromScriptExcludesAmbiguousNames(t *testing.T) {
 	}
 }
 
+func TestObjectRepositoryTraversalIncludesNestedControlActionsAndAmbiguity(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Name: "Continue", Type: "browser_click", Selector: "#top-continue"},
+		{Name: "Conditional", Type: "control_if", Control: &dsl.ControlFlow{
+			Steps: []dsl.Action{
+				{Name: "Continue", Type: "browser_click", Selector: "#nested-continue"},
+				{Name: "Nested Unique", Type: "browser_click", Selector: "#nested-unique"},
+			},
+		}},
+	}}
+	objects := objectRepositoryObjectsFromScript(script, "script-nested")
+	byName := make(map[string]storage.RepositoryObject, len(objects))
+	for _, object := range objects {
+		byName[object.LogicalName] = object
+	}
+	if _, ok := byName["Continue"]; ok {
+		t.Fatal("nested locator collision was not excluded as ambiguous")
+	}
+	if got, ok := byName["Nested Unique"]; !ok || got.CSS != "#nested-unique" {
+		t.Fatalf("nested unique object = %#v, found=%t", got, ok)
+	}
+
+	repository := &storage.ObjectRepository{ID: "repo-nested", Objects: objects}
+	if bound := bindScriptToObjectRepository(script, repository); bound != 1 {
+		t.Fatalf("bound actions = %d, want only nested unique action", bound)
+	}
+	if script.Actions[0].ObjectRef != "" || script.Actions[1].Control.Steps[0].ObjectRef != "" {
+		t.Fatal("ambiguous top-level/nested actions were rebound")
+	}
+	if got := script.Actions[1].Control.Steps[1].ObjectRef; got != "repo-nested:Nested Unique" {
+		t.Fatalf("nested unique object_ref = %q", got)
+	}
+}
+
 func TestObjectRepositoryFromScript(t *testing.T) {
 	server := recordingTestServer(t)
 

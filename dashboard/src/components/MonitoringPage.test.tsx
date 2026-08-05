@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { NavigationGuardRunnerContext } from '../hooks/NavigationGuardProvider'
-import MonitoringPage from './MonitoringPage'
+import MonitoringPage, { buildRunCalendarModel, mergeDashboardService } from './MonitoringPage'
+import type { RunCalendarEvent, SystemServicesResponse } from '../types'
 
 const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
 
@@ -1474,7 +1475,7 @@ describe('MonitoringPage', () => {
     const eventStart = new Date()
     eventStart.setHours(9, 0, 0, 0)
     const eventEnd = new Date(eventStart)
-    eventEnd.setMinutes(eventEnd.getMinutes() + 30)
+    eventEnd.setHours(eventEnd.getHours() + 30)
     const projectedStart = new Date(eventStart)
     projectedStart.setDate(projectedStart.getDate() + 1)
     apiMock.getRunCalendar.mockResolvedValue({
@@ -1500,7 +1501,7 @@ describe('MonitoringPage', () => {
           scenario_name: 'Checkout Scenario',
           workload: {
             total_vusers: 750,
-            duration: '30m',
+            duration: '30h',
             groups: [{ name: 'buyers', script_id: 'script-1', script_name: 'Checkout', protocol: 'http', vusers: 750 }],
           },
           user: {
@@ -1585,6 +1586,18 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Ad-hoc')
     expect(container.textContent).toContain('Current')
 
+    const localKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    const continuationDate = new Date(eventStart)
+    continuationDate.setDate(continuationDate.getDate() + 1)
+    const startingDay = container.querySelector(`[data-calendar-date="${localKey(eventStart)}"]`)
+    const continuationDay = container.querySelector(`[data-calendar-date="${localKey(continuationDate)}"]`)
+    expect(startingDay?.querySelector('.run-calendar-event-time')?.textContent).not.toContain('Continues')
+    expect(Array.from(continuationDay?.querySelectorAll('.run-calendar-event') || [])
+      .find(button => button.textContent?.includes('Checkout Spike Investigation'))
+      ?.querySelector('.run-calendar-event-time')?.textContent).toBe('↪ Continues')
+    expect(startingDay?.querySelector('[aria-label="1 starting"]')).not.toBeNull()
+    expect(continuationDay?.querySelector('[aria-label="1 continuing"]')).not.toBeNull()
+
     const schedulableDay = container.querySelector<HTMLElement>('.run-calendar-day.schedulable')
     expect(schedulableDay?.getAttribute('role')).toBe('button')
     expect(schedulableDay?.tabIndex).toBe(0)
@@ -1638,6 +1651,65 @@ describe('MonitoringPage', () => {
     })
 
     expect(onSelectTest).toHaveBeenCalledWith('test-adhoc')
+  })
+
+  it('buckets multi-day calendar events once while preserving order and continuation counts', () => {
+    const event = (id: string, title: string, start: Date, end: Date): RunCalendarEvent => ({
+      id,
+      source: 'cron',
+      run_type: 'scheduled',
+      title,
+      status: 'scheduled',
+      start_at: start.toISOString(),
+      end_at: end.toISOString(),
+      workload: { duration: '1h' },
+      user: {},
+      topology: {},
+    })
+    const anchor = new Date(2026, 7, 5, 12)
+    const start = new Date(2026, 7, 3, 22)
+    const end = new Date(2026, 7, 6, 1)
+    const earlier = event('earlier', 'Zulu', new Date(2026, 7, 3, 8), new Date(2026, 7, 3, 9))
+    const sameTimeAlphabetical = event('alpha', 'Alpha', start, new Date(2026, 7, 3, 23))
+    const spanning = event('spanning', 'Soak', start, end)
+
+    const model = buildRunCalendarModel('week', anchor, [spanning, sameTimeAlphabetical, earlier, {
+      ...earlier,
+      id: 'invalid',
+      start_at: 'not-a-date',
+    }])
+    const august3 = model.days.find(day => day.key === '2026-08-03')!
+    const august4 = model.days.find(day => day.key === '2026-08-04')!
+    const august5 = model.days.find(day => day.key === '2026-08-05')!
+    const august6 = model.days.find(day => day.key === '2026-08-06')!
+
+    expect(august3.events.map(item => item.id)).toEqual(['earlier', 'alpha', 'spanning'])
+    expect(august3.startingEventCount).toBe(3)
+    expect(august3.continuingEventCount).toBe(0)
+    expect(august4.events.map(item => item.id)).toEqual(['spanning'])
+    expect(august5.events.map(item => item.id)).toEqual(['spanning'])
+    expect(august6.events.map(item => item.id)).toEqual(['spanning'])
+    expect([august4, august5, august6].map(day => day.continuingEventCount)).toEqual([1, 1, 1])
+  })
+
+  it('does not treat a same-origin backend service as the dashboard frontend', () => {
+    const backend: SystemServicesResponse['services'][number] = {
+      id: 'controller-api',
+      name: 'Controller API',
+      kind: 'backend',
+      status: 'running',
+      address: ':8080',
+      url: 'http://127.0.0.1:8080',
+      source: 'controller',
+    }
+    const merged = mergeDashboardService([backend], 'http://127.0.0.1:8080')
+    expect(merged.map(service => service.id)).toEqual(['controller-api', 'frontend:dashboard'])
+
+    const deduped = mergeDashboardService([
+      backend,
+      { ...backend, id: 'custom-frontend', name: 'Dashboard mirror', kind: 'frontend' },
+    ], 'http://127.0.0.1:8080')
+    expect(deduped.map(service => service.id)).toEqual(['controller-api', 'custom-frontend'])
   })
 
   it('renders SLA threshold alerts with a stop-requested badge and ack control', async () => {

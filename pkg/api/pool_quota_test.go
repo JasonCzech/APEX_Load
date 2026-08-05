@@ -42,9 +42,7 @@ func TestPoolProjectQuotaBlocksAdmission(t *testing.T) {
 	tr.mu.Unlock()
 
 	eval := func(test *ManagedTest) (bool, string) {
-		tr.mu.RLock()
-		defer tr.mu.RUnlock()
-		return tr.evaluateQuotaBlockLocked(test, "")
+		return evaluateQuotaBlockWithLoadedEvidenceForTest(t, tr, test, "")
 	}
 
 	// A second pool-east run for the same project is blocked by the concurrency quota.

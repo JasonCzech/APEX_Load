@@ -195,6 +195,7 @@ export function classifyEndpointForDocs(route: ApiEndpointCatalogRoute): DocsVis
       return classification(['manage_system'])
     case 'browser-recorder':
     case 'browser-replay':
+    case 'bridge':
     case 'recorder':
     case 'replay':
     case 'script-debug':

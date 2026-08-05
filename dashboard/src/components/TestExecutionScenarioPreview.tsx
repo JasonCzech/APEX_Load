@@ -5,7 +5,7 @@ import {
 
 import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
 import { formatTimeCompact } from '../utils/timeUtils'
@@ -427,12 +427,13 @@ export default function TestExecutionScenarioPreview({
                   label={{ value: 'VUsers', angle: -90, position: 'left', fill: 'var(--text-muted)', fontSize: 11 }}
                 />
                 <Tooltip
+                  itemSorter={preserveChartItemOrder}
                   labelFormatter={(value) => formatTimeCompact(Number(value))}
                   contentStyle={chartTooltipContentStyle}
                   labelStyle={chartTooltipLabelStyle}
                   formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total' : name ?? '']}
                 />
-                <Legend verticalAlign="top" height={32} />
+                <Legend verticalAlign="top" height={32} itemSorter={preserveChartItemOrder} />
                 {test.groups.map((group, index) => (
                   <Area
                     key={group.name}

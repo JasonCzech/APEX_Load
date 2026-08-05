@@ -103,6 +103,7 @@ vi.mock('./runReport/RunReportVerdictBanner', () => ({
     onExplanationChange,
     onSaveOverride,
     saving,
+    disabled,
   }: {
     status: string
     explanation: string
@@ -110,11 +111,12 @@ vi.mock('./runReport/RunReportVerdictBanner', () => ({
     onExplanationChange: (value: string) => void
     onSaveOverride: (status: string, explanation: string) => Promise<boolean>
     saving: boolean
+    disabled?: boolean
   }) => (
     <section data-testid="verdict">
-      <input aria-label="Verdict status" value={status} onChange={event => onStatusChange(event.currentTarget.value)} disabled={saving} />
-      <textarea aria-label="Verdict explanation" value={explanation} onChange={event => onExplanationChange(event.currentTarget.value)} disabled={saving} />
-      <button type="button" onClick={() => void onSaveOverride(status, explanation)} disabled={saving}>Save verdict</button>
+      <input aria-label="Verdict status" value={status} onChange={event => onStatusChange(event.currentTarget.value)} disabled={saving || disabled} />
+      <textarea aria-label="Verdict explanation" value={explanation} onChange={event => onExplanationChange(event.currentTarget.value)} disabled={saving || disabled} />
+      <button type="button" onClick={() => void onSaveOverride(status, explanation)} disabled={saving || disabled}>Save verdict</button>
     </section>
   ),
 }))
@@ -122,7 +124,11 @@ vi.mock('./runReport/RunReportKpiScorecard', () => ({ default: () => <section da
 vi.mock('./runReport/SynchronizedTimeline', () => ({ default: () => <section data-testid="timeline" /> }))
 vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: () => <section data-testid="scoreboard" /> }))
 vi.mock('./runReport/RunReportDiagnostics', () => ({ default: () => <section data-testid="diagnostics" /> }))
-vi.mock('./runReport/RunReportCompareBar', () => ({ default: () => <section data-testid="compare" /> }))
+vi.mock('./runReport/RunReportCompareBar', () => ({
+  default: ({ onPinBaseline }: { onPinBaseline: () => Promise<boolean> }) => (
+    <section data-testid="compare"><button type="button" onClick={() => void onPinBaseline()}>Pin test baseline</button></section>
+  ),
+}))
 vi.mock('./runReport/RunReportExportActions', () => ({ default: () => <section data-testid="exports" /> }))
 
 function buildTest(status: TestSummary['status'], archive = true): TestSummary {
@@ -238,6 +244,93 @@ describe('RunReportPage', () => {
 
     expect(container.textContent).toContain('No archive available')
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the current run after pinning a comparison baseline', async () => {
+    const current = { ...buildTest('COMPLETE'), comparison_baseline: { source_test_id: 'baseline-1', source_test_name: 'Baseline' } }
+    const baseline = { ...buildTest('COMPLETE'), id: 'baseline-1', name: 'Baseline' }
+    const refreshed = { ...current, comparison_baseline: { ...current.comparison_baseline, pinned_at: '2026-08-05T12:00:00Z' } }
+    mocks.polling.test = current
+    mocks.archiveModel.archiveReport = {} as RunArchiveReport
+    mocks.api.getTest.mockImplementation(async (id: string) => id === 'run-1' ? refreshed : baseline)
+    mocks.api.getTestArchiveReport.mockResolvedValue({})
+    mocks.api.getTestArchiveAnalysis.mockResolvedValue({ nodes: [], edges: [], stats: {} })
+    mocks.api.pinComparisonBaseline.mockResolvedValue(baseline)
+
+    await act(async () => {
+      root.render(<RunReportPage
+        testId="run-1"
+        initialCompare="baseline-1"
+        onOpenCommandCenter={onOpenCommandCenter}
+        onOpenLegacyArchive={onOpenLegacyArchive}
+        onNavigateReport={onNavigateReport}
+      />)
+    })
+    await flush()
+    await act(async () => buttonByText(container, 'Pin test baseline')?.click())
+    await flush()
+
+    expect(mocks.api.pinComparisonBaseline).toHaveBeenCalledWith('baseline-1')
+    expect(mocks.api.getTest).toHaveBeenCalledWith('run-1')
+    expect(mocks.polling.setTest).toHaveBeenCalledWith(refreshed)
+  })
+
+  it('ignores a delayed pin refresh after the comparison changes', async () => {
+    const current = { ...buildTest('COMPLETE'), comparison_baseline: { source_test_id: 'baseline-1', source_test_name: 'Baseline 1' } }
+    const baseline = (id: string) => ({ ...buildTest('COMPLETE'), id, name: id })
+    let resolveRefresh!: (value: TestSummary) => void
+    const pendingRefresh = new Promise<TestSummary>(resolve => { resolveRefresh = resolve })
+    mocks.polling.test = current
+    mocks.archiveModel.archiveReport = {} as RunArchiveReport
+    mocks.api.getTest.mockImplementation((id: string) => id === 'run-1' ? pendingRefresh : Promise.resolve(baseline(id)))
+    mocks.api.getTestArchiveReport.mockResolvedValue({})
+    mocks.api.getTestArchiveAnalysis.mockResolvedValue({ nodes: [], edges: [], stats: {} })
+    mocks.api.pinComparisonBaseline.mockResolvedValue(baseline('baseline-1'))
+
+    const render = (initialCompare: string) => (
+      <RunReportPage
+        testId="run-1"
+        initialCompare={initialCompare}
+        onOpenCommandCenter={onOpenCommandCenter}
+        onOpenLegacyArchive={onOpenLegacyArchive}
+        onNavigateReport={onNavigateReport}
+      />
+    )
+    await act(async () => root.render(render('baseline-1')))
+    await flush()
+    await act(async () => buttonByText(container, 'Pin test baseline')?.click())
+    await vi.waitFor(() => expect(mocks.api.getTest).toHaveBeenCalledWith('run-1'))
+
+    await act(async () => root.render(render('baseline-2')))
+    await flush()
+    await act(async () => {
+      resolveRefresh(current)
+      await pendingRefresh
+    })
+
+    expect(mocks.polling.setTest).not.toHaveBeenCalled()
+  })
+
+  it('disables verdict saving when report annotations cannot be loaded', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = {
+      verdict: { status: 'Pass', failed: false, conditional: false, explanation: 'Automated verdict' },
+    } as RunArchiveReport
+    mocks.api.getTestReportAnnotations.mockRejectedValue(new Error('annotations unavailable'))
+
+    await act(async () => {
+      root.render(<RunReportPage
+        testId="run-1"
+        onOpenCommandCenter={onOpenCommandCenter}
+        onOpenLegacyArchive={onOpenLegacyArchive}
+        onNavigateReport={onNavigateReport}
+      />)
+    })
+    await flush()
+
+    expect(buttonByText(container, 'Save verdict')?.disabled).toBe(true)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('annotations unavailable')
+    expect(mocks.api.saveTestReportAnnotations).not.toHaveBeenCalled()
   })
 
   it('preserves a verdict draft across a slow annotation load and guards lens changes', async () => {

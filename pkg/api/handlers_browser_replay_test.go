@@ -325,9 +325,21 @@ func TestHandleStartBrowserReplayUsesDurableRetainedImportCredential(t *testing.
 	if _, _, err := server.runner.CreateImportedScriptDurableReportingReplay(source, "enterprise_script_archive"); err != nil {
 		t.Fatalf("create imported browser script: %v", err)
 	}
+	stored, ok := server.runner.GetScript(source.ID)
+	if !ok || stored == nil || stored.Script == nil {
+		t.Fatalf("stored imported browser script = %#v, found=%t", stored, ok)
+	}
+	projected := maskScriptSecrets(stored.Script)
+	if projected == nil || projected.Config.Browser.HTTPCredentials.Password != maskedScriptSecret {
+		t.Fatalf("browser disclosure projection did not mask retained password: %#v", projected)
+	}
 
 	body, _ := json.Marshal(map[string]any{
 		"start_paused": true,
+		// The editor sends the disclosure-safe GET projection back with bounded
+		// replay overrides. The handler must recognize that unchanged echo and
+		// execute the server-owned durable credential snapshot.
+		"script": projected,
 		"browser": map[string]any{
 			"viewport": map[string]any{"width": 1200, "height": 800},
 		},

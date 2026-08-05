@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+const ensureSettingSequenceAtLeastQuery = `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+	ON CONFLICT(key) DO UPDATE SET
+	value=CASE
+		WHEN CAST(app_settings.value AS INTEGER) < CAST(excluded.value AS INTEGER) THEN excluded.value
+		ELSE app_settings.value
+	END,
+	updated_at=CASE
+		WHEN CAST(app_settings.value AS INTEGER) < CAST(excluded.value AS INTEGER) THEN excluded.updated_at
+		ELSE app_settings.updated_at
+	END
+	RETURNING value`
+
 func (s *SQLiteStore) SaveSetting(key string, value string) error {
 	_, err := s.db.Exec(`INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, time.Now())
@@ -27,6 +39,15 @@ func (s *SQLiteStore) GetSetting(key string) (string, error) {
 	return value, nil
 }
 
+// DeleteSetting removes a durable setting so consumers can converge to their
+// configured defaults. It is intentionally a concrete-store operation rather
+// than part of the broad Store interface; reset workflows that need it can opt
+// in without forcing unrelated compatibility stores to implement deletion.
+func (s *SQLiteStore) DeleteSetting(key string) error {
+	_, err := s.db.Exec(`DELETE FROM app_settings WHERE key = ?`, key)
+	return err
+}
+
 // NextSettingSequence atomically increments an integer setting and returns the
 // committed value. The single upsert statement is safe across controller
 // replicas for both SQLite and PostgreSQL.
@@ -41,6 +62,25 @@ func (s *SQLiteStore) NextSettingSequence(key string) (int, error) {
 	value, err := strconv.Atoi(raw)
 	if err != nil || value <= 0 {
 		return 0, fmt.Errorf("invalid setting sequence %q", raw)
+	}
+	return value, nil
+}
+
+// EnsureSettingSequenceAtLeast atomically raises an integer setting without
+// ever lowering a value advanced by another controller. Startup ref-key
+// observation uses this before allocating from pre-existing durable runs.
+func (s *SQLiteStore) EnsureSettingSequenceAtLeast(key string, minimum int) (int, error) {
+	if minimum <= 0 {
+		return 0, fmt.Errorf("setting sequence minimum must be positive")
+	}
+	var raw string
+	err := s.db.QueryRow(ensureSettingSequenceAtLeastQuery, key, strconv.Itoa(minimum), time.Now()).Scan(&raw)
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < minimum {
+		return 0, fmt.Errorf("invalid setting sequence floor %q", raw)
 	}
 	return value, nil
 }

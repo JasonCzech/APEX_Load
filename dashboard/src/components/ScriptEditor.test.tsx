@@ -8,6 +8,7 @@ import type { ScriptDefinition } from '../types/scripts'
 import { ApiError } from '../hooks/apiClient'
 import { formatSnapshotRequestSection, formatSnapshotResponseSection } from '../utils/snapshotFormatUtils'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
+import { KeyboardShortcutProvider } from '../hooks/KeyboardShortcutRoot'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { formatSOAPFaultSummary } from './soapFaultUtils'
@@ -4316,6 +4317,45 @@ describe('ScriptEditor', () => {
     expect(dataView?.querySelector('input[placeholder="/absolute/path/to/data.csv (optional when inline data is used)"]')).toBeNull()
   })
 
+  it('marks path-backed parameter data statistics and preview as unavailable', async () => {
+    const pathBackedScript: ScriptDefinition = {
+      ...initialScript,
+      parameters: [{
+        name: 'username',
+        type: 'file',
+        update: 'each_iteration',
+        selection: 'sequential',
+        on_exhaustion: 'wrap',
+        data_source: 'users',
+        column: 'username',
+      }],
+      data_sources: [{
+        name: 'users',
+        type: 'csv',
+        path: 'fixtures/users.csv',
+        strategy: 'sequential',
+        first_row_header: true,
+        columns: ['username'],
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={pathBackedScript} initialFocusedSection="parameter-data" />)
+    })
+
+    const statRows = Array.from(container.querySelectorAll('.parameter-info-stats-table tbody tr'))
+    const statValue = (label: string) => statRows.find(row => row.querySelector('th')?.textContent === label)?.querySelector('td')?.textContent
+    expect(statValue('Record Count')).toBe('—')
+    expect(statValue('Unique Records')).toBe('—')
+    expect(statValue('Columns')).toBe('—')
+    expect(container.querySelector('.parameter-info-panel')?.textContent).toContain('fixtures/users.csv')
+
+    await activateParameterDataTab(container)
+    expect(container.querySelector('.parameter-detail-data')?.textContent).toContain('Data lives in fixtures/users.csv; contents are not available for preview.')
+    expect(container.querySelector('.parameter-detail-data')?.textContent).not.toContain('Column does not match this file')
+    expect(container.querySelector('.parameter-data-selected-view')).toBeNull()
+  })
+
   it('splits the parameter detail into Settings and Data tabs', async () => {
     const tabScript: ScriptDefinition = {
       ...initialScript,
@@ -4471,6 +4511,34 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('{{param.session_id}}')
   })
 
+  it('keeps the current parameter selected when its data source changes', async () => {
+    const mappedScript: ScriptDefinition = {
+      ...initialScript,
+      parameters: [
+        { name: 'username', type: 'file', data_source: 'users', column: 'value' },
+        { name: 'password', type: 'file', data_source: 'passwords', column: 'value' },
+      ],
+      data_sources: [
+        { name: 'users', type: 'csv', inline_data: 'value\nalice', first_row_header: true, strategy: 'sequential' },
+        { name: 'passwords', type: 'csv', inline_data: 'value\nsecret', first_row_header: true, strategy: 'sequential' },
+      ],
+    }
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={mappedScript} initialFocusedSection="parameter-data" />)
+    })
+    const sourceSelect = container.querySelector('select[aria-label="Data Source for username"]') as HTMLSelectElement
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!
+      setter.call(sourceSelect, 'passwords')
+      sourceSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
+    expect((container.querySelector('select[aria-label="Data Source for username"]') as HTMLSelectElement)?.value).toBe('passwords')
+    expect(container.querySelector('.parameter-data-dialog')?.textContent).toContain('Parameter: username')
+  })
+
   it('opens the requested data source when a draft opens with a data source focus hint', async () => {
     const focusedScript: ScriptDefinition = {
       ...initialScript,
@@ -4520,6 +4588,70 @@ describe('ScriptEditor', () => {
       'Row 2, username for users',
     ])
     expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
+  })
+
+  it('saves a focused parameter-grid edit in the exact keyboard-save snapshot and keeps it undoable', async () => {
+    const focusedScript: ScriptDefinition = {
+      ...initialScript,
+      parameters: [{
+        name: 'username',
+        type: 'file',
+        data_source: 'users',
+        column: 'username',
+      }],
+      data_sources: [{
+        name: 'users',
+        type: 'csv',
+        strategy: 'sequential',
+        first_row_header: true,
+        inline_data: 'username\nalice\nbob',
+      }],
+    }
+
+    await act(async () => {
+      root.render(
+        <KeyboardShortcutProvider>
+          <ScriptEditor
+            initialScript={focusedScript}
+            initialFocusedDataSourceName="users"
+            projectId="project-1"
+          />
+        </KeyboardShortcutProvider>,
+      )
+    })
+    await flushReact()
+
+    const cell = container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')
+    expect(cell).not.toBeNull()
+    if (!cell) return
+
+    await act(async () => {
+      cell.focus()
+      changeInputValue(cell, 'alice-updated')
+    })
+    await flushReact()
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    expect(saveButton?.disabled).toBe(false)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+
+    await act(async () => {
+      cell.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const savedDraft = apiMock.createScript.mock.calls[0][0] as ScriptDefinition
+    expect(savedDraft.data_sources?.[0]?.inline_data).toBe('username\nalice-updated\nbob')
+    expect(container.textContent).toContain('Script saved successfully!')
+
+    await act(async () => {
+      cell.blur()
+      findButtonByText(container, 'Undo')?.click()
+    })
+    await flushReact()
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Row 1, username for users"]')?.value).toBe('alice')
   })
 
   it('auto-detects tab data and lets the focused data source override delimiters for the grid preview', async () => {

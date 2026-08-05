@@ -9,6 +9,7 @@ import (
 func TestRegistersBundledProtocols(t *testing.T) {
 	want := []string{
 		"browser",
+		"bruno",
 		"database",
 		"eventhubs",
 		"grpc",

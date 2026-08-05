@@ -514,8 +514,8 @@ func TestCapacityReservationListTimeRangeAndBinding(t *testing.T) {
 		}
 	}
 
-	// Atomic reciprocal check-and-set: the first bind updates both rows and the
-	// second is rejected.
+	// Atomic reciprocal check-and-set: the first bind updates both rows and an
+	// exact retry adopts that already-committed reciprocal pair.
 	testID, status := "test-1", "QUEUED"
 	bindAt := base.Add(5 * time.Minute)
 	if err := store.SaveProject(&Project{ID: "proj-a", Name: "Project A", CreatedAt: bindAt, UpdatedAt: bindAt}); err != nil {
@@ -538,8 +538,8 @@ func TestCapacityReservationListTimeRangeAndBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second bind: %v", err)
 	}
-	if bound2 {
-		t.Fatal("second bind must fail because the reservation is already bound")
+	if !bound2 {
+		t.Fatal("exact second bind must adopt the already-committed reciprocal pair")
 	}
 	rebound, err := store.GetCapacityReservation("ts-0")
 	if err != nil {

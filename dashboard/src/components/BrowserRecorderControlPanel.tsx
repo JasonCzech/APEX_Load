@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } fr
 
 import { useApi } from '../hooks/useApi'
 import { hasDesktopApiCapability } from '../hooks/apiClient'
+import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { saveApiResourceViaBridge, startDesktopBrowserDownload } from '../desktop/desktopFiles'
@@ -196,6 +197,31 @@ export default function BrowserRecorderControlPanel({
   replaySessionIdRef.current = replaySessionId
   const [lastVerifyReport, setLastVerifyReport] = useState<BrowserReplayReport | null>(null)
   const [stepSearch, setStepSearch] = useState('')
+  const [showAllSteps, setShowAllSteps] = useState(false)
+  const steps = useMemo(() => session?.steps || [], [session?.steps])
+  const stepSearchQuery = stepSearch.trim().toLowerCase()
+  const visibleSteps = useMemo(() => [...steps].reverse().filter(step => {
+    if (!stepSearchQuery) return true
+    const detail = stepDetail(step)
+    return [
+      String(step.seq),
+      step.kind,
+      detail,
+      step.url,
+      step.title,
+      step.section,
+      step.candidates?.[0]?.value,
+    ].filter(Boolean).join(' ').toLowerCase().includes(stepSearchQuery)
+  }), [stepSearchQuery, steps])
+  const renderedSteps = useMemo(
+    () => showAllSteps ? visibleSteps : visibleSteps.slice(0, 25),
+    [showAllSteps, visibleSteps],
+  )
+  const [stepThumbnails, setStepThumbnails] = useState<Record<number, string>>({})
+  const [stepThumbnailsLoading, setStepThumbnailsLoading] = useState(false)
+  useEffect(() => {
+    setShowAllSteps(false)
+  }, [sessionId])
   const recorderRequestScope = api.browserRecorderRequestScope
   const refreshInFlightRef = useRef<{ sessionId: string; recorderRequestScope: string; request: Promise<void> } | null>(null)
   const verificationStartScopeRef = useRef<object | null>(null)
@@ -273,6 +299,36 @@ export default function BrowserRecorderControlPanel({
     }
   }, [api, recorderRequestScope, sessionId])
 
+  const loadStepThumbnails = async () => {
+    if (stepThumbnailsLoading || typeof api.getRawBrowserRecording !== 'function') return
+    const scope = { ...sessionScopeRef.current }
+    const requestIsCurrent = () => (
+      panelActiveRef.current
+      && sessionScopeRef.current.sessionId === scope.sessionId
+      && sessionScopeRef.current.recorderRequestScope === scope.recorderRequestScope
+      && sessionScopeRef.current.generation === scope.generation
+    )
+    setStepThumbnailsLoading(true)
+    try {
+      const response = await api.getRawBrowserRecording(sessionId)
+      if (!requestIsCurrent()) return
+      const thumbnails = Object.fromEntries(
+        (response.session.steps || [])
+          .filter(step => Boolean(step.thumbnail))
+          .map(step => [step.seq, step.thumbnail!]),
+      )
+      setStepThumbnails(thumbnails)
+      const count = Object.keys(thumbnails).length
+      showFeedback(count > 0
+        ? `Loaded ${count} screenshot thumbnail${count === 1 ? '' : 's'}.`
+        : 'No screenshot thumbnails are available for this recording.')
+    } catch (error: unknown) {
+      if (requestIsCurrent()) showFeedback(getErrorMessage(error, 'Unable to load screenshot thumbnails'), 'error')
+    } finally {
+      if (requestIsCurrent()) setStepThumbnailsLoading(false)
+    }
+  }
+
   const loadSuggestions = useCallback(async () => {
     const scope = { ...sessionScopeRef.current }
     try {
@@ -312,6 +368,8 @@ export default function BrowserRecorderControlPanel({
     setReplaySessionId(null)
     setLastVerifyReport(null)
     setStepSearch('')
+    setStepThumbnails({})
+    setStepThumbnailsLoading(false)
     setBusy(false)
     setFeedback('')
     setNavigateScheme(DEFAULT_HTTP_URL_SCHEME)
@@ -1382,22 +1440,6 @@ export default function BrowserRecorderControlPanel({
     )
   }
 
-  const steps = session.steps || []
-  const stepSearchQuery = stepSearch.trim().toLowerCase()
-  const visibleSteps = [...steps].reverse().filter(step => {
-    if (!stepSearchQuery) return true
-    const detail = stepDetail(step)
-    return [
-      String(step.seq),
-      step.kind,
-      detail,
-      step.url,
-      step.title,
-      step.section,
-      step.candidates?.[0]?.value,
-    ].filter(Boolean).join(' ').toLowerCase().includes(stepSearchQuery)
-  })
-  const renderedSteps = live && !stepSearchQuery ? visibleSteps.slice(0, 25) : visibleSteps
   const stopped = session.status === 'stopped'
   const controllable = CONTROLLABLE_STATUSES.has(session.status)
   const openTransactions = session.open_transactions || []
@@ -1641,7 +1683,21 @@ export default function BrowserRecorderControlPanel({
         <div className="rec-live-feed brp-feed">
           <div className="rec-feed-header">
             <span>{live ? 'Live Steps' : 'Recorded Steps'}</span>
-            <span className="rec-feed-count">{session.step_count}</span>
+            <span>
+              <button
+                type="button"
+                className="rec-inline-action"
+                disabled={stepThumbnailsLoading}
+                onClick={() => void loadStepThumbnails()}
+              >
+                {stepThumbnailsLoading
+                  ? 'Loading thumbnails…'
+                  : Object.keys(stepThumbnails).length > 0
+                    ? 'Refresh thumbnails'
+                    : 'Load thumbnails'}
+              </button>
+              <span className="rec-feed-count">{session.step_count}</span>
+            </span>
           </div>
           {steps.length > 10 && (
             <div className="brp-step-search">
@@ -1659,9 +1715,10 @@ export default function BrowserRecorderControlPanel({
           <div className="rec-feed-list">
             {renderedSteps.map(step => {
               const quality = selectorQuality(step)
+              const thumbnail = stepThumbnails[step.seq]
               return (
                 <div key={step.seq} className={`rec-feed-item brp-step ${step.excluded ? 'brp-step-excluded' : ''}`}>
-                  {step.thumbnail && <img className="brp-step-thumbnail" src={step.thumbnail} alt="" />}
+                  {thumbnail && <img className="brp-step-thumbnail" src={thumbnail} alt="" />}
                   <span className="brp-step-seq">#{step.seq}</span>
                   <span className={`brp-step-kind brp-step-kind-${step.kind}`}>{STEP_KIND_LABELS[step.kind] || step.kind}</span>
                   <span className="rec-path" title={stepDetail(step)}>{stepDetail(step)}</span>
@@ -1693,6 +1750,11 @@ export default function BrowserRecorderControlPanel({
               <div className="brp-step-empty">No recorded steps match this search.</div>
             )}
           </div>
+          {visibleSteps.length > 25 && (
+            <button type="button" className="rec-inline-action" onClick={() => setShowAllSteps(current => !current)}>
+              {showAllSteps ? 'Show fewer' : `Show all ${visibleSteps.length} steps`}
+            </button>
+          )}
           {controllable && session.step_count > 0 && (
             <button type="button" className="rec-inline-action brp-delete-last" onClick={handleDeleteLastStep}>Delete last step</button>
           )}

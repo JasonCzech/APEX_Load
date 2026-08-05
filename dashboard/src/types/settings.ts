@@ -62,6 +62,8 @@ export interface DashboardArchiveRetentionPolicy {
 export interface DashboardArchiveRetentionSettings {
   enabled: boolean
   default_retention_days: number
+  har_retention_days?: number
+  har_artifact_dir?: string
   policies?: DashboardArchiveRetentionPolicy[]
 }
 

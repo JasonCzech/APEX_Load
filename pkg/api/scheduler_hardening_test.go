@@ -86,7 +86,7 @@ func (s *scenarioRecoveryFaultStore) SaveScenarioSchedule(schedule *storage.Scen
 
 func TestScenarioSchedulerRecordsQuotaPendingOccurrenceAsQueued(t *testing.T) {
 	store := &scheduleQuotaRaceStore{metricsStoreSpy: &metricsStoreSpy{}}
-	runner := NewTestRunner(1, NewHub(), store)
+	runner := NewTestRunner(1, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	store.runner = runner
 	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 	runner.setExecutionBackend(backend)
@@ -168,7 +168,7 @@ func TestScenarioSchedulerRecordsQuotaPendingOccurrenceAsQueued(t *testing.T) {
 
 func TestScenarioSchedulerFailsPreparedTestWhenNextRunCalculationFails(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 	runner.setExecutionBackend(backend)
 	runner.StoreScript(&dsl.Script{
@@ -253,7 +253,7 @@ func TestScenarioSchedulerRecoversMaterializingOccurrenceByPreassignedTestID(t *
 	setup := func(t *testing.T, suffix string) (*metricsStoreSpy, *TestRunner, *scheduleExecutionBackend, *storage.ScenarioSchedule, time.Time) {
 		t.Helper()
 		store := &metricsStoreSpy{}
-		runner := NewTestRunner(2, NewHub(), store)
+		runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 		backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 		runner.setExecutionBackend(backend)
 		scriptID := "script-materializing-" + suffix
@@ -323,8 +323,10 @@ func TestScenarioSchedulerRecoversMaterializingOccurrenceByPreassignedTestID(t *
 		}); err != nil {
 			t.Fatalf("SaveScenarioScheduleOccurrence: %v", err)
 		}
+		recoveredRequest := CreateTestRequest{Name: "Recovered", ScenarioID: schedule.ScenarioID}
+		recoveredRequest.projectQuotaEvidence = runner.loadCreateTestProjectQuotaEvidence(recoveredRequest)
 		runner.mu.Lock()
-		recovered, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Recovered", ScenarioID: schedule.ScenarioID}, reservedTestID, "QUEUED")
+		recovered, err := runner.buildManagedTestLocked(recoveredRequest, reservedTestID, "QUEUED")
 		if err != nil {
 			runner.mu.Unlock()
 			t.Fatalf("buildManagedTestLocked: %v", err)
@@ -360,7 +362,7 @@ func TestScenarioSchedulerRecoversMaterializingOccurrenceByPreassignedTestID(t *
 
 func TestScenarioSchedulerDoesNotPromoteMaterializedOccurrenceWhoseTestFailedBeforeLaunch(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 	runner.setExecutionBackend(backend)
 	runner.StoreScript(&dsl.Script{
@@ -387,12 +389,14 @@ func TestScenarioSchedulerDoesNotPromoteMaterializedOccurrenceWhoseTestFailedBef
 		ScheduleRevision: schedule.Revision, PlannedAt: due, Status: "materialized", ReasonCode: "started",
 		TestID: testID, MaterializedAt: &materializedAt, CreatedAt: due, UpdatedAt: materializedAt,
 	}
+	failedRequest := CreateTestRequest{Name: "Interrupted", ScenarioID: scenario.ID}
+	failedRequest.projectQuotaEvidence = runner.loadCreateTestProjectQuotaEvidence(failedRequest)
 	runner.mu.Lock()
 	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
 		runner.mu.Unlock()
 		t.Fatalf("save schedule: %v", err)
 	}
-	failed, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Interrupted", ScenarioID: scenario.ID}, testID, "FAILED")
+	failed, err := runner.buildManagedTestLocked(failedRequest, testID, "FAILED")
 	if err != nil {
 		runner.mu.Unlock()
 		t.Fatalf("build failed correlated test: %v", err)
@@ -432,7 +436,7 @@ func TestScenarioSchedulerDoesNotPromoteMaterializedOccurrenceWhoseTestFailedBef
 
 func TestScenarioSchedulerRecoveryCatchUpAllRetainsBacklogAnchor(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(20, NewHub(), store)
+	runner := NewTestRunner(20, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &scheduleExecutionBackend{started: make(chan string, 16)}
 	runner.setExecutionBackend(backend)
 	runner.StoreScript(&dsl.Script{
@@ -454,12 +458,14 @@ func TestScenarioSchedulerRecoveryCatchUpAllRetainsBacklogAnchor(t *testing.T) {
 	}
 	testID := "test-recovered-catch-up-all"
 	materializedAt := plannedAt.Add(time.Minute)
+	recoveredRequest := CreateTestRequest{Name: "Recovered", ScenarioID: scenario.ID}
+	recoveredRequest.projectQuotaEvidence = runner.loadCreateTestProjectQuotaEvidence(recoveredRequest)
 	runner.mu.Lock()
 	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
 		runner.mu.Unlock()
 		t.Fatalf("save schedule: %v", err)
 	}
-	recovered, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Recovered", ScenarioID: scenario.ID}, testID, "RUNNING")
+	recovered, err := runner.buildManagedTestLocked(recoveredRequest, testID, "RUNNING")
 	if err != nil {
 		runner.mu.Unlock()
 		t.Fatalf("build recovered test: %v", err)
@@ -523,7 +529,7 @@ func TestScenarioSchedulerRecoveryFailsPreparedTestAcrossPersistenceBoundaries(t
 		t.Run(tc.name, func(t *testing.T) {
 			base := &metricsStoreSpy{}
 			store := &scenarioRecoveryFaultStore{metricsStoreSpy: base, err: errors.New("injected schedule store failure")}
-			runner := NewTestRunner(2, NewHub(), store)
+			runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 			defer runner.beginShutdown()
 			backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 			runner.setExecutionBackend(backend)
@@ -553,12 +559,14 @@ func TestScenarioSchedulerRecoveryFailsPreparedTestAcrossPersistenceBoundaries(t
 				ScheduleRevision: schedule.Revision, PlannedAt: due, Status: "materializing",
 				ReasonCode: "due", TestID: testID, CreatedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute),
 			}
+			recoveredRequest := CreateTestRequest{Name: "Recovered", ScenarioID: scenario.ID}
+			recoveredRequest.projectQuotaEvidence = runner.loadCreateTestProjectQuotaEvidence(recoveredRequest)
 			runner.mu.Lock()
 			if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
 				runner.mu.Unlock()
 				t.Fatalf("save schedule: %v", err)
 			}
-			recovered, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Recovered", ScenarioID: scenario.ID}, testID, "QUEUED")
+			recovered, err := runner.buildManagedTestLocked(recoveredRequest, testID, "QUEUED")
 			if err != nil {
 				runner.mu.Unlock()
 				t.Fatalf("build recovered test: %v", err)

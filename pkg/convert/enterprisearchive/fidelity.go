@@ -72,6 +72,9 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.Blockers = append(report.Blockers, javaVuserLifecycleFidelityBlockers(result)...)
 		if result.Script != nil {
 			report.SecretGated = countSecretGatedActions(result.Script)
+			if hasTrailingRequestContributors(result.Script) {
+				report.Blockers = append(report.Blockers, "One or more response contributors or one-shot headers occur after the final request and cannot be bound faithfully.")
+			}
 			if countCSourceParseFailureGates(result.Script) > 0 {
 				report.Blockers = append(report.Blockers, "One or more C lifecycle source files were missing, ambiguous, or incompletely parsed.")
 			}
@@ -103,6 +106,14 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.PromotionStatus = ImportPromotionBlocked
 	}
 	return report
+}
+
+func hasTrailingRequestContributors(script *dsl.Script) bool {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return false
+	}
+	_, ok := script.Metadata.Import.Preserved[trailingRequestContributorsMetadataKey]
+	return ok
 }
 
 func countCSourceParseFailureGates(script *dsl.Script) int {

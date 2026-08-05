@@ -39,3 +39,22 @@ func (b *suggestionRegexBudget) findAllSubmatches(pattern *regexp.Regexp, value 
 	b.matches += len(matches)
 	return matches, nil
 }
+
+func (b *suggestionRegexBudget) findAllSubmatchIndexes(pattern *regexp.Regexp, value string) ([][]int, error) {
+	valueBytes := int64(len(value))
+	if valueBytes > maxSuggestionRegexSearchBytes-b.searchBytes {
+		return nil, fmt.Errorf("%w: regex input exceeds %d bytes", ErrSuggestionWorkLimit, maxSuggestionRegexSearchBytes)
+	}
+	b.searchBytes += valueBytes
+
+	remaining := maxSuggestionRegexMatches - b.matches
+	if remaining < 0 {
+		return nil, fmt.Errorf("%w: regex matches exceed %d", ErrSuggestionWorkLimit, maxSuggestionRegexMatches)
+	}
+	matches := pattern.FindAllStringSubmatchIndex(value, remaining+1)
+	if len(matches) > remaining {
+		return nil, fmt.Errorf("%w: regex matches exceed %d", ErrSuggestionWorkLimit, maxSuggestionRegexMatches)
+	}
+	b.matches += len(matches)
+	return matches, nil
+}

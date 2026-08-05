@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"log/slog"
 	"strings"
@@ -180,51 +181,62 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
-	tests                 map[string]*ManagedTest
-	scripts               map[string]*StoredScript
-	privateCISnapshots    map[string]int
-	scenarios             map[string]*StoredScenario
-	archives              map[string]*storage.RunArchiveRecord
-	deletingProjects      map[string]struct{}
-	shuttingDown          bool
-	mu                    sync.RWMutex
-	contentRevision       uint64
-	contentReloadMu       sync.Mutex
-	testReloadMu          sync.Mutex
-	haTestRefreshAt       time.Time
-	capacityBindingReadMu sync.Mutex
-	capacityBindingReadAt time.Time
-	capacityBindingReadCh chan struct{}
-	haScenarioRefreshMu   sync.Mutex
-	haScenarioRefreshAt   time.Time
-	activeStopMu          sync.Mutex
-	remoteControlMu       sync.Mutex
-	remoteControlGates    map[string]*distributedControlGate
-	hub                   *Hub
-	maxTests              int
-	settings              SystemSettings
-	settingsRefreshMu     sync.Mutex
-	settingsWriteMu       sync.Mutex
-	settingsAuthRefreshAt time.Time
-	systemSettingsRaw     string
-	settingsRevision      uint64
-	scriptStore           scriptPersistence
-	testStore             testPersistence
-	scenarioStore         scenarioPersistence
-	dataPoolStore         dataPoolPersistence
-	projectStore          projectPersistence
-	releaseStore          releasePersistence
-	historyStore          historyPersistence
-	storedHistoryCache    *storedTestHistoryCache
-	archiveStore          archivePersistence
-	githubCheckStore      storage.GitHubEnterpriseStore
-	testNotesStore        testNotesPersistence
-	auditStore            auditPersistence
-	settingsStore         settingsPersistence
-	usageStore            usageSnapshotPersistence
-	projectSecretStore    secretstore.Store
-	secretAttemptStore    storage.RuntimeSecretProvisioningAttemptStore
-	secretRecovery        runtimeSecretRecoveryState
+	tests                       map[string]*ManagedTest
+	scripts                     map[string]*StoredScript
+	privateCISnapshots          map[string]int
+	scenarios                   map[string]*StoredScenario
+	archives                    map[string]*storage.RunArchiveRecord
+	deletingProjects            map[string]struct{}
+	projectDeletionGates        projectMutationCoordinator
+	projectDeletionUnlock       map[string]func()
+	shuttingDown                bool
+	mu                          sync.RWMutex
+	compatCreateMu              sync.Mutex
+	reservedLaunchCreateMu      sync.Mutex
+	contentRevision             uint64
+	contentReloadMu             sync.Mutex
+	haScriptRefreshMu           sync.Mutex
+	haScriptRefreshAt           time.Time
+	testReloadMu                sync.Mutex
+	haTestRefreshAt             time.Time
+	capacityBindingReadMu       sync.Mutex
+	capacityBindingReadAt       time.Time
+	capacityBindingReadCh       chan struct{}
+	haScenarioRefreshMu         sync.Mutex
+	haScenarioRefreshAt         time.Time
+	schedulerContentMu          sync.Mutex
+	schedulerContentToken       string
+	schedulerContentKnown       bool
+	activeStopMu                sync.Mutex
+	remoteControlMu             sync.Mutex
+	remoteControlGates          map[string]*distributedControlGate
+	hub                         *Hub
+	maxTests                    int
+	defaultMaxTests             int
+	settings                    SystemSettings
+	settingsRefreshMu           sync.Mutex
+	settingsWriteMu             sync.Mutex
+	settingsAuthRefreshAt       time.Time
+	systemSettingsRaw           string
+	settingsRevision            uint64
+	scriptStore                 scriptPersistence
+	testStore                   testPersistence
+	startAdmissionRevisionStore startAdmissionRevisionPersistence
+	scenarioStore               scenarioPersistence
+	dataPoolStore               dataPoolPersistence
+	projectStore                projectPersistence
+	releaseStore                releasePersistence
+	historyStore                historyPersistence
+	storedHistoryCache          *storedTestHistoryCache
+	archiveStore                archivePersistence
+	githubCheckStore            storage.GitHubEnterpriseStore
+	testNotesStore              testNotesPersistence
+	auditStore                  auditPersistence
+	settingsStore               settingsPersistence
+	usageStore                  usageSnapshotPersistence
+	projectSecretStore          secretstore.Store
+	secretAttemptStore          storage.RuntimeSecretProvisioningAttemptStore
+	secretRecovery              runtimeSecretRecoveryState
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
@@ -239,8 +251,24 @@ type TestRunner struct {
 	seqPlanRuns      map[string]*seqPlanRunState
 	seqPlanByTest    map[string]string
 	seqPlanRetrying  map[string]struct{}
-	terminalRetryMu  sync.Mutex
-	terminalRetrying map[string]struct{}
+	// Accepted CI retries share one term-bound coordinator. Per-row goroutines
+	// would create an unbounded timer/provider herd during a shared outage.
+	ciRecoveryRetrying        map[string]queuedCIRecoveryRetryState
+	ciRecoveryRetryWorkerTerm executionLeaseTerm
+	ciRecoveryRetryWorkerUp   bool
+	ciRecoveryRetryWake       chan struct{}
+	// pendingPromotionRetryActive/Term guard one bounded-backoff queue sweep per
+	// execution term. Promotion scans the whole queue, so per-test workers would
+	// add contention without improving liveness.
+	pendingPromotionRetryActive bool
+	pendingPromotionRetryTerm   executionLeaseTerm
+	// scriptShakeoutFingerprintKey authenticates exact executable inputs only
+	// inside this controller process. Durable evidence receives a separately
+	// disclosure-safe digest so low-entropy credentials never become a public
+	// offline guessing oracle.
+	scriptShakeoutFingerprintKey [32]byte
+	terminalRetryMu              sync.Mutex
+	terminalRetrying             map[string]struct{}
 	// stopTeardownRetries records the strongest pending teardown intent per
 	// test. Versioning lets the deduplicated worker detect a force-abort upgrade
 	// that arrives while a graceful attempt is in flight before it retires.
@@ -269,23 +297,42 @@ type TestRunner struct {
 	// an execution-plan caller's outer term check and the term-aware StartTest
 	// mutation. Production leaves it nil.
 	beforeExecutionPlanStartMutation func()
-	liveState                        LiveStateStore
-	snapshotWriteMu                  sync.Mutex
-	snapshotWrites                   map[string]*runSnapshotWriteState
-	execution                        testExecutionBackend
-	notifier                         *notificationDispatcher
-	notifications                    atomic.Value
-	routeCache                       map[string]latencyRouteCacheEntry
+	// beforeLocalBuildFailureFinalize is a deterministic test barrier between a
+	// local engine build failure and the lifecycle-fenced terminal transition.
+	// Production leaves it nil.
+	beforeLocalBuildFailureFinalize func()
+	// beforeQueuedCIRecoveryEmptyRelease is a deterministic test barrier inside
+	// the coordinator's atomic empty-queue/worker-ownership handoff. Production
+	// leaves it nil.
+	beforeQueuedCIRecoveryEmptyRelease func()
+	// beforePassiveTransitionRescan is a deterministic test barrier before a
+	// successor reloads one old-term passive transition. Production leaves it nil.
+	beforePassiveTransitionRescan func(string)
+	// beforeScenarioScheduleStartLifecycleRelease is a deterministic test
+	// barrier after the scheduler has reacquired mu and committed occurrence /
+	// parent correlation, but before it releases the per-test lifecycle gate.
+	// Production leaves it nil.
+	beforeScenarioScheduleStartLifecycleRelease func()
+	liveState                                   LiveStateStore
+	snapshotWriteMu                             sync.Mutex
+	snapshotWrites                              map[string]*runSnapshotWriteState
+	execution                                   testExecutionBackend
+	notifier                                    *notificationDispatcher
+	notifications                               atomic.Value
+	routeCache                                  map[string]latencyRouteCacheEntry
 
-	// Reference-key state (all guarded by mu). envCode is the short,
+	// Reference-key state. envCode, script/scenario counters, and the index are
+	// guarded by mu. Run sequences use a shared dedicated allocator so request
+	// snapshots can reserve unique keys without holding mu across settings I/O.
+	// envCode is the short,
 	// environment-aware prefix resolved once at startup; the seq counters are
 	// monotonic per (env, artifact type) and backed by persisted settings so
 	// they survive restarts. refKeyIndex maps a reference key to its UUID.
-	envCode        string
-	refScriptSeq   int
-	refScenarioSeq int
-	refRunSeqByDay map[string]int
-	refKeyIndex    map[string]string
+	envCode            string
+	refScriptSeq       int
+	refScenarioSeq     int
+	runRefSeqAllocator *runReferenceSequenceAllocator
+	refKeyIndex        map[string]string
 
 	// capacityAdvisoryCache memoizes estimateCapacityAdvisoryForAssignment. Its
 	// inputs are settings (generation-invalidated) and reservation-window time
@@ -400,6 +447,9 @@ type ManagedTest struct {
 	multiEngine                   *engine.MultiGroupEngine
 	executionCtx                  context.Context
 	executionGeneration           uint64
+	pendingScriptShakeoutOutcome  *pendingScriptShakeoutOutcome
+	validatedScriptShakeoutPass   string
+	validatedScriptShakeoutTerm   executionLeaseTerm
 	durationAdjustmentPrevious    time.Duration
 	scaleAdjustmentPrevious       map[string]int
 	cancel                        context.CancelFunc
@@ -407,8 +457,15 @@ type ManagedTest struct {
 	runtimeHydrationError         string
 	runtimeSnapshotRepairRequired bool
 	creationAdopted               bool
-	historyBytes                  int64
-	historyWeights                []int64
+	// Expected parent revisions are create-boundary CAS evidence. Storage locks
+	// and verifies these rows in the same transaction that inserts the test, so
+	// off-lock project/release/application reads cannot become stale authority.
+	expectedProjectUpdatedAt       time.Time
+	expectedApplicationUpdatedAt   time.Time
+	expectedReleaseUpdatedAt       time.Time
+	expectedStartAdmissionRevision int64
+	historyBytes                   int64
+	historyWeights                 []int64
 	// terminalGroupRuntimeTrimmed records that terminal compaction discarded
 	// process-private group material needed to reconstruct groups_json. Legacy
 	// compatibility stores that still require a full-row SaveTest use it to
@@ -463,8 +520,14 @@ type ManagedTest struct {
 	// executionFence is the scheduler-lease owner token captured by the epoch
 	// that created/claimed this run. It is intentionally process-private and is
 	// checked transactionally for every production full-row save.
-	executionFence      string
-	telemetryDiagnostic telemetryDiagnosticState
+	executionFence string
+	// passiveOperationToken serializes process-local transitions that persist a
+	// startable row after releasing tr.mu. The HA execution fence cannot provide
+	// this protection when durable fencing is disabled, so every controller mode
+	// claims this independent token before terminalizing or otherwise mutating a
+	// passive row. It is never serialized.
+	passiveOperationToken string
+	telemetryDiagnostic   telemetryDiagnosticState
 	// Threshold-alert webhook dedupe (guarded by tr.mu): alerts rebuild every
 	// metrics tick while breached, so webhook dispatch fires once per breach
 	// episode. thresholdAlertActive marks episode keys (metric["|"transaction])
@@ -551,6 +614,11 @@ type TestGroup struct {
 	initialVUsers          int
 	currentVUsers          int
 	script                 *dsl.Script
+	// javaVuserCapacityPlan is the compact immutable admission projection for
+	// this group's executable script. Request-scoped capacity snapshots retain it
+	// instead of retaining the full parsed script graph.
+	javaVuserCapacityPlan      engine.JavaVuserCapacityPlan
+	javaVuserCapacityPlanKnown bool
 	// baseScript is the immutable executable input before test/group runtime
 	// overrides. It lets a revised queued copy apply intentional runtime edits
 	// without recompiling mutable script or data-pool resources. Older rows may
@@ -737,6 +805,7 @@ type TelemetryHealth struct {
 	DroppedResults           int64     `json:"dropped_results,omitempty"`
 	SheddedArrivals          int64     `json:"shedded_arrivals,omitempty"`
 	DroppedSubscriberBatches int64     `json:"dropped_subscriber_batches,omitempty"`
+	MissingMetricWindows     int64     `json:"missing_metric_windows,omitempty"`
 	HistoryPoints            int       `json:"history_points,omitempty"`
 	WebsocketClients         int       `json:"websocket_clients,omitempty"`
 	WebsocketDroppedMessages int64     `json:"websocket_dropped_messages,omitempty"`
@@ -1258,43 +1327,51 @@ func (tr *TestRunner) secretResolverForProject(projectID string) engine.SecretRe
 
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
 	tr := &TestRunner{
-		tests:                 make(map[string]*ManagedTest),
-		scripts:               make(map[string]*StoredScript),
-		privateCISnapshots:    make(map[string]int),
-		scenarios:             make(map[string]*StoredScenario),
-		archives:              make(map[string]*storage.RunArchiveRecord),
-		deletingProjects:      make(map[string]struct{}),
-		hub:                   hub,
-		maxTests:              maxTests,
-		scriptStore:           store,
-		testStore:             store,
-		scenarioStore:         store,
-		dataPoolStore:         store,
-		projectStore:          store,
-		releaseStore:          store,
-		historyStore:          store,
-		storedHistoryCache:    newStoredTestHistoryCache(),
-		archiveStore:          store,
-		testNotesStore:        store,
-		auditStore:            store,
-		settingsStore:         store,
-		usageStore:            store,
-		objectRepoStore:       store,
-		reservationStore:      store,
-		execPlanRunStore:      store,
-		execPlanScheduleStore: store,
-		seqPlanRuns:           make(map[string]*seqPlanRunState),
-		seqPlanByTest:         make(map[string]string),
-		seqPlanRetrying:       make(map[string]struct{}),
-		terminalRetrying:      make(map[string]struct{}),
-		stopTeardownRetries:   make(map[string]stopTeardownRetryIntent),
-		fleetStore:            store,
-		execution:             localExecutionBackend{},
-		notifier:              newNotificationDispatcher(nil),
-		routeCache:            make(map[string]latencyRouteCacheEntry),
+		tests:                        make(map[string]*ManagedTest),
+		scripts:                      make(map[string]*StoredScript),
+		privateCISnapshots:           make(map[string]int),
+		scenarios:                    make(map[string]*StoredScenario),
+		archives:                     make(map[string]*storage.RunArchiveRecord),
+		deletingProjects:             make(map[string]struct{}),
+		projectDeletionUnlock:        make(map[string]func()),
+		hub:                          hub,
+		maxTests:                     maxTests,
+		defaultMaxTests:              maxTests,
+		scriptStore:                  store,
+		testStore:                    store,
+		scenarioStore:                store,
+		dataPoolStore:                store,
+		projectStore:                 store,
+		releaseStore:                 store,
+		historyStore:                 store,
+		storedHistoryCache:           newStoredTestHistoryCache(),
+		archiveStore:                 store,
+		testNotesStore:               store,
+		auditStore:                   store,
+		settingsStore:                store,
+		usageStore:                   store,
+		objectRepoStore:              store,
+		reservationStore:             store,
+		execPlanRunStore:             store,
+		execPlanScheduleStore:        store,
+		seqPlanRuns:                  make(map[string]*seqPlanRunState),
+		seqPlanByTest:                make(map[string]string),
+		seqPlanRetrying:              make(map[string]struct{}),
+		ciRecoveryRetrying:           make(map[string]queuedCIRecoveryRetryState),
+		ciRecoveryRetryWake:          make(chan struct{}, 1),
+		scriptShakeoutFingerprintKey: newScriptShakeoutFingerprintKey(),
+		terminalRetrying:             make(map[string]struct{}),
+		stopTeardownRetries:          make(map[string]stopTeardownRetryIntent),
+		fleetStore:                   store,
+		execution:                    localExecutionBackend{},
+		notifier:                     newNotificationDispatcher(nil),
+		routeCache:                   make(map[string]latencyRouteCacheEntry),
 	}
 	if githubStore, ok := store.(storage.GitHubEnterpriseStore); ok {
 		tr.githubCheckStore = githubStore
+	}
+	if revisionStore, ok := any(store).(startAdmissionRevisionPersistence); ok {
+		tr.startAdmissionRevisionStore = revisionStore
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -1326,6 +1403,16 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 	tr.ReconcilePendingTests()
 
 	return tr
+}
+
+func newScriptShakeoutFingerprintKey() [32]byte {
+	var key [32]byte
+	if _, err := cryptorand.Read(key[:]); err != nil {
+		// Without an unpredictable process key, hashing exact executable inputs
+		// could expose low-entropy embedded credentials to offline guessing.
+		panic("generate script shakeout fingerprint key: " + err.Error())
+	}
+	return key
 }
 
 func (tr *TestRunner) setExecutionBackend(backend testExecutionBackend) {
@@ -1411,8 +1498,11 @@ func (tr *TestRunner) claimTestExecutionFence(test *ManagedTest) error {
 	if tr == nil || test == nil || !tr.durableExecutionFence {
 		return nil
 	}
-	token := tr.currentExecutionFenceToken()
-	if token == "" {
+	if tr.leadership == nil {
+		return errNotExecutionLeader
+	}
+	token, generation := tr.leadership.executionLeaseTerm()
+	if token == "" || generation == 0 {
 		return errNotExecutionLeader
 	}
 	// A non-empty token belongs to the operation that created or previously
@@ -1423,6 +1513,7 @@ func (tr *TestRunner) claimTestExecutionFence(test *ManagedTest) error {
 		return errNotExecutionLeader
 	}
 	test.executionFence = token
+	test.executionGeneration = generation
 	return nil
 }
 
@@ -1434,13 +1525,14 @@ func (tr *TestRunner) claimTestExecutionFenceWithTerm(test *ManagedTest, term ex
 	if tr == nil || test == nil || !tr.durableExecutionFence {
 		return nil
 	}
-	if !tr.executionLeaseTermCurrent(term) {
+	if !tr.executionLeaseTermLocallyCurrent(term) {
 		return errNotExecutionLeader
 	}
 	if test.executionFence != "" && test.executionFence != term.ownerID {
 		return errNotExecutionLeader
 	}
 	test.executionFence = term.ownerID
+	test.executionGeneration = term.generation
 	return nil
 }
 
@@ -1496,6 +1588,9 @@ type CreateTestRequest struct {
 	// already-durable snapshots (currently execution plans). New API payloads
 	// must never set it and remain subject to the strict read-only contract.
 	allowLegacyDataPoolModes bool
+	projectQuotaEvidence     projectQuotaEvidence
+	releaseContextEvidence   createTestReleaseEvidence
+	deferRunRefKey           bool
 }
 
 type CreateScenarioRequest struct {
@@ -1627,7 +1722,14 @@ type StartTestOptions struct {
 	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
 	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
 	SkipLaunchWindowPreflight   bool `json:"-"`
-	actor                       testCreationActor
+	// deferPostShakeoutRecoveryEnqueue lets recurring schedules durably publish
+	// their occurrence and parent-schedule projections before the shared
+	// recovery coordinator is allowed to launch the prepared run.
+	deferPostShakeoutRecoveryEnqueue bool
+	// expectedRecoveryIdentity confines an asynchronous recovery attempt to the
+	// durable test incarnation that originally entered its coordinator.
+	expectedRecoveryIdentity *queuedStartRecoveryIdentity
+	actor                    testCreationActor
 	// traceContext carries only a detached SpanContext from an inbound request.
 	// It never carries request cancellation, credentials, or arbitrary values.
 	traceContext context.Context
@@ -1639,8 +1741,9 @@ type StartTestOptions struct {
 // a worse advisory requires a new explicit override instead of inheriting a
 // stale boolean forever.
 type QueuedStartAuthorization struct {
-	CapacityShortfall *CapacityShortfallStartAuthorization `json:"capacity_shortfall,omitempty"`
-	ScriptShakeout    *ScriptShakeoutStartAuthorization    `json:"script_shakeout,omitempty"`
+	CapacityShortfall  *CapacityShortfallStartAuthorization `json:"capacity_shortfall,omitempty"`
+	ScriptShakeout     *ScriptShakeoutStartAuthorization    `json:"script_shakeout,omitempty"`
+	ScriptShakeoutPass *ScriptShakeoutPassEvidence          `json:"script_shakeout_pass,omitempty"`
 }
 
 type CapacityShortfallStartAuthorization struct {
@@ -1658,6 +1761,16 @@ type ScriptShakeoutStartAuthorization struct {
 	ApprovedBySubject     string    `json:"approved_by_subject,omitempty"`
 	ApprovedByDisplayName string    `json:"approved_by_display_name,omitempty"`
 	ReviewEvidenceSHA256  string    `json:"review_evidence_sha256,omitempty"`
+}
+
+// ScriptShakeoutPassEvidence is controller-authored proof that the immutable
+// runtime snapshot already completed its one-shot shakeout. It is intentionally
+// distinct from ScriptShakeoutStartAuthorization, which records a human
+// decision to override a failed shakeout.
+type ScriptShakeoutPassEvidence struct {
+	PassedAt             time.Time `json:"passed_at"`
+	EvidenceSHA256       string    `json:"evidence_sha256"`
+	ReusableAfterRestart bool      `json:"reusable_after_restart,omitempty"`
 }
 
 type CapacityShortfallError struct {
@@ -1705,6 +1818,25 @@ type ScriptShakeoutReport struct {
 	StartedAt time.Time              `json:"started_at"`
 	EndedAt   time.Time              `json:"ended_at"`
 	Results   []ScriptShakeoutResult `json:"results"`
+}
+
+// pendingScriptShakeoutOutcome retains a completed one-shot shakeout result
+// while its durable state transition is retryable. It is deliberately
+// process-private: a controller that cannot prove the outcome after a crash
+// must fail closed rather than replay externally visible shakeout actions.
+type pendingScriptShakeoutOutcome struct {
+	Report                ScriptShakeoutReport
+	ExecutableFingerprint scriptShakeoutInputFingerprint
+	ExecutionTerm         executionLeaseTerm
+	PassStatus            string
+	PendingSince          *time.Time
+	PendingReason         string
+	// VerificationPending means the externally visible one-shot actions have
+	// completed successfully, but the controller could not re-read the exact
+	// executable-input fingerprint after those actions. The outcome remains
+	// process-private in SHAKEOUT until that comparison can be completed; the
+	// actions must never be replayed to obtain the missing evidence.
+	VerificationPending bool
 }
 
 type ScriptShakeoutResult struct {

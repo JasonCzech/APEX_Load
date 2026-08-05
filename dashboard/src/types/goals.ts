@@ -40,6 +40,14 @@ export interface GoalStatus {
   server_processing_breached?: boolean
   transfer_breached?: boolean
   error_count_breached?: boolean
+  lcp_breached?: boolean
+  inp_breached?: boolean
+  cls_breached?: boolean
+  throttled_requests_breached?: boolean
+  end_to_end_latency_breached?: boolean
+  partition_skew_breached?: boolean
+  redelivery_rate_breached?: boolean
+  dead_letter_rate_breached?: boolean
   breach_active?: boolean
   breach_duration_sec?: number
   stop_triggered?: boolean

@@ -138,6 +138,24 @@ type JavaProfile struct {
 }
 
 func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, files map[string]string) JavaProfile {
+	return classifyJavaArchiveWithReachability(
+		program,
+		projectConfig,
+		files,
+		buildJavaVuserRuntimeReachability(program),
+	)
+}
+
+// classifyJavaArchiveWithReachability keeps live conversion to one full
+// lifecycle-reachability pass. Standalone classifier callers retain the wrapper
+// above, while ConvertJava threads the same result into classification, source
+// mapping, transaction accounting, and promotion gating.
+func classifyJavaArchiveWithReachability(
+	program javaProgram,
+	projectConfig *ProjectConfig,
+	files map[string]string,
+	reachability javaVuserRuntimeReachability,
+) JavaProfile {
 	text, contextText := javaExecutableEvidence(program)
 	// Literal values and imports may identify a provider or driver, but they
 	// must never establish that a protocol was executed. Consult only source
@@ -172,7 +190,7 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 	if len(program.Unparsed) > 0 {
 		profile.ReviewFamilies = appendUnique(profile.ReviewFamilies, "unparsed_java_region")
 	}
-	if javaProgramHasUnknownLR(program) {
+	if javaReachabilityHasUnknownLR(reachability) {
 		profile.ReviewFamilies = appendUnique(profile.ReviewFamilies, "unrecognized_lr_method")
 	}
 	if len(profile.ReviewFamilies) > 0 {
@@ -207,7 +225,10 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 }
 
 func javaProgramHasUnknownLR(program javaProgram) bool {
-	reachability := buildJavaVuserRuntimeReachability(program)
+	return javaReachabilityHasUnknownLR(buildJavaVuserRuntimeReachability(program))
+}
+
+func javaReachabilityHasUnknownLR(reachability javaVuserRuntimeReachability) bool {
 	for _, reachable := range reachability.statements {
 		if len(reachable.phases) == 0 {
 			if javaStatementHasUnknownLR(reachable.statement, "action") {

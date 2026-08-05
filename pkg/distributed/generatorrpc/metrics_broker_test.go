@@ -15,6 +15,126 @@ func registerMetricsBrokerSubscriber(t testing.TB, broker *metricsBroker, genera
 	return broker.register(generation, testID, live, time.Now())
 }
 
+func TestMetricsBrokerAssignsMonotonicBatchSequences(t *testing.T) {
+	broker := newMetricsBroker(10, 10, 0)
+	id, subscriber, _, err := registerMetricsBrokerSubscriber(t, broker, 7, "run")
+	if err != nil {
+		t.Fatalf("register subscriber: %v", err)
+	}
+	defer broker.unregister(id)
+
+	first := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING"}
+	second := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING"}
+	broker.publish(first, nil)
+	broker.publish(second, nil)
+	if got := subscriber.pop(); got == nil || got.GetBatchSequence() != 1 {
+		t.Fatalf("first sequence = %#v, want 1", got)
+	}
+	if got := subscriber.pop(); got == nil || got.GetBatchSequence() != 2 {
+		t.Fatalf("second sequence = %#v, want 2", got)
+	}
+
+	// A different execution generation owns an independent sequence.
+	other := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 8, LifecycleState: "RUNNING"}
+	broker.publish(other, nil)
+	if other.GetBatchSequence() != 1 {
+		t.Fatalf("new-generation sequence = %d, want 1", other.GetBatchSequence())
+	}
+
+	// A caller-supplied terminal sequence still ends the broker's per-run
+	// counter; otherwise the map would retain one entry per completed run.
+	terminal := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "COMPLETE", BatchSequence: 99}
+	broker.publishTerminal(terminal)
+	broker.publishMu.Lock()
+	_, retained := broker.batchSequences[terminalBatchKey{testID: "run", generation: 7}]
+	broker.publishMu.Unlock()
+	if retained {
+		t.Fatal("terminal publication retained its batch-sequence counter")
+	}
+
+	// Forced cleanup can remove an execution that never reached a terminal
+	// publication; its independent generation counter must be reclaimed too.
+	broker.deleteTerminalsForTest("run")
+	broker.publishMu.Lock()
+	_, retained = broker.batchSequences[terminalBatchKey{testID: "run", generation: 8}]
+	broker.publishMu.Unlock()
+	if retained {
+		t.Fatal("forced cleanup retained a non-terminal batch-sequence counter")
+	}
+}
+
+func TestMetricsBrokerReconnectSnapshotRetainsCurrentBatchSequence(t *testing.T) {
+	broker := newMetricsBroker(10, 10, 0)
+	for index := 0; index < 5; index++ {
+		broker.publish(&pb.MetricsBatch{
+			TestId:              "run",
+			ExecutionGeneration: 7,
+			LifecycleState:      "RUNNING",
+		}, nil)
+	}
+
+	live := &pb.MetricsBatch{
+		TestId:              "run",
+		ExecutionGeneration: 7,
+		LifecycleState:      "RUNNING",
+		TimestampUnixMs:     time.Now().UnixMilli(),
+	}
+	id, _, initial, err := registerMetricsBrokerSubscriber(t, broker, 7, "run", live)
+	if err != nil {
+		t.Fatalf("register reconnecting subscriber: %v", err)
+	}
+	defer broker.unregister(id)
+	if len(initial) != 1 {
+		t.Fatalf("initial snapshots = %#v, want one live snapshot", initial)
+	}
+	if got := initial[0].GetBatchSequence(); got != 5 {
+		t.Fatalf("reconnect snapshot sequence = %d, want current sequence 5", got)
+	}
+	if live.GetBatchSequence() != 0 {
+		t.Fatalf("registration mutated caller-owned live snapshot sequence to %d", live.GetBatchSequence())
+	}
+}
+
+func TestMetricsBrokerTerminalOverflowPreservesDetectableSequenceGap(t *testing.T) {
+	broker := newMetricsBroker(10, 10, 0)
+	id, subscriber, _, err := registerMetricsBrokerSubscriber(t, broker, 7, "run")
+	if err != nil {
+		t.Fatalf("register subscriber: %v", err)
+	}
+	defer broker.unregister(id)
+
+	for index := 0; index < metricsSubscriberQueueCapacity; index++ {
+		broker.publish(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING"}, nil)
+	}
+	broker.publishTerminal(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "COMPLETE"})
+	// A routine terminal retry arrives before this slow subscriber drains the
+	// queue. It must replace the terminal payload without resetting sequence 17.
+	broker.publishTerminal(&pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "FAILED", LifecycleError: "replayed"})
+
+	sequences := make([]uint64, 0, metricsSubscriberQueueCapacity)
+	for batch := subscriber.pop(); batch != nil; batch = subscriber.pop() {
+		sequences = append(sequences, batch.GetBatchSequence())
+	}
+	if len(sequences) != metricsSubscriberQueueCapacity {
+		t.Fatalf("delivered sequence count = %d, want %d (%v)", len(sequences), metricsSubscriberQueueCapacity, sequences)
+	}
+	for index := 0; index < metricsSubscriberQueueCapacity-1; index++ {
+		if want := uint64(index + 1); sequences[index] != want {
+			t.Fatalf("sequences[%d] = %d, want preserved prefix %d (%v)", index, sequences[index], want, sequences)
+		}
+	}
+	if got := sequences[len(sequences)-1]; got != metricsSubscriberQueueCapacity+1 {
+		t.Fatalf("terminal sequence = %d, want %d (%v)", got, metricsSubscriberQueueCapacity+1, sequences)
+	}
+	retained := broker.terminalBatch(terminalBatchKey{testID: "run", generation: 7})
+	if retained == nil || retained.GetBatchSequence() != metricsSubscriberQueueCapacity+1 || retained.GetLifecycleState() != "FAILED" {
+		t.Fatalf("replayed terminal tombstone = %#v, want FAILED at stable sequence %d", retained, metricsSubscriberQueueCapacity+1)
+	}
+	if dropped := broker.droppedCount(); dropped != 1 {
+		t.Fatalf("dropped batches = %d, want 1", dropped)
+	}
+}
+
 func TestMetricsBrokerEnforcesSubscriptionLimitAndGenerationScope(t *testing.T) {
 	broker := newMetricsBroker(1, 10, 0)
 	live := &pb.MetricsBatch{TestId: "run", ExecutionGeneration: 7, LifecycleState: "RUNNING", LifecycleError: "original"}

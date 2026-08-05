@@ -105,7 +105,15 @@ func TestConvertArchiveMapsClickLikeWeb2Steps(t *testing.T) {
 	if len(result.Script.Actions) != 6 {
 		t.Fatalf("actions len = %d, want 6", len(result.Script.Actions))
 	}
-	assertBrowserClickAction(t, result.Script.Actions[1], "#quantity", "truclient_double_click", map[string]any{"click_count": 2})
+	if action := result.Script.Actions[1]; action.Type != "browser_dblclick" || action.Selector != "#quantity" || action.Target != "#quantity" {
+		t.Fatalf("action[1] = %#v, want browser_dblclick on #quantity", action)
+	}
+	if source := result.Script.Actions[1].Metadata["source"]; source != "truclient_double_click" {
+		t.Fatalf("action[1] metadata = %#v, want source=truclient_double_click", result.Script.Actions[1].Metadata)
+	}
+	if _, exists := result.Script.Actions[1].Params["click_count"]; exists {
+		t.Fatalf("action[1] params = %#v, want no dead click_count parameter", result.Script.Actions[1].Params)
+	}
 	assertBrowserClickAction(t, result.Script.Actions[2], "form#cart", "truclient_submit", nil)
 	if result.Script.Actions[2].Metadata["submit"] != true {
 		t.Fatalf("submit metadata = %#v, want submit=true", result.Script.Actions[2].Metadata)

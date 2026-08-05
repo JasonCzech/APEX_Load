@@ -566,6 +566,14 @@ func TestRedactCredentialBodyFormUsesStructuredStaticFieldVocabulary(t *testing.
 	}
 }
 
+func TestRedactCredentialBodyFormPreservesWireRepresentation(t *testing.T) {
+	input := "z=first+value&password=a+b%20c&password=[REDACTED]&password=[REDACTED]suffix&safe=%2fkeep&client%5fsecret=tiny&z=last"
+	want := "z=first+value&password=[REDACTED]&password=[REDACTED]&password=[REDACTED]&safe=%2fkeep&client%5fsecret=[REDACTED]&z=last"
+	if got := RedactCredentialBody(input); got != want {
+		t.Fatalf("surgical form redaction changed ordering or escaping:\n got: %q\nwant: %q", got, want)
+	}
+}
+
 func TestRedactCredentialBodyLeavesUnknownBodiesAlone(t *testing.T) {
 	xml := "<root><note>no credentials here</note></root>"
 	if RedactCredentialBody(xml) != xml {

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -89,6 +91,109 @@ func TestScopedAuthGrantsRequireDurableOwners(t *testing.T) {
 	loadedLegacy.UpdatedAt = expectedUpdatedAt.Add(time.Minute)
 	if updated, err := store.UpdateServiceAccountMetadata(loadedLegacy, expectedUpdatedAt); err != nil || !updated {
 		t.Fatalf("remove legacy dangling grant = %v, %v; want true, nil", updated, err)
+	}
+}
+
+func TestConcurrentProjectScopedAuthWritesAndProjectDeleteCannotLeaveOrphan(t *testing.T) {
+	tests := []struct {
+		name  string
+		write func(store *SQLiteStore, now time.Time) error
+		seed  func(t *testing.T, store *SQLiteStore, now time.Time)
+	}{
+		{
+			name: "single user binding",
+			seed: func(t *testing.T, store *SQLiteStore, now time.Time) {
+				t.Helper()
+				if err := store.SaveUser(&User{
+					ID: "scope-race-existing-user", Subject: "scope-race-existing-user", Active: true, CreatedAt: now, UpdatedAt: now,
+				}); err != nil {
+					t.Fatalf("SaveUser: %v", err)
+				}
+			},
+			write: func(store *SQLiteStore, now time.Time) error {
+				return store.SaveUserRoleBinding(&UserRoleBinding{
+					ID: "scope-race-binding", UserID: "scope-race-existing-user", ScopeType: "project", ScopeID: "scope-race-deleted-project",
+					Role: "viewer", CreatedAt: now, UpdatedAt: now,
+				})
+			},
+		},
+		{
+			name: "multi project onboarding",
+			seed: func(t *testing.T, store *SQLiteStore, now time.Time) {
+				t.Helper()
+				if err := store.SaveProject(&Project{ID: "scope-race-stable-project", Name: "Stable", CreatedAt: now, UpdatedAt: now}); err != nil {
+					t.Fatalf("SaveProject(stable): %v", err)
+				}
+			},
+			write: func(store *SQLiteStore, now time.Time) error {
+				user := &User{ID: "scope-race-onboarded-user", Subject: "scope-race-onboarded-user", Active: true, CreatedAt: now, UpdatedAt: now}
+				return store.SaveUserWithRoleBindings(user, []*UserRoleBinding{
+					{ID: "scope-race-onboarding-deleted", UserID: user.ID, ScopeType: "project", ScopeID: "scope-race-deleted-project", Role: "viewer", CreatedAt: now, UpdatedAt: now},
+					{ID: "scope-race-onboarding-stable", UserID: user.ID, ScopeType: "project", ScopeID: "scope-race-stable-project", Role: "viewer", CreatedAt: now, UpdatedAt: now},
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "project-auth-race.db")
+			first, err := NewSQLiteStore(path)
+			if err != nil {
+				t.Fatalf("NewSQLiteStore(first): %v", err)
+			}
+			defer first.Close()
+			second, err := NewSQLiteStore(path)
+			if err != nil {
+				t.Fatalf("NewSQLiteStore(second): %v", err)
+			}
+			defer second.Close()
+
+			now := time.Now().UTC()
+			if err := first.SaveProject(&Project{ID: "scope-race-deleted-project", Name: "Deleted", CreatedAt: now, UpdatedAt: now}); err != nil {
+				t.Fatalf("SaveProject(deleted): %v", err)
+			}
+			tt.seed(t, first, now)
+
+			start := make(chan struct{})
+			errs := make(chan error, 2)
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				<-start
+				errs <- tt.write(first, now)
+			}()
+			go func() {
+				defer wg.Done()
+				<-start
+				errs <- second.DeleteProject("scope-race-deleted-project")
+			}()
+			close(start)
+			wg.Wait()
+			close(errs)
+
+			for err := range errs {
+				if err == nil || errors.Is(err, ErrRoleScopeNotFound) || errors.Is(err, sql.ErrNoRows) {
+					continue
+				}
+				message := strings.ToLower(err.Error())
+				if !strings.Contains(message, "locked") && !strings.Contains(message, "busy") {
+					t.Fatalf("concurrent auth/project mutation error: %v", err)
+				}
+			}
+
+			var dangling int
+			if err := first.db.QueryRow(`SELECT COUNT(*)
+				FROM user_role_bindings binding
+				LEFT JOIN projects project ON project.id = binding.scope_id
+				WHERE binding.scope_type = 'project' AND project.id IS NULL`).Scan(&dangling); err != nil {
+				t.Fatalf("query dangling project bindings: %v", err)
+			}
+			if dangling != 0 {
+				t.Fatalf("concurrent write/delete left %d dangling project role binding(s)", dangling)
+			}
+		})
 	}
 }
 

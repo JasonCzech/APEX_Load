@@ -793,13 +793,6 @@ func (tr *TestRunner) forgetRunSnapshotWriteStateLocked(testID string) {
 }
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) time.Time {
-	groupVUsers := make(map[string]int)
-	tr.mu.RLock()
-	for _, g := range test.Groups {
-		groupVUsers[g.Name] = g.VUsers
-	}
-	tr.mu.RUnlock()
-
 	intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
 	interval, ok := checkedDuration(intervalSec, time.Second)
 	if !ok || interval <= 0 {
@@ -822,14 +815,31 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			}
 			lastPublishedSnapshot = snap.Timestamp
 
+			// Runtime scaling mutates the group targets while this broadcaster is
+			// alive. Snapshot them for every sample so active-VUser accounting and
+			// goal-control decisions use the configuration that produced it.
+			groupVUsers := tr.groupVUsersSnapshot(test)
 			live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
+			// Prefer the engine's observed per-group count when the collector
+			// reports one; the runner snapshot remains the fallback for quiet groups.
+			for groupName, metrics := range live.GroupMetrics {
+				if metrics != nil {
+					groupVUsers[groupName] = metrics.VUsers
+				}
+			}
 			if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
 				applyGoalControllerUpdate(tr, test, live, groupVUsers, update, mge.ScaleVUsers)
 			}
 
 			// Throttle network latency pings to every 5 seconds
 			if time.Since(lastLatencyCheck) >= 5*time.Second {
-				go tr.measureNetworkLatency(test, live)
+				tr.mu.RLock()
+				probeCtx := test.executionCtx
+				tr.mu.RUnlock()
+				if probeCtx == nil {
+					probeCtx = context.Background()
+				}
+				go tr.measureNetworkLatency(probeCtx, test, live)
 				lastLatencyCheck = time.Now()
 			}
 
@@ -837,6 +847,19 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			tr.evaluateThresholdAlertsAndStops(test, live, true)
 		}
 	}
+}
+
+func (tr *TestRunner) groupVUsersSnapshot(test *ManagedTest) map[string]int {
+	groupVUsers := make(map[string]int)
+	if tr == nil || test == nil {
+		return groupVUsers
+	}
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	for _, group := range test.Groups {
+		groupVUsers[group.Name] = groupCurrentVUsers(group)
+	}
+	return groupVUsers
 }
 
 // publishFinalLocalMetrics sends the collector's shutdown drain through the
@@ -861,7 +884,6 @@ func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.Me
 		live.GoalStatus = update.Status
 	}
 	tr.publishLiveMetrics(test, live, artifacts)
-	go tr.measureNetworkLatency(test, live)
 
 	// Broadcast + webhook-route final-drain breaches, but never issue stops
 	// here: the engine has already quiesced (see the function contract above).
@@ -910,7 +932,7 @@ func (tr *TestRunner) processMetricsSnapshot(test *ManagedTest, snap engine.Metr
 	tr.publishLiveMetrics(test, live, artifacts)
 
 	// Measure network latency in background if not already measured for this interval
-	go tr.measureNetworkLatency(test, live)
+	go tr.measureNetworkLatency(context.Background(), test, live)
 
 	tr.evaluateThresholdAlertsAndStops(test, live, true)
 }

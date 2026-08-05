@@ -145,6 +145,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const loadRequestRef = useRef(0)
+  const loadInFlightRef = useRef<Promise<boolean> | null>(null)
   const actionInFlightRef = useRef(false)
   const committedPoolsRef = useRef(new Map<string, FleetPool>())
   const deletedPoolIdsRef = useRef(new Set<string>())
@@ -193,8 +194,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     onClose: busy ? undefined : closeResult,
   })
 
-  const load = useCallback(async () => {
-    const requestId = ++loadRequestRef.current
+  const performLoad = useCallback(async (requestId: number) => {
     const requestIsCurrent = () => loadRequestRef.current === requestId
     setLoading(true)
     setError(null)
@@ -266,9 +266,39 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     return errors.length === 0
   }, [api])
 
+  const load = useCallback((): Promise<boolean> => {
+    // Polling, mutation refreshes, and the manual button share one request.
+    // A slow control plane must not let the next interval invalidate the only
+    // response that can clear loading and advance provisioning status.
+    if (loadInFlightRef.current) return loadInFlightRef.current
+    const requestId = ++loadRequestRef.current
+    const promise = performLoad(requestId)
+    loadInFlightRef.current = promise
+    const clearInFlight = () => {
+      if (loadInFlightRef.current === promise) loadInFlightRef.current = null
+    }
+    void promise.then(clearInFlight, clearInFlight)
+    return promise
+  }, [performLoad])
+
+  useEffect(() => () => {
+    loadRequestRef.current += 1
+    loadInFlightRef.current = null
+  }, [])
+
   useEffect(() => {
     void load()
   }, [load])
+
+  const hasActiveProvisionRequest = useMemo(
+    () => provisionRequests.some(request => canCancelProvisionRequest(request.status)),
+    [provisionRequests],
+  )
+  useEffect(() => {
+    if (!hasActiveProvisionRequest) return
+    const timer = window.setInterval(() => { void load() }, 5_000)
+    return () => window.clearInterval(timer)
+  }, [hasActiveProvisionRequest, load])
 
   const submitDraft = useCallback(async (): Promise<boolean> => {
     if (!draft || actionInFlightRef.current) return false

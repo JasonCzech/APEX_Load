@@ -241,10 +241,8 @@ func (tr *TestRunner) preflightExecutionPlanRuntimeSecretAuthority(plan *storage
 			// malformed entry later reaches runtime-secret persistence.
 			continue
 		}
-		tr.mu.RLock()
-		preview, err := tr.buildManagedTestLocked(req, executionPlanEntryTestID(runID, index, entry.Order), "DRAFT")
-		tr.mu.RUnlock()
-		if err != nil {
+		preview, _, revision, err := tr.buildManagedTestFromSnapshot(req, executionPlanEntryTestID(runID, index, entry.Order), "DRAFT")
+		if err != nil || !tr.managedTestBuildFenceCurrent(revision) {
 			continue
 		}
 		for _, group := range preview.Groups {

@@ -126,8 +126,8 @@ The full route list is generated from the controller route catalog.
 }
 ```
 
-**Supported protocol surfaces:** `http`, `soap`, `java_http`, `browser`, `websocket`, `grpc`,
-`jms`, `kafka`, `eventhubs`, `database`, and `network` families. Real broker adapters are opt-in
+**Supported protocol surfaces:** `http`, `soap`, `java_http`, `java_vuser`, `bruno`, `browser`,
+`websocket`, `grpc`, `jms`, `kafka`, `eventhubs`, `database`, and `network` families. Real broker adapters are opt-in
 behind build tags; see [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 
 ## Browser And Mobile DSL
@@ -357,7 +357,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 |----------|---------|---------|
 | `APEXLOAD_ADDR` | `:8080` | HTTP server bind address |
 | `APEXLOAD_DB` | `apexload.db` | SQLite database path |
-| `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
+| `APEXLOAD_LOG_LEVEL` | `info` | Controller/generator logging level (`debug`, `info`, `warn`, `error`); `LOG_LEVEL` is a legacy alias |
 
 ---
 
@@ -367,8 +367,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 |------|---------|
 | `apexload.db` | SQLite database (auto-created) |
 | `coverage.html` | Test coverage report (after `make test-cover`) |
-| `pkg/api/static/` | Embedded dashboard assets |
-| `dashboard/dist/` | Built frontend (before embedding) |
+| `pkg/api/static/` | Dashboard build output embedded by the controller; `npm run build` empties it first |
 | `examples/` | Sample scripts and test data |
 
 ---

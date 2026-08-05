@@ -1936,9 +1936,11 @@ interface RunCalendarDay {
   isOutsidePeriod: boolean
   isToday: boolean
   events: RunCalendarEvent[]
+  startingEventCount: number
+  continuingEventCount: number
 }
 
-interface RunCalendarModel {
+export interface RunCalendarModel {
   label: string
   rangeLabel: string
   days: RunCalendarDay[]
@@ -2116,7 +2118,7 @@ function RunCalendarPanel({
               {(model.days[0]?.events.length || 0) === 0 ? (
                 <p className="monitor-hint">No runs in this day.</p>
               ) : model.days[0].events.map(event => (
-                <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="agenda" onSelect={onSelectEvent} />
+                <RunCalendarEventButton key={event.id} event={event} dayDate={model.days[0].date} selected={selectedEvent?.id === event.id} mode="agenda" onSelect={onSelectEvent} />
               ))}
             </div>
           ) : (
@@ -2137,6 +2139,7 @@ function RunCalendarPanel({
                 return (
                   <div
                     key={day.key}
+                    data-calendar-date={day.key}
                     className={`run-calendar-day ${day.isOutsidePeriod ? 'outside' : ''} ${day.isToday ? 'today' : ''} ${scheduleThisDay ? 'schedulable' : ''}`}
                     {...(scheduleThisDay ? interactiveElementProps<HTMLDivElement>(event => {
                       // Only the empty cell area schedules; child event buttons
@@ -2159,12 +2162,17 @@ function RunCalendarPanel({
                             aria-label={`Capacity pressure ${capacityDay.pressure}`}
                           />
                         )}
-                        {day.events.length > 0 && <span>{day.events.length}</span>}
+                        {day.startingEventCount > 0 && (
+                          <span aria-label={`${day.startingEventCount} starting`}>{day.startingEventCount}</span>
+                        )}
+                        {day.continuingEventCount > 0 && (
+                          <span aria-label={`${day.continuingEventCount} continuing`}>↪{day.continuingEventCount}</span>
+                        )}
                       </span>
                     </div>
                     <div className="run-calendar-day-events">
                       {visibleEvents.map(event => (
-                        <RunCalendarEventButton key={event.id} event={event} selected={selectedEvent?.id === event.id} mode="compact" onSelect={onSelectEvent} />
+                        <RunCalendarEventButton key={event.id} event={event} dayDate={day.date} selected={selectedEvent?.id === event.id} mode="compact" onSelect={onSelectEvent} />
                       ))}
                       {hiddenCount > 0 && <span className="run-calendar-more">+{hiddenCount} more</span>}
                     </div>
@@ -2286,13 +2294,14 @@ function RunCalendarMetric({ label, value }: { label: string; value: number }) {
   )
 }
 
-function RunCalendarEventButton({ event, selected, mode, onSelect }: { event: RunCalendarEvent; selected: boolean; mode: 'compact' | 'agenda'; onSelect: (event: RunCalendarEvent) => void }) {
+function RunCalendarEventButton({ event, dayDate, selected, mode, onSelect }: { event: RunCalendarEvent; dayDate: Date; selected: boolean; mode: 'compact' | 'agenda'; onSelect: (event: RunCalendarEvent) => void }) {
+  const continuesIntoDay = runCalendarEventContinuesIntoDay(event, dayDate)
   const scheduledZoneTime = event.timezone ? formatCalendarTime(event.start_at, event.timezone) : ''
   return (
-    <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${formatRunCalendarStatus(event.status)}`}>
-      <span className="run-calendar-event-time">{formatCalendarTime(event.start_at)}</span>
+    <button type="button" className={`run-calendar-event ${mode} ${runCalendarEventClass(event)} ${continuesIntoDay ? 'continuing' : ''} ${selected ? 'selected' : ''}`} onClick={() => onSelect(event)} title={`${event.title} / ${continuesIntoDay ? 'continues' : formatRunCalendarStatus(event.status)}`}>
+      <span className="run-calendar-event-time">{continuesIntoDay ? '↪ Continues' : formatCalendarTime(event.start_at)}</span>
       <span className="run-calendar-event-title">{event.title}</span>
-      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}{scheduledZoneTime ? ` / ${scheduledZoneTime}` : ''}</span>
+      <span className="run-calendar-event-meta">{runCalendarSourceLabel(event)} / {formatRunCalendarStatus(event.status)}{scheduledZoneTime && !continuesIntoDay ? ` / ${scheduledZoneTime}` : ''}</span>
     </button>
   )
 }
@@ -2320,23 +2329,51 @@ function getRunCalendarVisibleRange(view: RunCalendarView, anchor: Date) {
   return { from, to: addDays(from, 1) }
 }
 
-function buildRunCalendarModel(view: RunCalendarView, anchor: Date, events: RunCalendarEvent[]): RunCalendarModel {
+export function buildRunCalendarModel(view: RunCalendarView, anchor: Date, events: RunCalendarEvent[]): RunCalendarModel {
   const range = getRunCalendarVisibleRange(view, anchor)
   const dayCount = view === 'month' ? 42 : view === 'week' ? 7 : 1
-  const sortedEvents = [...events].sort(compareRunCalendarEvents)
   const todayKey = localDateKey(new Date())
-  const days = Array.from({ length: dayCount }, (_, index) => {
+  const days: RunCalendarDay[] = Array.from({ length: dayCount }, (_, index) => {
     const date = addDays(range.from, index)
     const dayStart = startOfLocalDay(date)
-    const dayEnd = addDays(dayStart, 1)
     return {
       key: localDateKey(dayStart),
       date: dayStart,
       isOutsidePeriod: view === 'month' && dayStart.getMonth() !== anchor.getMonth(),
       isToday: localDateKey(dayStart) === todayKey,
-      events: sortedEvents.filter(event => runCalendarEventOverlapsDay(event, dayStart, dayEnd)),
+      events: [],
+      startingEventCount: 0,
+      continuingEventCount: 0,
     }
   })
+  const daysByKey = new Map(days.map(day => [day.key, day]))
+  const rangeStartMs = range.from.getTime()
+  const rangeEndMs = range.to.getTime()
+  const preparedEvents = events.flatMap(event => {
+    const startMs = Date.parse(event.start_at)
+    if (!Number.isFinite(startMs)) return []
+    const explicitEndMs = event.end_at ? Date.parse(event.end_at) : NaN
+    const endMs = Number.isFinite(explicitEndMs) && explicitEndMs > startMs
+      ? explicitEndMs
+      : startMs + Math.max(parseDurationMs(event.workload.duration), 60_000)
+    if (startMs >= rangeEndMs || endMs <= rangeStartMs) return []
+    return [{ event, startMs, endMs, startDayKey: localDateKey(new Date(startMs)) }]
+  }).sort((left, right) => left.startMs === right.startMs
+    ? left.event.title.localeCompare(right.event.title)
+    : left.startMs - right.startMs)
+
+  for (const prepared of preparedEvents) {
+    let cursor = startOfLocalDay(new Date(Math.max(prepared.startMs, rangeStartMs)))
+    while (cursor.getTime() < prepared.endMs && cursor.getTime() < rangeEndMs) {
+      const day = daysByKey.get(localDateKey(cursor))
+      if (day) {
+        day.events.push(prepared.event)
+        if (day.key === prepared.startDayKey) day.startingEventCount += 1
+        else day.continuingEventCount += 1
+      }
+      cursor = addDays(cursor, 1)
+    }
+  }
   return {
     label: formatCalendarModelLabel(view, anchor),
     rangeLabel: `${formatCalendarDate(range.from)} - ${formatCalendarDate(addDays(range.to, -1))}`,
@@ -2357,24 +2394,10 @@ function shiftRunCalendarAnchor(anchor: Date, view: RunCalendarView, amount: num
   return addDays(anchor, amount * (view === 'week' ? 7 : 1))
 }
 
-function compareRunCalendarEvents(a: RunCalendarEvent, b: RunCalendarEvent) {
-  const aTime = new Date(a.start_at).getTime()
-  const bTime = new Date(b.start_at).getTime()
-  if (aTime === bTime) return a.title.localeCompare(b.title)
-  return aTime - bTime
-}
-
-function runCalendarEventOverlapsDay(event: RunCalendarEvent, dayStart: Date, dayEnd: Date) {
+function runCalendarEventContinuesIntoDay(event: RunCalendarEvent, dayStart: Date) {
   const startMs = new Date(event.start_at).getTime()
   if (!Number.isFinite(startMs)) return false
-  const endMs = getRunCalendarEventEndMs(event, startMs)
-  return startMs < dayEnd.getTime() && endMs > dayStart.getTime()
-}
-
-function getRunCalendarEventEndMs(event: RunCalendarEvent, startMs: number) {
-  const explicitEnd = event.end_at ? new Date(event.end_at).getTime() : NaN
-  if (Number.isFinite(explicitEnd) && explicitEnd > startMs) return explicitEnd
-  return startMs + Math.max(parseDurationMs(event.workload.duration), 60_000)
+  return startOfLocalDay(new Date(startMs)).getTime() < startOfLocalDay(dayStart).getTime()
 }
 
 function startOfLocalDay(date: Date) {
@@ -2534,11 +2557,13 @@ function getCurrentDashboardOrigin(): string {
   return origin && origin !== 'null' ? trimTrailingSlash(origin) : ''
 }
 
-function mergeDashboardService(services: SystemServicesResponse['services'], dashboardOrigin: string): SystemServicesResponse['services'] {
+export function mergeDashboardService(services: SystemServicesResponse['services'], dashboardOrigin: string): SystemServicesResponse['services'] {
   if (!dashboardOrigin) return services
   const existingDashboard = services.some(service => {
     if (service.id === 'frontend:dashboard') return true
-    return service.url ? trimTrailingSlash(service.url) === dashboardOrigin : false
+    return service.kind === 'frontend' && service.url
+      ? trimTrailingSlash(service.url) === dashboardOrigin
+      : false
   })
   if (existingDashboard) return services
   return [

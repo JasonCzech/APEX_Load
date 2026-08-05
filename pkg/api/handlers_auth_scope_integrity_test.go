@@ -11,6 +11,22 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// disappearingRoleScopeStore models the narrow race in which request-level
+// validation observes a scope, but the durable transaction finds that a
+// concurrent deletion committed first. The embedded store supplies all reads;
+// only the final fenced writes are intercepted.
+type disappearingRoleScopeStore struct {
+	storage.Store
+}
+
+func (s *disappearingRoleScopeStore) SaveUserRoleBinding(*storage.UserRoleBinding) error {
+	return storage.ErrRoleScopeNotFound
+}
+
+func (s *disappearingRoleScopeStore) SaveUserWithRoleBindings(*storage.User, []*storage.UserRoleBinding) error {
+	return storage.ErrRoleScopeNotFound
+}
+
 func TestServiceAccountHandlersRejectMissingRoleScopes(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
@@ -60,5 +76,49 @@ func TestServiceAccountHandlersRejectMissingRoleScopes(t *testing.T) {
 	}
 	if len(stored.ProjectRoles) != 0 || stored.Name != account.Name {
 		t.Fatalf("invalid scoped update mutated account: %#v", stored)
+	}
+}
+
+func TestUserBindingHandlersReportConcurrentRoleScopeDeletionAsConflict(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	project := &storage.Project{ID: "role-scope-race-project", Name: "Race", CreatedAt: now, UpdatedAt: now}
+	user := &storage.User{ID: "role-scope-race-user", Subject: "role-scope-race-user", Active: true, CreatedAt: now, UpdatedAt: now}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUser(user); err != nil {
+		t.Fatal(err)
+	}
+
+	server := NewServer(ServerConfig{Store: &disappearingRoleScopeStore{Store: store}})
+	bindingReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/users/"+user.ID+"/bindings",
+		strings.NewReader(`{"scope_type":"project","scope_id":"`+project.ID+`","role":"viewer"}`),
+	)
+	bindingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(bindingResp, bindingReq)
+	if bindingResp.Code != http.StatusConflict {
+		t.Fatalf("binding status = %d, want %d body=%s", bindingResp.Code, http.StatusConflict, bindingResp.Body.String())
+	}
+
+	onboardReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/users/onboard",
+		strings.NewReader(`{"subject":"new-race-user","bindings":[{"scope_type":"project","scope_id":"`+project.ID+`","role":"viewer"}]}`),
+	)
+	onboardResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(onboardResp, onboardReq)
+	if onboardResp.Code != http.StatusConflict {
+		t.Fatalf("onboard status = %d, want %d body=%s", onboardResp.Code, http.StatusConflict, onboardResp.Body.String())
+	}
+	if _, err := store.GetUserBySubject("new-race-user"); err == nil {
+		t.Fatal("failed onboarding persisted a user")
 	}
 }
