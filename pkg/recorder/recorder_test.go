@@ -6,6 +6,7 @@ import (
 	"compress/zlib"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -22,6 +23,24 @@ import (
 	gorillawebsocket "github.com/gorilla/websocket"
 )
 
+type recorderErrorReader struct {
+	err error
+}
+
+func (r recorderErrorReader) Read([]byte) (int, error) { return 0, r.err }
+
+type recorderErrorWriter struct {
+	err error
+}
+
+func (w recorderErrorWriter) Write(value []byte) (int, error) { return len(value), w.err }
+
+type recorderRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f recorderRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func TestNewRecorder(t *testing.T) {
 	r := New(":9999")
 	if r.addr != ":9999" {
@@ -35,6 +54,85 @@ func TestNewRecorder(t *testing.T) {
 	transport, ok := r.proxyClient.Transport.(*http.Transport)
 	if !ok || transport.MaxResponseHeaderBytes != maxRecorderHeaderBytes {
 		t.Fatalf("upstream response header limit = %#v, want %d", transport, maxRecorderHeaderBytes)
+	}
+}
+
+func TestCopyAndCaptureBodyMarksPartialReadErrorTruncated(t *testing.T) {
+	wantErr := errors.New("upstream body interrupted")
+	src := io.MultiReader(strings.NewReader("partial"), recorderErrorReader{err: wantErr})
+	var dst bytes.Buffer
+
+	captured, wireSize, truncated, err := copyAndCaptureBody(&dst, src, 1024)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("copy error = %v, want %v", err, wantErr)
+	}
+	if !truncated {
+		t.Fatal("partial response terminated by a read error was not marked truncated")
+	}
+	if string(captured) != "partial" || dst.String() != "partial" || wireSize != int64(len("partial")) {
+		t.Fatalf("partial copy = captured %q, dst %q, wire size %d", captured, dst.String(), wireSize)
+	}
+}
+
+func TestCopyAndCaptureBodyMarksWriteErrorTruncated(t *testing.T) {
+	wantErr := errors.New("downstream write interrupted")
+
+	captured, wireSize, truncated, err := copyAndCaptureBody(
+		recorderErrorWriter{err: wantErr},
+		strings.NewReader("partial"),
+		1024,
+	)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("copy error = %v, want %v", err, wantErr)
+	}
+	if !truncated {
+		t.Fatal("response terminated by a write error was not marked truncated")
+	}
+	if string(captured) != "partial" || wireSize != int64(len("partial")) {
+		t.Fatalf("partial copy = captured %q, wire size %d", captured, wireSize)
+	}
+}
+
+func TestHandleProxyBoundsStalledNonStreamingResponseBody(t *testing.T) {
+	var body *contextOnlyStalledRecorderBody
+	rec := New(":0")
+	rec.proxyAuthToken = ""
+	rec.requireProxyAuth = false
+	rec.upstreamBodyInactivityTimeout = 20 * time.Millisecond
+	rec.proxyClient = &http.Client{Transport: recorderRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body = &contextOnlyStalledRecorderBody{ctx: req.Context(), closed: make(chan struct{})}
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        http.Header{"Content-Length": []string{"8"}},
+			Body:          body,
+			ContentLength: 8,
+			Request:       req,
+		}, nil
+	})}
+
+	done := make(chan struct{})
+	go func() {
+		rec.handleProxy(
+			httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodGet, "http://origin.example.test/stalled", nil),
+		)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("ordinary HTTP proxy did not bound a stalled response body")
+	}
+	if body == nil {
+		t.Fatal("ordinary HTTP proxy did not create an upstream response body")
+	}
+	select {
+	case <-body.closed:
+	default:
+		t.Fatal("ordinary HTTP proxy did not close the stalled upstream body")
+	}
+	if slots := len(rec.proxySlots); slots != 0 {
+		t.Fatalf("ordinary HTTP proxy retained %d request slot(s) after timeout", slots)
 	}
 }
 
@@ -612,7 +710,10 @@ func TestUpdateRequestRejectsOversizedCurationFields(t *testing.T) {
 
 func TestRecordRequestRetentionRejectionHasNoPartialMutation(t *testing.T) {
 	rec := New(":0")
-	session, err := rec.StartSession("test", "Retention Limit", SessionFilters{}, nil)
+	var events []SessionEvent
+	session, err := rec.StartSession("test", "Retention Limit", SessionFilters{}, func(event SessionEvent) {
+		events = append(events, event)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -629,6 +730,22 @@ func TestRecordRequestRetentionRejectionHasNoPartialMutation(t *testing.T) {
 	}
 	if session.BaseURL != "" || !session.lastReqTime.IsZero() || !session.lastReqEnd.IsZero() {
 		t.Fatalf("rejected request mutated timing/base URL: base=%q request=%v end=%v", session.BaseURL, session.lastReqTime, session.lastReqEnd)
+	}
+	if session.DroppedRequests != 1 || !session.Truncated || len(session.Warnings) != 1 {
+		t.Fatalf("request cap evidence = dropped:%d truncated:%v warnings:%v", session.DroppedRequests, session.Truncated, session.Warnings)
+	}
+	if len(events) != 1 || events[0].Type != "recording_warning" || events[0].Warning == "" {
+		t.Fatalf("warning events = %#v, want one explicit recording warning", events)
+	}
+	if seq := rec.recordRequest(session, req, []byte("payload"), resp, []byte("response"), time.Second); seq != 0 {
+		t.Fatalf("second record seq = %d, want rejection", seq)
+	}
+	if session.DroppedRequests != 2 || len(session.Warnings) != 1 || len(events) != 1 {
+		t.Fatalf("repeated cap evidence = dropped:%d warnings:%v events:%#v", session.DroppedRequests, session.Warnings, events)
+	}
+	snapshot := session.snapshot()
+	if snapshot.DroppedRequests != 2 || !snapshot.Truncated || len(snapshot.Warnings) != 1 {
+		t.Fatalf("snapshot omitted cap evidence: %+v", snapshot)
 	}
 }
 
@@ -649,6 +766,9 @@ func TestAppendWebSocketMessageHonorsSessionRetentionLimit(t *testing.T) {
 	rec.appendWebSocketMessage(session, 1, message)
 	if len(session.Requests[0].WebSocketMessages) != 0 || session.webSocketMessages != 0 || session.webSocketPayloadBytes != 0 {
 		t.Fatalf("rejected websocket message mutated session: %+v", session.Requests[0].WebSocketMessages)
+	}
+	if session.DroppedWebSocketMessages != 1 || !session.Truncated || len(session.Warnings) != 1 {
+		t.Fatalf("websocket cap evidence = dropped:%d truncated:%v warnings:%v", session.DroppedWebSocketMessages, session.Truncated, session.Warnings)
 	}
 }
 

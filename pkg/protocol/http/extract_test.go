@@ -249,6 +249,160 @@ func TestExtractJMESPath_InvalidExpression(t *testing.T) {
 	}
 }
 
+func TestExtractJMESPath_NumericComparisons(t *testing.T) {
+	tests := []struct {
+		name string
+		expr string
+		want string
+	}{
+		{name: "equality filter", expr: "items[?count == `2`].name | [0]", want: "second"},
+		{name: "ordering filter", expr: "items[?count > `1`].name | [0]", want: "second"},
+		{name: "mixed predicate keeps numeric-only match", expr: "items[?name == 'first' || count > `1`].name", want: `["first","second"]`},
+		{name: "numeric scalar", expr: "items[1].count", want: "2"},
+	}
+	body := []byte(`{"items":[{"name":"first","count":1},{"name":"second","count":2}]}`)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := extractJMESPath(test.expr, body)
+			if err != nil {
+				t.Fatalf("extractJMESPath(%q): %v", test.expr, err)
+			}
+			if got != test.want {
+				t.Fatalf("extractJMESPath(%q) = %q, want %q", test.expr, got, test.want)
+			}
+		})
+	}
+}
+
+func TestExtractJMESPath_PreservesUnrepresentableScalarNumber(t *testing.T) {
+	got, err := extractJMESPath("value", []byte(`{"value":1e400}`))
+	if err != nil {
+		t.Fatalf("extractJMESPath: %v", err)
+	}
+	if got != "1e400" {
+		t.Fatalf("scalar = %q, want exact JSON number", got)
+	}
+}
+
+func TestExtractJMESPathRejectsUnsafeLargeIntegerComparison(t *testing.T) {
+	body := []byte(`{"items":[{"name":"rounded-down","id":9007199254740992},{"name":"exact-target","id":9007199254740993}]}`)
+	if _, err := extractJMESPath("items[?id == `9007199254740993`].name", body); err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("unsafe integer predicate error = %v", err)
+	}
+	for _, expression := range []string{
+		"items[?id > `9007199254740992`].name",
+		"items[?id < `9007199254740994`].name",
+		"items[?id > threshold].name",
+	} {
+		if _, err := extractJMESPath(expression, []byte(`{"items":[{"name":"boundary","id":9007199254740993,"threshold":9007199254740992}]}`)); err == nil || !strings.Contains(err.Error(), "unsafe") {
+			t.Fatalf("unsafe integer predicate %q error = %v", expression, err)
+		}
+	}
+	got, err := extractJMESPath("items[?name == 'exact-target'].id | [0]", body)
+	if err != nil {
+		t.Fatalf("exact nonnumeric predicate: %v", err)
+	}
+	if got != "9007199254740993" {
+		t.Fatalf("exact selected integer = %q, want 9007199254740993", got)
+	}
+
+	got, err = extractJMESPath("items[?count > `1`].id | [0]", []byte(`{"items":[{"count":1,"id":9007199254740992},{"count":2,"id":9007199254740993}]}`))
+	if err != nil {
+		t.Fatalf("safe predicate with unrelated large identifier: %v", err)
+	}
+	if got != "9007199254740993" {
+		t.Fatalf("large identifier selected by safe predicate = %q, want 9007199254740993", got)
+	}
+	got, err = extractJMESPath("items[?!enabled].id | [0]", []byte(`{"items":[{"enabled":false,"id":9007199254740993}]}`))
+	if err != nil {
+		t.Fatalf("unary not with unrelated large identifier: %v", err)
+	}
+	if got != "9007199254740993" {
+		t.Fatalf("large identifier selected by unary predicate = %q, want 9007199254740993", got)
+	}
+}
+
+func TestExtractJMESPathAllowsQualifiedSafeFieldWithDuplicateUnsafeLeaf(t *testing.T) {
+	body := []byte(`{"archive":{"id":9007199254740993},"current":{"id":2}}`)
+	got, err := extractJMESPath("current.id == `2`", body)
+	if err != nil {
+		t.Fatalf("safe qualified comparison: %v", err)
+	}
+	if got != "true" {
+		t.Fatalf("safe qualified comparison = %q, want true", got)
+	}
+	if _, err := extractJMESPath("archive.id > `9007199254740992`", body); err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("unsafe qualified comparison error = %v", err)
+	}
+}
+
+func TestExtractJMESPathRejectsUnsafeQualifiedFieldInsideFilter(t *testing.T) {
+	body := []byte(`{"items":[{"name":"unsafe","foo":{"id":9007199254740993}}]}`)
+	expr := "length(items[?foo.id > `9007199254740992`])"
+	if _, err := extractJMESPath(expr, body); err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("unsafe nested filter comparison error = %v", err)
+	}
+}
+
+func TestExtractJMESPathAllowsScopedSafeLeafWithNestedUnsafeDuplicate(t *testing.T) {
+	body := []byte(`{"archive":{"id":9007199254740993},"id":2,"items":[{"id":2,"name":"safe"}]}`)
+	for expr, want := range map[string]string{
+		"id == `2`":                    "true",
+		"items[?id == `2`].name | [0]": "safe",
+	} {
+		got, err := extractJMESPath(expr, body)
+		if err != nil || got != want {
+			t.Fatalf("safe scoped comparison %q = %q, %v; want %q", expr, got, err, want)
+		}
+	}
+}
+
+func TestExtractJMESPathRejectsUnsafeQualifiedFieldAfterIndexProjection(t *testing.T) {
+	body := []byte(`{"items":[{"foo":{"id":9007199254740993}}]}`)
+	for _, expr := range []string{
+		"items[0].foo.id > `9007199254740992`",
+		"items[].foo.id > `9007199254740992`",
+	} {
+		if _, err := extractJMESPath(expr, body); err == nil || !strings.Contains(err.Error(), "unsafe") {
+			t.Fatalf("unsafe projected comparison %q error = %v", expr, err)
+		}
+	}
+
+	safeBody := []byte(`{"archive":[{"foo":{"id":9007199254740993}}],"current":[{"foo":{"id":2}}]}`)
+	for _, expr := range []string{
+		"current[0].foo.id == `2`",
+		"current[].foo.id == `[2]`",
+	} {
+		got, err := extractJMESPath(expr, safeBody)
+		if err != nil || got != "true" {
+			t.Fatalf("safe same-suffix comparison %q = %q, %v", expr, got, err)
+		}
+	}
+}
+
+func TestExtractJMESPathQualifiesPipeRelativeNumericComparisons(t *testing.T) {
+	unsafeBody := []byte(`{"items":[{"id":9007199254740993}]}`)
+	for _, expr := range []string{
+		"items[0] | (id > `9007199254740992` || `false`)",
+		"items[0] | (`false` || id > `9007199254740992`)",
+		"root | child.id > `9007199254740992`",
+	} {
+		body := unsafeBody
+		if strings.HasPrefix(expr, "root") {
+			body = []byte(`{"root":{"child":{"id":9007199254740993}}}`)
+		}
+		if _, err := extractJMESPath(expr, body); err == nil || !strings.Contains(err.Error(), "unsafe") {
+			t.Fatalf("unsafe pipe-relative comparison %q error = %v", expr, err)
+		}
+	}
+
+	safeBody := []byte(`{"archive":[{"id":9007199254740993}],"current":[{"id":2}]}`)
+	got, err := extractJMESPath("current[0] | (id == `2` || `false`)", safeBody)
+	if err != nil || got != "true" {
+		t.Fatalf("safe qualified pipe comparison = %q, %v; want true", got, err)
+	}
+}
+
 // TestExtractCompositeReferenceId guards the A5 composite-chaining contract: a
 // referenceId-scoped lookup needs a filter predicate, which only the jmespath
 // extractor supports — the hand-rolled jsonpath extractor errors on it. The
@@ -712,6 +866,24 @@ func TestExtractRegexWithoutCaptureReturnsFullMatch(t *testing.T) {
 	}
 	if got != "token-42" {
 		t.Fatalf("extractRegex = %q, want full match", got)
+	}
+}
+
+func TestExtractRegexVariantsWithoutCaptureReturnFullMatches(t *testing.T) {
+	body := []byte(`token-1 token-2`)
+	ordinal, err := extractRegexOrdinal(`token-\d+`, body)
+	if err != nil {
+		t.Fatalf("extractRegexOrdinal: %v", err)
+	}
+	if ordinal != "token-1" {
+		t.Fatalf("extractRegexOrdinal = %q, want token-1", ordinal)
+	}
+	all, err := extractAllRegex(`token-\d+`, body)
+	if err != nil {
+		t.Fatalf("extractAllRegex: %v", err)
+	}
+	if strings.Join(all, ",") != "token-1,token-2" {
+		t.Fatalf("extractAllRegex = %#v", all)
 	}
 }
 

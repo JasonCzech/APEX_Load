@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RuntimeSettingsGroupEditor, { type RuntimeEditorGroup } from './RuntimeSettingsGroupEditor'
 import { type ScenarioRuntimeSettingsDraft } from '../types'
+import { editReplacementSection } from './runtimeSettingsApply'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -71,6 +72,20 @@ function clickTab(label: string) {
 }
 
 describe('RuntimeSettingsGroupEditor', () => {
+  it('deletes inherited nested values when a replacement-section control is cleared', () => {
+    const inherited = {
+      default_headers: { Authorization: 'Bearer inherited' },
+      cache: { enabled: true },
+    }
+
+    expect(editReplacementSection<typeof inherited>(undefined, { default_headers: undefined }, inherited)).toEqual({
+      cache: { enabled: true },
+    })
+    expect(editReplacementSection<typeof inherited>(inherited, { cache: undefined }, inherited)).toEqual({
+      default_headers: { Authorization: 'Bearer inherited' },
+    })
+  })
+
   it('shows the effective value, source labels, and protocol applicability for the focused group', () => {
     act(() => {
       root.render(

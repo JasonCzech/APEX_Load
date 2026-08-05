@@ -849,9 +849,14 @@ func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *
 	if m.closed || m.sessions[session.ID] != session || session.reservation.failureOrExpired(time.Now()) != nil {
 		return
 	}
-	session.mu.RLock()
+	session.mu.Lock()
 	abandoned := session.workerAbandoned
-	session.mu.RUnlock()
+	if !abandoned {
+		// Engine callbacks are authoritative liveness evidence for WebSocket-only
+		// clients as well as the dashboard's polling client.
+		session.lastActivityAt = m.retention.clock()
+	}
+	session.mu.Unlock()
 	if abandoned {
 		return
 	}

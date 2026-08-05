@@ -56,8 +56,12 @@ type healthStatusSetter interface {
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	loadLocalDotEnv()
+	logLevel, logLevelErr := config.ResolveLogLevel(os.Getenv)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})))
+	if logLevelErr != nil {
+		slog.Warn("invalid log-level configuration; using info", "err", logLevelErr)
+	}
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
 	build := buildinfo.Get()
 	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-generator", build.Version)

@@ -49,6 +49,39 @@ func TestSQLiteScenarioScheduleRevisionCASPreventsOverwriteAndResurrection(t *te
 	}
 }
 
+func TestSQLiteScenarioScheduleRevisionGuardedDeleteRejectsNewerRevision(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	if err := store.SaveScenario(&Scenario{ID: "scenario-delete-cas", Name: "Scenario", Duration: "1m", CreatedAt: now}, nil); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	schedule := &ScenarioSchedule{ID: "schedule-delete-cas", ScenarioID: "scenario-delete-cas", ProjectID: DefaultProjectID, Revision: 1, Name: "A", CronExpr: "0 * * * *", Enabled: true, CreatedAt: now, UpdatedAt: now}
+	if created, err := store.CreateScenarioScheduleIfAbsent(schedule); err != nil || !created {
+		t.Fatalf("CreateScenarioScheduleIfAbsent = (%v, %v)", created, err)
+	}
+	updated := *schedule
+	updated.Name = "newer schedule"
+	if changed, err := store.UpdateScenarioScheduleIfRevision(&updated, schedule.Revision); err != nil || !changed {
+		t.Fatalf("UpdateScenarioScheduleIfRevision = (%v, %v)", changed, err)
+	}
+	result, err := store.DeleteScenarioScheduleGuardedIfRevision(schedule.ID, schedule.Revision)
+	if err != nil || result != ScheduleDeleteMissing {
+		t.Fatalf("stale guarded delete = (%q, %v), want missing without deletion", result, err)
+	}
+	retained, err := store.GetScenarioSchedule(schedule.ID)
+	if err != nil || retained == nil || retained.Name != "newer schedule" {
+		t.Fatalf("schedule after stale guarded delete = (%#v, %v)", retained, err)
+	}
+	result, err = store.DeleteScenarioScheduleGuardedIfRevision(schedule.ID, updated.Revision)
+	if err != nil || result != ScheduleDeleteDeleted {
+		t.Fatalf("current guarded delete = (%q, %v), want deleted", result, err)
+	}
+}
+
 func TestSQLiteScenarioScheduleApprovalResolutionIsAtomic(t *testing.T) {
 	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

@@ -27,6 +27,7 @@ import {
   sourceSecretSessionIsExpired,
 } from './sourceSecretSession'
 import { requiredScriptSecrets } from './scriptSecretReferenceModel'
+import { loadGitHubScriptStatuses } from './scriptGitHubStatusModel'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -45,6 +46,41 @@ interface Props {
 }
 
 type AuthoringHealthFilter = 'all' | 'blocked' | 'needs_replay' | 'missing_data' | 'runtime_warning' | 'ai_guardrail'
+
+type ScriptSecretStatusPlan = {
+  scriptId: string
+  projectId?: string
+  required: string[]
+  signature: string
+}
+
+export function beginScriptSecretStatusRequest(tokens: Map<string, number>, scriptId: string): number {
+  const token = (tokens.get(scriptId) || 0) + 1
+  tokens.set(scriptId, token)
+  return token
+}
+
+export function isLatestScriptSecretStatusRequest(tokens: ReadonlyMap<string, number>, scriptId: string, token: number): boolean {
+  return tokens.get(scriptId) === token
+}
+
+function buildScriptSecretStatusPlans(
+  scripts: readonly StoredScript[],
+  activeProjectId?: string,
+): ScriptSecretStatusPlan[] {
+  return scripts.flatMap(script => {
+    if (!isAddressableScriptId(script.id)) return []
+    const required = requiredScriptSecrets(script)
+    if (required.length === 0) return []
+    const projectId = script.project_id || activeProjectId
+    return [{
+      scriptId: script.id,
+      projectId,
+      required,
+      signature: `${projectId || ''}\u0000${required.join('\u0000')}`,
+    }]
+  })
+}
 
 const healthFilters: Array<{ key: AuthoringHealthFilter; label: string }> = [
   { key: 'all', label: 'All' },
@@ -119,7 +155,6 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
   const [secretStatusByScript, setSecretStatusByScript] = useState<Record<string, ScriptSecretStatus>>({})
   const [secretStatusStateByScript, setSecretStatusStateByScript] = useState<Record<string, 'loading' | 'ready' | 'error'>>({})
-  const [secretStatusRetryGeneration, setSecretStatusRetryGeneration] = useState(0)
   const [libraryQuery, setLibraryQuery] = useState('')
   const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
   const [releaseFilter, setReleaseFilter] = useState('all')
@@ -130,6 +165,8 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const scriptsRequestGenerationRef = useRef(0)
   const authoringSessionsRequestGenerationRef = useRef(0)
   const modelExistingRequestGenerationRef = useRef(0)
+  const secretStatusSignatureByScriptRef = useRef(new Map<string, string>())
+  const secretStatusRequestTokenByScriptRef = useRef(new Map<string, number>())
 
   if (projectScopeRef.current.id !== activeProjectId) {
     projectScopeRef.current = {
@@ -165,78 +202,145 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     else window.location.hash = '#/settings'
   }, [activeProjectId, onNavigate])
 
+  const secretStatusPlans = useMemo(
+    () => buildScriptSecretStatusPlans(scripts, activeProjectId),
+    [activeProjectId, scripts],
+  )
+  const secretStatusPlanKey = useMemo(
+    () => secretStatusPlans
+      .map(plan => `${plan.scriptId}\u0000${plan.signature}`)
+      .sort()
+      .join('\u0001'),
+    [secretStatusPlans],
+  )
+  const secretStatusPlansRef = useRef(secretStatusPlans)
+  secretStatusPlansRef.current = secretStatusPlans
+
+  const fetchSecretStatusesForPlans = useCallback(async (plans: readonly ScriptSecretStatusPlan[]) => {
+    const projectId = plans[0]?.projectId
+    if (!projectId || plans.length === 0) return {} as Record<string, ScriptSecretStatus>
+    const required = Array.from(new Set(plans.flatMap(plan => plan.required))).sort()
+    const responses = await Promise.all(Array.from({ length: Math.ceil(required.length / 256) }, (_, index) => (
+      api.getProjectSecretStatuses(projectId, required.slice(index * 256, (index + 1) * 256))
+    )))
+    const secrets = responses.flatMap(response => response.secrets)
+    const configured = new Set(secrets.filter(secret => secret.configured).map(secret => secret.name))
+    return Object.fromEntries(plans.map(plan => [plan.scriptId, {
+      script_id: plan.scriptId,
+      project_id: projectId,
+      required: plan.required,
+      configured: plan.required.filter(name => configured.has(name)),
+      missing: plan.required.filter(name => !configured.has(name)),
+      secrets: secrets.filter(secret => plan.required.includes(secret.name)),
+      capabilities: responses[0].capabilities,
+    } satisfies ScriptSecretStatus]))
+  }, [api])
+
   useEffect(() => {
-    if (scripts.length === 0) {
-      setSecretStatusByScript({})
+    const plans = secretStatusPlansRef.current
+    const knownScriptIds = new Set(plans.map(plan => plan.scriptId))
+    secretStatusSignatureByScriptRef.current.forEach((_, scriptId) => {
+      if (!knownScriptIds.has(scriptId)) secretStatusSignatureByScriptRef.current.delete(scriptId)
+    })
+    secretStatusRequestTokenByScriptRef.current.forEach((_, scriptId) => {
+      if (!knownScriptIds.has(scriptId)) secretStatusRequestTokenByScriptRef.current.delete(scriptId)
+    })
+    setSecretStatusByScript(current => Object.fromEntries(
+      Object.entries(current).filter(([scriptId]) => knownScriptIds.has(scriptId)),
+    ))
+
+    if (plans.length === 0) {
       setSecretStatusStateByScript({})
       return
     }
-    const addressableScripts = scripts.filter(script => isAddressableScriptId(script.id))
     if (typeof api.getProjectSecretStatuses !== 'function') {
-      setSecretStatusByScript({})
-      setSecretStatusStateByScript(Object.fromEntries(addressableScripts.map(script => [script.id, 'error'])))
+      setSecretStatusStateByScript(Object.fromEntries(plans.map(plan => [plan.scriptId, 'error'])))
       return
     }
-    if (addressableScripts.length === 0) {
-      setSecretStatusByScript({})
-      setSecretStatusStateByScript({})
-      return
-    }
+
     let cancelled = false
-    const requiredByScript = new Map(addressableScripts.map(script => [script.id, requiredScriptSecrets(script)]))
-    const scriptsRequiringSecrets = addressableScripts.filter(script => (requiredByScript.get(script.id)?.length || 0) > 0)
-    setSecretStatusByScript({})
-    setSecretStatusStateByScript(Object.fromEntries(scriptsRequiringSecrets.map(script => [script.id, 'loading'])))
-    const byProject = new Map<string, StoredScript[]>()
-    for (const script of scriptsRequiringSecrets) {
-      const projectID = script.project_id || activeProjectId
-      if (!projectID) {
-        setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'error' }))
-        continue
-      }
-      byProject.set(projectID, [...(byProject.get(projectID) || []), script])
+    const pendingPlans = plans.filter(plan => (
+      plan.projectId
+      && secretStatusSignatureByScriptRef.current.get(plan.scriptId) !== plan.signature
+    ))
+    const requestTokens = new Map<string, number>()
+    pendingPlans.forEach(plan => {
+      const token = beginScriptSecretStatusRequest(secretStatusRequestTokenByScriptRef.current, plan.scriptId)
+      requestTokens.set(plan.scriptId, token)
+    })
+    const missingProjectPlans = plans.filter(plan => !plan.projectId)
+    setSecretStatusStateByScript(current => {
+      const next = Object.fromEntries(Object.entries(current).filter(([scriptId]) => knownScriptIds.has(scriptId))) as Record<string, 'loading' | 'ready' | 'error'>
+      pendingPlans.forEach(plan => { next[plan.scriptId] = 'loading' })
+      missingProjectPlans.forEach(plan => { next[plan.scriptId] = 'error' })
+      return next
+    })
+
+    if (pendingPlans.length === 0) {
+      return () => { cancelled = true }
     }
-    void Promise.all(Array.from(byProject.entries()).map(async ([projectID, projectScripts]) => {
-      const required = Array.from(new Set(projectScripts.flatMap(script => requiredByScript.get(script.id) || []))).sort()
+
+    const byProject = new Map<string, ScriptSecretStatusPlan[]>()
+    pendingPlans.forEach(plan => {
+      if (!plan.projectId) return
+      byProject.set(plan.projectId, [...(byProject.get(plan.projectId) || []), plan])
+    })
+    void Promise.all(Array.from(byProject.values()).map(async projectPlans => {
       try {
-        const responses = await Promise.all(Array.from({ length: Math.ceil(required.length / 256) }, (_, index) => (
-          api.getProjectSecretStatuses(projectID, required.slice(index * 256, (index + 1) * 256))
-        )))
+        const statuses = await fetchSecretStatusesForPlans(projectPlans)
         if (cancelled) return
-        const secrets = responses.flatMap(response => response.secrets)
-        const configured = new Set(secrets.filter(secret => secret.configured).map(secret => secret.name))
-        setSecretStatusByScript(current => {
-          const next = { ...current }
-          for (const script of projectScripts) {
-            const names = requiredByScript.get(script.id) || []
-            next[script.id] = {
-              script_id: script.id,
-              project_id: projectID,
-              required: names,
-              configured: names.filter(name => configured.has(name)),
-              missing: names.filter(name => !configured.has(name)),
-              secrets: secrets.filter(secret => names.includes(secret.name)),
-              capabilities: responses[0].capabilities,
-            }
-          }
-          return next
-        })
-        setSecretStatusStateByScript(current => ({
+        const currentPlans = new Map(secretStatusPlansRef.current.map(plan => [plan.scriptId, plan.signature]))
+        const acceptedPlans = projectPlans.filter(plan => (
+          currentPlans.get(plan.scriptId) === plan.signature
+          && isLatestScriptSecretStatusRequest(secretStatusRequestTokenByScriptRef.current, plan.scriptId, requestTokens.get(plan.scriptId) || 0)
+        ))
+        if (acceptedPlans.length === 0) return
+        acceptedPlans.forEach(plan => secretStatusSignatureByScriptRef.current.set(plan.scriptId, plan.signature))
+        setSecretStatusByScript(current => ({
           ...current,
-          ...Object.fromEntries(projectScripts.map(script => [script.id, 'ready' as const])),
+          ...Object.fromEntries(acceptedPlans.map(plan => [plan.scriptId, statuses[plan.scriptId]])),
         }))
+        setSecretStatusStateByScript(current => ({ ...current, ...Object.fromEntries(acceptedPlans.map(plan => [plan.scriptId, 'ready' as const])) }))
       } catch {
         if (cancelled) return
+        const currentPlans = new Map(secretStatusPlansRef.current.map(plan => [plan.scriptId, plan.signature]))
+        const failedPlans = projectPlans.filter(plan => (
+          currentPlans.get(plan.scriptId) === plan.signature
+          && isLatestScriptSecretStatusRequest(secretStatusRequestTokenByScriptRef.current, plan.scriptId, requestTokens.get(plan.scriptId) || 0)
+        ))
         setSecretStatusStateByScript(current => ({
           ...current,
-          ...Object.fromEntries(projectScripts.map(script => [script.id, 'error' as const])),
+          ...Object.fromEntries(failedPlans.map(plan => [plan.scriptId, 'error' as const])),
         }))
       }
     }))
     return () => {
       cancelled = true
     }
-  }, [activeProjectId, api, scripts, secretStatusRetryGeneration])
+  }, [api, fetchSecretStatusesForPlans, secretStatusPlanKey])
+
+  const retryScriptSecretStatus = useCallback((script: StoredScript) => {
+    const plan = secretStatusPlansRef.current.find(candidate => candidate.scriptId === script.id)
+    if (!plan?.projectId || typeof api.getProjectSecretStatuses !== 'function') {
+      if (isAddressableScriptId(script.id)) {
+        setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'error' }))
+      }
+      return
+    }
+    const token = beginScriptSecretStatusRequest(secretStatusRequestTokenByScriptRef.current, plan.scriptId)
+    setSecretStatusStateByScript(current => ({ ...current, [plan.scriptId]: 'loading' }))
+    void fetchSecretStatusesForPlans([plan]).then(statuses => {
+      const currentPlan = secretStatusPlansRef.current.find(candidate => candidate.scriptId === plan.scriptId)
+      if (!isLatestScriptSecretStatusRequest(secretStatusRequestTokenByScriptRef.current, plan.scriptId, token) || currentPlan?.signature !== plan.signature) return
+      secretStatusSignatureByScriptRef.current.set(plan.scriptId, plan.signature)
+      setSecretStatusByScript(current => ({ ...current, [plan.scriptId]: statuses[plan.scriptId] }))
+      setSecretStatusStateByScript(current => ({ ...current, [plan.scriptId]: 'ready' }))
+    }).catch(() => {
+      const currentPlan = secretStatusPlansRef.current.find(candidate => candidate.scriptId === plan.scriptId)
+      if (!isLatestScriptSecretStatusRequest(secretStatusRequestTokenByScriptRef.current, plan.scriptId, token) || currentPlan?.signature !== plan.signature) return
+      setSecretStatusStateByScript(current => ({ ...current, [plan.scriptId]: 'error' }))
+    })
+  }, [api, fetchSecretStatusesForPlans])
 
   const refresh = useCallback(async () => {
     const projectId = activeProjectId
@@ -518,22 +622,9 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
       return () => { cancelled = true }
     }
     void (async () => {
-      const statuses = await Promise.all(scripts
-        .filter(script => isAddressableScriptId(script.id))
-        .slice(0, 100)
-        .map(async script => {
-        try {
-          return [script.id, await githubApi.scriptStatus(script.id)] as const
-        } catch {
-          return [script.id, null] as const
-        }
-      }))
+      const statuses = await loadGitHubScriptStatuses(scripts, githubApi.scriptStatus)
       if (cancelled) return
-      const next: Record<string, GitHubScriptStatus> = {}
-      statuses.forEach(([id, status]) => {
-        if (status?.linked) next[id] = status
-      })
-      setGithubStatusByScript(next)
+      setGithubStatusByScript(statuses)
     })()
     return () => { cancelled = true }
   }, [githubApi, githubReady, scripts])
@@ -921,7 +1012,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             secretStatusByScript={secretStatusByScript}
             secretStatusStateByScript={secretStatusStateByScript}
             onConfigureSecrets={onNavigate ? openProjectSecrets : undefined}
-            onRetrySecretStatus={() => setSecretStatusRetryGeneration(generation => generation + 1)}
+            onRetrySecretStatus={retryScriptSecretStatus}
             onValidateScriptDetails={api.validateScript}
           />
         </div>

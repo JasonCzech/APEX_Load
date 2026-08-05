@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
@@ -49,6 +50,194 @@ func TestGeneratedReferenceIsFresh(t *testing.T) {
 func TestGeneratedSchemaCompiles(t *testing.T) {
 	if _, err := compileGeneratedSchema(t); err != nil {
 		t.Fatalf("generated schema does not compile: %v", err)
+	}
+}
+
+func TestSAPGUIArtifactsDiscloseExternalRunnerRequirement(t *testing.T) {
+	reference := string(GenerateReference())
+	if !strings.Contains(reference, "Execution posture: `external_runner_required`") ||
+		!strings.Contains(reference, "not executable in the bundled runtime") {
+		t.Fatal("SAP GUI reference does not disclose its external runner requirement")
+	}
+	schema, err := GenerateSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(schema, []byte(`"x-execution-posture": "external_runner_required"`)) {
+		t.Fatal("SAP GUI schema does not carry execution posture")
+	}
+}
+
+func TestCatalogEnumChoicesAreSchemaExamplesNotUnenforcedConstraints(t *testing.T) {
+	schema := fieldSchema(dsl.FieldSpec{Kind: dsl.FieldKindEnum, Enum: []string{"left", "right"}})
+	if _, closed := schema["enum"]; closed {
+		t.Fatalf("unenforced catalog choices were emitted as a closed enum: %#v", schema)
+	}
+	examples, ok := schema["examples"].([]any)
+	if !ok || len(examples) != 2 {
+		t.Fatalf("catalog choices were not retained as examples: %#v", schema)
+	}
+	closed := fieldSchema(dsl.FieldSpec{Kind: dsl.FieldKindEnum, Enum: []string{"accept", "dismiss"}, SchemaEnum: true})
+	if values, ok := closed["enum"].([]any); !ok || len(values) != 2 {
+		t.Fatalf("validator-enforced choices were not emitted as a closed enum: %#v", closed)
+	}
+}
+
+func TestGeneratedSchemaPreservesOpenAliasesAndClosedRuntimeEnums(t *testing.T) {
+	schema, err := compileGeneratedSchema(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name        string
+		protocol    string
+		config      map[string]any
+		action      map[string]any
+		wantInvalid bool
+	}{
+		{
+			name:     "browser button compatibility alias remains accepted",
+			protocol: "browser",
+			action: map[string]any{
+				"name": "click", "type": "browser_click", "selector": "#submit",
+				"params": map[string]any{"button": "primary"},
+			},
+		},
+		{
+			name:     "blank browser button default remains accepted",
+			protocol: "browser",
+			action: map[string]any{
+				"name": "click", "type": "browser_click", "selector": "#submit",
+				"params": map[string]any{"button": " "},
+			},
+		},
+		{
+			name:     "blank navigation default remains accepted",
+			protocol: "browser",
+			action: map[string]any{
+				"name": "navigate", "type": "browser_navigate", "target": "https://example.test",
+				"params": map[string]any{"wait_until": " "},
+			},
+		},
+		{
+			name:     "normalized dialog choices remain accepted",
+			protocol: "browser",
+			action: map[string]any{
+				"name": "dialog", "type": "browser_handle_dialog",
+				"params": map[string]any{"action": " ACCEPT ", "match_mode": " Exact "},
+			},
+		},
+		{
+			name:     "blank dialog match mode remains accepted",
+			protocol: "browser",
+			action: map[string]any{
+				"name": "dialog", "type": "browser_handle_dialog",
+				"params": map[string]any{"action": "accept", "match_mode": " "},
+			},
+		},
+		{
+			name:     "blank Bruno defaults remain accepted",
+			protocol: "bruno",
+			config: map[string]any{
+				"bruno": map[string]any{
+					"bundle_ref": "asset://collection", "bundle_sha256": strings.Repeat("a", 64), "sandbox": "safe",
+				},
+			},
+			action: map[string]any{
+				"name": "run", "type": "bruno_run",
+				"params": map[string]any{"selection": " ", "execution": ""},
+			},
+		},
+		{
+			name:     "dialog action is validator-enforced",
+			protocol: "browser",
+			action: map[string]any{
+				"name": "dialog", "type": "browser_handle_dialog",
+				"params": map[string]any{"action": "approve"},
+			},
+			wantInvalid: true,
+		},
+		{
+			name:        "dialog action remains required",
+			protocol:    "browser",
+			action:      map[string]any{"name": "dialog", "type": "browser_handle_dialog", "params": map[string]any{}},
+			wantInvalid: true,
+		},
+		{
+			name:     "blank WebSocket message type uses its default",
+			protocol: "websocket",
+			config:   map[string]any{"base_url": "ws://example.test"},
+			action: map[string]any{
+				"name": "send", "type": "ws_send", "body": "payload",
+				"params": map[string]any{"type": " "},
+			},
+		},
+		{
+			name:     "websocket message type is validator-enforced",
+			protocol: "websocket",
+			action: map[string]any{
+				"name": "send", "type": "ws_send", "body": "payload",
+				"params": map[string]any{"type": "bogus"},
+			},
+			wantInvalid: true,
+		},
+		{
+			name:     "blank DNS record type uses its default",
+			protocol: "network",
+			action: map[string]any{
+				"name": "lookup", "type": "dns_query", "target": "example.test",
+				"params": map[string]any{"record_type": " "},
+			},
+		},
+		{
+			name:     "blank JMS message type uses its default",
+			protocol: "jms-solace",
+			config: map[string]any{
+				"jms": map[string]any{
+					"provider": "solace", "destination": "orders.in", "destination_type": "queue", "mock": true,
+				},
+			},
+			action: map[string]any{
+				"name": "publish", "type": "jms_publish", "target": "orders.in", "body": "payload",
+				"params": map[string]any{"message_type": " "},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			document := map[string]any{
+				"name": "enum schema contract", "protocol": test.protocol, "actions": []any{test.action},
+			}
+			if test.config != nil {
+				document["config"] = test.config
+			}
+			raw, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var script dsl.Script
+			if err := json.Unmarshal(raw, &script); err != nil {
+				t.Fatal(err)
+			}
+			issues := dsl.ValidateScriptIssues(&script)
+			if test.wantInvalid && len(issues) == 0 {
+				t.Fatal("runtime validator accepted the deliberately invalid enum")
+			}
+			if !test.wantInvalid && len(issues) != 0 {
+				t.Fatalf("runtime validator rejected a supported value: %v", issues)
+			}
+			instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = schema.Validate(instance)
+			if test.wantInvalid && err == nil {
+				t.Fatal("schema accepted a value rejected by the runtime validator")
+			}
+			if !test.wantInvalid && err != nil {
+				t.Fatalf("schema rejected a runtime-supported alias: %v", err)
+			}
+		})
 	}
 }
 

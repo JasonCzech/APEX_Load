@@ -13,13 +13,14 @@ import (
 
 type authoringCorrelationPreviewRequest struct {
 	Name                    string                               `json:"name"`
+	ExpectedUpdatedAt       time.Time                            `json:"expected_updated_at"`
 	Source                  string                               `json:"source,omitempty"`
 	Type                    string                               `json:"type,omitempty"`
 	Expression              string                               `json:"expression"`
 	SampleValue             string                               `json:"sample_value,omitempty"`
 	FoundAction             string                               `json:"found_action,omitempty"`
 	FoundActionIndex        *int                                 `json:"found_action_index,omitempty"`
-	UsedActionIndexes       []int                                `json:"used_action_indexes,omitempty"`
+	UsedActionIndexes       *[]int                               `json:"used_action_indexes,omitempty"`
 	ReplaceSampleValue      *bool                                `json:"replace_sample_value,omitempty"`
 	Apply                   bool                                 `json:"apply,omitempty"`
 	Confidence              float64                              `json:"confidence,omitempty"`
@@ -73,6 +74,14 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 
 	var req authoringCorrelationPreviewRequest
 	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if req.ExpectedUpdatedAt.IsZero() {
+		writeError(w, http.StatusBadRequest, "expected_updated_at is required")
+		return
+	}
+	if !session.UpdatedAt.Equal(req.ExpectedUpdatedAt) {
+		writeError(w, http.StatusConflict, "authoring session changed since correlation repair was prepared")
 		return
 	}
 	if req.Apply {
@@ -365,12 +374,15 @@ func resolveCorrelationFoundActionIndex(actions []dsl.Action, req authoringCorre
 }
 
 func resolveCorrelationUsedActionIndexes(actions []dsl.Action, foundIndex int, req authoringCorrelationPreviewRequest) []int {
-	if len(req.UsedActionIndexes) > 0 {
-		indexes := make([]int, 0, len(req.UsedActionIndexes))
+	if req.UsedActionIndexes != nil {
+		indexes := make([]int, 0, len(*req.UsedActionIndexes))
 		seen := map[int]struct{}{}
-		for _, oneBased := range req.UsedActionIndexes {
+		for _, oneBased := range *req.UsedActionIndexes {
 			index := oneBased - 1
-			if index < 0 || index >= len(actions) {
+			// Correlation values can only be consumed after their producing
+			// action. Ignore stale/forged picker indexes at or before the producer
+			// as well as indexes outside the current draft.
+			if index <= foundIndex || index >= len(actions) {
 				continue
 			}
 			if _, ok := seen[index]; ok {

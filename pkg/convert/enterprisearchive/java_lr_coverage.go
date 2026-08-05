@@ -250,6 +250,13 @@ func javaLRRunnerTarget(mode SourceFunctionSupportMode) string {
 	}
 }
 
+func javaLRPublishedTarget(name string, mode SourceFunctionSupportMode) string {
+	if target := strings.TrimSpace(javaLRCoverageDetail[name].target); target != "" {
+		return target
+	}
+	return javaLRRunnerTarget(mode)
+}
+
 // JavaLRFunctionCoverage returns the full published Java lr API coverage matrix,
 // sorted by Java method name.
 func JavaLRFunctionCoverage() []JavaLRCoverage {
@@ -261,7 +268,7 @@ func JavaLRFunctionCoverage() []JavaLRCoverage {
 			Function:    name,
 			Family:      def.Family,
 			SupportMode: string(def.SupportMode),
-			Target:      javaLRRunnerTarget(def.SupportMode),
+			Target:      javaLRPublishedTarget(name, def.SupportMode),
 			Notes:       notes,
 		})
 	}

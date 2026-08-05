@@ -57,9 +57,11 @@ describe('app topbar helpers', () => {
       buildRun({ id: 'running-old', name: 'Checkout Baseline', status: 'RUNNING', started_at: '2026-06-07T11:00:00Z' }),
       buildRun({ id: 'running-new', name: 'Checkout Peak', status: 'RUNNING', started_at: '2026-06-07T12:30:00Z' }),
       buildRun({ id: 'queued', name: 'Queued API Burst', status: 'QUEUED', created_at: '2026-06-07T12:45:00Z' }),
+      buildRun({ id: 'shakeout', name: 'Preflight', status: 'SHAKEOUT', created_at: '2026-06-07T12:46:00Z' }),
+      buildRun({ id: 'shakeout-review', name: 'Preflight Review', status: 'SHAKEOUT_REVIEW', created_at: '2026-06-07T12:47:00Z' }),
     ])
 
-    expect(runs.map(run => run.id)).toEqual(['running-new', 'running-old', 'paused', 'pending', 'queued'])
+    expect(runs.map(run => run.id)).toEqual(['running-new', 'running-old', 'shakeout', 'paused', 'shakeout-review', 'pending', 'queued'])
   })
 
   it('applies live status overrides before filtering active runs', () => {
@@ -128,6 +130,7 @@ describe('app topbar helpers', () => {
     expect(topbarRunTone('RUNNING')).toBe('running')
     expect(topbarRunTone('PAUSED')).toBe('paused')
     expect(topbarRunTone('QUEUED')).toBe('pending')
+    expect(topbarRunTone('SHAKEOUT')).toBe('pending')
     expect(topbarRunTone('STOPPING')).toBe('stopping')
   })
 })

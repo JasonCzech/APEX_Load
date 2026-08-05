@@ -115,15 +115,7 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
-		if isCredentialPreservingImport(stored.Script) &&
-			matchesStoredScriptDisclosureProjection(script, stored.Script) {
-			// The editor echoes the disclosure-safe GET projection even when
-			// the operator has made no changes. Execute the server-owned
-			// durable snapshot so projected sentinels never replace imported
-			// credentials or parameter data.
-			script = stored.Script
-			req.trustedPreservedImport = true
-		}
+		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
@@ -187,6 +179,7 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
@@ -196,6 +189,17 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 	}
 	req.Mode = "replay"
 	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
+}
+
+// resolveTrustedStoredReplayEcho recognizes an unchanged disclosure-safe GET
+// projection of a credential-preserving import. The client never receives the
+// retained credential bytes, so all saved-script replay/debug entry points must
+// substitute the server-owned durable snapshot before executable preparation.
+func resolveTrustedStoredReplayEcho(candidate, stored *dsl.Script) (*dsl.Script, bool) {
+	if candidate != nil && isCredentialPreservingImport(stored) && matchesStoredScriptDisclosureProjection(candidate, stored) {
+		return stored, true
+	}
+	return candidate, false
 }
 
 func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req ScriptDebugStartRequest) {

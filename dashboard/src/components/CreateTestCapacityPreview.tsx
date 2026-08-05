@@ -2,7 +2,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 import { DraftCapacityEstimate } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
-import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
 
 interface PreviewGroup {
   name: string
@@ -61,6 +61,7 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
               label={{ value: 'VUsers', angle: -90, position: 'left', fontSize: 10, fill: 'var(--text-muted)' }}
             />
             <Tooltip
+              itemSorter={preserveChartItemOrder}
               labelFormatter={(value) => `Time: ${formatTimeCompact(value)}`}
               contentStyle={{ ...chartTooltipContentStyle, fontSize: '12px' }}
               labelStyle={chartTooltipLabelStyle}

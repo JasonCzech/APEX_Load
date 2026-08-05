@@ -520,6 +520,13 @@ func (s *Server) remoteLibraryAPIKey(remote LibraryRemote) (string, error) {
 	return strings.TrimSpace(apiKey), nil
 }
 
+func sameLibraryRemoteTransport(left, right LibraryRemote) bool {
+	return strings.TrimSpace(left.ID) == strings.TrimSpace(right.ID) &&
+		strings.TrimRight(strings.TrimSpace(left.BaseURL), "/") == strings.TrimRight(strings.TrimSpace(right.BaseURL), "/") &&
+		strings.EqualFold(strings.TrimSpace(left.AuthMethod), strings.TrimSpace(right.AuthMethod)) &&
+		strings.TrimSpace(left.CredentialRef) == strings.TrimSpace(right.CredentialRef)
+}
+
 func (s *Server) remoteCredentialConfigured(remote LibraryRemote) bool {
 	if strings.EqualFold(remote.AuthMethod, "none") {
 		return true

@@ -179,7 +179,7 @@ func decodeStoredStartAuthorization(value any) *QueuedStartAuthorization {
 	if err := json.Unmarshal(data, &authorization); err != nil {
 		return nil
 	}
-	if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil {
+	if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil && authorization.ScriptShakeoutPass == nil {
 		return nil
 	}
 	return cloneQueuedStartAuthorization(&authorization)
@@ -197,6 +197,10 @@ func cloneQueuedStartAuthorization(authorization *QueuedStartAuthorization) *Que
 	if authorization.ScriptShakeout != nil {
 		shakeout := *authorization.ScriptShakeout
 		cloned.ScriptShakeout = &shakeout
+	}
+	if authorization.ScriptShakeoutPass != nil {
+		pass := *authorization.ScriptShakeoutPass
+		cloned.ScriptShakeoutPass = &pass
 	}
 	return &cloned
 }

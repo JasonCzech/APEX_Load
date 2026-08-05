@@ -22,6 +22,8 @@ export interface TestGroup {
 
 export interface GeneratorAssignmentSettings {
   mode?: 'auto' | 'specific_hosts' | 'region_weighted' | 'load_zone_weighted'
+  /** Restrict root-level automatic placement to one managed fleet pool. */
+  pool_id?: string
   selected_targets?: string[]
   region_weights?: Record<string, number>
   load_zone_weights?: Record<string, number>

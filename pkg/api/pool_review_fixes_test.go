@@ -184,6 +184,7 @@ func TestPoolScopedBoundTimeslotProtectsPoolAtAdmission(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 50, Addr: ":8080"})
 	tr := server.runner
+	seedCapacityProjects(t, store, "proj-a", "proj-b")
 	seedFleetPool(t, store, "pool-z", 2) // envelope = 2
 
 	gens := 2
@@ -219,9 +220,7 @@ func TestPoolScopedBoundTimeslotProtectsPoolAtAdmission(t *testing.T) {
 		}
 	}
 	eval := func(test *ManagedTest) (bool, string) {
-		tr.mu.RLock()
-		defer tr.mu.RUnlock()
-		return tr.evaluateQuotaBlockLocked(test, "")
+		return evaluateQuotaBlockWithLoadedEvidenceForTest(t, tr, test, "")
 	}
 
 	// proj-a reserved the pool's whole 2-generator envelope via the bound timeslot,
@@ -253,6 +252,7 @@ func TestPoolReservedCapacityEmptyEnvelopeFailsOpen(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 50, Addr: ":8080"})
 	tr := server.runner
+	seedCapacityProjects(t, store, "proj-a", "proj-b")
 
 	// Pool exists but has no members (envelope = 0).
 	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-empty", Name: "Drained", Status: "active"}); err != nil {
@@ -269,9 +269,7 @@ func TestPoolReservedCapacityEmptyEnvelopeFailsOpen(t *testing.T) {
 		Assignment:       &GeneratorAssignmentSettings{Mode: "specific_hosts", PoolID: "pool-empty"},
 		CapacityAdvisory: &CapacityAdvisory{RecommendedGenerators: 1},
 	}
-	tr.mu.RLock()
-	blocked, reason := tr.evaluateQuotaBlockLocked(other, "")
-	tr.mu.RUnlock()
+	blocked, reason := evaluateQuotaBlockWithLoadedEvidenceForTest(t, tr, other, "")
 	if blocked {
 		t.Fatalf("empty-envelope pool reservation should fail open (gate nothing), got blocked: %q", reason)
 	}

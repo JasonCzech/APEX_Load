@@ -2037,6 +2037,21 @@ describe('EnterpriseArchiveImport', () => {
     })
     expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
 
+    const betaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
+      .find(row => row.textContent?.includes('beta.zip'))
+    expect(betaRow).toBeDefined()
+    await act(async () => {
+      betaRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(findButton(container, 'Saving Review Artifact')).toBeUndefined()
+    expect(findButton(container, 'Save Review Artifact')).toBeDefined()
+
+    const alphaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
+      .find(row => row.textContent?.includes('alpha.zip'))
+    await act(async () => {
+      alphaRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
     const removeUnrelated = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement
     await act(async () => {
       removeUnrelated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2632,12 +2647,78 @@ describe('EnterpriseArchiveImport', () => {
       Object.defineProperty(supplementalInput, 'files', { configurable: true, value: [basicClientFile] })
       supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
+    await flushPromises()
+
+    expect(container.textContent).toContain('BasicClient (BasicClient.java) - attached')
+    expect(container.textContent).toContain('Review is stale; re-validate to refresh unresolved required files.')
+    expect(container.textContent).not.toContain('No unresolved required files detected in the current review.')
 
     await clickImportAction(container, 'Validate Only')
     expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenLastCalledWith(zipFile, expect.objectContaining({
       supplemental_files: [basicClientFile],
     }))
     expect(container.textContent).toContain('BasicClient (BasicClient.java) - attached')
+    expect(container.textContent).not.toContain('Review is stale; re-validate to refresh unresolved required files.')
+  })
+
+  it('shows lane-scoped replay preflight and falls back to the response envelope', async () => {
+    const lanePreflight = {
+      valid: false,
+      action_count: 1,
+      expected_action_count: 1,
+      data_source_count: 0,
+      parameter_count: 1,
+      missing_variables: ['LANE_PARAMETER'],
+      checks: [{ id: 'variables', label: 'Variables', status: 'fail', detail: 'LANE_PARAMETER' }],
+    }
+    const responsePreflight = {
+      valid: false,
+      action_count: 1,
+      expected_action_count: 1,
+      data_source_count: 0,
+      parameter_count: 1,
+      missing_variables: ['RESPONSE_PARAMETER'],
+      checks: [{ id: 'variables', label: 'Variables', status: 'fail', detail: 'RESPONSE_PARAMETER' }],
+    }
+    const first = {
+      name: 'HTTP lane',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: '' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+      metadata: { import: { preserved: { replay_preflight: lanePreflight } } },
+    }
+    const second = {
+      name: 'JMS lane',
+      version: '1.0.0',
+      protocol: 'jms',
+      config: { base_url: '' },
+      actions: [{ name: 'Publish', type: 'jms_publish', target: 'orders' }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
+      ...executableEnterpriseResult(first, { preflight: responsePreflight }),
+      scripts: [first, second],
+      script: first,
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['multi'], 'multi.zip', { type: 'application/zip' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('Missing variable: LANE_PARAMETER')
+    expect(container.textContent).not.toContain('Missing variable: RESPONSE_PARAMETER')
+
+    await clickButton(container.querySelector<HTMLButtonElement>('[aria-label="Review generated script JMS lane"]')!)
+    expect(container.textContent).toContain('Missing variable: RESPONSE_PARAMETER')
+    expect(container.textContent).not.toContain('Missing variable: LANE_PARAMETER')
   })
 
   it('surfaces TrueClient2 compatibility report from Enterprise Script Archive import responses', async () => {
@@ -3177,6 +3258,49 @@ describe('EnterpriseArchiveImport', () => {
     })
     expect(container.textContent).toContain(firstFile.name)
     expect(container.textContent).not.toContain(secondFile.name)
+  })
+
+  it('discards only the selected archive source session when opening its draft in the editor', async () => {
+    const onEdit = vi.fn()
+    const resultFor = (file: File) => executableEnterpriseResult({
+      name: file.name,
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: '' },
+      actions: [{ name: 'Request', type: 'request', method: 'GET', target: '/' }],
+    }, {
+      source_secret_session_id: `${file.name}-source-session`,
+      source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+    })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => resultFor(file))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => resultFor(file))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+          new File(['beta'], 'beta.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await flushPromises()
+    apiMock.discardImportSecretSession.mockClear()
+
+    await clickButton(findButton(container, 'Open In Visual Editor')!)
+    await flushPromises()
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'alpha.zip' }), undefined)
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledTimes(1)
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'alpha.zip-source-session',
+    })
   })
 
   it('announces import progress and failed queue item details', async () => {
@@ -5296,6 +5420,58 @@ describe('EnterpriseArchiveImport', () => {
     const inProgressReplayButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Draft Browser Replay In Progress')) as HTMLButtonElement | undefined
     expect(inProgressReplayButton).toBeDefined()
     expect(inProgressReplayButton?.disabled).toBe(true)
+  })
+
+  it('clears replay-start loading on its source row after the operator switches rows', async () => {
+    const resultFor = (file: File) => executableEnterpriseResult({
+      name: file.name,
+      version: '1.0.0',
+      protocol: 'browser',
+      config: { base_url: 'https://shop.example.test', browser: { engine: 'chromium', headless: true } },
+      actions: [{ name: 'Open', type: 'browser_navigate', target: '/' }],
+    })
+    apiMock.validateEnterpriseArchiveImport.mockImplementation(async (file: File) => resultFor(file))
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => resultFor(file))
+    let resolveStart!: (value: unknown) => void
+    apiMock.startDraftBrowserReplaySession.mockReturnValueOnce(new Promise(resolve => { resolveStart = resolve }))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['alpha'], 'alpha-browser.zip', { type: 'application/zip' }),
+          new File(['beta'], 'beta-browser.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate 2 Scripts')
+    await clickButton(findButton(container, 'Convert 2 Loadrunner Script Archives')!)
+    await clickButton(findButton(container, 'Start Draft Browser Replay')!)
+    expect(findButton(container, 'Starting Draft Browser Replay...')).toBeDefined()
+
+    const betaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
+      .find(row => row.textContent?.includes('beta-browser.zip'))!
+    await act(async () => betaRow.click())
+    await act(async () => {
+      resolveStart({
+        script_id: '',
+        replay_session_id: 'alpha-replay',
+        session: { id: 'alpha-replay', status: 'running', group: 'alpha', protocol: 'browser', current_event_index: 0 },
+        warnings: [],
+      })
+      await Promise.resolve()
+    })
+
+    const alphaRow = Array.from(container.querySelectorAll<HTMLElement>('.lr-file-row'))
+      .find(row => row.textContent?.includes('alpha-browser.zip'))!
+    await act(async () => alphaRow.click())
+    await flushPromises()
+
+    expect(findButton(container, 'Starting Draft Browser Replay...')).toBeUndefined()
   })
 
   it('starts draft browser replay validation when saving a browser import for the first time', async () => {

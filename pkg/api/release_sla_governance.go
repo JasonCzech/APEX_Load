@@ -160,12 +160,6 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 	if err != nil {
 		return ReleaseSLAGovernanceResponse{}, err
 	}
-	activeWaivers := 0
-	for _, waiver := range waivers {
-		if waiver != nil && waiver.Status == "active" {
-			activeWaivers++
-		}
-	}
 	tests := s.runner.ListTestSummariesByContext("", releaseID, "")
 	sort.SliceStable(tests, func(left, right int) bool {
 		return managedTestCompletedAt(tests[left]).After(managedTestCompletedAt(tests[right]))
@@ -206,8 +200,7 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 				run.TelemetryStatus = "unknown"
 				run.SLABreached = true
 				run.SLADetails = []string{"archive report unavailable: " + err.Error()}
-				response.Summary.FailedRuns++
-				response.BreachHistory = append(response.BreachHistory, run)
+				recordReleaseSLABreach(&response, run, waivers)
 				continue
 			}
 			response.Summary.ArchivedRuns++
@@ -224,16 +217,10 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 			run.SLADetails = []string{firstNonEmpty(test.Error, "Run failed before archive evidence was available.")}
 		}
 		if run.SLABreached {
-			response.Summary.FailedRuns++
-			response.BreachHistory = append(response.BreachHistory, run)
+			recordReleaseSLABreach(&response, run, waivers)
 		} else if test.Status == "COMPLETE" {
 			response.Summary.PassedRuns++
 		}
-	}
-	if activeWaivers > 0 {
-		response.Summary.WaivedBreaches = response.Summary.FailedRuns
-	} else {
-		response.Summary.UnwaivedBreaches = response.Summary.FailedRuns
 	}
 	switch {
 	case response.Summary.TotalRuns == 0:
@@ -251,6 +238,45 @@ func (s *Server) buildReleaseSLAGovernance(releaseID string) (ReleaseSLAGovernan
 	}
 	response.AuditTrail = s.releaseAuditTrail(releaseID)
 	return response, nil
+}
+
+func recordReleaseSLABreach(response *ReleaseSLAGovernanceResponse, run ReleaseSLAGovernanceRun, waivers []*storage.ReleaseSLAWaiver) {
+	if response == nil {
+		return
+	}
+	response.Summary.FailedRuns++
+	response.BreachHistory = append(response.BreachHistory, run)
+	for _, waiver := range waivers {
+		if releaseSLAWaiverCoversRun(waiver, run, response.GeneratedAt) {
+			response.Summary.WaivedBreaches++
+			return
+		}
+	}
+	response.Summary.UnwaivedBreaches++
+}
+
+func releaseSLAWaiverCoversRun(waiver *storage.ReleaseSLAWaiver, run ReleaseSLAGovernanceRun, evaluatedAt time.Time) bool {
+	if waiver == nil || !strings.EqualFold(strings.TrimSpace(waiver.Status), "active") ||
+		waiver.CreatedAt.IsZero() || run.CompletedAt == nil || run.CompletedAt.IsZero() {
+		return false
+	}
+	if waiver.ExpiresAt != nil && !waiver.ExpiresAt.After(evaluatedAt) {
+		return false
+	}
+	// A waiver records acceptance of evidence that already existed. It cannot
+	// prospectively waive a breach produced after that approval was created.
+	if run.CompletedAt.After(waiver.CreatedAt) {
+		return false
+	}
+	scope := strings.TrimSpace(waiver.Scope)
+	if strings.EqualFold(scope, "release") {
+		return true
+	}
+	if scope == run.TestID {
+		return true
+	}
+	lowerScope := strings.ToLower(scope)
+	return lowerScope == "test:"+strings.ToLower(run.TestID) || lowerScope == "run:"+strings.ToLower(run.TestID)
 }
 
 func (s *Server) releaseContext(releaseID string) (projectID string, releaseName string, applicationID string, err error) {

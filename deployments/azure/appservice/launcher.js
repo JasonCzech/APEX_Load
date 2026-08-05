@@ -3,7 +3,7 @@
 // No npm dependencies — this file is the only runtime code.
 "use strict";
 
-const { spawnSync, spawn } = require("child_process");
+const { spawn } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");

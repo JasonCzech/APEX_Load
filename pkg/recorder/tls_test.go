@@ -2,10 +2,12 @@ package recorder
 
 import (
 	"bufio"
+	"context"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +24,90 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
+
+type stalledRecorderBody struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+type contextOnlyStalledRecorderBody struct {
+	ctx    context.Context
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (b *contextOnlyStalledRecorderBody) Read([]byte) (int, error) {
+	<-b.ctx.Done()
+	return 0, b.ctx.Err()
+}
+
+func (b *contextOnlyStalledRecorderBody) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return nil
+}
+
+func (b *stalledRecorderBody) Read([]byte) (int, error) {
+	<-b.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (b *stalledRecorderBody) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return nil
+}
+
+func TestInactivityTimeoutBodyBoundsStalledRead(t *testing.T) {
+	body := &stalledRecorderBody{closed: make(chan struct{})}
+	bounded := &inactivityTimeoutBody{body: body, timeout: 20 * time.Millisecond}
+	started := time.Now()
+	_, err := bounded.Read(make([]byte, 1))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("stalled read took %s", elapsed)
+	}
+}
+
+func TestInactivityTimeoutBodyAllowsProgress(t *testing.T) {
+	bounded := &inactivityTimeoutBody{body: io.NopCloser(strings.NewReader("response")), timeout: time.Second}
+	got, err := io.ReadAll(bounded)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(got) != "response" {
+		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestInactivityTimeoutBodyCancelsOwningRequestContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	body := &contextOnlyStalledRecorderBody{ctx: ctx, closed: make(chan struct{})}
+	bounded := &inactivityTimeoutBody{body: body, timeout: 20 * time.Millisecond, cancel: cancel}
+
+	_, err := bounded.Read(make([]byte, 1))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want deadline exceeded", err)
+	}
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Fatalf("request context error = %v, want canceled", ctx.Err())
+	}
+	// The request handler owns response-body cleanup. The timer must not race
+	// that deferred Close after cancellation has already interrupted Read.
+	select {
+	case <-body.closed:
+		t.Fatal("timeout callback closed a request-owned response body")
+	default:
+	}
+	if err := bounded.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case <-body.closed:
+	case <-time.After(time.Second):
+		t.Fatal("response body was not closed by its owner after request cancellation")
+	}
+}
 
 func newTLSRecorder(t *testing.T) *Recorder {
 	t.Helper()

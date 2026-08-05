@@ -1633,6 +1633,17 @@ func TestValidateExtractorIssuesSkipsSourceTypeAllowlistForNonHTTPProtocols(t *t
 	}
 }
 
+func TestValidateExtractorIssuesRejectsUnsupportedAllModeForNonHTTPProtocols(t *testing.T) {
+	for _, protocolName := range []string{"browser", "bruno", "websocket", "grpc", "network", "database", "sap_gui", "java_vuser", "kafka", "jms", "eventhubs"} {
+		action := Action{Name: "a", Extractors: []Extractor{{
+			Name: "values",
+			Mode: "all",
+		}}}
+		issues := validateExtractorIssues(protocolName, "actions[0]", action)
+		assertIssueContains(t, issues, `mode "all" is supported only by HTTP-family protocols`)
+	}
+}
+
 // TestValidateScriptIssues_NestedJMSHonorsConfigDestination locks in that a JMS
 // action nested inside a control block is NOT falsely flagged "missing target"
 // when config.jms.destination supplies the destination.

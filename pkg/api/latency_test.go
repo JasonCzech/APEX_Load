@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -323,7 +324,7 @@ func TestMeasureNetworkLatency(t *testing.T) {
 	live := &LiveMetrics{}
 	test.LiveMetrics = live
 	tr.tests[test.ID] = test
-	tr.measureNetworkLatency(test, live)
+	tr.measureNetworkLatency(context.Background(), test, live)
 	live = test.LiveMetrics
 
 	if live.Latency == nil {
@@ -340,6 +341,49 @@ func TestMeasureNetworkLatency(t *testing.T) {
 	}
 	if !target.LastSuccess {
 		t.Error("expected latency measurement to succeed")
+	}
+}
+
+func TestMeasureNetworkLatencyDiscardsResultAfterTerminalTransition(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer endpoint.Close()
+
+	tr := NewTestRunner(1, nil, nil)
+	test := &ManagedTest{
+		ID: "terminal-latency", Status: "RUNNING", LiveMetrics: &LiveMetrics{},
+		Groups: []TestGroup{{Name: "group", script: &dsl.Script{Config: dsl.ScriptConfig{BaseURL: endpoint.URL}}}},
+	}
+	tr.tests[test.ID] = test
+	done := make(chan struct{})
+	go func() {
+		tr.measureNetworkLatency(context.Background(), test, test.LiveMetrics)
+		close(done)
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("latency probe did not start")
+	}
+	tr.mu.Lock()
+	test.Status = "COMPLETE"
+	tr.mu.Unlock()
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("latency probe did not finish")
+	}
+	tr.mu.RLock()
+	latency := test.LiveMetrics.Latency
+	tr.mu.RUnlock()
+	if latency != nil {
+		t.Fatalf("terminal run was mutated by late latency result: %#v", latency)
 	}
 }
 
@@ -560,7 +604,7 @@ func TestMeasureNetworkLatencyHydratesScriptByGroupScriptID(t *testing.T) {
 	live := &LiveMetrics{}
 	test.LiveMetrics = live
 	tr.tests[test.ID] = test
-	tr.measureNetworkLatency(test, live)
+	tr.measureNetworkLatency(context.Background(), test, live)
 	live = test.LiveMetrics
 
 	if live.Latency == nil || len(live.Latency.Targets) != 1 {

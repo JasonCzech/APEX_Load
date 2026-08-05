@@ -580,7 +580,10 @@ func findJavaGenericAngleEnd(expr string, open int) int {
 		case '>':
 			depth--
 			if depth == 0 {
-				return i
+				if javaGenericAngleContext(expr, open, i) {
+					return i
+				}
+				return -1
 			}
 		case ',':
 			if depth == 1 {
@@ -589,4 +592,57 @@ func findJavaGenericAngleEnd(expr string, open int) int {
 		}
 	}
 	return -1
+}
+
+// javaGenericAngleContext distinguishes type-argument brackets from comparison
+// and shift operators. Balance alone is insufficient: "a < b, c > d" is a
+// valid expression fragment whose comma must remain top-level.
+func javaGenericAngleContext(expr string, open, close int) bool {
+	if open < 0 || close <= open+1 || close >= len(expr) {
+		return false
+	}
+	content := strings.TrimSpace(expr[open+1 : close])
+	if content == "" || strings.HasPrefix(content, "<") || strings.ContainsAny(content, `=;:+-*/%!|^~(){}"'`) {
+		return false
+	}
+
+	previous := previousJavaNonSpaceByte(expr, open-1)
+	if previous != 0 && !javaIdentifierByte(previous) && previous != '.' && previous != ']' && previous != '>' && previous != '?' {
+		return false
+	}
+	next := nextJavaNonSpaceByte(expr, close+1)
+	// In "left < middle, right >= tail" the greater-than byte that balances
+	// the apparent angle bracket belongs to >=, not a generic type argument.
+	if next == '=' {
+		return false
+	}
+	// A bare identifier after the closing bracket is comparison syntax in the
+	// expression contexts this splitter handles. The one valid exception is an
+	// explicit generic method invocation such as obj.<String>method().
+	if javaIdentifierByte(next) && previous != '.' && open != 0 {
+		return false
+	}
+	return true
+}
+
+func previousJavaNonSpaceByte(value string, index int) byte {
+	for ; index >= 0; index-- {
+		if value[index] != ' ' && value[index] != '\t' && value[index] != '\r' && value[index] != '\n' {
+			return value[index]
+		}
+	}
+	return 0
+}
+
+func nextJavaNonSpaceByte(value string, index int) byte {
+	for ; index < len(value); index++ {
+		if value[index] != ' ' && value[index] != '\t' && value[index] != '\r' && value[index] != '\n' {
+			return value[index]
+		}
+	}
+	return 0
+}
+
+func javaIdentifierByte(value byte) bool {
+	return value == '_' || value == '$' || value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9'
 }

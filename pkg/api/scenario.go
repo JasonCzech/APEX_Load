@@ -54,6 +54,16 @@ type guardedScenarioScheduleDeletePersistence interface {
 	DeleteScenarioScheduleOccurrenceGuarded(id string) (storage.ScheduleOccurrenceDeleteResult, error)
 }
 
+// revisionGuardedScenarioScheduleDeletePersistence is used only for
+// compensation after a non-atomic schedule+approval write. An ordinary
+// guarded delete protects occurrence anchors, but it is not sufficient here:
+// another request may have advanced the schedule while the approval write was
+// in flight. The revision predicate prevents compensation from deleting that
+// newer durable state.
+type revisionGuardedScenarioScheduleDeletePersistence interface {
+	DeleteScenarioScheduleGuardedIfRevision(id string, expectedRevision int) (storage.ScheduleDeleteResult, error)
+}
+
 type leaseTermFencedScenarioScheduleDeletePersistence interface {
 	DeleteScenarioScheduleGuardedIfLeaseTermHeld(id, leaseName, leaseOwnerID string, leaseGeneration uint64) (storage.ScheduleDeleteResult, error)
 }
@@ -646,44 +656,88 @@ func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSched
 	if schedule == nil {
 		return fmt.Errorf("schedule is required")
 	}
-	scenario, ok := tr.scenarios[schedule.ScenarioID]
-	if !ok {
-		return fmt.Errorf("scenario not found: %s", schedule.ScenarioID)
+	fence, err := tr.captureScenarioScheduleMemoryFenceLocked(schedule.ScenarioID, schedule.ID)
+	if err != nil {
+		return err
 	}
-	existingIndex := -1
-	expectedRevision := 0
-	for index, existing := range scenario.Schedules {
-		if existing != nil && existing.ID == schedule.ID {
-			existingIndex = index
-			expectedRevision = existing.Revision
+	store := tr.scenarioStore
+	if store != nil {
+		tr.mu.Unlock()
+		changed := true
+		if casStore, ok := store.(scenarioScheduleCASPersistence); ok {
+			if fence.existed {
+				changed, err = casStore.UpdateScenarioScheduleIfRevision(schedule, fence.expectedRevision)
+			} else {
+				changed, err = casStore.CreateScenarioScheduleIfAbsent(schedule)
+			}
+		} else {
+			err = store.SaveScenarioSchedule(schedule)
+		}
+		tr.mu.Lock()
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return fmt.Errorf("%w: scenario schedule %q changed or was deleted; reload and retry", errScheduleConcurrentChange, schedule.ID)
+		}
+	}
+	return tr.installScenarioScheduleAfterPersistenceLocked(schedule, fence)
+}
+
+type scenarioScheduleMemoryFence struct {
+	scenarioID       string
+	scheduleID       string
+	existed          bool
+	expectedRevision int
+}
+
+// captureScenarioScheduleMemoryFenceLocked records only the mutable state that
+// determines whether a schedule CAS result can still be installed. Persistence
+// is allowed to run after tr.mu is released; the exact schedule identity and
+// revision are revalidated before the in-memory projection is changed.
+func (tr *TestRunner) captureScenarioScheduleMemoryFenceLocked(scenarioID, scheduleID string) (scenarioScheduleMemoryFence, error) {
+	scenario, ok := tr.scenarios[scenarioID]
+	if !ok {
+		return scenarioScheduleMemoryFence{}, fmt.Errorf("scenario not found: %s", scenarioID)
+	}
+	fence := scenarioScheduleMemoryFence{scenarioID: scenarioID, scheduleID: scheduleID}
+	for _, existing := range scenario.Schedules {
+		if existing != nil && existing.ID == scheduleID {
+			fence.existed = true
+			fence.expectedRevision = existing.Revision
 			break
 		}
 	}
-	if tr.scenarioStore != nil {
-		if casStore, ok := tr.scenarioStore.(scenarioScheduleCASPersistence); ok {
-			var changed bool
-			var err error
-			if existingIndex < 0 {
-				changed, err = casStore.CreateScenarioScheduleIfAbsent(schedule)
-			} else {
-				changed, err = casStore.UpdateScenarioScheduleIfRevision(schedule, expectedRevision)
-			}
-			if err != nil {
-				return err
-			}
-			if !changed {
-				return fmt.Errorf("%w: scenario schedule %q changed or was deleted; reload and retry", errScheduleConcurrentChange, schedule.ID)
-			}
-		} else if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
-			return err
+	return fence, nil
+}
+
+func (tr *TestRunner) installScenarioScheduleAfterPersistenceLocked(schedule *storage.ScenarioSchedule, fence scenarioScheduleMemoryFence) error {
+	if schedule == nil || schedule.ScenarioID != fence.scenarioID || schedule.ID != fence.scheduleID {
+		return fmt.Errorf("%w: scenario schedule identity changed while persistence was in flight", errScheduleConcurrentChange)
+	}
+	scenario, ok := tr.scenarios[fence.scenarioID]
+	if !ok {
+		return fmt.Errorf("%w: scenario %q changed or was deleted while schedule persistence was in flight", errScheduleConcurrentChange, fence.scenarioID)
+	}
+	currentIndex := -1
+	for index, current := range scenario.Schedules {
+		if current == nil || current.ID != fence.scheduleID {
+			continue
 		}
+		currentIndex = index
+		if !fence.existed || current.Revision != fence.expectedRevision {
+			return fmt.Errorf("%w: scenario schedule %q changed while persistence was in flight", errScheduleConcurrentChange, fence.scheduleID)
+		}
+		break
 	}
-	if existingIndex >= 0 {
-		scenario.Schedules[existingIndex] = cloneScenarioSchedule(schedule)
-		tr.contentRevision++
-		return nil
+	if fence.existed && currentIndex < 0 {
+		return fmt.Errorf("%w: scenario schedule %q was deleted while persistence was in flight", errScheduleConcurrentChange, fence.scheduleID)
 	}
-	scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+	if currentIndex >= 0 {
+		scenario.Schedules[currentIndex] = cloneScenarioSchedule(schedule)
+	} else {
+		scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
+	}
 	tr.contentRevision++
 	return nil
 }
@@ -771,9 +825,9 @@ func scenarioScheduleOccurrenceAuditAction(occurrenceStatus string) (string, str
 func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleOccurrence, bool) {
 	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
+		tr.mu.RUnlock()
 		return nil, false
 	}
 	found := false
@@ -784,12 +838,15 @@ func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, schedul
 		}
 	}
 	if !found {
+		tr.mu.RUnlock()
 		return nil, false
 	}
-	if tr.scenarioStore == nil {
+	store := tr.scenarioStore
+	tr.mu.RUnlock()
+	if store == nil {
 		return []*storage.ScenarioScheduleOccurrence{}, true
 	}
-	occurrences, err := tr.scenarioStore.ListScenarioScheduleOccurrences(scheduleID)
+	occurrences, err := store.ListScenarioScheduleOccurrences(scheduleID)
 	if err != nil {
 		return []*storage.ScenarioScheduleOccurrence{}, true
 	}
@@ -867,9 +924,9 @@ func pageScenarioScheduleOccurrences(items []*storage.ScenarioScheduleOccurrence
 func (tr *TestRunner) ListScenarioScheduleApprovals(scenarioID string, scheduleID string) ([]*storage.ScenarioScheduleApproval, bool) {
 	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
-	defer tr.mu.RUnlock()
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
+		tr.mu.RUnlock()
 		return nil, false
 	}
 	found := false
@@ -880,12 +937,15 @@ func (tr *TestRunner) ListScenarioScheduleApprovals(scenarioID string, scheduleI
 		}
 	}
 	if !found {
+		tr.mu.RUnlock()
 		return nil, false
 	}
-	if tr.scenarioStore == nil {
+	store := tr.scenarioStore
+	tr.mu.RUnlock()
+	if store == nil {
 		return []*storage.ScenarioScheduleApproval{}, true
 	}
-	approvals, err := tr.scenarioStore.ListScenarioScheduleApprovals(scheduleID)
+	approvals, err := store.ListScenarioScheduleApprovals(scheduleID)
 	if err != nil {
 		return []*storage.ScenarioScheduleApproval{}, true
 	}
@@ -960,30 +1020,32 @@ func (tr *TestRunner) ListScenarioScheduleApprovalsPage(scenarioID, scheduleID s
 func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, scheduleID string, occurrenceID string) (bool, error) {
 	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
-	defer tr.mu.Unlock()
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
+		tr.mu.Unlock()
 		return false, nil
 	}
-	var target *storage.ScenarioSchedule
+	found := false
 	for _, schedule := range scenario.Schedules {
 		if schedule != nil && schedule.ID == scheduleID {
-			target = schedule
+			found = true
 			break
 		}
 	}
-	if target == nil || tr.scenarioStore == nil {
+	store := tr.scenarioStore
+	tr.mu.Unlock()
+	if !found || store == nil {
 		return false, nil
 	}
-	occurrence, err := tr.scenarioStore.GetScenarioScheduleOccurrence(occurrenceID)
+	occurrence, err := store.GetScenarioScheduleOccurrence(occurrenceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil || occurrence == nil || occurrence.ScheduleID != scheduleID {
 		return false, err
 	}
-	if store, ok := tr.scenarioStore.(guardedScenarioScheduleDeletePersistence); ok {
-		result, deleteErr := store.DeleteScenarioScheduleOccurrenceGuarded(occurrenceID)
+	if guardedStore, ok := store.(guardedScenarioScheduleDeletePersistence); ok {
+		result, deleteErr := guardedStore.DeleteScenarioScheduleOccurrenceGuarded(occurrenceID)
 		if deleteErr != nil {
 			return true, deleteErr
 		}
@@ -999,17 +1061,26 @@ func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, schedu
 		default:
 			return true, errScheduleHasActiveOccurrence
 		}
-		if err := tr.scenarioStore.DeleteScenarioScheduleOccurrence(occurrenceID); err != nil {
+		if err := store.DeleteScenarioScheduleOccurrence(occurrenceID); err != nil {
 			return true, err
 		}
 	}
-	if target.LastOccurrence != nil && target.LastOccurrence.ID == occurrenceID {
-		target.LastOccurrence = nil
+	tr.mu.Lock()
+	if currentScenario := tr.scenarios[scenarioID]; currentScenario != nil {
+		for _, current := range currentScenario.Schedules {
+			if current != nil && current.ID == scheduleID && current.LastOccurrence != nil && current.LastOccurrence.ID == occurrenceID {
+				current.LastOccurrence = nil
+				break
+			}
+		}
 	}
+	tr.mu.Unlock()
 	return true, nil
 }
 
 func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
+	// Health is a schedule entry point, so it must not reuse a recently cached
+	// empty snapshot after another controller replica commits schedule changes.
 	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	health := ScenarioScheduleHealth{StatusCounts: map[string]int{}}
@@ -1037,13 +1108,25 @@ func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHeal
 	store := tr.scenarioStore
 	tr.mu.RUnlock()
 	if store != nil {
-		if occurrences, err := store.ListAllScenarioScheduleOccurrences(); err == nil {
-			for _, occurrence := range occurrences {
-				if occurrence != nil {
-					health.StatusCounts[occurrence.Status]++
-				}
+		var err error
+		if counter, ok := store.(scenarioScheduleOccurrenceStatusCounter); ok {
+			var counts map[string]int
+			counts, err = counter.CountScenarioScheduleOccurrencesByStatus()
+			if counts != nil {
+				health.StatusCounts = counts
 			}
 		} else {
+			var occurrences []*storage.ScenarioScheduleOccurrence
+			occurrences, err = store.ListAllScenarioScheduleOccurrences()
+			if err == nil {
+				for _, occurrence := range occurrences {
+					if occurrence != nil {
+						health.StatusCounts[occurrence.Status]++
+					}
+				}
+			}
+		}
+		if err != nil {
 			health.StorageError = "scenario occurrence history unavailable: " + err.Error()
 		}
 	}
@@ -1052,6 +1135,10 @@ func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHeal
 	health.Skipped = health.StatusCounts["skipped"]
 	health.Completed = health.StatusCounts["completed"]
 	return health
+}
+
+type scenarioScheduleOccurrenceStatusCounter interface {
+	CountScenarioScheduleOccurrencesByStatus() (map[string]int, error)
 }
 
 func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *StoredScenario {

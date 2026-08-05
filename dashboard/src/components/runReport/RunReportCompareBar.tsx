@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { BaselineOverviewDiff } from './runReportModel'
 
@@ -10,7 +10,7 @@ interface Props {
   loading?: boolean
   error?: string
   onCompareChange: (id: string) => void
-  onPinBaseline: () => Promise<void>
+  onPinBaseline: () => Promise<boolean>
 }
 
 function DeltaCell({ label, value }: { label: string; value?: { label: string; tone: string } }) {
@@ -34,15 +34,36 @@ export default function RunReportCompareBar({
 }: Props) {
   const [draft, setDraft] = useState(compareId)
   const [pinning, setPinning] = useState(false)
+  const [pinMessage, setPinMessage] = useState('')
+  const compareIdRef = useRef(compareId)
+  const pinRequestGenerationRef = useRef(0)
+  const pinningRef = useRef(false)
+  compareIdRef.current = compareId
 
-  useEffect(() => setDraft(compareId), [compareId])
+  useEffect(() => {
+    pinRequestGenerationRef.current += 1
+    pinningRef.current = false
+    setPinning(false)
+    setDraft(compareId)
+    setPinMessage('')
+  }, [compareId])
 
   const pin = async () => {
+    if (pinningRef.current || !compareId) return
+    pinningRef.current = true
+    const requestCompareId = compareId
+    const requestGeneration = ++pinRequestGenerationRef.current
     setPinning(true)
     try {
-      await onPinBaseline()
+      const pinned = await onPinBaseline()
+      if (pinned && requestGeneration === pinRequestGenerationRef.current && compareIdRef.current === requestCompareId) {
+        setPinMessage('Pinned')
+      }
     } finally {
-      setPinning(false)
+      if (requestGeneration === pinRequestGenerationRef.current) {
+        pinningRef.current = false
+        setPinning(false)
+      }
     }
   }
 
@@ -70,6 +91,7 @@ export default function RunReportCompareBar({
         <button className="btn btn-sm btn-primary" type="button" onClick={() => void pin()} disabled={pinning || !compareId}>
           {pinning ? 'Pinning...' : 'Pin baseline'}
         </button>
+        {pinMessage && <span role="status">{pinMessage}</span>}
       </div>
       {loading && <p role="status">Loading baseline...</p>}
       {error && <p className="run-report-error">{error}</p>}

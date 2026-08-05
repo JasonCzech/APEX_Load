@@ -82,17 +82,19 @@ type oasSecurityScheme struct {
 }
 
 type oasOperation struct {
-	Summary     string                 `yaml:"summary"`
-	Description string                 `yaml:"description"`
-	OperationID string                 `yaml:"operationId"`
-	Deprecated  bool                   `yaml:"deprecated,omitempty"`
-	RequestBody *oasRequestBody        `yaml:"requestBody,omitempty"`
-	Responses   map[string]oasResponse `yaml:"responses"`
-	XRoles      string                 `yaml:"x-roles"`
-	Security    *[]map[string][]string `yaml:"security,omitempty"`
-	Parameters  []oasParameter         `yaml:"parameters,omitempty"`
-	Tags        []string               `yaml:"tags"`
-	XHandler    string                 `yaml:"x-handler,omitempty"`
+	Summary      string                 `yaml:"summary"`
+	Description  string                 `yaml:"description"`
+	OperationID  string                 `yaml:"operationId"`
+	Deprecated   bool                   `yaml:"deprecated,omitempty"`
+	RequestBody  *oasRequestBody        `yaml:"requestBody,omitempty"`
+	Responses    map[string]oasResponse `yaml:"responses"`
+	XRoles       string                 `yaml:"x-roles"`
+	Security     *[]map[string][]string `yaml:"security,omitempty"`
+	Parameters   []oasParameter         `yaml:"parameters,omitempty"`
+	Tags         []string               `yaml:"tags"`
+	XHandler     string                 `yaml:"x-handler,omitempty"`
+	XServer      string                 `yaml:"x-server,omitempty"`
+	XConditional string                 `yaml:"x-conditional,omitempty"`
 }
 
 // noSecurity is the per-operation override emitted for public (unauthenticated)
@@ -181,6 +183,8 @@ type routeDoc struct {
 	Category      string
 	Authenticated bool
 	Parameters    []oasParameter
+	Server        string
+	Conditional   string
 }
 
 type endpointCatalog struct {
@@ -198,6 +202,8 @@ type endpointCatalogRoute struct {
 	Public        bool   `json:"public"`
 	Authenticated bool   `json:"authenticated"`
 	Access        string `json:"access"`
+	Server        string `json:"server,omitempty"`
+	Conditional   string `json:"conditional,omitempty"`
 }
 
 // GenerateOpenAPIYAML parses the controller routing source (serverGoPath, typically
@@ -225,9 +231,11 @@ func GenerateOpenAPIYAML(serverGoPath string) ([]byte, error) {
 		Servers: []oasServer{{URL: "http://localhost:8080", Description: "Local development server"}},
 		Components: oasComponents{
 			SecuritySchemes: map[string]oasSecurityScheme{
-				"bearerAuth":  {Type: "http", Scheme: "bearer", BearerFormat: "JWT or service-account key"},
-				"apiKeyAuth":  {Type: "apiKey", Name: "X-APEXLoad-API-Key", In: "header"},
-				"oidcSession": {Type: "apiKey", Name: "apexload_auth_session", In: "cookie"},
+				"bearerAuth":    {Type: "http", Scheme: "bearer", BearerFormat: "JWT or service-account key"},
+				"apiKeyAuth":    {Type: "apiKey", Name: "X-APEXLoad-API-Key", In: "header"},
+				"oidcSession":   {Type: "apiKey", Name: "apexload_auth_session", In: "cookie"},
+				"bridgeToken":   {Type: "apiKey", Name: bridgeTokenHeader, In: "header"},
+				"bridgeSession": {Type: "apiKey", Name: bridgeSessionHeader, In: "header"},
 			},
 			Schemas: openAPIComponentSchemas(),
 		},
@@ -265,7 +273,7 @@ func GenerateEndpointCatalogJSON(serverGoPath string) ([]byte, error) {
 	docs := buildRouteDocs(routes)
 	catalog := endpointCatalog{
 		Version: 1,
-		Source:  serverGoPath,
+		Source:  "pkg/api/server.go",
 		Routes:  make([]endpointCatalogRoute, 0, len(docs)),
 	}
 	for _, doc := range docs {
@@ -278,6 +286,8 @@ func GenerateEndpointCatalogJSON(serverGoPath string) ([]byte, error) {
 			Public:        !doc.Authenticated,
 			Authenticated: doc.Authenticated,
 			Access:        doc.Access,
+			Server:        doc.Server,
+			Conditional:   doc.Conditional,
 		})
 	}
 
@@ -309,7 +319,11 @@ func discoverControllerRoutes(serverGoPath string) ([]discoveredRoute, error) {
 	}
 	fset := token.NewFileSet()
 	var routes []discoveredRoute
+	hasBridgeRoutes := false
 	for _, sourceFile := range sourceFiles {
+		if filepath.Base(sourceFile) == "browser_recording_bridge.go" {
+			hasBridgeRoutes = true
+		}
 		isLegacyRouteFile := filepath.Clean(sourceFile) == legacyRouteFile
 		source, readErr := os.ReadFile(sourceFile)
 		if readErr != nil {
@@ -343,6 +357,16 @@ func discoverControllerRoutes(serverGoPath string) ([]discoveredRoute, error) {
 			}
 			return true
 		})
+	}
+	if hasBridgeRoutes {
+		// The local recording-agent bridge uses a separate mux and address, so it
+		// is not discoverable through the controller registrations above. These
+		// unique pairing routes are nevertheless a supported public contract;
+		// x-server keeps clients from mistaking them for controller endpoints.
+		routes = append(routes,
+			discoveredRoute{Method: http.MethodPost, Path: bridgePairPath, Handler: "handlePair", Unauthenticated: true},
+			discoveredRoute{Method: http.MethodGet, Path: bridgeStatusPath, Handler: "handleStatus", Authenticated: true},
+		)
 	}
 	return routes, nil
 }
@@ -479,15 +503,23 @@ func buildPaths(routes []discoveredRoute, contracts map[string]inferredRouteCont
 		}
 		responses = responseSchemasForRoute(doc.Method, doc.Path, responses)
 		op := oasOperation{
-			Summary:     doc.Summary,
-			Description: fmt.Sprintf("**Access Control:** %s", doc.Access),
-			OperationID: doc.OperationID,
-			Deprecated:  deprecatedRoute(doc.Path),
-			Responses:   responses,
-			XRoles:      doc.Access,
-			Tags:        []string{tagForPath(doc.Path)},
-			Parameters:  append(append(doc.Parameters, contract.QueryParameters...), contract.HeaderParameters...),
-			XHandler:    doc.HandlerLabel,
+			Summary:      doc.Summary,
+			Description:  fmt.Sprintf("**Access Control:** %s", doc.Access),
+			OperationID:  doc.OperationID,
+			Deprecated:   deprecatedRoute(doc.Path),
+			Responses:    responses,
+			XRoles:       doc.Access,
+			Tags:         []string{tagForPath(doc.Path)},
+			Parameters:   append(append(doc.Parameters, contract.QueryParameters...), contract.HeaderParameters...),
+			XHandler:     doc.HandlerLabel,
+			XServer:      doc.Server,
+			XConditional: doc.Conditional,
+		}
+		if doc.Server != "" {
+			op.Description += "\n\n**Server:** " + doc.Server
+		}
+		if doc.Conditional != "" {
+			op.Description += "\n\n**Availability:** " + doc.Conditional
 		}
 		if requestBody := requestBodyForRoute(doc.Method, doc.Path); requestBody != nil {
 			op.RequestBody = requestBody
@@ -499,6 +531,12 @@ func buildPaths(routes []discoveredRoute, contracts map[string]inferredRouteCont
 		}
 		if doc.Path == "/metrics" {
 			op.Security = &optionalMetricsSecurity
+		}
+		if doc.Path == bridgeStatusPath {
+			// Both headers are required by authorizeTokenRequest. Putting the two
+			// schemes in one requirement object expresses AND in OpenAPI.
+			bridgeSecurity := []map[string][]string{{"bridgeToken": {}, "bridgeSession": {}}}
+			op.Security = &bridgeSecurity
 		}
 		if paths[doc.Path] == nil {
 			paths[doc.Path] = map[string]oasOperation{}
@@ -1232,6 +1270,10 @@ func requestBodyForRoute(method, path string) *oasRequestBody {
 
 func responseSchemasForRoute(method, path string, responses map[string]oasResponse) map[string]oasResponse {
 	switch {
+	case method == http.MethodGet && strings.HasSuffix(path, "/swagger.yaml"):
+		setResponseMediaSchema(responses, "2XX", "application/yaml", oasSchema{Type: "string"})
+	case method == http.MethodGet && strings.HasSuffix(path, "/endpoint-catalog"):
+		setResponseMediaSchema(responses, "2XX", "application/json", oasSchema{Type: "object"})
 	case method == http.MethodPost && path == "/api/v1/scripts/import/bruno/inspect":
 		setJSONResponseSchema(responses, "200", "BrunoInspectResponse")
 	case method == http.MethodPost && path == "/api/v1/scripts/import/bruno/commit":
@@ -1244,6 +1286,18 @@ func responseSchemasForRoute(method, path string, responses map[string]oasRespon
 		}
 	}
 	return responses
+}
+
+func setResponseMediaSchema(responses map[string]oasResponse, status, mediaType string, schema oasSchema) {
+	response, ok := responses[status]
+	if !ok {
+		return
+	}
+	if response.Content == nil {
+		response.Content = make(map[string]oasMediaType)
+	}
+	response.Content[mediaType] = oasMediaType{Schema: schema}
+	responses[status] = response
 }
 
 func setJSONResponseSchema(responses map[string]oasResponse, status, schemaName string) {
@@ -1390,6 +1444,8 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 			Category:      docsCategoryForPath(r.Path),
 			Authenticated: r.Authenticated,
 			Parameters:    parameters,
+			Server:        documentedRouteServer(r.Method, r.Path),
+			Conditional:   documentedRouteCondition(r.Method, r.Path),
 		})
 	}
 	return docs
@@ -1399,6 +1455,9 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 // the pre-migration presentation of derived scopes, then falls back to runtime
 // authorization logic for legacy routes.
 func routeRolesText(method, path string) string {
+	if method == http.MethodGet && path == bridgeStatusPath {
+		return "Recording-agent bridge token and session via " + bridgeTokenHeader + " and " + bridgeSessionHeader
+	}
 	if method == http.MethodPost && strings.HasSuffix(path, "/monitoring/collectors/{id}/heartbeat") {
 		return "Collector token via Bearer or X-APEXLoad-API-Key"
 	}
@@ -1611,7 +1670,33 @@ func documentedRoute(method, path string) bool {
 	if method == http.MethodOptions {
 		return false
 	}
-	return strings.HasPrefix(path, "/api/v1/") || path == "/metrics"
+	if strings.HasPrefix(path, "/api/v1/") || path == "/metrics" {
+		return true
+	}
+	switch method + " " + path {
+	case "GET /.well-known/apexload-ci", "GET /desktop/bootstrap", "GET /desktop/download":
+		return true
+	default:
+		return false
+	}
+}
+
+func documentedRouteServer(_ string, path string) string {
+	if path == bridgePairPath || path == bridgeStatusPath {
+		return "Local recording-agent bridge (address selected during agent pairing)"
+	}
+	return ""
+}
+
+func documentedRouteCondition(method, path string) string {
+	switch method + " " + path {
+	case "GET /metrics":
+		return "Served on the controller API address only when APEXLOAD_METRICS_ADDR is unset; otherwise use the dedicated metrics listener."
+	case "GET /desktop/bootstrap", "GET /desktop/download", "POST /api/v1/desktop/browser-downloads":
+		return "Available only when the controller is running with desktop capabilities enabled."
+	default:
+		return ""
+	}
 }
 
 func splitMethodPath(pattern string) (method, path string, ok bool) {

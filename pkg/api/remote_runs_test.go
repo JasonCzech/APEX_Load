@@ -938,6 +938,176 @@ func TestPendingRemoteRunCleanupFencesRemoteCredentialMutationAndDeletion(t *tes
 	}
 }
 
+func TestRemoteRunNetworkWaitDoesNotHoldRemoteConfigLock(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "remote-config-progress.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requestEntered := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	remoteHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestEntered)
+		<-releaseRequest
+		writeJSON(w, http.StatusOK, &ManagedTest{ID: "remote-run", Status: "RUNNING"})
+	}))
+	defer remoteHTTP.Close()
+	server := NewServer(ServerConfig{Store: store})
+	remote := LibraryRemote{ID: "workspace", Name: "Workspace", BaseURL: remoteHTTP.URL, AuthMethod: "none"}
+	server.libraryMu.Lock()
+	server.libraryRemotes[remote.ID] = &remote
+	server.libraryMu.Unlock()
+	if err := server.persistLibraryRemotes(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.upsertRemoteRunLink(RemoteRunLink{
+		LocalRunID: "local-run", RemoteID: remote.ID, RemoteTestID: "remote-run", LocalProjectID: storage.DefaultProjectID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	responseDone := make(chan int, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/remotes/workspace/runs/remote-run", nil))
+		responseDone <- response.Code
+	}()
+	select {
+	case <-requestEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("remote request did not start")
+	}
+	writerAcquired := make(chan struct{})
+	go func() {
+		server.remoteConfigMu.Lock()
+		close(writerAcquired)
+		server.remoteConfigMu.Unlock()
+	}()
+	select {
+	case <-writerAcquired:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("remote config writer was blocked by stalled outbound request")
+	}
+	close(releaseRequest)
+	select {
+	case status := <-responseDone:
+		if status != http.StatusOK {
+			t.Fatalf("remote run response status = %d", status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("remote run response did not complete")
+	}
+}
+
+func TestRemoteRunCreateFencesRemoteMutationBeforeCleanupIntent(t *testing.T) {
+	t.Setenv(remoteOutboundAllowPrivateHostsEnv, "1")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "remote-create-fence.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: "local-project", Name: "Local", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store, LibraryCredentials: NewMemoryLibraryCredentialStore()})
+	script, err := server.runner.StoreScriptDurable(libraryTestScript("create-fence-script", "Create Fence", "local-project", "/fence"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	importEntered := make(chan struct{})
+	releaseImport := make(chan struct{})
+	var enterOnce sync.Once
+	var releaseOnce sync.Once
+	releaseBlockedImport := func() { releaseOnce.Do(func() { close(releaseImport) }) }
+	t.Cleanup(releaseBlockedImport)
+	remoteHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/library/import":
+			var req LibraryImportRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			enterOnce.Do(func() { close(importEntered) })
+			<-releaseImport
+			response := LibraryImportResponse{SchemaVersion: libraryBundleSchemaVersion}
+			for _, item := range req.Bundle.Items {
+				response.Items = append(response.Items, LibraryImportResultItem{
+					Kind: item.Kind, SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID,
+					LocalItemID: "remote-" + normalizeLibraryKind(item.Kind), ContentHash: item.ContentHash, Action: "created",
+				})
+			}
+			writeJSON(w, http.StatusCreated, response)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/tests":
+			var req CreateTestRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, &ManagedTest{ID: req.RequestedTestID, Status: "QUEUED", ProjectID: "remote-project"})
+		default:
+			writeError(w, http.StatusNotFound, r.Method+" "+r.URL.Path)
+		}
+	}))
+	defer remoteHTTP.Close()
+	remote := LibraryRemote{
+		ID: "workspace", Name: "Workspace", BaseURL: remoteHTTP.URL, AuthMethod: "none", DefaultProjectID: "remote-project",
+		ProjectMappings: map[string]string{"local-project": "remote-project"},
+	}
+	server.libraryMu.Lock()
+	server.libraryRemotes[remote.ID] = &remote
+	server.libraryMu.Unlock()
+	if err := server.persistLibraryRemotes(); err != nil {
+		t.Fatal(err)
+	}
+
+	body := marshalLibraryTestJSON(t, RemoteRunCreateRequest{CreateTestRequest: CreateTestRequest{
+		Name: "fenced", Duration: "30s", ScriptID: script.ID, VUsers: 1,
+	}})
+	createDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/remotes/workspace/runs", bytes.NewReader(body)))
+		createDone <- response
+	}()
+	select {
+	case <-importEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("remote create did not reach the pre-cleanup preparation window")
+	}
+
+	remove := httptest.NewRecorder()
+	server.mux.ServeHTTP(remove, httptest.NewRequest(http.MethodDelete, "/api/v1/library/remotes/workspace", nil))
+	if remove.Code != http.StatusConflict {
+		t.Fatalf("delete during create = %d, want %d body=%s", remove.Code, http.StatusConflict, remove.Body.String())
+	}
+	update := httptest.NewRecorder()
+	updateBody := marshalLibraryTestJSON(t, LibraryRemoteRequest{BaseURL: remoteHTTP.URL})
+	server.mux.ServeHTTP(update, httptest.NewRequest(http.MethodPut, "/api/v1/library/remotes/workspace", bytes.NewReader(updateBody)))
+	if update.Code != http.StatusConflict {
+		t.Fatalf("transport update during create = %d, want %d body=%s", update.Code, http.StatusConflict, update.Body.String())
+	}
+
+	releaseBlockedImport()
+	select {
+	case response := <-createDone:
+		if response.Code != http.StatusCreated {
+			t.Fatalf("remote create = %d body=%s", response.Code, response.Body.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("remote create did not complete")
+	}
+	server.remoteConfigMu.Lock()
+	inFlight := server.remoteRunCreateInFlightLocked(remote.ID)
+	server.remoteConfigMu.Unlock()
+	if inFlight {
+		t.Fatal("remote create reservation was not retired after cleanup intent became durable")
+	}
+}
+
 func TestCreateTestRequestedIDCannotReplaceExistingLifecycleRow(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "requested-test-id.db"))
 	if err != nil {

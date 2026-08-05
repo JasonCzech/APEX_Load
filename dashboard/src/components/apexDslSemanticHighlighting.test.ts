@@ -1,12 +1,21 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EditorState } from '@codemirror/state'
+import { EditorView } from '@codemirror/view'
 
 import {
   APEX_DSL_SEMANTIC_MAX_DOC_CHARS,
+  APEX_DSL_SEMANTIC_REBUILD_DELAY_MS,
+  apexDslSemanticHighlighting,
   buildApexDslSemanticDecorations,
   collectApexDslSemanticRanges,
   type ApexDslSemanticKind,
 } from './apexDslSemanticHighlighting'
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 const script = {
   name: 'Checkout Flow',
@@ -112,5 +121,30 @@ describe('buildApexDslSemanticDecorations', () => {
     expect(padded.length).toBeGreaterThan(APEX_DSL_SEMANTIC_MAX_DOC_CHARS)
     const state = EditorState.create({ doc: padded })
     expect(buildApexDslSemanticDecorations(state).size).toBe(0)
+  })
+
+  it('debounces whole-document semantic rebuilds while the user is typing', async () => {
+    vi.useFakeTimers()
+    const text = JSON.stringify({ script }, null, 2)
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({ doc: text, extensions: [apexDslSemanticHighlighting()] }),
+    })
+
+    const keyFrom = text.indexOf('"name": "Submit Order"') + 1
+    expect(parent.querySelector('.apex-dsl-action-name')).not.toBeNull()
+
+    view.dispatch({ changes: { from: keyFrom, to: keyFrom + 4, insert: 'label' } })
+
+    // Existing ranges are cheaply mapped through the edit; the expensive semantic
+    // parse is deferred until typing settles.
+    expect(parent.querySelector('.apex-dsl-action-name')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(APEX_DSL_SEMANTIC_REBUILD_DELAY_MS)
+    expect(parent.querySelector('.apex-dsl-action-name')).toBeNull()
+
+    view.destroy()
+    parent.remove()
   })
 })

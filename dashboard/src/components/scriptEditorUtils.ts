@@ -1,4 +1,5 @@
 import { jsonLanguage } from '@codemirror/lang-json'
+import type { SyntaxNode } from '@lezer/common'
 import { downloadTextFile as downloadTextFileBlob } from '../utils/fileUtils'
 import {
   type BrowserReplayStartRequest,
@@ -455,14 +456,11 @@ export interface JsonStringOccurrence {
   isOriginal: boolean
 }
 
-interface JsonStringValueRecord {
-  path: string
-  value: string
-}
-
 interface JsonStringNodeRecord {
   from: number
   to: number
+  path: string
+  value: string
 }
 
 /**
@@ -524,43 +522,63 @@ function formatJsonPathKey(key: string): string {
   return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key) ? `.${key}` : `[${JSON.stringify(key)}]`
 }
 
-function collectJsonStringValues(value: unknown, path = '$', records: JsonStringValueRecord[] = []): JsonStringValueRecord[] {
-  if (typeof value === 'string') {
-    records.push({ path, value })
-    return records
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      collectJsonStringValues(item, `${path}[${index}]`, records)
-    })
-    return records
-  }
-  if (value && typeof value === 'object') {
-    Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
-      collectJsonStringValues(item, `${path}${formatJsonPathKey(key)}`, records)
-    })
-  }
-  return records
-}
-
 function collectJsonStringNodes(text: string): JsonStringNodeRecord[] {
   const tree = jsonLanguage.parser.parse(text)
-  const cursor = tree.cursor()
   const nodes: JsonStringNodeRecord[] = []
 
-  const visit = () => {
-    if (cursor.name === 'String') {
-      nodes.push({ from: cursor.from, to: cursor.to })
+  const jsonValueNames = new Set(['String', 'Number', 'Object', 'Array', 'True', 'False', 'Null'])
+  const visit = (node: SyntaxNode, path: string) => {
+    if (node.name === 'String') {
+      const rawLiteral = text.slice(node.from, node.to)
+      let value = rawLiteral.slice(1, -1)
+      try {
+        value = JSON.parse(rawLiteral) as string
+      } catch {
+        // The full-document JSON.parse in the caller normally makes this unreachable.
+      }
+      nodes.push({ from: node.from, to: node.to, path, value })
+      return
     }
-    if (cursor.firstChild()) {
-      do {
-        visit()
-      } while (cursor.nextSibling())
-      cursor.parent()
+
+    if (node.name === 'Object') {
+      for (let child = node.firstChild; child; child = child.nextSibling) {
+        if (child.name !== 'Property') continue
+        const propertyName = child.getChild('PropertyName')
+        if (!propertyName) continue
+        let key = text.slice(propertyName.from + 1, propertyName.to - 1)
+        try {
+          key = JSON.parse(text.slice(propertyName.from, propertyName.to)) as string
+        } catch {
+          // Keep the raw key for the same defensive reason as string values above.
+        }
+        for (let valueNode = child.firstChild; valueNode; valueNode = valueNode.nextSibling) {
+          if (jsonValueNames.has(valueNode.name)) {
+            visit(valueNode, `${path}${formatJsonPathKey(key)}`)
+            break
+          }
+        }
+      }
+      return
+    }
+
+    if (node.name === 'Array') {
+      let index = 0
+      for (let child = node.firstChild; child; child = child.nextSibling) {
+        if (!jsonValueNames.has(child.name)) continue
+        visit(child, `${path}[${index}]`)
+        index += 1
+      }
+      return
+    }
+
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (jsonValueNames.has(child.name)) {
+        visit(child, path)
+      }
     }
   }
 
-  visit()
+  visit(tree.topNode, '$')
   return nodes
 }
 
@@ -595,14 +613,12 @@ export function findJsonStringOccurrences(
   const searchText = selectedText.trim()
   if (!searchText) return []
 
-  let parsed: unknown
   try {
-    parsed = JSON.parse(text)
+    JSON.parse(text)
   } catch {
     return []
   }
 
-  const valueRecords = collectJsonStringValues(parsed)
   let nodes: JsonStringNodeRecord[]
   try {
     nodes = collectJsonStringNodes(text)
@@ -611,12 +627,12 @@ export function findJsonStringOccurrences(
   }
 
   const selectedDecoded = decodeJsonStringLiteral(selectedText)
-  return nodes.flatMap((node, index) => {
+  return nodes.flatMap(node => {
     const from = node.from + 1
     const to = node.to - 1
     if (to < from) return []
     const rawText = text.slice(from, to)
-    const value = valueRecords[index]?.value ?? decodeJsonStringLiteral(rawText)
+    const value = node.value
     const matches = rawText === selectedText || value === selectedDecoded
     const isOriginal = Boolean(originalRange && originalRange.from >= from && originalRange.to <= to)
     if (!matches && !isOriginal) return []
@@ -627,7 +643,7 @@ export function findJsonStringOccurrences(
       to,
       rawText,
       value,
-      path: valueRecords[index]?.path || `$:${line}`,
+      path: node.path || `$:${line}`,
       line,
       preview,
       isOriginal,

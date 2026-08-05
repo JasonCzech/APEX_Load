@@ -119,6 +119,56 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	}
 }
 
+func TestBroadcastRecorderSessionEventPreservesScrubbedCapWarningScope(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	server.hub.broadcast = make(chan hubBroadcast, 1)
+
+	warning := "recording truncated: requests are being dropped after reaching the request-count retention limit; access_token=handler-secret"
+	server.broadcastRecorderSessionEvent("project-1", recorder.SessionEvent{
+		Type:      "recording_warning",
+		SessionID: "recording-1",
+		Warning:   warning,
+		Session: &recorder.Session{
+			ID:        "recording-1",
+			ProjectID: "project-1",
+			Warnings:  []string{warning},
+		},
+	})
+
+	select {
+	case message := <-server.hub.broadcast:
+		if message.projectID != "project-1" || message.testID != "" || message.broadcastAll {
+			t.Fatalf("broadcast scope = %#v, want project-1 only", message)
+		}
+		var payload struct {
+			Type      string `json:"type"`
+			ProjectID string `json:"project_id"`
+			SessionID string `json:"session_id"`
+			Warning   string `json:"warning"`
+			Session   struct {
+				Warnings []string `json:"warnings"`
+			} `json:"session"`
+		}
+		if err := json.Unmarshal(message.payload, &payload); err != nil {
+			t.Fatalf("json.Unmarshal returned error: %v", err)
+		}
+		if payload.Type != "recording_warning" || payload.ProjectID != "project-1" || payload.SessionID != "recording-1" {
+			t.Fatalf("broadcast payload identity = %#v", payload)
+		}
+		if !strings.Contains(payload.Warning, "request-count retention limit") {
+			t.Fatalf("warning = %q, want cap warning", payload.Warning)
+		}
+		if strings.Contains(payload.Warning, "handler-secret") || !strings.Contains(payload.Warning, scrub.Redacted) {
+			t.Fatalf("warning was not scrubbed: %q", payload.Warning)
+		}
+		if len(payload.Session.Warnings) != 1 || payload.Session.Warnings[0] != payload.Warning {
+			t.Fatalf("session warnings = %#v, want scrubbed live warning %q", payload.Session.Warnings, payload.Warning)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for recorder warning broadcast")
+	}
+}
+
 func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	t.Setenv(recordingBaselineKeyEnvVar, "recorder-handler-test-key")
 	server := recordingTestServer(t)

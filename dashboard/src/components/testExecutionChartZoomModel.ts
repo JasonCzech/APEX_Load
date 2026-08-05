@@ -11,30 +11,35 @@ export type ExecutionChartTimeRange = ExecutionChartMinuteRange | 'all' | 'custo
 export const executionChartMinMinuteRange = executionChartMinuteRangeValues[0]
 export const executionChartMaxMinuteRange = executionChartMinuteRangeValues[executionChartMinuteRangeValues.length - 1]
 
+export interface ExecutionChartZoomAnchor {
+  label: string | number
+  timestampMs: number
+}
+
 export interface ExecutionChartZoomRange {
-  left: string | number
-  right: string | number
+  startTimestampMs: number
+  endTimestampMs: number
 }
 
 export interface ExecutionChartZoomState {
   timeRange: ExecutionChartTimeRange
   zoomRange: ExecutionChartZoomRange | null
-  refAreaLeft: string | number
-  refAreaRight: string | number
+  refAreaLeft: ExecutionChartZoomAnchor | null
+  refAreaRight: ExecutionChartZoomAnchor | null
 }
 
 export type ExecutionChartZoomAction =
   | { type: 'setTimeRange'; value: ExecutionChartTimeRange }
-  | { type: 'beginSelection'; activeLabel?: string | number }
-  | { type: 'updateSelection'; activeLabel?: string | number }
+  | { type: 'beginSelection'; anchor?: ExecutionChartZoomAnchor }
+  | { type: 'updateSelection'; anchor?: ExecutionChartZoomAnchor }
   | { type: 'applySelection' }
   | { type: 'setZoomRange'; zoomRange: ExecutionChartZoomRange | null }
 
 export const initialExecutionChartZoomState: ExecutionChartZoomState = {
   timeRange: 'all',
   zoomRange: null,
-  refAreaLeft: '',
-  refAreaRight: '',
+  refAreaLeft: null,
+  refAreaRight: null,
 }
 
 export function executionChartMinuteRangeValue(timeRange: ExecutionChartTimeRange): ExecutionChartMinuteValue | null {
@@ -70,30 +75,30 @@ export function executionChartZoomReducer(
         zoomRange: action.zoomRange,
       }
     case 'beginSelection':
-      if (action.activeLabel === undefined) {
+      if (!action.anchor) {
         return state
       }
 
       return {
         ...state,
-        refAreaLeft: action.activeLabel,
-        refAreaRight: action.activeLabel,
+        refAreaLeft: action.anchor,
+        refAreaRight: action.anchor,
       }
     case 'updateSelection':
-      if (action.activeLabel === undefined || state.refAreaLeft === '') {
+      if (!action.anchor || !state.refAreaLeft) {
         return state
       }
 
       return {
         ...state,
-        refAreaRight: action.activeLabel,
+        refAreaRight: action.anchor,
       }
     case 'applySelection':
-      if (state.refAreaLeft === state.refAreaRight || state.refAreaRight === '') {
+      if (!state.refAreaLeft || !state.refAreaRight || state.refAreaLeft.timestampMs === state.refAreaRight.timestampMs) {
         return {
           ...state,
-          refAreaLeft: '',
-          refAreaRight: '',
+          refAreaLeft: null,
+          refAreaRight: null,
         }
       }
 
@@ -101,11 +106,11 @@ export function executionChartZoomReducer(
         ...state,
         timeRange: 'custom',
         zoomRange: {
-          left: state.refAreaLeft,
-          right: state.refAreaRight,
+          startTimestampMs: Math.min(state.refAreaLeft.timestampMs, state.refAreaRight.timestampMs),
+          endTimestampMs: Math.max(state.refAreaLeft.timestampMs, state.refAreaRight.timestampMs),
         },
-        refAreaLeft: '',
-        refAreaRight: '',
+        refAreaLeft: null,
+        refAreaRight: null,
       }
     default:
       return state
@@ -114,7 +119,8 @@ export function executionChartZoomReducer(
 
 export function getExecutionChartRefArea(state: ExecutionChartZoomState) {
   return {
-    showRefArea: state.refAreaLeft !== '',
-    refAreaEnd: state.refAreaRight === '' ? state.refAreaLeft : state.refAreaRight,
+    showRefArea: state.refAreaLeft !== null,
+    refAreaLeft: state.refAreaLeft?.label ?? '',
+    refAreaEnd: (state.refAreaRight ?? state.refAreaLeft)?.label ?? '',
   }
 }

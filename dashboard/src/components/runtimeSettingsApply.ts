@@ -8,6 +8,30 @@ import {
   runtimeOverrideFromScriptConfig,
 } from './runtimeSettingsModel'
 
+/**
+ * Apply one UI edit to a replacement section. The first edit materializes the
+ * inherited section; later edits preserve only the already-authoritative group
+ * section. An explicit `undefined` is a deletion request because replacement
+ * sections cannot inherit one nested field independently.
+ */
+export function editReplacementSection<T extends object>(
+  current: Partial<T> | undefined,
+  next: Partial<T> | undefined,
+  inherited: Partial<T> | undefined,
+): Partial<T> {
+  const edited: Partial<T> = structuredClone(current ?? inherited ?? {})
+  if (!next) return edited
+  for (const key of Object.keys(next) as Array<keyof T>) {
+    const value = next[key]
+    if (value === undefined) {
+      delete edited[key]
+    } else {
+      Object.assign(edited, { [key]: structuredClone(value) })
+    }
+  }
+  return edited
+}
+
 /** Copies a runtime profile while removing every section the target protocol cannot execute. */
 export function copyRuntimeSettingsForProtocol(
   source: ScenarioRuntimeSettingsDraft,

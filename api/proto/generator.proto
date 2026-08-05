@@ -225,6 +225,10 @@ message MetricsBatch {
   BrowserMetrics browser_metrics = 16;
   repeated BrowserDeviceMetrics browser_device_metrics = 17;
   uint64 execution_generation = 18;
+  // batch_sequence is monotonic for one test execution generation. Zero means
+  // unknown (an older generator). Controllers use gaps to mark live windows
+  // that a bounded subscriber queue could not deliver.
+  uint64 batch_sequence = 19;
 }
 
 message MetricsBatchTelemetry {
@@ -448,6 +452,7 @@ message ProtocolRuntimeCapacity {
 
 message HeartbeatPong {
   string generator_id = 3;
+  // Millisecond generator wall-clock sample retained for rolling compatibility.
   int64 timestamp_unix_ms = 1;
   repeated string active_test_ids = 2;
   GeneratorStats stats = 4;
@@ -459,6 +464,10 @@ message HeartbeatPong {
   repeated string supported_protocols = 10;
   repeated string compatible_features = 11;
   repeated ProtocolRuntimeCapacity runtime_capacities = 12;
+  // Actual generator wall-clock sample taken immediately before the heartbeat
+  // response is built. Controllers use the request/response midpoint to
+  // estimate the generator clock domain for coordinated start barriers.
+  int64 timestamp_unix_nano = 13;
 }
 
 message ScriptPayload {

@@ -37,6 +37,15 @@ func TestActionCatalogEntriesAreWellFormed(t *testing.T) {
 			if field.Kind != FieldKindEnum && len(field.Enum) > 0 {
 				t.Errorf("%s.%s: enum values on non-enum kind %s", spec.Type, field.Name, field.Kind)
 			}
+			if field.Kind != FieldKindEnum && (field.SchemaEnum || len(field.EnumAliases) > 0 || field.EnumCaseFold || field.EnumTrimSpace || field.EnumAllowEmpty || field.EnumAllowBlank) {
+				t.Errorf("%s.%s: enum schema metadata on non-enum kind %s", spec.Type, field.Name, field.Kind)
+			}
+			if !field.SchemaEnum && (len(field.EnumAliases) > 0 || field.EnumCaseFold || field.EnumTrimSpace || field.EnumAllowEmpty || field.EnumAllowBlank) {
+				t.Errorf("%s.%s: enum normalization metadata requires schema_enum", spec.Type, field.Name)
+			}
+			if field.EnumAllowBlank && !field.EnumTrimSpace {
+				t.Errorf("%s.%s: enum_allow_blank requires enum_trim_space", spec.Type, field.Name)
+			}
 			declared[field.Name] = true
 		}
 		for _, group := range spec.RequireOneOf {
@@ -266,16 +275,16 @@ func TestActionSpecsForProtocol(t *testing.T) {
 	if !hasType(jmsSpecs, "jms_publish") {
 		t.Error("jms-solace specs missing jms_publish")
 	}
-	if hasType(jmsSpecs, "control_if") {
-		t.Error("jms specs should not include engine actions (JMS validator rejects them)")
+	if !hasType(jmsSpecs, "control_if") {
+		t.Error("jms specs should include engine actions")
 	}
 
 	kafkaSpecs := ActionSpecsForProtocol("kafka")
 	if !hasType(kafkaSpecs, "kafka_produce") {
 		t.Error("kafka specs missing kafka_produce")
 	}
-	if hasType(kafkaSpecs, "rendezvous") {
-		t.Error("kafka specs should not include engine actions (Kafka validator rejects them)")
+	if !hasType(kafkaSpecs, "rendezvous") {
+		t.Error("kafka specs should include engine actions")
 	}
 
 	browserSpecs := ActionSpecsForProtocol("browser")

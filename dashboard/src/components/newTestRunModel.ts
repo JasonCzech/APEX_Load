@@ -443,32 +443,53 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
   const startDelaySeconds = parseDurationToSeconds(startDelay)
   const preBaselineSeconds = startDelaySeconds + (resourceBaseline ? RESOURCE_BASELINE_SECONDS : 0)
   const postBaselineSeconds = resourceBaseline ? RESOURCE_BASELINE_SECONDS : 0
-  const maxRampDown = groups.reduce((max, group) => Math.max(max, parseDurationToSeconds(group.ramp_down)), 0)
+  const maxRampDown = groups.reduce(
+    (max, group) => group.stages?.length ? max : Math.max(max, parseDurationToSeconds(group.ramp_down)),
+    0,
+  )
   const totalSeconds = preBaselineSeconds + steadySeconds + maxRampDown + postBaselineSeconds
   if (totalSeconds <= 0) {
     return { points: [], totalSeconds: 0, steadySeconds, preBaselineSeconds, postBaselineSeconds, peakVUsers: 0 }
   }
 
   const step = Math.max(1, Math.floor(totalSeconds / 30))
+  const timeline = new Set<number>([0, totalSeconds, preBaselineSeconds, preBaselineSeconds + steadySeconds])
+  for (let second = step; second < totalSeconds; second += step) timeline.add(second)
+  groups.forEach(group => {
+    if (group.stages?.length) {
+      let cursor = preBaselineSeconds
+      group.stages.forEach(stage => {
+        cursor += parseDurationToSeconds(stage.duration)
+        timeline.add(Math.min(preBaselineSeconds + steadySeconds, cursor))
+      })
+      return
+    }
+    timeline.add(preBaselineSeconds + Math.min(steadySeconds, parseDurationToSeconds(group.ramp_up)))
+    timeline.add(preBaselineSeconds + steadySeconds + parseDurationToSeconds(group.ramp_down))
+  })
   const points: Array<Record<string, number>> = []
   let peakVUsers = 0
 
-  for (let second = 0; second <= totalSeconds; second += step) {
+  for (const second of Array.from(timeline).filter(value => value >= 0 && value <= totalSeconds).sort((left, right) => left - right)) {
     const point: Record<string, number> = { second, total: 0 }
     groups.forEach((group, index) => {
-      const rampUp = parseDurationToSeconds(group.ramp_up)
-      const rampDown = parseDurationToSeconds(group.ramp_down)
       const loadSecond = Math.max(0, second - preBaselineSeconds)
       let value = 0
 
       if (second < preBaselineSeconds) {
         value = 0
-      } else if (loadSecond < rampUp) {
-        value = rampUp > 0 ? (loadSecond / rampUp) * group.vusers : group.vusers
-      } else if (loadSecond < steadySeconds) {
-        value = group.vusers
-      } else if (loadSecond < steadySeconds + rampDown) {
-        value = rampDown > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * group.vusers : 0
+      } else if (group.stages?.length) {
+        value = loadSecond < steadySeconds ? stagedRunGroupValue(group, loadSecond) : 0
+      } else {
+        const rampUp = parseDurationToSeconds(group.ramp_up)
+        const rampDown = parseDurationToSeconds(group.ramp_down)
+        if (loadSecond < rampUp) {
+          value = rampUp > 0 ? (loadSecond / rampUp) * group.vusers : group.vusers
+        } else if (loadSecond < steadySeconds) {
+          value = group.vusers
+        } else if (loadSecond < steadySeconds + rampDown) {
+          value = rampDown > 0 ? (1 - ((loadSecond - steadySeconds) / rampDown)) * group.vusers : 0
+        }
       }
 
       const roundedValue = Math.round(Math.max(0, value))
@@ -496,6 +517,33 @@ export function buildRunLoadProfilePreview(groups: ScenarioScriptGroup[], durati
     postBaselineSeconds,
     peakVUsers,
   }
+}
+
+function stagedRunGroupValue(group: ScenarioScriptGroup, elapsedSeconds: number): number {
+  const stages = group.stages || []
+  const firstType = stages[0]?.type?.trim().toLowerCase()
+  let previousValue = firstType === 'ramp_down'
+    ? Math.max(0, Number(group.vusers) || 0)
+    : firstType === 'hold'
+      ? Math.max(0, Number(stages[0]?.target_vusers) || 0)
+      : 0
+  let cursor = 0
+
+  for (const stage of stages) {
+    const duration = parseDurationToSeconds(stage.duration)
+    const target = Math.max(0, Number(stage.target_vusers) || 0)
+    const end = cursor + duration
+    if (elapsedSeconds <= end) {
+      if (stage.type.trim().toLowerCase() === 'ramp_up' || stage.type.trim().toLowerCase() === 'ramp_down') {
+        const progress = duration > 0 ? Math.max(0, Math.min(1, (elapsedSeconds - cursor) / duration)) : 1
+        return previousValue + ((target - previousValue) * progress)
+      }
+      return target
+    }
+    cursor = end
+    previousValue = target
+  }
+  return previousValue
 }
 
 export function buildRunDefaultCards(scenario: StoredScenario | undefined, overrides: RunDefaultOverrides): RunDefaultCard[] {

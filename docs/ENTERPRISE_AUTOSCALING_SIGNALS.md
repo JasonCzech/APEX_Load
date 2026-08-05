@@ -113,7 +113,7 @@ Capacity advice now publishes protocol-specific density envelopes in `capacity_a
 | SOAP | 5,000 | Calibrated model | XML parsing and larger payload assumptions. |
 | Java-over-HTTP | 7,000 | Calibrated model | HTTP-family behavior with heavier client/runtime assumptions. |
 | JMS / Solace / IBM MQ | 3,000 | Calibrated model | Broker/session resources drive lower default density. |
-| Browser canaries | 20-40 | Device-tier model | Real browser runtime canaries, not HTTP-scale VUsers. |
+| Browser canaries | 1-5 (2 recommended) | Acceptance contract | Real browser runtime canaries, not HTTP-scale VUsers; raise the cap only with release-attached evidence for the exact image and hardware. |
 | Unknown | 4,000 | Conservative | Applied with a warning until the protocol has an explicit envelope. |
 
 The advisor applies the configured headroom percentage to protocol envelopes before calculating required generators. For mixed workloads, the advisory includes one envelope per protocol and the generator recommendation is the maximum of CPU, memory, network, global VUser density, and protocol-specific density.

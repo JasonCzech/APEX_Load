@@ -8656,6 +8656,18 @@ col.results-actions-col {
   overflow-x: auto;
 }
 
+.repository-asset-table-virtualized {
+  max-height: min(72vh, 900px);
+  overflow: auto;
+}
+
+.repository-asset-table-virtualized thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-card);
+}
+
 .repository-asset-table table {
   min-width: 1240px;
   table-layout: fixed;

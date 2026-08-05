@@ -1298,6 +1298,20 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 			writeError(w, http.StatusInternalServerError, "failed to renew browser recording receipt after recovery: "+renewErr.Error())
 			return
 		}
+		if fenceErr := s.fenceDirectImportAssetAdoption(
+			attempt,
+			projectID,
+			deterministicScriptIDs(transactionScripts),
+			"",
+		); fenceErr != nil {
+			if errors.Is(fenceErr, errDirectImportAssetsClaimed) {
+				w.Header().Set("Retry-After", "2")
+				writeError(w, http.StatusConflict, "the prior browser recording transaction is still finalizing; retry conversion")
+			} else {
+				writeError(w, http.StatusInternalServerError, "failed to inspect prior browser recording transaction: "+fenceErr.Error())
+			}
+			return
+		}
 		stored, storedScenario, loadErr := s.loadDirectImportAssetsByIDs(
 			projectID,
 			deterministicScriptIDs(transactionScripts),

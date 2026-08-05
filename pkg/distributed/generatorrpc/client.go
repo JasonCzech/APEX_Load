@@ -115,6 +115,7 @@ type PauseResult struct {
 type MetricsBatch struct {
 	TestID                string
 	ExecutionGeneration   uint64
+	BatchSequence         uint64
 	GeneratorID           string
 	TimestampUnixMs       int64
 	WindowMs              int64
@@ -143,6 +144,10 @@ type MetricsTelemetry struct {
 	GeneratorProcessingLagMs   float64
 	TransportLagMs             float64
 	DroppedSubscriberBatches   int64
+	// MissingMetricWindows is controller-computed from gaps in BatchSequence.
+	// It is cumulative for the target stream and remains zero for older
+	// generators that do not publish a sequence.
+	MissingMetricWindows int64
 	// WindowMs is the elapsed wall-clock duration this group's drained
 	// transactions cover. It is generator-internal (merged to the batch's
 	// window_ms) and is not transmitted on the telemetry proto message.
@@ -310,6 +315,7 @@ type ProtocolRuntimeCapacity struct {
 type HeartbeatResponse struct {
 	GeneratorID        string
 	TimestampUnixMs    int64
+	TimestampUnixNano  int64
 	ActiveTestIDs      []string
 	Stats              GeneratorStats
 	AvailableCapacity  int32
@@ -380,11 +386,32 @@ type GeneratorStats struct {
 type Client struct {
 	conn *grpc.ClientConn
 	rpc  pb.GeneratorControlClient
+
+	clockMu       sync.RWMutex
+	clockEstimate generatorClockEstimate
 }
 
 type HeartbeatStream struct {
 	stream pb.GeneratorControl_HeartbeatClient
+	owner  *Client
+
+	clockMu           sync.Mutex
+	clockSentAt       time.Time
+	clockPingUnixMS   int64
+	clockSampleActive bool
 }
+
+type generatorClockEstimate struct {
+	offset      time.Duration
+	uncertainty time.Duration
+	observedAt  time.Time
+	known       bool
+}
+
+const (
+	coordinatedStartClockEstimateMaxAge         = 5 * time.Minute
+	coordinatedStartClockEstimateMaxUncertainty = 250 * time.Millisecond
+)
 
 type MetricsStream struct {
 	stream    pb.GeneratorControl_StreamMetricsClient
@@ -510,13 +537,100 @@ func (c *Client) CommitWork(ctx context.Context, testID string, generation uint6
 func (c *Client) CommitWorkAt(ctx context.Context, testID string, generation uint64, startAt time.Time) (WorkCommitResult, error) {
 	request := &pb.WorkCommitRequest{TestId: testID, ExecutionGeneration: generation}
 	if !startAt.IsZero() {
+		clockEstimate, err := c.ensureCoordinatedStartClockEstimate(ctx)
+		if err != nil {
+			return WorkCommitResult{}, err
+		}
 		request.StartAtUnixNano = startAt.UnixNano()
+		// Keep sent_at for rolling compatibility, but current generators translate
+		// the absolute controller barrier with the heartbeat-derived clock offset.
+		// The deadline therefore does not move later by this RPC's one-way transit.
+		ctx = outgoingCoordinatedStartContextWithClockEstimate(
+			ctx,
+			time.Now(),
+			clockEstimate.offset,
+			clockEstimate.uncertainty,
+		)
 	}
 	ack, err := c.rpc.CommitWork(ctx, request)
 	if err != nil {
 		return WorkCommitResult{}, err
 	}
 	return WorkCommitResult{Accepted: ack.GetAccepted(), ErrorMessage: ack.GetErrorMessage()}, nil
+}
+
+func (c *Client) observeGeneratorClock(controllerSentAt, controllerReceivedAt, generatorAt time.Time) {
+	if c == nil || controllerSentAt.IsZero() || controllerReceivedAt.Before(controllerSentAt) || generatorAt.IsZero() {
+		return
+	}
+	roundTrip := controllerReceivedAt.Sub(controllerSentAt)
+	midpoint := controllerSentAt.Add(roundTrip / 2)
+	estimate := generatorClockEstimate{
+		offset:      generatorAt.Sub(midpoint),
+		uncertainty: roundTrip / 2,
+		observedAt:  controllerReceivedAt,
+		known:       true,
+	}
+	c.clockMu.Lock()
+	current := c.clockEstimate
+	// Preserve a more precise recent sample when an unrelated heartbeat is
+	// briefly delayed. A stale estimate is always replaced so clock correction
+	// can follow long-lived drift.
+	if !current.known || controllerReceivedAt.Sub(current.observedAt) > coordinatedStartClockEstimateMaxAge || estimate.uncertainty <= current.uncertainty {
+		c.clockEstimate = estimate
+	}
+	c.clockMu.Unlock()
+}
+
+func (c *Client) coordinatedStartClockEstimate(now time.Time) (generatorClockEstimate, bool) {
+	if c == nil {
+		return generatorClockEstimate{}, false
+	}
+	c.clockMu.RLock()
+	estimate := c.clockEstimate
+	c.clockMu.RUnlock()
+	if !estimate.known || estimate.observedAt.IsZero() {
+		return generatorClockEstimate{}, false
+	}
+	age := now.Sub(estimate.observedAt)
+	if age < 0 || age > coordinatedStartClockEstimateMaxAge ||
+		estimate.offset < -maxCoordinatedStartClockOffset || estimate.offset > maxCoordinatedStartClockOffset ||
+		estimate.uncertainty < 0 || estimate.uncertainty > coordinatedStartClockEstimateMaxUncertainty {
+		return generatorClockEstimate{}, false
+	}
+	return estimate, true
+}
+
+func (c *Client) ensureCoordinatedStartClockEstimate(ctx context.Context) (generatorClockEstimate, error) {
+	if estimate, ok := c.coordinatedStartClockEstimate(time.Now()); ok {
+		return estimate, nil
+	}
+	if c == nil || c.rpc == nil {
+		return generatorClockEstimate{}, fmt.Errorf("coordinated start clock probe is unavailable")
+	}
+	heartbeat, err := c.OpenHeartbeat(ctx)
+	if err != nil {
+		return generatorClockEstimate{}, fmt.Errorf("open coordinated start clock probe: %w", err)
+	}
+	defer heartbeat.CloseSend()
+	// Zero is deliberate for rolling compatibility: legacy generators return
+	// max(generatorNow,pingTimestamp), so a controller timestamp here would hide
+	// a generator clock that is behind the controller.
+	if err := heartbeat.Send(Heartbeat{GeneratorID: "controller-clock-probe"}); err != nil {
+		return generatorClockEstimate{}, fmt.Errorf("send coordinated start clock probe: %w", err)
+	}
+	if _, err := heartbeat.Receive(); err != nil {
+		return generatorClockEstimate{}, fmt.Errorf("receive coordinated start clock probe: %w", err)
+	}
+	estimate, ok := c.coordinatedStartClockEstimate(time.Now())
+	if !ok {
+		return generatorClockEstimate{}, fmt.Errorf(
+			"coordinated start clock estimate is unavailable, outside the %s offset bound, or exceeds %s uncertainty",
+			maxCoordinatedStartClockOffset,
+			coordinatedStartClockEstimateMaxUncertainty,
+		)
+	}
+	return estimate, nil
 }
 
 func (c *Client) AdjustVUsers(ctx context.Context, adjustment VUserAdjustment) (AdjustmentResult, error) {
@@ -776,27 +890,61 @@ func (c *Client) OpenHeartbeat(ctx context.Context) (*HeartbeatStream, error) {
 		return nil, err
 	}
 
-	return &HeartbeatStream{stream: stream}, nil
+	return &HeartbeatStream{stream: stream, owner: c}, nil
 }
 
 func (s *HeartbeatStream) Send(heartbeat Heartbeat) error {
-	return s.stream.Send(&pb.HeartbeatPing{
+	sentAt := time.Now()
+	s.clockMu.Lock()
+	s.clockSentAt = sentAt
+	s.clockPingUnixMS = heartbeat.TimestampUnixMs
+	s.clockSampleActive = true
+	s.clockMu.Unlock()
+	err := s.stream.Send(&pb.HeartbeatPing{
 		GeneratorId:     heartbeat.GeneratorID,
 		TimestampUnixMs: heartbeat.TimestampUnixMs,
 		Stats:           toProtoStats(heartbeat.Stats),
 	})
+	if err != nil {
+		s.clockMu.Lock()
+		s.clockSampleActive = false
+		s.clockMu.Unlock()
+	}
+	return err
 }
 
 func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	pong, err := s.stream.Recv()
+	receivedAt := time.Now()
 	if err != nil {
 		return HeartbeatResponse{}, err
+	}
+	s.clockMu.Lock()
+	sentAt := s.clockSentAt
+	pingUnixMS := s.clockPingUnixMS
+	sampleActive := s.clockSampleActive
+	s.clockSampleActive = false
+	s.clockMu.Unlock()
+	if sampleActive && s.owner != nil {
+		generatorAt := time.Time{}
+		if pong.GetTimestampUnixNano() > 0 {
+			generatorAt = time.Unix(0, pong.GetTimestampUnixNano())
+		} else if pingUnixMS == 0 && pong.GetTimestampUnixMs() > 0 {
+			// An older generator has only millisecond precision. A zero ping
+			// timestamp prevents its legacy max(now,ping) response behavior from
+			// substituting the controller clock for the generator clock.
+			generatorAt = time.UnixMilli(pong.GetTimestampUnixMs())
+		}
+		if !generatorAt.IsZero() {
+			s.owner.observeGeneratorClock(sentAt, receivedAt, generatorAt)
+		}
 	}
 	stats := generatorStatsFromProto(pong.GetStats())
 
 	return HeartbeatResponse{
 		GeneratorID:        pong.GetGeneratorId(),
 		TimestampUnixMs:    pong.GetTimestampUnixMs(),
+		TimestampUnixNano:  pong.GetTimestampUnixNano(),
 		ActiveTestIDs:      pong.GetActiveTestIds(),
 		Stats:              stats,
 		AvailableCapacity:  pong.GetAvailableCapacity(),
@@ -966,6 +1114,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	return MetricsBatch{
 		TestID:                batch.GetTestId(),
 		ExecutionGeneration:   batch.GetExecutionGeneration(),
+		BatchSequence:         batch.GetBatchSequence(),
 		GeneratorID:           batch.GetGeneratorId(),
 		TimestampUnixMs:       batch.GetTimestampUnixMs(),
 		WindowMs:              batch.GetWindowMs(),

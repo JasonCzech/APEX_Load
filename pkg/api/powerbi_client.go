@@ -105,6 +105,15 @@ func (e *powerBIAPIError) Error() string {
 }
 
 func (c *powerBIClient) doJSON(ctx context.Context, method, requestURL string, payload any, out any) error {
+	return c.doJSONAttempts(ctx, method, requestURL, payload, out, 3, true, true)
+}
+
+// doJSONAttempts performs a bounded number of attempts. Callers must disable
+// ambiguous retries for operations, such as push-dataset row insertion, that
+// have no upstream idempotency primitive. Explicit 401 responses remain safe
+// after refreshing the token. Callers may also enable explicit 429 retries when
+// a throttle rejection is safe for that operation; Retry-After is then honored.
+func (c *powerBIClient) doJSONAttempts(ctx context.Context, method, requestURL string, payload any, out any, maxAttempts int, retryAmbiguous, retryRejectedThrottle bool) error {
 	var body []byte
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -113,7 +122,9 @@ func (c *powerBIClient) doJSON(ctx context.Context, method, requestURL string, p
 		}
 		body = encoded
 	}
-	const maxAttempts = 3
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		token, err := c.token(ctx)
 		if err != nil {
@@ -133,7 +144,7 @@ func (c *powerBIClient) doJSON(ctx context.Context, method, requestURL string, p
 		}
 		resp, err := c.http.Do(req)
 		if err != nil {
-			if attempt == maxAttempts {
+			if !retryAmbiguous || attempt == maxAttempts {
 				return fmt.Errorf("power bi request failed: %w", err)
 			}
 			sleepWithContext(ctx, notificationRetryDelay(nil, attempt))
@@ -159,7 +170,9 @@ func (c *powerBIClient) doJSON(ctx context.Context, method, requestURL string, p
 			c.cachedToken = ""
 			c.mu.Unlock()
 		}
-		retryable := retryableNotificationStatus(resp.StatusCode) || resp.StatusCode == http.StatusUnauthorized
+		retryable := resp.StatusCode == http.StatusUnauthorized ||
+			(retryRejectedThrottle && resp.StatusCode == http.StatusTooManyRequests) ||
+			(retryAmbiguous && retryableNotificationStatus(resp.StatusCode))
 		delay := notificationRetryDelay(resp, attempt)
 		_ = resp.Body.Close()
 		if !retryable || attempt == maxAttempts {
@@ -243,14 +256,16 @@ func (c *powerBIClient) ensureDataset(ctx context.Context) (datasetID string, cr
 		return existing.ID, false, nil
 	}
 	var out powerBIDataset
-	createErr := c.doJSON(ctx, http.MethodPost, c.groupURL("datasets"), powerBIDatasetDefinition(c.settings.DatasetName), &out)
+	// Dataset creation has no idempotency primitive and names are not unique.
+	// Retry only an explicit 401: transport, throttle, and server failures may
+	// mean the first request committed even though its response was ambiguous.
+	createErr := c.doJSONAttempts(ctx, http.MethodPost, c.groupURL("datasets"), powerBIDatasetDefinition(c.settings.DatasetName), &out, 3, false, false)
 	if createErr != nil {
-		// A concurrent publish may have created the dataset between our list
-		// and create calls; re-list before failing.
-		if apiErr, ok := createErr.(*powerBIAPIError); ok && apiErr.Status >= 400 && apiErr.Status < 500 {
-			if raced, listErr := c.findDatasetByName(ctx); listErr == nil && raced != nil {
-				return raced.ID, false, nil
-			}
+		// The failed response may conceal our own committed create, or another
+		// publisher may have won the list/create race. Reconcile after every
+		// failure class without issuing another mutation.
+		if raced, listErr := c.findDatasetByName(ctx); listErr == nil && raced != nil {
+			return raced.ID, false, nil
 		}
 		return "", false, createErr
 	}
@@ -281,7 +296,12 @@ func (c *powerBIClient) pushRows(ctx context.Context, datasetID string, table st
 			end = len(rows)
 		}
 		payload := map[string]any{"rows": rows[start:end]}
-		if err := c.doJSON(ctx, http.MethodPost, c.groupURL("datasets", url.PathEscape(datasetID), "tables", url.PathEscape(table), "rows"), payload, nil); err != nil {
+		// Power BI does not offer an idempotency key for push-dataset rows.
+		// Retrying an ambiguous result can duplicate a whole chunk under the
+		// same publish_id, which reports cannot distinguish. Retry only explicit
+		// authentication and throttle rejections; transport and server failures
+		// leave the publish partial for operator-controlled recovery.
+		if err := c.doJSONAttempts(ctx, http.MethodPost, c.groupURL("datasets", url.PathEscape(datasetID), "tables", url.PathEscape(table), "rows"), payload, nil, 3, false, true); err != nil {
 			return pushed, err
 		}
 		pushed = end

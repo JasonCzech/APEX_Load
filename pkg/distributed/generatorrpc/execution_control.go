@@ -3,6 +3,7 @@ package generatorrpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	apptelemetry "github.com/jasonczech/apexload/pkg/telemetry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -369,10 +371,25 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 		if request.GetStartAtUnixNano() != 0 {
 			startAt = time.Unix(0, request.GetStartAtUnixNano())
 			if !startAt.After(now) {
-				return commitTransition{kind: commitTransitionRejected, errorMessage: "coordinated start barrier has already elapsed"}
+				return commitTransition{
+					kind: commitTransitionRejected,
+					errorMessage: fmt.Sprintf(
+						"coordinated start barrier elapsed by %s (local now %s, local start deadline %s)",
+						now.Sub(startAt),
+						now.UTC().Format(time.RFC3339Nano),
+						startAt.UTC().Format(time.RFC3339Nano),
+					),
+				}
 			}
 			if startAt.Sub(now) > coordinator.stageTTLValue() {
-				return commitTransition{kind: commitTransitionRejected, errorMessage: "coordinated start barrier is too far in the future"}
+				return commitTransition{
+					kind: commitTransitionRejected,
+					errorMessage: fmt.Sprintf(
+						"coordinated start barrier is %s ahead of local now, exceeding staging TTL %s",
+						startAt.Sub(now),
+						coordinator.stageTTLValue(),
+					),
+				}
 			}
 		}
 		for _, groupName := range groupNames {
@@ -418,6 +435,11 @@ func (service *Service) CommitWork(ctx context.Context, request *pb.WorkCommitRe
 }
 
 func (service *Service) commitValidatedWork(ctx context.Context, request *pb.WorkCommitRequest) (*pb.WorkCommitAck, error) {
+	translatedRequest, err := translateCoordinatedStartRequest(ctx, request, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	request = translatedRequest
 	for {
 		runtimeValidation, validationErr := service.revalidateCommitRuntime(ctx, request)
 		if validationErr != nil {
@@ -465,6 +487,42 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			return nil, status.Error(codes.Internal, "assignment coordinator returned an invalid commit decision")
 		}
 	}
+}
+
+// translateCoordinatedStartRequest converts a controller-clock barrier into a
+// generator-clock deadline. Current clients provide a heartbeat RTT-midpoint
+// clock estimate, so one-way CommitWork transit cannot move the common barrier
+// later on a slower target. The sent-at relative translation remains only for
+// rolling compatibility with clients that do not provide an estimate. This
+// intentionally runs once on receipt: retries behind a pending lifecycle
+// transition must keep the original deadline rather than extending it.
+func translateCoordinatedStartRequest(ctx context.Context, request *pb.WorkCommitRequest, receivedAt time.Time) (*pb.WorkCommitRequest, error) {
+	if request == nil || request.GetStartAtUnixNano() == 0 {
+		return request, nil
+	}
+	controllerSentAt, present, err := incomingCoordinatedStartControllerTime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clockOffset, _, clockEstimatePresent, err := incomingCoordinatedStartClockEstimate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if clockEstimatePresent && !present {
+		return nil, status.Error(codes.InvalidArgument, "coordinated start clock estimate requires controller sent-time metadata")
+	}
+	if !present {
+		// Preserve compatibility with older clients and direct in-process calls.
+		return request, nil
+	}
+	controllerBarrier := time.Unix(0, request.GetStartAtUnixNano())
+	localBarrier := receivedAt.Add(controllerBarrier.Sub(controllerSentAt))
+	if clockEstimatePresent {
+		localBarrier = controllerBarrier.Add(clockOffset)
+	}
+	translated := proto.Clone(request).(*pb.WorkCommitRequest)
+	translated.StartAtUnixNano = localBarrier.UnixNano()
+	return translated, nil
 }
 
 func (service *Service) startExecutionEvent(event executionStartEvent) {

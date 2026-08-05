@@ -296,6 +296,7 @@ func rewriteNativeURLTemplates(
 		state,
 	))
 	parts := strings.Split(rawTarget[queryStart+1:queryEnd], "&")
+	nameOccurrences := make(map[string]int, len(parts))
 	for index, part := range parts {
 		if index > 0 {
 			rewritten.WriteByte('&')
@@ -307,14 +308,17 @@ func rewriteNativeURLTemplates(
 			"",
 			state,
 		))
-		if !hasValue {
-			continue
-		}
-		rewritten.WriteByte('=')
 		name, err := url.QueryUnescape(rawName)
 		if err != nil {
 			name = rawName
 		}
+		nameIdentity := strings.ToLower(name)
+		nameOccurrences[nameIdentity]++
+		occurrence := nameOccurrences[nameIdentity]
+		if !hasValue {
+			continue
+		}
+		rewritten.WriteByte('=')
 		if nativeSensitiveURLValue(name, rawValue) &&
 			brunoTemplatePattern.MatchString(rawValue) &&
 			!isExactGovernedSecretReference(rawValue) {
@@ -323,14 +327,15 @@ func rewriteNativeURLTemplates(
 				rawValue,
 				pointer,
 				name,
-				index+1,
+				occurrence,
 				state,
 				sourceRequirements,
 				nativeSecretScrubTarget{
-					Path:    state.sourcePath,
-					Pointer: "/http/url",
-					Kind:    "url_query_value",
-					Index:   index,
+					Path:     state.sourcePath,
+					Pointer:  "/http/url",
+					Kind:     "url_query_value",
+					Selector: name,
+					Index:    occurrence,
 				},
 			)
 			rewritten.WriteString(value)
@@ -442,7 +447,8 @@ func rewriteNativeComposedURLCredential(
 func setNativeURLQueryValue(
 	document any,
 	pointer string,
-	index int,
+	selector string,
+	occurrence int,
 	replacement string,
 ) (bool, error) {
 	rawValue, err := nativeJSONPointerValue(document, pointer)
@@ -462,12 +468,40 @@ func setNativeURLQueryValue(
 		queryEnd = queryStart + 1 + fragment
 	}
 	parts := strings.Split(rawTarget[queryStart+1:queryEnd], "&")
-	if index < 0 || index >= len(parts) {
-		return false, fmt.Errorf("URL query scrub index %d is out of range", index)
+	if occurrence < 1 {
+		return false, fmt.Errorf("URL query scrub occurrence %d is invalid", occurrence)
+	}
+	index := -1
+	seen := 0
+	for partIndex, part := range parts {
+		rawName, _, _ := strings.Cut(part, "=")
+		name, decodeErr := url.QueryUnescape(rawName)
+		if decodeErr != nil {
+			name = rawName
+		}
+		if !strings.EqualFold(name, selector) {
+			continue
+		}
+		seen++
+		if seen == occurrence {
+			index = partIndex
+			break
+		}
+	}
+	if index < 0 {
+		return false, fmt.Errorf(
+			"URL query scrub target %q occurrence %d was not found",
+			selector,
+			occurrence,
+		)
 	}
 	name, current, hasValue := strings.Cut(parts[index], "=")
 	if !hasValue {
-		return false, fmt.Errorf("URL query scrub index %d has no value", index)
+		return false, fmt.Errorf(
+			"URL query scrub target %q occurrence %d has no value",
+			selector,
+			occurrence,
+		)
 	}
 	if current == replacement {
 		return false, nil

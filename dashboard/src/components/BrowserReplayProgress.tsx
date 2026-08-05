@@ -43,6 +43,11 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const timeoutRef = useRef<number | null>(null)
   const eventsRef = useRef<BrowserReplayEvent[]>([])
   const completedRef = useRef(false)
+  const notFoundCountRef = useRef(0)
+  const onCompleteRef = useRef(onComplete)
+  const onApplySuggestionRef = useRef(onApplySuggestion)
+  onCompleteRef.current = onComplete
+  onApplySuggestionRef.current = onApplySuggestion
   const replayScopeGenerationRef = useRef(0)
   const applyingSuggestionIdsRef = useRef<Set<string>>(new Set())
   const bridgeScopeKey = bridge
@@ -75,6 +80,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     setUnavailable(false)
     eventsRef.current = []
     completedRef.current = false
+    notFoundCountRef.current = 0
     armInactivityTimer()
     return clearInactivityTimer
   }, [armInactivityTimer, bridgeScopeKey, clearInactivityTimer, projectId, replaySessionId])
@@ -101,8 +107,8 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     setInactive(false)
     setPhase(nextPhase)
     if (nextReport) setReport(nextReport)
-    onComplete?.(nextReport, eventsRef.current.filter(Boolean))
-  }, [clearInactivityTimer, onComplete])
+    onCompleteRef.current?.(nextReport, eventsRef.current.filter(Boolean))
+  }, [clearInactivityTimer])
 
   const reportFromSession = useCallback((session: BrowserReplaySession, nextPhase: TerminalPhase): BrowserReplayReport | null => {
     if (isBrowserReplayReport(session.report)) return session.report
@@ -204,7 +210,6 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     if (completedRef.current) return
     let cancelled = false
     let pollTimer: number | null = null
-    let notFoundCount = 0
     const abortController = new AbortController()
     const path = `/browser-replay/sessions/${encodeURIComponent(replaySessionId)}`
 
@@ -213,7 +218,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
         const response = bridge
           ? await bridgeRequest<BrowserReplaySessionResponse>(bridge, path, { signal: abortController.signal })
           : await request<BrowserReplaySessionResponse>(path, { signal: abortController.signal })
-        notFoundCount = 0
+        notFoundCountRef.current = 0
         if (!cancelled && !completedRef.current && response?.session) adoptSession(response.session)
       } catch (cause: unknown) {
         if (
@@ -222,8 +227,8 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
           && cause instanceof ApiError
           && cause.status === 404
         ) {
-          notFoundCount += 1
-          if (notFoundCount > REPLAY_NOT_FOUND_RETRY_LIMIT) {
+          notFoundCountRef.current += 1
+          if (notFoundCountRef.current > REPLAY_NOT_FOUND_RETRY_LIMIT) {
             setUnavailable(true)
             complete('failed', null)
             return
@@ -251,7 +256,8 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const reportSuggestions: ReplayRepairSuggestion[] = report?.repair_suggestions ?? []
 
   const applySuggestion = async (suggestion: ReplayRepairSuggestion) => {
-    if (!onApplySuggestion) return
+    const applyCurrentSuggestion = onApplySuggestionRef.current
+    if (!applyCurrentSuggestion) return
     const inFlightSuggestionIds = applyingSuggestionIdsRef.current
     if (inFlightSuggestionIds.has(suggestion.id)) return
     const replayScopeGeneration = replayScopeGenerationRef.current
@@ -261,7 +267,7 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     inFlightSuggestionIds.add(suggestion.id)
     setApplying(prev => ({ ...prev, [suggestion.id]: true }))
     try {
-      await onApplySuggestion(suggestion)
+      await applyCurrentSuggestion(suggestion)
     } finally {
       inFlightSuggestionIds.delete(suggestion.id)
       if (replayScopeGenerationRef.current === replayScopeGeneration) {

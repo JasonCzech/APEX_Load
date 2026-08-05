@@ -68,6 +68,13 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	if name == "" {
 		name = session.Name
 	}
+	if session.DroppedRequests > 0 || session.DroppedWebSocketMessages > 0 || session.Truncated {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"Recording capture was truncated: %d request(s) and %d WebSocket message(s) were dropped after retention limits were reached; review the generated script for missing tail steps.",
+			session.DroppedRequests,
+			session.DroppedWebSocketMessages,
+		))
+	}
 
 	webSocketRequests := includedWebSocketRequests(session.Requests)
 	hasHTTPRequests := hasIncludedHTTPRequests(session.Requests)

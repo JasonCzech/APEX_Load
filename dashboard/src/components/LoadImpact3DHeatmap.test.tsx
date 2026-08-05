@@ -17,6 +17,8 @@ const threeMockState = vi.hoisted(() => ({
     setPixelRatio: ReturnType<typeof vi.fn>
     setSize: ReturnType<typeof vi.fn>
   }>,
+  geometries: [] as Array<{ dispose: ReturnType<typeof vi.fn> }>,
+  materials: [] as Array<{ color: { copy: ReturnType<typeof vi.fn> }; dispose: ReturnType<typeof vi.fn> }>,
 }))
 
 vi.mock('three', () => {
@@ -89,12 +91,19 @@ vi.mock('three', () => {
 
   class BoxGeometry {
     dispose = vi.fn()
+
+    constructor() {
+      threeMockState.geometries.push(this)
+    }
   }
 
   class MeshStandardMaterial {
+    color = { copy: vi.fn() }
     dispose = vi.fn()
 
-    constructor(public options: unknown) {}
+    constructor(public options: unknown) {
+      threeMockState.materials.push(this)
+    }
   }
 
   class Mesh {
@@ -145,6 +154,8 @@ describe('LoadImpact3DHeatmap', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     threeMockState.rendererInstances.length = 0
+    threeMockState.geometries.length = 0
+    threeMockState.materials.length = 0
 
     vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
     vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
@@ -199,6 +210,25 @@ describe('LoadImpact3DHeatmap', () => {
     expect(threeMockState.rendererInstances).toHaveLength(1)
     expect(container.querySelector('canvas')).toBe(firstCanvas)
     expect(firstRenderer.dispose).not.toHaveBeenCalled()
+  })
+
+  it('recolors existing meshes without rebuilding geometry when selection changes', async () => {
+    const model = createModel(120)
+    await act(async () => {
+      root.render(<LoadImpact3DHeatmap model={model} selectedCellKey={null} onSelectedCellKeyChange={vi.fn()} />)
+    })
+    const geometry = threeMockState.geometries[0]
+    const material = threeMockState.materials[0]
+    const initialCopyCount = material.color.copy.mock.calls.length
+
+    await act(async () => {
+      root.render(<LoadImpact3DHeatmap model={model} selectedCellKey="avgMs:vusers-5" onSelectedCellKeyChange={vi.fn()} />)
+    })
+
+    expect(threeMockState.geometries).toHaveLength(1)
+    expect(geometry.dispose).not.toHaveBeenCalled()
+    expect(threeMockState.materials).toHaveLength(1)
+    expect(material.color.copy).toHaveBeenCalledTimes(initialCopyCount + 1)
   })
 })
 

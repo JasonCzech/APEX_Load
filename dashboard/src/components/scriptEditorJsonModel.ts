@@ -137,6 +137,18 @@ export function deriveScriptJsonDraftState(
   dirty: boolean,
   structuredScript: ScriptDefinition,
 ): ScriptJsonDraftState {
+  // A clean JSON pane is only a formatted projection of the structured editor.
+  // Trust that source of truth instead of reparsing a potentially very large
+  // document after every structured-field edit.
+  if (!dirty) {
+    return {
+      currentScript: structuredScript,
+      parseMessage: '',
+      parseResult: { ok: true, script: structuredScript },
+      status: 'synced',
+      statusMessage: 'Synced',
+    }
+  }
   const parseResult = parseScriptJsonDraft(text)
   const parseMessage = parseResult.ok ? '' : parseResult.message
   const status: ScriptJsonStatus = parseMessage ? 'invalid' : dirty ? 'dirty' : 'synced'
@@ -153,10 +165,10 @@ export function synchronizeStructuredScriptJson(
   structuredScript: ScriptDefinition,
   currentText: string,
   dirty: boolean,
+  formattedScript = formatScriptJson(structuredScript),
 ): { changed: boolean; text: string } {
-  const formatted = formatScriptJson(structuredScript)
-  if (dirty || currentText === formatted) return { changed: false, text: currentText }
-  return { changed: true, text: formatted }
+  if (dirty || currentText === formattedScript) return { changed: false, text: currentText }
+  return { changed: true, text: formattedScript }
 }
 
 export function updateScriptJsonText(

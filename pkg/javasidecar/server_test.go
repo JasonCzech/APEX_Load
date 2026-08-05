@@ -1068,6 +1068,32 @@ func TestPersistentSessionCloseReportsContainmentFailure(t *testing.T) {
 	}
 }
 
+func TestPersistentSessionFailureIncludesJVMExitStatus(t *testing.T) {
+	waitDone := make(chan struct{})
+	close(waitDone)
+	tempDir := t.TempDir()
+	eventPath := filepath.Join(tempDir, "events.log")
+	diagnosticPath := filepath.Join(tempDir, "diagnostics.log")
+	for _, path := range []string{eventPath, diagnosticPath} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	session := &persistentSession{
+		waitDone:       waitDone,
+		waitErr:        errors.New("signal: killed"),
+		eventPath:      eventPath,
+		diagnosticPath: diagnosticPath,
+		stdoutNoise:    &lockedCappedBuffer{buf: cappedBuffer{max: MaxCaptureBytes}},
+		stderrNoise:    &lockedCappedBuffer{buf: cappedBuffer{max: MaxCaptureBytes}},
+		killFunc:       func(*exec.Cmd) error { return nil },
+	}
+	outcome := session.failAndReap("session_unusable")
+	if !strings.Contains(outcome.stderr, "signal: killed") {
+		t.Fatalf("persistent failure stderr = %q, want JVM exit status", outcome.stderr)
+	}
+}
+
 func TestOwnerClaimRejectsContainmentFailureWithoutWaitingForReap(t *testing.T) {
 	implementation := NewServer(ServerOptions{
 		Operator: config.JavaVuserOperatorConfig{

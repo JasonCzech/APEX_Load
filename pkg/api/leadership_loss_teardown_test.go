@@ -2,12 +2,103 @@ package api
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestLockRWMutexWithContextRegistersWriterIntent(t *testing.T) {
+	var mu sync.RWMutex
+	mu.RLock()
+
+	locked := make(chan error, 1)
+	go func() {
+		locked <- lockRWMutexWithContext(context.Background(), &mu)
+	}()
+	// Keep read pressure active while releasing the original reader. A polling
+	// TryLock implementation can starve here; a real queued RWMutex writer must
+	// eventually register intent, drain the readers, and acquire.
+	stopReaders := make(chan struct{})
+	var readers sync.WaitGroup
+	for range 16 {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-stopReaders:
+					return
+				default:
+				}
+				mu.RLock()
+				mu.RUnlock()
+			}
+		}()
+	}
+	mu.RUnlock()
+	select {
+	case err := <-locked:
+		if err != nil {
+			t.Fatalf("lockRWMutexWithContext: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued writer starved behind continuous readers")
+	}
+	if mu.TryRLock() {
+		mu.RUnlock()
+		t.Fatal("reader acquired while caller owned write lock")
+	}
+	close(stopReaders)
+	mu.Unlock()
+	readers.Wait()
+}
+
+func TestLockRWMutexWithContextReleasesLateAcquisition(t *testing.T) {
+	var mu sync.RWMutex
+	mu.RLock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := lockRWMutexWithContext(ctx, &mu); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want deadline exceeded", err)
+	}
+	mu.RUnlock()
+
+	deadline := time.Now().Add(time.Second)
+	for !mu.TryLock() {
+		if time.Now().After(deadline) {
+			t.Fatal("late write-lock ownership was leaked")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	mu.Unlock()
+}
+
+func TestLockRWMutexWithContextDoesNotQueueAlreadyCancelledWriter(t *testing.T) {
+	var mu sync.RWMutex
+	mu.RLock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := lockRWMutexWithContext(ctx, &mu); !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled", err)
+	}
+
+	readerAcquired := make(chan struct{})
+	go func() {
+		mu.RLock()
+		close(readerAcquired)
+		mu.RUnlock()
+	}()
+	select {
+	case <-readerAcquired:
+	case <-time.After(time.Second):
+		t.Fatal("an already-cancelled writer was queued behind the existing reader")
+	}
+	mu.RUnlock()
+}
 
 func TestLeadershipLossTeardownStopsRuntimeWithoutLifecyclePersistence(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))

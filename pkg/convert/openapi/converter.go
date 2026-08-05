@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -487,13 +488,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	reviewContent := openAPISourceReviewCredentialOmission
 	if !sensitiveTypedSourceValue {
 		reviewContent = scrub.Value(content, scrub.Policy{})
-		for _, sensitiveValue := range sensitiveSourceValues {
-			reviewContent = strings.ReplaceAll(reviewContent, sensitiveValue, scrub.Redacted)
-			if encoded, err := json.Marshal(sensitiveValue); err == nil && len(encoded) >= 2 {
-				reviewContent = strings.ReplaceAll(reviewContent, string(encoded[1:len(encoded)-1]), scrub.Redacted)
-			}
-		}
-		reviewContent, _ = scrub.RedactQuotedValues(reviewContent, sensitiveSourceValues)
+		reviewContent = redactOpenAPISourceValues(reviewContent, sensitiveSourceValues)
 	}
 	sourceMappings := make([]sourceview.Mapping, 0)
 	res := resolver{doc: doc, diagnostics: &diagnostics}
@@ -636,10 +631,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	for _, requirement := range finalized.Requirements {
 		if requirement.Value != "" {
 			protectedSourceValues = append(protectedSourceValues, requirement.Value)
-			reviewContent = strings.ReplaceAll(reviewContent, requirement.Value, scrub.Redacted)
 		}
 	}
-	reviewContent, _ = scrub.RedactQuotedValues(reviewContent, protectedSourceValues)
+	reviewContent = redactOpenAPISourceValues(reviewContent, protectedSourceValues)
 	sourceReviewOmitted := sensitiveTypedSourceValue
 	if !sourceReviewOmitted {
 		reviewContent, sourceReviewOmitted = disclosureSafeOpenAPISourceReview(
@@ -676,6 +670,215 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
+// redactOpenAPISourceValues replaces only complete parsed scalar values. A
+// credential that happens to be a substring of an unrelated operation ID,
+// path, title, or description must not alter that review evidence.
+func redactOpenAPISourceValues(content string, protected []string) string {
+	return redactOpenAPISourceValuesWithParser(content, protected, parseOpenAPISourceNode)
+}
+
+type openAPISourceNodeParser func([]byte, *yaml.Node) error
+
+func parseOpenAPISourceNode(content []byte, root *yaml.Node) error {
+	return yaml.Unmarshal(content, root)
+}
+
+func redactOpenAPISourceValuesWithParser(content string, protected []string, parse openAPISourceNodeParser) string {
+	values := make(map[string]struct{}, len(protected))
+	for _, value := range protected {
+		if value != "" {
+			values[value] = struct{}{}
+		}
+	}
+	return replaceExactOpenAPISourceScalars(content, values, parse)
+}
+
+type openAPISourceScalarCandidate struct {
+	node  *yaml.Node
+	start int
+}
+
+func replaceExactOpenAPISourceScalars(content string, values map[string]struct{}, parse openAPISourceNodeParser) string {
+	if content == "" || len(values) == 0 || parse == nil {
+		return content
+	}
+	var root yaml.Node
+	if err := parse([]byte(content), &root); err != nil {
+		return content
+	}
+	type scalarSpan struct {
+		start       int
+		end         int
+		replacement string
+	}
+	candidates := make([]openAPISourceScalarCandidate, 0)
+	var collect func(*yaml.Node)
+	collect = func(node *yaml.Node) {
+		if node == nil {
+			return
+		}
+		switch node.Kind {
+		case yaml.DocumentNode, yaml.SequenceNode:
+			for _, child := range node.Content {
+				collect(child)
+			}
+		case yaml.MappingNode:
+			for index := 1; index < len(node.Content); index += 2 {
+				collect(node.Content[index])
+			}
+		case yaml.ScalarNode:
+			if _, protected := values[node.Value]; protected {
+				candidates = append(candidates, openAPISourceScalarCandidate{node: node, start: -1})
+			}
+		}
+	}
+	collect(&root)
+	if len(candidates) == 0 {
+		return content
+	}
+	openAPISourceCandidateOffsets(content, candidates)
+	spans := make([]scalarSpan, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.start < 0 {
+			continue
+		}
+		start, end, replacement, ok := openAPISourceScalarValueSpan(content, candidate.node, candidate.start)
+		if ok {
+			spans = append(spans, scalarSpan{start: start, end: end, replacement: replacement})
+		}
+	}
+	if len(spans) == 0 {
+		return content
+	}
+	sort.Slice(spans, func(left, right int) bool {
+		return spans[left].start < spans[right].start
+	})
+	var output strings.Builder
+	cursor := 0
+	for _, span := range spans {
+		if span.start < cursor || span.end > len(content) {
+			continue
+		}
+		output.WriteString(content[cursor:span.start])
+		output.WriteString(span.replacement)
+		cursor = span.end
+	}
+	output.WriteString(content[cursor:])
+	return output.String()
+}
+
+func openAPISourceCandidateOffsets(content string, candidates []openAPISourceScalarCandidate) {
+	sort.Slice(candidates, func(left, right int) bool {
+		if candidates[left].node.Line != candidates[right].node.Line {
+			return candidates[left].node.Line < candidates[right].node.Line
+		}
+		return candidates[left].node.Column < candidates[right].node.Column
+	})
+	offset, line, column := 0, 1, 1
+	for index := range candidates {
+		node := candidates[index].node
+		if !openAPISourceAdvancePosition(content, &offset, &line, &column, node.Line, node.Column) {
+			continue
+		}
+		candidates[index].start = offset
+	}
+}
+
+func openAPISourceAdvancePosition(content string, offset, line, column *int, targetLine, targetColumn int) bool {
+	if targetLine < *line || (targetLine == *line && targetColumn < *column) {
+		return false
+	}
+	for *line < targetLine {
+		if *offset >= len(content) {
+			return false
+		}
+		r, size := utf8.DecodeRuneInString(content[*offset:])
+		*offset += size
+		if r == '\n' {
+			*line = *line + 1
+			*column = 1
+		} else {
+			*column = *column + 1
+		}
+	}
+	for *column < targetColumn {
+		if *offset >= len(content) {
+			return false
+		}
+		r, size := utf8.DecodeRuneInString(content[*offset:])
+		if r == '\n' {
+			return false
+		}
+		*offset += size
+		*column = *column + 1
+	}
+	return *line == targetLine && *column == targetColumn
+}
+
+func openAPISourceScalarValueSpan(content string, node *yaml.Node, start int) (int, int, string, bool) {
+	if start < 0 || start >= len(content) {
+		return 0, 0, "", false
+	}
+	if node.Style&yaml.DoubleQuotedStyle != 0 {
+		end, found := openAPISourceQuotedScalarEnd(content, start, '"')
+		return start, end, strconv.Quote(scrub.Redacted), found
+	}
+	if node.Style&yaml.SingleQuotedStyle != 0 {
+		end, found := openAPISourceQuotedScalarEnd(content, start, '\'')
+		return start, end, "'" + scrub.Redacted + "'", found
+	}
+	if node.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0 ||
+		!strings.HasPrefix(content[start:], node.Value) {
+		return 0, 0, "", false
+	}
+	end := start + len(node.Value)
+	if !isExactOpenAPISourceScalar(content, start, end) {
+		return 0, 0, "", false
+	}
+	return start, end, strconv.Quote(scrub.Redacted), true
+}
+
+func openAPISourceQuotedScalarEnd(content string, start int, quote byte) (int, bool) {
+	if start >= len(content) || content[start] != quote {
+		return 0, false
+	}
+	for cursor := start + 1; cursor < len(content); {
+		if quote == '"' && content[cursor] == '\\' {
+			cursor++
+			if cursor >= len(content) {
+				return 0, false
+			}
+			_, size := utf8.DecodeRuneInString(content[cursor:])
+			cursor += size
+			continue
+		}
+		if content[cursor] == quote {
+			if quote == '\'' && cursor+1 < len(content) && content[cursor+1] == '\'' {
+				cursor += 2
+				continue
+			}
+			return cursor + 1, true
+		}
+		_, size := utf8.DecodeRuneInString(content[cursor:])
+		cursor += size
+	}
+	return 0, false
+}
+
+func isExactOpenAPISourceScalar(content string, start, end int) bool {
+	left := start - 1
+	for left >= 0 && (content[left] == ' ' || content[left] == '\t' || content[left] == '\r') {
+		left--
+	}
+	right := end
+	for right < len(content) && (content[right] == ' ' || content[right] == '\t' || content[right] == '\r') {
+		right++
+	}
+	leftOK := left < 0 || content[left] == '\n' || strings.ContainsRune(`:[{,-`, rune(content[left]))
+	rightOK := right >= len(content) || content[right] == '\n' || strings.ContainsRune(`,]}#`, rune(content[right]))
+	return leftOK && rightOK
+}
+
 func disclosureSafeOpenAPISourceReview(content string, protected []string) (string, bool) {
 	seen := make(map[string]struct{}, len(protected))
 	normalized := make([]string, 0, len(protected))
@@ -693,54 +896,29 @@ func disclosureSafeOpenAPISourceReview(content string, protected []string) (stri
 	if content == "" || len(protected) == 0 {
 		return content, false
 	}
-	var root yaml.Node
-	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+	redactedDoc, _, err := decodeDocument([]byte(content))
+	if err != nil {
 		// The original document parsed successfully. If redaction made the
 		// review copy ambiguous, retaining it would make it impossible to prove
 		// that an alternate scalar encoding does not still disclose a secret.
 		return openAPISourceReviewCredentialOmission, true
 	}
-	seenNodes := make(map[*yaml.Node]struct{})
-	remainingNodes := len(content) + 1
-	remainingComparisons := (16 * int64(len(content))) + (1 << 20)
-	var containsProtected func(*yaml.Node) (bool, bool)
-	containsProtected = func(node *yaml.Node) (bool, bool) {
-		if node == nil {
-			return false, false
-		}
-		if _, duplicate := seenNodes[node]; duplicate {
-			return false, false
-		}
-		seenNodes[node] = struct{}{}
-		remainingNodes--
-		if remainingNodes < 0 {
-			return false, true
-		}
-		if node.Kind == yaml.ScalarNode {
-			for _, value := range protected {
-				if int64(len(node.Value)) > remainingComparisons {
-					return false, true
-				}
-				remainingComparisons -= int64(len(node.Value))
-				if strings.Contains(node.Value, value) {
-					return true, false
-				}
-			}
-		}
-		if node.Alias != nil {
-			if found, exhausted := containsProtected(node.Alias); found || exhausted {
-				return found, exhausted
-			}
-		}
-		for _, child := range node.Content {
-			if found, exhausted := containsProtected(child); found || exhausted {
-				return found, exhausted
-			}
-		}
-		return false, false
-	}
-	if found, exhausted := containsProtected(&root); found || exhausted {
+	remainingSensitive, remainingTyped := sensitiveOpenAPISourceValues(redactedDoc)
+	if remainingTyped {
 		return openAPISourceReviewCredentialOmission, true
+	}
+	for _, value := range protected {
+		for _, remaining := range remainingSensitive {
+			if remaining == scrub.Redacted {
+				continue
+			}
+			// Substring matching is safe here because remainingSensitive contains
+			// only values reached through credential-bearing OpenAPI semantics; it
+			// excludes unrelated operation IDs, paths, titles, and prose.
+			if strings.Contains(remaining, value) {
+				return openAPISourceReviewCredentialOmission, true
+			}
+		}
 	}
 	return content, false
 }

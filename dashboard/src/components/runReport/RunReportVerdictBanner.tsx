@@ -9,6 +9,7 @@ interface Props {
   status: string
   explanation: string
   saving: boolean
+  disabled?: boolean
   onStatusChange: (status: string) => void
   onExplanationChange: (explanation: string) => void
   onSaveOverride: (status: string, explanation: string) => Promise<boolean>
@@ -26,12 +27,14 @@ export default function RunReportVerdictBanner({
   status,
   explanation,
   saving,
+  disabled = false,
   onStatusChange,
   onExplanationChange,
   onSaveOverride,
 }: Props) {
   const verdict = effectiveReportVerdict(report, annotations)
   const [message, setMessage] = useState('')
+  const controlsDisabled = saving || disabled
 
   useEffect(() => {
     setMessage('')
@@ -63,7 +66,7 @@ export default function RunReportVerdictBanner({
         <div className="run-report-override-grid">
           <label>
             <span>Status</span>
-            <select value={status} onChange={event => onStatusChange(event.currentTarget.value)} disabled={saving}>
+            <select value={status} onChange={event => onStatusChange(event.currentTarget.value)} disabled={controlsDisabled}>
               <option value="Pass">Pass</option>
               <option value="Conditional Pass">Conditional Pass</option>
               <option value="Fail">Fail</option>
@@ -71,12 +74,13 @@ export default function RunReportVerdictBanner({
           </label>
           <label>
             <span>Explanation</span>
-            <textarea value={explanation} onChange={event => onExplanationChange(event.currentTarget.value)} rows={3} disabled={saving} />
+            <textarea value={explanation} onChange={event => onExplanationChange(event.currentTarget.value)} rows={3} disabled={controlsDisabled} />
           </label>
           <div className="run-report-override-actions">
-            <button className="btn btn-sm btn-primary" type="button" onClick={() => void save()} disabled={saving}>
+            <button className="btn btn-sm btn-primary" type="button" onClick={() => void save()} disabled={controlsDisabled}>
               {saving ? 'Saving...' : 'Save'}
             </button>
+            {disabled && !saving && <span role="status">Annotations unavailable</span>}
             {message && <span role="status">{message}</span>}
           </div>
         </div>

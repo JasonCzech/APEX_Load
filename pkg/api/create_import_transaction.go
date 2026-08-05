@@ -24,8 +24,11 @@ type createImportTransaction struct {
 	projectID        string
 	sourceInstanceID string
 	items            map[string]LibraryBundleItem
+	mutationStarted  bool
 	closed           bool
 }
+
+var errCreateImportAssetCompensation = errors.New("direct import asset compensation failed")
 
 func newCreateImportTransaction(server *Server, source string, scripts []*dsl.Script, scenarioID string, scenarioRequest *CreateScenarioRequest) (*createImportTransaction, error) {
 	if server == nil || server.runner == nil {
@@ -172,6 +175,7 @@ func (tx *createImportTransaction) createScriptWithImportProfile(
 	}
 	var stored *StoredScript
 	created := false
+	tx.mutationStarted = true
 	if sourceProfile == "" {
 		stored, created, err = tx.server.runner.CreateScriptDurableReportingReplay(script)
 	} else {
@@ -197,6 +201,7 @@ func (tx *createImportTransaction) createScenario(id string, request CreateScena
 	if err != nil {
 		return nil, err
 	}
+	tx.mutationStarted = true
 	stored, err := tx.server.runner.StoreScenarioWithIDCreateOnly(id, request)
 	created := err == nil
 	if errors.Is(err, errScenarioConcurrentChange) {
@@ -245,15 +250,65 @@ func (tx *createImportTransaction) rollback() error {
 	var errs []error
 	if tx.journal != nil {
 		if err := tx.journal.rollback(); err != nil {
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("%w: %v", errCreateImportAssetCompensation, err))
 		}
 	}
 	if tx.claims != nil {
-		if err := tx.claims.abandon(); err != nil {
+		if err := tx.releaseClaims(); err != nil {
 			errs = append(errs, fmt.Errorf("abandon durable import transaction: %w", err))
-		} else if err := tx.server.recoverExpiredLibraryImportClaims(); err != nil {
+		}
+	}
+	if tx.server != nil {
+		if err := tx.server.recoverExpiredLibraryImportClaims(); err != nil {
 			errs = append(errs, fmt.Errorf("recover abandoned import transaction: %w", err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// stopClaimHeartbeat is deliberately independent from durable claim expiry.
+// Direct-import rollback must first stop process-local renewal, then establish
+// whether it still owns the receipt fence before exposing claims to recovery.
+func (tx *createImportTransaction) stopClaimHeartbeat() {
+	if tx == nil || tx.claims == nil {
+		return
+	}
+	tx.claims.stopHeartbeat()
+}
+
+// releaseClaims expires the durable recovery evidence after receipt ownership
+// has been resolved or local asset compensation has finished.
+func (tx *createImportTransaction) releaseClaims() error {
+	if tx == nil || tx.claims == nil {
+		return nil
+	}
+	claims := tx.claims
+	tx.claims = nil
+	return claims.abandon()
+}
+
+// commitUnmutatedClaims records a terminal no-op transaction. It is safe only
+// before any durable asset mutation has started. Unlike expiring the claims,
+// this prevents recovery from mistaking an identical asset owned by a newer
+// receipt holder for work performed by this losing request.
+func (tx *createImportTransaction) commitUnmutatedClaims() error {
+	if tx == nil || tx.claims == nil {
+		return nil
+	}
+	if tx.mutationStarted {
+		return errors.New("cannot commit direct import claims after asset mutation started")
+	}
+	claims := tx.claims
+	tx.claims = nil
+	return claims.complete()
+}
+
+func (tx *createImportTransaction) closeWithoutAssetCompensation() {
+	if tx == nil {
+		return
+	}
+	tx.closed = true
+	if tx.journal != nil {
+		tx.journal.undo = nil
+	}
 }

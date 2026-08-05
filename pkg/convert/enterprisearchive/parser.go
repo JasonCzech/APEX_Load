@@ -509,11 +509,8 @@ func parseSourceRuntimeControl(fn *ParsedFunction, inner string) {
 
 	for index, arg := range splitCFunctionArgs(inner) {
 		cleaned := cleanCArgument(arg)
-		if cleaned == "" {
-			continue
-		}
 		fn.Args[fmt.Sprintf("arg%d", index+1)] = cleaned
-		if fn.Args["value"] == "" {
+		if cleaned != "" && fn.Args["value"] == "" {
 			fn.Args["value"] = cleaned
 		}
 	}

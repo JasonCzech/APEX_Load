@@ -83,10 +83,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(doc) == 0 {
 		return nil, fmt.Errorf("RAML document is empty")
 	}
-	baseURL := convertutil.FirstNonEmpty(req.Options.BaseURL, stringValue(doc["baseUri"]), "{{env.BASE_URL}}")
+	authoredBaseURL := stringValue(doc["baseUri"])
+	baseURL := convertutil.FirstNonEmpty(req.Options.BaseURL, authoredBaseURL, "{{env.BASE_URL}}")
+	var baseURLWarnings []string
+	if strings.TrimSpace(req.Options.BaseURL) == "" && strings.TrimSpace(authoredBaseURL) != "" {
+		baseURL, baseURLWarnings = bindRAMLBaseURI(authoredBaseURL, doc)
+	}
 	name := convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, stringValue(doc["title"]), "RAML Import")
 	result := &ConvertResult{
-		Stats: ConvertStats{Format: "raml"},
+		Warnings: baseURLWarnings,
+		Stats:    ConvertStats{Format: "raml"},
 		Summary: ReviewSummary{
 			Title:   stringValue(doc["title"]),
 			Version: stringValue(doc["version"]),
@@ -146,6 +152,46 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.Script = script
 	result.Stats.ConvertedActions = len(script.Actions)
 	return result, nil
+}
+
+var ramlBaseURIParameterPattern = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_.-]*)\}`)
+
+func bindRAMLBaseURI(baseURI string, doc map[string]any) (string, []string) {
+	if !ramlBaseURIParameterPattern.MatchString(baseURI) {
+		return baseURI, nil
+	}
+	declarations := mapValue(doc["baseUriParameters"])
+	version := stringValue(doc["version"])
+	var warnings []string
+	bound := ramlBaseURIParameterPattern.ReplaceAllStringFunc(baseURI, func(token string) string {
+		matches := ramlBaseURIParameterPattern.FindStringSubmatch(token)
+		name := matches[1]
+		value := ""
+		if name == "version" {
+			value = version
+		}
+		if value == "" {
+			declaration := mapValue(declarations[name])
+			value = convertutil.FirstNonEmpty(stringValue(declaration["example"]), stringValue(declaration["default"]))
+			if value == "" {
+				if values, ok := declaration["enum"].([]any); ok && len(values) > 0 {
+					value = fmt.Sprint(values[0])
+				}
+			}
+		}
+		if value != "" {
+			return value
+		}
+		envName := strings.ToUpper(strings.Map(func(r rune) rune {
+			if r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+				return r
+			}
+			return '_'
+		}, name))
+		warnings = append(warnings, fmt.Sprintf("RAML baseUri parameter %q has no version/example/default binding; supply {{env.RAML_BASE_URI_PARAM_%s}} before replay", name, envName))
+		return "{{env.RAML_BASE_URI_PARAM_" + envName + "}}"
+	})
+	return bound, warnings
 }
 
 func walkResource(resourcePath string, node map[string]any, result *ConvertResult, script *dsl.Script, apply applyOptions, inheritedURIParameters map[string]any) {

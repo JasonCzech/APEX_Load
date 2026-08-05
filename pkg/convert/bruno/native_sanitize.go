@@ -243,6 +243,7 @@ func applyNativeProjectedVariableSecrets(
 				changed, err = setNativeURLQueryValue(
 					document,
 					plan.pointer,
+					plan.selector,
 					plan.index,
 					plan.replacement,
 				)

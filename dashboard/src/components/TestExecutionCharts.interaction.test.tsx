@@ -22,12 +22,16 @@ vi.mock('recharts', () => {
     children,
     data,
     syncId,
+    onMouseDown,
     onMouseMove,
+    onMouseUp,
   }: {
     children?: ReactNode
     data?: unknown[]
     syncId?: string
-    onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number; activePayload?: Array<{ payload?: { timestampMs?: number } }> }) => void
+    onMouseDown?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
+    onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
+    onMouseUp?: () => void
   }) => (
     <svg
       data-testid="mock-chart"
@@ -35,7 +39,9 @@ vi.mock('recharts', () => {
       data-sync-id={syncId ?? ''}
       width="640"
       height="200"
-      onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1, activePayload: [{ payload: { timestampMs: 1_000 } }] })}
+      onMouseDown={() => onMouseDown?.({ activeLabel: '10:00:00', activeTooltipIndex: 0 })}
+      onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1 })}
+      onMouseUp={() => onMouseUp?.()}
     >
       {children}
     </svg>
@@ -121,30 +127,32 @@ vi.mock('recharts', () => {
       label,
       orientation,
       domain,
-      onClick,
-      className,
+      tick,
       ...props
     }: {
       yAxisId?: string | number
       label?: string | { value?: string; position?: string }
       orientation?: string
       domain?: Array<string | number>
-      onClick?: (...args: unknown[]) => void
-      className?: string
+      tick?: (props: { x: number; y: number; index: number; payload: { value: number } }) => ReactNode
       'aria-label'?: string
-    }) => (
-      <g
+    }) => {
+      const firstTick = typeof tick === 'function' ? tick({ x: 10, y: 20, index: 0, payload: { value: 0 } }) : null
+      const secondTick = typeof tick === 'function' ? tick({ x: 10, y: 40, index: 1, payload: { value: 100 } }) : null
+      const firstTickProps = (firstTick as { props?: Record<string, unknown> } | null)?.props
+      return <g
         data-testid="mock-y-axis"
         data-y-axis-id={String(yAxisId ?? '')}
         data-orientation={orientation ?? 'left'}
         data-label={labelText(label)}
         data-label-position={labelPosition(label)}
         data-domain={Array.isArray(domain) ? domain.join('|') : ''}
-        data-axis-aria-label={props['aria-label'] ?? ''}
-        className={className}
-        onClick={onClick}
-      />
-    ),
+        data-axis-aria-label={String(firstTickProps?.['aria-label'] ?? props['aria-label'] ?? '')}
+      >
+        {firstTick}
+        {secondTick}
+      </g>
+    },
   }
 })
 
@@ -317,9 +325,11 @@ describe('TestExecutionCharts context menu', () => {
     expect(vusersChart?.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('')
     expect(axisLabels(vusersChart)).toEqual([])
     expect(axisAriaLabels(vusersChart)).toContain('Show VUsers axis label')
+    const vuserAxis = vusersChart?.querySelector('[data-testid="mock-y-axis"]')
+    expect(vuserAxis?.querySelectorAll('[role="button"][tabindex="0"]')).toHaveLength(1)
 
     await act(async () => {
-      vusersChart?.querySelector('[data-testid="mock-y-axis"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 140, clientY: 180 }))
+      vuserAxis?.querySelector<SVGTextElement>('[role="button"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
 
     expect(container.querySelector('.chart-axis-label-popover-title')?.textContent).toBe('Y-axis')
@@ -373,6 +383,7 @@ describe('TestExecutionCharts context menu', () => {
     const tpsChart = mockCharts[1]
     await act(async () => {
       tpsChart.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+      await flushAnimationFrame()
     })
 
     const tooltips = Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]'))
@@ -1143,6 +1154,7 @@ describe('TestExecutionCharts context menu', () => {
 
     await act(async () => {
       container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+      await flushAnimationFrame()
     })
 
     const hiddenTooltips = Array.from(container.querySelectorAll('[data-testid="mock-tooltip"]'))
@@ -1334,8 +1346,8 @@ describe('TestExecutionCharts context menu', () => {
       root.render(
         <TestExecutionCharts
           filteredData={[
-            { time: '10:00:00', vusers: 2, tps: 1, targetTps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p95: 115, p99: 130 },
-            { time: '10:00:01', vusers: 4, tps: 2, targetTps: 3, avgMs: 110, errorPct: 0.1, p50: 85, p90: 105, p95: 118, p99: 135 },
+            { time: '10:00:00', timestampMs: 0, vusers: 2, tps: 1, targetTps: 3, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p95: 115, p99: 130 },
+            { time: '10:00:01', timestampMs: 1_000, vusers: 4, tps: 2, targetTps: 3, avgMs: 110, errorPct: 0.1, p50: 85, p90: 105, p95: 118, p99: 135 },
           ]}
           expandedChart={null}
           onExpandedChartChange={vi.fn()}
@@ -1414,12 +1426,117 @@ describe('TestExecutionCharts context menu', () => {
 
     await act(async () => {
       container.querySelector<SVGElement>('[data-testid="mock-chart"]')?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+      await flushAnimationFrame()
     })
 
-    // The shared cursor is keyed by the hovered sample's timestamp (from the
-    // Recharts active payload), not a positional index — that is what keeps the
-    // crosshair aligned across differently-downsampled charts.
+    // The shared cursor resolves the hovered index against this chart's exact
+    // rendered data, keeping differently-downsampled charts aligned by time.
     expect(onActiveCursorChange).toHaveBeenCalledWith({ label: '10:00:01', timestampMs: 1_000 })
+  })
+
+  it('cancels a pending mouse-move frame when the pointer leaves the chart', async () => {
+    let pendingFrame: FrameRequestCallback | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      pendingFrame = callback
+      return 91
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    const onActiveCursorChange = vi.fn()
+    const onChartMouseMove = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', timestampMs: 0, vusers: 2, tps: 1, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0 },
+            { time: '10:00:01', timestampMs: 1_000, vusers: 4, tps: 2, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={onChartMouseMove}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="3m"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={[]}
+          surface="command-center"
+          onActiveCursorChange={onActiveCursorChange}
+        />,
+      )
+    })
+    const chart = container.querySelector<SVGElement>('[data-testid="mock-chart"]')
+    const card = chart?.closest('.chart-card')
+    await act(async () => chart?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true })))
+    expect(requestFrame).toHaveBeenCalled()
+    await act(async () => card?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })))
+    expect(cancelFrame).toHaveBeenCalledWith(91)
+    pendingFrame?.(0)
+    expect(onChartMouseMove).not.toHaveBeenCalled()
+    expect(onActiveCursorChange).not.toHaveBeenCalled()
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
+  })
+
+  it('flushes the pending drag anchor before applying a quick mouse-up zoom', async () => {
+    let pendingFrame: FrameRequestCallback | undefined
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      pendingFrame = callback
+      return 92
+    })
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+    const calls: string[] = []
+    const onChartMouseDown = vi.fn(() => calls.push('down'))
+    const onChartMouseMove = vi.fn(() => calls.push('move'))
+    const onZoom = vi.fn(() => calls.push('zoom'))
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={[
+            { time: '10:00:00', timestampMs: 0, vusers: 2, tps: 1, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0 },
+            { time: '10:00:01', timestampMs: 1_000, vusers: 4, tps: 2, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={onChartMouseDown}
+          onChartMouseMove={onChartMouseMove}
+          onZoom={onZoom}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={[]}
+        />,
+      )
+    })
+
+    const chart = container.querySelector<SVGElement>('[data-testid="mock-chart"]')
+    await act(async () => {
+      chart?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      chart?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+      chart?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    })
+
+    expect(requestFrame).toHaveBeenCalled()
+    expect(cancelFrame).toHaveBeenCalledWith(92)
+    expect(onChartMouseDown).toHaveBeenCalledWith({ label: '10:00:00', timestampMs: 0 })
+    expect(onChartMouseMove).toHaveBeenCalledWith({ label: '10:00:01', timestampMs: 1_000 })
+    expect(calls).toEqual(['down', 'move', 'zoom'])
+    pendingFrame?.(0)
+    expect(onChartMouseMove).toHaveBeenCalledTimes(1)
+
+    requestFrame.mockRestore()
+    cancelFrame.mockRestore()
   })
 
   it('toggles gradient underlays and dense chart downsampling from graph options', async () => {
@@ -1553,6 +1670,10 @@ describe('TestExecutionCharts context menu', () => {
     return Array.from(chart?.querySelectorAll('[data-testid="mock-y-axis"]') ?? [])
       .map(axis => axis.getAttribute('data-axis-aria-label'))
       .filter(Boolean)
+  }
+
+  async function flushAnimationFrame() {
+    await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()))
   }
 
   function primaryAxisDomain(chart: Element | undefined) {

@@ -13,6 +13,7 @@ import (
 	"go/token"
 	"io/fs"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,6 +96,9 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 			}
 		}
 	}
+	if err := addOpenAPICrossPackageTypeDefinitions(dir, typeDefinitions); err != nil {
+		return nil, err
+	}
 	functions := map[string]*ast.FuncDecl{}
 	functionResults := map[string][]ast.Expr{}
 	for name, candidates := range functionCandidates {
@@ -139,18 +143,131 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 	return contracts, nil
 }
 
+// openAPICrossPackageDirectories is deliberately bounded to the model packages
+// used most heavily by REST request and response contracts. Loading the entire
+// module would make generation sensitive to unrelated packages and build-tag
+// variants; these packages cover the public storage, DSL, execution, recorder,
+// and converter models that handlers decode or return directly.
+var openAPICrossPackageDirectories = map[string]string{
+	"dsl":      "dsl",
+	"engine":   "engine",
+	"k6":       "convert/k6",
+	"recorder": "recorder",
+	"sample":   "convert/sample",
+	"storage":  "storage",
+}
+
+func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {
+	packageNames := make([]string, 0, len(openAPICrossPackageDirectories))
+	for packageName := range openAPICrossPackageDirectories {
+		packageNames = append(packageNames, packageName)
+	}
+	sort.Strings(packageNames)
+	for _, packageName := range packageNames {
+		dir := filepath.Clean(filepath.Join(apiDir, "..", openAPICrossPackageDirectories[packageName]))
+		packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
+			name := info.Name()
+			return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
+		}, 0)
+		if err != nil {
+			return fmt.Errorf("parse OpenAPI model package %s in %s: %w", packageName, dir, err)
+		}
+		parsedPackage, ok := packages[packageName]
+		if !ok {
+			return fmt.Errorf("parse OpenAPI model package %s in %s: package not found", packageName, dir)
+		}
+		fileNames := make([]string, 0, len(parsedPackage.Files))
+		for fileName := range parsedPackage.Files {
+			fileNames = append(fileNames, fileName)
+		}
+		sort.Strings(fileNames)
+		for _, fileName := range fileNames {
+			for _, decl := range parsedPackage.Files[fileName].Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok || gen.Tok != token.TYPE {
+					continue
+				}
+				for _, spec := range gen.Specs {
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+					typeDefinitions[packageName+"."+typeSpec.Name.Name] = typeSpec.Type
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // explicitRouteContractTypes types operations whose handlers hide their JSON
-// contract from AST inference. The system-settings handlers read the raw
-// request body (io.ReadAll feeds the omitted-section merge probing, which the
-// walker classifies as a binary rawRequest) and write a redacted
-// map[string]any response. Data-pool updates write values returned from a
-// storage-interface method, whose cross-package result type is likewise not
-// visible to the local function-result walker.
+// contract from AST inference. Some handlers decode through chained decoder or
+// helper calls that the bounded walker deliberately does not interpret. The
+// system-settings handlers read the raw request body (io.ReadAll feeds the
+// omitted-section merge probing, which the walker classifies as a binary
+// rawRequest) and write a redacted map[string]any response. Data-pool updates
+// write values returned from a storage-interface method, whose cross-package
+// result type is likewise not visible to the local function-result walker.
 var explicitRouteContractTypes = map[string]struct {
 	requestType         string
+	requestOptional     bool
 	responseTypes       map[int]string
 	responseDescription string
 }{
+	"POST /api/v1/auth/ci/github/exchange": {
+		requestType: "githubCIExchangeRequest",
+	},
+	"POST /api/v1/ci/runs/{id}/abort": {
+		requestType:     "ciAbortRequest",
+		requestOptional: true,
+	},
+	"POST /api/v1/correlations/diff": {
+		requestType: "correlationDiffRequest",
+	},
+	"POST /api/v1/integrations/github/sync-jobs": {
+		requestType: "githubSyncJobRequest",
+	},
+	"PUT /api/v1/projects/{id}/github/policy": {
+		requestType: "storage.GitHubProjectPolicy",
+	},
+	"POST /api/v1/scripts/{id}/diagnose-replay": {
+		requestType: "scriptReplayDiagnosisRequest",
+	},
+	"POST /api/v1/scripts/{id}/export": {
+		requestType:     "scriptExportRequest",
+		requestOptional: true,
+	},
+	"POST /api/v1/scripts/{id}/github/push": {
+		requestType: "githubPushRequest",
+	},
+	"PUT /api/v1/scripts/authoring/sessions/{id}": {
+		requestType: "authoringSessionRequest",
+	},
+	"POST /api/v1/scripts/import/github": {
+		requestType: "githubImportRequest",
+	},
+	"POST /api/v1/scripts/secret-bindings/apply": {
+		requestType: "applySecretBindingsRequest",
+	},
+	"POST /api/v1/selectors/diagnose": {
+		requestType: "selectorDiagnoseRequest",
+	},
+	"POST /api/v1/system/deployment-lease/acquire": {
+		requestType: "deploymentLeaseRequest",
+	},
+	"POST /api/v1/system/deployment-lease/release": {
+		requestType: "deploymentLeaseRequest",
+	},
+	"POST /api/v1/system/deployment-lease/renew": {
+		requestType: "deploymentLeaseRequest",
+	},
+	"POST /api/v1/tests/{id}/github/check-run": {
+		requestType: "githubCheckPublishRequest",
+	},
+	"POST /api/v1/tests/{id}/publish/powerbi": {
+		requestType:     "powerBIPublishRequest",
+		requestOptional: true,
+	},
 	"GET /api/v1/system/settings": {
 		responseTypes:       map[int]string{http.StatusOK: "SystemSettings"},
 		responseDescription: "System settings document. notifications.webhooks[].api_token is always redacted to an empty string; a has_api_token boolean reports whether a token is stored.",
@@ -190,6 +307,7 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 		analysis.jsonRequest = true
 		analysis.rawRequest = false
 		analysis.requestSchema = &schema
+		analysis.optionalJSONBody = override.requestOptional
 	}
 	for status, typeName := range override.responseTypes {
 		schema := openAPISchemaForASTType(explicitOpenAPITypeExpression(typeName), typeDefinitions, map[string]bool{}, 0)
@@ -643,6 +761,15 @@ func shouldInspectCalledContract(name string) bool {
 
 func inferredContractForAnalysis(route discoveredRoute, analysis *handlerContractAnalysis) inferredRouteContract {
 	headerParameters := inferredHeaderParameters(analysis)
+	if route.Path == bridgePairPath || route.Path == bridgeStatusPath {
+		headerParameters = appendOrReplaceHeaderParameter(headerParameters, oasParameter{
+			Name:        "Origin",
+			In:          "header",
+			Description: "Browser origin bound to the recording-agent pairing session.",
+			Required:    true,
+			Schema:      oasParamSchema{Type: "string"},
+		})
+	}
 	responses := inferredResponses(route, analysis)
 	if isScheduleUpdateRoute(route.Method, route.Path) {
 		headerParameters = appendOrReplaceHeaderParameter(headerParameters, oasParameter{
@@ -780,6 +907,8 @@ func requiredQueryParameter(method, path, name string) bool {
 		"GET /api/v1/library/catalog":                              {"kind": true},
 		"GET /api/v1/library/remotes/{id}/catalog":                 {"kind": true},
 		"GET /api/v1/auth/effective-access/principal":              {"principal_type": true, "principal_id": true},
+		"GET /api/v1/integrations/github/branches":                 {"owner": true, "repo": true},
+		"GET /api/v1/integrations/github/contents":                 {"owner": true, "repo": true},
 		"GET /api/v1/browser-recorder/sessions/{id}/storage-state": {},
 	}
 	return required[method+" "+path][name]
@@ -884,6 +1013,8 @@ func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, b
 
 func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) ([]string, bool) {
 	declared := map[string][]string{
+		"POST /api/v1/auth/ci/github/exchange":                                                          {"id_token", "project_id"},
+		"POST /api/v1/correlations/diff":                                                                {"recording_a", "recording_b"},
 		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
 		"PUT /api/v1/scenarios/{id}":                                                                    {"name", "duration", "groups"},
 		"POST /api/v1/scenarios/{id}/schedules":                                                         {"name", "cron_expr"},
@@ -906,6 +1037,16 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"PATCH /api/v1/tests/{id}/groups/{group}/runtime-settings":                                      {"expected_revision", "fields"},
 		"PUT /api/v1/tests/{id}/groups/{group}/parameters":                                              {"expected_revision", "parameters"},
 		"PUT /api/v1/correlation-rulesets/{id}":                                                         {"expected_updated_at", "name"},
+		"POST /api/v1/scripts/authoring/sessions/{id}/correlations/preview":                             {"expected_updated_at"},
+		"PUT /api/v1/scripts/authoring/sessions/{id}":                                                   {"draft", "source"},
+		"POST /api/v1/scripts/export/k6":                                                                {"script"},
+		"POST /api/v1/scripts/import/github":                                                            {"owner", "path", "repo"},
+		"POST /api/v1/scripts/import/sample":                                                            {"content", "format"},
+		"POST /api/v1/scripts/secret-bindings/apply":                                                    {"script"},
+		"POST /api/v1/selectors/diagnose":                                                               {"steps"},
+		"POST /api/v1/system/deployment-lease/acquire":                                                  {"owner_id"},
+		"POST /api/v1/system/deployment-lease/release":                                                  {"owner_id"},
+		"POST /api/v1/system/deployment-lease/renew":                                                    {"owner_id"},
 		"POST /api/v1/correlation-rulesets/discover-from-script":                                        {"script_id"},
 		"POST /api/v1/correlation-rulesets/{id}/apply-to-script":                                        {"script_id"},
 		"POST /api/v1/scripts/browser-replay/sessions":                                                  {"script"},
@@ -1055,6 +1196,10 @@ func setInferredRequestSchema(call *ast.CallExpr, variableTypes map[string]ast.E
 }
 
 func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr, visiting map[string]bool, depth int) oasSchema {
+	return openAPISchemaForASTTypeInPackage(expr, typeDefinitions, visiting, depth, "")
+}
+
+func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]ast.Expr, visiting map[string]bool, depth int, currentPackage string) oasSchema {
 	if expr == nil {
 		additional := true
 		return oasSchema{Type: "object", AdditionalProperties: &additional}
@@ -1077,25 +1222,41 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			additional := true
 			return oasSchema{Type: "object", Description: "Go type: " + value.Name, AdditionalProperties: &additional}
 		}
-		definition := typeDefinitions[value.Name]
-		if definition == nil || visiting[value.Name] {
-			additional := true
-			return oasSchema{Type: "object", Description: "Go type: " + value.Name, AdditionalProperties: &additional}
+		definitionKey := value.Name
+		if currentPackage != "" {
+			qualified := currentPackage + "." + value.Name
+			if typeDefinitions[qualified] != nil {
+				definitionKey = qualified
+			}
 		}
-		visiting[value.Name] = true
-		schema := openAPISchemaForASTType(definition, typeDefinitions, visiting, depth+1)
-		delete(visiting, value.Name)
+		definition := typeDefinitions[definitionKey]
+		if definition == nil || visiting[definitionKey] {
+			additional := true
+			description := value.Name
+			if currentPackage != "" {
+				description = currentPackage + "." + value.Name
+			}
+			return oasSchema{Type: "object", Description: "Go type: " + description, AdditionalProperties: &additional}
+		}
+		visiting[definitionKey] = true
+		schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, depth+1, currentPackage)
+		delete(visiting, definitionKey)
 		return schema
 	case *ast.StarExpr:
 		// Pointer indirection does not make a JSON document structurally deeper.
 		// Keeping the same depth also lets scalar pointers retain their real type
-		// when nested request models approach the recursion guard.
-		return openAPISchemaForASTType(value.X, typeDefinitions, visiting, depth)
+		// when nested request models approach the recursion guard. A nil pointer
+		// encodes as JSON null whenever its field is not omitted, so retain that
+		// wire shape instead of advertising the pointed-to value as the only
+		// possible representation.
+		schema := openAPISchemaForASTTypeInPackage(value.X, typeDefinitions, visiting, depth, currentPackage)
+		schema.Nullable = true
+		return schema
 	case *ast.ArrayType:
-		item := openAPISchemaForASTType(value.Elt, typeDefinitions, visiting, depth+1)
+		item := openAPISchemaForASTTypeInPackage(value.Elt, typeDefinitions, visiting, depth+1, currentPackage)
 		return oasSchema{Type: "array", Items: &item}
 	case *ast.MapType:
-		additional := openAPISchemaForASTType(value.Value, typeDefinitions, visiting, depth+1)
+		additional := openAPISchemaForASTTypeInPackage(value.Value, typeDefinitions, visiting, depth+1, currentPackage)
 		return oasSchema{Type: "object", AdditionalProperties: &additional}
 	case *ast.InterfaceType:
 		return oasSchema{}
@@ -1103,6 +1264,9 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 		if pkg, ok := value.X.(*ast.Ident); ok {
 			if pkg.Name == "time" && value.Sel.Name == "Time" {
 				return oasSchema{Type: "string", Format: "date-time"}
+			}
+			if pkg.Name == "time" && value.Sel.Name == "Duration" {
+				return oasSchema{Type: "integer", Format: "int64", Description: "Duration in nanoseconds."}
 			}
 			if pkg.Name == "json" && value.Sel.Name == "RawMessage" {
 				return oasSchema{}
@@ -1124,6 +1288,13 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			if pkg.Name == "generatorrpc" && value.Sel.Name == "ProtocolRuntimeCapacity" {
 				return protocolRuntimeCapacityOpenAPISchema()
 			}
+			definitionKey := pkg.Name + "." + value.Sel.Name
+			if definition := typeDefinitions[definitionKey]; definition != nil && !visiting[definitionKey] {
+				visiting[definitionKey] = true
+				schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, depth+1, pkg.Name)
+				delete(visiting, definitionKey)
+				return schema
+			}
 			additional := true
 			return oasSchema{Type: "object", Description: "Go type: " + pkg.Name + "." + value.Sel.Name, AdditionalProperties: &additional}
 		}
@@ -1137,7 +1308,7 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 		for _, field := range value.Fields.List {
 			name, include, omitEmpty := jsonFieldName(field)
 			if len(field.Names) == 0 && (!include || name == "") && anonymousJSONFieldPromotesMembers(field) {
-				embedded := openAPISchemaForASTType(field.Type, typeDefinitions, visiting, depth+1)
+				embedded := openAPISchemaForASTTypeInPackage(field.Type, typeDefinitions, visiting, depth+1, currentPackage)
 				for embeddedName, embeddedProperty := range embedded.Properties {
 					// A directly declared field wins over a promoted field. This
 					// matches the only conflict rule that matters for request
@@ -1153,7 +1324,7 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			if !include || name == "" {
 				continue
 			}
-			properties[name] = openAPISchemaForASTType(field.Type, typeDefinitions, visiting, depth+1)
+			properties[name] = openAPISchemaForASTTypeInPackage(field.Type, typeDefinitions, visiting, depth+1, currentPackage)
 			if !omitEmpty {
 				required = append(required, name)
 			}

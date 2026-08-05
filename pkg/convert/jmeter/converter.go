@@ -1,8 +1,10 @@
 package jmeter
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -353,6 +355,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			script.Config.HTTP.DefaultHeaders = nil
 		}
 		finalizeNativeProtocolScript(script, &ctx, &diagnostics, &sourceMappings, sourceFileName, threadName)
+		attachJMeterDynamicFunctionParameters(script, &diagnostics, &sourceMappings, sourceFileName)
 		if len(ctx.csvSources) > 0 {
 			script.DataSources = append(script.DataSources, ctx.csvSources...)
 		}
@@ -452,6 +455,66 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	sanitizeJMeterResultReviewText(result)
 	return result, nil
+}
+
+var jmeterDynamicParameterPattern = regexp.MustCompile(`\{\{param\.(jmeter_(?:(?:global_)?counter(?:_[A-Za-z0-9_]+)?|thread_num))\}\}`)
+
+func attachJMeterDynamicFunctionParameters(script *dsl.Script, diagnostics *diag.Collector, sourceMappings *[]sourceview.Mapping, sourceFileName string) {
+	if script == nil {
+		return
+	}
+	encoded, err := json.Marshal(script)
+	if err != nil {
+		return
+	}
+	existing := make(map[string]struct{}, len(script.Parameters))
+	for _, parameter := range script.Parameters {
+		existing[parameter.Name] = struct{}{}
+	}
+	names := make(map[string]struct{})
+	for _, match := range jmeterDynamicParameterPattern.FindAllSubmatch(encoded, -1) {
+		name := string(match[1])
+		if _, exists := existing[name]; !exists {
+			names[name] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(names))
+	globalCounter := false
+	for name := range names {
+		ordered = append(ordered, name)
+		globalCounter = globalCounter || strings.HasPrefix(name, "jmeter_global_counter")
+	}
+	sort.Strings(ordered)
+	for _, name := range ordered {
+		if name == "jmeter_thread_num" {
+			script.Parameters = append(script.Parameters, dsl.Parameter{Name: name, Type: "vuser_id", Update: "once"})
+			continue
+		}
+		script.Parameters = append(script.Parameters, dsl.Parameter{
+			Name: name, Type: "counter", Update: "each_occurrence", Start: 1, Step: 1,
+		})
+	}
+	if !globalCounter || hasJMeterReviewReason(script.Actions, "unsupported_jmeter_global_counter") {
+		return
+	}
+	setJMeterRuntimeParity(script, "dynamicFunctions.globalCounter", "review_required")
+	location := convertutil.FirstNonEmpty(sourceFileName, "JMX plan")
+	actionIndex := appendJMeterSourceReviewPlaceholder(script, "cross-thread __counter", location, sourceFileName, "unsupported_jmeter_global_counter")
+	if diagnostics != nil {
+		diagnostics.Add(diag.Blocker, "JMeter __counter", location, "cross-thread __counter(FALSE, ...) cannot be reproduced by the per-VUser counter runtime; replace the preserved counter before replay")
+	}
+	if sourceMappings != nil {
+		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(
+			sourceFileName,
+			nil,
+			"__counter(FALSE, ...)",
+			fmt.Sprintf("actions[%d]", actionIndex),
+			"Cross-thread counter review gate",
+			"dynamic_function",
+			"review_only",
+			"JMeter cross-thread counter scope has no equivalent in the per-VUser parameter runtime.",
+		))
+	}
 }
 
 func jmeterPreservedCredentialFinding(findings []importreview.Finding) bool {
@@ -588,6 +651,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			continue
 		case "TransactionController":
 			next := *ctx
+			next.csvSources = append([]dsl.DataSource(nil), ctx.csvSources...)
 			txName := attrOr(child.Element, "testname", "Transaction")
 			if ctx.transaction != "" {
 				txName = ctx.transaction + " / " + txName
@@ -598,15 +662,21 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			// sampler lived inside this controller, propagate its consumption so the
 			// pause is not replayed again by the next sibling sampler.
 			ctx.oneShotTimerMs = next.oneShotTimerMs
+			var csvConflicts []jmeterCSVSourceConflict
+			ctx.csvSources, csvConflicts = mergeJMeterCSVSources(ctx.csvSources, next.csvSources)
+			applyJMeterCSVSourceConflicts(script, result, diagnostics, sourceFileName, jmeterElementLocation(child.Element), csvConflicts)
 			continue
 		case "OnceOnlyController":
-			steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+			steps, childMappings := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 			if len(steps) == 0 {
 				diagnostics.Add(diag.Info, "JMeter OnceOnlyController", jmeterElementLocation(child.Element), "OnceOnlyController contained no converted child samplers")
 				continue
 			}
 			start := len(script.Init)
 			script.Init = append(script.Init, steps...)
+			*sourceMappings = append(*sourceMappings, rebaseJMeterChildMappings(childMappings, func(index int) string {
+				return fmt.Sprintf("init[%d]", start+index)
+			})...)
 			setJMeterRuntimeParity(script, "onceOnlyController", "executed")
 			targetPath := fmt.Sprintf("init[%d]", start)
 			if len(steps) > 1 {
@@ -620,7 +690,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				loopCountStr = attrOr(child.Element, "loops", "1")
 			}
 			if val, err := strconv.Atoi(loopCountStr); err == nil && val > 0 {
-				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+				steps, childMappings := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, dsl.Action{
 					Name: strings.TrimSpace(convertutil.FirstNonEmpty(attrOr(child.Element, "testname", ""), "Loop")),
@@ -634,6 +704,9 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 						"source_type": "LoopController",
 					},
 				})
+				*sourceMappings = append(*sourceMappings, rebaseJMeterChildMappings(childMappings, func(index int) string {
+					return fmt.Sprintf("actions[%d].control.steps[%d]", actionIndex, index)
+				})...)
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", fmt.Sprintf("JMeter LoopController was mapped to control_loop with count %d.", val)))
 			} else if loopCountStr == "-1" || loopCountStr == "0" {
 				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "infinite loops (-1) remain review-gated; children were imported once for review")
@@ -654,7 +727,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "IfController":
 			condition := prop(child.Element, "IfController.condition")
 			if cond, ok := simpleJMeterCondition(condition); ok {
-				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+				steps, childMappings := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, dsl.Action{
 					Name:    strings.TrimSpace(convertutil.FirstNonEmpty(attrOr(child.Element, "testname", ""), "If")),
@@ -667,6 +740,9 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 						"condition_original": condition,
 					},
 				})
+				*sourceMappings = append(*sourceMappings, rebaseJMeterChildMappings(childMappings, func(index int) string {
+					return fmt.Sprintf("actions[%d].control.steps[%d]", actionIndex, index)
+				})...)
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", "JMeter IfController was mapped to control_if."))
 			} else {
 				diagnostics.Add(diag.Warning, "JMeter IfController", jmeterElementLocation(child.Element), "conditional execution could not be translated safely; the condition was omitted and children were flattened into a blocked draft")
@@ -680,7 +756,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 		case "WhileController":
 			condition := prop(child.Element, "WhileController.condition")
 			if cond, ok := simpleJMeterCondition(condition); ok {
-				steps := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
+				steps, childMappings := collectJMeterChildActions(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName)
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, dsl.Action{
 					Name: strings.TrimSpace(convertutil.FirstNonEmpty(attrOr(child.Element, "testname", ""), "While")),
@@ -699,6 +775,9 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 						"condition_original": condition,
 					},
 				})
+				*sourceMappings = append(*sourceMappings, rebaseJMeterChildMappings(childMappings, func(index int) string {
+					return fmt.Sprintf("actions[%d].control.steps[%d]", actionIndex, index)
+				})...)
 				diagnostics.Add(diag.Info, "JMeter WhileController", jmeterElementLocation(child.Element), fmt.Sprintf("while loop was mapped to a condition-driven control_loop with a %d-iteration safety cap", jmeterWhileLoopSafetyCap))
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", "JMeter WhileController was mapped to a condition-driven control_loop."))
 				continue
@@ -828,6 +907,16 @@ func applyJMeterScopeConfig(
 				diagnostics.Add(diag.Warning, "JMeter CSVDataSet", jmeterElementLocation(element), "CSV shareMode has no equivalent and requires review")
 			}
 		}
+		// stopThread only affects what happens after a finite CSV reaches EOF. With
+		// recycling enabled EOF is never reached, so stopThread=true alone is not a
+		// semantic gap and must not gate an otherwise runnable plan.
+		if strings.EqualFold(strings.TrimSpace(prop(element, "recycle")), "false") {
+			setJMeterRuntimeParity(script, "csvDataSet.eof", "review_required")
+			diagnostics.Add(diag.Blocker, "JMeter CSVDataSet", jmeterElementLocation(element), "recycle=false EOF behavior (including the configured stopThread disposition) has no exact APEX data-source equivalent; execution is review-gated")
+			if !hasJMeterReviewReason(script.Actions, "unsupported_csv_eof_semantics") {
+				appendJMeterSourceReviewPlaceholder(script, "CSVDataSet EOF behavior", jmeterElementLocation(element), sourceFileName, "unsupported_csv_eof_semantics")
+			}
+		}
 	case "ResponseAssertion":
 		assertions := parseResponseAssertions(element, diagnostics)
 		ctx.assertions = append(ctx.assertions, assertions...)
@@ -947,18 +1036,214 @@ func jmeterDirectScopeTimers(node *treeNode) []*treeNode {
 	return timers
 }
 
-func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string) []dsl.Action {
+func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string) ([]dsl.Action, []sourceview.Mapping) {
 	if node == nil || len(node.Children) == 0 {
-		return nil
+		return nil, nil
 	}
 	next := *ctx
+	next.csvSources = append([]dsl.DataSource(nil), ctx.csvSources...)
 	next.provenVariables = jmeterProvenVariables(ctx)
 	tempScript := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{}}}}
 	var tempMappings []sourceview.Mapping
 	walkThreadGroup(node, &next, tempScript, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, &tempMappings)
 	ctx.oneShotTimerMs = next.oneShotTimerMs
+	var csvConflicts []jmeterCSVSourceConflict
+	ctx.csvSources, csvConflicts = mergeJMeterCSVSources(ctx.csvSources, next.csvSources)
+	applyJMeterCSVSourceConflicts(parentScript, result, diagnostics, sourceFileName, jmeterElementLocation(node.Element), csvConflicts)
 	mergeJMeterRuntimeParity(parentScript, tempScript)
-	return append([]dsl.Action(nil), tempScript.Actions...)
+	if len(tempScript.Init) > 0 {
+		gateIndex := len(parentScript.Init)
+		parentScript.Init = append(parentScript.Init, jmeterNestedOnceReviewGate(node.Element, sourceFileName))
+		result.Stats.ReviewRequired++
+		start := len(parentScript.Init)
+		parentScript.Init = append(parentScript.Init, tempScript.Init...)
+		tempMappings = rebaseJMeterInitMappings(tempMappings, func(index int) string {
+			return fmt.Sprintf("init[%d]", start+index)
+		})
+		tempMappings = append(tempMappings, jmeterSourceMapping(
+			sourceFileName,
+			node.Element,
+			"Nested OnceOnlyController",
+			fmt.Sprintf("init[%d]", gateIndex),
+			jmeterElementLocation(node.Element),
+			"controller",
+			"review_only",
+			"Nested OnceOnlyController actions were hoisted to init behind a durable execution gate because ordering inside repeated control flow cannot be reproduced exactly.",
+		))
+		setJMeterRuntimeParity(parentScript, "onceOnlyController", "partial")
+		diagnostics.Add(diag.Warning, "JMeter nested OnceOnlyController", jmeterElementLocation(node.Element), "nested OnceOnlyController children were preserved in script init because the DSL has no once-per-VUser controller nested inside repeated control flow; review ordering relative to sibling steps")
+	}
+	return append([]dsl.Action(nil), tempScript.Actions...), tempMappings
+}
+
+func jmeterNestedOnceReviewGate(element *xmlNode, sourceFileName string) dsl.Action {
+	location := jmeterElementLocation(element)
+	action := dsl.Action{
+		Name:  "Review nested OnceOnlyController ordering",
+		Type:  "review_required",
+		Value: "Review the hoisted once-only init actions and their ordering, then remove this gate before replay.",
+		Metadata: map[string]any{
+			"source":      "jmeter",
+			"source_type": "OnceOnlyController",
+		},
+	}
+	importreview.ApplyToAction(&action, []importreview.Finding{{
+		Code:       "import_review_required",
+		Severity:   diag.Blocker,
+		Element:    "JMeter nested OnceOnlyController",
+		Detail:     "nested once-only actions were preserved in script init, but their ordering relative to repeated sibling actions cannot be reproduced exactly",
+		Location:   location,
+		Source:     "jmeter",
+		ReasonCode: "nested_once_only_ordering",
+		SourceRef:  sourceFileName + "#" + location,
+		Resolution: "verify_hoisted_once_only_ordering_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}})
+	return action
+}
+
+type jmeterCSVSourceConflict struct {
+	OriginalName string
+	RenamedName  string
+}
+
+func mergeJMeterCSVSources(destination, additional []dsl.DataSource) ([]dsl.DataSource, []jmeterCSVSourceConflict) {
+	out := append([]dsl.DataSource(nil), destination...)
+	var conflicts []jmeterCSVSourceConflict
+	for _, source := range additional {
+		if jmeterCSVSourceExists(out, source) {
+			continue
+		}
+		if !jmeterCSVSourceNameExists(out, source.Name) {
+			out = append(out, source)
+			continue
+		}
+		// A nested scope can legally shadow a CSVDataSet with a differently
+		// configured source of the same test name. The flat APEX data-source
+		// model cannot express that scope. Preserve both records under stable,
+		// unique names and review-gate execution instead of silently collapsing
+		// the nested source into the outer one.
+		originalName := source.Name
+		for suffix := 2; ; suffix++ {
+			candidate := fmt.Sprintf("%s_scoped_%d", originalName, suffix)
+			source.Name = candidate
+			if jmeterCSVSourceExists(out, source) {
+				break
+			}
+			if jmeterCSVSourceNameExists(out, candidate) {
+				continue
+			}
+			out = append(out, source)
+			conflicts = append(conflicts, jmeterCSVSourceConflict{OriginalName: originalName, RenamedName: candidate})
+			break
+		}
+	}
+	return out, conflicts
+}
+
+func jmeterCSVSourceNameExists(sources []dsl.DataSource, name string) bool {
+	for _, existing := range sources {
+		if existing.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func jmeterCSVSourceExists(sources []dsl.DataSource, candidate dsl.DataSource) bool {
+	for _, existing := range sources {
+		if existing.Name != candidate.Name {
+			continue
+		}
+		if existing.Type == candidate.Type &&
+			existing.Path == candidate.Path &&
+			existing.InlineData == candidate.InlineData &&
+			existing.Encoding == candidate.Encoding &&
+			existing.FileName == candidate.FileName &&
+			existing.ContentType == candidate.ContentType &&
+			existing.StorageRef == candidate.StorageRef &&
+			existing.StagedAsset == candidate.StagedAsset &&
+			existing.Strategy == candidate.Strategy &&
+			existing.Delimiter == candidate.Delimiter &&
+			existing.FirstRowHeader == candidate.FirstRowHeader &&
+			slices.Equal(existing.Columns, candidate.Columns) {
+			return true
+		}
+	}
+	return false
+}
+
+func applyJMeterCSVSourceConflicts(script *dsl.Script, result *ConvertResult, diagnostics *diag.Collector, sourceFileName, location string, conflicts []jmeterCSVSourceConflict) {
+	if script == nil || len(conflicts) == 0 {
+		return
+	}
+	setJMeterRuntimeParity(script, "csvDataSet.scope", "review_required")
+	if hasJMeterReviewReason(script.Actions, "conflicting_csv_data_source_scope") {
+		return
+	}
+	pairs := make([]string, 0, len(conflicts))
+	for _, conflict := range conflicts {
+		pairs = append(pairs, fmt.Sprintf("%q as %q", conflict.OriginalName, conflict.RenamedName))
+	}
+	diagnostics.Add(diag.Blocker, "JMeter CSVDataSet scoped name conflict", location, "nested CSVDataSet definitions with the same name have different runtime semantics; preserved "+strings.Join(pairs, ", ")+" but the flat data-source model cannot reproduce JMeter scope")
+	appendJMeterSourceReviewPlaceholder(script, "CSVDataSet scoped name conflict", location, sourceFileName, "conflicting_csv_data_source_scope")
+	if result != nil {
+		result.Stats.ReviewRequired++
+	}
+}
+
+func rebaseJMeterChildMappings(mappings []sourceview.Mapping, target func(int) string) []sourceview.Mapping {
+	return rebaseJMeterSectionMappings(mappings, "actions[", target)
+}
+
+func rebaseJMeterInitMappings(mappings []sourceview.Mapping, target func(int) string) []sourceview.Mapping {
+	return rebaseJMeterSectionMappings(mappings, "init[", target)
+}
+
+func rebaseJMeterSectionMappings(mappings []sourceview.Mapping, prefix string, target func(int) string) []sourceview.Mapping {
+	rebased := append([]sourceview.Mapping(nil), mappings...)
+	for index := range rebased {
+		path := rebased[index].TargetPath
+		if !strings.HasPrefix(path, prefix) {
+			continue
+		}
+		end := strings.IndexByte(path, ']')
+		if end < len(prefix) {
+			continue
+		}
+		actionIndex, err := strconv.Atoi(path[len(prefix):end])
+		if err != nil {
+			continue
+		}
+		rebased[index].TargetPath = target(actionIndex) + path[end+1:]
+	}
+	return rebased
+}
+
+func hasJMeterReviewReason(actions []dsl.Action, reason string) bool {
+	for _, action := range actions {
+		if action.Metadata == nil {
+			continue
+		}
+		if review, ok := action.Metadata["import_review"].(map[string]any); ok {
+			if review["reason_code"] == reason {
+				return true
+			}
+			switch reasons := review["reason_codes"].(type) {
+			case []string:
+				if slices.Contains(reasons, reason) {
+					return true
+				}
+			case []any:
+				for _, value := range reasons {
+					if value == reason {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func setJMeterRuntimeParity(script *dsl.Script, key string, status string) {

@@ -24,6 +24,9 @@ type ResourceCollector struct {
 	cgroupRoot  string
 	procRoot    string
 	lastCPU     cpu.TimesStat
+	lastProcCPU cpu.TimesStat
+	lastProcAt  time.Time
+	hasProcCPU  bool
 	lastRuntime runtime.MemStats
 	lastCgroup  cgroupResourceSnapshot
 	lastTCP     tcpDiagnostics
@@ -103,9 +106,23 @@ func (rc *ResourceCollector) collect() *SystemResources {
 		res.Load5 = avg.Load5
 		res.Load15 = avg.Load15
 	}
+	processCPUSeconds := 0.0
+	processCPUWallSeconds := 0.0
+	processCPUAvailable := false
 	if rc.proc != nil {
-		if p, err := rc.proc.CPUPercent(); err == nil {
-			res.CPUProcessPct = p
+		if current, err := rc.proc.Times(); err == nil && current != nil {
+			processSampleAt := time.Now()
+			if rc.hasProcCPU {
+				processCPUSeconds, processCPUWallSeconds, processCPUAvailable = processCPUSampleDelta(
+					rc.lastProcCPU,
+					*current,
+					rc.lastProcAt,
+					processSampleAt,
+				)
+			}
+			rc.lastProcCPU = *current
+			rc.lastProcAt = processSampleAt
+			rc.hasProcCPU = true
 		}
 		if threads, err := rc.proc.NumThreads(); err == nil {
 			res.ThreadCount = threads
@@ -190,6 +207,14 @@ func (rc *ResourceCollector) collect() *SystemResources {
 	}
 	cgroup := collectCgroupResources(rc.cgroupRoot)
 	res.ContainerCPULimitCores = cgroup.CPULimitCores
+	if processCPUAvailable {
+		// GOMAXPROCS is the process's actual Go execution capacity and, on
+		// container-aware runtimes, already reflects the default cgroup quota.
+		// NumCPU reports host-visible CPUs and can understate utilization when an
+		// operator intentionally constrains GOMAXPROCS below that value.
+		capacityCores := effectiveCPUCapacity(cgroup.CPULimitCores, runtime.GOMAXPROCS(0))
+		res.CPUProcessPct = processCPUPercent(processCPUSeconds, processCPUWallSeconds, capacityCores)
+	}
 	res.ContainerMemoryWorkingSetMB = bytesToMBUint64(cgroup.MemoryWorkingSetBytes)
 	res.ContainerMemoryLimitMB = bytesToMBUint64(cgroup.MemoryLimitBytes)
 	if cgroup.MemoryLimitBytes > 0 && cgroup.MemoryWorkingSetBytes > 0 {
@@ -209,6 +234,47 @@ func (rc *ResourceCollector) collect() *SystemResources {
 	rc.lastTime = now
 	rc.initialized = true
 	return res
+}
+
+// processCPUPercent converts the process's cumulative CPU-time delta into a
+// current, capacity-normalized utilization percentage. Process.Times is a
+// cumulative counter; Process.CPUPercent instead averages over the entire OS
+// process lifetime and can leave a later test reporting an earlier test's load.
+// Normalize against the lesser of a container quota and the process's Go
+// execution capacity, so 100 means all CPU actually available to the generator.
+func processCPUPercent(cpuSeconds, wallSeconds, capacityCores float64) float64 {
+	if cpuSeconds <= 0 || wallSeconds <= 0 || capacityCores <= 0 {
+		return 0
+	}
+	return cpuSeconds / wallSeconds / capacityCores * 100
+}
+
+// processCPUSampleDelta keeps the cumulative CPU counter and wall interval on
+// the same pair of successful samples. In particular, a transient Times error
+// must not make the next multi-interval CPU delta use only one collection
+// interval as its denominator.
+func processCPUSampleDelta(previous, current cpu.TimesStat, previousAt, currentAt time.Time) (cpuSeconds, wallSeconds float64, ok bool) {
+	// Process.Times populates User and System with CPU execution time. On Linux
+	// it also populates Iowait from delayacct_blkio_ticks, which is time blocked
+	// on I/O rather than time executing on a CPU and must not inflate this gauge.
+	cpuSeconds = processCPUTime(current) - processCPUTime(previous)
+	wallSeconds = currentAt.Sub(previousAt).Seconds()
+	return cpuSeconds, wallSeconds, cpuSeconds >= 0 && wallSeconds > 0
+}
+
+func processCPUTime(sample cpu.TimesStat) float64 {
+	return sample.User + sample.System
+}
+
+func effectiveCPUCapacity(cgroupLimitCores float64, runtimeCPUs int) float64 {
+	availableCores := float64(runtimeCPUs)
+	if availableCores <= 0 {
+		return max(cgroupLimitCores, 0)
+	}
+	if cgroupLimitCores > 0 && cgroupLimitCores < availableCores {
+		return cgroupLimitCores
+	}
+	return availableCores
 }
 
 type cgroupResourceSnapshot struct {

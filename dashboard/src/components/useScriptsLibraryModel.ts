@@ -3,9 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { StoredScript, TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
+import { parseDurationToSeconds } from '../utils/timeUtils'
 import { loadAllTestSummaries } from './testCatalogPagination'
 
 type SortValue = string | number
+
+export const SCRIPT_RUN_CATALOG_CACHE_TTL_MS = 30_000
 
 export type ScriptLibrarySortField = 'name' | 'protocol' | 'version' | 'authoring_health' | 'created_at' | 'scenario_count' | 'associated_releases' | 'scenario_run_releases' | 'last_run_at'
 export type ScriptRunSortField = 'name' | 'status' | 'scenario_id' | 'release_id' | 'start_time' | 'duration'
@@ -56,6 +59,7 @@ function getRunSortValue(run: TestSummary, field: ScriptRunSortField): SortValue
   if (field === 'start_time') {
     return new Date(run.start_time || run.created_at || 0).getTime()
   }
+  if (field === 'duration') return parseDurationToSeconds(run.duration)
   return String(run[field] || '').toLowerCase()
 }
 
@@ -70,14 +74,23 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
   const [innerSortDirection, setInnerSortDirection] = useState<'asc' | 'desc'>('desc')
   const currentProjectIDRef = useRef(projectId)
   const projectScopeGenerationRef = useRef(0)
+  const runRequestGenerationRef = useRef(0)
+  const runCatalogRef = useRef<{
+    projectId?: string
+    tests?: TestSummary[]
+    expiresAt?: number
+    promise?: Promise<TestSummary[]>
+  } | null>(null)
   currentProjectIDRef.current = projectId
 
   useEffect(() => {
     projectScopeGenerationRef.current += 1
+    runRequestGenerationRef.current += 1
     setExpandedScriptId(null)
     setScriptRuns({})
     setScriptRunErrors({})
     setLoadingRunsFor(null)
+    runCatalogRef.current = null
   }, [projectId])
 
   const sortedScripts = useMemo(() => {
@@ -100,52 +113,81 @@ export function useScriptsLibraryModel({ api, scripts, projectId }: UseScriptsLi
     setSortDirection('asc')
   }, [sortField])
 
-  const loadScriptRuns = useCallback(async (script: StoredScript) => {
+  const loadRunCatalog = useCallback(async (forceRefresh = false): Promise<TestSummary[]> => {
+    const catalog = runCatalogRef.current
+    if (catalog && catalog.projectId === projectId) {
+      if (catalog.promise) return catalog.promise
+      if (!forceRefresh && catalog.tests && (catalog.expiresAt ?? 0) > Date.now()) return catalog.tests
+    }
+
+    const promise = loadAllTestSummaries(
+      api.listTests,
+      projectId ? { project_id: projectId, summary: true } : { summary: true },
+    ).then(response => response.tests || [])
+    runCatalogRef.current = { projectId, promise }
+    try {
+      const tests = await promise
+      if (runCatalogRef.current?.promise === promise) {
+        runCatalogRef.current = {
+          projectId,
+          tests,
+          expiresAt: Date.now() + SCRIPT_RUN_CATALOG_CACHE_TTL_MS,
+        }
+      }
+      return tests
+    } catch (error) {
+      if (runCatalogRef.current?.promise === promise) runCatalogRef.current = null
+      throw error
+    }
+  }, [api.listTests, projectId])
+
+  const loadScriptRuns = useCallback(async (script: StoredScript, refreshCatalog = false) => {
     if (loadingRunsFor === script.id) return
     const requestProjectID = projectId
     const requestScopeGeneration = projectScopeGenerationRef.current
+    const requestGeneration = ++runRequestGenerationRef.current
     const isCurrentProjectScope = () => (
       currentProjectIDRef.current === requestProjectID
       && projectScopeGenerationRef.current === requestScopeGeneration
+      && runRequestGenerationRef.current === requestGeneration
     )
     setLoadingRunsFor(script.id)
-    setScriptRunErrors(prev => ({ ...prev, [script.id]: '' }))
+    setScriptRuns({})
+    setScriptRunErrors({})
     try {
-      const res = await loadAllTestSummaries(api.listTests, projectId ? { project_id: projectId, summary: true } : { summary: true })
+      const tests = await loadRunCatalog(refreshCatalog)
       if (!isCurrentProjectScope()) return
-      const linkedRuns = (res.tests || [])
+      const linkedRuns = tests
         .filter((test: TestSummary) => !!test.scenario_id && (test.groups || []).some((group) => group.script_id === script.id))
         .sort((a: TestSummary, b: TestSummary) => {
           const aTime = new Date(a.start_time || a.created_at || 0).getTime()
           const bTime = new Date(b.start_time || b.created_at || 0).getTime()
           return bTime - aTime
         })
-      setScriptRuns((prev) => ({ ...prev, [script.id]: linkedRuns }))
+      setScriptRuns({ [script.id]: linkedRuns })
     } catch (error) {
       if (!isCurrentProjectScope()) return
-      setScriptRunErrors(prev => ({
-        ...prev,
-        [script.id]: getErrorMessage(error, 'Unable to load linked scenario runs'),
-      }))
+      setScriptRunErrors({ [script.id]: getErrorMessage(error, 'Unable to load linked scenario runs') })
     } finally {
-      if (isCurrentProjectScope()) setLoadingRunsFor(null)
+      if (isCurrentProjectScope()) setLoadingRunsFor(current => current === script.id ? null : current)
     }
-  }, [api.listTests, loadingRunsFor, projectId])
+  }, [loadRunCatalog, loadingRunsFor, projectId])
 
   const onToggleScriptRuns = useCallback(async (script: StoredScript) => {
     if (expandedScriptId === script.id) {
+      runRequestGenerationRef.current += 1
       setExpandedScriptId(null)
+      setLoadingRunsFor(null)
       return
     }
 
     setExpandedScriptId(script.id)
-    if (scriptRuns[script.id] || scriptRunErrors[script.id]) return
     await loadScriptRuns(script)
-  }, [expandedScriptId, loadScriptRuns, scriptRunErrors, scriptRuns])
+  }, [expandedScriptId, loadScriptRuns])
 
   const onRetryScriptRuns = useCallback(async (script: StoredScript) => {
     setExpandedScriptId(script.id)
-    await loadScriptRuns(script)
+    await loadScriptRuns(script, true)
   }, [loadScriptRuns])
 
   const onInnerSort = useCallback((field: ScriptRunSortField) => {

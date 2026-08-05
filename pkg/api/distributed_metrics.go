@@ -124,6 +124,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 				combined.Telemetry.TransportLagMs = batch.Telemetry.TransportLagMs
 			}
 			combined.Telemetry.DroppedSubscriberBatches += batch.Telemetry.DroppedSubscriberBatches
+			combined.Telemetry.MissingMetricWindows += batch.Telemetry.MissingMetricWindows
 		}
 	}
 	combined.FleetMetrics = mergeGeneratorMetricAggregates(fleetMetrics)
@@ -205,6 +206,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		live.Telemetry.DroppedResults = batch.Telemetry.DroppedResults
 		live.Telemetry.SheddedArrivals = batch.Telemetry.SheddedArrivals
 		live.Telemetry.DroppedSubscriberBatches = batch.Telemetry.DroppedSubscriberBatches
+		live.Telemetry.MissingMetricWindows = batch.Telemetry.MissingMetricWindows
 		if batch.Telemetry.CollectedAtUnixMs > 0 {
 			live.Telemetry.CollectedAt = time.UnixMilli(batch.Telemetry.CollectedAtUnixMs)
 		}

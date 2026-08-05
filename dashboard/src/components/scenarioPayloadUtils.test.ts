@@ -651,6 +651,47 @@ describe('scenarioPayloadUtils', () => {
     })
   })
 
+  it('keeps a fleet-pool restriction on the root assignment only', () => {
+    const draft = {
+      name: 'EU-only run',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven' as const,
+      scriptShakeout: false,
+      resourceBaseline: false,
+      assignment: { mode: 'auto' as const, pool_id: ' pool-eu-west ' },
+      groups: [{
+        name: 'Checkout',
+        scriptId: 'script-1',
+        vusers: 25,
+        rampUp: '',
+        rampDown: '',
+        initialization: 'at_runtime' as const,
+        assignment: { mode: 'auto' as const, pool_id: 'invalid-group-pool' },
+      }],
+      goalConfig: {},
+      runtimeSettings: { log_level: '', auto_transactions: '' },
+    }
+
+    const scenarioPayload = buildScenarioUpsertPayload(draft)
+    const testPayload = buildCreateTestPayload({
+      duration: draft.duration,
+      startDelay: draft.startDelay,
+      scenarioMode: draft.scenarioMode,
+      scriptShakeout: draft.scriptShakeout,
+      resourceBaseline: draft.resourceBaseline,
+      assignment: draft.assignment,
+      groups: draft.groups,
+      goalConfig: draft.goalConfig,
+      runtimeSettings: draft.runtimeSettings,
+    })
+
+    expect(scenarioPayload.assignment).toEqual({ mode: 'auto', pool_id: 'pool-eu-west' })
+    expect(testPayload.assignment).toEqual({ mode: 'auto', pool_id: 'pool-eu-west' })
+    expect(scenarioPayload.groups[0].assignment).toEqual({ mode: 'auto' })
+    expect(testPayload.groups![0].assignment).toEqual({ mode: 'auto' })
+  })
+
   it('preserves explicit empty hostname assignment so validation can reject it', () => {
     const payload = buildScenarioUpsertPayload({
       name: 'Incomplete Host Pinning',

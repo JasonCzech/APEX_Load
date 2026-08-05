@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 func TestGeneratorArchiveIntervalSummaryPersistsNestedFleetEvidence(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv(envGeneratorArchiveMinFree, "1")
 	writer, err := newArchiveRecorder("summary-evidence-generator", "summary-evidence-run", "Summary evidence")
 	if err != nil {
 		t.Fatalf("newArchiveRecorder: %v", err)
@@ -23,7 +25,13 @@ func TestGeneratorArchiveIntervalSummaryPersistsNestedFleetEvidence(t *testing.T
 		TimestampUnixMs: publishedAt.UnixMilli(),
 		WindowMs:        2_000,
 		Stats:           &pb.GeneratorStats{ActiveVusers: 4},
-		FleetMetrics:    &pb.MetricAggregate{Count: 8, Errors: 2, AvgMs: 175, P50Ms: 150, P90Ms: 240, P95Ms: 260, P99Ms: 300},
+		FleetMetrics: &pb.MetricAggregate{
+			Count: 8, Errors: 2, AvgMs: 175, P50Ms: 150, P90Ms: 240, P95Ms: 260, P99Ms: 300,
+			DurationDigest: &pb.TDigestSnapshot{
+				Compression: 100, TotalWeight: 8, Min: 100, Max: 300, Count: 8,
+				Centroids: []*pb.TDigestCentroid{{Mean: 100, Weight: 2}, {Mean: 200, Weight: 4}, {Mean: 300, Weight: 2}},
+			},
+		},
 		Groups: []*pb.GroupMetric{{
 			Name: "buyers", ActiveVusers: 4,
 			Metrics: &pb.MetricAggregate{Count: 8, Errors: 2, AvgMs: 175, P50Ms: 150, P90Ms: 240, P95Ms: 260, P99Ms: 300, Tps: 3},
@@ -68,5 +76,13 @@ func TestGeneratorArchiveIntervalSummaryPersistsNestedFleetEvidence(t *testing.T
 		summary.Telemetry.DroppedSubscriberBatches != 1 || !summary.Telemetry.CollectedAt.Equal(collectedAt) ||
 		!summary.Telemetry.GeneratorPublishedAt.Equal(publishedAt) || summary.Telemetry.GeneratorProcessingLagMs != 125 {
 		t.Fatalf("archived telemetry = %#v", summary.Telemetry)
+	}
+	if summary.DurationDigest == nil || summary.DurationDigest.Count != 8 ||
+		len(summary.DurationDigest.Centroids) != 3 {
+		t.Fatalf("archived fleet duration digest = %#v", summary.DurationDigest)
+	}
+	parquetRows := toParquetSummaries([]archiveIntervalSummary{summary})
+	if len(parquetRows) != 1 || !strings.Contains(parquetRows[0].DurationDigestJSON, `"count":8`) {
+		t.Fatalf("parquet duration digest = %#v", parquetRows)
 	}
 }

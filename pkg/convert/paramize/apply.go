@@ -538,21 +538,15 @@ func replaceOutsideTemplates(value string, replacements map[string]string) strin
 		}
 		return searches[i] < searches[j]
 	})
-	pairs := make([]string, 0, len(searches)*2)
-	for _, search := range searches {
-		pairs = append(pairs, search, replacements[search])
-	}
-	replacer := strings.NewReplacer(pairs...)
-
 	var result strings.Builder
 	remaining := value
 	for remaining != "" {
 		start := strings.Index(remaining, "{{")
 		if start < 0 {
-			result.WriteString(replacer.Replace(remaining))
+			result.WriteString(replaceLiteralMappings(remaining, searches, replacements))
 			break
 		}
-		result.WriteString(replacer.Replace(remaining[:start]))
+		result.WriteString(replaceLiteralMappings(remaining[:start], searches, replacements))
 		endOffset := strings.Index(remaining[start+2:], "}}")
 		if endOffset < 0 {
 			// Preserve an unterminated template-like suffix. Rewriting it is more
@@ -563,6 +557,51 @@ func replaceOutsideTemplates(value string, replacements map[string]string) strin
 		end := start + 2 + endOffset + 2
 		result.WriteString(remaining[start:end])
 		remaining = remaining[end:]
+	}
+	return result.String()
+}
+
+// replaceLiteralMappings is the non-template segment counterpart of
+// strings.NewReplacer. Query/form locations deliberately include delimiters to
+// avoid matching a key suffix (id inside user_id). Adjacent pairs share their
+// ampersand, so consuming a matched trailing delimiter would make the next
+// location unmatchable. Emit that shared delimiter on the next scan instead.
+func replaceLiteralMappings(value string, searches []string, replacements map[string]string) string {
+	var result strings.Builder
+	remaining := value
+	for remaining != "" {
+		matchAt := -1
+		matched := ""
+		for _, search := range searches {
+			at := strings.Index(remaining, search)
+			if at < 0 {
+				continue
+			}
+			if matchAt < 0 || at < matchAt {
+				matchAt = at
+				matched = search
+			}
+		}
+		if matchAt < 0 {
+			result.WriteString(remaining)
+			break
+		}
+		result.WriteString(remaining[:matchAt])
+		replacement := replacements[matched]
+		advance := len(matched)
+		if len(matched) > 1 && len(replacement) > 0 {
+			last := matched[len(matched)-1]
+			if (last == '&' || last == '#') && replacement[len(replacement)-1] == last {
+				// Do not consume the delimiter: another exact pair may begin there.
+				result.WriteString(replacement[:len(replacement)-1])
+				advance--
+			} else {
+				result.WriteString(replacement)
+			}
+		} else {
+			result.WriteString(replacement)
+		}
+		remaining = remaining[matchAt+advance:]
 	}
 	return result.String()
 }

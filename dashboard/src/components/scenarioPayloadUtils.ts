@@ -215,6 +215,7 @@ export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSett
 function buildRootAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings {
   const requiredLabels = normalizeRequiredLabels(assignment?.required_labels)
   const lossTolerance = assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}
+  const pool = assignment?.pool_id?.trim() ? { pool_id: assignment.pool_id.trim() } : {}
   if (assignment?.mode === 'specific_hosts') {
     const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
     return {
@@ -222,16 +223,17 @@ function buildRootAssignmentPayload(assignment?: GeneratorAssignmentSettings): G
       selected_targets: selectedTargets,
       ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
       ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+      ...pool,
       ...lossTolerance,
     }
   }
   if (assignment?.mode === 'region_weighted' && assignment.region_weights) {
-    return { mode: 'region_weighted', region_weights: assignment.region_weights, ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...lossTolerance }
+    return { mode: 'region_weighted', region_weights: assignment.region_weights, ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...pool, ...lossTolerance }
   }
   if (assignment?.mode === 'load_zone_weighted' && assignment.load_zone_weights) {
-    return { mode: 'load_zone_weighted', load_zone_weights: assignment.load_zone_weights, ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...lossTolerance }
+    return { mode: 'load_zone_weighted', load_zone_weights: assignment.load_zone_weights, ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...pool, ...lossTolerance }
   }
-  return { mode: 'auto', ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...lossTolerance }
+  return { mode: 'auto', ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...pool, ...lossTolerance }
 }
 
 function normalizeSelectedTargets(targets?: string[]) {

@@ -164,8 +164,12 @@ func Inspect(input Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	applyBrunoCollectionDisplayName(&collection, input.Name)
+	var preparedNativeCandidates []NativeScriptCandidate
+	preparedNativeProjection := false
+	nativeRequestPasses := 0
 	if outputMode == OutputModeNativeRequests {
-		_, projectedRequirements, _, _, projectionErr := nativeRequestScripts(
+		previewCandidates, previewRequirements, previewMissing, previewFindings, projectionErr := nativeRequestScripts(
 			input,
 			nativeExecutionFiles,
 			root,
@@ -174,10 +178,11 @@ func Inspect(input Input) (*Result, error) {
 			requirements,
 			findings,
 		)
+		nativeRequestPasses++
 		if projectionErr != nil {
 			return nil, projectionErr
 		}
-		projectedRequirements = nativeProjectedVariableRequirements(projectedRequirements)
+		projectedRequirements := nativeProjectedVariableRequirements(previewRequirements)
 		if len(projectedRequirements) > 0 {
 			sanitizedFiles, _, err = applyNativeProjectedVariableSecrets(
 				sanitizedFiles,
@@ -205,16 +210,19 @@ func Inspect(input Input) (*Result, error) {
 			if err != nil {
 				return nil, err
 			}
+			applyBrunoCollectionDisplayName(&collection, input.Name)
+		} else {
+			// Nothing changed after the preview. Reuse its candidates and associated
+			// diagnostics instead of reparsing every request/ancestor a second time.
+			preparedNativeCandidates = previewCandidates
+			requirements = previewRequirements
+			missing = previewMissing
+			findings = previewFindings
+			preparedNativeProjection = true
 		}
 		if err := validateNoUnprojectedNativeCredentialTemplates(sanitizedFiles); err != nil {
 			return nil, err
 		}
-	}
-	if strings.TrimSpace(input.Name) != "" {
-		collection.Name = strings.TrimSpace(input.Name)
-	}
-	if collection.Name == "" {
-		collection.Name = "Imported Bruno Collection"
 	}
 	sandbox := strings.ToLower(strings.TrimSpace(input.Sandbox))
 	if sandbox == "" {
@@ -236,17 +244,22 @@ func Inspect(input Input) (*Result, error) {
 			return nil, fmt.Errorf("invalid Bruno execution selection: %s", strings.Join(issues, "; "))
 		}
 	} else {
-		nativeCandidates, requirements, missing, findings, err = nativeRequestScripts(
-			input,
-			nativeExecutionFiles,
-			root,
-			collection,
-			manifest,
-			requirements,
-			findings,
-		)
-		if err != nil {
-			return nil, err
+		if preparedNativeProjection {
+			nativeCandidates = preparedNativeCandidates
+		} else {
+			nativeCandidates, requirements, missing, findings, err = nativeRequestScripts(
+				input,
+				nativeExecutionFiles,
+				root,
+				collection,
+				manifest,
+				requirements,
+				findings,
+			)
+			nativeRequestPasses++
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	executable, apps := countItems(collection.Items)
@@ -275,16 +288,29 @@ func Inspect(input Input) (*Result, error) {
 				"bru.runRequest may target HTTP, GraphQL, gRPC, or WebSocket items",
 			},
 		},
-		NativeProjection: projection,
-		MissingVariables: missing,
-		Script:           script,
-		Scripts:          nativeCandidates,
-		RawArchive:       rawArchive,
-		SanitizedArchive: sanitizedArchive,
-		OriginalUpload:   original,
-		InspectedAt:      time.Now().UTC(),
+		NativeProjection:    projection,
+		MissingVariables:    missing,
+		Script:              script,
+		Scripts:             nativeCandidates,
+		RawArchive:          rawArchive,
+		SanitizedArchive:    sanitizedArchive,
+		OriginalUpload:      original,
+		InspectedAt:         time.Now().UTC(),
+		nativeRequestPasses: nativeRequestPasses,
 	}
 	return result, nil
+}
+
+func applyBrunoCollectionDisplayName(collection *Collection, requested string) {
+	if collection == nil {
+		return
+	}
+	if name := strings.TrimSpace(requested); name != "" {
+		collection.Name = name
+	}
+	if collection.Name == "" {
+		collection.Name = "Imported Bruno Collection"
+	}
 }
 
 func appendUniqueSecretRequirements(existing, additional []SecretRequirement) []SecretRequirement {

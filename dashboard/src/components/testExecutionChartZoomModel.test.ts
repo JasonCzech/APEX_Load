@@ -13,54 +13,69 @@ describe('testExecutionChartZoomModel', () => {
   it('tracks drag selection and applies a custom zoom range', () => {
     const afterBegin = executionChartZoomReducer(initialExecutionChartZoomState, {
       type: 'beginSelection',
-      activeLabel: '10:00:01',
+      anchor: { label: '10:00:01', timestampMs: 1_000 },
     })
     const afterMove = executionChartZoomReducer(afterBegin, {
       type: 'updateSelection',
-      activeLabel: '10:00:05',
+      anchor: { label: '10:00:05', timestampMs: 5_000 },
     })
     const afterApply = executionChartZoomReducer(afterMove, { type: 'applySelection' })
 
     expect(getExecutionChartRefArea(afterMove)).toEqual({
       showRefArea: true,
+      refAreaLeft: '10:00:01',
       refAreaEnd: '10:00:05',
     })
     expect(afterApply).toEqual({
       timeRange: 'custom',
-      zoomRange: { left: '10:00:01', right: '10:00:05' },
-      refAreaLeft: '',
-      refAreaRight: '',
+      zoomRange: { startTimestampMs: 1_000, endTimestampMs: 5_000 },
+      refAreaLeft: null,
+      refAreaRight: null,
     })
+  })
+
+  it('normalizes a right-to-left drag into chronological timestamp bounds', () => {
+    const afterBegin = executionChartZoomReducer(initialExecutionChartZoomState, {
+      type: 'beginSelection',
+      anchor: { label: 'same display time', timestampMs: 5_000 },
+    })
+    const afterMove = executionChartZoomReducer(afterBegin, {
+      type: 'updateSelection',
+      anchor: { label: 'same display time', timestampMs: 1_000 },
+    })
+    const afterApply = executionChartZoomReducer(afterMove, { type: 'applySelection' })
+
+    expect(afterApply.zoomRange).toEqual({ startTimestampMs: 1_000, endTimestampMs: 5_000 })
   })
 
   it('clears a degenerate selection instead of applying zoom', () => {
     const selected = executionChartZoomReducer(initialExecutionChartZoomState, {
       type: 'beginSelection',
-      activeLabel: '10:00:01',
+      anchor: { label: '10:00:01', timestampMs: 1_000 },
     })
     const cleared = executionChartZoomReducer(selected, { type: 'applySelection' })
 
     expect(cleared).toEqual({
       timeRange: 'all',
       zoomRange: null,
-      refAreaLeft: '',
-      refAreaRight: '',
+      refAreaLeft: null,
+      refAreaRight: null,
     })
   })
 
   it('allows switching visible range without disturbing the last stored zoom range', () => {
     const customState = {
       timeRange: 'custom' as const,
-      zoomRange: { left: '10:00:01', right: '10:00:05' },
-      refAreaLeft: '',
-      refAreaRight: '',
+      zoomRange: { startTimestampMs: 1_000, endTimestampMs: 5_000 },
+      refAreaLeft: null,
+      refAreaRight: null,
     }
 
     expect(executionChartZoomReducer(customState, { type: 'setTimeRange', value: 'all' })).toEqual({
       timeRange: 'all',
-      zoomRange: { left: '10:00:01', right: '10:00:05' },
-      refAreaLeft: '',
-      refAreaRight: '',
+      zoomRange: { startTimestampMs: 1_000, endTimestampMs: 5_000 },
+      refAreaLeft: null,
+      refAreaRight: null,
     })
   })
 

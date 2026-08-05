@@ -221,9 +221,7 @@ func TestReservationAdmissionFailsClosedOnLookupError(t *testing.T) {
 	test := &ManagedTest{ID: "x", ProjectID: "project-b", TotalVUsers: 100, Status: "QUEUED",
 		CapacityAdvisory: &CapacityAdvisory{RecommendedGenerators: 4}}
 
-	runner.mu.Lock()
-	blocked, reason := runner.evaluateReservedCapacityBlockLocked(test, "")
-	runner.mu.Unlock()
+	blocked, reason := evaluateReservedCapacityBlockWithLoadedEvidenceForTest(t, runner, test, "")
 
 	if !blocked {
 		t.Fatal("admission must fail CLOSED (hold the test) when the reservation lookup errors")
@@ -249,10 +247,8 @@ func TestReservationAwareAdmissionBlocksOtherTenant(t *testing.T) {
 	testB := &ManagedTest{ID: "b-test", ProjectID: "project-b", TotalVUsers: 100, Status: "QUEUED", CapacityAdvisory: &CapacityAdvisory{RecommendedGenerators: 4}}
 	testA := &ManagedTest{ID: "a2", ProjectID: "project-a", TotalVUsers: 100, Status: "QUEUED", CapacityAdvisory: &CapacityAdvisory{RecommendedGenerators: 4}}
 
-	runner.mu.Lock()
-	blockedB, reason := runner.evaluateReservedCapacityBlockLocked(testB, "")
-	blockedA, _ := runner.evaluateReservedCapacityBlockLocked(testA, "")
-	runner.mu.Unlock()
+	blockedB, reason := evaluateReservedCapacityBlockWithLoadedEvidenceForTest(t, runner, testB, "")
+	blockedA, _ := evaluateReservedCapacityBlockWithLoadedEvidenceForTest(t, runner, testA, "")
 
 	if !blockedB {
 		t.Fatal("project-b should be blocked: project-a's bound timeslot reserves 8 of 10 generators (shared=2 < 4)")
@@ -275,9 +271,7 @@ func TestReservationAwareAdmissionBlocksOtherTenant(t *testing.T) {
 	if err := store.DeleteCapacityReservation("ts-a"); err != nil {
 		t.Fatalf("delete timeslot: %v", err)
 	}
-	runner.mu.Lock()
-	stillBlocked, _ := runner.evaluateReservedCapacityBlockLocked(testB, "")
-	runner.mu.Unlock()
+	stillBlocked, _ := evaluateReservedCapacityBlockWithLoadedEvidenceForTest(t, runner, testB, "")
 	if stillBlocked {
 		t.Fatal("with no bound timeslot, project-b should admit")
 	}

@@ -58,6 +58,14 @@ type DirectImportReceiptStore interface {
 	AbandonDirectImportReceipt(id, ownerToken string) (bool, error)
 }
 
+// DirectImportReceiptReleaseStore is an optional extension that permits an
+// owner to relinquish a pending receipt without deleting its stable identity.
+// Keeping this separate preserves compatibility with receipt stores that can
+// safely retain ownership until their ordinary lease expires.
+type DirectImportReceiptReleaseStore interface {
+	ReleaseDirectImportReceipt(id, ownerToken string, now time.Time) (bool, error)
+}
+
 func (s *SQLiteStore) ClaimDirectImportReceipt(
 	projectID, sourceProfile, operationKeyHash, requestSHA256, ownerToken string,
 	now time.Time, lease time.Duration,
@@ -217,6 +225,30 @@ func (s *SQLiteStore) CompleteDirectImportReceipt(
 		id, DirectImportReceiptPending, ownerToken)
 	if err != nil {
 		return false, fmt.Errorf("complete direct import receipt: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	return rows == 1, err
+}
+
+// ReleaseDirectImportReceipt relinquishes a pending receipt without deleting
+// its operation identity. A later retry can immediately reclaim the same row
+// and therefore derives the same deterministic asset IDs.
+func (s *SQLiteStore) ReleaseDirectImportReceipt(
+	id, ownerToken string,
+	now time.Time,
+) (bool, error) {
+	id = strings.TrimSpace(id)
+	ownerToken = strings.TrimSpace(ownerToken)
+	if id == "" || ownerToken == "" {
+		return false, errors.New("direct import receipt release requires id and owner token")
+	}
+	now = now.UTC()
+	result, err := s.db.Exec(`UPDATE direct_import_receipts
+		SET owner_token = '', lease_expires_at = NULL, updated_at = ?
+		WHERE id = ? AND state = ? AND owner_token = ?`,
+		now, id, DirectImportReceiptPending, ownerToken)
+	if err != nil {
+		return false, fmt.Errorf("release direct import receipt: %w", err)
 	}
 	rows, err := result.RowsAffected()
 	return rows == 1, err

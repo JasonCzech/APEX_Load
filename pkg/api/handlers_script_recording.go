@@ -128,6 +128,12 @@ func baselineSidecarStatus(record *storage.ScriptRecordingStatusRecord) (int, er
 	return retainedCount, nil
 }
 
+type scriptReplayDiagnosisRequest struct {
+	Recorded        *[]correlationStep `json:"recorded,omitempty"`
+	Replay          []correlationStep  `json:"replay"`
+	ReplaySessionID string             `json:"replay_session_id,omitempty"`
+}
+
 // handleDiagnoseScriptReplay diffs a script's stored or request-supplied
 // recorded baseline against replay evidence and returns ranked correlation
 // repair suggestions. replay_session_id selects bounded raw evidence retained
@@ -144,11 +150,7 @@ func (s *Server) handleDiagnoseScriptReplay(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	id = stored.ID
-	var req struct {
-		Recorded        *[]correlationStep `json:"recorded,omitempty"`
-		Replay          []correlationStep  `json:"replay"`
-		ReplaySessionID string             `json:"replay_session_id,omitempty"`
-	}
+	var req scriptReplayDiagnosisRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return

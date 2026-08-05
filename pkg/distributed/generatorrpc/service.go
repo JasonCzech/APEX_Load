@@ -1210,7 +1210,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 	}
 	defer releaseStream()
 	for {
-		ping, err := stream.Recv()
+		_, err := stream.Recv()
 		if err == io.EOF {
 			return nil
 		}
@@ -1237,10 +1237,13 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]int64{"java_vuser": persistentJavaReserved},
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
+		activeTestIDs := s.activeTestIDs()
+		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:        s.generatorID,
-			TimestampUnixMs:    maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
-			ActiveTestIds:      s.activeTestIDs(),
+			TimestampUnixMs:    generatorNow.UnixMilli(),
+			TimestampUnixNano:  generatorNow.UnixNano(),
+			ActiveTestIds:      activeTestIDs,
 			Stats:              toProtoStats(stats),
 			AvailableCapacity:  avail,
 			CpuLimitCores:      s.podResources.CPULimitCores,
@@ -1723,6 +1726,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		P90Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.90),
 		P95Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.95),
 		P99Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
+		DurationDigest:  tdigestSnapshotFromProto(batch.GetFleetMetrics().GetDurationDigest()),
 		Groups:          archiveSummaryGroupsFromBatch(batch),
 		Browser:         archiveSummaryBrowserFromBatch(batch),
 		BrowserByDevice: archiveSummaryBrowserDevicesFromBatch(batch),

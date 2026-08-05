@@ -5,6 +5,7 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
+	"context"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
@@ -111,17 +112,21 @@ type RecordedWebSocketMessage struct {
 }
 
 type Session struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	ProjectID    string            `json:"project_id,omitempty"`
-	Status       string            `json:"status"`
-	StartedAt    time.Time         `json:"started_at"`
-	StoppedAt    *time.Time        `json:"stopped_at,omitempty"`
-	BaseURL      string            `json:"base_url,omitempty"`
-	Requests     []RecordedRequest `json:"requests,omitempty"`
-	RequestCount int               `json:"request_count,omitempty"`
-	LastSeq      int               `json:"last_seq,omitempty"`
-	Filters      SessionFilters    `json:"filters"`
+	ID                       string            `json:"id"`
+	Name                     string            `json:"name"`
+	ProjectID                string            `json:"project_id,omitempty"`
+	Status                   string            `json:"status"`
+	StartedAt                time.Time         `json:"started_at"`
+	StoppedAt                *time.Time        `json:"stopped_at,omitempty"`
+	BaseURL                  string            `json:"base_url,omitempty"`
+	Requests                 []RecordedRequest `json:"requests,omitempty"`
+	RequestCount             int               `json:"request_count,omitempty"`
+	LastSeq                  int               `json:"last_seq,omitempty"`
+	DroppedRequests          int64             `json:"dropped_requests,omitempty"`
+	DroppedWebSocketMessages int64             `json:"dropped_websocket_messages,omitempty"`
+	Truncated                bool              `json:"truncated,omitempty"`
+	Warnings                 []string          `json:"warnings,omitempty"`
+	Filters                  SessionFilters    `json:"filters"`
 
 	mu                    sync.Mutex
 	seq                   int
@@ -132,6 +137,8 @@ type Session struct {
 	webSocketMessages     int
 	webSocketPayloadBytes int
 	retainedBytes         int64
+	requestDropWarned     bool
+	webSocketDropWarned   bool
 }
 
 type SessionFilters struct {
@@ -149,6 +156,7 @@ type SessionEvent struct {
 	SessionID string           `json:"session_id"`
 	Request   *RecordedRequest `json:"request,omitempty"`
 	Session   *Session         `json:"session,omitempty"`
+	Warning   string           `json:"warning,omitempty"`
 }
 
 type RequestUpdate struct {
@@ -175,6 +183,9 @@ type Recorder struct {
 	requireLoopback  bool
 	caCertPath       string
 	caKeyPath        string
+	// upstreamBodyInactivityTimeout is internal so tests can exercise stalled
+	// response handling without waiting for the production timeout.
+	upstreamBodyInactivityTimeout time.Duration
 
 	// TLS interception fields
 	caOnce     sync.Once
@@ -237,16 +248,17 @@ func NewWithOptions(options Options) *Recorder {
 		MaxResponseHeaderBytes: maxRecorderHeaderBytes,
 	}
 	return &Recorder{
-		sessions:         make(map[string]*Session),
-		certCache:        boundedcache.NewStringCache[*tls.Certificate](maxRecorderLeafCertificates, maxRecorderCertificateHostBytes, maxRecorderCertificateCacheKeyBytes),
-		proxySlots:       make(chan struct{}, maxConcurrentRecorderProxyRequests),
-		proxyClient:      &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
-		addr:             proxyAddr,
-		proxyAuthToken:   proxyAuthToken,
-		requireProxyAuth: options.RequireProxyAuth,
-		requireLoopback:  options.RequireLoopback,
-		caCertPath:       caCertPath,
-		caKeyPath:        caKeyPath,
+		sessions:                      make(map[string]*Session),
+		certCache:                     boundedcache.NewStringCache[*tls.Certificate](maxRecorderLeafCertificates, maxRecorderCertificateHostBytes, maxRecorderCertificateCacheKeyBytes),
+		proxySlots:                    make(chan struct{}, maxConcurrentRecorderProxyRequests),
+		proxyClient:                   &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
+		addr:                          proxyAddr,
+		proxyAuthToken:                proxyAuthToken,
+		requireProxyAuth:              options.RequireProxyAuth,
+		requireLoopback:               options.RequireLoopback,
+		caCertPath:                    caCertPath,
+		caKeyPath:                     caKeyPath,
+		upstreamBodyInactivityTimeout: recorderUpstreamBodyInactivityTimeout,
 	}
 }
 
@@ -616,16 +628,20 @@ func (s *Session) snapshotWindow(includeRequests bool, sinceSeq int, tail int) *
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cp := &Session{
-		ID:           s.ID,
-		Name:         s.Name,
-		ProjectID:    s.ProjectID,
-		Status:       s.Status,
-		StartedAt:    s.StartedAt,
-		StoppedAt:    s.StoppedAt,
-		BaseURL:      s.BaseURL,
-		RequestCount: len(s.Requests),
-		LastSeq:      s.seq,
-		Filters:      s.Filters,
+		ID:                       s.ID,
+		Name:                     s.Name,
+		ProjectID:                s.ProjectID,
+		Status:                   s.Status,
+		StartedAt:                s.StartedAt,
+		StoppedAt:                s.StoppedAt,
+		BaseURL:                  s.BaseURL,
+		RequestCount:             len(s.Requests),
+		LastSeq:                  s.seq,
+		DroppedRequests:          s.DroppedRequests,
+		DroppedWebSocketMessages: s.DroppedWebSocketMessages,
+		Truncated:                s.Truncated,
+		Warnings:                 append([]string(nil), s.Warnings...),
+		Filters:                  s.Filters,
 	}
 	if includeRequests && len(s.Requests) > 0 {
 		start := 0
@@ -876,7 +892,9 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	reqBodyCapture := newBodyCapture(requestCaptureLimit(session))
 	upstreamBody := requestBodyReader(req.Body, reqBodyCapture)
 
-	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, targetURL, upstreamBody)
+	upstreamCtx, cancelUpstream := context.WithCancel(req.Context())
+	defer cancelUpstream()
+	proxyReq, err := http.NewRequestWithContext(upstreamCtx, req.Method, targetURL, upstreamBody)
 	if err != nil {
 		http.Error(w, "proxy error: "+err.Error(), http.StatusBadGateway)
 		return
@@ -925,7 +943,12 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	respBody, respBodySize, respBodyTruncated, _ := copyAndCaptureBody(w, resp.Body, responseCaptureLimit(session))
+	boundedBody := &inactivityTimeoutBody{
+		body:    resp.Body,
+		timeout: r.responseBodyInactivityTimeout(),
+		cancel:  cancelUpstream,
+	}
+	respBody, respBodySize, respBodyTruncated, _ := copyAndCaptureBody(w, boundedBody, responseCaptureLimit(session))
 	elapsed := time.Since(start)
 
 	if session != nil {
@@ -1164,12 +1187,14 @@ func copyAndCaptureBody(dst io.Writer, src io.Reader, limit int) ([]byte, int64,
 				truncated = true
 			}
 			if writeErr != nil {
+				truncated = true
 				firstErr = writeErr
 				break
 			}
 		}
 		if readErr != nil {
 			if readErr != io.EOF {
+				truncated = true
 				firstErr = readErr
 			}
 			break
@@ -1263,6 +1288,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 		}
 	}
 	if len(s.Requests) >= maxRecordedRequests {
+		event = s.noteRequestDropLocked("request-count retention limit")
 		return 0
 	}
 
@@ -1371,6 +1397,7 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	}
 	requestBytes := estimateRecordedRequestBytes(rec)
 	if requestBytes > maxRecordedSessionBytes-s.retainedBytes {
+		event = s.noteRequestDropLocked("session byte retention limit")
 		return 0
 	}
 
@@ -1400,6 +1427,36 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	return rec.Seq
 }
 
+func (s *Session) noteRequestDropLocked(reason string) *SessionEvent {
+	if s == nil {
+		return nil
+	}
+	s.DroppedRequests++
+	s.Truncated = true
+	if s.requestDropWarned {
+		return nil
+	}
+	s.requestDropWarned = true
+	warning := fmt.Sprintf("recording truncated: requests are being dropped after reaching the %s", reason)
+	s.Warnings = append(s.Warnings, warning)
+	return &SessionEvent{Type: "recording_warning", SessionID: s.ID, Warning: warning}
+}
+
+func (s *Session) noteWebSocketDropLocked() *SessionEvent {
+	if s == nil {
+		return nil
+	}
+	s.DroppedWebSocketMessages++
+	s.Truncated = true
+	if s.webSocketDropWarned {
+		return nil
+	}
+	s.webSocketDropWarned = true
+	warning := "recording truncated: WebSocket messages are being dropped after reaching a capture limit"
+	s.Warnings = append(s.Warnings, warning)
+	return &SessionEvent{Type: "recording_warning", SessionID: s.ID, Warning: warning}
+}
+
 func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSocketMessage) {
 	if s == nil || seq == 0 {
 		return
@@ -1416,7 +1473,12 @@ func (r *Recorder) appendWebSocketMessage(s *Session, seq int, msg RecordedWebSo
 		}
 		messageBytes := estimateRecordedWebSocketMessageBytes(msg) + 32
 		if s.webSocketMessages >= maxRecordedWebSocketMessages || s.webSocketPayloadBytes+len(msg.Payload) > maxRecordedWebSocketPayloadBytes || messageBytes > maxRecordedSessionBytes-s.retainedBytes {
+			event := s.noteWebSocketDropLocked()
+			notify := s.notify
 			s.mu.Unlock()
+			if event != nil && notify != nil {
+				notify(*event)
+			}
 			return
 		}
 		s.Requests[i].WebSocketMessages = append(s.Requests[i].WebSocketMessages, msg)

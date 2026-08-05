@@ -227,6 +227,10 @@ func (s *Server) scopedUsageAccounting(projectID string, scope map[string]struct
 }
 
 func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccountingResponse {
+	return usageAccountingFromTestsAt(projectID, tests, time.Now().UTC())
+}
+
+func usageAccountingFromTestsAt(projectID string, tests []*ManagedTest, generatedAt time.Time) UsageAccountingResponse {
 	byProject := map[string]*UsageAccountingBucket{}
 	byProtocol := map[string]*UsageAccountingBucket{}
 	byRegion := map[string]*UsageAccountingBucket{}
@@ -241,7 +245,7 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 		if projectID != "" && testProjectID != projectID {
 			continue
 		}
-		durationSeconds := usageDurationSeconds(test.Duration)
+		durationSeconds := usageActiveDurationSeconds(test, generatedAt)
 		vuserSeconds := int64(test.TotalVUsers) * durationSeconds
 		archiveBytes := usageArchiveBytes(test)
 		status := strings.TrimSpace(test.Status)
@@ -269,7 +273,7 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 	}
 
 	response := UsageAccountingResponse{
-		GeneratedAt: time.Now().UTC(),
+		GeneratedAt: generatedAt,
 		ProjectID:   projectID,
 		Totals:      *totals,
 		ByProject:   usageSortedBuckets(byProject),
@@ -285,6 +289,41 @@ func usageAccountingFromTests(projectID string, tests []*ManagedTest) UsageAccou
 		response.ByProject = nil
 	}
 	return response
+}
+
+// usageActiveDurationSeconds reports billable active execution time. Queued or
+// otherwise never-started tests consume no runtime, and early termination is
+// charged only through the observed end rather than the configured duration.
+func usageActiveDurationSeconds(test *ManagedTest, now time.Time) int64 {
+	if test == nil || test.StartedAt == nil || test.StartedAt.IsZero() {
+		// Legacy successful rows predate started_at persistence; retain their
+		// configured-duration estimate. Nonterminal and failed-before-start rows
+		// must never accrue execution usage merely because they were requested.
+		if test != nil && strings.EqualFold(strings.TrimSpace(test.Status), "COMPLETE") {
+			return usageDurationSeconds(test.Duration)
+		}
+		return 0
+	}
+	start := *test.StartedAt
+	end := now
+	if test.EndedAt != nil && !test.EndedAt.IsZero() {
+		end = *test.EndedAt
+	}
+	if !end.After(start) {
+		return 0
+	}
+	active := end.Sub(start) - max(time.Duration(0), test.CumulativePause)
+	if test.PausedAt != nil && !test.PausedAt.IsZero() && test.PausedAt.Before(end) {
+		pauseStart := *test.PausedAt
+		if pauseStart.Before(start) {
+			pauseStart = start
+		}
+		active -= end.Sub(pauseStart)
+	}
+	if active <= 0 {
+		return 0
+	}
+	return int64(active / time.Second)
 }
 
 // usageAccountingFromTestsScoped aggregates usage across only the projects in scope

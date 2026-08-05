@@ -209,6 +209,24 @@ func (s *SQLiteStore) SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease(test
 
 var errExecutionLeaseNotHeld = errors.New("execution lease is not held")
 
+// ErrTestProjectRevisionChanged marks a start transition whose project policy
+// or quota revision changed after controller admission was evaluated. Start
+// callers may reload their evidence and retry; the SHAKEOUT/INITIALIZING row was
+// not written because this check runs in the same transaction as the save.
+var ErrTestProjectRevisionChanged = errors.New("test project changed before start commit")
+
+// ErrTestStartAdmissionRevisionChanged marks a start transition whose durable
+// launch inputs changed after the controller assembled its evidence snapshot.
+// The caller may reload evidence and retry; no SHAKEOUT/INITIALIZING row was
+// committed.
+var ErrTestStartAdmissionRevisionChanged = errors.New("test start admission state changed before start commit")
+
+// ErrTestStartIdentityChanged marks a start transition whose original durable
+// row was deleted or replaced while the controller was preparing the commit.
+// Start writes are updates of an existing incarnation; they must never recreate
+// a deleted test through the full-row UPSERT used by ordinary metadata saves.
+var ErrTestStartIdentityChanged = errors.New("test identity changed before start commit")
+
 func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executionLeaseName, executionLeaseOwnerID, deploymentLeaseName, authorizedDeploymentOwnerID, authorizedDeploymentTokenHash string, requireExecutionLease bool) error {
 	if test == nil {
 		return errors.New("test is required")
@@ -243,15 +261,42 @@ func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executi
 			return errExecutionLeaseNotHeld
 		}
 	}
+	// Normalize and marshal the immutable write projection before taking content
+	// locks. The resulting args are written only after placement and admission
+	// validation complete in this same transaction.
+	preparedArgs, err := prepareTestSaveArgs(test)
+	if err != nil {
+		return err
+	}
+	if !test.ExpectedProjectUpdatedAt.IsZero() {
+		if err := lockRequiredTestParent(tx,
+			`UPDATE projects SET updated_at = updated_at WHERE id = ?`, test.ProjectID, "project"); err != nil {
+			return err
+		}
+		var projectUpdatedAt time.Time
+		if err := tx.QueryRow(testProjectRevisionSelect, normalizeProjectID(test.ProjectID)).Scan(&projectUpdatedAt); err != nil {
+			return err
+		}
+		if !projectUpdatedAt.Equal(test.ExpectedProjectUpdatedAt) {
+			return fmt.Errorf("%w: project %q", ErrTestProjectRevisionChanged, normalizeProjectID(test.ProjectID))
+		}
+	}
+	// SQLite's deployment-lease no-op write above already owns the database
+	// writer lock, so compare before this transaction's immediate table triggers
+	// advance the revision. PostgreSQL uses deferred triggers and compares only
+	// after acquiring every admission-content row lock below, preserving the
+	// content-row -> revision-row order used by concurrent writers.
+	if s.db.dialect == storeDialectSQLite {
+		if err := validateExpectedStartAdmissionRevision(tx, s.db.dialect, test.ExpectedStartAdmissionRevision); err != nil {
+			return err
+		}
+	}
 	// A bound capacity reservation is part of launch authorization, not merely
 	// display metadata. Lock and revalidate it in this transaction before the
 	// full-row upsert can persist SHAKEOUT/INITIALIZING (and potentially restore a
 	// stale timeslot_id cleared by a concurrent reject).
 	slotID, err := validateCapacityReservationForTestStart(tx, s.db.dialect, test)
 	if err != nil {
-		return err
-	}
-	if err := s.saveTestWithExecutor(tx, test); err != nil {
 		return err
 	}
 	if slotID != "" {
@@ -268,12 +313,54 @@ func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executi
 			return fmt.Errorf("%w: timeslot %q changed before test %q start commit", ErrCapacityReservationStartInvalid, slotID, test.ID)
 		}
 	}
+	// saveTestWithExecutor normally combines placement validation with the
+	// upsert. A PostgreSQL start must split those phases: concurrent content
+	// writers take their test/scenario rows before deferred triggers take the
+	// singleton revision rows, so doing the revision check first can deadlock.
+	if err := s.validateExistingTestStartPlacement(tx, test); err != nil {
+		return err
+	}
 	if strings.EqualFold(strings.TrimSpace(test.Status), "INITIALIZING") {
-		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, test.ID, scenarioScheduleOccurrenceStarted, time.Time{}, ""); err != nil {
+		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, test.ID, scenarioScheduleOccurrenceStarted, time.Time{}, "", false); err != nil {
 			return fmt.Errorf("reconcile queued scenario occurrence at test start: %w", err)
 		}
 	}
+	if s.db.dialect == storeDialectPostgres {
+		if err := validateExpectedPostgresStartAdmissionRevision(tx, test.ExpectedStartAdmissionRevision); err != nil {
+			return err
+		}
+	}
+	if err := s.writePreparedTestWithExecutor(tx, test, preparedArgs); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+func validateExistingTestStartIdentity(tx *storeTx, dialect storeDialect, test *TestRecord) error {
+	if tx == nil || test == nil {
+		return ErrTestStartIdentityChanged
+	}
+	var refKey, projectID string
+	var startTime time.Time
+	if err := tx.QueryRow(`SELECT COALESCE(ref_key, ''), COALESCE(project_id, ''), start_time FROM tests WHERE id = ?`, test.ID).
+		Scan(&refKey, &projectID, &startTime); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: test %q no longer exists", ErrTestStartIdentityChanged, test.ID)
+		}
+		return err
+	}
+	durableStart := startTime.UTC()
+	requestedStart := test.StartTime.UTC()
+	if dialect == storeDialectPostgres {
+		durableStart = durableStart.Truncate(time.Microsecond)
+		requestedStart = requestedStart.Truncate(time.Microsecond)
+	}
+	if strings.TrimSpace(refKey) != strings.TrimSpace(test.RefKey) ||
+		normalizeProjectID(projectID) != normalizeProjectID(test.ProjectID) ||
+		!durableStart.Equal(requestedStart) {
+		return fmt.Errorf("%w: test %q was replaced", ErrTestStartIdentityChanged, test.ID)
+	}
+	return nil
 }
 
 func validateDeploymentLeaseIdentity(name, ownerID, tokenHash string, ttl time.Duration) error {

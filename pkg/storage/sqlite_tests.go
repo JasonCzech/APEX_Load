@@ -96,12 +96,30 @@ type testSaveExecutor interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
+const (
+	testProjectRevisionSelect     = `SELECT updated_at FROM projects WHERE id = ?`
+	testApplicationRevisionSelect = `SELECT COALESCE(project_id, ''), updated_at FROM applications WHERE id = ?`
+	testReleaseRevisionSelect     = `SELECT application_id, COALESCE(project_id, ''), updated_at, archived_at FROM releases WHERE id = ?`
+)
+
 func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *TestRecord) error {
 	args, err := prepareTestSaveArgs(test)
 	if err != nil {
 		return err
 	}
-	exists, err := validateTestPlacement(executor, test, true)
+	if err := s.validateTestSavePlacement(executor, test); err != nil {
+		return err
+	}
+	return s.writePreparedTestWithExecutor(executor, test, args)
+}
+
+// validateTestSavePlacement acquires every tenant/content row needed by the
+// full-row test upsert. Keeping this phase separate lets the start transaction
+// acquire these rows before PostgreSQL's deferred-trigger singleton revision
+// rows, matching the content-row -> revision-row order used by concurrent
+// admission writers.
+func (s *SQLiteStore) validateTestSavePlacement(executor testSaveExecutor, test *TestRecord) error {
+	exists, err := validateTestPlacement(executor, test, true, false)
 	if err != nil {
 		return err
 	}
@@ -110,7 +128,34 @@ func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *Test
 			return err
 		}
 	}
+	return nil
+}
 
+func (s *SQLiteStore) validateExistingTestStartPlacement(executor testSaveExecutor, test *TestRecord) error {
+	if _, err := validateTestPlacement(executor, test, true, true); err != nil {
+		return err
+	}
+	tx, ok := executor.(*storeTx)
+	if !ok {
+		return errors.New("test start identity validation requires a transaction")
+	}
+	return validateExistingTestStartIdentity(tx, s.db.dialect, test)
+}
+
+// writePreparedTestWithExecutor writes an already-normalized test after the
+// caller has acquired and validated its placement rows. Callers must not use it
+// without the matching create/update or existing-start placement validator in
+// the same transaction.
+func (s *SQLiteStore) writePreparedTestWithExecutor(executor testSaveExecutor, test *TestRecord, args []any) error {
+	allowMaterializedPrelaunchAbort := false
+	if strings.EqualFold(strings.TrimSpace(test.Status), "ABORTED") {
+		var previousStatus string
+		err := executor.QueryRow(`SELECT COALESCE(status, '') FROM tests WHERE id = ?`, test.ID).Scan(&previousStatus)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("load prior test status for aborted occurrence reconciliation: %w", err)
+		}
+		allowMaterializedPrelaunchAbort = strings.EqualFold(strings.TrimSpace(previousStatus), "INITIALIZING")
+	}
 	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
@@ -155,7 +200,7 @@ func (s *SQLiteStore) saveTestWithExecutor(executor testSaveExecutor, test *Test
 		if test.EndTime != nil {
 			abortedAt = *test.EndTime
 		}
-		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, test.ID, scenarioScheduleOccurrenceAborted, abortedAt, test.Error); err != nil {
+		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, test.ID, scenarioScheduleOccurrenceAborted, abortedAt, test.Error, allowMaterializedPrelaunchAbort); err != nil {
 			return fmt.Errorf("reconcile queued scenario occurrence at test cancellation: %w", err)
 		}
 	}
@@ -167,7 +212,7 @@ func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, 
 	if err != nil {
 		return false, err
 	}
-	exists, err := validateTestPlacement(executor, test, false)
+	exists, err := validateTestPlacement(executor, test, false, false)
 	if err != nil {
 		return false, err
 	}
@@ -290,7 +335,7 @@ func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
 // deletion's lock order, while the conditional upsert in saveTestWithExecutor
 // remains the final fence for two concurrent first writers of the same test ID.
 // It returns whether the test already exists.
-func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRelocation bool) (bool, error) {
+func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRelocation, requireExistingStartIdentity bool) (bool, error) {
 	if test == nil {
 		return false, errors.New("test is required")
 	}
@@ -306,11 +351,26 @@ func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRe
 	if err != nil {
 		return false, err
 	}
+	if !exists && requireExistingStartIdentity {
+		return false, fmt.Errorf("%w: test %q no longer exists", ErrTestStartIdentityChanged, test.ID)
+	}
 	if exists && rejectRelocation && normalizeProjectID(existingProjectID) != test.ProjectID {
+		if requireExistingStartIdentity {
+			return false, fmt.Errorf("%w: test %q moved from project %q to %q", ErrTestStartIdentityChanged, test.ID, test.ProjectID, normalizeProjectID(existingProjectID))
+		}
 		return false, fmt.Errorf("test %q belongs to project %q, not %q", test.ID, normalizeProjectID(existingProjectID), test.ProjectID)
 	}
 	if exists && !rejectRelocation {
 		return true, nil
+	}
+	if !exists && !test.ExpectedProjectUpdatedAt.IsZero() {
+		var projectUpdatedAt time.Time
+		if err := executor.QueryRow(testProjectRevisionSelect, test.ProjectID).Scan(&projectUpdatedAt); err != nil {
+			return false, err
+		}
+		if !projectUpdatedAt.Equal(test.ExpectedProjectUpdatedAt) {
+			return false, fmt.Errorf("test project %q changed while the run was being prepared", test.ProjectID)
+		}
 	}
 
 	if err := lockRequiredTestParent(executor,
@@ -318,11 +378,15 @@ func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRe
 		return false, err
 	}
 	var applicationProjectID string
-	if err := executor.QueryRow(`SELECT COALESCE(project_id, '') FROM applications WHERE id = ?`, test.ApplicationID).Scan(&applicationProjectID); err != nil {
+	var applicationUpdatedAt time.Time
+	if err := executor.QueryRow(testApplicationRevisionSelect, test.ApplicationID).Scan(&applicationProjectID, &applicationUpdatedAt); err != nil {
 		return false, err
 	}
 	if normalizeProjectID(applicationProjectID) != test.ProjectID {
 		return false, fmt.Errorf("test application %q belongs to project %q, not %q", test.ApplicationID, normalizeProjectID(applicationProjectID), test.ProjectID)
+	}
+	if !exists && !test.ExpectedApplicationUpdatedAt.IsZero() && !applicationUpdatedAt.Equal(test.ExpectedApplicationUpdatedAt) {
+		return false, fmt.Errorf("test application %q changed while the run was being prepared", test.ApplicationID)
 	}
 
 	if err := lockRequiredTestParent(executor,
@@ -330,7 +394,9 @@ func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRe
 		return false, err
 	}
 	var releaseApplicationID, releaseProjectID string
-	if err := executor.QueryRow(`SELECT application_id, COALESCE(project_id, '') FROM releases WHERE id = ?`, test.ReleaseID).Scan(&releaseApplicationID, &releaseProjectID); err != nil {
+	var releaseUpdatedAt time.Time
+	var releaseArchivedAt sql.NullTime
+	if err := executor.QueryRow(testReleaseRevisionSelect, test.ReleaseID).Scan(&releaseApplicationID, &releaseProjectID, &releaseUpdatedAt, &releaseArchivedAt); err != nil {
 		return false, err
 	}
 	if releaseApplicationID != test.ApplicationID {
@@ -338,6 +404,12 @@ func validateTestPlacement(executor testSaveExecutor, test *TestRecord, rejectRe
 	}
 	if normalizeProjectID(releaseProjectID) != test.ProjectID {
 		return false, fmt.Errorf("test release %q belongs to project %q, not %q", test.ReleaseID, normalizeProjectID(releaseProjectID), test.ProjectID)
+	}
+	if !exists && releaseArchivedAt.Valid {
+		return false, fmt.Errorf("release is archived: %s", test.ReleaseID)
+	}
+	if !exists && !test.ExpectedReleaseUpdatedAt.IsZero() && !releaseUpdatedAt.Equal(test.ExpectedReleaseUpdatedAt) {
+		return false, fmt.Errorf("test release %q changed while the run was being prepared", test.ReleaseID)
 	}
 
 	if test.ScenarioID != "" {
@@ -860,7 +932,7 @@ func (s *SQLiteStore) UpdateTestStatus(id string, status string, endTime *time.T
 		if endTime != nil {
 			failedAt = *endTime
 		}
-		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr); err != nil {
+		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr, false); err != nil {
 			return fmt.Errorf("reconcile queued scenario occurrence at test failure: %w", err)
 		}
 	}
@@ -888,7 +960,7 @@ func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime
 			if endTime != nil {
 				failedAt = *endTime
 			}
-			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr); err != nil {
+			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr, false); err != nil {
 				return "", fmt.Errorf("reconcile queued scenario occurrence at test failure: %w", err)
 			}
 		}
@@ -910,7 +982,7 @@ func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime
 			if endTime != nil {
 				failedAt = *endTime
 			}
-			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr); err != nil {
+			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr, false); err != nil {
 				return "", fmt.Errorf("reconcile queued scenario occurrence at unchanged test failure: %w", err)
 			}
 		}
@@ -1061,7 +1133,7 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndLeaseHeld(id string, status str
 			if endTime != nil {
 				failedAt = *endTime
 			}
-			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr); err != nil {
+			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr, false); err != nil {
 				return "", fmt.Errorf("reconcile queued scenario occurrence at lease-fenced test failure: %w", err)
 			}
 		}
@@ -1083,7 +1155,7 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndLeaseHeld(id string, status str
 			if endTime != nil {
 				failedAt = *endTime
 			}
-			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr); err != nil {
+			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr, false); err != nil {
 				return "", fmt.Errorf("reconcile queued scenario occurrence at unchanged lease-fenced test failure: %w", err)
 			}
 		}
@@ -1395,6 +1467,9 @@ func lockCapacityReservationsForTestMutation(tx *storeTx, testID string, timeslo
 }
 
 func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
+	if err := reconcileQueuedScenarioScheduleOccurrenceForTestDeletion(tx, id); err != nil {
+		return err
+	}
 	var incompleteControllerChecks int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM github_check_links
 		WHERE test_id = ? AND kind = 'controller'

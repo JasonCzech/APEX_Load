@@ -71,6 +71,20 @@ func TestGenerateOpenAPIYAMLAcceptsRoutingPackageDirectory(t *testing.T) {
 	}
 }
 
+func TestEndpointCatalogSourceIsInvocationIndependent(t *testing.T) {
+	fromPackage, err := GenerateEndpointCatalogJSON("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromRepositoryRoot, err := GenerateEndpointCatalogJSON("../../pkg/api/server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(fromPackage, fromRepositoryRoot) {
+		t.Fatal("endpoint catalog depends on the invocation's server path")
+	}
+}
+
 func TestBrunoInspectOpenAPIRequestBodyDocumentsAllSupportedUploads(t *testing.T) {
 	body := requestBodyForRoute(http.MethodPost, "/api/v1/scripts/import/bruno/inspect")
 	if body == nil || !body.Required {
@@ -528,6 +542,12 @@ func TestGeneratedSwaggerDocumentsSupportedAuthenticationAlternatives(t *testing
 			t.Errorf("generated spec does not offer %s as a security alternative", name)
 		}
 	}
+	if got := spec.Components.SecuritySchemes["bridgeSession"]; got.Type != "apiKey" || got.Name != bridgeSessionHeader || got.In != "header" {
+		t.Errorf("bridgeSession = %#v, want %s header scheme", got, bridgeSessionHeader)
+	}
+	if got := spec.Components.SecuritySchemes["bridgeToken"]; got.Type != "apiKey" || got.Name != bridgeTokenHeader || got.In != "header" {
+		t.Errorf("bridgeToken = %#v, want %s header scheme", got, bridgeTokenHeader)
+	}
 	if got := spec.Components.SecuritySchemes["apiKeyAuth"]; got.Type != "apiKey" || got.Name != "X-APEXLoad-API-Key" || got.In != "header" {
 		t.Errorf("apiKeyAuth = %#v, want X-APEXLoad-API-Key header scheme", got)
 	}
@@ -555,6 +575,12 @@ func TestGeneratedSwaggerDocumentsConditionalAndInHandlerAuthentication(t *testi
 	if !strings.Contains(metrics.XRoles, "metrics Bearer token") {
 		t.Errorf("metrics access text = %q, want conditional metrics-token requirement", metrics.XRoles)
 	}
+	if !strings.Contains(metrics.XConditional, "APEXLOAD_METRICS_ADDR") {
+		t.Errorf("metrics conditional availability = %q", metrics.XConditional)
+	}
+	if got := spec.Paths["/api/v1/desktop/browser-downloads"]["post"].XConditional; !strings.Contains(got, "desktop") {
+		t.Errorf("desktop download conditional availability = %q", got)
+	}
 
 	authoringCapabilities := spec.Paths["/api/v1/scripts/authoring/capabilities"]["get"]
 	for _, contract := range []string{
@@ -577,6 +603,81 @@ func TestGeneratedSwaggerDocumentsConditionalAndInHandlerAuthentication(t *testi
 		operation := spec.Paths[endpoint.path][endpoint.method]
 		if operation.Security != nil {
 			t.Errorf("%s %s unexpectedly overrides inherited authentication with %#v", endpoint.method, endpoint.path, *operation.Security)
+		}
+	}
+}
+
+func TestGeneratedSwaggerDocumentsBridgeDiscoveryAndDocsMedia(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct{ method, path string }{
+		{method: "post", path: bridgePairPath},
+		{method: "get", path: bridgeStatusPath},
+		{method: "get", path: "/.well-known/apexload-ci"},
+		{method: "get", path: "/desktop/bootstrap"},
+		{method: "get", path: "/desktop/download"},
+	} {
+		if _, ok := spec.Paths[route.path][route.method]; !ok {
+			t.Errorf("generated spec is missing %s %s", route.method, route.path)
+		}
+	}
+	status := spec.Paths[bridgeStatusPath]["get"]
+	if !strings.Contains(status.XServer, "recording-agent bridge") {
+		t.Errorf("bridge status x-server = %q", status.XServer)
+	}
+	if status.Security == nil || len(*status.Security) != 1 {
+		t.Fatalf("bridge status security = %#v", status.Security)
+	}
+	for _, scheme := range []string{"bridgeToken", "bridgeSession"} {
+		if _, ok := (*status.Security)[0][scheme]; !ok {
+			t.Errorf("bridge status does not require %s: %#v", scheme, *status.Security)
+		}
+	}
+	for _, route := range []struct{ method, path string }{
+		{method: "post", path: bridgePairPath},
+		{method: "get", path: bridgeStatusPath},
+	} {
+		originRequired := false
+		for _, parameter := range spec.Paths[route.path][route.method].Parameters {
+			if parameter.In == "header" && strings.EqualFold(parameter.Name, "Origin") {
+				originRequired = parameter.Required
+			}
+		}
+		if !originRequired {
+			t.Errorf("%s %s does not require the Origin header", route.method, route.path)
+		}
+	}
+
+	for path, mediaType := range map[string]string{
+		"/api/v1/docs/swagger.yaml":     "application/yaml",
+		"/api/v1/docs/endpoint-catalog": "application/json",
+	} {
+		operation := spec.Paths[path]["get"]
+		response := operation.Responses["2XX"]
+		if _, ok := response.Content[mediaType]; !ok {
+			t.Errorf("%s response is missing %s content", path, mediaType)
+		}
+	}
+}
+
+func TestOpenAPIContractSpecialCasesMatchRuntimeWireTypes(t *testing.T) {
+	duration := openAPISchemaForASTType(&ast.SelectorExpr{X: ast.NewIdent("time"), Sel: ast.NewIdent("Duration")}, nil, map[string]bool{}, 0)
+	if duration.Type != "integer" || duration.Format != "int64" {
+		t.Fatalf("time.Duration schema = %#v", duration)
+	}
+	for _, path := range []string{"/api/v1/integrations/github/branches", "/api/v1/integrations/github/contents"} {
+		for _, name := range []string{"owner", "repo"} {
+			if !requiredQueryParameter(http.MethodGet, path, name) {
+				t.Errorf("GET %s query parameter %s is not required", path, name)
+			}
 		}
 	}
 }
@@ -794,6 +895,19 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 		if _, ok := rules.Items.Properties[name]; !ok {
 			t.Errorf("correlation ruleset update rule schema is missing %q", name)
 		}
+	}
+
+	correlationPreview := spec.Paths["/api/v1/scripts/authoring/sessions/{id}/correlations/preview"]["post"]
+	if correlationPreview.RequestBody == nil || !correlationPreview.RequestBody.Required {
+		t.Fatal("authoring correlation preview is missing its required request body")
+	}
+	correlationPreviewSchema := correlationPreview.RequestBody.Content["application/json"].Schema
+	expectedUpdatedAt, ok := correlationPreviewSchema.Properties["expected_updated_at"]
+	if !ok || expectedUpdatedAt.Type != "string" || expectedUpdatedAt.Format != "date-time" {
+		t.Errorf("authoring correlation expected_updated_at schema = %#v, want required date-time", expectedUpdatedAt)
+	}
+	if !openAPIStringSliceContains(correlationPreviewSchema.Required, "expected_updated_at") {
+		t.Errorf("authoring correlation required fields = %v, want expected_updated_at", correlationPreviewSchema.Required)
 	}
 	if _, ok := rules.Items.Properties["sample_value"]; ok {
 		t.Error("correlation ruleset update rule schema exposes non-editable sample_value")
@@ -1393,8 +1507,8 @@ func TestGeneratedEndpointCatalogIsValid(t *testing.T) {
 	if catalog.Version != 1 {
 		t.Fatalf("catalog version = %d, want 1", catalog.Version)
 	}
-	if catalog.Source != "server.go" {
-		t.Fatalf("catalog source = %q, want server.go", catalog.Source)
+	if catalog.Source != "pkg/api/server.go" {
+		t.Fatalf("catalog source = %q, want pkg/api/server.go", catalog.Source)
 	}
 	if len(catalog.Routes) == 0 {
 		t.Fatal("generated endpoint catalog has no routes")

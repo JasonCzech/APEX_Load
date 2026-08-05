@@ -140,7 +140,14 @@ var stepScopes = []StepScope{
 		DisplayName:   "Click / Submit / Check",
 		Status:        ScopeSupported,
 		APEXLoadShape: "browser_click",
-		Notes:         "Direct object clicks, submit actions, checkbox/radio selection actions, and double-click metadata map to browser click actions with the captured selector.",
+		Notes:         "Direct object clicks, submit actions, and checkbox/radio selection actions map to browser click actions with the captured selector.",
+	},
+	{
+		CanonicalName: "double_click",
+		DisplayName:   "Double Click",
+		Status:        ScopeSupported,
+		APEXLoadShape: "browser_dblclick",
+		Notes:         "Selector-backed double clicks map to the executable browser double-click action; coordinate-only captures remain review-gated.",
 	},
 	{
 		CanonicalName: "set_type",
@@ -537,7 +544,9 @@ func LookupScriptTypeScope(scriptType string) (ScriptTypeScope, bool) {
 func LookupStepScope(stepName string) (StepScope, bool) {
 	normalized := normalizeStepName(stepName)
 	switch normalized {
-	case "double_click", "doubleclick", "submit", "check", "uncheck", "select_radio", "select_checkbox", "radio", "checkbox":
+	case "doubleclick":
+		normalized = "double_click"
+	case "submit", "check", "uncheck", "select_radio", "select_checkbox", "radio", "checkbox":
 		normalized = "click"
 	case "mouse_over", "mouseover":
 		normalized = "hover"

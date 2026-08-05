@@ -573,16 +573,16 @@ func sourceControlArgAt(fn ParsedFunction, index int) string {
 
 func sourceControlArgs(fn ParsedFunction) []string {
 	args := make([]string, 0, len(fn.Args))
+	foundPositional := false
 	for index := 1; ; index++ {
 		value, ok := fn.Args[fmt.Sprintf("arg%d", index)]
 		if !ok {
 			break
 		}
-		if strings.TrimSpace(value) != "" {
-			args = append(args, value)
-		}
+		foundPositional = true
+		args = append(args, value)
 	}
-	if len(args) == 0 && len(fn.CallArgs) > 0 {
+	if !foundPositional && len(fn.CallArgs) > 0 {
 		for _, arg := range fn.CallArgs {
 			if arg.Kind == "macro" {
 				continue
@@ -596,7 +596,7 @@ func sourceControlArgs(fn ParsedFunction) []string {
 			}
 		}
 	}
-	if len(args) == 0 {
+	if !foundPositional && len(args) == 0 {
 		args = append(args, fn.RawArgs...)
 	}
 	return args

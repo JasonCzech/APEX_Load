@@ -8,6 +8,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/refkey"
@@ -45,15 +47,12 @@ func (req *CreateTestRequest) UnmarshalJSON(data []byte) error {
 }
 
 func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapacityEstimate, error) {
-	tr.mu.RLock()
-	defer tr.mu.RUnlock()
-
-	preview, err := tr.buildManagedTestLocked(req, "draft-estimate", "DRAFT")
+	preview, snapshot, revision, err := tr.buildManagedTestFromSnapshot(req, "draft-estimate", "DRAFT")
 	if err != nil {
 		return nil, err
 	}
 
-	return &DraftCapacityEstimate{
+	estimate := &DraftCapacityEstimate{
 		ScenarioMode:          preview.ScenarioMode,
 		TotalVUsers:           preview.TotalVUsers,
 		Duration:              preview.DurationStr,
@@ -61,10 +60,665 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 		Groups:                preview.Groups,
 		Assignment:            cloneGeneratorAssignmentSettings(preview.Assignment),
 		Footprint:             buildScenarioFootprint(preview),
-		Recommendation:        tr.buildAssignmentRecommendation(preview),
+		Recommendation:        snapshot.buildAssignmentRecommendation(preview),
 		CapacityAdvisory:      cloneCapacityAdvisory(preview.CapacityAdvisory),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(preview.RuntimeSettingsReview),
-	}, nil
+	}
+	if !tr.managedTestBuildFenceCurrent(revision) {
+		return nil, fmt.Errorf("controller content changed while draft capacity was being compiled; retry")
+	}
+	return estimate, nil
+}
+
+func (tr *TestRunner) loadCreateTestProjectQuotaEvidence(req CreateTestRequest) projectQuotaEvidence {
+	tr.mu.RLock()
+	projectID := strings.TrimSpace(req.ProjectID)
+	poolID := ""
+	if req.Assignment != nil {
+		poolID = req.Assignment.PoolID
+	}
+	if req.RevisionSourceTestID != "" {
+		if source := tr.tests[tr.resolveRefKeyLocked(req.RevisionSourceTestID)]; source != nil {
+			projectID = source.ProjectID
+			if req.Assignment == nil && source.Assignment != nil {
+				poolID = source.Assignment.PoolID
+			}
+		}
+	} else if req.ScenarioID != "" {
+		if scenario := tr.scenarios[tr.resolveRefKeyLocked(req.ScenarioID)]; scenario != nil {
+			projectID = scenario.ProjectID
+			if req.Assignment == nil && scenario.Assignment != nil {
+				poolID = scenario.Assignment.PoolID
+			}
+		}
+	}
+	if projectID == "" && req.ScriptID != "" {
+		if script := tr.scripts[tr.resolveRefKeyLocked(req.ScriptID)]; script != nil {
+			projectID = script.ProjectID
+		}
+	}
+	if projectID == "" {
+		for _, group := range req.Groups {
+			if script := tr.scripts[tr.resolveRefKeyLocked(group.ScriptID)]; script != nil {
+				projectID = script.ProjectID
+				break
+			}
+		}
+	}
+	projectStore := tr.projectStore
+	tr.mu.RUnlock()
+	return loadProjectQuotaEvidence(projectStore, projectID, poolID)
+}
+
+type createTestReleaseEvidence struct {
+	requestedApplicationID     string
+	requestedReleaseID         string
+	storeConfigured            bool
+	applicationStoreConfigured bool
+	loaded                     bool
+	releaseResolved            bool
+	releaseID                  string
+	releaseApplicationID       string
+	releaseProjectID           string
+	releaseArchived            bool
+	releaseUpdatedAt           time.Time
+	releaseErr                 error
+	applicationResolved        bool
+	applicationID              string
+	applicationProjectID       string
+	applicationUpdatedAt       time.Time
+	applicationErr             error
+}
+
+type applicationPersistence interface {
+	GetApplication(id string) (*storage.Application, error)
+}
+
+// loadCreateTestReleaseEvidence captures the effective release/application
+// identity inherited from a queued revision while tr.mu is held, then performs
+// every durable lookup after releasing it. The scalar result is immutable and
+// is identity-checked again by buildManagedTestLocked.
+func (tr *TestRunner) loadCreateTestReleaseEvidence(req CreateTestRequest) createTestReleaseEvidence {
+	tr.mu.RLock()
+	applicationID := strings.TrimSpace(req.ApplicationID)
+	releaseID := strings.TrimSpace(req.ReleaseID)
+	if sourceID := strings.TrimSpace(req.RevisionSourceTestID); sourceID != "" {
+		if source := tr.tests[tr.resolveRefKeyLocked(sourceID)]; source != nil {
+			if isLegacyTestReleaseContext(source.ApplicationID, source.ReleaseID) {
+				if matchesImplicitRevisionReleaseContext(applicationID, releaseID, source.ApplicationID, source.ReleaseID) {
+					applicationID = ""
+					releaseID = ""
+				}
+			} else {
+				if applicationID == "" {
+					applicationID = strings.TrimSpace(source.ApplicationID)
+				}
+				if releaseID == "" {
+					releaseID = strings.TrimSpace(source.ReleaseID)
+				}
+			}
+		}
+	}
+	store := tr.releaseStore
+	tr.mu.RUnlock()
+	return loadCreateTestReleaseEvidence(store, applicationID, releaseID)
+}
+
+func loadCreateTestReleaseEvidence(store releasePersistence, applicationID, releaseID string) createTestReleaseEvidence {
+	applicationID = strings.TrimSpace(applicationID)
+	releaseID = strings.TrimSpace(releaseID)
+	evidence := createTestReleaseEvidence{
+		requestedApplicationID: applicationID,
+		requestedReleaseID:     releaseID,
+		storeConfigured:        store != nil,
+		loaded:                 true,
+	}
+	if store == nil {
+		return evidence
+	}
+
+	effectiveApplicationID := applicationID
+	if releaseID != "" {
+		release, err := store.GetRelease(releaseID)
+		if err != nil {
+			evidence.releaseErr = err
+			return evidence
+		}
+		if release == nil {
+			evidence.releaseErr = errors.New("release not found")
+			return evidence
+		}
+		evidence.releaseResolved = true
+		evidence.releaseID = strings.TrimSpace(release.ID)
+		evidence.releaseApplicationID = strings.TrimSpace(release.ApplicationID)
+		evidence.releaseProjectID = strings.TrimSpace(release.ProjectID)
+		evidence.releaseArchived = release.ArchivedAt != nil
+		evidence.releaseUpdatedAt = release.UpdatedAt
+		if applicationID != "" && applicationID != evidence.releaseApplicationID {
+			return evidence
+		}
+		effectiveApplicationID = evidence.releaseApplicationID
+	}
+
+	applicationStore, ok := store.(applicationPersistence)
+	evidence.applicationStoreConfigured = ok
+	if !ok || effectiveApplicationID == "" {
+		return evidence
+	}
+	application, err := applicationStore.GetApplication(effectiveApplicationID)
+	if err != nil {
+		evidence.applicationErr = err
+		return evidence
+	}
+	if application == nil {
+		evidence.applicationErr = errors.New("application not found")
+		return evidence
+	}
+	evidence.applicationResolved = true
+	evidence.applicationID = strings.TrimSpace(application.ID)
+	evidence.applicationProjectID = strings.TrimSpace(application.ProjectID)
+	evidence.applicationUpdatedAt = application.UpdatedAt
+	return evidence
+}
+
+// cloneManagedTestCapacitySnapshotLocked retains only the fields used by
+// capacity/admission projections. In particular it must not retain live metrics,
+// history, or executable group scripts: a single terminal run can own tens of
+// MiB of history, and cloning that payload while servicing a polled preflight
+// would turn the live runner read lock into a large serialization boundary.
+func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
+	if test == nil {
+		return nil
+	}
+	groups := make([]TestGroup, len(test.Groups))
+	for index, group := range test.Groups {
+		javaCapacityPlan := javaVuserCapacityPlanForGroup(group)
+		groups[index] = TestGroup{
+			Name:                       group.Name,
+			ScriptID:                   group.ScriptID,
+			ScriptName:                 group.ScriptName,
+			Protocol:                   group.Protocol,
+			Role:                       group.Role,
+			VUsers:                     group.VUsers,
+			RampUp:                     group.RampUp,
+			RampDown:                   group.RampDown,
+			Stages:                     cloneLoadStages(group.Stages),
+			Initialization:             group.Initialization,
+			Assignment:                 cloneGeneratorAssignmentSettings(group.Assignment),
+			rampUpDur:                  group.rampUpDur,
+			stageDriven:                group.stageDriven,
+			initialVUsers:              group.initialVUsers,
+			currentVUsers:              group.currentVUsers,
+			IterationOverrideKnown:     group.IterationOverrideKnown,
+			Iterations:                 cloneIntPtr(group.Iterations),
+			IterationOverride:          cloneIntPtr(group.IterationOverride),
+			javaVuserCapacityPlan:      javaCapacityPlan,
+			javaVuserCapacityPlanKnown: true,
+		}
+	}
+	return &ManagedTest{
+		ID:                    test.ID,
+		RefKey:                test.RefKey,
+		MaterializationKey:    test.MaterializationKey,
+		Name:                  test.Name,
+		Status:                test.Status,
+		ScenarioID:            test.ScenarioID,
+		ProjectID:             test.ProjectID,
+		Groups:                groups,
+		CapacityAdvisory:      cloneCapacityAdvisory(test.CapacityAdvisory),
+		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
+		ResourceBaseline:      test.ResourceBaseline,
+		StartDelay:            test.StartDelay,
+		GoalConfig:            cloneGoalConfig(test.GoalConfig),
+		TotalVUsers:           test.TotalVUsers,
+		Duration:              test.Duration,
+		DurationStr:           test.DurationStr,
+		CreatedAt:             test.CreatedAt,
+		ScheduledStartAt:      cloneTimePtr(test.ScheduledStartAt),
+		TimeslotID:            cloneStringPtr(test.TimeslotID),
+		PendingSince:          cloneTimePtr(test.PendingSince),
+		StartedAt:             cloneTimePtr(test.StartedAt),
+		PausedAt:              cloneTimePtr(test.PausedAt),
+		CumulativePause:       test.CumulativePause,
+		CapacityWindowStartAt: cloneTimePtr(test.CapacityWindowStartAt),
+		CapacityWindowEndAt:   cloneTimePtr(test.CapacityWindowEndAt),
+		EndedAt:               cloneTimePtr(test.EndedAt),
+		StartAuthorization:    cloneQueuedStartAuthorization(test.StartAuthorization),
+		ExecutionPlanApproval: cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval),
+	}
+}
+
+type managedTestBuildFence struct {
+	contentRevision      uint64
+	settingsFingerprint  [sha256.Size]byte
+	maxTests             int
+	identityTestIDs      []string
+	admissionFingerprint [sha256.Size]byte
+}
+
+func managedTestBuildSettingsFingerprint(settings SystemSettings) [sha256.Size]byte {
+	encoded, _ := json.Marshal(settings) // SystemSettings contains only JSON-supported configuration fields.
+	return sha256.Sum256(encoded)
+}
+
+type managedTestBuildTimeFence struct {
+	Set      bool  `json:"set"`
+	UnixNano int64 `json:"unix_nano"`
+}
+
+type managedTestBuildStageFence struct {
+	Type         string `json:"type"`
+	Duration     string `json:"duration"`
+	TargetVUsers int    `json:"target_vusers"`
+}
+
+type managedTestBuildGroupFence struct {
+	Protocol               string                       `json:"protocol"`
+	VUsers                 int                          `json:"vusers"`
+	RequiredRuntimeFeature string                       `json:"required_runtime_feature"`
+	RuntimeOccupancyMode   string                       `json:"runtime_occupancy_mode"`
+	RuntimeDemand          int64                        `json:"runtime_demand"`
+	RampDown               string                       `json:"ramp_down"`
+	Assignment             *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	Stages                 []managedTestBuildStageFence `json:"stages,omitempty"`
+}
+
+type managedTestBuildTestFence struct {
+	ID                    string                       `json:"id"`
+	RefKey                string                       `json:"ref_key"`
+	MaterializationKey    string                       `json:"materialization_key"`
+	Status                string                       `json:"status"`
+	ProjectID             string                       `json:"project_id"`
+	TotalVUsers           int                          `json:"total_vusers"`
+	RecommendedGenerators int                          `json:"recommended_generators"`
+	Assignment            *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	ResourceBaseline      bool                         `json:"resource_baseline"`
+	StartDelay            string                       `json:"start_delay"`
+	Duration              int64                        `json:"duration"`
+	CreatedAt             managedTestBuildTimeFence    `json:"created_at"`
+	ScheduledStartAt      managedTestBuildTimeFence    `json:"scheduled_start_at"`
+	PendingSince          managedTestBuildTimeFence    `json:"pending_since"`
+	StartedAt             managedTestBuildTimeFence    `json:"started_at"`
+	PausedAt              managedTestBuildTimeFence    `json:"paused_at"`
+	CumulativePause       int64                        `json:"cumulative_pause"`
+	CapacityWindowStartAt managedTestBuildTimeFence    `json:"capacity_window_start_at"`
+	CapacityWindowEndAt   managedTestBuildTimeFence    `json:"capacity_window_end_at"`
+	TimeslotID            string                       `json:"timeslot_id"`
+	GoalMaxVUsers         int                          `json:"goal_max_vusers"`
+	ApprovalID            string                       `json:"approval_id"`
+	ApprovalPlanID        string                       `json:"approval_plan_id"`
+	ApprovalContentHash   string                       `json:"approval_content_hash"`
+	ApprovalStatus        string                       `json:"approval_status"`
+	ApprovalPolicy        string                       `json:"approval_policy"`
+	ApprovedPeakVUsers    int                          `json:"approved_peak_vusers"`
+	ShakeoutPassedAt      managedTestBuildTimeFence    `json:"shakeout_passed_at"`
+	ShakeoutPassSHA256    string                       `json:"shakeout_pass_sha256"`
+	Groups                []managedTestBuildGroupFence `json:"groups,omitempty"`
+}
+
+type managedTestBuildInventoryFence struct {
+	Target             string                                 `json:"target"`
+	GeneratorID        string                                 `json:"generator_id"`
+	Region             string                                 `json:"region"`
+	FleetPoolID        string                                 `json:"fleet_pool_id"`
+	Cordoned           bool                                   `json:"cordoned"`
+	Status             string                                 `json:"status"`
+	SupportedProtocols []string                               `json:"supported_protocols,omitempty"`
+	Labels             map[string]string                      `json:"labels,omitempty"`
+	CompatibleFeatures []string                               `json:"compatible_features,omitempty"`
+	RuntimeCapacities  []generatorrpc.ProtocolRuntimeCapacity `json:"runtime_capacities,omitempty"`
+	DrainState         string                                 `json:"drain_state"`
+	CapacityState      string                                 `json:"capacity_state"`
+	AvailableCapacity  int32                                  `json:"available_capacity"`
+	MaxVUsers          int32                                  `json:"max_vusers"`
+}
+
+func managedTestBuildTimeFingerprint(value *time.Time) managedTestBuildTimeFence {
+	if value == nil {
+		return managedTestBuildTimeFence{}
+	}
+	return managedTestBuildTimeFence{Set: true, UnixNano: value.UnixNano()}
+}
+
+func managedTestBuildTestFingerprint(test *ManagedTest) managedTestBuildTestFence {
+	if test == nil {
+		return managedTestBuildTestFence{}
+	}
+	row := managedTestBuildTestFence{
+		ID:                    test.ID,
+		RefKey:                test.RefKey,
+		MaterializationKey:    test.MaterializationKey,
+		Status:                test.Status,
+		ProjectID:             normalizeProjectID(test.ProjectID),
+		TotalVUsers:           test.TotalVUsers,
+		Assignment:            cloneGeneratorAssignmentSettings(test.Assignment),
+		ResourceBaseline:      test.ResourceBaseline,
+		StartDelay:            test.StartDelay,
+		Duration:              int64(test.Duration),
+		CreatedAt:             managedTestBuildTimeFingerprint(&test.CreatedAt),
+		ScheduledStartAt:      managedTestBuildTimeFingerprint(test.ScheduledStartAt),
+		PendingSince:          managedTestBuildTimeFingerprint(test.PendingSince),
+		StartedAt:             managedTestBuildTimeFingerprint(test.StartedAt),
+		PausedAt:              managedTestBuildTimeFingerprint(test.PausedAt),
+		CumulativePause:       int64(test.CumulativePause),
+		CapacityWindowStartAt: managedTestBuildTimeFingerprint(test.CapacityWindowStartAt),
+		CapacityWindowEndAt:   managedTestBuildTimeFingerprint(test.CapacityWindowEndAt),
+		TimeslotID:            stringPtrValue(test.TimeslotID),
+	}
+	if test.CapacityAdvisory != nil {
+		row.RecommendedGenerators = test.CapacityAdvisory.RecommendedGenerators
+	}
+	if test.GoalConfig != nil && test.GoalConfig.MaxVUsers != nil {
+		row.GoalMaxVUsers = *test.GoalConfig.MaxVUsers
+	}
+	if approval := test.ExecutionPlanApproval; approval != nil {
+		row.ApprovalID = approval.ID
+		row.ApprovalPlanID = approval.PlanID
+		row.ApprovalContentHash = approval.PlanContentHash
+		row.ApprovalStatus = approval.Status
+		row.ApprovalPolicy = approval.Policy
+		row.ApprovedPeakVUsers = approval.ApprovedPeakVUsers
+	}
+	if authorization := test.StartAuthorization; authorization != nil && authorization.ScriptShakeoutPass != nil {
+		row.ShakeoutPassedAt = managedTestBuildTimeFingerprint(&authorization.ScriptShakeoutPass.PassedAt)
+		row.ShakeoutPassSHA256 = authorization.ScriptShakeoutPass.EvidenceSHA256
+	}
+	if len(test.Groups) > 0 {
+		row.Groups = make([]managedTestBuildGroupFence, len(test.Groups))
+		for index, group := range test.Groups {
+			plan := javaVuserCapacityPlanForGroup(group)
+			row.Groups[index].Protocol = group.Protocol
+			row.Groups[index].VUsers = group.VUsers
+			row.Groups[index].RequiredRuntimeFeature = groupRequiredRuntimeFeature(group)
+			row.Groups[index].RuntimeOccupancyMode = javaVuserOccupancyModeForGroup(group)
+			row.Groups[index].RuntimeDemand = plan.Demand(group.VUsers)
+			row.Groups[index].RampDown = group.RampDown
+			row.Groups[index].Assignment = cloneGeneratorAssignmentSettings(group.Assignment)
+			if len(group.Stages) > 0 {
+				row.Groups[index].Stages = make([]managedTestBuildStageFence, len(group.Stages))
+				for stageIndex, stage := range group.Stages {
+					row.Groups[index].Stages[stageIndex] = managedTestBuildStageFence{
+						Type: stage.Type, Duration: stage.Duration, TargetVUsers: stage.TargetVUsers,
+					}
+				}
+			}
+		}
+	}
+	return row
+}
+
+// managedTestBuildAdmissionRelevant reports whether a run can affect a fresh
+// create/preflight admission decision. Terminal history is deliberately
+// excluded: retained completed runs can number in the millions, while none of
+// the quota, reservation, launch-window, or pending projections consume them.
+func managedTestBuildAdmissionRelevant(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(test.Status)) {
+	case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT_REVIEW",
+		"INITIALIZING", "STARTING", "SHAKEOUT", "RUNNING", "PAUSED", "STOPPING":
+		return true
+	default:
+		return false
+	}
+}
+
+func managedTestBuildAdmissionFingerprint(tests map[string]*ManagedTest, identityTestIDs []string, inventory []GeneratorInventoryEntry, inventoryAt time.Time, deletingProjects map[string]struct{}) [sha256.Size]byte {
+	selected := make(map[string]struct{}, len(identityTestIDs))
+	for _, id := range identityTestIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			selected[id] = struct{}{}
+		}
+	}
+	ids := make([]string, 0)
+	for id, test := range tests {
+		if _, identity := selected[id]; identity || managedTestBuildAdmissionRelevant(test) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	testRows := make([]managedTestBuildTestFence, 0, len(ids))
+	for _, id := range ids {
+		testRows = append(testRows, managedTestBuildTestFingerprint(tests[id]))
+	}
+	inventoryRows := make([]managedTestBuildInventoryFence, len(inventory))
+	for index, entry := range inventory {
+		inventoryRows[index] = managedTestBuildInventoryFence{
+			Target:             entry.Target,
+			GeneratorID:        entry.GeneratorID,
+			Region:             entry.Region,
+			FleetPoolID:        entry.FleetPoolID,
+			Cordoned:           entry.Cordoned,
+			Status:             entry.Status,
+			SupportedProtocols: append([]string(nil), entry.SupportedProtocols...),
+			Labels:             cloneStringMap(entry.Labels),
+			CompatibleFeatures: append([]string(nil), entry.CompatibleFeatures...),
+			RuntimeCapacities:  cloneProtocolRuntimeCapacities(entry.RuntimeCapacities),
+			DrainState:         entry.DrainState,
+			CapacityState:      entry.CapacityState,
+			AvailableCapacity:  entry.AvailableCapacity,
+			MaxVUsers:          entry.MaxVUsers,
+		}
+	}
+	sort.Slice(inventoryRows, func(i, j int) bool {
+		if inventoryRows[i].Target != inventoryRows[j].Target {
+			return inventoryRows[i].Target < inventoryRows[j].Target
+		}
+		return inventoryRows[i].GeneratorID < inventoryRows[j].GeneratorID
+	})
+	deleting := make([]string, 0, len(deletingProjects))
+	for projectID := range deletingProjects {
+		deleting = append(deleting, normalizeProjectID(projectID))
+	}
+	sort.Strings(deleting)
+	payload := struct {
+		Tests       []managedTestBuildTestFence      `json:"tests"`
+		Inventory   []managedTestBuildInventoryFence `json:"inventory"`
+		InventoryAt int64                            `json:"inventory_at"`
+		Deleting    []string                         `json:"deleting_projects"`
+	}{Tests: testRows, Inventory: inventoryRows, InventoryAt: inventoryAt.UnixNano(), Deleting: deleting}
+	encoded, _ := json.Marshal(payload) // payload contains only JSON-supported scalar/map/slice fields.
+	return sha256.Sum256(encoded)
+}
+
+func (tr *TestRunner) managedTestBuildFenceCurrentLocked(fence managedTestBuildFence) bool {
+	if tr == nil || tr.contentRevision != fence.contentRevision || managedTestBuildSettingsFingerprint(tr.settings) != fence.settingsFingerprint || tr.maxTests != fence.maxTests {
+		return false
+	}
+	tr.liveInventoryMu.RLock()
+	inventory := cloneGeneratorInventoryEntries(tr.liveInventory)
+	inventoryAt := tr.liveInventoryAt
+	tr.liveInventoryMu.RUnlock()
+	return managedTestBuildAdmissionFingerprint(tr.tests, fence.identityTestIDs, inventory, inventoryAt, tr.deletingProjects) == fence.admissionFingerprint
+}
+
+func (tr *TestRunner) managedTestBuildFenceCurrent(fence managedTestBuildFence) bool {
+	tr.mu.RLock()
+	defer tr.mu.RUnlock()
+	return tr.managedTestBuildFenceCurrentLocked(fence)
+}
+
+// managedTestBuildSnapshotLocked captures only the controller state reachable
+// from one build request. Capacity-relevant and pending tests contribute a
+// lightweight row; terminal history is omitted, and only the selected revision
+// source is fully cloned. Likewise only the selected scenario and scripts
+// referenced by the request/source/scenario are retained. Callers hold tr.mu
+// (read or write).
+func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*TestRunner, CreateTestRequest, managedTestBuildFence) {
+	snapshot := &TestRunner{
+		tests:                 make(map[string]*ManagedTest),
+		scripts:               make(map[string]*StoredScript),
+		scenarios:             make(map[string]*StoredScenario, 1),
+		archives:              make(map[string]*storage.RunArchiveRecord),
+		deletingProjects:      make(map[string]struct{}, len(tr.deletingProjects)),
+		hub:                   nil,
+		maxTests:              tr.maxTests,
+		settings:              cloneSystemSettings(tr.settings),
+		scriptStore:           tr.scriptStore,
+		dataPoolStore:         tr.dataPoolStore,
+		projectStore:          tr.projectStore,
+		releaseStore:          tr.releaseStore,
+		settingsStore:         tr.settingsStore,
+		projectSecretStore:    tr.projectSecretStore,
+		objectRepoStore:       tr.objectRepoStore,
+		fleetStore:            tr.fleetStore,
+		leadership:            tr.leadership,
+		durableExecutionFence: tr.durableExecutionFence,
+		liveState:             tr.liveState,
+		execution:             tr.execution,
+		notifier:              nil,
+		routeCache:            make(map[string]latencyRouteCacheEntry),
+		envCode:               tr.envCode,
+		runRefSeqAllocator:    tr.runRefSeqAllocator,
+		refKeyIndex:           make(map[string]string),
+		capacityAdvisoryCache: make(map[string]cachedCapacityAdvisory),
+		capacityAdvisoryGen:   tr.capacityAdvisoryGen,
+		remoteControlGates:    make(map[string]*distributedControlGate),
+		seqPlanRuns:           make(map[string]*seqPlanRunState),
+		seqPlanByTest:         make(map[string]string),
+		seqPlanRetrying:       make(map[string]struct{}),
+		terminalRetrying:      make(map[string]struct{}),
+		archiveCommitGates:    make(map[string]*archiveCommitGate),
+		stopTeardownRetries:   make(map[string]stopTeardownRetryIntent),
+		privateCISnapshots:    make(map[string]int),
+		snapshotWrites:        make(map[string]*runSnapshotWriteState),
+		capacityBindingReadCh: make(chan struct{}),
+	}
+	for id, test := range tr.tests {
+		if managedTestBuildAdmissionRelevant(test) {
+			snapshot.tests[id] = cloneManagedTestCapacitySnapshotLocked(test)
+		}
+	}
+	for id := range tr.deletingProjects {
+		snapshot.deletingProjects[id] = struct{}{}
+	}
+
+	prepared := req
+	prepared.Groups = append([]CreateGroupEntry(nil), req.Groups...)
+	resolve := func(raw string) string {
+		raw = strings.TrimSpace(raw)
+		resolved := tr.resolveRefKeyLocked(raw)
+		if key := normalizeRefKeyCandidate(raw); key != "" && resolved != raw {
+			snapshot.refKeyIndex[key] = resolved
+		}
+		return resolved
+	}
+	indexRefKey := func(key, id string) {
+		if normalized := normalizeRefKeyCandidate(key); normalized != "" {
+			snapshot.refKeyIndex[normalized] = id
+		}
+	}
+
+	revisionSourceID := resolve(prepared.RevisionSourceTestID)
+	prepared.RevisionSourceTestID = revisionSourceID
+	var revisionSource *ManagedTest
+	if revisionSourceID != "" {
+		if source := tr.tests[revisionSourceID]; source != nil {
+			revisionSource = cloneManagedTestFieldsLocked(source)
+			// Revision compilation needs the immutable group/runtime snapshots but
+			// never consumes metric history. Drop every metric projection copied by
+			// the general read clone so selecting a long-running queued source cannot
+			// retain its telemetry payload under the live runner read lock.
+			revisionSource.History = nil
+			revisionSource.LiveMetrics = nil
+			revisionSource.Sparkline = nil
+			snapshot.tests[revisionSourceID] = revisionSource
+			indexRefKey(source.RefKey, revisionSourceID)
+		}
+	}
+	requestedTestID := strings.TrimSpace(prepared.RequestedTestID)
+	prepared.RequestedTestID = requestedTestID
+	if requestedTestID != "" && snapshot.tests[requestedTestID] == nil {
+		if existing := tr.tests[requestedTestID]; existing != nil {
+			snapshot.tests[requestedTestID] = cloneManagedTestCapacitySnapshotLocked(existing)
+		}
+	}
+
+	selectedScenarioID := resolve(prepared.ScenarioID)
+	prepared.ScenarioID = selectedScenarioID
+	if selectedScenarioID == "" && revisionSource != nil {
+		selectedScenarioID = strings.TrimSpace(revisionSource.ScenarioID)
+	}
+	var selectedScenario *StoredScenario
+	if selectedScenarioID != "" {
+		if scenario := tr.scenarios[selectedScenarioID]; scenario != nil {
+			selectedScenario = cloneStoredScenarioForReadLocked(scenario)
+			snapshot.scenarios[selectedScenarioID] = selectedScenario
+			indexRefKey(scenario.RefKey, selectedScenarioID)
+		}
+	}
+
+	prepared.ScriptID = resolve(prepared.ScriptID)
+	for index := range prepared.Groups {
+		prepared.Groups[index].ScriptID = resolve(prepared.Groups[index].ScriptID)
+	}
+	scriptIDs := make(map[string]struct{})
+	addScriptID := func(raw string) {
+		if id := resolve(raw); id != "" {
+			scriptIDs[id] = struct{}{}
+		}
+	}
+	addScriptID(prepared.ScriptID)
+	for _, group := range prepared.Groups {
+		addScriptID(group.ScriptID)
+	}
+	if selectedScenario != nil {
+		for _, group := range selectedScenario.Scripts {
+			addScriptID(group.ScriptID)
+		}
+	}
+	if revisionSource != nil {
+		for _, group := range revisionSource.Groups {
+			addScriptID(group.ScriptID)
+		}
+	}
+	for scriptID := range scriptIDs {
+		if script := tr.scripts[scriptID]; script != nil {
+			snapshot.scripts[scriptID] = cloneStoredScriptForReadLocked(script)
+			indexRefKey(script.RefKey, scriptID)
+		}
+	}
+
+	tr.liveInventoryMu.RLock()
+	snapshot.liveInventory = cloneGeneratorInventoryEntries(tr.liveInventory)
+	snapshot.liveInventoryAt = tr.liveInventoryAt
+	tr.liveInventoryMu.RUnlock()
+	identityTestIDs := make([]string, 0, 2)
+	if revisionSourceID != "" {
+		identityTestIDs = append(identityTestIDs, revisionSourceID)
+	}
+	if requestedTestID != "" && requestedTestID != revisionSourceID {
+		identityTestIDs = append(identityTestIDs, requestedTestID)
+	}
+	fence := managedTestBuildFence{
+		contentRevision:      tr.contentRevision,
+		settingsFingerprint:  managedTestBuildSettingsFingerprint(snapshot.settings),
+		maxTests:             tr.maxTests,
+		identityTestIDs:      identityTestIDs,
+		admissionFingerprint: managedTestBuildAdmissionFingerprint(snapshot.tests, identityTestIDs, snapshot.liveInventory, snapshot.liveInventoryAt, snapshot.deletingProjects),
+	}
+	return snapshot, prepared, fence
+}
+
+// buildManagedTestFromSnapshot keeps every storage-backed resolver reachable
+// from buildManagedTestLocked off the live runner mutex, then fences the result
+// with the captured content revision before a caller consumes or installs it.
+func (tr *TestRunner) buildManagedTestFromSnapshot(req CreateTestRequest, id, status string) (*ManagedTest, *TestRunner, managedTestBuildFence, error) {
+	tr.mu.RLock()
+	snapshot, req, revision := tr.managedTestBuildSnapshotLocked(req)
+	tr.mu.RUnlock()
+
+	if !req.projectQuotaEvidence.loaded {
+		req.projectQuotaEvidence = snapshot.loadCreateTestProjectQuotaEvidence(req)
+	}
+	if !req.releaseContextEvidence.loaded {
+		req.releaseContextEvidence = snapshot.loadCreateTestReleaseEvidence(req)
+	}
+	snapshot.mu.Lock()
+	test, err := snapshot.buildManagedTestLocked(req, id, status)
+	snapshot.mu.Unlock()
+	return test, snapshot, revision, err
 }
 
 func (tr *TestRunner) CreateTest(req CreateTestRequest) (*ManagedTest, error) {
@@ -90,15 +744,67 @@ func (tr *TestRunner) createTest(req CreateTestRequest, broadcast bool) (*Manage
 	return tr.createTestWithIDAndTerm(req, broadcast, id, leaseTerm)
 }
 
+const managedTestCreateBuildAttempts = 5
+
+var errManagedTestBuildFenceStale = errors.New("managed test build fence is stale")
+
+// managedTestRunReferenceReservation retains the one externally visible
+// identity allocation that may happen between the two admission fences. A
+// stale second fence rebuilds the candidate with this exact reference rather
+// than consuming a new durable sequence for every transparent retry.
+type managedTestRunReferenceReservation struct {
+	refKey    string
+	createdAt time.Time
+}
+
 // createTestWithIDAndTerm is the execution-plan materialization boundary. The
 // caller preassigns and durably correlates id before entering this method, and
-// the exact leadership term is retained throughout creation so an old goroutine
-// cannot adopt a newer term after same-process reacquisition.
+// the exact leadership term is retained throughout every transparent rebuild so
+// an old goroutine cannot adopt a newer term after same-process reacquisition.
 func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast bool, id string, leaseTerm executionLeaseTerm) (*ManagedTest, error) {
+	requestedAt := time.Now()
+	runReference := managedTestRunReferenceReservation{createdAt: requestedAt}
+	var lastErr error
+	for attempt := 0; attempt < managedTestCreateBuildAttempts; attempt++ {
+		created, err := tr.createTestWithIDAndTermAttempt(req, broadcast, id, leaseTerm, requestedAt, &runReference)
+		if !errors.Is(err, errManagedTestBuildFenceStale) {
+			return created, err
+		}
+		lastErr = err
+		// A rebuild is safe only while the exact term captured by the caller still
+		// owns execution. The attempt also rechecks this term at each mutation
+		// boundary; checking here prevents needless compilation after lease loss.
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			return nil, errNotExecutionLeader
+		}
+		if attempt+1 < managedTestCreateBuildAttempts {
+			time.Sleep(time.Duration(attempt+1) * time.Millisecond)
+		}
+	}
+	return nil, fmt.Errorf("controller admission state kept changing across %d test-build attempts: %w", managedTestCreateBuildAttempts, lastErr)
+}
+
+// createTestWithIDAndTermAttempt performs no provider or test-store mutation
+// before a stale build can be retried. It may retain one reserved run reference
+// across a stale second fence, because that durable sequence has already been
+// consumed and must identify every rebuild of the same ID/materialization under
+// the same lease term. Once runtime-secret provisioning or test persistence
+// begins, ordinary commit/adoption semantics are authoritative and the attempt
+// is never replayed merely because in-memory admission changed.
+func (tr *TestRunner) createTestWithIDAndTermAttempt(req CreateTestRequest, broadcast bool, id string, leaseTerm executionLeaseTerm, requestedAt time.Time, runReference *managedTestRunReferenceReservation) (*ManagedTest, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, fmt.Errorf("preassigned test id is required")
 	}
+	// Keep the selected identity in the request-scoped fence even though the
+	// public field is otherwise only an ID-allocation input. This catches an
+	// ownership change without reintroducing every terminal run into the snapshot.
+	req.RequestedTestID = id
+	unlockControl, err := tr.lockTestLifecycleControl(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	defer unlockControl()
 	// Tests must be created on the execution leader so the in-memory queue stays
 	// coherent with the replica that will actually run them.
 	if !tr.isExecutionLeader() || !tr.executionLeaseTermCurrent(leaseTerm) {
@@ -125,24 +831,10 @@ func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast b
 			return existing, nil
 		}
 	}
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-	if !tr.executionLeaseTermCurrent(leaseTerm) {
-		return nil, errNotExecutionLeader
+	now := requestedAt
+	if now.IsZero() {
+		now = time.Now()
 	}
-	// A concurrent exact retry can miss the durable/cache preflight above while
-	// the winning goroutine is still creating the row. tr.mu serializes that
-	// boundary, so re-check after acquiring it and return the winner unchanged.
-	if existing := tr.tests[id]; existing != nil {
-		if materializationKey == "" || !sameManagedTestMaterialization(existing, id, materializationKey, req.ProjectID) {
-			return nil, fmt.Errorf("%w: test %s", errTestIdentityCollision, id)
-		}
-		adopted := cloneManagedTestForReadLocked(existing)
-		adopted.creationAdopted = true
-		return adopted, nil
-	}
-
-	now := time.Now()
 	status := "QUEUED"
 	if req.ReserveLaunchWindow {
 		status = "RESERVED"
@@ -155,25 +847,116 @@ func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast b
 	} else if req.ScheduledStartAt != nil && req.ScheduledStartAt.After(now) {
 		status = "SCHEDULED"
 	}
-	test, err := tr.buildManagedTestLocked(req, id, status)
+	req.deferRunRefKey = true
+	test, buildSnapshot, buildRevision, err := tr.buildManagedTestFromSnapshot(req, id, status)
 	if err != nil {
 		return nil, err
 	}
+	if runReference == nil {
+		return nil, fmt.Errorf("run reference reservation is required")
+	}
+	// Compilation performs its own clock read. Pin the durable creation identity
+	// to the outer request boundary so a retry cannot change either CreatedAt or
+	// the day embedded in its reference key.
+	test.CreatedAt = runReference.createdAt
+	var reservedEvidence launchWindowEvidence
+	if status == "RESERVED" && test.ScheduledStartAt != nil {
+		reservedEvidence = tr.loadLaunchWindowEvidenceForProject(launchWindowForTest(test, test.ScheduledStartAt.UTC()), test.ProjectID, testAssignedPoolID(test))
+	}
+	var timeslotEvidence *storage.CapacityReservation
+	if req.TimeslotID != nil && strings.TrimSpace(*req.TimeslotID) != "" {
+		var timeslotErr error
+		timeslotEvidence, timeslotErr = tr.loadCapacityTimeslotEvidence(strings.TrimSpace(*req.TimeslotID))
+		if timeslotErr != nil {
+			return nil, timeslotErr
+		}
+	}
+	if status == "RESERVED" {
+		// Overlap admission is a check-then-create decision across all reserved
+		// runs. Keep that boundary serialized without holding tr.mu across secret
+		// or storage I/O so two different IDs cannot both commit from the same
+		// pre-install launch-window snapshot.
+		tr.reservedLaunchCreateMu.Lock()
+		defer tr.reservedLaunchCreateMu.Unlock()
+	}
+	// Keep a same-leader project deletion outside the final evidence check,
+	// durable insert, and in-memory install. A cross-replica takeover is fenced
+	// by leaseTerm below; a stale creator never installs after losing that term.
+	releaseProjectMutation := tr.acquireProjectTestMutation(test.ProjectID)
+	defer releaseProjectMutation()
+	// First fence the immutable build before reserving a reference sequence. No
+	// provider or test-store mutation occurs until the same lease/content identity
+	// has won twice around that off-lock sequence reservation.
+	tr.mu.Lock()
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		tr.mu.Unlock()
+		return nil, errNotExecutionLeader
+	}
+	if existing := tr.tests[id]; existing != nil {
+		if materializationKey == "" || !sameManagedTestMaterialization(existing, id, materializationKey, req.ProjectID) {
+			tr.mu.Unlock()
+			return nil, fmt.Errorf("%w: test %s", errTestIdentityCollision, id)
+		}
+		adopted := cloneManagedTestForReadLocked(existing)
+		adopted.creationAdopted = true
+		tr.mu.Unlock()
+		return adopted, nil
+	}
+	if !tr.managedTestBuildFenceCurrentLocked(buildRevision) {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("%w: controller content changed while test creation was being compiled", errManagedTestBuildFenceStale)
+	}
+	tr.mu.Unlock()
+
+	if runReference.refKey == "" {
+		buildSnapshot.mu.Lock()
+		sequence, sequenceErr := buildSnapshot.nextRunSeqLocked(test.CreatedAt)
+		buildSnapshot.mu.Unlock()
+		if sequenceErr != nil {
+			return nil, fmt.Errorf("allocate run reference key: %w", sequenceErr)
+		}
+		runReference.refKey = refkey.Run(buildSnapshot.envCode, test.CreatedAt, sequence)
+	}
+	test.RefKey = runReference.refKey
 	test.executionFence = executionFence
+
+	tr.mu.Lock()
+	tr.mergeSchedulerSnapshotSequenceLocked(buildSnapshot)
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		tr.mu.Unlock()
+		return nil, errNotExecutionLeader
+	}
+	if existing := tr.tests[id]; existing != nil {
+		if materializationKey == "" || !sameManagedTestMaterialization(existing, id, materializationKey, req.ProjectID) {
+			tr.mu.Unlock()
+			return nil, fmt.Errorf("%w: test %s", errTestIdentityCollision, id)
+		}
+		adopted := cloneManagedTestForReadLocked(existing)
+		adopted.creationAdopted = true
+		tr.mu.Unlock()
+		return adopted, nil
+	}
+	if !tr.managedTestBuildFenceCurrentLocked(buildRevision) {
+		tr.mu.Unlock()
+		return nil, fmt.Errorf("%w: controller content changed while test creation was being prepared", errManagedTestBuildFenceStale)
+	}
 	if status == "RESERVED" && test.ScheduledStartAt != nil {
 		window := launchWindowForTest(test, test.ScheduledStartAt.UTC())
-		if conflicts := tr.launchWindowConflictsLocked(test, window, now.UTC(), "", ""); len(conflicts) > 0 {
+		if conflicts := tr.launchWindowConflictsWithEvidenceLocked(test, window, now.UTC(), "", "", reservedEvidence); len(conflicts) > 0 {
+			tr.mu.Unlock()
 			return nil, fmt.Errorf("launch window conflict: %s", conflicts[0].Message)
 		}
 	}
-
-	// Strict: when a timeslot is supplied, bind it as part of creation. A bind
-	// failure aborts the create so a run is never created unprotected.
+	// Strict: when a timeslot is supplied, bind it as part of creation. The
+	// durable test+binding transaction remains authoritative after this pure
+	// evidence check.
 	if req.TimeslotID != nil && strings.TrimSpace(*req.TimeslotID) != "" {
-		if err := tr.validateAndBindTimeslotLocked(strings.TrimSpace(*req.TimeslotID), test); err != nil {
+		if err := validateAndApplyTimeslotEvidenceLocked(timeslotEvidence, test); err != nil {
+			tr.mu.Unlock()
 			return nil, err
 		}
 	}
+	tr.mu.Unlock()
 
 	runtimeSecretAttempt, err := tr.persistRuntimeOverrideSecretValues(
 		test.ProjectID, test.ID, test.MaterializationKey, test.RefKey, test.Groups, req.creationActor,
@@ -196,17 +979,46 @@ func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast b
 		slog.Warn("runtime credential provisioning journal cleanup deferred", "test_id", test.ID, "error", err)
 		tr.scheduleRuntimeOverrideSecretAttempt(runtimeSecretAttempt.ID, runtimeSecretAttempt.LeaseExpiresAt)
 	}
+	// The atomic create has committed. A lease loss from this point forward must
+	// not hide the newly allocated identity from an ordinary caller: return the
+	// exact committed snapshot, but leave installation/reconciliation to the new
+	// leader so this stale replica cannot resurrect state deleted by its successor.
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
-		return nil, errNotExecutionLeader
+		return cloneManagedTestForReadLocked(test), nil
 	}
 
+	tr.mu.Lock()
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		tr.mu.Unlock()
+		return cloneManagedTestForReadLocked(test), nil
+	}
+	if existing := tr.tests[id]; existing != nil {
+		if materializationKey == "" || !sameManagedTestMaterialization(existing, id, materializationKey, req.ProjectID) {
+			tr.mu.Unlock()
+			return nil, fmt.Errorf("%w: test %s", errTestIdentityCollision, id)
+		}
+		adopted := cloneManagedTestForReadLocked(existing)
+		adopted.creationAdopted = true
+		tr.mu.Unlock()
+		return adopted, nil
+	}
+	if !tr.managedTestBuildFenceCurrentLocked(buildRevision) {
+		slog.Info("controller admission state changed after durable test creation; installing the exact committed snapshot",
+			"test_id", test.ID, "ref_key", test.RefKey)
+	}
+	// executionFence authorized the create-only durable insert. Passive rows do
+	// not own runtime work, so retaining that process-private token would prevent
+	// a later lease epoch from claiming the queued/scheduled identity.
+	releasePassiveExecutionFenceLocked(test)
 	tr.tests[test.ID] = test
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
 
-	if broadcast {
+	if broadcast && !test.creationAdopted {
 		tr.broadcastEvent("test_created", test)
 	}
-	return cloneManagedTestForReadLocked(test), nil
+	created := cloneManagedTestForReadLocked(test)
+	tr.mu.Unlock()
+	return created, nil
 }
 
 // releaseProvisionedRuntimeSecretOverlays drops the request-time plaintext
@@ -317,7 +1129,7 @@ func (tr *TestRunner) revisionSourceTestLocked(req *CreateTestRequest) (*Managed
 	if strings.TrimSpace(req.ScriptID) != "" {
 		return nil, fmt.Errorf("queued-run revisions require canonical groups with source identities; script_id shorthand is not supported")
 	}
-	sourceID := strings.TrimSpace(req.RevisionSourceTestID)
+	sourceID := tr.resolveRefKeyLocked(strings.TrimSpace(req.RevisionSourceTestID))
 	source := tr.tests[sourceID]
 	if source == nil {
 		return nil, fmt.Errorf("revision source test not found: %s", req.RevisionSourceTestID)
@@ -467,6 +1279,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if revisionSource != nil && normalizeProjectID(revisionSource.ProjectID) != projectID {
 		return nil, fmt.Errorf("revision source test and referenced test resources must belong to one project")
 	}
+	projectQuota, quotaOK := req.projectQuotaEvidence.quotaFor(&ManagedTest{ProjectID: projectID, Assignment: req.Assignment})
+	if !quotaOK && status != "DRAFT" {
+		return nil, fmt.Errorf("project quota evidence changed or is unavailable; retry test creation")
+	}
 	revisionDataPoolsChanged := revisionSource != nil && !sameRevisionDataPoolBindings(req.DataPools, revisionSource.DataPools)
 	var sharedDataSources []dsl.DataSource
 	if revisionSource != nil && !revisionDataPoolsChanged {
@@ -485,7 +1301,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		}
 	}
 
-	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsForModeWithRevisionLocked(groups, req.RuntimeSettings, sharedDataSources, scenarioMode, revisionSource, revisionDataPoolsChanged)
+	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsForModeWithRevisionLocked(groups, req.RuntimeSettings, sharedDataSources, scenarioMode, revisionSource, revisionDataPoolsChanged, projectQuota)
 	if err != nil {
 		return nil, err
 	}
@@ -499,10 +1315,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err := tr.projectDeletionErrorLocked(projectID); err != nil {
 		return nil, err
 	}
-	if err := tr.enforceTestQuotaLocked(projectID, totalVUsers, dur, status); err != nil {
+	if err := enforceTestQuotaWithProjectQuota(projectQuota, totalVUsers, dur, status); err != nil {
 		return nil, err
 	}
-	effectiveRuntimeSettings, err := tr.resolveEffectiveRuntimeSettings(projectID, req.RuntimeSettings)
+	effectiveRuntimeSettings, err := resolveEffectiveRuntimeSettingsWithProjectQuota(req.RuntimeSettings, projectQuota)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +1327,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		return nil, fmt.Errorf("protect test runtime credentials: %w", err)
 	}
 
-	applicationID, releaseID, err := tr.resolveCreateTestReleaseContext(projectID, req.ApplicationID, req.ReleaseID, status)
+	applicationID, releaseID, err := resolveCreateTestReleaseContextWithEvidence(projectID, req.ApplicationID, req.ReleaseID, status, req.releaseContextEvidence)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +1335,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	now := time.Now()
 	creationActor := normalizeTestCreationActor(req.creationActor)
 	refKey := ""
-	if status != "DRAFT" {
+	if status != "DRAFT" && !req.deferRunRefKey {
 		sequence, err := tr.nextRunSeqLocked(now)
 		if err != nil {
 			return nil, fmt.Errorf("allocate run reference key: %w", err)
@@ -527,35 +1343,38 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		refKey = refkey.Run(tr.envCode, now, sequence)
 	}
 	test := &ManagedTest{
-		ID:                    id,
-		RefKey:                refKey,
-		MaterializationKey:    strings.TrimSpace(req.MaterializationKey),
-		Name:                  testName,
-		Status:                status,
-		ApplicationID:         applicationID,
-		ReleaseID:             req.ReleaseID,
-		ScenarioID:            req.ScenarioID,
-		ProjectID:             projectID,
-		FolderID:              req.FolderID,
-		DataPools:             cloneScenarioDataPoolBindings(req.DataPools),
-		Groups:                testGroups,
-		Assignment:            cloneGeneratorAssignmentSettings(req.Assignment),
-		CapacityAdvisory:      tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
-		RuntimeSettingsReview: cloneRuntimeSettingsReview(runtimeSettingsReview),
-		ScenarioMode:          scenarioMode,
-		ScriptShakeout:        req.ScriptShakeout,
-		ResourceBaseline:      req.ResourceBaseline,
-		StartDelay:            req.StartDelay,
-		GoalConfig:            cloneGoalConfig(req.GoalConfig),
-		RuntimeSettings:       cloneRuntimeSettings(protectedRuntimeSettings),
-		TotalVUsers:           totalVUsers,
-		Duration:              dur,
-		DurationStr:           req.Duration,
-		CreatedAt:             now,
-		CreatedBySubject:      creationActor.Subject,
-		CreatedByDisplayName:  creationActor.DisplayName,
-		ScheduledStartAt:      cloneTimePtr(req.ScheduledStartAt),
-		groupSpecs:            engineGroups,
+		ID:                           id,
+		RefKey:                       refKey,
+		MaterializationKey:           strings.TrimSpace(req.MaterializationKey),
+		Name:                         testName,
+		Status:                       status,
+		ApplicationID:                applicationID,
+		ReleaseID:                    req.ReleaseID,
+		ScenarioID:                   req.ScenarioID,
+		ProjectID:                    projectID,
+		FolderID:                     req.FolderID,
+		DataPools:                    cloneScenarioDataPoolBindings(req.DataPools),
+		Groups:                       testGroups,
+		Assignment:                   cloneGeneratorAssignmentSettings(req.Assignment),
+		CapacityAdvisory:             tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
+		RuntimeSettingsReview:        cloneRuntimeSettingsReview(runtimeSettingsReview),
+		expectedProjectUpdatedAt:     req.projectQuotaEvidence.updatedAt,
+		expectedApplicationUpdatedAt: req.releaseContextEvidence.applicationUpdatedAt,
+		expectedReleaseUpdatedAt:     req.releaseContextEvidence.releaseUpdatedAt,
+		ScenarioMode:                 scenarioMode,
+		ScriptShakeout:               req.ScriptShakeout,
+		ResourceBaseline:             req.ResourceBaseline,
+		StartDelay:                   req.StartDelay,
+		GoalConfig:                   cloneGoalConfig(req.GoalConfig),
+		RuntimeSettings:              cloneRuntimeSettings(protectedRuntimeSettings),
+		TotalVUsers:                  totalVUsers,
+		Duration:                     dur,
+		DurationStr:                  req.Duration,
+		CreatedAt:                    now,
+		CreatedBySubject:             creationActor.Subject,
+		CreatedByDisplayName:         creationActor.DisplayName,
+		ScheduledStartAt:             cloneTimePtr(req.ScheduledStartAt),
+		groupSpecs:                   engineGroups,
 	}
 	if req.ExecutionPlanApproval != nil {
 		test.ExecutionPlanApproval = runArchiveExecutionPlanApprovalSnapshot(req.ExecutionPlanApproval)
@@ -1407,7 +2226,7 @@ func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(group
 	return tr.compileManagedTestGroupsForModeWithRevisionLocked(groups, runtimeSettings, sharedDataSources, scenarioMode, nil, false)
 }
 
-func (tr *TestRunner) compileManagedTestGroupsForModeWithRevisionLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string, revisionSource *ManagedTest, revisionDataPoolsChanged bool) ([]TestGroup, []engine.GroupConfig, int, error) {
+func (tr *TestRunner) compileManagedTestGroupsForModeWithRevisionLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string, revisionSource *ManagedTest, revisionDataPoolsChanged bool, projectQuotas ...projectQuotaSnapshot) ([]TestGroup, []engine.GroupConfig, int, error) {
 	if len(groups) == 0 {
 		return nil, nil, 0, fmt.Errorf("at least one group is required")
 	}
@@ -1441,7 +2260,7 @@ func (tr *TestRunner) compileManagedTestGroupsForModeWithRevisionLocked(groups [
 			(group.Iterations == nil || intPointersEqual(group.Iterations, revisionGroup.Iterations)) {
 			return nil, nil, 0, fmt.Errorf("group[%d]: revision source lacks iteration-override provenance; create a fresh queued source before changing inherited runtime or data-pool settings", i)
 		}
-		testGroup, engineGroup, err := tr.compileManagedTestGroupForModeWithRevisionLocked(i, len(groups), group, runtimeSettings, sharedDataSources, scenarioMode, revisionGroup, runtimeAlreadyApplied)
+		testGroup, engineGroup, err := tr.compileManagedTestGroupForModeWithRevisionLocked(i, len(groups), group, runtimeSettings, sharedDataSources, scenarioMode, revisionGroup, runtimeAlreadyApplied, projectQuotas...)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -1476,7 +2295,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	return tr.compileManagedTestGroupForModeWithRevisionLocked(index, totalGroups, group, runtimeSettings, sharedDataSources, scenarioMode, nil, false)
 }
 
-func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string, revisionGroup *TestGroup, runtimeAlreadyApplied bool) (TestGroup, engine.GroupConfig, error) {
+func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string, revisionGroup *TestGroup, runtimeAlreadyApplied bool, projectQuotas ...projectQuotaSnapshot) (TestGroup, engine.GroupConfig, error) {
 	script, ok := tr.scripts[group.ScriptID]
 	if revisionGroup != nil && revisionGroup.script != nil {
 		runtimeScript := revisionGroup.script
@@ -1745,7 +2564,11 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		}
 		effectiveRuntimeSettings.RedactionRules = cloneRedactionRules(revisionGroup.redactionRules)
 	} else {
-		effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
+		if len(projectQuotas) > 0 {
+			effectiveRuntimeSettings, err = resolveEffectiveRuntimeSettingsWithProjectQuota(effectiveRuntimeSettings, projectQuotas[0])
+		} else {
+			effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
+		}
 		if err != nil {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
 		}
@@ -1877,10 +2700,14 @@ func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDa
 // Callers hold tr.mu, so validation and compilation observe one controller
 // snapshot; the database ownership check remains authoritative.
 func (tr *TestRunner) validateDataPoolProjectsLocked(projectID string, bindings []storage.ScenarioDataPoolBinding) error {
+	return validateDataPoolProjects(tr.dataPoolStore, projectID, bindings)
+}
+
+func validateDataPoolProjects(poolStore dataPoolPersistence, projectID string, bindings []storage.ScenarioDataPoolBinding) error {
 	if len(bindings) == 0 {
 		return nil
 	}
-	if tr.dataPoolStore == nil {
+	if poolStore == nil {
 		return fmt.Errorf("data pool storage is not configured")
 	}
 	expectedProjectID := normalizeProjectID(projectID)
@@ -1889,7 +2716,7 @@ func (tr *TestRunner) validateDataPoolProjectsLocked(projectID string, bindings 
 		if poolID == "" {
 			return fmt.Errorf("data pool id is required")
 		}
-		pool, err := tr.dataPoolStore.GetDataPool(poolID)
+		pool, err := poolStore.GetDataPool(poolID)
 		if err != nil || pool == nil {
 			if err != nil {
 				return fmt.Errorf("load data pool %q: %w", poolID, err)
@@ -2131,7 +2958,7 @@ func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups
 	return normalizeProjectID(projectID), nil
 }
 
-func (tr *TestRunner) resolveCreateTestReleaseContext(projectID, requestedApplicationID, requestedReleaseID, status string) (string, string, error) {
+func resolveCreateTestReleaseContextWithEvidence(projectID, requestedApplicationID, requestedReleaseID, status string, evidence createTestReleaseEvidence) (string, string, error) {
 	projectID = normalizeProjectID(projectID)
 	applicationID := strings.TrimSpace(requestedApplicationID)
 	releaseID := strings.TrimSpace(requestedReleaseID)
@@ -2149,39 +2976,48 @@ func (tr *TestRunner) resolveCreateTestReleaseContext(projectID, requestedApplic
 		legacyFallback = true
 	}
 
-	var release *storage.Release
+	// Implicit runnable-test fallback is controller-owned and requires no
+	// external identity lookup. A draft with no context is likewise safe without
+	// evidence, which keeps internal capacity-only previews lightweight.
+	if !explicitRelease && (legacyFallback || applicationID == "") {
+		return applicationID, releaseID, nil
+	}
+	if !evidence.loaded ||
+		evidence.requestedApplicationID != strings.TrimSpace(requestedApplicationID) ||
+		evidence.requestedReleaseID != strings.TrimSpace(requestedReleaseID) {
+		return "", "", fmt.Errorf("release/application evidence changed or is unavailable; retry test creation")
+	}
+
+	releaseApplicationID := ""
+	releaseProjectID := ""
 	if explicitRelease {
-		if tr.releaseStore != nil {
-			var err error
-			release, err = tr.releaseStore.GetRelease(releaseID)
-			if err != nil || release == nil {
+		if evidence.storeConfigured {
+			if evidence.releaseErr != nil || !evidence.releaseResolved || evidence.releaseID != releaseID {
 				return "", "", fmt.Errorf("release not found: %s", releaseID)
 			}
-			if release.ArchivedAt != nil {
+			if evidence.releaseArchived {
 				return "", "", fmt.Errorf("release is archived: %s", releaseID)
 			}
-			if applicationID != "" && applicationID != strings.TrimSpace(release.ApplicationID) {
+			if applicationID != "" && applicationID != evidence.releaseApplicationID {
 				return "", "", fmt.Errorf("application_id does not match release")
 			}
-			applicationID = strings.TrimSpace(release.ApplicationID)
+			applicationID = evidence.releaseApplicationID
+			releaseApplicationID = evidence.releaseApplicationID
+			releaseProjectID = evidence.releaseProjectID
 		}
 	}
 
 	applicationProjectID := ""
 	if applicationID != "" && !legacyFallback {
-		if applicationStore, ok := tr.releaseStore.(interface {
-			GetApplication(id string) (*storage.Application, error)
-		}); ok {
-			application, err := applicationStore.GetApplication(applicationID)
-			if err != nil || application == nil {
+		if evidence.applicationStoreConfigured {
+			if evidence.applicationErr != nil || !evidence.applicationResolved || evidence.applicationID != applicationID {
 				return "", "", fmt.Errorf("application not found: %s", applicationID)
 			}
-			applicationProjectID = normalizeProjectID(application.ProjectID)
+			applicationProjectID = normalizeProjectID(evidence.applicationProjectID)
 		}
 	}
 
-	if release != nil {
-		releaseProjectID := strings.TrimSpace(release.ProjectID)
+	if releaseApplicationID != "" || releaseProjectID != "" {
 		if releaseProjectID == "" {
 			releaseProjectID = applicationProjectID
 		}
@@ -2203,6 +3039,22 @@ func (tr *TestRunner) resolveEffectiveRuntimeSettings(projectID string, runtimeS
 	rules, err := tr.resolveEffectiveRedactionRules(projectID, nilIfNoRules(runtimeSettings))
 	if err != nil {
 		return nil, err
+	}
+	if len(rules) == 0 {
+		return effective, nil
+	}
+	if effective == nil {
+		effective = &RuntimeSettingsOverride{}
+	}
+	effective.RedactionRules = rules
+	return effective, nil
+}
+
+func resolveEffectiveRuntimeSettingsWithProjectQuota(runtimeSettings *RuntimeSettingsOverride, quota projectQuotaSnapshot) (*RuntimeSettingsOverride, error) {
+	effective := cloneRuntimeSettings(runtimeSettings)
+	rules := cloneRedactionRules(quota.redactionRules)
+	if runtimeSettings != nil {
+		rules = append(cloneRedactionRules(runtimeSettings.RedactionRules), rules...)
 	}
 	if len(rules) == 0 {
 		return effective, nil

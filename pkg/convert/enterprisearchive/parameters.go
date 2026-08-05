@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -30,7 +31,21 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	}
 
 	dataSourceByFile := make(map[string]string)
-	for sectionName, values := range sections {
+	dataSourceSignatureByFile := make(map[string]string)
+	usedDataSourceNames := make(map[string]struct{})
+	sectionNames := make([]string, 0, len(sections))
+	for sectionName := range sections {
+		sectionNames = append(sectionNames, sectionName)
+	}
+	sort.Slice(sectionNames, func(i, j int) bool {
+		left, right := strings.ToLower(sectionNames[i]), strings.ToLower(sectionNames[j])
+		if left == right {
+			return sectionNames[i] < sectionNames[j]
+		}
+		return left < right
+	})
+	for _, sectionName := range sectionNames {
+		values := sections[sectionName]
 		lower := make(map[string]string, len(values))
 		for key, value := range values {
 			lower[strings.ToLower(strings.TrimSpace(key))] = cleanConfigValue(value)
@@ -122,16 +137,26 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 			} else if dataFile != "" {
 				param.Type = "file"
 				column := convertutil.FirstNonEmpty(lower["columnname"], lower["column"], lower["colname"])
-				if dataContent, ok := findFile(archiveFiles, dataFile); ok && column != "" {
-					dataSourceName, exists := dataSourceByFile[strings.ToLower(filepath.Base(dataFile))]
+				resolvedPath, dataContent, resolved := findFileEntry(archiveFiles, dataFile)
+				if resolved && column != "" {
+					firstRowHeader, columns := inferParameterDataSourceColumns(dataContent, column, lower["delimiter"], name, resolvedPath)
+					signature := normalizeParameterDelimiter(lower["delimiter"]) + "|" + strconv.FormatBool(firstRowHeader) + "|" + strings.Join(columns, "\x00")
+					fileKey := strings.ToLower(filepath.Clean(resolvedPath))
+					dataSourceKey := fileKey + "\x00" + signature
+					dataSourceName, exists := dataSourceByFile[dataSourceKey]
 					if !exists {
-						dataSourceName = sanitizeParameterDataSourceName(dataFile)
-						dataSourceByFile[strings.ToLower(filepath.Base(dataFile))] = dataSourceName
-						result.DataSources = append(result.DataSources, buildParameterDataSource(dataSourceName, dataFile, dataContent, column, lower["delimiter"], name))
+						baseName := sanitizeParameterDataSourceName(resolvedPath)
+						dataSourceName = uniqueParameterDataSourceName(baseName, usedDataSourceNames)
+						dataSourceByFile[dataSourceKey] = dataSourceName
+						if prior, conflicting := dataSourceSignatureByFile[fileKey]; conflicting && prior != signature {
+							result.Warnings = append(result.Warnings, "parameter file "+filepath.Base(filename)+": data file "+resolvedPath+" is referenced with conflicting delimiter/column layouts; separate deterministic data sources were created")
+						}
+						dataSourceSignatureByFile[fileKey] = signature
+						result.DataSources = append(result.DataSources, buildParameterDataSource(dataSourceName, resolvedPath, dataContent, column, lower["delimiter"], name))
 					}
 					param.DataSource = dataSourceName
-					param.Column = resolveParameterColumn(dataContent, column, lower["delimiter"], name, dataFile)
-				} else if dataContent, ok := findFile(archiveFiles, dataFile); ok {
+					param.Column = resolveParameterColumn(dataContent, column, lower["delimiter"], name, resolvedPath)
+				} else if resolved {
 					param.Type = "list"
 					param.Values = parseDataFileValues(dataContent)
 				} else {
@@ -163,6 +188,20 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	}
 
 	return result
+}
+
+func uniqueParameterDataSourceName(base string, used map[string]struct{}) string {
+	if _, exists := used[base]; !exists {
+		used[base] = struct{}{}
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := base + "_" + strconv.Itoa(suffix)
+		if _, exists := used[candidate]; !exists {
+			used[candidate] = struct{}{}
+			return candidate
+		}
+	}
 }
 
 // parseExplicitParameterBlockSize keeps LoadRunner's allocation selector

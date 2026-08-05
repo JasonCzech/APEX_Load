@@ -1505,6 +1505,9 @@ describe('SettingsPage', () => {
     expect(capacitySection.textContent).toContain('Archive Retention Executor')
     expect(capacitySection.textContent).toContain('Default Retention Days')
     expect(findSettingInput(capacitySection, 'Default Retention Days')?.value).toBe('45')
+    expect(capacitySection.textContent).toContain('HAR Retention Days')
+    expect(findSettingInput(capacitySection, 'HAR Retention Days')?.value).toBe('7')
+    expect(capacitySection.textContent).toContain('HAR Artifact Directory')
 
     const planButton = Array.from(capacitySection.querySelectorAll('button')).find(button => button.textContent?.includes('Plan Retention'))
     expect(planButton).toBeDefined()

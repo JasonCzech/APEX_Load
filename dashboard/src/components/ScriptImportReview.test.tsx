@@ -59,6 +59,48 @@ describe('ScriptImportReview', () => {
     container.remove()
   })
 
+  it('does not serialize preview data until the preview is visible and memoizes the result', () => {
+    const toJSON = vi.fn(() => ({ generated: true }))
+    const previewData = { toJSON }
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review hidden preview"
+          script={script}
+          previewData={previewData}
+          showPreview={false}
+        />,
+      )
+    })
+    expect(toJSON).not.toHaveBeenCalled()
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Review visible preview"
+          script={script}
+          previewData={previewData}
+          showPreview
+        />,
+      )
+    })
+    expect(toJSON).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('"generated": true')
+
+    act(() => {
+      root.render(
+        <ScriptImportReview
+          title="Unrelated title change"
+          script={script}
+          previewData={previewData}
+          showPreview
+        />,
+      )
+    })
+    expect(toJSON).toHaveBeenCalledTimes(1)
+  })
+
   it('renders unsupported elements and diagnostic review sections', () => {
     act(() => {
       root.render(

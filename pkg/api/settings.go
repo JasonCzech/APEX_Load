@@ -1713,23 +1713,28 @@ func (tr *TestRunner) refreshSystemSettingsFromStore(force bool) {
 	revision := tr.settingsRevision
 	tr.settingsRefreshMu.Unlock()
 	raw, err := tr.settingsStore.GetSetting(systemSettingsStoreKey)
-	if err != nil || strings.TrimSpace(raw) == "" {
+	if err != nil {
 		return
 	}
 	var loaded SystemSettings
-	if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
-		return
+	if strings.TrimSpace(raw) == "" {
+		// Deleting the durable settings row is the canonical reset-to-defaults
+		// operation. Apply that reset coherently so the admission seqlock can
+		// converge instead of comparing an empty durable value to stale cached JSON
+		// forever.
+		loaded = defaultSystemSettings(tr.defaultMaxTests)
+	} else {
+		if err := json.Unmarshal([]byte(raw), &loaded); err != nil {
+			return
+		}
+		if !rawJSONHasKey(raw, "prometheus") {
+			loaded.Prometheus = defaultPrometheusSettings()
+		}
+		if !rawJSONHasKey(raw, "client_downloads") {
+			loaded.ClientDownloads = defaultClientDownloadsSettings()
+		}
+		loaded = normalizeLoadedSystemSettings(loaded, raw, tr.defaultMaxTests)
 	}
-	if !rawJSONHasKey(raw, "prometheus") {
-		loaded.Prometheus = defaultPrometheusSettings()
-	}
-	if !rawJSONHasKey(raw, "client_downloads") {
-		loaded.ClientDownloads = defaultClientDownloadsSettings()
-	}
-	tr.mu.RLock()
-	defaultMaxConcurrent := tr.settings.General.MaxConcurrentTests
-	tr.mu.RUnlock()
-	loaded = normalizeLoadedSystemSettings(loaded, raw, defaultMaxConcurrent)
 	if err := validateSystemSettings(loaded); err != nil {
 		return
 	}

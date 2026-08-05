@@ -1,3 +1,5 @@
+import type { GoalConfig } from './goals'
+
 export interface ScriptWaitCondition {
   type?: string
   value?: string
@@ -38,7 +40,16 @@ export interface ScriptAssertionDefinition {
   type: string
   expected?: unknown
   value?: string
+  min?: number
   max?: number
+}
+
+export interface ScriptAuthConfig {
+  type?: string
+  username?: string
+  password?: string
+  token?: string
+  domain?: string
 }
 
 export interface ScriptHeaderEntry {
@@ -116,6 +127,7 @@ export interface ScriptActionDefinition {
   headers?: Record<string, string>
   header_list?: ScriptHeaderEntry[]
   body?: string
+  body_file?: string
   body_encoding?: string
   params?: Record<string, unknown>
   metadata?: Record<string, unknown>
@@ -125,7 +137,11 @@ export interface ScriptActionDefinition {
   control?: ScriptControlFlow
   extractors?: ScriptExtractorDefinition[]
   assertions?: ScriptAssertionDefinition[]
+  think_time?: ThinkTimeConfig
   think_time_after?: boolean
+  auth?: ScriptAuthConfig | null
+  timeout_ms?: number
+  max_redirects?: number | null
   soap?: {
     action?: string
     operation?: string
@@ -158,6 +174,8 @@ export interface ScriptControlFlow {
   max_iterations?: number
   /** control_loop data-driven mode; takes precedence over count/condition. */
   for_each?: ScriptForEachLoop
+  /** Run a condition-driven loop body once before evaluating its predicate. */
+  do_while?: boolean
 }
 
 export interface ThinkTimeConfig {
@@ -187,6 +205,7 @@ export interface RunLogicConfig {
   global_iterations?: number
   max_transactions?: number
   workload_model?: string
+  max_in_flight?: number
   auto_transactions?: string
   block_scheduling?: string
   action_sequence?: string[]
@@ -229,6 +248,7 @@ export interface HTTPConfig {
   traceparent_sampled?: boolean
   tls?: {
     min_version?: string
+    max_version?: string
     insecure_skip_verify?: boolean
     client_cert_file?: string
     client_key_file?: string
@@ -245,6 +265,7 @@ export interface HTTPConfig {
     username?: string
     password?: string
     token?: string
+    domain?: string
   }
 }
 
@@ -253,16 +274,28 @@ export interface BrowserConfig {
   headless?: boolean
   slow_mo_ms?: number
   user_agent?: string
+  locale?: string
+  timezone?: string
   device_profile?: string
   touch_mode?: boolean
   orientation?: string
   client_metrics?: boolean
+  experience_canary?: boolean
+  traceparent?: boolean
+  har_capture?: string
+  har_capture_policy?: string
+  har_sla_threshold_ms?: number
+  har_artifact_dir?: string
   capture_screenshots?: string
   cache_enabled?: boolean
   cache_content_urls?: boolean
   check_newer_versions?: boolean
   new_user_per_iteration?: boolean
   download_resources?: string
+  geolocation?: BrowserGeolocation
+  http_credentials?: BrowserHTTPCredentials
+  proxy?: BrowserProxyConfig
+  client_certificates?: BrowserClientCertificate[]
   viewport?: {
     width?: number
     height?: number
@@ -271,6 +304,34 @@ export interface BrowserConfig {
     allow_reviewed_javascript?: boolean
     allow_review_required?: boolean
   }
+}
+
+export interface BrowserGeolocation {
+  latitude?: number
+  longitude?: number
+  accuracy?: number
+}
+
+export interface BrowserHTTPCredentials {
+  username?: string
+  password?: string
+  origin?: string
+  send?: string
+}
+
+export interface BrowserProxyConfig {
+  server?: string
+  bypass?: string
+  username?: string
+  password?: string
+}
+
+export interface BrowserClientCertificate {
+  origin?: string
+  cert_path?: string
+  key_path?: string
+  pfx_path?: string
+  passphrase?: string
 }
 
 // BrowserEmulationConfig drives HTTP-transport replay identity (User-Agent /
@@ -434,7 +495,14 @@ export interface JMSConfig {
   delivery_mode?: string
   timeout_ms?: number
   properties?: Record<string, string>
+  tls?: JMSTLSConfig
   mock?: boolean
+}
+
+export interface JMSTLSConfig {
+  ca_cert_secret?: string
+  trust_store_ref?: string
+  insecure_skip_verify?: boolean
 }
 
 export interface SAPGUIConfig {
@@ -484,6 +552,20 @@ export interface KafkaConfig {
   schema?: string
   schema_id?: number
   properties?: Record<string, string>
+  mock?: boolean
+}
+
+export interface EventHubsConfig {
+  namespace?: string
+  event_hub?: string
+  connection_string?: string
+  connection_string_secret?: string
+  consumer_group?: string
+  partition_key?: string
+  partition_id?: string
+  start_position?: string
+  auth_type?: string
+  timeout_ms?: number
   mock?: boolean
 }
 
@@ -590,7 +672,26 @@ export type SourceArchiveReview = SourceReview
 
 export interface ScriptMetadata {
   import?: ScriptImportMetadata
+  runtime_policy?: ScriptRuntimePolicy
 }
+
+export interface ScriptRuntimePolicy {
+  allowed_target_hosts?: string[]
+}
+
+export type ScriptGoalConfig = Pick<GoalConfig,
+  | 'target_average_tps'
+  | 'p95_latency_ms'
+  | 'max_error_pct'
+  | 'max_avg_server_processing_ms'
+  | 'max_avg_transfer_ms'
+  | 'max_error_count'
+  | 'min_vusers'
+  | 'max_vusers'
+  | 'stop_on_sla_breach'
+  | 'stop_on_max_errors'
+  | 'sla_breach_window'
+>
 
 export interface ScriptConfig {
   base_url: string
@@ -613,6 +714,7 @@ export interface ScriptConfig {
   jms?: JMSConfig
   sapgui?: SAPGUIConfig
   kafka?: KafkaConfig
+  eventhubs?: EventHubsConfig
   bruno?: BrunoConfig
   observability?: ObservabilityConfig
 }
@@ -669,6 +771,7 @@ export interface ScriptDataSource {
   file_name?: string
   content_type?: string
   storage_ref?: string
+  staged_asset?: string
   strategy: string
   delimiter?: string
   first_row_header?: boolean
@@ -709,8 +812,11 @@ export interface ScriptDefinition {
   name: string
   version: string
   protocol: string
+  goal_config?: ScriptGoalConfig | null
   project_id?: string
   folder_id?: string | null
+  generated_by?: string
+  generated_from?: string
   metadata?: ScriptMetadata
   config: ScriptConfig
   init?: ScriptActionDefinition[]

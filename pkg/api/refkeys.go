@@ -3,8 +3,9 @@ package api
 // Human-readable reference keys (refkeys): per-environment monotonic sequence
 // allocation for scripts/scenarios/runs, an in-memory key→id index, and
 // one-time backfill of refkeys onto pre-existing records. Extracted from
-// runner.go; all methods hang off *TestRunner and run under its lock (the
-// "Locked" suffix denotes a caller-holds-mu contract).
+// runner.go. Index and script/scenario helpers retain the caller-holds-mu
+// contract denoted by "Locked". Run sequence reservation is the exception: it
+// uses a shared dedicated allocator so settings I/O never runs under tr.mu.
 
 import (
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
@@ -44,7 +46,7 @@ func refRunSeqSettingKey(envCode string, day string) string {
 
 func (tr *TestRunner) initRefKeys() {
 	tr.envCode = refkey.EnvCode(buildinfo.Environment())
-	tr.refRunSeqByDay = make(map[string]int)
+	tr.runRefSeqAllocator = newRunReferenceSequenceAllocator(tr.envCode, tr.settingsStore)
 	tr.refKeyIndex = make(map[string]string)
 
 	tr.refScriptSeq = tr.loadRefSeqSettingLocked(refSeqSettingKey(tr.envCode, refkey.TypeScript))
@@ -105,6 +107,91 @@ type atomicReferenceSequenceStore interface {
 	NextSettingSequence(key string) (int, error)
 }
 
+type atomicReferenceSequenceFloorStore interface {
+	EnsureSettingSequenceAtLeast(key string, minimum int) (int, error)
+}
+
+// runReferenceSequenceAllocator is shared by the live runner and every
+// request-scoped build snapshot. Its mutex is intentionally independent of
+// TestRunner.mu: settings-backed allocation may perform I/O, while nil and
+// non-atomic stores still need one single-controller monotonic sequence.
+type runReferenceSequenceAllocator struct {
+	mu      sync.Mutex
+	envCode string
+	store   settingsPersistence
+	byDay   map[string]int
+}
+
+func newRunReferenceSequenceAllocator(envCode string, store settingsPersistence) *runReferenceSequenceAllocator {
+	return &runReferenceSequenceAllocator{envCode: envCode, store: store, byDay: make(map[string]int)}
+}
+
+func (allocator *runReferenceSequenceAllocator) next(now time.Time) (int, error) {
+	if allocator == nil {
+		return 0, fmt.Errorf("run reference sequence allocator is not initialized")
+	}
+	day := refRunDay(now)
+	key := refRunSeqSettingKey(allocator.envCode, day)
+	allocator.mu.Lock()
+	defer allocator.mu.Unlock()
+	if store, ok := allocator.store.(atomicReferenceSequenceStore); ok {
+		current := allocator.byDay[day]
+		if current > 0 {
+			if floorStore, floorOK := allocator.store.(atomicReferenceSequenceFloorStore); floorOK {
+				floor, err := floorStore.EnsureSettingSequenceAtLeast(key, current)
+				if err != nil {
+					return 0, err
+				}
+				if floor > current {
+					current = floor
+					allocator.byDay[day] = floor
+				}
+			}
+		}
+		next, err := store.NextSettingSequence(key)
+		// Compatibility atomic stores may not expose the efficient ensure-floor
+		// primitive. Advance until the returned durable value clears every
+		// observed local ref instead of lowering the shared setting with Save.
+		for err == nil && next <= current {
+			next, err = store.NextSettingSequence(key)
+		}
+		if err == nil {
+			allocator.byDay[day] = next
+		}
+		return next, err
+	}
+	current := allocator.byDay[day]
+	if allocator.store != nil {
+		raw, err := allocator.store.GetSetting(key)
+		if err != nil {
+			return 0, fmt.Errorf("load run reference sequence %q: %w", key, err)
+		}
+		if persisted, parseErr := strconv.Atoi(strings.TrimSpace(raw)); parseErr == nil && persisted > current {
+			current = persisted
+		}
+	}
+	next := current + 1
+	if allocator.store != nil {
+		if err := allocator.store.SaveSetting(key, strconv.Itoa(next)); err != nil {
+			return 0, err
+		}
+	}
+	allocator.byDay[day] = next
+	return next, nil
+}
+
+func (allocator *runReferenceSequenceAllocator) observe(day string, sequence int) {
+	if allocator == nil || sequence <= 0 {
+		return
+	}
+	allocator.mu.Lock()
+	defer allocator.mu.Unlock()
+	if sequence <= allocator.byDay[day] {
+		return
+	}
+	allocator.byDay[day] = sequence
+}
+
 func (tr *TestRunner) allocateRefSequenceLocked(key string, current int) (int, error) {
 	if store, ok := tr.settingsStore.(atomicReferenceSequenceStore); ok {
 		return store.NextSettingSequence(key)
@@ -139,16 +226,10 @@ func (tr *TestRunner) nextScenarioSeqLocked() (int, error) {
 }
 
 func (tr *TestRunner) nextRunSeqLocked(now time.Time) (int, error) {
-	day := refRunDay(now)
-	current := tr.refRunSeqByDay[day]
-	if current == 0 {
-		current = tr.loadRefSeqSettingLocked(refRunSeqSettingKey(tr.envCode, day))
+	if tr.runRefSeqAllocator == nil {
+		tr.runRefSeqAllocator = newRunReferenceSequenceAllocator(tr.envCode, tr.settingsStore)
 	}
-	next, err := tr.allocateRefSequenceLocked(refRunSeqSettingKey(tr.envCode, day), current)
-	if err == nil {
-		tr.refRunSeqByDay[day] = next
-	}
-	return next, err
+	return tr.runRefSeqAllocator.next(now)
 }
 
 func refRunDay(t time.Time) string {
@@ -200,10 +281,10 @@ func (tr *TestRunner) observeAndIndexRefKeyLocked(key string, id string) {
 		}
 	case refkey.TypeRun:
 		day := parts.Date.Format(refRunDateLayout)
-		if parts.Seq > tr.refRunSeqByDay[day] {
-			tr.refRunSeqByDay[day] = parts.Seq
-			tr.saveRefSeqSettingLocked(refRunSeqSettingKey(tr.envCode, day), parts.Seq)
+		if tr.runRefSeqAllocator == nil {
+			tr.runRefSeqAllocator = newRunReferenceSequenceAllocator(tr.envCode, tr.settingsStore)
 		}
+		tr.runRefSeqAllocator.observe(day, parts.Seq)
 	}
 }
 

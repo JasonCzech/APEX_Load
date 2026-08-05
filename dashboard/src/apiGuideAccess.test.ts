@@ -21,6 +21,8 @@ describe('apiGuideAccess docs visibility classification', () => {
     )
 
     expect(examples.get('GET /api/v1/system/health')).toEqual([])
+    expect(examples.get('POST /api/v1/bridge/pair')).toEqual([])
+    expect(examples.get('GET /api/v1/bridge/status')).toEqual(['view_replay'])
     expect(examples.get('GET /api/v1/docs/swagger.yaml')).toEqual(['view_system'])
     expect(examples.get('GET /api/v1/scripts')).toEqual(['view_scripts'])
     expect(examples.get('POST /api/v1/scripts')).toEqual(['manage_scripts'])

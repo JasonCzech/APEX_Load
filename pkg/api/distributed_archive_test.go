@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 	localParquet "github.com/xitongsys/parquet-go-source/local"
 	parquetReader "github.com/xitongsys/parquet-go/reader"
@@ -759,6 +760,71 @@ func TestMergeRemoteArchiveIntervalSummariesAggregatesFleetTimeline(t *testing.T
 	}
 	if !strings.Contains(string(htmlReport), "unavailable") {
 		t.Fatal("HTML report did not label the unavailable fleet percentile")
+	}
+}
+
+func TestMergeRemoteArchiveIntervalSummariesUsesGeneratorDigestsWithoutRawEvents(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	digest := func(values ...time.Duration) *engine.TDigestSnapshot {
+		t.Helper()
+		value := engine.NewTDigest(200)
+		for _, duration := range values {
+			value.Add(float64(duration))
+		}
+		snapshot := value.Snapshot()
+		return &snapshot
+	}
+	writeSummary := func(name string, record IntervalSummaryRecord) string {
+		t.Helper()
+		path := filepath.Join(root, name)
+		file, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.NewEncoder(file).Encode(record); err != nil {
+			_ = file.Close()
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	a := writeSummary("a-digest.jsonl", IntervalSummaryRecord{
+		Timestamp: base, TestID: "run-digest", TotalTx: 2,
+		DurationDigest: digest(10*time.Millisecond, 20*time.Millisecond),
+	})
+	b := writeSummary("b-digest.jsonl", IntervalSummaryRecord{
+		Timestamp: base.Add(20 * time.Millisecond), TestID: "run-digest", TotalTx: 2,
+		DurationDigest: digest(100*time.Millisecond, 200*time.Millisecond),
+	})
+	destination := filepath.Join(root, "merged-digest.jsonl")
+	count, err := mergeRemoteArchiveIntervalSummaries(destination, []remoteArchiveBundle{
+		{target: "a", summariesPath: a, manifest: RunArchiveManifest{IntervalSummaryCount: 1}},
+		{target: "b", summariesPath: b, manifest: RunArchiveManifest{IntervalSummaryCount: 1}},
+	})
+	if err != nil {
+		t.Fatalf("mergeRemoteArchiveIntervalSummaries: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("summary count = %d, want 1", count)
+	}
+	file, err := os.Open(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	var merged IntervalSummaryRecord
+	if err := json.NewDecoder(file).Decode(&merged); err != nil {
+		t.Fatal(err)
+	}
+	if merged.PercentileQuality != archivePercentileQualityMergedDigest || merged.DurationDigest != nil {
+		t.Fatalf("merged digest evidence = quality:%q digest:%#v", merged.PercentileQuality, merged.DurationDigest)
+	}
+	if merged.P50Ms <= 0 || merged.P95Ms < 100 || merged.P99Ms < merged.P95Ms {
+		t.Fatalf("merged percentiles = p50:%f p95:%f p99:%f", merged.P50Ms, merged.P95Ms, merged.P99Ms)
 	}
 }
 

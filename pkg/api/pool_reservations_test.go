@@ -5,9 +5,26 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+// seedCapacityProjects persists the project rows a capacity/quota test refers to.
+// Admission evidence is now fail-closed on an unresolvable project (see
+// projectQuotaEvidence.quotaFor in capacity.go: a configured project store must
+// resolve the project), which matches production, where a test always belongs to
+// a durable project row. Fixtures that name a project without creating it would
+// otherwise be rejected as missing evidence rather than exercising quota logic.
+func seedCapacityProjects(t *testing.T, store *storage.SQLiteStore, ids ...string) {
+	t.Helper()
+	now := time.Now().UTC()
+	for _, id := range ids {
+		if err := store.SaveProject(&storage.Project{ID: id, Name: id, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s) returned error: %v", id, err)
+		}
+	}
+}
 
 // A pool-scoped reservation protects capacity within a fleet pool's member
 // envelope: a non-reserving project cannot consume the slice reserved for another
@@ -20,6 +37,7 @@ func TestPoolReservedCapacityProtectsPool(t *testing.T) {
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 50, Addr: ":8080"})
 	tr := server.runner
+	seedCapacityProjects(t, store, "proj-a", "proj-b")
 
 	// Fleet pool with a 4-generator envelope.
 	if err := store.SaveFleetPool(&storage.FleetPool{ID: "pool-r", Name: "Reserved Pool", Status: "active"}); err != nil {
@@ -48,9 +66,7 @@ func TestPoolReservedCapacityProtectsPool(t *testing.T) {
 		}
 	}
 	eval := func(test *ManagedTest) (bool, string) {
-		tr.mu.RLock()
-		defer tr.mu.RUnlock()
-		return tr.evaluateQuotaBlockLocked(test, "")
+		return evaluateQuotaBlockWithLoadedEvidenceForTest(t, tr, test, "")
 	}
 
 	// Non-reserving project B asking for 2 generators would eat into A's reserved 3

@@ -1,7 +1,10 @@
 package storage
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,6 +86,243 @@ func TestScenarioScheduleOccurrenceLookupRejectsAmbiguousTestIdentity(t *testing
 	}
 	if occurrence, err := store.GetScenarioScheduleOccurrenceByTestID(testID); err == nil || occurrence != nil {
 		t.Fatalf("ambiguous lookup = (%#v, %v), want nil occurrence and error", occurrence, err)
+	}
+}
+
+func TestMaterializedScenarioOccurrenceDemotedOnlyForPrelaunchAbort(t *testing.T) {
+	tests := []struct {
+		name                  string
+		priorTestStatus       string
+		wantOccurrenceStatus  string
+		wantOccurrenceReason  string
+		wantMaterializedAt    bool
+		wantScheduleLastRunAt bool
+		wantScheduleLastError bool
+	}{
+		{
+			name: "initializing run never crossed backend boundary", priorTestStatus: "INITIALIZING",
+			wantOccurrenceStatus: "failed", wantOccurrenceReason: "prelaunch_aborted",
+			wantMaterializedAt: false, wantScheduleLastRunAt: false, wantScheduleLastError: true,
+		},
+		{
+			name: "running lifecycle remains a real materialization", priorTestStatus: "RUNNING",
+			wantOccurrenceStatus: "materialized", wantOccurrenceReason: "started",
+			wantMaterializedAt: true, wantScheduleLastRunAt: true, wantScheduleLastError: false,
+		},
+	}
+	for index, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := newHAFencingStore(t)
+			now := time.Date(2026, 8, 5, 17, index, 0, 0, time.UTC)
+			suffix := string(rune('a' + index))
+			scenarioID := "scenario-prelaunch-abort-" + suffix
+			scheduleID := "schedule-prelaunch-abort-" + suffix
+			occurrenceID := "occurrence-prelaunch-abort-" + suffix
+			testID := "test-prelaunch-abort-" + suffix
+			if err := store.SaveScenario(&Scenario{
+				ID: scenarioID, Name: "Prelaunch abort", Duration: "1m", CreatedAt: now, UpdatedAt: now,
+			}, nil); err != nil {
+				t.Fatalf("SaveScenario: %v", err)
+			}
+			record := &TestRecord{
+				ID: testID, Name: "Prelaunch abort", Status: testCase.priorTestStatus,
+				ScenarioID: scenarioID, ProjectID: DefaultProjectID, Duration: int64(time.Minute),
+				StartTime: now, Groups: []any{},
+			}
+			if err := store.SaveTest(record); err != nil {
+				t.Fatalf("SaveTest(initial): %v", err)
+			}
+			nextRunAt := now.Add(5 * time.Minute)
+			if err := store.SaveScenarioSchedule(&ScenarioSchedule{
+				ID: scheduleID, ScenarioID: scenarioID, ProjectID: DefaultProjectID, Revision: 1,
+				Name: "Prelaunch abort", CronExpr: "*/5 * * * *", Timezone: "UTC", Enabled: true,
+				LastRunTestID: testID, LastRunAt: &now, NextRunAt: &nextRunAt,
+				CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
+			}); err != nil {
+				t.Fatalf("SaveScenarioSchedule: %v", err)
+			}
+			if err := store.SaveScenarioScheduleOccurrence(&ScenarioScheduleOccurrence{
+				ID: occurrenceID, ScheduleID: scheduleID, ScenarioID: scenarioID, ProjectID: DefaultProjectID,
+				ScheduleRevision: 1, PlannedAt: now, MaterializedAt: &now, Status: "materialized",
+				ReasonCode: "started", TestID: testID, CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				t.Fatalf("SaveScenarioScheduleOccurrence: %v", err)
+			}
+
+			endedAt := now.Add(time.Second)
+			record.Status = "ABORTED"
+			record.EndTime = &endedAt
+			record.Error = "test cancelled before start"
+			if err := store.SaveTest(record); err != nil {
+				t.Fatalf("SaveTest(ABORTED): %v", err)
+			}
+
+			occurrence, err := store.GetScenarioScheduleOccurrenceByTestID(testID)
+			if err != nil || occurrence == nil {
+				t.Fatalf("GetScenarioScheduleOccurrenceByTestID = (%#v, %v)", occurrence, err)
+			}
+			if occurrence.Status != testCase.wantOccurrenceStatus || occurrence.ReasonCode != testCase.wantOccurrenceReason ||
+				(occurrence.MaterializedAt != nil) != testCase.wantMaterializedAt {
+				t.Fatalf("occurrence after abort = %#v", occurrence)
+			}
+			schedule, err := store.GetScenarioSchedule(scheduleID)
+			if err != nil {
+				t.Fatalf("GetScenarioSchedule: %v", err)
+			}
+			if schedule.LastRunTestID != testID || (schedule.LastRunAt != nil) != testCase.wantScheduleLastRunAt ||
+				(strings.TrimSpace(schedule.LastError) != "") != testCase.wantScheduleLastError {
+				t.Fatalf("schedule after abort = %#v", schedule)
+			}
+		})
+	}
+}
+
+func TestDeletingQueuedScheduledTestTerminalizesOccurrence(t *testing.T) {
+	tests := []struct {
+		name       string
+		deleteTest func(t *testing.T, store *SQLiteStore, testID string)
+	}{
+		{
+			name: "direct delete",
+			deleteTest: func(t *testing.T, store *SQLiteStore, testID string) {
+				t.Helper()
+				if err := store.DeleteTest(testID); err != nil {
+					t.Fatalf("DeleteTest: %v", err)
+				}
+			},
+		},
+		{
+			name: "execution lease fenced delete",
+			deleteTest: func(t *testing.T, store *SQLiteStore, testID string) {
+				t.Helper()
+				const owner = "controller/delete-scheduled-test"
+				if acquired, err := store.TryAcquireSchedulerLease(testExecutionLeaseName, owner, time.Now().UTC(), time.Minute); err != nil || !acquired {
+					t.Fatalf("TryAcquireSchedulerLease = (%v, %v), want (true, nil)", acquired, err)
+				}
+				result, err := store.DeleteTestIfLeaseHeld(testID, testExecutionLeaseName, owner)
+				if err != nil || result != LeaseFencedDeleteDeleted {
+					t.Fatalf("DeleteTestIfLeaseHeld = (%q, %v), want (%q, nil)", result, err, LeaseFencedDeleteDeleted)
+				}
+			},
+		},
+	}
+
+	for index, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			store := newHAFencingStore(t)
+			now := time.Date(2026, 8, 5, 18, index, 0, 0, time.UTC)
+			suffix := string(rune('a' + index))
+			scenarioID := "scenario-delete-queued-" + suffix
+			scheduleID := "schedule-delete-queued-" + suffix
+			occurrenceID := "occurrence-delete-queued-" + suffix
+			testID := "test-delete-queued-" + suffix
+
+			if err := store.SaveScenario(&Scenario{
+				ID: scenarioID, Name: "Delete queued occurrence", Duration: "1m", CreatedAt: now, UpdatedAt: now,
+			}, nil); err != nil {
+				t.Fatalf("SaveScenario: %v", err)
+			}
+			if err := store.SaveTest(&TestRecord{
+				ID: testID, Name: "Delete queued occurrence", Status: "QUEUED", ScenarioID: scenarioID,
+				ProjectID: DefaultProjectID, Duration: int64(time.Minute), StartTime: now, Groups: []any{},
+			}); err != nil {
+				t.Fatalf("SaveTest: %v", err)
+			}
+			nextRunAt := now.Add(5 * time.Minute)
+			if err := store.SaveScenarioSchedule(&ScenarioSchedule{
+				ID: scheduleID, ScenarioID: scenarioID, ProjectID: DefaultProjectID, Revision: 1,
+				Name: "Delete queued occurrence", CronExpr: "*/5 * * * *", Timezone: "UTC", Enabled: true,
+				LastRunTestID: testID, NextRunAt: &nextRunAt, CreatedAt: now.Add(-time.Hour), UpdatedAt: now,
+			}); err != nil {
+				t.Fatalf("SaveScenarioSchedule: %v", err)
+			}
+			if err := store.SaveScenarioScheduleOccurrence(&ScenarioScheduleOccurrence{
+				ID: occurrenceID, ScheduleID: scheduleID, ScenarioID: scenarioID, ProjectID: DefaultProjectID,
+				ScheduleRevision: 1, PlannedAt: now, Status: "queued", ReasonCode: "start_retrying",
+				TestID: testID, ConflictSummary: "provider temporarily unavailable", CreatedAt: now, UpdatedAt: now,
+			}); err != nil {
+				t.Fatalf("SaveScenarioScheduleOccurrence: %v", err)
+			}
+
+			testCase.deleteTest(t, store, testID)
+
+			if _, err := store.GetTest(testID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("GetTest after delete error = %v, want sql.ErrNoRows", err)
+			}
+			occurrence, err := store.GetScenarioScheduleOccurrence(occurrenceID)
+			if err != nil {
+				t.Fatalf("GetScenarioScheduleOccurrence: %v", err)
+			}
+			if occurrence.Status != "failed" || occurrence.ReasonCode != scenarioScheduleOccurrenceTestDeletedReason ||
+				occurrence.TestID != "" || occurrence.MaterializedAt != nil ||
+				occurrence.ConflictSummary != scenarioScheduleOccurrenceTestDeletedError ||
+				!strings.HasPrefix(occurrence.TransitionToken, "test-deleted:"+testID+":") {
+				t.Fatalf("occurrence after test deletion = %#v", occurrence)
+			}
+			schedule, err := store.GetScenarioSchedule(scheduleID)
+			if err != nil {
+				t.Fatalf("GetScenarioSchedule: %v", err)
+			}
+			if schedule.LastRunTestID != "" || schedule.LastRunAt != nil || schedule.LastError != scenarioScheduleOccurrenceTestDeletedError ||
+				schedule.NextRequiredAction != "operator_decision_required" || schedule.NextRunAt == nil || !schedule.NextRunAt.Equal(nextRunAt) {
+				t.Fatalf("schedule after test deletion = %#v", schedule)
+			}
+		})
+	}
+}
+
+func TestDeletingScheduledTestRejectsAmbiguousOccurrenceCorrelation(t *testing.T) {
+	store := newHAFencingStore(t)
+	now := time.Date(2026, 8, 5, 19, 0, 0, 0, time.UTC)
+	const (
+		scenarioID = "scenario-delete-ambiguous"
+		scheduleID = "schedule-delete-ambiguous"
+		testID     = "test-delete-ambiguous"
+	)
+	if err := store.SaveScenario(&Scenario{
+		ID: scenarioID, Name: "Delete ambiguous occurrence", Duration: "1m", CreatedAt: now, UpdatedAt: now,
+	}, nil); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	if err := store.SaveTest(&TestRecord{
+		ID: testID, Name: "Delete ambiguous occurrence", Status: "QUEUED", ScenarioID: scenarioID,
+		ProjectID: DefaultProjectID, Duration: int64(time.Minute), StartTime: now, Groups: []any{},
+	}); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
+	if err := store.SaveScenarioSchedule(&ScenarioSchedule{
+		ID: scheduleID, ScenarioID: scenarioID, ProjectID: DefaultProjectID, Revision: 1,
+		Name: "Delete ambiguous occurrence", CronExpr: "* * * * *", Timezone: "UTC", Enabled: true,
+		LastRunTestID: testID, CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveScenarioSchedule: %v", err)
+	}
+	for index := range 2 {
+		if err := store.SaveScenarioScheduleOccurrence(&ScenarioScheduleOccurrence{
+			ID: scheduleID + "-occurrence-" + string(rune('a'+index)), ScheduleID: scheduleID,
+			ScenarioID: scenarioID, ProjectID: DefaultProjectID, ScheduleRevision: 1,
+			PlannedAt: now.Add(time.Duration(index) * time.Minute), Status: "queued", ReasonCode: "start_retrying",
+			TestID: testID, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			t.Fatalf("SaveScenarioScheduleOccurrence(%d): %v", index, err)
+		}
+	}
+
+	err := store.DeleteTest(testID)
+	if err == nil || !strings.Contains(err.Error(), "correlated to 2 scenario schedule occurrences") {
+		t.Fatalf("DeleteTest error = %v, want ambiguous-correlation failure", err)
+	}
+	if test, err := store.GetTest(testID); err != nil || test.Status != "QUEUED" {
+		t.Fatalf("test after rejected delete = (%#v, %v), want retained QUEUED test", test, err)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(scheduleID)
+	if err != nil || len(occurrences) != 2 {
+		t.Fatalf("ListScenarioScheduleOccurrences = (%#v, %v), want two rows", occurrences, err)
+	}
+	for _, occurrence := range occurrences {
+		if occurrence.TestID != testID || occurrence.Status != "queued" || occurrence.ReasonCode != "start_retrying" {
+			t.Fatalf("ambiguous occurrence changed despite rollback: %#v", occurrence)
+		}
 	}
 }
 

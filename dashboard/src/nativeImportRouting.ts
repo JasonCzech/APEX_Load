@@ -72,10 +72,27 @@ function hasOpenAPISourceMarkers(content: string): boolean {
   }
 }
 
+function scriptImportTargetFromContent(content: string): NativeImportTarget | null {
+  if (/\bload\.(?:WebRequest|initialize|action|sleep|Transaction)\b/.test(content)) {
+    return { launcher: 'devweb' }
+  }
+  if (/from\s+['"]@playwright\/test['"]|require\(['"]@playwright\/test['"]\)|\bpage\.(?:goto|click|fill|locator)\s*\(/.test(content)) {
+    return { launcher: 'recorder_export' }
+  }
+  if (/from\s+['"]k6(?:\/http)?['"]|require\(['"]k6(?:\/http)?['"]\)|\bhttp\.(?:get|post|put|patch|del|request)\s*\(/.test(content)) {
+    return { launcher: 'k6' }
+  }
+  return null
+}
+
 export async function nativeImportTargetForFile(file: File): Promise<NativeImportTarget> {
   const name = file.name.toLowerCase()
   if (isOpenCollectionFileName(file)) return { launcher: 'bruno', mode: 'native_requests' }
   const namedTarget = nativeImportTargetForFileName(name)
+  if (name.endsWith('.js') || name.endsWith('.ts')) {
+    const content = await file.slice(0, 128 * 1024).text()
+    return scriptImportTargetFromContent(content) || namedTarget
+  }
   const inspectContent = (name.endsWith('.yaml') || name.endsWith('.yml') || name.endsWith('.json')) &&
     !name.endsWith('.postman_collection.json') &&
     !name.endsWith('.postman_environment.json') &&

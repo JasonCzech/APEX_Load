@@ -128,7 +128,14 @@ func actionThenClause(spec dsl.ActionSpec) map[string]any {
 		}
 	}
 
-	then := map[string]any{"description": spec.Summary}
+	description := spec.Summary
+	if spec.ExecutionNote != "" {
+		description += " " + spec.ExecutionNote
+	}
+	then := map[string]any{"description": description}
+	if spec.ExecutionPosture != "" {
+		then["x-execution-posture"] = spec.ExecutionPosture
+	}
 	if len(properties) > 0 {
 		then["properties"] = properties
 	}
@@ -176,7 +183,29 @@ func fieldSchema(field dsl.FieldSpec) map[string]any {
 		schema["type"] = "boolean"
 	case dsl.FieldKindEnum:
 		schema["type"] = "string"
-		schema["enum"] = toAnySlice(field.Enum)
+		if field.SchemaEnum {
+			accepted := append(append([]string(nil), field.Enum...), field.EnumAliases...)
+			if field.EnumCaseFold || field.EnumTrimSpace {
+				if field.EnumAllowBlank {
+					accepted = append(accepted, "")
+				}
+				pattern := normalizedEnumPattern(accepted, field.EnumCaseFold, field.EnumTrimSpace)
+				if field.EnumAllowEmpty && !field.EnumAllowBlank {
+					schema["anyOf"] = []any{map[string]any{"const": ""}, map[string]any{"pattern": pattern}}
+				} else {
+					schema["pattern"] = pattern
+				}
+			} else {
+				if field.EnumAllowEmpty || field.EnumAllowBlank {
+					accepted = append(accepted, "")
+				}
+				schema["enum"] = toAnySlice(accepted)
+			}
+		} else {
+			// Open catalog choices remain examples because some protocol runtimes
+			// trim, fold case, or accept compatibility aliases outside the editor list.
+			schema["examples"] = toAnySlice(field.Enum)
+		}
 	case dsl.FieldKindObject:
 		schema["type"] = "object"
 	case dsl.FieldKindArray:
@@ -191,6 +220,47 @@ func fieldSchema(field dsl.FieldSpec) map[string]any {
 		schema["maximum"] = field.Maximum
 	}
 	return schema
+}
+
+func normalizedEnumPattern(values []string, caseFold, trimSpace bool) string {
+	var pattern strings.Builder
+	pattern.WriteByte('^')
+	if trimSpace {
+		pattern.WriteString(`\s*`)
+	}
+	pattern.WriteString("(?:")
+	for valueIndex, value := range values {
+		if valueIndex > 0 {
+			pattern.WriteByte('|')
+		}
+		for index := 0; index < len(value); index++ {
+			char := value[index]
+			if caseFold && char >= 'a' && char <= 'z' {
+				pattern.WriteByte('[')
+				pattern.WriteByte(char)
+				pattern.WriteByte(char - ('a' - 'A'))
+				pattern.WriteByte(']')
+				continue
+			}
+			if caseFold && char >= 'A' && char <= 'Z' {
+				pattern.WriteByte('[')
+				pattern.WriteByte(char + ('a' - 'A'))
+				pattern.WriteByte(char)
+				pattern.WriteByte(']')
+				continue
+			}
+			if strings.ContainsRune(`\.^$|?*+()[]{}`, rune(char)) {
+				pattern.WriteByte('\\')
+			}
+			pattern.WriteByte(char)
+		}
+	}
+	pattern.WriteByte(')')
+	if trimSpace {
+		pattern.WriteString(`\s*`)
+	}
+	pattern.WriteByte('$')
+	return pattern.String()
 }
 
 // specTypeNames returns every accepted spelling for a spec: canonical type,
@@ -249,7 +319,7 @@ func GenerateReference() []byte {
 	}
 
 	b.WriteString("## Engine actions (any protocol)\n\n")
-	b.WriteString("Valid in every script except jms-* and kafka, whose validators accept only their own action types.\n\n")
+	b.WriteString("Valid in every script, including JMS, Kafka, and Event Hubs; these actions execute in the common engine lifecycle rather than protocol dispatch.\n\n")
 	for _, spec := range engine {
 		writeActionSpec(&b, spec)
 	}
@@ -271,6 +341,9 @@ func GenerateReference() []byte {
 func writeActionSpec(b *strings.Builder, spec dsl.ActionSpec) {
 	fmt.Fprintf(b, "### `%s`\n\n", spec.Type)
 	fmt.Fprintf(b, "%s\n\n", spec.Summary)
+	if spec.ExecutionPosture != "" {
+		fmt.Fprintf(b, "Execution posture: `%s` — %s\n\n", spec.ExecutionPosture, spec.ExecutionNote)
+	}
 	if len(spec.Aliases) > 0 {
 		fmt.Fprintf(b, "Aliases: `%s`\n\n", strings.Join(spec.Aliases, "`, `"))
 	}

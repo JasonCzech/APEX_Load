@@ -157,6 +157,26 @@ describe('findJsonStringOccurrences', () => {
     expect(occurrences.map(occurrence => occurrence.value)).toEqual(['a"b', 'a"b'])
     expect(occurrences.every(occurrence => occurrence.rawText === escapedNeedle)).toBe(true)
   })
+
+  it('keeps numeric-looking object keys in the syntax-tree path order', () => {
+    const text = '{"10":"same","2":"same","nested":{"1":"same"}}'
+
+    expect(findJsonStringOccurrences(text, 'same').map(occurrence => occurrence.path)).toEqual([
+      '$["10"]',
+      '$["2"]',
+      '$.nested["1"]',
+    ])
+  })
+
+  it('retains duplicate object properties instead of misaligning later paths', () => {
+    const text = '{"duplicate":"same","duplicate":"same","after":{"target":"same"}}'
+
+    expect(findJsonStringOccurrences(text, 'same').map(occurrence => occurrence.path)).toEqual([
+      '$.duplicate',
+      '$.duplicate',
+      '$.after.target',
+    ])
+  })
 })
 
 describe('scriptEditorUtils replay handoff helpers', () => {

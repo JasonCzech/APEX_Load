@@ -147,8 +147,8 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
 
 3. Check protocol availability:
    ```bash
-   # In controller logs, look for protocol registration
-   grep "registering protocol" controller.log
+   # Inspect the code-owned action catalog exposed by the running controller
+   curl -fsS "$APEXLOAD_URL/api/v1/dsl/actions" | jq '.protocols'
    ```
 
 4. Try restarting controller and retry
@@ -160,7 +160,8 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
 1. This may be normal for long tests (metrics accumulation)
 2. Check if there's a goroutine leak:
    ```bash
-   # Enable pprof profiling
+   # Start the process with APEXLOAD_PPROF_ADDR=127.0.0.1:6060 first.
+   # For an in-cluster process, keep it loopback-only and use kubectl port-forward.
    go tool pprof http://localhost:6060/debug/pprof/goroutine
    ```
 
@@ -268,9 +269,9 @@ go build -o apexctl ./cmd/apexctl
    - actions array must not be empty
    - All template variables must be defined
 
-3. Run with verbose output:
+3. Validate the script with structured output before running it:
    ```bash
-   go run ./cmd/apexctl run --script test.json --vusers 1 -verbose
+   go run ./cmd/apexctl script validate --script test.json --format json
    ```
 
 #### Test completes but shows 0 transactions
@@ -293,7 +294,7 @@ go build -o apexctl ./cmd/apexctl
 1. Clean build cache:
    ```bash
    cd dashboard
-   rm -rf dist/
+   rm -rf ../pkg/api/static/
    npm run build
    ```
 
@@ -331,14 +332,14 @@ go test ./...
 1. Check TypeScript errors:
    ```bash
    cd dashboard
-   npm run lint
+   npm run typecheck
    ```
 
 2. Fix type issues in source files
 
 3. Clear cache and rebuild:
    ```bash
-   rm -rf node_modules dist
+   rm -rf node_modules ../pkg/api/static
    npm install
    npm run build
    ```
@@ -389,6 +390,9 @@ go test ./...
 **Symptom:** Process memory grows 1 MB/sec
 
 **Solutions:**
+Start the process with `APEXLOAD_PPROF_ADDR=127.0.0.1:6060` before collecting profiles.
+Production rejects non-loopback pprof binds; use `kubectl port-forward` for in-cluster pods.
+
 1. Check for goroutine leaks:
    ```bash
    # Get goroutine count while test running
@@ -411,8 +415,7 @@ go test ./...
 
 **In controller:**
 ```bash
-# Assuming slog is configured for debug level
-export LOG_LEVEL=debug
+export APEXLOAD_LOG_LEVEL=debug
 go run ./cmd/controller
 ```
 

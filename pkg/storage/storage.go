@@ -15,6 +15,8 @@ const DefaultRepositoryCategoryID = "uncategorized"
 const LegacyApplicationID = "legacy"
 const LegacyReleaseID = "legacy-imported"
 
+var ErrScenarioScheduleOccurrenceCorrelationAmbiguous = errors.New("test is correlated to multiple scenario schedule occurrences")
+
 // Store defines the interface for persisting APEX Load data.
 type Store interface {
 	// Domains and application repository hierarchy
@@ -228,6 +230,7 @@ type Store interface {
 
 	// Tests
 	SaveTest(test *TestRecord) error
+	TransitionTestFromShakeout(transition TestShakeoutTransition) (TestStatusTransitionResult, error)
 	GetTest(id string) (*TestRecord, error)
 	ListTests(projectID string, folderID *string) ([]*TestRecord, error)
 	ListTestsByContext(applicationID string, releaseID string, scenarioID string) ([]*TestRecord, error)
@@ -1303,6 +1306,14 @@ type TestRecord struct {
 	// binding survives a controller restart / HA failover and can be re-validated
 	// at launch time.
 	TimeslotID *string `json:"timeslot_id,omitempty"`
+
+	// Expected parent revisions are optional create-only compare-and-swap
+	// evidence. They are checked while the parent rows are locked in the same
+	// transaction that inserts the test and are never persisted with the row.
+	ExpectedProjectUpdatedAt       time.Time `json:"-"`
+	ExpectedApplicationUpdatedAt   time.Time `json:"-"`
+	ExpectedReleaseUpdatedAt       time.Time `json:"-"`
+	ExpectedStartAdmissionRevision int64     `json:"-"`
 }
 
 // TestCapacityBindingState is the lightweight durable projection used by HA
@@ -1333,3 +1344,43 @@ const (
 	TestStatusTransitionFenced    TestStatusTransitionResult = "fenced"
 	TestStatusTransitionMissing   TestStatusTransitionResult = "missing"
 )
+
+// TestPendingTransition is the minimal durable projection needed to queue a
+// startable test. It deliberately excludes groups, reservation bindings, and
+// other mutable control-plane fields so a stale admission callback cannot
+// overwrite a concurrent edit. ExpectedStartAdmissionRevision fences the
+// evidence used to choose PENDING; the optional lease term fences HA writers.
+type TestPendingTransition struct {
+	ID                             string
+	RefKey                         string
+	ProjectID                      string
+	StartTime                      time.Time
+	ExpectedStatus                 string
+	PendingSince                   time.Time
+	StartAuthorization             any
+	StartedBySubject               string
+	StartedByDisplayName           string
+	ExpectedStartAdmissionRevision int64
+	ExecutionLeaseName             string
+	ExecutionLeaseOwnerID          string
+	ExecutionLeaseGeneration       uint64
+}
+
+// TestShakeoutTransition is the narrow durable compare-and-swap used to
+// publish a completed one-shot script shakeout. It deliberately updates only
+// lifecycle evidence owned by the shakeout operation; a concurrent Abort or
+// replacement incarnation therefore cannot be overwritten by a stale full-row
+// snapshot.
+type TestShakeoutTransition struct {
+	ID                       string
+	RefKey                   string
+	ProjectID                string
+	StartTime                time.Time
+	Status                   string
+	PendingSince             *time.Time
+	Error                    string
+	StartAuthorization       any
+	ExecutionLeaseName       string
+	ExecutionLeaseOwnerID    string
+	ExecutionLeaseGeneration uint64
+}

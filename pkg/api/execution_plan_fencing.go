@@ -63,6 +63,21 @@ func (tr *TestRunner) executionLeaseTermCurrent(term executionLeaseTerm) bool {
 	return err == nil && lease != nil && lease.OwnerID == term.ownerID && lease.Generation == term.generation
 }
 
+// executionLeaseTermLocallyCurrent is the non-blocking half of the term check.
+// It is safe while tr.mu is held because it consults only leadership's local
+// epoch snapshot. Callers must perform executionLeaseTermCurrent immediately
+// before taking tr.mu and rely on the durable transaction CAS at commit.
+func (tr *TestRunner) executionLeaseTermLocallyCurrent(term executionLeaseTerm) bool {
+	if tr == nil || !tr.durableExecutionFence {
+		return true
+	}
+	if !term.valid() || tr.leadership == nil {
+		return false
+	}
+	ownerID, generation := tr.leadership.executionLeaseTerm()
+	return ownerID == term.ownerID && generation == term.generation
+}
+
 type leaseTermFencedExecutionPlanRunPersistence interface {
 	CreateExecutionPlanRunIfAbsentAndLeaseTermHeld(run *storage.ExecutionPlanRun, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)
 	CompareAndSwapExecutionPlanRunIfLeaseTermHeld(run *storage.ExecutionPlanRun, expectedRevision int64, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error)

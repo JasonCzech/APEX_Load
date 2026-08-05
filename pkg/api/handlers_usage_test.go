@@ -138,8 +138,8 @@ func TestHandleGetUsageAccountingBucketsAttributedRunsByUser(t *testing.T) {
 		t.Fatalf("alice bucket = %#v, want one attributed run", aliceBucket)
 	}
 	bobBucket := findUsageBucket(t, payload.ByUser, "bob")
-	if bobBucket.RunCount != 1 || bobBucket.VUserSeconds != 150 {
-		t.Fatalf("bob bucket = %#v, want one created run", bobBucket)
+	if bobBucket.RunCount != 1 || bobBucket.VUserSeconds != 0 {
+		t.Fatalf("bob bucket = %#v, want failed-before-start run counted without execution usage", bobBucket)
 	}
 }
 

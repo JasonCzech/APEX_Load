@@ -12,6 +12,8 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  type MouseHandlerDataParam,
+  type YAxisTickContentProps,
 } from 'recharts'
 
 import { ImportedDashboardResult, LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
@@ -26,7 +28,7 @@ import {
   buildLoadImpactModel,
   formatLoadImpactValue,
 } from './loadImpactModel'
-import { chartTooltipContentStyle } from './chartTooltipTheme'
+import { chartTooltipContentStyle, preserveChartItemOrder } from './chartTooltipTheme'
 import {
   DEFAULT_LOAD_IMPACT_GRAPH_METRIC_IDS,
   ART_STD_DEV_BAND_KEY,
@@ -112,6 +114,7 @@ import {
   executionChartMinuteRangeValue,
   executionChartTimeRangeForMinutes,
   type ExecutionChartTimeRange,
+  type ExecutionChartZoomAnchor,
 } from './testExecutionChartZoomModel'
 import {
   readStoredString,
@@ -125,8 +128,8 @@ interface Props {
   filteredData: MetricsHistoryPoint[]
   expandedChart: string | null
   onExpandedChartChange: (value: string | null) => void
-  onChartMouseDown: (activeLabel?: string | number) => void
-  onChartMouseMove: (activeLabel?: string | number) => void
+  onChartMouseDown: (anchor?: ExecutionChartZoomAnchor) => void
+  onChartMouseMove: (anchor?: ExecutionChartZoomAnchor) => void
   onZoom: () => void
   onResetZoom: () => void
   showRefArea: boolean
@@ -194,12 +197,6 @@ function sameGraphCursor(left: GraphCursorState | null | undefined, right: Graph
     && (left?.timestampMs ?? undefined) === (right?.timestampMs ?? undefined)
 }
 
-interface RechartsMouseEvent {
-  activeLabel?: string | number
-  activeTooltipIndex?: number | string | null
-  activePayload?: Array<{ payload?: { timestampMs?: number } }>
-}
-
 const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'test_results', label: 'Live Metrics' },
   { id: 'under_load', label: 'Under Load' },
@@ -231,16 +228,6 @@ const PRIMARY_Y_AXIS_WIDTH = 60
 const OVERLAY_Y_AXIS_WIDTH = 64
 const COMMAND_CENTER_PRIMARY_Y_AXIS_WIDTH = 52
 const COMMAND_CENTER_OVERLAY_Y_AXIS_WIDTH = 34
-
-function isAxisInteractionEvent(value: unknown): value is AxisInteractionEvent {
-  return Boolean(value && typeof value === 'object' && (
-    'clientX' in value
-    || 'clientY' in value
-    || 'currentTarget' in value
-    || 'preventDefault' in value
-    || 'stopPropagation' in value
-  ))
-}
 
 function readStoredTimeAxisMode(storageKey: string): ChartTimeAxisMode {
   return readStoredString(storageKey) === 'relative'
@@ -520,7 +507,7 @@ export default function TestExecutionCharts({
   const chartDrawerCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
   const sharedCursorRef = useRef<GraphCursorState | null>(activeCursor ?? null)
-  const pendingMouseMoveRef = useRef<{ activeLabel?: string | number; cursor: GraphCursorState | null } | null>(null)
+  const pendingMouseMoveRef = useRef<{ zoomAnchor?: ExecutionChartZoomAnchor; cursor: GraphCursorState | null } | null>(null)
   const mouseMoveFrameRef = useRef<number | null>(null)
   const onChartMouseMoveRef = useRef(onChartMouseMove)
   // Per-chart memo cache for the expensive derived series (downsample + std-dev band + smoothing).
@@ -963,21 +950,29 @@ export default function TestExecutionCharts({
     if (surface === 'command-center') {
       updateSharedCursor(pending.cursor)
     }
-    onChartMouseMoveRef.current(pending.activeLabel)
+    onChartMouseMoveRef.current(pending.zoomAnchor)
   }
 
-  const scheduleChartMouseMove = (activeLabel: string | number | undefined, cursor: GraphCursorState | null) => {
-    pendingMouseMoveRef.current = { activeLabel, cursor }
+  const scheduleChartMouseMove = (zoomAnchor: ExecutionChartZoomAnchor | undefined, cursor: GraphCursorState | null) => {
+    pendingMouseMoveRef.current = { zoomAnchor, cursor }
     if (mouseMoveFrameRef.current !== null) return
-    if (import.meta.env.MODE === 'test') {
-      flushPendingMouseMove()
-      return
-    }
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
       flushPendingMouseMove()
       return
     }
     mouseMoveFrameRef.current = window.requestAnimationFrame(flushPendingMouseMove)
+  }
+
+  const handleChartMouseUp = () => {
+    if (mouseMoveFrameRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+      window.cancelAnimationFrame(mouseMoveFrameRef.current)
+    }
+    // React queues both reducer dispatches from this event in order, so the
+    // latest throttled drag anchor becomes part of the same zoom snapshot
+    // before applySelection runs. Without this flush, a quick drag/release can
+    // apply a degenerate or one-frame-stale range.
+    flushPendingMouseMove()
+    onZoom()
   }
 
   const cursorXForChart = (chartData: MetricsHistoryPoint[]) => resolveSharedCursorTime(chartData, sharedCursor)
@@ -1029,7 +1024,7 @@ export default function TestExecutionCharts({
 
   const renderTooltip = (chartId: string) => {
     if (!showCursorLabels) {
-      return <Tooltip content={() => null} isAnimationActive={false} />
+      return <Tooltip content={() => null} itemSorter={preserveChartItemOrder} isAnimationActive={false} />
     }
     const showTimeLabel = showCursorLabels && hoveredChartId === chartId
     return (
@@ -1038,6 +1033,7 @@ export default function TestExecutionCharts({
         labelStyle={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: showTimeLabel ? 4 : 0, display: showTimeLabel ? undefined : 'none' }}
         labelFormatter={(value) => showTimeLabel ? formatXAxisLabel(value) : ''}
         formatter={(value, name, item) => [formatGraphOverlayMetricValue(rawTooltipMetricValue(value, item)), name]}
+        itemSorter={preserveChartItemOrder}
         isAnimationActive={false}
       />
     )
@@ -1045,7 +1041,7 @@ export default function TestExecutionCharts({
 
   const renderLoadImpactTooltip = (chart: ChartConfig) => {
     if (!showCursorLabels) {
-      return <Tooltip content={() => null} isAnimationActive={false} />
+      return <Tooltip content={() => null} itemSorter={preserveChartItemOrder} isAnimationActive={false} />
     }
     const showLabel = showCursorLabels && hoveredChartId === chart.id
     const rows = metricRowsForChart(chart)
@@ -1061,6 +1057,7 @@ export default function TestExecutionCharts({
             : ''
           return [formatLoadImpactValue(typeof value === 'number' ? value : undefined, rowUnits.get(dataKey)), name]
         }}
+        itemSorter={preserveChartItemOrder}
         isAnimationActive={false}
       />
     )
@@ -1068,30 +1065,49 @@ export default function TestExecutionCharts({
 
   const handleChartMouseMove = (
     chartId: string,
-    event?: RechartsMouseEvent,
+    event?: MouseHandlerDataParam,
     data?: ReadonlyArray<{ timestampMs?: number }>,
   ) => {
     setHoveredChartId(current => current === chartId ? current : chartId)
     const activeLabel = event?.activeLabel
+    const activeIndex = typeof event?.activeTooltipIndex === 'number'
+      ? event.activeTooltipIndex
+      : typeof event?.activeTooltipIndex === 'string' && event.activeTooltipIndex.trim() !== ''
+        ? Number(event.activeTooltipIndex)
+        : Number.NaN
+    const timestampMs = Number.isInteger(activeIndex) && activeIndex >= 0
+      ? data?.[activeIndex]?.timestampMs
+      : undefined
+    const zoomAnchor = activeLabel !== undefined && typeof timestampMs === 'number'
+      ? { label: activeLabel, timestampMs }
+      : undefined
     let nextCursor: GraphCursorState | null = null
     if (surface === 'command-center') {
-      // Key the shared crosshair on the hovered sample's timestamp (from the
-      // Recharts active payload), not a positional index — so it lines up on
-      // every chart regardless of how each was downsampled.
-      const activeIndex = typeof event?.activeTooltipIndex === 'number'
-        ? event.activeTooltipIndex
-        : typeof event?.activeTooltipIndex === 'string' && event.activeTooltipIndex.trim() !== ''
-          ? Number(event.activeTooltipIndex)
-          : Number.NaN
-      const timestampMs = event?.activePayload?.[0]?.payload?.timestampMs
-        ?? (Number.isInteger(activeIndex) && activeIndex >= 0
-          ? data?.[activeIndex]?.timestampMs
-          : undefined)
+      // Recharts 3 exposes the hovered index but no activePayload on this chart
+      // callback. Resolve the timestamp from the exact data array rendered by
+      // this chart so differently-downsampled graphs still align by time.
       nextCursor = activeLabel !== undefined || typeof timestampMs === 'number'
         ? { label: activeLabel, timestampMs }
         : null
     }
-    scheduleChartMouseMove(activeLabel, nextCursor)
+    scheduleChartMouseMove(zoomAnchor, nextCursor)
+  }
+
+  const handleChartMouseDown = (
+    event: MouseHandlerDataParam | undefined,
+    data: ReadonlyArray<{ timestampMs?: number }>,
+  ) => {
+    const activeIndex = typeof event?.activeTooltipIndex === 'number'
+      ? event.activeTooltipIndex
+      : typeof event?.activeTooltipIndex === 'string' && event.activeTooltipIndex.trim() !== ''
+        ? Number(event.activeTooltipIndex)
+        : Number.NaN
+    const timestampMs = Number.isInteger(activeIndex) && activeIndex >= 0
+      ? data[activeIndex]?.timestampMs
+      : undefined
+    onChartMouseDown(event?.activeLabel !== undefined && typeof timestampMs === 'number'
+      ? { label: event.activeLabel, timestampMs }
+      : undefined)
   }
 
   const handleChartMouseLeave = (chartId: string) => {
@@ -1292,15 +1308,27 @@ export default function TestExecutionCharts({
   }
 
   const axisInteractionProps = (label: string) => ({
-    className: 'chart-y-axis-click-target',
-    role: 'button',
-    tabIndex: 0,
-    'aria-label': `Show ${label} axis label`,
-    onClick: (...args: unknown[]) => openAxisLabelPopover(args.find(isAxisInteractionEvent) ?? null, label),
-    onKeyDown: (_tick: unknown, _index: number, event: ReactKeyboardEvent<SVGTextElement>) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        openAxisLabelPopover(event, label)
-      }
+    tick: ({ x = 0, y = 0, index = -1, fill = 'var(--text-muted)', textAnchor = 'end', payload }: YAxisTickContentProps) => {
+      const keyboardTarget = index === 0
+      return (
+        <text
+          x={x}
+          y={y}
+          dy="0.32em"
+          fill={fill}
+          textAnchor={textAnchor}
+          className="chart-y-axis-click-target"
+          role={keyboardTarget ? 'button' : undefined}
+          tabIndex={keyboardTarget ? 0 : undefined}
+          aria-label={keyboardTarget ? `Show ${label} axis label` : undefined}
+          onClick={event => openAxisLabelPopover(event, label)}
+          onKeyDown={keyboardTarget ? (event: ReactKeyboardEvent<SVGTextElement>) => {
+            if (event.key === 'Enter' || event.key === ' ') openAxisLabelPopover(event, label)
+          } : undefined}
+        >
+          {payload?.value ?? ''}
+        </text>
+      )
     },
   })
 
@@ -2597,9 +2625,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2663,7 +2691,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderLoadImpactTooltip(chart)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" />
+                <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {metricRows
                   .filter(row => !overlayMetricKeysForChart(chart).includes(row.key as OverlayMetricKey))
                   .map(row => {
@@ -2699,7 +2727,7 @@ export default function TestExecutionCharts({
                 {renderMetricAxis(chart, visibleMetricKeys, metricAxisDomain)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                {metricRows.length > 1 && <Legend verticalAlign="bottom" />}
+                {metricRows.length > 1 && <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map(row => showMetric(row.key) && (
@@ -2722,9 +2750,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2732,7 +2760,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                {isMultiGroup && <Legend verticalAlign="bottom" />}
+                {isMultiGroup && <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />}
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {chart.totalKey && showMetric(chart.totalKey) && (
@@ -2771,9 +2799,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2835,9 +2863,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2845,7 +2873,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" />
+                <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {chart.keys!.filter(key => showMetric(key.k)).map((key) => (
                   <Area key={key.k} yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey(key.k)} name={key.n} stroke={key.c} fill={chartGradientFill(chart, key.k)} fillOpacity={1} isAnimationActive={false} connectNulls={false} stackId={chart.type === 'area-stacked' ? (chart.stackId ?? 'stack') : undefined} />
@@ -2861,9 +2889,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2897,9 +2925,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2908,7 +2936,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend verticalAlign="bottom" />
+                <Legend verticalAlign="bottom" itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {metricRows.map((row) => showMetric(row.key) && (
@@ -2935,9 +2963,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
+                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={onZoom}
+                onMouseUp={handleChartMouseUp}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2945,7 +2973,7 @@ export default function TestExecutionCharts({
                 {renderOverlayAxes(chart, visibleMetricKeys)}
                 {renderTooltip(chart.id)}
                 {renderSharedCursor(displayChartData, metricAxisIdForChart)}
-                <Legend />
+                <Legend itemSorter={preserveChartItemOrder} />
                 {renderChartGradientDefs(chart, metricRows, visibleMetricKeys)}
                 {showGradientUnderlays && renderGradientUnderlays(chart, metricRows, visibleMetricKeys, displayMetricKey, metricAxisIdForChart)}
                 {showMetric('netSent') && <Line yAxisId={metricAxisIdForChart} type="monotone" dataKey={displayMetricKey('netSent')} name="Net Egress" stroke="var(--chart-1)" dot={false} strokeWidth={2} isAnimationActive={false} />}

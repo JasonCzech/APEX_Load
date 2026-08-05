@@ -405,8 +405,6 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "project storage is not configured")
 		return
 	}
-	s.projectMutationMu.Lock()
-	defer s.projectMutationMu.Unlock()
 	id := r.PathValue("id")
 	project, err := s.store.GetProject(id)
 	if err != nil {
@@ -426,6 +424,37 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		externalSecretDiscoveryComplete = false
 		slog.Warn("external project secret discovery incomplete; continuing with indexed cleanup guidance", "project_id", id, "reason", "provider_unavailable")
 	}
+	if strings.Contains(secretProvider, "azure_key_vault") {
+		externalSecretCleanupPrefix = engine.ProjectSecretBindingPrefix(id)
+	}
+	// Authorization and external-provider discovery have completed before the
+	// project-keyed exclusive section. From here through the durable graph delete,
+	// wait only for mutations already admitted for this project; unrelated
+	// projects remain fully concurrent.
+	releaseProjectMutation := s.projectMutations.acquire(id, true)
+	projectMutationHeld := true
+	defer func() {
+		if projectMutationHeld {
+			releaseProjectMutation()
+		}
+	}()
+	runnerDeletionHeld := false
+	if s.runner != nil {
+		if err := s.runner.beginProjectDeletion(id); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		runnerDeletionHeld = true
+		defer func() {
+			if runnerDeletionHeld {
+				s.runner.endProjectDeletion(id)
+			}
+		}()
+	}
+	// Provider discovery above may overlap an already-admitted secret mutation.
+	// Re-read the durable metadata after the project tombstone is installed and
+	// all earlier same-project mutations have drained. This bounded local query
+	// closes that race without holding the project gate across provider I/O.
 	if metadataStore, ok := s.store.(storage.ProjectSecretMetadataStore); ok {
 		secretMetadata, err := metadataStore.ListExternalProjectSecretMetadata(id)
 		if err != nil {
@@ -433,7 +462,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seenExternalNames := make(map[string]struct{}, len(secretMetadata))
-		seenExternalProviders := make(map[string]struct{}, len(secretMetadata))
+		seenExternalProviders := make(map[string]struct{}, len(secretMetadata)+1)
 		for _, metadata := range secretMetadata {
 			name := strings.TrimSpace(metadata.SecretName)
 			if name == "" {
@@ -451,31 +480,17 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		sort.Strings(externalSecretCleanupNames)
-		sort.Strings(externalSecretCleanupProviders)
-	}
-	if strings.Contains(secretProvider, "azure_key_vault") {
-		externalSecretCleanupPrefix = engine.ProjectSecretBindingPrefix(id)
-		foundProvider := false
-		for _, provider := range externalSecretCleanupProviders {
-			if provider == "azure_key_vault" {
-				foundProvider = true
-				break
+		if strings.Contains(secretProvider, "azure_key_vault") {
+			if _, found := seenExternalProviders["azure_key_vault"]; !found {
+				externalSecretCleanupProviders = append(externalSecretCleanupProviders, "azure_key_vault")
 			}
 		}
-		if !foundProvider {
-			externalSecretCleanupProviders = append(externalSecretCleanupProviders, "azure_key_vault")
-			sort.Strings(externalSecretCleanupProviders)
-		}
+		sort.Strings(externalSecretCleanupNames)
+		sort.Strings(externalSecretCleanupProviders)
+	} else if strings.Contains(secretProvider, "azure_key_vault") {
+		externalSecretCleanupProviders = append(externalSecretCleanupProviders, "azure_key_vault")
 	}
 	externalSecretCleanupRequired := len(externalSecretCleanupNames) > 0 || externalSecretCleanupPrefix != ""
-	if s.runner != nil {
-		if err := s.runner.beginProjectDeletion(id); err != nil {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		defer s.runner.endProjectDeletion(id)
-	}
 	tests, err := s.store.ListTests(id, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to enumerate project tests: "+err.Error())
@@ -577,6 +592,16 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "project not found")
 		return
 	case storage.LeaseFencedDeleteDeleted:
+		// Fence every request that resolved this project before the durable
+		// deletion. The marker is installed while the exclusive project gate is
+		// still held, before any queued mutation can enter its handler.
+		s.projectMutations.markDeleted(id)
+		// The durable graph deletion and coordinator tombstone are now complete.
+		// Release the project gate before in-memory/session cleanup: Bruno cleanup
+		// may wait on a shared filesystem or object backend, and queued requests are
+		// already rejected by the tombstone rather than allowed to recreate state.
+		releaseProjectMutation()
+		projectMutationHeld = false
 		// Continue with local-index and physical archive cleanup below.
 	default:
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("unexpected durable project delete result %q", deleteResult))
@@ -584,6 +609,12 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.runner != nil {
 		s.runner.forgetProject(id)
+		// Durable deletion and local index eviction are the only operations that
+		// must exclude a test's create→install boundary. Release before provider,
+		// filesystem, and archive-object cleanup so slow physical cleanup does not
+		// stall unrelated internal work for this now-deleted project.
+		s.runner.endProjectDeletion(id)
+		runnerDeletionHeld = false
 	}
 	s.clearProjectSourceSecretSessions(id)
 	cleanupErrors := make([]string, 0)

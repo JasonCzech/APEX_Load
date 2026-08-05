@@ -128,7 +128,7 @@ func TestConvertWSDLBuildsTypedSkeletonAndReportsAdditionalEndpoints(t *testing.
   xmlns:tns="urn:accounts"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <types>
-    <xsd:schema targetNamespace="urn:accounts">
+    <xsd:schema targetNamespace="urn:accounts" elementFormDefault="qualified">
       <xsd:element name="GetAccountRequest" type="tns:GetAccountRequestType"/>
       <xsd:complexType name="GetAccountRequestType">
         <xsd:sequence>
@@ -196,7 +196,7 @@ func TestConvertWSDLExpandsAllChoiceAndReportsAttributes(t *testing.T) {
   xmlns:tns="urn:accounts"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <types>
-    <xsd:schema targetNamespace="urn:accounts">
+    <xsd:schema targetNamespace="urn:accounts" elementFormDefault="qualified">
       <xsd:element name="UpdateAccountRequest" type="tns:UpdateAccountRequestType"/>
       <xsd:element name="SearchAccountRequest" type="tns:SearchAccountRequestType"/>
       <xsd:complexType name="UpdateAccountRequestType">
@@ -294,7 +294,7 @@ func TestConvertWSDLRendersSOAPHeaderBindings(t *testing.T) {
              xmlns:tns="urn:orders"
              name="OrderService" targetNamespace="urn:orders">
   <types>
-    <xsd:schema targetNamespace="urn:orders">
+    <xsd:schema targetNamespace="urn:orders" elementFormDefault="qualified">
       <xsd:element name="SessionHeader">
         <xsd:complexType>
           <xsd:sequence>
@@ -420,7 +420,7 @@ func TestConvertWSDLHandlesRecursiveTypeWithoutStackOverflow(t *testing.T) {
   xmlns:tns="urn:nodes"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <types>
-    <xsd:schema targetNamespace="urn:nodes">
+    <xsd:schema targetNamespace="urn:nodes" elementFormDefault="qualified">
       <xsd:element name="GetNodeRequest" type="tns:NodeType"/>
       <xsd:complexType name="NodeType">
         <xsd:sequence>
@@ -462,7 +462,7 @@ func TestConvertWSDLHandlesRecursiveSimpleTypeWithoutStackOverflow(t *testing.T)
   xmlns:tns="urn:cyc"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <types>
-    <xsd:schema targetNamespace="urn:cyc">
+    <xsd:schema targetNamespace="urn:cyc" elementFormDefault="qualified">
       <xsd:element name="GetThingRequest" type="tns:SelfRef"/>
       <xsd:simpleType name="SelfRef">
         <xsd:restriction base="tns:SelfRef"/>
@@ -559,7 +559,7 @@ func TestConvertWSDLZipResolvesLocalXSDInclude(t *testing.T) {
   xmlns:tns="urn:zip"
   xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <types>
-    <xsd:schema targetNamespace="urn:zip">
+    <xsd:schema targetNamespace="urn:zip" elementFormDefault="qualified">
       <xsd:include schemaLocation="../schema/request.xsd"/>
     </xsd:schema>
   </types>
@@ -571,7 +571,7 @@ func TestConvertWSDLZipResolvesLocalXSDInclude(t *testing.T) {
   </binding>
   <service name="ZipService"><port name="ZipPort" binding="tns:ZipBinding"><soap:address location="https://zip.example.test/soap"/></port></service>
 </definitions>`)
-	addZipFile("schema/request.xsd", `<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:zip" targetNamespace="urn:zip">
+	addZipFile("schema/request.xsd", `<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:zip" targetNamespace="urn:zip" elementFormDefault="qualified">
   <xsd:element name="LookupRequest" type="tns:LookupRequestType"/>
   <xsd:complexType name="LookupRequestType">
     <xsd:sequence>

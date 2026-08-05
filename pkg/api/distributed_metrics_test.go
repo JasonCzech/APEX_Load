@@ -159,7 +159,7 @@ func TestAggregateDistributedMetricsBatchesSumsDroppedSubscriberBatches(t *testi
 	combined, _, _ := aggregateDistributedMetricsBatches("t", map[string]generatorrpc.MetricsBatch{
 		"gen-a": {
 			TestID:    "t",
-			Telemetry: &generatorrpc.MetricsTelemetry{DroppedSubscriberBatches: 3},
+			Telemetry: &generatorrpc.MetricsTelemetry{DroppedSubscriberBatches: 3, MissingMetricWindows: 2},
 		},
 		"gen-b": {
 			TestID:    "t",
@@ -171,6 +171,9 @@ func TestAggregateDistributedMetricsBatchesSumsDroppedSubscriberBatches(t *testi
 	}
 	if combined.Telemetry.DroppedSubscriberBatches != 8 {
 		t.Fatalf("dropped subscriber batches = %d, want sum 8", combined.Telemetry.DroppedSubscriberBatches)
+	}
+	if combined.Telemetry.MissingMetricWindows != 2 {
+		t.Fatalf("missing metric windows = %d, want 2", combined.Telemetry.MissingMetricWindows)
 	}
 }
 

@@ -78,8 +78,13 @@ vi.mock('recharts', () => ({
   ReferenceArea: () => <span data-testid="mock-reference-area" />,
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="mock-responsive-container">{children}</div>,
   Tooltip: () => <span data-testid="mock-tooltip" />,
-  XAxis: ({ label }: { label?: string | { value?: string } }) => (
-    <span data-testid="mock-x-axis" data-label={typeof label === 'string' ? label : label?.value ?? ''} />
+  XAxis: ({ label, type, domain }: { label?: string | { value?: string }; type?: string; domain?: Array<string | number> }) => (
+    <span
+      data-testid="mock-x-axis"
+      data-label={typeof label === 'string' ? label : label?.value ?? ''}
+      data-type={type || ''}
+      data-domain={domain?.join(',') || ''}
+    />
   ),
   YAxis: ({ label }: { label?: string | { value?: string } }) => (
     <span data-testid="mock-y-axis" data-label={typeof label === 'string' ? label : label?.value ?? ''} />
@@ -565,6 +570,88 @@ describe('NewTestPage', () => {
 
     expect(container.textContent).toContain('Unsaved Changes')
     expect(document.querySelector('.run-default-modal')).toBeTruthy()
+  })
+
+  it('rejects invalid duration text in run and group overrides', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          initialScenarioId="scenario-1"
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const durationCard = Array.from(container.querySelectorAll<HTMLButtonElement>('button.new-test-default-card'))
+      .find(button => button.textContent?.includes('Duration'))
+    await act(async () => durationCard?.click())
+    const durationModal = document.querySelector('.run-default-modal') as HTMLElement
+    const durationInput = findControlByLabel<HTMLInputElement>(durationModal, 'Run duration', 'input')
+    await act(async () => {
+      if (durationInput) setInputValue(durationInput, '30')
+    })
+    expect(durationInput?.getAttribute('aria-invalid')).toBe('true')
+    await act(async () => {
+      Array.from(durationModal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save Run Override')?.click()
+    })
+    expect(document.querySelector('.run-default-modal')).toBe(durationModal)
+    expect(container.textContent).toContain('Run duration must be a positive Go duration')
+
+    await act(async () => {
+      Array.from(durationModal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Cancel')?.click()
+    })
+    const selectedScenario = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row.selected')
+    await act(async () => selectedScenario?.click())
+    await act(async () => container.querySelector<HTMLTableRowElement>('.new-test-script-row')?.click())
+    const groupModal = document.querySelector('.run-group-modal') as HTMLElement
+    const rampUp = findControlByLabel<HTMLInputElement>(groupModal, 'Ramp up', 'input')
+    await act(async () => {
+      if (rampUp) setInputValue(rampUp, '30')
+    })
+    expect(rampUp?.getAttribute('aria-invalid')).toBe('true')
+    await act(async () => {
+      Array.from(groupModal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save For This Run')?.click()
+    })
+    expect(document.querySelector('.run-group-modal')).toBe(groupModal)
+    expect(container.textContent).toContain('Ramp up must be a non-negative Go duration')
+
+    await act(async () => {
+      if (rampUp) setInputValue(rampUp, '0s')
+    })
+    expect(rampUp?.getAttribute('aria-invalid')).toBe('false')
+    await act(async () => {
+      Array.from(groupModal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save For This Run')?.click()
+    })
+    expect(document.querySelector('.run-group-modal')).toBeNull()
+  })
+
+  it('lets an operator intentionally clear the seeded run name', async () => {
+    const props = {
+      activeApplication: { id: 'app-1', name: 'ACC', created_at: '', updated_at: '' },
+      activeRelease: { id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' },
+      releases: [{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }],
+      initialScenarioId: 'scenario-1',
+      onSelectTest: vi.fn(),
+      onCreateRelease: vi.fn().mockResolvedValue(null),
+    }
+    await act(async () => { root.render(<NewTestPage {...props} />) })
+    await flushPromises()
+    const runNameInput = container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')
+    expect(runNameInput?.value).toBe('Multi-group (3 groups)')
+
+    await act(async () => {
+      if (runNameInput) setInputValue(runNameInput, '')
+    })
+    await flushPromises()
+    await act(async () => { root.render(<NewTestPage {...props} />) })
+    await flushPromises()
+
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('')
   })
 
   it('queues a guarded run with the still-open group editor draft applied', async () => {
@@ -1174,6 +1261,8 @@ describe('NewTestPage', () => {
     expect(profileCard.textContent).toContain('20m total')
     expect(profileCard.querySelector('[data-testid="mock-responsive-container"]')).toBeTruthy()
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
+    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-type')).toBe('number')
+    expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,dataMax')
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
     expect(launchCard.textContent).toContain('Hold for Manual Start / Schedule Run')
     expect(launchCard.textContent).toContain('Hold for Manual Start')

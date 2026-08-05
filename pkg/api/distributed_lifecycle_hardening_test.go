@@ -456,6 +456,66 @@ func TestDistributedStartupRollsBackEveryAttemptedShard(t *testing.T) {
 	}
 }
 
+func TestDistributedStartupRollbackFansOutStops(t *testing.T) {
+	blocking := &blockingStopGeneratorClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: true},
+		stopStarted:                make(chan struct{}),
+		releaseStop:                make(chan struct{}),
+	}
+	defer func() {
+		select {
+		case <-blocking.releaseStop:
+		default:
+			close(blocking.releaseStop)
+		}
+	}()
+	fast := &observedStopGeneratorClient{
+		startupLifecycleFakeClient: startupLifecycleFakeClient{accept: false},
+		stopStarted:                make(chan struct{}),
+	}
+	blocking.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-a", 10)
+	fast.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-b", 10)
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, func(_ context.Context, target string) (generatorClient, error) {
+		if target == "gen-a" {
+			return blocking, nil
+		}
+		return fast, nil
+	})
+	script := &dsl.Script{ID: "script", Name: "script", Protocol: "http"}
+	runCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	test := &ManagedTest{
+		ID: "run-startup-parallel-rollback", Name: "parallel rollback", Status: "INITIALIZING", Duration: time.Minute,
+		executionCtx: runCtx, cancel: cancel,
+		Groups: []TestGroup{
+			{Name: "group-a", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 1, script: script, Assignment: &GeneratorAssignmentSettings{Mode: generatorAssignmentModeSpecificHosts, SelectedTargets: []string{"gen-a"}}},
+			{Name: "group-b", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 1, script: script, Assignment: &GeneratorAssignmentSettings{Mode: generatorAssignmentModeSpecificHosts, SelectedTargets: []string{"gen-b"}}},
+		},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
+	done := make(chan struct{})
+	go func() {
+		backend.Run(runner, test)
+		close(done)
+	}()
+	select {
+	case <-blocking.stopStarted:
+	case <-time.After(time.Second):
+		t.Fatal("blocking startup rollback stop did not begin")
+	}
+	select {
+	case <-fast.stopStarted:
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("healthy startup rollback stop was serialized behind blocked target")
+	}
+	close(blocking.releaseStop)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startup rollback did not finish")
+	}
+}
+
 func TestDistributedStartupCleansUpAmbiguousAssignWorkError(t *testing.T) {
 	wantErr := errors.New("assignment response lost")
 	client := &startupLifecycleFakeClient{accept: true, assignErr: wantErr}

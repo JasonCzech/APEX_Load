@@ -85,15 +85,18 @@ type RemoteRunProxyResponse struct {
 }
 
 func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+	var req RemoteRunCreateRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	remote, ok, releaseCreateFence, err := s.reserveRemoteRunCreateConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote workspace not found")
 		return
 	}
-	var req RemoteRunCreateRequest
-	if !decodeJSONBody(w, r, &req) {
+	defer releaseCreateFence()
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	createReq := req.CreateTestRequest
@@ -120,6 +123,11 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "remote test was not created because its cleanup intent could not be persisted: "+err.Error())
 		return
 	}
+	// The durable cleanup intent now fences transport/credential mutation across
+	// the remaining network and link-commit steps. Retire the short-lived local
+	// snapshot reservation so unrelated metadata edits are not held for the full
+	// remote request duration.
+	releaseCreateFence()
 
 	var remoteTest ManagedTest
 	if err := s.remoteJSON(r.Context(), remote, http.MethodPost, "/api/v1/tests", prepared, &remoteTest); err != nil {
@@ -224,11 +232,13 @@ func (s *Server) handleCreateRemoteRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetRemoteRun(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+	remote, ok, err := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote workspace not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	remoteTestID := strings.TrimSpace(r.PathValue("remote_test_id"))
@@ -257,11 +267,13 @@ func (s *Server) handleGetRemoteRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRemoteRunAction(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		s.remoteConfigMu.RLock()
-		defer s.remoteConfigMu.RUnlock()
-		remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+		remote, ok, err := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 		if !ok {
 			writeError(w, http.StatusNotFound, "remote workspace not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
 			return
 		}
 		remoteTestID := strings.TrimSpace(r.PathValue("remote_test_id"))
@@ -303,6 +315,95 @@ func (s *Server) handleRemoteRunAction(action string) http.HandlerFunc {
 		s.recordAuditEvent(r, "remote.run."+action, "success", "remote_run", remoteTestID, link.LocalProjectID, map[string]any{"remote_id": remote.ID, "remote_name": remote.Name})
 		writeJSON(w, http.StatusOK, RemoteRunProxyResponse{Remote: s.sanitizeLibraryRemote(&remote), Link: link, Test: maskManagedTest(test), Action: maskRemoteRunAction(actionResponse)})
 	}
+}
+
+// snapshotLibraryRemoteConfig pins a deep-copied transport configuration and its
+// resolved credential. The remoteConfig lock protects only this local snapshot;
+// no caller holds it while waiting on another controller.
+func (s *Server) snapshotLibraryRemoteConfig(id string) (LibraryRemote, bool, error) {
+	// Refresh the HA-backed state before taking remoteConfigMu. Writers acquire
+	// remoteConfigMu before libraryStateMutationMu, so retaining the state lock
+	// while waiting for the config lock would invert that order. The refresh is
+	// complete before the config snapshot and therefore cannot expose a partially
+	// applied in-memory update.
+	s.libraryStateMutationMu.Lock()
+	s.loadLibraryState()
+	s.libraryStateMutationMu.Unlock()
+
+	s.remoteConfigMu.RLock()
+	remote, ok := s.libraryRemote(strings.TrimSpace(id))
+	s.remoteConfigMu.RUnlock()
+	if !ok {
+		return LibraryRemote{}, false, nil
+	}
+	// Credential stores may be backed by a keyring or external provider. Resolve
+	// them after releasing the config lock; the copied credential reference pins
+	// the requested version, and a concurrent rotation/deletion can at worst make
+	// this request fail closed.
+	apiKey, err := s.remoteLibraryAPIKey(remote)
+	if err != nil {
+		return remote, true, err
+	}
+	remote.APIKey = apiKey
+	return remote, true, nil
+}
+
+// reserveRemoteRunCreateConfig pins one transport snapshot and registers the
+// small pre-outbox interval as in flight under the same lock used by remote
+// update/delete. The returned release is idempotent so callers can retire the
+// fence as soon as cleanup is durable while still deferring it on every error
+// path.
+func (s *Server) reserveRemoteRunCreateConfig(id string) (LibraryRemote, bool, func(), error) {
+	if s == nil {
+		return LibraryRemote{}, false, func() {}, nil
+	}
+	id = strings.TrimSpace(id)
+	// Keep durable HA refresh I/O outside remoteConfigMu. As in the ordinary
+	// snapshot path, release libraryStateMutationMu before taking the config lock
+	// to preserve the writers' lock order.
+	s.libraryStateMutationMu.Lock()
+	s.loadLibraryState()
+	s.libraryStateMutationMu.Unlock()
+
+	s.remoteConfigMu.Lock()
+	remote, ok := s.libraryRemote(id)
+	if !ok {
+		s.remoteConfigMu.Unlock()
+		return LibraryRemote{}, false, func() {}, nil
+	}
+	if s.remoteRunCreates == nil {
+		s.remoteRunCreates = make(map[string]int)
+	}
+	s.remoteRunCreates[id]++
+	s.remoteConfigMu.Unlock()
+
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			s.remoteConfigMu.Lock()
+			if s.remoteRunCreates[id] <= 1 {
+				delete(s.remoteRunCreates, id)
+			} else {
+				s.remoteRunCreates[id]--
+			}
+			s.remoteConfigMu.Unlock()
+		})
+	}
+	// Register the short create fence before resolving credentials so a
+	// concurrent update/delete cannot retire the referenced secret. Resolution
+	// itself remains outside remoteConfigMu and therefore cannot stall unrelated
+	// config readers or a writer that will fail fast on the reservation.
+	apiKey, err := s.remoteLibraryAPIKey(remote)
+	if err != nil {
+		release()
+		return LibraryRemote{}, true, func() {}, err
+	}
+	remote.APIKey = apiKey
+	return remote, true, release, nil
+}
+
+func (s *Server) remoteRunCreateInFlightLocked(id string) bool {
+	return s != nil && s.remoteRunCreates[strings.TrimSpace(id)] > 0
 }
 
 func maskRemoteRunAction(action map[string]any) map[string]any {

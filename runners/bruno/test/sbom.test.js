@@ -12,7 +12,7 @@ const {
   parseLockPackageKey
 } = require('../scripts/sbom');
 
-test('SBOM generator inventories the immutable pnpm lock snapshot', () => {
+test('SBOM generator inventories only the production dependency closure', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'apexload-bruno-sbom-'));
   try {
     fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
@@ -22,7 +22,19 @@ test('SBOM generator inventories the immutable pnpm lock snapshot', () => {
     fs.writeFileSync(path.join(root, 'pnpm-lock.yaml'), `lockfileVersion: '9.0'
 
 importers:
-  .: {}
+  .:
+    dependencies:
+      '@scope/library':
+        specifier: 2.0.0
+        version: 2.0.0(peer@1.0.0)
+    optionalDependencies:
+      uuid:
+        specifier: 11.1.1
+        version: 11.1.1
+    devDependencies:
+      eslint:
+        specifier: 9.39.5
+        version: 9.39.5
 
 packages:
 
@@ -34,10 +46,27 @@ packages:
   duplicate@1.0.0:
     resolution: {integrity: sha512-example}
 
+  eslint@9.39.5:
+    resolution: {integrity: sha512-example}
+
+  peer@1.0.0:
+    resolution: {integrity: sha512-example}
+
   uuid@11.1.1:
     resolution: {integrity: sha512-example}
 
 snapshots:
+  '@scope/library@2.0.0(peer@1.0.0)':
+    dependencies:
+      duplicate: 1.0.0
+      peer: 1.0.0
+
+  duplicate@1.0.0: {}
+
+  eslint@9.39.5: {}
+
+  peer@1.0.0: {}
+
   uuid@11.1.1: {}
 `);
 
@@ -45,11 +74,13 @@ snapshots:
     assert.deepEqual(components.map(({ name, version }) => `${name}@${version}`), [
       '@scope/library@2.0.0',
       'duplicate@1.0.0',
+      'peer@1.0.0',
       'uuid@11.1.1'
     ]);
     const document = JSON.parse(generateSBOM(root));
     assert.equal(document.metadata.timestamp, '1970-01-01T00:00:00.000Z');
-    assert.equal(document.components.length, 3);
+    assert.equal(document.components.length, 4);
+    assert.equal(document.components.some(({ name }) => name === 'eslint'), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

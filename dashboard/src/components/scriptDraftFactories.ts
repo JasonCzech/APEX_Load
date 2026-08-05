@@ -405,20 +405,17 @@ function baseDraftForComponent(component: AuthoringComponent): ScriptDefinition 
 }
 
 // composeComponentDraft seeds a new draft script from a Component Library entry.
-// The dashboard ScriptDefinition has no init/teardown phases, so the component's
-// init, actions, and teardown fragments are folded into a single actions array in
-// that order, keeping everything visible and editable in the draft editor.
+// Preserve the component's execution phases so setup and cleanup actions keep the
+// lifecycle semantics declared by the library author.
 export function composeComponentDraft(component: AuthoringComponent): ScriptDefinition {
   const base = baseDraftForComponent(component)
   const draft: ScriptDefinition = {
     ...base,
     name: component.name,
     config: { ...base.config, ...(component.config ?? {}) } as ScriptDefinition['config'],
-    actions: [
-      ...(component.init ?? []),
-      ...(component.actions ?? []),
-      ...(component.teardown ?? []),
-    ],
+    init: structuredClone(component.init ?? []),
+    actions: structuredClone(component.actions ?? []),
+    teardown: structuredClone(component.teardown ?? []),
   }
   if (component.data_sources?.length) {
     draft.data_sources = component.data_sources

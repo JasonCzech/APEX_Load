@@ -556,14 +556,26 @@ func redactSensitiveQueryAssignments(value string, sensitiveName func(string) bo
 			continue
 		}
 		valueStart := index + 1
-		if valueStart >= len(value) ||
-			isQueryValueDelimiter(value[valueStart]) ||
-			strings.HasPrefix(value[valueStart:], Redacted) {
+		if valueStart >= len(value) || isQueryValueDelimiter(value[valueStart]) {
 			continue
 		}
 		valueEnd := valueStart
 		for valueEnd < len(value) && !isQueryValueDelimiter(value[valueEnd]) {
 			valueEnd++
+		}
+		// When this generic nested-query pass follows XML redaction, an invalid
+		// unquoted attribute can look like password=[REDACTED]/>. The trailing
+		// slash is known to be the XML self-close delimiter only when the complete
+		// preceding value was already scrubbed. Never infer that role from an
+		// arbitrary credential suffix: for password=/>, the slash is the complete
+		// credential value and must be redacted.
+		if valueEnd > valueStart && valueEnd < len(value) &&
+			value[valueEnd] == '>' && value[valueEnd-1] == '/' &&
+			value[valueStart:valueEnd-1] == Redacted {
+			continue
+		}
+		if value[valueStart:valueEnd] == Redacted {
+			continue
 		}
 		spans = append(spans, redactionSpan{start: valueStart, end: valueEnd})
 	}
@@ -1495,8 +1507,12 @@ func (cp compiledPolicy) scrubHARBody(entry, container map[string]any) {
 	if !ok {
 		return
 	}
+	textualMIME, knownMIME := classifyHARBodyMIME(container["mimeType"])
 	encoding, _ := container["encoding"].(string)
 	if !strings.EqualFold(strings.TrimSpace(encoding), "base64") {
+		if knownMIME && !textualMIME {
+			return
+		}
 		container["text"] = cp.value(text)
 		return
 	}
@@ -1512,12 +1528,63 @@ func (cp compiledPolicy) scrubHARBody(entry, container map[string]any) {
 		}
 		return
 	}
-	if !isTextualHARBody(decoded) {
+	if knownMIME && !textualMIME {
+		// A successfully decoded printable binary body is still binary. Do not
+		// let token-shaped bytes inside an octet stream change the captured
+		// payload that replay/import must preserve byte-for-byte.
+		return
+	}
+	if !utf8.Valid(decoded) || (!knownMIME && !isTextualHARBody(decoded)) {
 		return
 	}
 	scrubbed := cp.value(string(decoded))
 	container["text"] = base64.StdEncoding.EncodeToString([]byte(scrubbed))
 	container["encoding"] = "base64"
+}
+
+// classifyHARBodyMIME returns whether a recognized media type is textual and
+// whether the classification is authoritative. Vendor JSON/XML suffixes are
+// textual, while well-known binary families remain binary even when their bytes
+// happen to be valid, mostly printable UTF-8. Multipart and unknown application
+// subtypes stay ambiguous because they may contain either kind of payload.
+func classifyHARBodyMIME(raw any) (textual, known bool) {
+	value, _ := raw.(string)
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false, false
+	}
+	mediaType, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		return false, false
+	}
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	if strings.HasPrefix(mediaType, "text/") ||
+		strings.HasSuffix(mediaType, "+json") ||
+		strings.HasSuffix(mediaType, "+xml") {
+		return true, true
+	}
+	switch mediaType {
+	case "application/json", "application/xml",
+		"application/x-www-form-urlencoded",
+		"application/javascript", "application/ecmascript",
+		"application/graphql", "application/sql",
+		"application/yaml", "application/x-yaml", "application/toml",
+		"application/x-ndjson", "application/json-seq":
+		return true, true
+	case "application/octet-stream", "application/pdf",
+		"application/zip", "application/gzip", "application/x-gzip",
+		"application/x-7z-compressed", "application/vnd.rar", "application/x-rar-compressed",
+		"application/x-tar", "application/wasm",
+		"application/cbor", "application/msgpack", "application/x-msgpack",
+		"application/protobuf", "application/x-protobuf":
+		return false, true
+	}
+	for _, prefix := range []string{"image/", "audio/", "video/", "font/"} {
+		if strings.HasPrefix(mediaType, prefix) {
+			return false, true
+		}
+	}
+	return false, false
 }
 
 func isTextualHARBody(data []byte) bool {

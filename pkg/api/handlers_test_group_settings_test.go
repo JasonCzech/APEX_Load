@@ -454,6 +454,94 @@ func TestUpdateTestGroupRuntimeSettingsAppliesPreStart(t *testing.T) {
 	}
 }
 
+func TestExecutableGroupEditsInvalidateShakeoutPassAndOverride(t *testing.T) {
+	seedShakeoutEvidence := func(runner *TestRunner, testID string) {
+		runner.mu.Lock()
+		defer runner.mu.Unlock()
+		test := runner.tests[testID]
+		test.StartAuthorization = &QueuedStartAuthorization{
+			CapacityShortfall:  &CapacityShortfallStartAuthorization{ApprovedAt: time.Now().UTC(), TotalVUsers: test.TotalVUsers},
+			ScriptShakeout:     &ScriptShakeoutStartAuthorization{ApprovedAt: time.Now().UTC(), ReviewEvidenceSHA256: "prior-review"},
+			ScriptShakeoutPass: &ScriptShakeoutPassEvidence{PassedAt: time.Now().UTC(), EvidenceSHA256: "prior-executable-snapshot"},
+		}
+		test.validatedScriptShakeoutPass = "prior-executable-snapshot"
+	}
+	assertInvalidated := func(t *testing.T, runner *TestRunner, testID string) {
+		t.Helper()
+		runner.mu.RLock()
+		defer runner.mu.RUnlock()
+		test := runner.tests[testID]
+		if test.StartAuthorization == nil || test.StartAuthorization.CapacityShortfall == nil {
+			t.Fatalf("unrelated capacity authorization was removed: %#v", test.StartAuthorization)
+		}
+		if test.StartAuthorization.ScriptShakeout != nil || test.StartAuthorization.ScriptShakeoutPass != nil || test.validatedScriptShakeoutPass != "" {
+			t.Fatalf("executable edit retained stale shakeout authority: authorization=%#v validated=%q", test.StartAuthorization, test.validatedScriptShakeoutPass)
+		}
+	}
+
+	t.Run("runtime settings", func(t *testing.T) {
+		server, _ := newRuntimeOverrideTestServer(t)
+		test := createQueuedGroupSettingsTest(t, server)
+		seedShakeoutEvidence(server.runner, test.ID)
+		_, err := server.runner.UpdateTestGroupRuntimeSettings(
+			test.ID, "Buyers", mustGroupSettingsRevision(t, server.runner, test.ID, "Buyers"),
+			&RuntimeSettingsOverride{Pacing: &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 1777}}, []string{"pacing"},
+		)
+		if err != nil {
+			t.Fatalf("UpdateTestGroupRuntimeSettings: %v", err)
+		}
+		assertInvalidated(t, server.runner, test.ID)
+	})
+
+	t.Run("parameters", func(t *testing.T) {
+		server, _ := newRuntimeOverrideTestServer(t)
+		test := createQueuedGroupSettingsTest(t, server)
+		seedShakeoutEvidence(server.runner, test.ID)
+		view, err := server.runner.GetTestGroupParametersView(test.ID, "Buyers")
+		if err != nil {
+			t.Fatalf("GetTestGroupParametersView: %v", err)
+		}
+		parameters := cloneScriptParameters(view.Parameters)
+		parameters[1].Selection = "sequential"
+		if _, err := server.runner.UpdateTestGroupParameters(test.ID, "Buyers", view.Revision, parameters); err != nil {
+			t.Fatalf("UpdateTestGroupParameters: %v", err)
+		}
+		assertInvalidated(t, server.runner, test.ID)
+	})
+}
+
+func TestUpdateTestGroupRuntimeSettingsReplacesCreateTimeIterations(t *testing.T) {
+	server, _ := newRuntimeOverrideTestServer(t)
+	server.runner.StoreScript(parameterizedHTTPScript("script-iterations", "Iterations"))
+	initialIterations := 10
+	test, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Iteration edit", Duration: "5m",
+		Groups: []CreateGroupEntry{{Name: "Buyers", ScriptID: "script-iterations", VUsers: 1, Iterations: &initialIterations}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedIterations := 20
+	result, err := server.runner.UpdateTestGroupRuntimeSettings(
+		test.ID, "Buyers", mustGroupSettingsRevision(t, server.runner, test.ID, "Buyers"),
+		&RuntimeSettingsOverride{Iterations: &updatedIterations}, []string{"iterations"},
+	)
+	if err != nil {
+		t.Fatalf("UpdateTestGroupRuntimeSettings iterations: %v", err)
+	}
+	if result.NoChanges {
+		t.Fatal("iteration update reported no changes")
+	}
+	managed, ok := server.runner.GetTest(test.ID)
+	if !ok || len(managed.Groups) != 1 {
+		t.Fatalf("updated test = %#v", managed)
+	}
+	group := managed.Groups[0]
+	if group.IterationOverride == nil || *group.IterationOverride != updatedIterations || group.script == nil || group.script.Config.RunLogic.Iterations != updatedIterations {
+		t.Fatalf("iteration projection = override %#v compiled %#v, want %d", group.IterationOverride, group.script, updatedIterations)
+	}
+}
+
 func TestUpdateTestGroupRuntimeSettingsRejectsStartedRun(t *testing.T) {
 	server, _ := newRuntimeOverrideTestServer(t)
 	test := createQueuedGroupSettingsTest(t, server)

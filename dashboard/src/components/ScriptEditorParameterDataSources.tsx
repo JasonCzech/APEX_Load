@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type {
   ScriptDefinition,
@@ -32,6 +32,119 @@ import {
 type ScriptData = ScriptDefinition
 type DataSourceConfig = ScriptDataSource
 type ParameterConfig = ScriptParameterDefinition
+
+export interface ParameterDataCellDraftChange {
+  sourceIndex: number
+  rowIndex: number
+  columnIndex: number
+  value: string | null
+}
+
+const ParameterDataCellDraftContext = createContext<((change: ParameterDataCellDraftChange) => void) | null>(null)
+
+export function ParameterDataCellDraftProvider({
+  children,
+  onDraftChange,
+}: {
+  children: ReactNode
+  onDraftChange: (change: ParameterDataCellDraftChange) => void
+}) {
+  return (
+    <ParameterDataCellDraftContext.Provider value={onDraftChange}>
+      {children}
+    </ParameterDataCellDraftContext.Provider>
+  )
+}
+
+interface ParameterDataCellInputProps {
+  ariaLabel: string
+  value: string
+  onCommit: (value: string) => void
+  onDraftChange?: (value: string | null) => void
+}
+
+/**
+ * Keep keystrokes local to the cell and commit once focus leaves it. Updating the
+ * script on every character reparses and serializes the full DSL document, which
+ * made large parameter files progressively slower to edit.
+ */
+export function ParameterDataCellInput({ ariaLabel, value, onCommit, onDraftChange }: ParameterDataCellInputProps) {
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const cancelBlurCommitRef = useRef(false)
+  const draftRef = useRef(value)
+  const storedValueRef = useRef(value)
+  const onCommitRef = useRef(onCommit)
+  const onDraftChangeRef = useRef(onDraftChange)
+  const dirtyRef = useRef(false)
+
+  storedValueRef.current = value
+  onCommitRef.current = onCommit
+  onDraftChangeRef.current = onDraftChange
+
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) {
+      draftRef.current = value
+      dirtyRef.current = false
+      setDraft(value)
+      onDraftChangeRef.current?.(null)
+    }
+  }, [value])
+
+  useEffect(() => () => {
+    // Virtualized rows can disappear without dispatching blur. Flush an active
+    // edit from the passive cleanup so scrolling cannot discard a keystroke.
+    if (dirtyRef.current && draftRef.current !== storedValueRef.current) {
+      dirtyRef.current = false
+      onCommitRef.current(draftRef.current)
+    }
+    onDraftChangeRef.current?.(null)
+  }, [])
+
+  const commit = () => {
+    if (cancelBlurCommitRef.current) {
+      cancelBlurCommitRef.current = false
+      dirtyRef.current = false
+      onDraftChangeRef.current?.(null)
+      return
+    }
+    if (dirtyRef.current && draftRef.current !== storedValueRef.current) {
+      dirtyRef.current = false
+      onCommitRef.current(draftRef.current)
+      onDraftChangeRef.current?.(null)
+      return
+    }
+    dirtyRef.current = false
+    onDraftChangeRef.current?.(null)
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      aria-label={ariaLabel}
+      value={draft}
+      onChange={event => {
+        const nextValue = event.target.value
+        draftRef.current = nextValue
+        dirtyRef.current = nextValue !== storedValueRef.current
+        setDraft(nextValue)
+        onDraftChangeRef.current?.(dirtyRef.current ? nextValue : null)
+      }}
+      onBlur={commit}
+      onKeyDown={event => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+        if (event.key === 'Escape') {
+          cancelBlurCommitRef.current = true
+          dirtyRef.current = false
+          draftRef.current = storedValueRef.current
+          setDraft(value)
+          onDraftChangeRef.current?.(null)
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
 
 interface ParameterDataSourcesSectionProps {
   dataEditorMode: Record<number, 'grid' | 'raw'>
@@ -503,6 +616,7 @@ export function ParameterDataEditor({
   summary,
   warnings,
 }: ParameterDataEditorProps) {
+  const onDataCellDraftChange = useContext(ParameterDataCellDraftContext)
   const [sortState, setSortState] = useState<{ column: number; direction: DataSourceSortDirection } | null>(null)
   const [filterText, setFilterText] = useState('')
   const [filterColumn, setFilterColumn] = useState<number | 'all'>('all')
@@ -721,10 +835,16 @@ export function ParameterDataEditor({
                     </td>
                     {visibleColumnIndexes.map((colIdx) => (
                       <td key={`${index}-c-${rowIdx}-${colIdx}`}>
-                        <input
-                          aria-label={`Row ${rowIdx + 1}, ${formatDataSourceColumnLabel(parsed.columns[colIdx], colIdx)} for ${sourceLabel}`}
+                        <ParameterDataCellInput
+                          ariaLabel={`Row ${rowIdx + 1}, ${formatDataSourceColumnLabel(parsed.columns[colIdx], colIdx)} for ${sourceLabel}`}
                           value={row[colIdx] || ''}
-                          onChange={e => onUpdateDataCell(index, rowIdx, colIdx, e.target.value)}
+                          onCommit={value => onUpdateDataCell(index, rowIdx, colIdx, value)}
+                          onDraftChange={value => onDataCellDraftChange?.({
+                            sourceIndex: index,
+                            rowIndex: rowIdx,
+                            columnIndex: colIdx,
+                            value,
+                          })}
                         />
                       </td>
                     ))}

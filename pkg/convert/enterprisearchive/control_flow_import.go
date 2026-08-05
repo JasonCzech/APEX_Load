@@ -372,7 +372,7 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 			if loopID != "" && (loopExpr != "" || loopCount != "") {
 				start := i
 				var group []dsl.Action
-				for i < len(actions) && metadataString(actions[i].Metadata, sourceFlowLoopIDKey) == loopID {
+				for i < len(actions) && sourceLoopPathWithin(metadataString(actions[i].Metadata, sourceFlowLoopIDKey), loopID) {
 					group = append(group, actions[i])
 					i++
 				}
@@ -474,6 +474,13 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 		i++
 	}
 	return out
+}
+
+func sourceLoopPathWithin(candidate, parent string) bool {
+	if candidate == parent {
+		return true
+	}
+	return parent != "" && strings.HasPrefix(candidate, parent+">>")
 }
 
 // applyControlFlowThinkTime propagates pacing into structured control blocks:

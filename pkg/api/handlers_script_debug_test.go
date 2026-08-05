@@ -687,6 +687,30 @@ func TestScriptDebugManagerCancelsIdleRunningSession(t *testing.T) {
 	}
 }
 
+func TestScriptDebugManagerReplayProgressRefreshesActivity(t *testing.T) {
+	before := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	now := before.Add(45 * time.Minute)
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  30 * time.Minute,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	session := &ScriptDebugSession{
+		ID: "progress", Status: ScriptDebugRunning, StartedAt: &before, lastActivityAt: before,
+	}
+	manager.sessions[session.ID] = session
+	manager.handleReplayProgress(context.Background(), session, engine.ReplayProgressEvent{Type: engine.ReplayProgressActionStarted})
+
+	session.mu.RLock()
+	activity := session.lastActivityAt
+	session.mu.RUnlock()
+	if !activity.Equal(now) {
+		t.Fatalf("last activity = %s, want progress time %s", activity, now)
+	}
+}
+
 func TestScriptDebugManagerCancelsIdlePausedSession(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	lastActivity := now.Add(-2 * time.Minute)
@@ -971,6 +995,14 @@ func TestSavedImportedScriptDebugUsesDurableCredentialsForUnchangedProjection(t 
 	edited.Actions[0].Target = "/edited"
 	if matchesStoredScriptDisclosureProjection(edited, stored.Script) {
 		t.Fatal("edited disclosure projection inherited durable import trust")
+	}
+	resolved, trusted := resolveTrustedStoredReplayEcho(projected, stored.Script)
+	if !trusted || resolved != stored.Script {
+		t.Fatalf("unchanged disclosure echo resolved to %#v trusted=%v, want durable snapshot", resolved, trusted)
+	}
+	resolved, trusted = resolveTrustedStoredReplayEcho(edited, stored.Script)
+	if trusted || resolved != edited {
+		t.Fatalf("edited disclosure echo resolved to %#v trusted=%v, want untrusted edit", resolved, trusted)
 	}
 
 	body, err := json.Marshal(ScriptDebugStartRequest{

@@ -430,6 +430,86 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectSnapshotsSecretMetadataAfterAdmittedMutationsDrain(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	const projectID = "delete-secret-mutation-race"
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{
+		ID: projectID, Name: "Secret mutation race", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x73}, 32),
+		KeyID: "project-delete-race-test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{
+		Store:                store,
+		ImportAssetDir:       t.TempDir(),
+		BrunoArtifactWrapper: wrapper,
+	})
+
+	// Model a mutation that authorization admitted before deletion installed its
+	// project tombstone. The delete handler must wait for it and then snapshot
+	// the metadata it committed, rather than using an earlier stale snapshot.
+	releaseMutation := server.projectMutations.acquire(projectID, false)
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		server.mux.ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil))
+		close(done)
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		server.projectMutations.mu.Lock()
+		entry := server.projectMutations.entries[projectID]
+		waiters := 0
+		if entry != nil {
+			waiters = entry.refs
+		}
+		server.projectMutations.mu.Unlock()
+		if waiters >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("project deletion did not wait on the admitted mutation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	created, err := store.CreateProjectSecretMetadata(&storage.ProjectSecretMetadata{
+		ProjectID: projectID, SecretName: "LATE_TOKEN", Provider: "azure_key_vault",
+		CreatedAt: now, UpdatedAt: now, CreatedBy: "operator",
+	})
+	if err != nil || !created {
+		t.Fatalf("CreateProjectSecretMetadata returned created=%t error=%v", created, err)
+	}
+	releaseMutation()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("project deletion did not finish after the mutation drained")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("delete status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Names []string `json:"external_secret_cleanup_names"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Names) != 1 || payload.Names[0] != "LATE_TOKEN" {
+		t.Fatalf("cleanup names = %#v, want the drained mutation's metadata", payload.Names)
+	}
+}
+
 func TestDeleteProjectPartialCleanupResponseRetainsExternalSecretGuidance(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

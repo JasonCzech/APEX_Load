@@ -204,10 +204,12 @@ func TestScenarioOccurrenceRetryUsesNewDeterministicAttemptTestID(t *testing.T) 
 	if err := store.SaveScenarioSchedule(schedule); err != nil {
 		t.Fatal(err)
 	}
+	oldTestRequest := CreateTestRequest{Name: "Old failed attempt", ScenarioID: scenario.ID}
+	oldTestRequest.projectQuotaEvidence = runner.loadCreateTestProjectQuotaEvidence(oldTestRequest)
 	runner.mu.Lock()
 	runner.scenarios[scenario.ID].Schedules = append(runner.scenarios[scenario.ID].Schedules, cloneScenarioSchedule(schedule))
 	oldID := scenarioScheduleOccurrenceTestID("scenario-retry-occurrence")
-	oldTest, err := runner.buildManagedTestLocked(CreateTestRequest{Name: "Old failed attempt", ScenarioID: scenario.ID}, oldID, "FAILED")
+	oldTest, err := runner.buildManagedTestLocked(oldTestRequest, oldID, "FAILED")
 	if err != nil {
 		runner.mu.Unlock()
 		t.Fatal(err)

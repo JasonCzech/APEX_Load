@@ -257,6 +257,36 @@ describe('CommandCenterPrototype', () => {
     expect(discoveryURL).toContain('offset=0')
   })
 
+  it('shows alerts for a run discovered after opening the unscoped command center', async () => {
+    const liveRun = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests/live-vuser-1/')) return Promise.resolve(jsonResponse({}))
+      if (url.includes('/tests/live-vuser-1')) return Promise.resolve(jsonResponse(liveRun))
+      if (url.includes('/tests')) return Promise.resolve(jsonResponse({ tests: [liveRun], count: 1 }))
+      return Promise.resolve(jsonResponse({}))
+    })
+    const baseAlert = {
+      metric: 'p99_ms', value: 900, threshold: 500,
+      firstSeenAt: '2026-08-04T12:00:00Z', lastSeenAt: '2026-08-04T12:00:00Z',
+      acknowledged: false, active: true,
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype
+        projectId="project-1"
+        thresholdAlerts={[
+          { ...baseAlert, key: 'live:p99', testId: 'live-vuser-1' },
+          { ...baseAlert, key: 'other:p99', testId: 'other-run', value: 1200 },
+        ]}
+      />)
+    })
+    await flush()
+
+    expect(container.textContent).toContain('P99 latency 900 ms exceeded threshold 500 ms')
+    expect(container.textContent).not.toContain('P99 latency 1200 ms')
+  })
+
   it('opens the Test Notes dialog from the run controls', async () => {
     const liveRun = buildLiveVuserTest()
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {

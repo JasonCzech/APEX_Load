@@ -491,7 +491,10 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Summary Timeline')
-    expect(container.textContent).toContain('2026-05-14 20:00Z')
+    expect(container.textContent).toContain(new Date('2026-05-14T20:00:00Z').toLocaleString(undefined, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }))
+    expect(container.textContent).not.toContain('2026-05-14 20:00Z')
     expect(container.textContent).toContain('120.0 ms')
     expect(container.querySelector('[data-testid="archive-analysis-section"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="archive-analysis-nodes"]')).toBeTruthy()
@@ -1481,8 +1484,12 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('env:Receiver')
     expect(container.textContent).toContain('client')
     expect(container.textContent).toContain('server')
-    expect(container.textContent).toContain('2026-05-14 20:00Z')
-    expect(container.textContent).toContain('2026-05-14 20:01Z')
+    expect(container.textContent).toContain(new Date('2026-05-14T20:00:00Z').toLocaleString(undefined, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }))
+    expect(container.textContent).toContain(new Date('2026-05-14T20:01:00Z').toLocaleString(undefined, {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }))
     expect(container.textContent).toContain('env:Sender (2)')
     expect(container.textContent).toContain('env:Receiver (1)')
     expect(container.textContent).toContain('1.50 KB')

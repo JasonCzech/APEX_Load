@@ -1106,6 +1106,261 @@ func TestReconcileProtectedScriptCredentialSourcesAfterParameterAttachment(t *te
 	}
 }
 
+func TestReconcileProtectedScriptCredentialSourcesRetainsResidualParameterReference(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "shared-parameter-password-canary"
+	script := validBaseScript()
+	script.Parameters = []dsl.Parameter{{
+		Name:   "password",
+		Type:   "list",
+		Values: []string{sourcePassword},
+	}}
+	script.Actions = []dsl.Action{{
+		Name:   "request",
+		Type:   "POST",
+		Method: "POST",
+		Target: "https://api.example.test/login",
+		Body:   `{"note":"prefix-{{param.password}}-suffix"}`,
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID:                       "password-requirement",
+		Value:                    "{{param.password}}",
+		DeferredSourceExpression: "{{param.password}}",
+		Targets: []credentialpolicy.TargetRef{{
+			RequestKey: "candidate",
+			Field:      "auth.password",
+		}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(
+		script,
+		requirements,
+		"test_import",
+		"candidate",
+	)
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 1 ||
+		len(script.Parameters[0].Values) != 1 ||
+		script.Parameters[0].Values[0] != sourcePassword {
+		t.Fatalf("residually referenced parameter = %#v", script.Parameters)
+	}
+	if !strings.Contains(script.Actions[0].Body, "{{param.password}}") {
+		t.Fatalf("residual parameter reference was changed: %q", script.Actions[0].Body)
+	}
+}
+
+func TestReconcileProtectedScriptCredentialSourcesRetainsSharedDataBindingForResidualReference(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "shared-data-source-password-canary"
+	script := validBaseScript()
+	script.DataSources = []dsl.DataSource{{
+		Name: "credentials", Type: "dat", InlineData: "Password\n" + sourcePassword + "\n",
+		Strategy: "sequential", FirstRowHeader: true,
+	}}
+	script.Parameters = []dsl.Parameter{
+		{Name: "password", Type: "file", DataSource: "credentials", Column: "Password"},
+		{Name: "password_copy", Type: "file", DataSource: "credentials", Column: "Password"},
+	}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "POST", Method: "POST", Target: "https://api.example.test/login",
+		Body: `{"note":"prefix-{{param.password}}-suffix"}`,
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID: "password-requirement", Value: "{{param.password}}",
+		DeferredSourceExpression: "{{param.password}}", SourceVariableNames: []string{"password_copy"},
+		Targets: []credentialpolicy.TargetRef{{RequestKey: "candidate", Field: "auth.password"}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(script, requirements, "test_import", "candidate")
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 1 || script.Parameters[0].Name != "password" ||
+		script.Parameters[0].DataSource != "credentials" || script.Parameters[0].Column != "Password" {
+		t.Fatalf("retained parameters = %#v", script.Parameters)
+	}
+	if len(script.DataSources) != 1 || !strings.Contains(script.DataSources[0].InlineData, sourcePassword) {
+		t.Fatalf("retained data source = %#v", script.DataSources)
+	}
+	if !strings.Contains(script.Actions[0].Body, "{{param.password}}") {
+		t.Fatalf("residual parameter reference was changed: %q", script.Actions[0].Body)
+	}
+}
+
+func TestReconcileProtectedScriptCredentialSourcesRetainsSharedBindingForUnconsumedAlias(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "unconsumed-alias-password-canary"
+	script := validBaseScript()
+	script.DataSources = []dsl.DataSource{{
+		Name: "credentials", Type: "dat", InlineData: "Password\n" + sourcePassword + "\n",
+		Strategy: "sequential", FirstRowHeader: true,
+	}}
+	script.Parameters = []dsl.Parameter{
+		{Name: "credential_password", Type: "file", DataSource: "credentials", Column: "Password"},
+		{Name: "display_password", Type: "file", DataSource: "credentials", Column: "Password"},
+	}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "POST", Method: "POST", Target: "https://api.example.test/login",
+		Body: `{"note":"prefix-{{param.display_password}}-suffix"}`,
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID: "password-requirement", Value: "{{param.credential_password}}",
+		DeferredSourceExpression: "{{param.credential_password}}",
+		Targets:                  []credentialpolicy.TargetRef{{RequestKey: "candidate", Field: "auth.password"}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(script, requirements, "test_import", "candidate")
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 1 || script.Parameters[0].Name != "display_password" ||
+		script.Parameters[0].DataSource != "credentials" || script.Parameters[0].Column != "Password" {
+		t.Fatalf("retained alias parameter = %#v", script.Parameters)
+	}
+	if len(script.DataSources) != 1 || !strings.Contains(script.DataSources[0].InlineData, sourcePassword) {
+		t.Fatalf("shared alias data source = %#v", script.DataSources)
+	}
+	if !strings.Contains(script.Actions[0].Body, "{{param.display_password}}") {
+		t.Fatalf("residual alias reference was changed: %q", script.Actions[0].Body)
+	}
+}
+
+func TestReconcileProtectedScriptCredentialSourcesRetainsDirectDataBinding(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "direct-data-password-canary"
+	script := validBaseScript()
+	script.DataSources = []dsl.DataSource{{
+		Name: "credentials", Type: "dat", InlineData: "Password\n" + sourcePassword + "\n",
+		Strategy: "sequential", FirstRowHeader: true,
+	}}
+	script.Parameters = []dsl.Parameter{{
+		Name: "credential_password", Type: "file", DataSource: "credentials", Column: "Password",
+	}}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "POST", Method: "POST", Target: "https://api.example.test/login",
+		Body: `{"audit":"{{data.credentials.Password}}"}`,
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID: "password-requirement", Value: "{{param.credential_password}}",
+		DeferredSourceExpression: "{{param.credential_password}}",
+		Targets:                  []credentialpolicy.TargetRef{{RequestKey: "candidate", Field: "auth.password"}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(script, requirements, "test_import", "candidate")
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 0 {
+		t.Fatalf("consumed credential parameter = %#v, want removed", script.Parameters)
+	}
+	if len(script.DataSources) != 1 || !strings.Contains(script.DataSources[0].InlineData, sourcePassword) {
+		t.Fatalf("directly referenced data source = %#v, want binding retained", script.DataSources)
+	}
+	if !strings.Contains(script.Actions[0].Body, "{{data.credentials.Password}}") {
+		t.Fatalf("direct data reference was changed: %q", script.Actions[0].Body)
+	}
+}
+
+func TestReconcileProtectedScriptCredentialSourcesRetainsOpaqueSourceForDirectDataBinding(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "opaque-source-password-canary"
+	script := validBaseScript()
+	script.DataSources = []dsl.DataSource{{
+		Name: "credentials", Type: "file", StorageRef: "asset://credentials.dat", Strategy: "sequential",
+	}}
+	// The list value lets reconciliation materialize the protected requirement;
+	// the attached source binding models an importer that also retained the
+	// original opaque source relationship.
+	script.Parameters = []dsl.Parameter{{
+		Name: "credential_password", Type: "list", Values: []string{sourcePassword},
+		DataSource: "credentials", Column: "Password",
+	}}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "POST", Method: "POST", Target: "https://api.example.test/login",
+		Body: `{"user":"{{data.credentials.Username}}"}`,
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID: "password-requirement", Value: "{{param.credential_password}}",
+		DeferredSourceExpression: "{{param.credential_password}}",
+		Targets:                  []credentialpolicy.TargetRef{{RequestKey: "candidate", Field: "auth.password"}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(script, requirements, "test_import", "candidate")
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 0 {
+		t.Fatalf("consumed credential parameter = %#v, want removed", script.Parameters)
+	}
+	if len(script.DataSources) != 1 || script.DataSources[0].StorageRef != "asset://credentials.dat" {
+		t.Fatalf("opaque directly referenced source = %#v, want whole source retained", script.DataSources)
+	}
+	if !strings.Contains(script.Actions[0].Body, "{{data.credentials.Username}}") {
+		t.Fatalf("direct data reference was changed: %q", script.Actions[0].Body)
+	}
+}
+
+func TestReconcileProtectedScriptCredentialSourcesRetainsSourcesWhenReferenceScanCannotMarshal(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "unmarshalable-metadata-password-canary"
+	script := validBaseScript()
+	script.Parameters = []dsl.Parameter{{
+		Name: "password", Type: "list", Values: []string{sourcePassword},
+	}}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "POST", Method: "POST", Target: "https://api.example.test/login",
+		Body:     `{"note":"prefix-{{param.password}}-suffix"}`,
+		Metadata: map[string]any{"unsupported": func() {}},
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID: "password-requirement", Value: "{{param.password}}", DeferredSourceExpression: "{{param.password}}",
+		Targets: []credentialpolicy.TargetRef{{RequestKey: "candidate", Field: "auth.password"}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(script, requirements, "test_import", "candidate")
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 1 || len(script.Parameters[0].Values) != 1 || script.Parameters[0].Values[0] != sourcePassword {
+		t.Fatalf("parameter was removed or redacted after an incomplete reference scan: %#v", script.Parameters)
+	}
+	if !strings.Contains(script.Actions[0].Body, "{{param.password}}") {
+		t.Fatalf("residual parameter reference was changed: %q", script.Actions[0].Body)
+	}
+}
+
+func TestReconcileProtectedScriptCredentialSourcesIgnoresProvenanceOnlyParameterReferences(t *testing.T) {
+	t.Parallel()
+	const sourcePassword = "provenance-only-password-canary"
+	script := validBaseScript()
+	script.Metadata = &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+		Preserved: map[string]any{"authored_expression": "{{param.password}}"},
+	}}
+	script.Parameters = []dsl.Parameter{{
+		Name: "password", Type: "list", Values: []string{sourcePassword},
+	}}
+	script.Actions = []dsl.Action{{
+		Name: "request", Type: "GET", Method: "GET", Target: "https://api.example.test/ready",
+	}}
+	requirements := []credentialpolicy.Requirement{{
+		ID: "password-requirement", Value: "{{param.password}}", DeferredSourceExpression: "{{param.password}}",
+		Targets: []credentialpolicy.TargetRef{{RequestKey: "candidate", Field: "auth.password"}},
+	}}
+
+	reconciled := ReconcileProtectedScriptCredentialSources(script, requirements, "test_import", "candidate")
+	if len(reconciled) != 1 || reconciled[0].Value != sourcePassword {
+		t.Fatalf("reconciled requirements = %#v", reconciled)
+	}
+	if len(script.Parameters) != 0 {
+		t.Fatalf("provenance-only token retained a public credential parameter: %#v", script.Parameters)
+	}
+	if got := script.Metadata.Import.Preserved["authored_expression"]; got != "{{param.password}}" {
+		t.Fatalf("import provenance changed: %#v", got)
+	}
+}
+
 func TestProjectScriptCredentialsRetainsProtectedSnapshotOnTraversalFailure(t *testing.T) {
 	t.Parallel()
 	const credential = "traversal-fallback-password-canary"

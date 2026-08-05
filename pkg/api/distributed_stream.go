@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -768,11 +769,21 @@ func isTerminalRemoteLifecycle(state string) bool {
 // lifecycle transition as authoritative while continuing to reject ordinary
 // duplicate/stale windows and any non-terminal update after a terminal state.
 func remoteMetricsBatchSupersedes(prior, next generatorrpc.MetricsBatch) bool {
+	if next.BatchSequence > 0 && prior.BatchSequence > 0 {
+		if next.BatchSequence > prior.BatchSequence {
+			// Continue below so lifecycle validity is still enforced.
+		} else {
+			return false
+		}
+	}
 	if isTerminalRemoteLifecycle(next.LifecycleState) {
 		return true
 	}
 	if isTerminalRemoteLifecycle(prior.LifecycleState) {
 		return false
+	}
+	if next.BatchSequence > 0 && prior.BatchSequence > 0 {
+		return true
 	}
 	if next.TimestampUnixMs <= 0 || prior.TimestampUnixMs <= 0 {
 		return true
@@ -1195,6 +1206,26 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
 		if !remoteMetricsBatchSupersedes(prior, batch) {
 			return false
+		}
+		missing := int64(0)
+		if prior.Telemetry != nil {
+			missing = prior.Telemetry.MissingMetricWindows
+		}
+		if prior.BatchSequence > 0 && batch.BatchSequence > prior.BatchSequence && batch.BatchSequence-prior.BatchSequence > 1 {
+			gap := batch.BatchSequence - prior.BatchSequence - 1
+			if gap > math.MaxInt64 {
+				missing = math.MaxInt64
+			} else if missing <= math.MaxInt64-int64(gap) {
+				missing += int64(gap)
+			} else {
+				missing = math.MaxInt64
+			}
+		}
+		if missing > 0 {
+			if batch.Telemetry == nil {
+				batch.Telemetry = &generatorrpc.MetricsTelemetry{}
+			}
+			batch.Telemetry.MissingMetricWindows = missing
 		}
 	}
 	test.remoteMetricsBatchesByTarget[target] = batch

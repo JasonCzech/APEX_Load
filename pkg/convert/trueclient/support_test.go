@@ -53,7 +53,7 @@ func TestLookupStepScope(t *testing.T) {
 		wantOK     bool
 	}{
 		{stepName: "Set / Type", wantName: "Set / Type", wantStatus: ScopeSupported, wantType: "browser_fill", wantOK: true},
-		{stepName: "Double Click", wantName: "Click / Submit / Check", wantStatus: ScopeSupported, wantType: "browser_click", wantOK: true},
+		{stepName: "Double Click", wantName: "Double Click", wantStatus: ScopeSupported, wantType: "browser_dblclick", wantOK: true},
 		{stepName: "Submit", wantName: "Click / Submit / Check", wantStatus: ScopeSupported, wantType: "browser_click", wantOK: true},
 		{stepName: "Select Radio", wantName: "Click / Submit / Check", wantStatus: ScopeSupported, wantType: "browser_click", wantOK: true},
 		{stepName: "Select", wantName: "Select", wantStatus: ScopeSupported, wantType: "browser_select", wantOK: true},

@@ -121,15 +121,32 @@ func plainPowerBILinkHostname(host string) bool {
 // TryLock (not Lock) because a publish can hold the lock for the full external
 // push; a second request must get an immediate "in progress" conflict rather
 // than piling up a goroutine that cannot honor its own context deadline.
-var powerBIPublishLocks sync.Map // testID -> *sync.Mutex
+var powerBIPublishLocks = struct {
+	sync.Mutex
+	inFlight map[string]struct{}
+}{inFlight: make(map[string]struct{})}
 
 func tryLockPowerBIPublish(testID string) (func(), bool) {
-	entry, _ := powerBIPublishLocks.LoadOrStore(testID, &sync.Mutex{})
-	mu := entry.(*sync.Mutex)
-	if !mu.TryLock() {
+	powerBIPublishLocks.Lock()
+	defer powerBIPublishLocks.Unlock()
+	if _, exists := powerBIPublishLocks.inFlight[testID]; exists {
 		return nil, false
 	}
-	return mu.Unlock, true
+	powerBIPublishLocks.inFlight[testID] = struct{}{}
+	var releaseOnce sync.Once
+	return func() {
+		releaseOnce.Do(func() {
+			powerBIPublishLocks.Lock()
+			delete(powerBIPublishLocks.inFlight, testID)
+			powerBIPublishLocks.Unlock()
+		})
+	}, true
+}
+
+func powerBIPublishLockCount() int {
+	powerBIPublishLocks.Lock()
+	defer powerBIPublishLocks.Unlock()
+	return len(powerBIPublishLocks.inFlight)
 }
 
 // powerBIPublishConflict reports whether a prior publish of this test into the
@@ -147,11 +164,10 @@ func powerBIPublishConflict(latest *storage.PowerBIPublish, datasetID string, fo
 		return true, fmt.Sprintf("a previous publish pushed %d of %d transaction rows before failing; those rows remain in the dataset and re-publishing appends a full duplicate set — pass force=true to continue (reports must keep only the latest publish_id per run)", latest.TransactionRowsPushed, latest.TransactionRowsTotal)
 	case storage.PowerBIPublishStatusPending:
 		// A pending row with zero recorded rows is treated as a crashed attempt
-		// that pushed nothing. That is at-least-once optimistic: a crash after a
-		// chunk landed but before its progress update persisted slips through
-		// and duplicates on re-publish — inherent to the push API (documented in
-		// docs/POWERBI_INTEGRATION.md), and rows remain distinguishable by
-		// publish_id.
+		// that pushed nothing. This is necessarily optimistic: the service may
+		// have applied a single-attempt chunk before the client crashed or saw an
+		// ambiguous response. A forced re-publish remains distinguishable by its
+		// new publish_id, as documented in docs/POWERBI_INTEGRATION.md.
 		if latest.TransactionRowsPushed > 0 || latest.RunRowsPushed > 0 {
 			return true, "a previous publish attempt pushed rows but never completed; re-publishing appends duplicates — pass force=true to continue"
 		}
@@ -178,6 +194,10 @@ func applyPowerBIVerdictOverride(store storage.Store, report *RunArchiveReport, 
 	}
 }
 
+type powerBIPublishRequest struct {
+	Force bool `json:"force"`
+}
+
 func (s *Server) handlePublishRunToPowerBI(w http.ResponseWriter, r *http.Request) {
 	settings := s.powerBISettings()
 	if !settings.Enabled {
@@ -194,9 +214,7 @@ func (s *Server) handlePublishRunToPowerBI(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var body struct {
-		Force bool `json:"force"`
-	}
+	var body powerBIPublishRequest
 	if r.Body != nil {
 		// An empty body means a plain publish; only a malformed non-empty body
 		// is rejected.

@@ -59,6 +59,8 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
   archive_retention: {
     enabled: false,
     default_retention_days: 90,
+    har_retention_days: 7,
+    har_artifact_dir: '',
     policies: [],
   },
   schedule_defaults: {
@@ -182,6 +184,26 @@ export const OIDC_PROVIDER_PRESETS = [
     description: 'Keeps the standard OIDC scope and claim contract for any compliant issuer.',
   },
 ] as const
+
+type NotificationWebhook = DashboardSystemSettings['notifications']['webhooks'][number]
+
+export function updateNotificationWebhookDraft(
+  webhook: NotificationWebhook,
+  updates: Partial<NotificationWebhook>,
+): NotificationWebhook {
+  const endpointChanged = (
+    ('url' in updates && updates.url !== webhook.url)
+    || ('format' in updates && updates.format !== webhook.format)
+  )
+  const next = { ...webhook, ...updates }
+  if (endpointChanged && webhook.has_api_token && !next.api_token?.trim()) {
+    // A write-only token is scoped to the destination it was saved with. Once
+    // that destination changes, retaining the opaque marker would falsely tell
+    // validation that the new endpoint has credentials.
+    next.has_api_token = false
+  }
+  return next
+}
 
 
 
@@ -423,6 +445,7 @@ const CAPACITY_DRAFT_FIELDS: Record<string, { label: string; subsection: Capacit
   'capacity_planning.generator.max_vusers': { label: 'Generator max VUsers', subsection: 'generator' },
   'capacity_planning.availability.configured_available_generators': { label: 'Configured available generators', subsection: 'availability' },
   'archive_retention.default_retention_days': { label: 'Default retention days', subsection: 'retention' },
+  'archive_retention.har_retention_days': { label: 'HAR retention days', subsection: 'retention' },
 }
 
 // Blank or non-numeric drafts for capacity number inputs block saving instead
@@ -591,6 +614,10 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
   }
   if (!Number.isInteger(settings.archive_retention.default_retention_days) || settings.archive_retention.default_retention_days < 1) {
     push('capacity', 'retention', 'archive_retention.default_retention_days', 'Archive retention default days must be an integer >= 1.')
+  }
+  if (settings.archive_retention.har_retention_days !== undefined &&
+      (!Number.isInteger(settings.archive_retention.har_retention_days) || settings.archive_retention.har_retention_days < 1)) {
+    push('capacity', 'retention', 'archive_retention.har_retention_days', 'HAR retention days must be an integer >= 1.')
   }
   const blackoutWindowError = validateScheduleWindowPair('Blackout', settings.schedule_defaults.blackout_start_time, settings.schedule_defaults.blackout_end_time)
   if (blackoutWindowError) push('general', 'governance', 'schedule_defaults.blackout', blackoutWindowError)

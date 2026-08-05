@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -609,7 +613,259 @@ func TestFleetAlertNotificationsRouteOnceAndResetWhenResolved(t *testing.T) {
 		CompatibilityState: "compatible",
 	}}
 	get()
+	assertNoFleetWebhook(t, received)
+
+	// A single empty inventory can be a stale follower snapshot. The durable
+	// dedupe marker is cleared only after the alert remains absent for the HA
+	// grace period, at which point a true recurrence routes again.
+	backend.entries = nil
+	get()
+	assertNoFleetWebhook(t, received)
+	if err := reconcileFleetAlertNotificationState(store, map[string]struct{}{}, time.Now().UTC().Add(fleetAlertNotificationInactiveGrace+time.Second)); err != nil {
+		t.Fatalf("reconcile fleet notification resolution grace: %v", err)
+	}
+	backend.entries = []GeneratorInventoryEntry{{
+		Target:             "gen-a:9090",
+		GeneratorID:        "gen-a",
+		Status:             "unreachable",
+		Version:            "0.1.0",
+		CapacityState:      "available",
+		AvailableCapacity:  100,
+		MaxVUsers:          1000,
+		CompatibilityState: "compatible",
+	}}
+	get()
 	_ = waitForFleetWebhook(t, received)
+}
+
+func TestFleetAlertNotificationsRouteFromBackgroundRefreshWithoutPolling(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "fleet-background.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	received := make(chan map[string]any, 2)
+	hook := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			received <- payload
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hook.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2})
+	server.runner.notifier = newNotificationDispatcher(hook.Client())
+	settings := server.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Enabled: true, URL: hook.URL, Format: notificationFormatSlack, Events: []string{"fleet_alert"},
+	}}}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	backend := &mutableInventoryBackend{entries: []GeneratorInventoryEntry{{
+		Target: "gen-background:9090", GeneratorID: "gen-background", Status: "unreachable",
+		CapacityState: "available", AvailableCapacity: 10, MaxVUsers: 100, CompatibilityState: "compatible",
+	}}}
+	server.runner.setExecutionBackend(backend)
+
+	server.refreshGeneratorInventory(context.Background())
+	first := waitForFleetWebhook(t, received)
+	if !strings.Contains(fmt.Sprint(first["text"]), "gen-background") {
+		t.Fatalf("background webhook = %#v", first)
+	}
+	server.refreshGeneratorInventory(context.Background())
+	assertNoFleetWebhook(t, received)
+}
+
+func TestFleetAlertNotificationRoutingIsSerialized(t *testing.T) {
+	t.Setenv("APEXLOAD_ALLOW_PRIVATE_WEBHOOKS", "true")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "fleet-concurrent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	received := make(chan map[string]any, 16)
+	hook := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var payload map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		received <- payload
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer hook.Close()
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2})
+	server.runner.notifier = newNotificationDispatcher(hook.Client())
+	settings := server.runner.GetSystemSettings()
+	settings.Notifications = NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Enabled: true, URL: hook.URL, Format: notificationFormatSlack, Events: []string{"fleet_alert"},
+	}}}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	alert := FleetAlert{ID: "alert-concurrent", Type: "unreachable", Target: "gen-a", Severity: "danger", Summary: "offline"}
+	var wait sync.WaitGroup
+	for index := 0; index < 16; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			server.routeFleetAlertNotifications([]FleetAlert{alert})
+		}()
+	}
+	wait.Wait()
+	_ = waitForFleetWebhook(t, received)
+	assertNoFleetWebhook(t, received)
+}
+
+type fleetAlertCountingTransport struct {
+	calls atomic.Int32
+	keys  chan string
+}
+
+func (transport *fleetAlertCountingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	transport.calls.Add(1)
+	if transport.keys != nil {
+		transport.keys <- req.Header.Get("X-APEXLoad-Notification-Key")
+	}
+	return &http.Response{
+		StatusCode: http.StatusAccepted,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+func configureFleetAlertNotificationTestServer(server *Server, transport http.RoundTripper) {
+	server.runner.notifier = newNotificationDispatcher(&http.Client{Transport: transport, Timeout: time.Second})
+	server.runner.setNotificationSettings(NotificationsSettings{Webhooks: []NotificationWebhookSettings{{
+		Name:    "fleet-test",
+		Enabled: true,
+		URL:     "https://alerts.example.com/webhook",
+		Format:  notificationFormatSlack,
+		Events:  []string{"fleet_alert"},
+	}}})
+}
+
+func waitForFleetTransportCall(t *testing.T, transport *fleetAlertCountingTransport) string {
+	t.Helper()
+	select {
+	case key := <-transport.keys:
+		return key
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for fleet notification transport")
+	}
+	return ""
+}
+
+func TestFleetAlertNotificationClaimPreventsCrossReplicaDuplicate(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "fleet-ha.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	transport := &fleetAlertCountingTransport{keys: make(chan string, 4)}
+	first := NewServer(ServerConfig{Store: store, MaxConcurrent: 2})
+	second := NewServer(ServerConfig{Store: store, MaxConcurrent: 2})
+	configureFleetAlertNotificationTestServer(first, transport)
+	configureFleetAlertNotificationTestServer(second, transport)
+	defer first.runner.notifier.Close()
+	defer second.runner.notifier.Close()
+
+	alert := FleetAlert{ID: "alert-ha", Type: "unreachable", Target: "gen-a", Severity: "danger", Summary: "offline"}
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		first.routeFleetAlertNotifications([]FleetAlert{alert})
+	}()
+	go func() {
+		defer wait.Done()
+		second.routeFleetAlertNotifications([]FleetAlert{alert})
+	}()
+	wait.Wait()
+
+	if key := waitForFleetTransportCall(t, transport); key == "" {
+		t.Fatal("notification idempotency key is empty")
+	}
+	// A replica can briefly observe an older inventory snapshot during leader
+	// handoff. That absence must not erase the durable routed marker and turn the
+	// same active incident into a second delivery.
+	second.routeFleetAlertNotifications(nil)
+	first.routeFleetAlertNotifications([]FleetAlert{alert})
+	time.Sleep(100 * time.Millisecond)
+	if calls := transport.calls.Load(); calls != 1 {
+		t.Fatalf("fleet notification transport calls = %d, want 1", calls)
+	}
+}
+
+type failFleetAlertFinalizeCASStore struct {
+	storage.Store
+	fleetCASCalls atomic.Int32
+}
+
+func (store *failFleetAlertFinalizeCASStore) CompareAndSwapSetting(key, expected, value string) (bool, error) {
+	if key == fleetAlertNotificationStateStoreKey && store.fleetCASCalls.Add(1) == 2 {
+		return false, errors.New("injected fleet alert finalization failure")
+	}
+	delegate, ok := store.Store.(interface {
+		CompareAndSwapSetting(string, string, string) (bool, error)
+	})
+	if !ok {
+		return false, errors.New("wrapped store does not support setting CAS")
+	}
+	return delegate.CompareAndSwapSetting(key, expected, value)
+}
+
+func TestFleetAlertNotificationClaimSuppressesRetryAfterFinalizeFailure(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "fleet-finalize-failure.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &failFleetAlertFinalizeCASStore{Store: base}
+
+	transport := &fleetAlertCountingTransport{keys: make(chan string, 4)}
+	first := NewServer(ServerConfig{Store: store, MaxConcurrent: 2})
+	second := NewServer(ServerConfig{Store: base, MaxConcurrent: 2})
+	configureFleetAlertNotificationTestServer(first, transport)
+	configureFleetAlertNotificationTestServer(second, transport)
+	defer first.runner.notifier.Close()
+	defer second.runner.notifier.Close()
+
+	alert := FleetAlert{ID: "alert-finalize-failure", Type: "unreachable", Target: "gen-a", Severity: "danger", Summary: "offline"}
+	first.routeFleetAlertNotifications([]FleetAlert{alert})
+	firstKey := waitForFleetTransportCall(t, transport)
+	// A stale empty inventory pass must also preserve an in-flight claim left by
+	// the injected finalization failure.
+	second.routeFleetAlertNotifications(nil)
+	second.routeFleetAlertNotifications([]FleetAlert{alert})
+
+	time.Sleep(100 * time.Millisecond)
+	if calls := transport.calls.Load(); calls != 1 {
+		t.Fatalf("fleet notification transport calls = %d, want 1", calls)
+	}
+	raw, err := base.GetSetting(fleetAlertNotificationStateStoreKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := decodeFleetAlertNotificationState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, found := state.Claims[alert.ID]
+	if !found {
+		t.Fatalf("fleet notification claim was lost after finalization failure: %#v", state)
+	}
+	if got := notificationDedupeKey(NotificationWebhookSettings{
+		Name: "fleet-test", URL: "https://alerts.example.com/webhook",
+	}, NotificationEvent{
+		Type: "fleet_alert", TestID: alert.ID, TestName: alert.Target, Status: alert.Type,
+		Severity: alert.Severity, Summary: alert.Summary, Conditions: []string{"unscoped"}, Timestamp: claim.ClaimedAt,
+	}); got != firstKey {
+		t.Fatalf("durable claim idempotency key = %q, first delivery key = %q", got, firstKey)
+	}
 }
 
 func waitForFleetWebhook(t *testing.T, received <-chan map[string]any) map[string]any {

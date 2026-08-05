@@ -24,7 +24,7 @@ to their `source_*` equivalents.
 
 ## Engine actions (any protocol)
 
-Valid in every script except jms-* and kafka, whose validators accept only their own action types.
+Valid in every script, including JMS, Kafka, and Event Hubs; these actions execute in the common engine lifecycle rather than protocol dispatch.
 
 ### `cache_clear`
 
@@ -257,7 +257,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. |
+| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively. |
 | `params.modifiers` | array |  | Modifier keys held for the click, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -273,7 +273,7 @@ Requires one of: `target`, `selector`, `object_ref`
 | `target` | string |  | Element locator; target, selector, or object_ref is required. |
 | `selector` | string |  | Inline element locator (CSS/XPath). For a repository-managed object use object_ref instead. |
 | `object_ref` | string |  | Object-repository binding: a logical object name ("name" or "repoID:name") resolved on the controller at script preparation into a concrete selector plus ranked fallbacks. Alternative to an inline selector. |
-| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. |
+| `params.button` | enum: left\|right\|middle |  | Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively. |
 | `params.modifiers` | array |  | Modifier keys held for the double-click, such as Control, Shift, Alt, Meta, or ControlOrMeta. |
 | `sync` | object |  | Post-step synchronization: {type (network_idle|dom_stable|element_visible|duration|load|domcontentloaded), value, timeout_ms, stable_ms}. |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
@@ -354,12 +354,12 @@ Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.action` | enum: accept\|dismiss |  | How to respond: accept or dismiss (required). |
+| `params.action` | enum: accept\|dismiss | yes | How to respond: accept or dismiss (required). |
 | `params.dialog_type` | enum: alert\|confirm\|prompt\|beforeunload |  | Expected dialog kind for documentation/validation. |
 | `params.expected_message` | string |  | If set, the captured dialog message must contain this text. |
 | `params.match_mode` | enum: exact\|contains\|normalized |  | Message comparison mode; recorder-origin dialogs default to contains. |
 | `params.prompt_text` | string |  | Text entered into a prompt dialog when accepting. |
-| `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 5000; maximum 3600000). |
+| `params.wait_ms` | int |  | How long to wait for the dialog to appear (default 1000; maximum 3600000). |
 | `capture` | object |  | Evidence capture: {screenshot, full_page, html}. |
 
 ### `browser_hover`
@@ -1104,7 +1104,7 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Java class name to load, usually Actions. |
-| `params.method` | enum: init\|vuser_init\|initialize\|action\|Action\|run\|end\|vuser_end\|teardown\|full_lifecycle |  | Source lifecycle method name or legacy full lifecycle sequence to invoke. |
+| `params.method` | enum: init\|vuser_init\|initialize\|action\|run\|end\|vuser_end\|teardown\|full_lifecycle |  | Source lifecycle method name or legacy full lifecycle sequence to invoke. |
 | `params.source_archive_ref` | string |  | Preserved source archive or authoring artifact reference. |
 | `params.timeout_ms` | int |  | Per-run timeout in milliseconds (maximum 3600000); falls back to config.java_vuser.action_timeout_ms. |
 | `params.runner_requirement` | string |  | Governance gate required before execution, usually java_vuser_jvm_runner. |
@@ -1302,6 +1302,10 @@ Begins a producer transaction (requires config.kafka.transactional_id). Subseque
 
 Commits consumer group offsets.
 
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.consumer_group` | string |  | Consumer group identity; falls back to config.kafka.consumer_group. |
+
 ### `kafka_commit_transaction`
 
 Commits the open producer transaction, making buffered records atomically visible (EOS).
@@ -1314,6 +1318,7 @@ Consumes the next record from a topic.
 |-------|------|----------|-------------|
 | `target` | string |  | Topic; falls back to config.kafka.topic or params.topic. |
 | `params.topic` | string |  | Topic alternative to target. |
+| `params.consumer_group` | string |  | Consumer group override; falls back to config.kafka.consumer_group. |
 | `params.timeout_ms` | int |  | Consume timeout in milliseconds; falls back to config.kafka.timeout_ms. |
 
 ### `kafka_produce`
@@ -1329,6 +1334,7 @@ Produces a record to a topic.
 | `params.topic` | string |  | Topic alternative to target. |
 | `params.key` | string |  | Record key (drives key-hash partitioning). |
 | `params.partition` | int |  | Explicit partition (with partition_strategy: explicit). |
+| `params.correlation_id` | string |  | Explicit record correlation ID; when omitted kafka_request_reply generates one. |
 
 ### `kafka_request_reply`
 
@@ -1340,6 +1346,7 @@ Produces a request record and waits for the correlated reply record.
 | `body` | string |  | Request record value. |
 | `body_file` | string |  | Local file containing the request record value. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `params.reply_to` | string | yes | Reply topic. |
+| `params.correlation_id` | string |  | Explicit request correlation ID; generated automatically when omitted. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
 
 ### `kafka_seek`
@@ -1348,6 +1355,7 @@ Seeks the consumer cursor for the whole (topic, group) to an offset (mock only; 
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
+| `params.consumer_group` | string |  | Consumer group override; falls back to config.kafka.consumer_group. |
 | `params.offset` | any |  | Target offset: a number, "earliest", or "latest". |
 | `params.partition` | int |  | Reserved: not yet honored at runtime — seek repositions the whole (topic, group) cursor, not a single partition. |
 
@@ -1486,6 +1494,8 @@ Aliases: `udp_send`, `winsock_udp`
 
 Preserves a raw SAP GUI scripting call for review-gated replay.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 Requires one of: `target`, `params.method`
 
 | Field | Kind | Required | Description |
@@ -1498,6 +1508,8 @@ Requires one of: `target`, `params.method`
 
 Connects to a SAP GUI application server or connection entry.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Connection string or SAP GUI connection entry. |
@@ -1506,6 +1518,8 @@ Connects to a SAP GUI application server or connection entry.
 ### `sapgui_grid`
 
 Executes a SAP GUI grid operation.
+
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1519,6 +1533,8 @@ Executes a SAP GUI grid operation.
 
 Logs on to a SAP GUI session.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `params.client` | string |  | SAP client number. |
@@ -1529,6 +1545,8 @@ Logs on to a SAP GUI session.
 ### `sapgui_press`
 
 Presses a button or sends a virtual key.
+
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
 
 Requires one of: `target`, `params.vkey`
 
@@ -1541,6 +1559,8 @@ Requires one of: `target`, `params.vkey`
 ### `sapgui_select`
 
 Selects an item by text, index, or ID.
+
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
 
 Requires one of: `value`, `params.text`, `params.index`, `params.id`
 
@@ -1556,6 +1576,8 @@ Requires one of: `value`, `params.text`, `params.index`, `params.id`
 
 Sets a value on a SAP GUI control.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Full SAP GUI control ID. |
@@ -1567,6 +1589,8 @@ Sets a value on a SAP GUI control.
 
 Waits for SAP GUI status, screen change, or session-idle synchronization.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Optional control/status target. |
@@ -1576,6 +1600,8 @@ Waits for SAP GUI status, screen change, or session-idle synchronization.
 ### `sapgui_table`
 
 Executes a SAP GUI table operation.
+
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
@@ -1589,6 +1615,8 @@ Executes a SAP GUI table operation.
 
 Executes a SAP GUI tree operation.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Full SAP GUI control ID. |
@@ -1601,6 +1629,8 @@ Executes a SAP GUI tree operation.
 
 Verifies a SAP GUI control value or status text.
 
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
+
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Control or status bar ID. |
@@ -1610,6 +1640,8 @@ Verifies a SAP GUI control value or status text.
 ### `sapgui_window`
 
 Activates, maximizes, resizes, or closes a SAP GUI window.
+
+Execution posture: `external_runner_required` — Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|

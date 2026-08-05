@@ -15,7 +15,7 @@ import {
   RUNTIME_FIELD_SOURCE_LABEL,
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
-import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
+import { editReplacementSection, materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
@@ -142,32 +142,6 @@ type LogSettings = NonNullable<RuntimeSettingsOverride['log']>
 type RunLogicSettings = NonNullable<RuntimeSettingsOverride['run_logic']>
 type ThinkTimeSettings = NonNullable<RuntimeSettingsOverride['think_time']>
 type PacingSettings = NonNullable<RuntimeSettingsOverride['pacing']>
-
-/**
- * Apply one UI edit to a replacement section. The first edit materializes the
- * inherited section; later edits preserve only the already-authoritative group
- * section. Clearing one control copies that control's inherited value because a
- * partial replacement section cannot otherwise inherit an individual field.
- */
-function editReplacementSection<T extends object>(
-  current: Partial<T> | undefined,
-  next: Partial<T> | undefined,
-  inherited: Partial<T> | undefined,
-): Partial<T> {
-  const edited: Partial<T> = structuredClone(current ?? inherited ?? {})
-  if (!next) return edited
-  for (const key of Object.keys(next) as Array<keyof T>) {
-    const value = next[key]
-    if (value === undefined) {
-      const inheritedValue = inherited?.[key]
-      if (inheritedValue === undefined) delete edited[key]
-      else Object.assign(edited, { [key]: structuredClone(inheritedValue) })
-    } else {
-      Object.assign(edited, { [key]: structuredClone(value) })
-    }
-  }
-  return edited
-}
 
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
   return group.name || `Group ${index + 1}`

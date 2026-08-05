@@ -37,7 +37,13 @@ const (
 
 var latencyRouteProbeSlots = make(chan struct{}, maxConcurrentRouteProbes)
 
-func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, _ *LiveMetrics) {
+func (tr *TestRunner) measureNetworkLatency(ctx context.Context, test *ManagedTest, _ *LiveMetrics) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return
+	}
 	if !tr.beginLatencyProbe(test) {
 		return
 	}
@@ -50,10 +56,13 @@ func (tr *TestRunner) measureNetworkLatency(test *ManagedTest, _ *LiveMetrics) {
 		return
 	}
 
-	latency := &NetworkLatency{Targets: collectLatencyTargets(endpoints, tr.measureEndpointLatency)}
+	latency := &NetworkLatency{Targets: collectLatencyTargetsContext(ctx, endpoints, tr.measureEndpointLatencyContext)}
+	if ctx.Err() != nil {
+		return
+	}
 
 	tr.mu.Lock()
-	if test == nil || tr.tests[test.ID] != test {
+	if test == nil || tr.tests[test.ID] != test || isTerminalTestStatus(test.Status) {
 		tr.mu.Unlock()
 		return
 	}
@@ -90,10 +99,19 @@ type latencyProbeJob struct {
 // resolver call, HTTP connection, and traceroute subprocess for every host at
 // once.
 func collectLatencyTargets(endpoints map[string]string, probe func(host, endpoint string) LatencyTarget) []LatencyTarget {
+	return collectLatencyTargetsContext(context.Background(), endpoints, func(_ context.Context, host, endpoint string) LatencyTarget {
+		return probe(host, endpoint)
+	})
+}
+
+func collectLatencyTargetsContext(ctx context.Context, endpoints map[string]string, probe func(context.Context, string, string) LatencyTarget) []LatencyTarget {
 	if len(endpoints) == 0 || probe == nil {
 		return nil
 	}
-	jobs := make(chan latencyProbeJob)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	jobs := make(chan latencyProbeJob, len(endpoints))
 	results := make(chan LatencyTarget, len(endpoints))
 	workerCount := min(len(endpoints), maxConcurrentLatencyTargets)
 	var workers sync.WaitGroup
@@ -101,8 +119,16 @@ func collectLatencyTargets(endpoints map[string]string, probe func(host, endpoin
 	for range workerCount {
 		go func() {
 			defer workers.Done()
-			for job := range jobs {
-				results <- probe(job.host, job.endpoint)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case job, ok := <-jobs:
+					if !ok {
+						return
+					}
+					results <- probe(ctx, job.host, job.endpoint)
+				}
 			}
 		}()
 	}
@@ -125,7 +151,7 @@ func (tr *TestRunner) beginLatencyProbe(test *ManagedTest) bool {
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if tr.tests[test.ID] != test || test.latencyProbeInFlight {
+	if tr.tests[test.ID] != test || test.latencyProbeInFlight || isTerminalTestStatus(test.Status) {
 		return false
 	}
 	test.latencyProbeInFlight = true
@@ -546,25 +572,29 @@ func latencyJitterMs(values []float64) float64 {
 }
 
 func (tr *TestRunner) measureEndpointLatency(host, endpoint string) LatencyTarget {
+	return tr.measureEndpointLatencyContext(context.Background(), host, endpoint)
+}
+
+func (tr *TestRunner) measureEndpointLatencyContext(ctx context.Context, host, endpoint string) LatencyTarget {
 	if isHTTPProbeEndpoint(endpoint) {
-		target, err := tr.measureEndpointHTTPLatency(host, endpoint)
+		target, err := tr.measureEndpointHTTPLatencyContext(ctx, host, endpoint)
 		if err == nil {
-			tr.applyLatencyRouteMetadata(&target)
+			tr.applyLatencyRouteMetadataContext(ctx, &target)
 			return sanitizeLatencyTarget(target)
 		}
 
-		target = tr.measureEndpointTCPLatency(host, endpoint)
+		target = tr.measureEndpointTCPLatencyContext(ctx, host, endpoint)
 		if target.LastSuccess {
 			target.Error = fmt.Sprintf("HTTP probe failed; TCP fallback succeeded: %s", err.Error())
 		} else if target.Error == "" {
 			target.Error = err.Error()
 		}
-		tr.applyLatencyRouteMetadata(&target)
+		tr.applyLatencyRouteMetadataContext(ctx, &target)
 		return sanitizeLatencyTarget(target)
 	}
 
-	target := tr.measureEndpointTCPLatency(host, endpoint)
-	tr.applyLatencyRouteMetadata(&target)
+	target := tr.measureEndpointTCPLatencyContext(ctx, host, endpoint)
+	tr.applyLatencyRouteMetadataContext(ctx, &target)
 	return sanitizeLatencyTarget(target)
 }
 
@@ -579,6 +609,10 @@ func sanitizeLatencyTarget(target LatencyTarget) LatencyTarget {
 }
 
 func (tr *TestRunner) measureEndpointTCPLatency(host, endpoint string) LatencyTarget {
+	return tr.measureEndpointTCPLatencyContext(context.Background(), host, endpoint)
+}
+
+func (tr *TestRunner) measureEndpointTCPLatencyContext(ctx context.Context, host, endpoint string) LatencyTarget {
 	target := LatencyTarget{
 		Name:        host,
 		Endpoint:    endpoint,
@@ -589,7 +623,7 @@ func (tr *TestRunner) measureEndpointTCPLatency(host, endpoint string) LatencyTa
 
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
 	dialHost := latencyDialHost(host, endpoint)
-	conn, err := dialer.Dial("tcp", dialHost)
+	conn, err := dialer.DialContext(ctx, "tcp", dialHost)
 	if err != nil {
 		target.LastSuccess = false
 		target.Error = err.Error()
@@ -610,14 +644,18 @@ func (tr *TestRunner) measureEndpointTCPLatency(host, endpoint string) LatencyTa
 }
 
 func (tr *TestRunner) measureEndpointHTTPLatency(host, endpoint string) (LatencyTarget, error) {
-	target, err := tr.performLatencyHTTPProbe(host, endpoint, http.MethodHead)
+	return tr.measureEndpointHTTPLatencyContext(context.Background(), host, endpoint)
+}
+
+func (tr *TestRunner) measureEndpointHTTPLatencyContext(ctx context.Context, host, endpoint string) (LatencyTarget, error) {
+	target, err := tr.performLatencyHTTPProbeContext(ctx, host, endpoint, http.MethodHead)
 	if err == nil && target.HTTPStatus != http.StatusMethodNotAllowed && target.HTTPStatus != http.StatusNotImplemented {
 		return target, nil
 	}
 	if err == nil {
 		err = fmt.Errorf("HEAD probe returned %d", target.HTTPStatus)
 	}
-	fallback, fallbackErr := tr.performLatencyHTTPProbe(host, endpoint, http.MethodGet)
+	fallback, fallbackErr := tr.performLatencyHTTPProbeContext(ctx, host, endpoint, http.MethodGet)
 	if fallbackErr == nil {
 		return fallback, nil
 	}
@@ -625,13 +663,17 @@ func (tr *TestRunner) measureEndpointHTTPLatency(host, endpoint string) (Latency
 }
 
 func (tr *TestRunner) performLatencyHTTPProbe(host, endpoint string, method string) (LatencyTarget, error) {
+	return tr.performLatencyHTTPProbeContext(context.Background(), host, endpoint, method)
+}
+
+func (tr *TestRunner) performLatencyHTTPProbeContext(ctx context.Context, host, endpoint string, method string) (LatencyTarget, error) {
 	target := LatencyTarget{
 		Name:        host,
 		Endpoint:    endpoint,
 		ProbeMethod: strings.ToUpper(method),
 		Timestamp:   time.Now(),
 	}
-	req, err := http.NewRequest(method, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
 	if err != nil {
 		target.Error = err.Error()
 		return target, err
@@ -778,6 +820,10 @@ func durationMilliseconds(duration time.Duration) float64 {
 }
 
 func (tr *TestRunner) applyLatencyRouteMetadata(target *LatencyTarget) {
+	tr.applyLatencyRouteMetadataContext(context.Background(), target)
+}
+
+func (tr *TestRunner) applyLatencyRouteMetadataContext(ctx context.Context, target *LatencyTarget) {
 	if target == nil {
 		return
 	}
@@ -786,7 +832,7 @@ func (tr *TestRunner) applyLatencyRouteMetadata(target *LatencyTarget) {
 		target.RouteStatus = "unavailable"
 		return
 	}
-	hops, status := tr.routeMetadataForLatencyTarget(routeTarget)
+	hops, status := tr.routeMetadataForLatencyTargetContext(ctx, routeTarget)
 	target.Hops = hops
 	target.RouteStatus = status
 }
@@ -810,11 +856,15 @@ func trimLatencyHostPort(value string) string {
 }
 
 func (tr *TestRunner) routeMetadataForLatencyTarget(target string) (int, string) {
+	return tr.routeMetadataForLatencyTargetContext(context.Background(), target)
+}
+
+func (tr *TestRunner) routeMetadataForLatencyTargetContext(ctx context.Context, target string) (int, string) {
 	target = trimLatencyHostPort(target)
 	if target == "" {
 		return 0, "unavailable"
 	}
-	if isLatencyLoopbackTarget(target) {
+	if isLatencyLoopbackTargetContext(ctx, target) {
 		return 0, "local"
 	}
 
@@ -826,7 +876,7 @@ func (tr *TestRunner) routeMetadataForLatencyTarget(target string) (int, string)
 		return entry.hops, entry.status
 	}
 
-	hops, status := measureLatencyRoute(target)
+	hops, status := measureLatencyRouteContext(ctx, target)
 	if status != "busy" {
 		tr.storeLatencyRouteCacheEntry(target, latencyRouteCacheEntry{
 			hops:      hops,
@@ -870,13 +920,17 @@ func (tr *TestRunner) storeLatencyRouteCacheEntry(target string, entry latencyRo
 }
 
 func isLatencyLoopbackTarget(target string) bool {
+	return isLatencyLoopbackTargetContext(context.Background(), target)
+}
+
+func isLatencyLoopbackTargetContext(parent context.Context, target string) bool {
 	if strings.EqualFold(target, "localhost") {
 		return true
 	}
 	if ip := net.ParseIP(target); ip != nil {
 		return ip.IsLoopback()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), latencyDNSLookupTimeout)
+	ctx, cancel := context.WithTimeout(parent, latencyDNSLookupTimeout)
 	defer cancel()
 	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, target)
 	if err != nil {
@@ -891,6 +945,10 @@ func isLatencyLoopbackTarget(target string) bool {
 }
 
 func measureLatencyRoute(target string) (int, string) {
+	return measureLatencyRouteContext(context.Background(), target)
+}
+
+func measureLatencyRouteContext(parent context.Context, target string) (int, string) {
 	if !validLatencyRouteTarget(target) {
 		return 0, "unavailable"
 	}
@@ -904,7 +962,7 @@ func measureLatencyRoute(target string) (int, string) {
 	if err != nil {
 		return 0, "unavailable"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
 	defer cancel()
 	output, err := exec.CommandContext(ctx, traceroutePath, "-m", "8", "-q", "1", "-w", "1", target).CombinedOutput()
 	if ctx.Err() != nil {

@@ -37,7 +37,7 @@ pkg/
   api/static/    — Embedded dashboard build output (from dashboard/)
   storage/       — SQLite (default) / PostgreSQL persistence layer
   recorder/      — HTTP recording + HAR conversion + browser recording
-  convert/       — Multi-format import hub (LR archive, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
+  convert/       — Multi-format import hub (LR archive, Bruno, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
   selector/      — Shared element-selector model (CSS/XPath/role/text) + replay self-heal
   scrub/         — PII/credential redaction for recorder artifacts and HAR exports
   refkey/        — Human-readable, environment-aware reference keys
@@ -59,7 +59,7 @@ deployments/
   azure/
     terraform/   — Azure IaC (AKS, ACR, PostgreSQL, Redis, Blob, Key Vault)
     appservice/  — Node.js launcher wrapper for Azure App Service deployments
-  ci/            — Retired legacy CI location; authoritative CI/CD workflows live under .github/workflows/
+  .github/workflows/ — Authoritative CI/CD workflows
 ```
 
 ## Key Design Decisions
@@ -86,6 +86,8 @@ real franz-go network adapter opt-in via `-tags kafka_real`; Event Hubs Kafka-en
 `eventhubs_produce` + observer-probe `eventhubs_consume`; in-memory mock by default, real
 azeventhubs/AMQP adapter opt-in via `-tags eventhubs_real`), database (SQL query/exec/transactions),
 network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), and browser (replay + canary diagnostics).
+Bruno execution is also bundled through the version-pinned Node compatibility runner in
+`runners/bruno`; it is egress-governed and remains disabled unless its runner policy is configured.
 `sap_gui` actions are authorable/importable via the DSL catalog but have no registered runtime
 protocol and cannot be executed.
 

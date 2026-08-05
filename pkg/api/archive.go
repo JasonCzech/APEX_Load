@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -27,6 +28,7 @@ const testRunManifestFileName = "test_manifest.json"
 
 const (
 	archivePercentileQualitySourceGenerator = "source_generator"
+	archivePercentileQualityMergedDigest    = "merged_tdigest"
 	archivePercentileQualityRecomputed      = "recomputed_from_transactions"
 	archivePercentileQualityUnavailable     = "unavailable"
 )
@@ -253,10 +255,15 @@ type IntervalSummaryRecord struct {
 	P90Ms                  float64   `json:"p90_ms"`
 	P95Ms                  float64   `json:"p95_ms"`
 	P99Ms                  float64   `json:"p99_ms"`
+	// DurationDigest is an optional generator-archive staging field. Distributed
+	// finalization consumes it into fleet scalar percentiles; controller archives
+	// keep the existing scalar reporting contract.
+	DurationDigest *engine.TDigestSnapshot `json:"duration_digest,omitempty"`
 	// PercentileQuality identifies how the interval percentile distribution was
 	// obtained. It is empty for legacy/local rows, "source_generator" for an
-	// unmerged generator row, "recomputed_from_transactions" when the controller
-	// rebuilt the fleet distribution, and "unavailable" when multiple generator
+	// unmerged generator row, "merged_tdigest" when generator digests were
+	// combined, "recomputed_from_transactions" when the controller rebuilt the
+	// fleet distribution, and "unavailable" when multiple generator
 	// distributions could not be merged without inventing a percentile.
 	PercentileQuality string                               `json:"percentile_quality,omitempty"`
 	Groups            map[string]*GroupLiveMetrics         `json:"groups,omitempty"`

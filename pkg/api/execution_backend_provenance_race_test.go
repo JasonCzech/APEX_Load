@@ -44,7 +44,7 @@ func TestBuildRunArchiveProvenanceNoRaceWithPendingRefresh(t *testing.T) {
 	}()
 	for i := 0; i < 400; i++ {
 		tr.mu.Lock()
-		tr.refreshPendingQueueMetadataLocked()
+		tr.refreshPendingQueueMetadataWithTimeslotsLocked(time.Now(), nil, nil, nil)
 		tr.mu.Unlock()
 	}
 	<-done

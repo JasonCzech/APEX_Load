@@ -86,11 +86,14 @@ type Server struct {
 	// remotes and synchronization links within one controller. Durable CAS still
 	// provides the cross-controller fence.
 	libraryStateMutationMu sync.Mutex
-	// remoteConfigMu keeps remote transport/credential metadata stable for the
-	// full lifetime of an outbound operation. Updates/deletion take the write
-	// side so they cannot invalidate a cleanup intent created from an older
-	// credential snapshot.
+	// remoteConfigMu serializes snapshots of remote transport/credential
+	// metadata with updates and deletion. Outbound network calls use a deep copy
+	// with a pinned credential and never retain this lock.
 	remoteConfigMu sync.RWMutex
+	// remoteRunCreates fences the snapshot-to-cleanup-intent interval. Once the
+	// cleanup intent is durable, the existing outbox check becomes the long-lived
+	// transport/credential fence and this in-memory reservation is released.
+	remoteRunCreates map[string]int
 	// libraryArchiveImportMu protects the staged archive swap that accompanies
 	// an external-result upsert so a failed retry cannot destroy the prior copy.
 	libraryArchiveImportMu sync.Mutex
@@ -102,23 +105,26 @@ type Server struct {
 	remoteCleanupRetryMu   sync.Mutex
 	remoteCleanupCancel    context.CancelFunc
 	remoteCleanupDone      chan struct{}
-	c4Mu                   sync.Mutex
-	slaWaivers             map[string][]*storage.ReleaseSLAWaiver
-	resultImports          map[string]*storage.ExternalResultImport
-	resultImportBytes      int64
-	githubMu               sync.Mutex
-	githubTokens           map[string]githubCachedToken
-	// projectMutationMu prevents an acknowledged project-scoped HTTP mutation
-	// from being erased by a concurrent project graph deletion. Project deletion
-	// takes the write side; every other mutating request takes the read side.
-	projectMutationMu sync.RWMutex
-	oidcMu            sync.Mutex
-	oidcRuntimeKey    string
-	oidcRuntime       *oidcRuntime
-	ciAuthMu          sync.Mutex
-	ciOIDCProviders   map[string]*ciOIDCProviderRuntime
-	ciOIDCExchanges   map[string]ciOIDCExchangeCacheEntry
-	ciChecksCancel    context.CancelFunc
+	// fleetAlertNotificationMu makes the persisted route-once state a single
+	// read-modify-write transition within this controller.
+	fleetAlertNotificationMu sync.Mutex
+	c4Mu                     sync.Mutex
+	slaWaivers               map[string][]*storage.ReleaseSLAWaiver
+	resultImports            map[string]*storage.ExternalResultImport
+	resultImportBytes        int64
+	githubMu                 sync.Mutex
+	githubTokens             map[string]githubCachedToken
+	// projectMutations prevents an acknowledged project-scoped HTTP mutation
+	// from being erased by deletion of that same project without stalling work
+	// for unrelated projects.
+	projectMutations projectMutationCoordinator
+	oidcMu           sync.Mutex
+	oidcRuntimeKey   string
+	oidcRuntime      *oidcRuntime
+	ciAuthMu         sync.Mutex
+	ciOIDCProviders  map[string]*ciOIDCProviderRuntime
+	ciOIDCExchanges  map[string]ciOIDCExchangeCacheEntry
+	ciChecksCancel   context.CancelFunc
 	// selfHealMu serializes replay/debug self-heal write-back. Both the browser
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
@@ -551,7 +557,7 @@ func NewServer(cfg ServerConfig) *Server {
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
 
-	handler := bodyLimitMiddleware(s.projectMutationAdmission(s.mux))
+	handler := bodyLimitMiddleware(s.mux)
 	if s.desktopCapability != "" {
 		handler = desktopAuthMaterialMiddleware(s.desktopOIDCSessionForCapability, s.desktopDevPreviewForCapability)(handler)
 		handler = desktopCapabilityMiddleware(s.desktopCapability, cfg.AllowedOrigins, s.validDesktopBrowserCapability)(handler)
@@ -571,10 +577,12 @@ func NewServer(cfg ServerConfig) *Server {
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins, func() AuthSettings { return s.runner.GetSystemSettings().Auth })
 	log := loggingMiddleware
-	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
+	baseAuth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
+	auth := s.projectMutationCoordinatedAuth(baseAuth)
 	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}
-	ciAuth := s.ciAuthMiddleware(auth)
-	recorderViewAuth := projectScopedAuthMiddleware(
+	ciAuth := s.ciAuthMiddleware(baseAuth)
+	ciMutationAuth := s.projectMutationCoordinatedAuth(ciAuth)
+	recorderViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -582,8 +590,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderListProjectID,
 		withAuthAuditRecorder(s),
-	)
-	recorderCreateAuth := projectScopedAuthMiddleware(
+	))
+	recorderCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -591,8 +599,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
 		withAuthAuditRecorder(s),
-	)
-	recorderSessionViewAuth := projectScopedAuthMiddleware(
+	))
+	recorderSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -600,8 +608,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
 		withAuthAuditRecorder(s),
-	)
-	recorderSessionEditAuth := projectScopedAuthMiddleware(
+	))
+	recorderSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -609,8 +617,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderSessionProjectID(s.recorder),
 		withAuthAuditRecorder(s),
-	)
-	browserReplaySessionViewAuth := projectScopedAuthMiddleware(
+	))
+	browserReplaySessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -618,8 +626,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
 		withAuthAuditRecorder(s),
-	)
-	browserReplaySessionEditAuth := projectScopedAuthMiddleware(
+	))
+	browserReplaySessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -627,8 +635,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserReplaySessionProjectID(s.browserReplay),
 		withAuthAuditRecorder(s),
-	)
-	scriptDebugSessionViewAuth := projectScopedAuthMiddleware(
+	))
+	scriptDebugSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -636,8 +644,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
 		withAuthAuditRecorder(s),
-	)
-	scriptDebugSessionEditAuth := projectScopedAuthMiddleware(
+	))
+	scriptDebugSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -645,8 +653,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveScriptDebugSessionProjectID(s.scriptDebug),
 		withAuthAuditRecorder(s),
-	)
-	browserRecordingCreateAuth := projectScopedAuthMiddleware(
+	))
+	browserRecordingCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -654,8 +662,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveRecorderCreateProjectID,
 		withAuthAuditRecorder(s),
-	)
-	browserRecordingSessionViewAuth := projectScopedAuthMiddleware(
+	))
+	browserRecordingSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -663,8 +671,8 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleViewer, RoleEditor, RoleProjectAdmin},
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
 		withAuthAuditRecorder(s),
-	)
-	browserRecordingSessionEditAuth := projectScopedAuthMiddleware(
+	))
+	browserRecordingSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
 		s.cache,
@@ -672,14 +680,14 @@ func (s *Server) routes(allowedOrigins []string) {
 		[]string{RoleEditor, RoleProjectAdmin},
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
 		withAuthAuditRecorder(s),
-	)
+	))
 
 	// Controller-native GitHub Actions discovery, authentication, and run API.
 	s.mux.Handle("GET /.well-known/apexload-ci", cors(log(http.HandlerFunc(s.handleCIWellKnown))))
 	s.mux.Handle("POST /api/v1/auth/ci/github/exchange", cors(log(http.HandlerFunc(s.handleGitHubCIExchange))))
-	s.mux.Handle("POST /api/v1/ci/runs", cors(log(ciAuth(http.HandlerFunc(s.handleCreateCIRun)))))
+	s.mux.Handle("POST /api/v1/ci/runs", cors(log(ciMutationAuth(http.HandlerFunc(s.handleCreateCIRun)))))
 	s.mux.Handle("GET /api/v1/ci/runs/{id}", cors(log(ciAuth(http.HandlerFunc(s.handleGetCIRun)))))
-	s.mux.Handle("POST /api/v1/ci/runs/{id}/abort", cors(log(ciAuth(http.HandlerFunc(s.handleAbortCIRun)))))
+	s.mux.Handle("POST /api/v1/ci/runs/{id}/abort", cors(log(ciMutationAuth(http.HandlerFunc(s.handleAbortCIRun)))))
 
 	// Test lifecycle and archive endpoints.
 	s.mux.Handle("POST /api/v1/domains", cors(log(auth(http.HandlerFunc(s.handleCreateDomain)))))
@@ -2171,7 +2179,12 @@ func (s *Server) refreshGeneratorInventory(ctx context.Context) {
 	}()
 	probeCtx, cancel := context.WithTimeout(ctx, generatorInventoryRefreshTimeout)
 	defer cancel()
-	s.systemInventory(probeCtx)
+	inventory := s.systemInventory(probeCtx)
+	if s.runner.isExecutionLeader() {
+		alerts := buildFleetAlerts(inventory, s.runner.GetSystemSettings().Thresholds)
+		s.applyFleetAlertAcknowledgements(alerts)
+		s.routeFleetAlertNotifications(alerts)
+	}
 }
 
 func (s *Server) RunDueSchedules() error {

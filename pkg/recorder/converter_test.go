@@ -1715,3 +1715,21 @@ func TestConvertSession_SkippedResponsesDoNotCreateDanglingCorrelationVars(t *te
 		t.Fatalf("target = %q, want literal value because extractor source was skipped", got)
 	}
 }
+
+func TestConvertSession_WarnsWhenCaptureWasTruncated(t *testing.T) {
+	session := &Session{
+		ID:                       "test",
+		Name:                     "Truncated Capture",
+		DroppedRequests:          2,
+		DroppedWebSocketMessages: 3,
+		Truncated:                true,
+	}
+
+	result := ConvertSession(session, "")
+	warnings := strings.Join(result.Warnings, "\n")
+	if !strings.Contains(warnings, "capture was truncated") ||
+		!strings.Contains(warnings, "2 request(s)") ||
+		!strings.Contains(warnings, "3 WebSocket message(s)") {
+		t.Fatalf("warnings = %q, want retained drop counts", warnings)
+	}
+}

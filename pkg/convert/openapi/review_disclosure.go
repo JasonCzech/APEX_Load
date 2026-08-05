@@ -51,11 +51,14 @@ func sanitizeOpenAPIResultReviewText(result *ConvertResult) {
 
 	if result.SourceReview != nil {
 		for index := range result.SourceReview.SourceFiles {
+			// Source content is redacted by the schema-aware source-review pass
+			// before this generic label projection. Treating a short credential
+			// example as a bare substring here would erase unrelated paths,
+			// operation IDs, and prose from the operator's review copy.
 			refs = append(
 				refs,
 				&result.SourceReview.SourceFiles[index].Path,
 				&result.SourceReview.SourceFiles[index].Language,
-				&result.SourceReview.SourceFiles[index].Content,
 			)
 		}
 		appendOpenAPIStringRefs(&refs, result.SourceReview.OmittedSourceFiles)

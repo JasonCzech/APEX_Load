@@ -365,7 +365,7 @@ export function diagnoseError(error: unknown, fallback: string): ErrorDiagnostic
     )
   }
 
-  if (/import|conversion|convert|har|jmeter|postman|openapi|swagger|wsdl|loadrunner|devweb|truclient/.test(message)) {
+  if (/\b(?:import(?:s|ed|ing)?|conversion|convert(?:s|ed|ing)?|har|jmeter|postman|openapi|swagger|wsdl|loadrunner|devweb|truclient)\b/.test(message)) {
     return diagnostic(
       details,
       'import',

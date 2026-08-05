@@ -18,12 +18,16 @@ import (
 )
 
 const (
-	executionGenerationMetadataKey = "x-apexload-execution-generation"
-	metricsTestIDMetadataKey       = "x-apexload-metrics-test-id"
-	maxExecutionEpochTTL           = 10 * time.Minute
-	maxExecutionFenceWorkers       = 16
-	maxExecutionLeaseTestIDBytes   = 512
-	maxTestExecutionLeaseFences    = 4096
+	executionGenerationMetadataKey         = "x-apexload-execution-generation"
+	metricsTestIDMetadataKey               = "x-apexload-metrics-test-id"
+	coordinatedStartControllerMetadataKey  = "x-apexload-controller-sent-unix-nano"
+	coordinatedStartClockOffsetMetadataKey = "x-apexload-generator-clock-offset-nano"
+	coordinatedStartClockErrorMetadataKey  = "x-apexload-generator-clock-error-nano"
+	maxExecutionEpochTTL                   = 10 * time.Minute
+	maxCoordinatedStartClockOffset         = 24 * time.Hour
+	maxExecutionFenceWorkers               = 16
+	maxExecutionLeaseTestIDBytes           = 512
+	maxTestExecutionLeaseFences            = 4096
 )
 
 // testExecutionLease is a volatile, assignment-scoped safety fence. The
@@ -428,6 +432,66 @@ func incomingExecutionGeneration(ctx context.Context) (uint64, error) {
 		return 0, status.Error(codes.InvalidArgument, "invalid execution generation metadata")
 	}
 	return generation, nil
+}
+
+func outgoingCoordinatedStartContext(ctx context.Context, sentAt time.Time) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, coordinatedStartControllerMetadataKey, strconv.FormatInt(sentAt.UnixNano(), 10))
+}
+
+func outgoingCoordinatedStartContextWithClockEstimate(ctx context.Context, sentAt time.Time, offset, uncertainty time.Duration) context.Context {
+	ctx = outgoingCoordinatedStartContext(ctx, sentAt)
+	return metadata.AppendToOutgoingContext(
+		ctx,
+		coordinatedStartClockOffsetMetadataKey, strconv.FormatInt(int64(offset), 10),
+		coordinatedStartClockErrorMetadataKey, strconv.FormatInt(int64(uncertainty), 10),
+	)
+}
+
+func incomingCoordinatedStartControllerTime(ctx context.Context) (time.Time, bool, error) {
+	if ctx == nil {
+		return time.Time{}, false, nil
+	}
+	values := metadata.ValueFromIncomingContext(ctx, coordinatedStartControllerMetadataKey)
+	if len(values) == 0 {
+		return time.Time{}, false, nil
+	}
+	if len(values) != 1 {
+		return time.Time{}, false, status.Error(codes.InvalidArgument, "coordinated start controller time metadata must have exactly one value")
+	}
+	raw := strings.TrimSpace(values[0])
+	unixNano, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || raw != values[0] || unixNano <= 0 {
+		return time.Time{}, false, status.Error(codes.InvalidArgument, "invalid coordinated start controller time metadata")
+	}
+	return time.Unix(0, unixNano), true, nil
+}
+
+func incomingCoordinatedStartClockEstimate(ctx context.Context) (time.Duration, time.Duration, bool, error) {
+	if ctx == nil {
+		return 0, 0, false, nil
+	}
+	offsetValues := metadata.ValueFromIncomingContext(ctx, coordinatedStartClockOffsetMetadataKey)
+	errorValues := metadata.ValueFromIncomingContext(ctx, coordinatedStartClockErrorMetadataKey)
+	if len(offsetValues) == 0 && len(errorValues) == 0 {
+		return 0, 0, false, nil
+	}
+	if len(offsetValues) != 1 || len(errorValues) != 1 {
+		return 0, 0, false, status.Error(codes.InvalidArgument, "coordinated start clock estimate metadata must have exactly one offset and uncertainty")
+	}
+	offsetRaw, uncertaintyRaw := offsetValues[0], errorValues[0]
+	offsetNanos, offsetErr := strconv.ParseInt(offsetRaw, 10, 64)
+	uncertaintyNanos, uncertaintyErr := strconv.ParseInt(uncertaintyRaw, 10, 64)
+	if offsetErr != nil || uncertaintyErr != nil ||
+		strconv.FormatInt(offsetNanos, 10) != offsetRaw || strconv.FormatInt(uncertaintyNanos, 10) != uncertaintyRaw {
+		return 0, 0, false, status.Error(codes.InvalidArgument, "invalid coordinated start clock estimate metadata")
+	}
+	offset := time.Duration(offsetNanos)
+	uncertainty := time.Duration(uncertaintyNanos)
+	if offset < -maxCoordinatedStartClockOffset || offset > maxCoordinatedStartClockOffset ||
+		uncertainty < 0 || uncertainty > coordinatedStartClockEstimateMaxUncertainty {
+		return 0, 0, false, status.Error(codes.InvalidArgument, "coordinated start clock estimate is outside the accepted bounds")
+	}
+	return offset, uncertainty, true, nil
 }
 
 func outgoingMetricsTestContext(ctx context.Context, testID string) context.Context {

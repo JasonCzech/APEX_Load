@@ -354,13 +354,13 @@ func (s *Server) handleLibraryCreateRemote(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.Lock()
-	defer s.remoteConfigMu.Unlock()
 	id := strings.TrimSpace(r.PathValue("id"))
 	var req LibraryRemoteRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	s.remoteConfigMu.Lock()
+	defer s.remoteConfigMu.Unlock()
 	s.libraryStateMutationMu.Lock()
 	defer s.libraryStateMutationMu.Unlock()
 	s.loadLibraryState()
@@ -378,6 +378,10 @@ func (s *Server) handleLibraryUpdateRemote(w http.ResponseWriter, r *http.Reques
 	updated := previous
 	s.libraryMu.Unlock()
 	if strings.TrimSpace(req.BaseURL) != "" || strings.TrimSpace(req.AuthMethod) != "" || strings.TrimSpace(req.CredentialRef) != "" || strings.TrimSpace(req.APIKey) != "" {
+		if s.remoteRunCreateInFlightLocked(id) {
+			writeError(w, http.StatusConflict, "remote transport and credentials cannot change while a run create is preparing")
+			return
+		}
 		pending, pendingErr := s.hasPendingRemoteRunCleanup(id)
 		if pendingErr != nil {
 			writeError(w, http.StatusServiceUnavailable, "remote cleanup state is unavailable: "+pendingErr.Error())
@@ -479,6 +483,11 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 	previousRemote.ProjectMappings = cloneLibraryRemoteProjectMappings(remote.ProjectMappings)
 	previousRemote.ApplicationMappings = cloneLibraryRemoteApplicationMappings(remote.ApplicationMappings)
 	previousRemote.ReleaseMappings = cloneLibraryRemoteReleaseMappings(remote.ReleaseMappings)
+	if s.remoteRunCreateInFlightLocked(id) {
+		s.libraryMu.Unlock()
+		writeError(w, http.StatusConflict, "remote workspace cannot be deleted while a run create is preparing")
+		return
+	}
 	pending, pendingErr := s.hasPendingRemoteRunCleanup(id)
 	if pendingErr != nil {
 		s.libraryMu.Unlock()
@@ -523,18 +532,18 @@ func (s *Server) handleLibraryDeleteRemote(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	s.libraryStateMutationMu.Lock()
-	s.loadLibraryState()
-	remote, ok := s.libraryRemote(r.PathValue("id"))
-	s.libraryStateMutationMu.Unlock()
+	remote, ok, probeErr := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
-	caps, err := s.remoteLibraryCapabilities(r.Context(), remote)
+	var caps *LibraryCapabilitiesResponse
+	if probeErr == nil {
+		caps, probeErr = s.remoteLibraryCapabilities(r.Context(), remote)
+	}
 	now := time.Now().UTC()
+	s.remoteConfigMu.Lock()
+	defer s.remoteConfigMu.Unlock()
 	s.libraryStateMutationMu.Lock()
 	defer s.libraryStateMutationMu.Unlock()
 	s.loadLibraryState()
@@ -545,13 +554,18 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
+	if !sameLibraryRemoteTransport(remote, *stored) {
+		s.libraryMu.Unlock()
+		writeError(w, http.StatusConflict, "remote transport changed while the probe was in progress; retry")
+		return
+	}
 	copied := *stored
 	previous := &copied
 	stored.LastHealthCheck = &now
 	stored.UpdatedAt = now
-	if err != nil {
+	if probeErr != nil {
 		stored.Status = "unreachable"
-		stored.LastError = err.Error()
+		stored.LastError = probeErr.Error()
 	} else {
 		stored.Status = "healthy"
 		stored.LastError = ""
@@ -567,9 +581,9 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, persistErr.Error())
 		return
 	}
-	if err != nil {
-		s.recordAuditEvent(r, "library.remote.probe", "failure", "library_remote", remote.ID, "", map[string]any{"error": err.Error()})
-		writeJSON(w, http.StatusOK, map[string]any{"remote": remote, "status": "unreachable", "error": err.Error()})
+	if probeErr != nil {
+		s.recordAuditEvent(r, "library.remote.probe", "failure", "library_remote", remote.ID, "", map[string]any{"error": probeErr.Error()})
+		writeJSON(w, http.StatusOK, map[string]any{"remote": remote, "status": "unreachable", "error": probeErr.Error()})
 		return
 	}
 	s.recordAuditEvent(r, "library.remote.probe", "success", "library_remote", remote.ID, "", nil)
@@ -577,11 +591,13 @@ func (s *Server) handleLibraryProbeRemote(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+	remote, ok, err := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	localProjectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
@@ -609,15 +625,17 @@ func (s *Server) handleLibraryRemoteCatalog(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleLibraryRemotePull(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+	var req LibraryTransferRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	remote, ok, err := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
-	var req LibraryTransferRequest
-	if !decodeJSONBody(w, r, &req) {
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
@@ -725,15 +743,17 @@ func (s *Server) validateLibraryResultPullDestination(remote LibraryRemote, req 
 }
 
 func (s *Server) handleLibraryRemotePush(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+	var req LibraryTransferRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	remote, ok, err := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
-	var req LibraryTransferRequest
-	if !decodeJSONBody(w, r, &req) {
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	localProjectID, resolveStatus, message := s.resolveLibraryTransferHandlerProject(req, r.URL.Path)
@@ -850,15 +870,17 @@ func requireServiceAccountLibraryBundleScopesContext(ctx context.Context, bundle
 }
 
 func (s *Server) handleLibraryRemoteDiff(w http.ResponseWriter, r *http.Request) {
-	s.remoteConfigMu.RLock()
-	defer s.remoteConfigMu.RUnlock()
-	remote, ok := s.freshLibraryRemote(r.PathValue("id"))
+	var req LibraryTransferRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	remote, ok, err := s.snapshotLibraryRemoteConfig(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "remote library not found")
 		return
 	}
-	var req LibraryTransferRequest
-	if !decodeJSONBody(w, r, &req) {
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	localID := firstNonEmpty(req.LocalID, req.ID)

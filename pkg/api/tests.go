@@ -521,12 +521,11 @@ func (tr *TestRunner) ListTestSummaries() []*ManagedTest {
 	return out
 }
 
-// listOperationalTestSnapshots returns the complete current test metadata used
-// by controller-wide accounting, capacity, retention, and observability paths,
-// but deliberately omits retained interval history and its derived sparkline.
-// Those paths are polled frequently and never consume either field; cloning the
-// full history for every Prometheus scrape or accounting request lets retained
-// run history multiply the cost of otherwise lightweight control-plane reads.
+// listOperationalTestSnapshots returns a narrow projection used by
+// controller-wide accounting, capacity, retention, calendar, and observability
+// paths. In particular it never clones transaction/dependency metric maps or
+// authoring/runtime state; those paths consume only scalar live metrics and the
+// compact workload/topology fields copied below.
 func (tr *TestRunner) listOperationalTestSnapshots() []*ManagedTest {
 	tr.refreshTestsForHARead()
 	tr.refreshReadMetadataForTestList()
@@ -537,12 +536,74 @@ func (tr *TestRunner) listOperationalTestSnapshots() []*ManagedTest {
 		if test == nil {
 			continue
 		}
-		cloned := cloneManagedTestFieldsLocked(test)
-		cloned.History = nil
-		cloned.Sparkline = nil
-		out = append(out, cloned)
+		out = append(out, cloneOperationalTestProjectionLocked(test))
 	}
 	return out
+}
+
+func cloneOperationalTestProjectionLocked(test *ManagedTest) *ManagedTest {
+	if test == nil {
+		return nil
+	}
+	projection := &ManagedTest{
+		ID:                   test.ID,
+		RefKey:               test.RefKey,
+		Name:                 test.Name,
+		Status:               test.Status,
+		ApplicationID:        test.ApplicationID,
+		ReleaseID:            test.ReleaseID,
+		ScenarioID:           test.ScenarioID,
+		ProjectID:            test.ProjectID,
+		FolderID:             cloneStringPtr(test.FolderID),
+		Groups:               cloneArchiveTestGroups(test.Groups),
+		Assignment:           cloneGeneratorAssignmentSettings(test.Assignment),
+		ScenarioMode:         test.ScenarioMode,
+		ResourceBaseline:     test.ResourceBaseline,
+		StartDelay:           test.StartDelay,
+		TotalVUsers:          test.TotalVUsers,
+		GeneratorShards:      cloneGeneratorShardSummaries(test.GeneratorShards),
+		Duration:             test.Duration,
+		DurationStr:          test.DurationStr,
+		CreatedAt:            test.CreatedAt,
+		ScheduledStartAt:     cloneTimePtr(test.ScheduledStartAt),
+		StartedAt:            cloneTimePtr(test.StartedAt),
+		PausedAt:             cloneTimePtr(test.PausedAt),
+		CumulativePause:      test.CumulativePause,
+		EndedAt:              cloneTimePtr(test.EndedAt),
+		CreatedBySubject:     test.CreatedBySubject,
+		CreatedByDisplayName: test.CreatedByDisplayName,
+		StartedBySubject:     test.StartedBySubject,
+		StartedByDisplayName: test.StartedByDisplayName,
+		StoppedBySubject:     test.StoppedBySubject,
+		StoppedByDisplayName: test.StoppedByDisplayName,
+		Archive:              cloneRunArchiveRecord(test.Archive),
+		ScriptID:             test.ScriptID,
+		ScriptName:           test.ScriptName,
+	}
+	for index := range projection.Groups {
+		// cloneArchiveTestGroups preserves the complete public run-calendar
+		// contract, but operational readers must not retain or alias executable
+		// script graphs and runtime-only overlays through its unexported fields.
+		projection.Groups[index].script = nil
+		projection.Groups[index].baseScript = nil
+		projection.Groups[index].sharedDataSources = nil
+		projection.Groups[index].redactionRules = nil
+		projection.Groups[index].runtimeSecretValues = nil
+	}
+	if test.CapacityAdvisory != nil {
+		projection.CapacityAdvisory = &CapacityAdvisory{RequiresOverride: test.CapacityAdvisory.RequiresOverride}
+	}
+	if test.LiveMetrics != nil {
+		projection.LiveMetrics = &LiveMetrics{
+			Timestamp:    test.LiveMetrics.Timestamp,
+			ActiveVUsers: test.LiveMetrics.ActiveVUsers,
+			TPS:          test.LiveMetrics.TPS,
+			ErrorPct:     test.LiveMetrics.ErrorPct,
+			P95Ms:        test.LiveMetrics.P95Ms,
+			P99Ms:        test.LiveMetrics.P99Ms,
+		}
+	}
+	return projection
 }
 
 type testSummaryListQuery struct {
@@ -727,10 +788,10 @@ func (tr *TestRunner) refreshReadMetadataForTest(id string) {
 		return
 	}
 
+	tr.refreshPendingQueueMetadata()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	resolvedID = tr.resolveRefKeyLocked(id)
-	tr.refreshPendingQueueMetadataLocked()
 	if test, ok := tr.tests[resolvedID]; ok && (test.Status == "QUEUED" || test.Status == "PENDING") {
 		tr.refreshCapacityAdvisoryLocked(test)
 	}
@@ -751,9 +812,9 @@ func (tr *TestRunner) refreshReadMetadataForTestList() {
 		return
 	}
 
+	tr.refreshPendingQueueMetadata()
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	tr.refreshPendingQueueMetadataLocked()
 	for _, test := range tr.tests {
 		if test != nil && (test.Status == "QUEUED" || test.Status == "PENDING") {
 			tr.refreshCapacityAdvisoryLocked(test)
@@ -819,6 +880,10 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.ComparisonBaseline = cloneRunComparisonBaseline(test.ComparisonBaseline)
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
 	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
+	if test.initialArchiveProvenance != nil {
+		initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)
+		cloned.initialArchiveProvenance = &initial
+	}
 	cloned.ciSLADetails = append([]string(nil), test.ciSLADetails...)
 	cloned.thresholdAlertActive = cloneStringBoolMap(test.thresholdAlertActive)
 	cloned.thresholdAlertNotifiedAt = cloneStringTimeMap(test.thresholdAlertNotifiedAt)
@@ -1175,8 +1240,7 @@ func (tr *TestRunner) DeleteTestWithError(id string) (bool, error) {
 	tr.mu.RLock()
 	var archiveRecord *storage.RunArchiveRecord
 	if test := tr.tests[canonicalID]; test != nil {
-		switch test.Status {
-		case "RUNNING", "INITIALIZING", "PAUSED", "STOPPING", "SHAKEOUT":
+		if managedTestDeletionBlocked(test) {
 			tr.mu.RUnlock()
 			return false, nil
 		}
@@ -1255,7 +1319,7 @@ func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	if test.Status == "RUNNING" || test.Status == "INITIALIZING" || test.Status == "PAUSED" || test.Status == "STOPPING" || test.Status == "SHAKEOUT" {
+	if managedTestDeletionBlocked(test) {
 		return false, nil // Can't delete active tests
 	}
 	result, err := tr.deleteStoredTest(id)
@@ -1280,4 +1344,22 @@ func (tr *TestRunner) DeleteTestDurable(id string) (bool, error) {
 	delete(tr.archives, id)
 	forgetRunArchiveCache(id)
 	return true, nil
+}
+
+func managedTestDeletionBlocked(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	// Passive transitions temporarily release tr.mu while their identity-fenced
+	// storage write is in flight. Deletion must not remove that incarnation in
+	// the gap, even when its public status is otherwise deletable.
+	if strings.TrimSpace(test.passiveOperationToken) != "" {
+		return true
+	}
+	switch strings.ToUpper(strings.TrimSpace(test.Status)) {
+	case "INITIALIZING", "STARTING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
+		return true
+	default:
+		return false
+	}
 }

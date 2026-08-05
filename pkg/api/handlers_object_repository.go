@@ -309,6 +309,9 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 // returns the number of actions bound. The reference is qualified with the
 // repository id so resolution and self-heal write-back are deterministic.
 func bindScriptToObjectRepository(script *dsl.Script, repo *storage.ObjectRepository) int {
+	if script == nil || repo == nil {
+		return 0
+	}
 	canonical := map[string]string{}
 	for _, obj := range repo.Objects {
 		key := strings.ToLower(strings.TrimSpace(obj.LogicalName))
@@ -317,16 +320,29 @@ func bindScriptToObjectRepository(script *dsl.Script, repo *storage.ObjectReposi
 		}
 	}
 	bound := 0
+	walkScriptActions(script, func(action *dsl.Action) {
+		if strings.TrimSpace(action.ObjectRef) == "" {
+			if name, ok := canonical[strings.ToLower(strings.TrimSpace(action.Name))]; ok {
+				action.ObjectRef = repo.ID + ":" + name
+				bound++
+			}
+		}
+	})
+	return bound
+}
+
+// walkScriptActions is the single definition of action scope for repository
+// collection, ambiguity checks, and binding. Control-flow steps and else
+// branches are first-class actions and must participate in all three phases.
+func walkScriptActions(script *dsl.Script, visit func(action *dsl.Action)) {
+	if script == nil || visit == nil {
+		return
+	}
 	var walk func(actions []dsl.Action)
 	walk = func(actions []dsl.Action) {
-		for i := range actions {
-			action := &actions[i]
-			if strings.TrimSpace(action.ObjectRef) == "" {
-				if name, ok := canonical[strings.ToLower(strings.TrimSpace(action.Name))]; ok {
-					action.ObjectRef = repo.ID + ":" + name
-					bound++
-				}
-			}
+		for index := range actions {
+			action := &actions[index]
+			visit(action)
 			if action.Control != nil {
 				walk(action.Control.Steps)
 				walk(action.Control.Else)
@@ -336,7 +352,6 @@ func bindScriptToObjectRepository(script *dsl.Script, repo *storage.ObjectReposi
 	walk(script.Init)
 	walk(script.Actions)
 	walk(script.Teardown)
-	return bound
 }
 
 // actionLocatorSignature is a stable fingerprint of an action's locator (inline
@@ -353,40 +368,35 @@ func actionLocatorSignature(action dsl.Action) string {
 }
 
 // ambiguousObjectNames returns the set of logical names that two distinct actions
-// share with different locator signatures, scanning the same scope (top-level
-// init/actions/teardown) that objectRepositoryObjectsFromScript collects from.
+// share with different locator signatures across every executable action.
 func ambiguousObjectNames(script *dsl.Script) map[string]bool {
 	firstSig := map[string]string{}
 	ambiguous := map[string]bool{}
-	scan := func(actions []dsl.Action) {
-		for _, action := range actions {
-			var candidates []selector.Candidate
-			if action.Metadata != nil {
-				candidates = selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey])
-			}
-			if len(candidates) == 0 && strings.TrimSpace(action.Selector) == "" {
-				continue
-			}
-			logicalName := strings.TrimSpace(action.Name)
-			if logicalName == "" {
-				logicalName = strings.TrimSpace(action.Selector)
-			}
-			if logicalName == "" {
-				continue
-			}
-			sig := actionLocatorSignature(action)
-			if prev, ok := firstSig[logicalName]; ok {
-				if prev != sig {
-					ambiguous[logicalName] = true
-				}
-				continue
-			}
-			firstSig[logicalName] = sig
+	walkScriptActions(script, func(action *dsl.Action) {
+		var candidates []selector.Candidate
+		if action.Metadata != nil {
+			candidates = selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey])
 		}
-	}
-	scan(script.Init)
-	scan(script.Actions)
-	scan(script.Teardown)
+		if len(candidates) == 0 && strings.TrimSpace(action.Selector) == "" {
+			return
+		}
+		logicalName := strings.TrimSpace(action.Name)
+		if logicalName == "" {
+			logicalName = strings.TrimSpace(action.Selector)
+		}
+		if logicalName == "" {
+			return
+		}
+		logicalKey := strings.ToLower(logicalName)
+		sig := actionLocatorSignature(*action)
+		if previous, ok := firstSig[logicalKey]; ok {
+			if previous != sig {
+				ambiguous[logicalKey] = true
+			}
+			return
+		}
+		firstSig[logicalKey] = sig
+	})
 	return ambiguous
 }
 
@@ -403,61 +413,57 @@ func objectRepositoryObjectsFromScript(script *dsl.Script, scriptID string) []st
 	// re-targets the others. Exclude such ambiguous names entirely so no action is
 	// mis-bound; the colliding actions keep their inline selectors.
 	ambiguous := ambiguousObjectNames(script)
-	collect := func(actions []dsl.Action) {
-		for _, action := range actions {
-			var candidates []selector.Candidate
-			if action.Metadata != nil {
-				candidates = selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey])
-			}
-			if len(candidates) == 0 && strings.TrimSpace(action.Selector) == "" {
-				continue
-			}
-			logicalName := strings.TrimSpace(action.Name)
-			if logicalName == "" {
-				logicalName = strings.TrimSpace(action.Selector)
-			}
-			if logicalName == "" || seen[logicalName] || ambiguous[logicalName] {
-				continue
-			}
-			seen[logicalName] = true
-			obj := storage.RepositoryObject{
-				LogicalName:    logicalName,
-				CSS:            action.Selector,
-				SourceScriptID: scriptID,
-			}
-			best := 0
-			for _, candidate := range candidates {
-				obj.Candidates = append(obj.Candidates, storage.RepositoryObjectCandidate{
-					Kind: candidate.Kind, Value: candidate.Value, Confidence: candidate.Confidence, Reason: candidate.Reason,
-				})
-				if candidate.Confidence > best {
-					best = candidate.Confidence
-				}
-				switch candidate.Kind {
-				case "css":
-					if obj.CSS == "" {
-						obj.CSS = candidate.Value
-					}
-				case "xpath":
-					if obj.XPath == "" {
-						obj.XPath = candidate.Value
-					}
-				case "role":
-					if obj.Role == "" {
-						obj.Role = candidate.Value
-					}
-				case "text":
-					if obj.Text == "" {
-						obj.Text = candidate.Value
-					}
-				}
-			}
-			obj.BestConfidence = best
-			objects = append(objects, obj)
+	walkScriptActions(script, func(action *dsl.Action) {
+		var candidates []selector.Candidate
+		if action.Metadata != nil {
+			candidates = selector.FromMetadataValue(action.Metadata[selector.MetadataCandidatesKey])
 		}
-	}
-	collect(script.Init)
-	collect(script.Actions)
-	collect(script.Teardown)
+		if len(candidates) == 0 && strings.TrimSpace(action.Selector) == "" {
+			return
+		}
+		logicalName := strings.TrimSpace(action.Name)
+		if logicalName == "" {
+			logicalName = strings.TrimSpace(action.Selector)
+		}
+		logicalKey := strings.ToLower(logicalName)
+		if logicalName == "" || seen[logicalKey] || ambiguous[logicalKey] {
+			return
+		}
+		seen[logicalKey] = true
+		obj := storage.RepositoryObject{
+			LogicalName:    logicalName,
+			CSS:            action.Selector,
+			SourceScriptID: scriptID,
+		}
+		best := 0
+		for _, candidate := range candidates {
+			obj.Candidates = append(obj.Candidates, storage.RepositoryObjectCandidate{
+				Kind: candidate.Kind, Value: candidate.Value, Confidence: candidate.Confidence, Reason: candidate.Reason,
+			})
+			if candidate.Confidence > best {
+				best = candidate.Confidence
+			}
+			switch candidate.Kind {
+			case "css":
+				if obj.CSS == "" {
+					obj.CSS = candidate.Value
+				}
+			case "xpath":
+				if obj.XPath == "" {
+					obj.XPath = candidate.Value
+				}
+			case "role":
+				if obj.Role == "" {
+					obj.Role = candidate.Value
+				}
+			case "text":
+				if obj.Text == "" {
+					obj.Text = candidate.Value
+				}
+			}
+		}
+		obj.BestConfidence = best
+		objects = append(objects, obj)
+	})
 	return objects
 }

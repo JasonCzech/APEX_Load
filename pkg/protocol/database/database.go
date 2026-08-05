@@ -191,10 +191,12 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 			result.ErrorMessage = extractorErr
 		}
 	}
-	if assertionErr := evaluateDatabaseAssertions(action.Assertions, result, result.ResponseBody); assertionErr != "" {
-		result.Success = false
-		result.StatusCode = 500
-		result.ErrorMessage = assertionErr
+	if result.Success {
+		if assertionErr := evaluateDatabaseAssertions(action.Assertions, result, result.ResponseBody); assertionErr != "" {
+			result.Success = false
+			result.StatusCode = 500
+			result.ErrorMessage = assertionErr
+		}
 	}
 	if !result.Success {
 		result.Snapshot = databaseSnapshot(action, result)

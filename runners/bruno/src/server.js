@@ -65,7 +65,9 @@ async function finishPendingSession(session, error, timeoutMS = DEFAULT_PENDING_
     if (typeof handler !== 'function') continue;
     try {
       completions.push(Promise.resolve(handler({ type: 'error', requestID, error })));
-    } catch {}
+    } catch {
+      // Best effort: one faulty completion handler must not block session cleanup.
+    }
   }
   if (completions.length === 0) return true;
   let timer;
@@ -80,7 +82,9 @@ async function finishPendingSession(session, error, timeoutMS = DEFAULT_PENDING_
   // second time and therefore cannot hold session deletion or runner shutdown.
   for (const [, entry] of pending) {
     if (typeof entry?.abort !== 'function') continue;
-    try { entry.abort(); } catch {}
+    try { entry.abort(); } catch {
+      // Best effort: teardown continues even when a response chain already closed.
+    }
   }
   return false;
 }
@@ -185,7 +189,9 @@ async function destroySessionResources(
   }
   if (session.expiryTimer) clearTimeout(session.expiryTimer);
   session.expiryTimer = null;
-  try { session.worker?.postMessage({ type: 'cancel' }); } catch {}
+  try { session.worker?.postMessage({ type: 'cancel' }); } catch {
+    // The worker may already have exited; bounded termination below is authoritative.
+  }
   try {
     await finishPendingSession(session, terminalError, timeoutMS);
     session.closed = true;
@@ -275,13 +281,19 @@ function sweepStaleRunnerRoots(parent, options = {}) {
     try {
       fs.rmSync(candidate, { recursive: true, force: true });
       removed.push(candidate);
-    } catch {}
+    } catch {
+      // A concurrent cleanup may already have removed this stale root.
+    }
   }
   return removed;
 }
 
 function validRelativePath(value) {
-  if (typeof value !== 'string' || value.length === 0 || value.includes('\0') || /[\x00-\x1f\x7f]/.test(value)) {
+  const hasControlCharacter = typeof value === 'string' && Array.from(value).some((character) => {
+    const codePoint = character.charCodeAt(0);
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+  if (typeof value !== 'string' || value.length === 0 || hasControlCharacter) {
     return null;
   }
   const normalized = value.replaceAll('\\', '/');
@@ -591,7 +603,9 @@ function createRunnerServer(options = {}) {
     const now = new Date();
     try {
       fs.utimesSync(ownerPath, now, now);
-    } catch {}
+    } catch {
+      // Heartbeats are advisory; ownership and TTL checks still protect cleanup.
+    }
   }, Math.max(1000, Math.min(30000, Math.floor(staleRootTTLMS / 3))));
   ownerHeartbeat.unref?.();
   function bundleExpiryDeadline(bundle) {

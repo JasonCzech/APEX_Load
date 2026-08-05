@@ -40,6 +40,24 @@ type dynamicCallRule struct {
 // Finite dynamic routes list every OpenAPI operation they can dispatch to.
 var dynamicDashboardCallRules = []dynamicCallRule{
 	{
+		File:           "browserRecorderBridge.ts",
+		Callee:         "requestFromOrigin",
+		ArgumentPrefix: "path",
+		Reason:         "generic bridge JSON transport; every bridgeRequest call site is scanned",
+	},
+	{
+		File:           "useBrowserRecorderApi.ts",
+		Callee:         "bridgeRequest",
+		ArgumentPrefix: "path",
+		Reason:         "controller/record-agent dispatcher; every recorderRequest call site is scanned",
+	},
+	{
+		File:           "useBrowserRecorderApi.ts",
+		Callee:         "bridgeFetch",
+		ArgumentPrefix: "path",
+		Reason:         "bridge blob dispatcher; its concrete export call is represented by the recorder API route inventory",
+	},
+	{
 		File:           "useApplicationApi.ts",
 		Callee:         "apiFetch",
 		ArgumentPrefix: "path",
@@ -123,7 +141,7 @@ var dynamicDashboardCallRules = []dynamicCallRule{
 }
 
 var (
-	controllerCallNamePattern = regexp.MustCompile(`\b(request|apiFetch|fetchBlob|recorderRequest|transferRequest)\b`)
+	controllerCallNamePattern = regexp.MustCompile(`\b(request|apiFetch|fetchBlob|recorderRequest|transferRequest|requestFromOrigin|bridgeRequest|bridgeFetch)\b`)
 	methodOptionPattern       = regexp.MustCompile(`(?i)\bmethod\s*:\s*['\"]([a-z]+)['\"]`)
 	constantPathPattern       = regexp.MustCompile(`(?m)^\s*const\s+([A-Z][A-Z0-9_]*)\s*=\s*['\"](/[^'\"\r\n]*)['\"]`)
 	pathParameterPattern      = regexp.MustCompile(`\{[^}/]+\}`)
@@ -405,8 +423,21 @@ func scanDashboardControllerCalls(file, source string) []dashboardCall {
 		if argumentStart >= callEnd {
 			continue
 		}
-		argument, literal := readFirstArgument(source, argumentStart, callEnd)
 		callee := source[nameStart:nameEnd]
+		// Origin-aware bridge helpers take the target origin/connection first and
+		// the API path second. Inspect the route argument rather than allowlisting
+		// every call solely because its first argument is dynamic.
+		if callee == "requestFromOrigin" || callee == "bridgeRequest" || callee == "bridgeFetch" {
+			firstArgumentEnd := scanExpressionEnd(source, argumentStart, callEnd)
+			if firstArgumentEnd >= callEnd || source[firstArgumentEnd] != ',' {
+				continue
+			}
+			argumentStart = skipSpace(source, firstArgumentEnd+1)
+			if argumentStart >= callEnd {
+				continue
+			}
+		}
+		argument, literal := readFirstArgument(source, argumentStart, callEnd)
 		method := defaultMethod(callee)
 		if methodMatch := methodOptionPattern.FindStringSubmatch(source[cursor:callEnd]); len(methodMatch) == 2 {
 			method = strings.ToUpper(methodMatch[1])

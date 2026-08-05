@@ -310,6 +310,29 @@ describe('newTestRunModel', () => {
     expect(preview.points[preview.points.length - 1]).toMatchObject({ second: 1260, total: 0 })
   })
 
+  it('renders authored load stages instead of the legacy simple ramp fields', () => {
+    const group = {
+      ...scenarioFixture().scripts[0],
+      vusers: 20,
+      ramp_up: '10m',
+      ramp_down: '10m',
+      stages: [
+        { type: 'ramp_up', duration: '1m', target_vusers: 20 },
+        { type: 'hold', duration: '1m', target_vusers: 20 },
+        { type: 'ramp_down', duration: '1m', target_vusers: 0 },
+      ],
+    }
+
+    const preview = buildRunLoadProfilePreview([group], '3m', undefined, false)
+
+    expect(preview.totalSeconds).toBe(180)
+    expect(preview.points.find(point => point.second === 0)?.group0).toBe(0)
+    expect(preview.points.find(point => point.second === 60)?.group0).toBe(20)
+    expect(preview.points.find(point => point.second === 120)?.group0).toBe(20)
+    expect(preview.points.find(point => point.second === 180)?.group0).toBe(0)
+    expect(preview.peakVUsers).toBe(20)
+  })
+
   it('formats placement summaries and generator eligibility', () => {
     const scenario = scenarioFixture()
     const pinned: GroupRunOverride = { assignment: { mode: 'specific_hosts', selected_targets: ['gen-a:9090'] } }

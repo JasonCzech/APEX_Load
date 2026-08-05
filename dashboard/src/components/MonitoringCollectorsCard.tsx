@@ -5,6 +5,7 @@ import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { CollectorMetricSnapshot, MonitoringCollector } from '../types'
+import { copyTextToClipboard } from '../utils/clipboardUtils'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { listAllMonitoringCollectors } from './monitoringCatalogModel'
@@ -74,6 +75,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   const [metrics, setMetrics] = useState<{ name: string; snapshot: CollectorMetricSnapshot } | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const scopeRef = useRef({ projectId, generation: 0 })
   const loadGenerationRef = useRef(0)
   if (scopeRef.current.projectId !== projectId) {
@@ -119,7 +121,13 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
     setMetrics(null)
     setBusy(false)
     setCopied(false)
+    setCopyError(null)
   }, [projectId])
+
+  useEffect(() => {
+    setCopied(false)
+    setCopyError(null)
+  }, [oneTimeToken?.token])
 
   const load = useCallback(async () => {
     const scope = { ...scopeRef.current }
@@ -256,12 +264,16 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
     }
   }, [api, deleteTarget, isCurrentScope, load])
 
-  const copyToken = useCallback(() => {
+  const copyToken = useCallback(async () => {
     if (!oneTimeToken) return
-    void navigator.clipboard?.writeText(oneTimeToken.token).then(() => {
+    setCopyError(null)
+    if (await copyTextToClipboard(oneTimeToken.token)) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    })
+      return
+    }
+    setCopied(false)
+    setCopyError('Copy unavailable. Select the token and copy it manually.')
   }, [oneTimeToken])
 
   const createValid = useMemo(() => Boolean(projectId && createForm.name.trim()), [projectId, createForm.name])
@@ -482,10 +494,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               <span className="pp-token-warning">This token is shown only once. Copy it now and store it securely.</span>
               <div className="pp-token-value">
                 <code>{oneTimeToken.token}</code>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={copyToken}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copyToken()}>
                   {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
+              {copyError && <span className="setting-error" role="alert">{copyError}</span>}
             </div>
             <div className="pp-modal-actions">
               <button type="button" className="btn btn-primary" onClick={closeToken}>

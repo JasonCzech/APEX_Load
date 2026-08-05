@@ -29,21 +29,110 @@ function parseLockPackageKey(raw) {
   };
 }
 
+function parseProductionLockGraph(lines) {
+  const roots = [];
+  const snapshots = new Map();
+  let topLevel = '';
+  let inRootImporter = false;
+  let importerDependencySection = '';
+  let importerDependency = '';
+  let snapshot = '';
+  let snapshotDependencySection = '';
+
+  for (const line of lines) {
+    if (/^[^\s]/.test(line)) {
+      topLevel = line.endsWith(':') ? line.slice(0, -1) : '';
+      inRootImporter = false;
+      importerDependencySection = '';
+      importerDependency = '';
+      snapshot = '';
+      snapshotDependencySection = '';
+      continue;
+    }
+
+    if (topLevel === 'importers') {
+      const importerMatch = line.match(/^ {2}(\S.*):$/);
+      if (importerMatch) {
+        inRootImporter = unquoteYAMLKey(importerMatch[1]) === '.';
+        importerDependencySection = '';
+        importerDependency = '';
+        continue;
+      }
+      if (!inRootImporter) continue;
+
+      const sectionMatch = line.match(/^ {4}(dependencies|optionalDependencies|devDependencies):$/);
+      if (sectionMatch) {
+        importerDependencySection = sectionMatch[1];
+        importerDependency = '';
+        continue;
+      }
+      const dependencyMatch = line.match(/^ {6}(\S.*):$/);
+      if (dependencyMatch) {
+        importerDependency = unquoteYAMLKey(dependencyMatch[1]);
+        continue;
+      }
+      const versionMatch = line.match(/^ {8}version: (.+)$/);
+      if (versionMatch && importerDependency && importerDependencySection !== 'devDependencies') {
+        roots.push(`${importerDependency}@${unquoteYAMLKey(versionMatch[1])}`);
+      }
+      continue;
+    }
+
+    if (topLevel !== 'snapshots') continue;
+    const snapshotMatch = line.match(/^ {2}(\S.*):(?: \{\})?$/);
+    if (snapshotMatch) {
+      snapshot = unquoteYAMLKey(snapshotMatch[1]);
+      snapshots.set(snapshot, []);
+      snapshotDependencySection = '';
+      continue;
+    }
+    if (!snapshot) continue;
+
+    const sectionMatch = line.match(/^ {4}(\S+):$/);
+    if (sectionMatch) {
+      snapshotDependencySection = ['dependencies', 'optionalDependencies'].includes(sectionMatch[1])
+        ? sectionMatch[1]
+        : '';
+      continue;
+    }
+    if (!snapshotDependencySection) continue;
+    const dependencyMatch = line.match(/^ {6}(\S.*?): (.+)$/);
+    if (dependencyMatch) {
+      const name = unquoteYAMLKey(dependencyMatch[1]);
+      const version = unquoteYAMLKey(dependencyMatch[2]);
+      snapshots.get(snapshot).push(`${name}@${version}`);
+    }
+  }
+
+  if (roots.length === 0) {
+    throw new Error('pnpm-lock.yaml root importer contains no production dependencies');
+  }
+  if (snapshots.size === 0) {
+    throw new Error('pnpm-lock.yaml contains no package snapshots');
+  }
+  return { roots, snapshots };
+}
+
 function collectLockfileComponents(projectRoot) {
   const filename = path.join(projectRoot, 'pnpm-lock.yaml');
   const lines = fs.readFileSync(filename, 'utf8').split(/\r?\n/);
+  const { roots, snapshots } = parseProductionLockGraph(lines);
   const components = new Map();
-  let inPackages = false;
-  for (const line of lines) {
-    if (line === 'packages:') {
-      inPackages = true;
-      continue;
+  const visited = new Set();
+  const pending = [...roots];
+  while (pending.length > 0) {
+    const snapshot = pending.pop();
+    if (visited.has(snapshot)) continue;
+    visited.add(snapshot);
+    const dependencies = snapshots.get(snapshot);
+    if (!dependencies) {
+      throw new Error(`production dependency ${JSON.stringify(snapshot)} has no pnpm snapshot`);
     }
-    if (inPackages && /^[^\s]/.test(line)) break;
-    if (!inPackages) continue;
-    const match = line.match(/^  (\S.*):$/);
-    if (!match) continue;
-    const { name, version } = parseLockPackageKey(match[1]);
+    pending.push(...dependencies);
+
+    const parsed = parseLockPackageKey(snapshot);
+    const name = parsed.name;
+    const version = parsed.version.replace(/\(.*/, '');
     const key = `${name}\0${version}`;
     components.set(key, {
       type: 'library',
@@ -51,9 +140,6 @@ function collectLockfileComponents(projectRoot) {
       version,
       purl: `pkg:npm/${encodeURIComponent(name)}@${encodeURIComponent(version)}`
     });
-  }
-  if (components.size === 0) {
-    throw new Error('pnpm-lock.yaml contains no package snapshot');
   }
   return [...components.values()].sort((left, right) => (
     left.name.localeCompare(right.name) || left.version.localeCompare(right.version)
@@ -89,6 +175,7 @@ if (require.main === module) {
 module.exports = {
   collectLockfileComponents,
   generateSBOM,
+  parseProductionLockGraph,
   parseLockPackageKey,
   unquoteYAMLKey
 };

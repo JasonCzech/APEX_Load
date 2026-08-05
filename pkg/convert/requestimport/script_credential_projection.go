@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -135,22 +136,69 @@ func removeConsumedLiteralScriptParameters(
 	if len(consumed) == 0 {
 		return
 	}
-	protectedBindings := make([]scriptCredentialDataBinding, 0, len(consumed))
+	remainingReferences, referenceScanComplete := scanRemainingScriptReferences(script)
+	retainedConsumed := make(map[string]struct{})
+	for name := range consumed {
+		// If an extension put a non-JSON value in an executable action surface,
+		// serialization cannot prove that no reference remains. Retaining the source
+		// is the fidelity-safe failure mode; deleting it would recreate the exact
+		// dangling-template defect this reconciliation is meant to prevent.
+		if !referenceScanComplete || stringSetContainsFold(remainingReferences.parameters, name) {
+			retainedConsumed[name] = struct{}{}
+		}
+	}
+	// Protect every still-referenced parameter binding, not only consumed
+	// parameters that themselves remain. Two differently named parameters may
+	// alias the same data-source column; removing the consumed alias must not
+	// delete the shared column underneath an otherwise unrelated live reference.
+	retainedBindings := append([]scriptCredentialDataBinding(nil), remainingReferences.dataBindings...)
 	for _, parameter := range script.Parameters {
-		if _, remove := consumed[strings.ToLower(strings.TrimSpace(parameter.Name))]; !remove {
+		name := strings.ToLower(strings.TrimSpace(parameter.Name))
+		_, retainConsumed := retainedConsumed[name]
+		if !retainConsumed && !stringSetContainsFold(remainingReferences.parameters, name) {
 			continue
 		}
 		if source := strings.TrimSpace(parameter.DataSource); source != "" {
-			protectedBindings = append(protectedBindings, scriptCredentialDataBinding{
+			retainedBindings = append(retainedBindings, scriptCredentialDataBinding{
 				source: source,
 				column: strings.TrimSpace(parameter.Column),
 			})
 		}
 	}
+	protectedBindings := make([]scriptCredentialDataBinding, 0, len(consumed))
+	for _, parameter := range script.Parameters {
+		name := strings.ToLower(strings.TrimSpace(parameter.Name))
+		if _, remove := consumed[name]; !remove {
+			continue
+		}
+		if _, retain := retainedConsumed[name]; retain {
+			continue
+		}
+		if source := strings.TrimSpace(parameter.DataSource); source != "" {
+			binding := scriptCredentialDataBinding{
+				source: source,
+				column: strings.TrimSpace(parameter.Column),
+			}
+			if !scriptCredentialDataBindingOverlapsAny(binding, retainedBindings) {
+				protectedBindings = append(protectedBindings, binding)
+			}
+		}
+	}
 	kept := script.Parameters[:0]
 	for index := range script.Parameters {
 		parameter := script.Parameters[index]
-		_, removeByName := consumed[strings.ToLower(strings.TrimSpace(parameter.Name))]
+		name := strings.ToLower(strings.TrimSpace(parameter.Name))
+		_, removeByName := consumed[name]
+		if _, retain := retainedConsumed[name]; retain {
+			// MaterializeSourceVariables rewrites only credential-bearing
+			// surfaces. A parameter still referenced anywhere else remains part of
+			// the executable script contract, so replacing its source value with a
+			// redaction marker is as destructive as deleting it: the authored
+			// non-credential surface would send "[REDACTED]" at runtime. Preserve
+			// the existing parameter unchanged until every reference is consumed.
+			kept = append(kept, parameter)
+			continue
+		}
 		if removeByName || parameterUsesCredentialDataBinding(parameter, protectedBindings) {
 			for valueIndex := range parameter.Values {
 				parameter.Values[valueIndex] = ""
@@ -160,7 +208,89 @@ func removeConsumedLiteralScriptParameters(
 		kept = append(kept, parameter)
 	}
 	script.Parameters = kept
-	removeCredentialDataSourceColumns(script, protectedBindings)
+	removeCredentialDataSourceColumns(script, protectedBindings, retainedBindings)
+}
+
+func scriptCredentialDataBindingOverlapsAny(candidate scriptCredentialDataBinding, retained []scriptCredentialDataBinding) bool {
+	for _, binding := range retained {
+		if !strings.EqualFold(strings.TrimSpace(candidate.source), strings.TrimSpace(binding.source)) {
+			continue
+		}
+		candidateColumn := strings.TrimSpace(candidate.column)
+		retainedColumn := strings.TrimSpace(binding.column)
+		if candidateColumn == "" || retainedColumn == "" || strings.EqualFold(candidateColumn, retainedColumn) {
+			return true
+		}
+	}
+	return false
+}
+
+type remainingScriptReferenceSet struct {
+	parameters   map[string]struct{}
+	dataBindings []scriptCredentialDataBinding
+}
+
+var dataTemplatePattern = regexp.MustCompile(`\{\{\s*data\.([^{}]+)\}\}`)
+
+func scanRemainingScriptReferences(script *dsl.Script) (remainingScriptReferenceSet, bool) {
+	if script == nil {
+		return remainingScriptReferenceSet{}, true
+	}
+	// Scan only executable surfaces. Parameter definitions, data-source bytes,
+	// and top-level import provenance may legitimately preserve the authored
+	// token as evidence, but they do not resolve {{param.*}} at runtime. Treating
+	// those copies as live references would retain public credential material
+	// even after every executable use had been governed.
+	surfaces := struct {
+		Config   dsl.ScriptConfig `json:"config"`
+		Init     []dsl.Action     `json:"init,omitempty"`
+		Actions  []dsl.Action     `json:"actions,omitempty"`
+		Teardown []dsl.Action     `json:"teardown,omitempty"`
+	}{
+		Config:   script.Config,
+		Init:     script.Init,
+		Actions:  script.Actions,
+		Teardown: script.Teardown,
+	}
+	encoded, err := json.Marshal(surfaces)
+	if err != nil {
+		return remainingScriptReferenceSet{}, false
+	}
+	references := remainingScriptReferenceSet{parameters: make(map[string]struct{})}
+	collectParameterReferences(string(encoded), references.parameters)
+	directDataKeys := make(map[string]struct{})
+	for _, match := range dataTemplatePattern.FindAllStringSubmatch(string(encoded), -1) {
+		if len(match) != 2 {
+			continue
+		}
+		if key := strings.ToLower(strings.TrimSpace(match[1])); key != "" {
+			directDataKeys[key] = struct{}{}
+		}
+	}
+	// Resolve the expression against every known source name instead of splitting
+	// at the first dot. Both source and column names may themselves contain dots;
+	// ambiguous composites deliberately protect every matching binding.
+	for _, source := range script.DataSources {
+		sourceName := strings.TrimSpace(source.Name)
+		normalizedSource := strings.ToLower(sourceName)
+		if normalizedSource == "" {
+			continue
+		}
+		prefix := normalizedSource + "."
+		for key := range directDataKeys {
+			if key == normalizedSource {
+				references.dataBindings = append(references.dataBindings, scriptCredentialDataBinding{source: sourceName})
+				continue
+			}
+			if strings.HasPrefix(key, prefix) {
+				references.dataBindings = append(references.dataBindings, scriptCredentialDataBinding{
+					source: sourceName,
+					column: strings.TrimSpace(strings.TrimPrefix(key, prefix)),
+				})
+			}
+		}
+	}
+	return references, true
 }
 
 // ProjectScriptCredentials applies the shared URL, ordered-header, auth, and
@@ -381,10 +511,17 @@ func redactCredentialSourceVariables(
 	if len(names) == 0 {
 		return
 	}
+	remainingReferences, referenceScanComplete := scanRemainingScriptReferences(script)
 	dataSources := make(map[string]struct{})
 	for index := range script.Parameters {
 		parameter := &script.Parameters[index]
 		if !stringSetContainsFold(names, parameter.Name) {
+			continue
+		}
+		// A source that still supplies an authored non-credential surface is not
+		// exclusively credential material. Redacting it would preserve the
+		// template syntactically while changing the request's runtime value.
+		if !referenceScanComplete || stringSetContainsFold(remainingReferences.parameters, parameter.Name) {
 			continue
 		}
 		if len(parameter.Values) > 0 {

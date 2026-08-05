@@ -928,6 +928,10 @@ func (s *Server) handleOnboardUser(w http.ResponseWriter, r *http.Request) {
 		bindings = append(bindings, binding)
 	}
 	if err := onboardingStore.SaveUserWithRoleBindings(user, bindings); err != nil {
+		if errors.Is(err, storage.ErrRoleScopeNotFound) {
+			writeError(w, http.StatusConflict, "a requested role scope was deleted while the user was being onboarded; reload and retry")
+			return
+		}
 		if s.writeUserSubjectPersistenceError(w, subject, user.ID, err) {
 			return
 		}
@@ -1079,6 +1083,10 @@ func (s *Server) handleCreateUserBinding(w http.ResponseWriter, r *http.Request)
 	if err := s.store.SaveUserRoleBinding(binding); err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
 			writeError(w, http.StatusConflict, "user was deleted while the binding was being saved")
+			return
+		}
+		if errors.Is(err, storage.ErrRoleScopeNotFound) {
+			writeError(w, http.StatusConflict, "role scope was deleted while the binding was being saved; reload and retry")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())

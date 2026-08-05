@@ -62,9 +62,9 @@ export function useScriptJsonDraftController({
   )
 
   useEffect(() => {
-    const synchronized = synchronizeStructuredScriptJson(script, jsonText, jsonDirty)
+    const synchronized = synchronizeStructuredScriptJson(script, jsonText, jsonDirty, formattedScriptJson)
     if (synchronized.changed) setJsonText(synchronized.text)
-  }, [jsonDirty, jsonText, script, setJsonText])
+  }, [formattedScriptJson, jsonDirty, jsonText, script, setJsonText])
 
   const resolveCurrentScript = useCallback((): ScriptDefinition => {
     const parsed = parseScriptJsonDraft(jsonText)

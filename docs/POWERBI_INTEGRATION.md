@@ -79,7 +79,7 @@ Two tables, related on `run_id` (relationship is created with the dataset, cross
 
 Power BI push datasets cannot delete individual rows, so re-publishing a run **appends** a second copy of its rows (a new `publish_id`). APEX Load blocks accidental duplicates — a publish is refused with a conflict when a previous attempt already pushed rows for the run into the same dataset (whether it completed or failed partway), unless the user confirms **force**. A `partial` publish leaves transaction rows without a matching runs row; because the table relationship joins on `run_id`, those orphaned rows would double-count in transaction-level visuals after a re-publish — which is why **reports must filter both tables to the latest `publish_id` per run**, not just the `runs` table.
 
-Row delivery is at-least-once: a retried chunk whose first attempt actually landed (e.g. a timeout after server-side apply) can duplicate rows *within* one `publish_id`. This is inherent to the push API; it is rare and bounded to one chunk, and the recreate procedure clears it if it ever matters.
+The Power BI push API has no idempotency key, so APEX Load does not retry ambiguous row mutations. A timeout, throttle response, or server error stops the publish as `partial`; only an explicit authentication rejection is retried after refreshing the token. This prevents a client retry from duplicating rows within one `publish_id`. The service can still apply a chunk before returning an ambiguous error, so an operator-forced re-publish may append rows under a new `publish_id`; the latest-publish filter above remains required.
 
 Sample DAX filter measure:
 

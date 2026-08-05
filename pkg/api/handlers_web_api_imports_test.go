@@ -30,8 +30,10 @@ func TestHandleWebAPIExecutionSupportMatrix(t *testing.T) {
 			ExecutionStatus string `json:"execution_status"`
 		} `json:"support_matrix"`
 		BenchmarkEnvelopes []struct {
-			Protocol          string `json:"protocol"`
-			RecommendedVUsers int    `json:"recommended_vusers_per_generator"`
+			Protocol                string `json:"protocol"`
+			RecommendedVUsers       int    `json:"recommended_vusers_per_generator"`
+			CompatibilityConfidence string `json:"compatibility_confidence"`
+			Measured                bool   `json:"measured"`
 		} `json:"benchmark_envelopes"`
 		Diagnostics []struct {
 			Protocol string   `json:"protocol"`
@@ -57,6 +59,19 @@ func TestHandleWebAPIExecutionSupportMatrix(t *testing.T) {
 		}
 		if !webAPIDiagnosticsContains(result.Diagnostics, protocol) {
 			t.Fatalf("diagnostics missing %s", protocol)
+		}
+	}
+	for _, entry := range result.BenchmarkEnvelopes {
+		if entry.Protocol == "browser" {
+			canonical := browserDiagnosticCanaryEnvelope()
+			if entry.RecommendedVUsers != canonical.RecommendedCanaryVUsersPerGenerator {
+				t.Fatalf("browser recommendation = %d, want canonical %d", entry.RecommendedVUsers, canonical.RecommendedCanaryVUsersPerGenerator)
+			}
+		}
+	}
+	for _, envelope := range result.BenchmarkEnvelopes {
+		if envelope.CompatibilityConfidence != "design_target" || envelope.Measured {
+			t.Errorf("planning envelope overstates benchmark provenance: %#v", envelope)
 		}
 	}
 	if len(result.SampleProjects) < 6 {
@@ -1224,8 +1239,10 @@ func webAPIMatrixContains(entries []struct {
 }
 
 func webAPIEnvelopeContains(entries []struct {
-	Protocol          string `json:"protocol"`
-	RecommendedVUsers int    `json:"recommended_vusers_per_generator"`
+	Protocol                string `json:"protocol"`
+	RecommendedVUsers       int    `json:"recommended_vusers_per_generator"`
+	CompatibilityConfidence string `json:"compatibility_confidence"`
+	Measured                bool   `json:"measured"`
 }, protocol string) bool {
 	for _, entry := range entries {
 		if entry.Protocol == protocol && entry.RecommendedVUsers > 0 {

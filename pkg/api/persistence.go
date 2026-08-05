@@ -96,8 +96,17 @@ func (tr *TestRunner) loadStoredScripts() {
 }
 
 func (tr *TestRunner) reloadStoredScripts() error {
+	_, err := tr.reloadStoredScriptsApplied()
+	return err
+}
+
+// reloadStoredScriptsApplied reports whether the loaded snapshot was actually
+// installed. A concurrent process-local mutation advances contentRevision and
+// deliberately fences the stale snapshot; callers that cache an external
+// database revision must distinguish that safe skip from a completed refresh.
+func (tr *TestRunner) reloadStoredScriptsApplied() (bool, error) {
 	if tr == nil || tr.scriptStore == nil {
-		return nil
+		return true, nil
 	}
 	tr.contentReloadMu.Lock()
 	defer tr.contentReloadMu.Unlock()
@@ -106,7 +115,7 @@ func (tr *TestRunner) reloadStoredScripts() error {
 	tr.mu.RUnlock()
 	scripts, err := tr.scriptStore.ListScripts("", nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	loaded := make(map[string]*StoredScript, len(scripts))
 	for _, script := range scripts {
@@ -129,7 +138,7 @@ func (tr *TestRunner) reloadStoredScripts() error {
 	tr.mu.Lock()
 	if tr.contentRevision != revision {
 		tr.mu.Unlock()
-		return nil
+		return false, nil
 	}
 	// Private CI snapshots exist only long enough for synchronous test
 	// compilation. Preserve them across an HA read refresh; they are deliberately
@@ -149,7 +158,7 @@ func (tr *TestRunner) reloadStoredScripts() error {
 		tr.observeAndIndexRefKeyLocked(script.RefKey, script.ID)
 	}
 	tr.mu.Unlock()
-	return nil
+	return true, nil
 }
 
 func (tr *TestRunner) loadStoredScenarios() {
@@ -180,8 +189,16 @@ func (tr *TestRunner) loadStoredScenarios() {
 // reloadStoredScenarios refreshes the in-memory scenario/schedule view from
 // shared storage so an HA leader observes CRUD performed by another replica.
 func (tr *TestRunner) reloadStoredScenarios() error {
+	_, err := tr.reloadStoredScenariosApplied()
+	return err
+}
+
+// reloadStoredScenariosApplied is the scenario counterpart to
+// reloadStoredScriptsApplied. Returning false keeps scheduler revision caching
+// from accepting a DB token for a snapshot that contentRevision rejected.
+func (tr *TestRunner) reloadStoredScenariosApplied() (bool, error) {
 	if tr == nil || tr.scenarioStore == nil {
-		return nil
+		return true, nil
 	}
 	tr.contentReloadMu.Lock()
 	defer tr.contentReloadMu.Unlock()
@@ -190,7 +207,7 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 	tr.mu.RUnlock()
 	scenarios, err := tr.scenarioStore.ListScenarios()
 	if err != nil {
-		return err
+		return false, err
 	}
 	loaded := make(map[string]*StoredScenario, len(scenarios))
 	type loadedScenarioParts struct {
@@ -206,18 +223,18 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 		}
 		full, scripts, loadErr := tr.scenarioStore.GetScenario(scenario.ID)
 		if loadErr != nil {
-			return loadErr
+			return false, loadErr
 		}
 		bindings, loadErr := tr.scenarioStore.ListScenarioDataPoolBindings(scenario.ID)
 		if loadErr != nil {
-			return fmt.Errorf("load scenario %s data pools: %w", scenario.ID, loadErr)
+			return false, fmt.Errorf("load scenario %s data pools: %w", scenario.ID, loadErr)
 		}
 		if repairErr := tr.repairLegacyStoredScenarioRuntime(full, scripts, bindings); repairErr != nil {
-			return fmt.Errorf("protect stored scenario %s runtime: %w", scenario.ID, repairErr)
+			return false, fmt.Errorf("protect stored scenario %s runtime: %w", scenario.ID, repairErr)
 		}
 		schedules, loadErr := tr.scenarioStore.ListScenarioSchedules(scenario.ID)
 		if loadErr != nil {
-			return fmt.Errorf("load scenario %s schedules: %w", scenario.ID, loadErr)
+			return false, fmt.Errorf("load scenario %s schedules: %w", scenario.ID, loadErr)
 		}
 		parts = append(parts, loadedScenarioParts{full: full, scripts: scripts, bindings: bindings, schedules: schedules})
 	}
@@ -235,7 +252,7 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 	tr.mu.Lock()
 	if tr.contentRevision != revision {
 		tr.mu.Unlock()
-		return nil
+		return false, nil
 	}
 	for _, scenario := range tr.scenarios {
 		if scenario != nil {
@@ -247,7 +264,67 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 		tr.observeAndIndexRefKeyLocked(scenario.RefKey, scenario.ID)
 	}
 	tr.mu.Unlock()
-	return nil
+	return true, nil
+}
+
+type schedulerContentVersionPersistence interface {
+	SchedulerContentVersion() (string, error)
+}
+
+// refreshSchedulerContentForHASweep avoids re-materializing the full script and
+// scenario library on every idle scheduler tick. Older/custom stores without a
+// lightweight version probe retain the conservative full-refresh behavior.
+func (tr *TestRunner) refreshSchedulerContentForHASweep() error {
+	if tr == nil {
+		return nil
+	}
+	tr.schedulerContentMu.Lock()
+	defer tr.schedulerContentMu.Unlock()
+	versionStore, versioned := tr.scriptStore.(schedulerContentVersionPersistence)
+	if !versioned {
+		if err := tr.reloadStoredScripts(); err != nil {
+			return err
+		}
+		return tr.reloadStoredScenarios()
+	}
+	token, err := versionStore.SchedulerContentVersion()
+	if err != nil {
+		return err
+	}
+	if tr.schedulerContentKnown && token == tr.schedulerContentToken {
+		return nil
+	}
+	// If content changes while it is being loaded, retry once. A continuously
+	// changing catalog remains marked unknown so the next sweep reconciles it
+	// again instead of treating a potentially mixed view as authoritative.
+	for attempt := 0; attempt < 2; attempt++ {
+		tr.mu.RLock()
+		contentRevision := tr.contentRevision
+		tr.mu.RUnlock()
+		scriptsApplied, err := tr.reloadStoredScriptsApplied()
+		if err != nil {
+			return err
+		}
+		scenariosApplied, err := tr.reloadStoredScenariosApplied()
+		if err != nil {
+			return err
+		}
+		after, err := versionStore.SchedulerContentVersion()
+		if err != nil {
+			return err
+		}
+		tr.mu.RLock()
+		contentUnchanged := tr.contentRevision == contentRevision
+		tr.mu.RUnlock()
+		if scriptsApplied && scenariosApplied && contentUnchanged && after == token {
+			tr.schedulerContentToken = after
+			tr.schedulerContentKnown = true
+			return nil
+		}
+		token = after
+	}
+	tr.schedulerContentKnown = false
+	return fmt.Errorf("scheduler content changed continuously while it was being refreshed; retry next sweep")
 }
 
 func (tr *TestRunner) repairLegacyStoredScenarioRuntime(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
@@ -486,10 +563,12 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 		liveLocally := ok && liveTestRuntimeForExecutionEpoch(existing, tr.durableExecutionFence, executionFenceAtStart)
 		sameIdentity := ok && sameStoredTestIdentity(existing, record)
 		staleRuntimeHandle := sameIdentity && !liveLocally && (existing.cancel != nil || existing.executionCtx != nil)
-		reuseReplicaState := sameIdentity && !staleRuntimeHandle
+		passiveOperationInFlight := sameIdentity && existing.passiveOperationToken != ""
+		priorEpochPassiveFence := sameIdentity && passiveExecutionFenceReleasable(existing) && existing.executionFence != "" && existing.executionFence != executionFenceAtStart
+		reuseReplicaState := sameIdentity && !staleRuntimeHandle && !passiveOperationInFlight && !priorEpochPassiveFence
 		retryHydration := reuseReplicaState && (existing.runtimeHydrationError != "" || existing.runtimeSnapshotRepairRequired)
 		tr.mu.RUnlock()
-		if liveLocally {
+		if liveLocally || passiveOperationInFlight {
 			continue
 		}
 		managedTest := managedTestFromRecord(record)
@@ -534,11 +613,12 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			return fmt.Errorf("execution leadership changed while reloading tests")
 		}
 		current, currentOK := tr.tests[record.ID]
-		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || (isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
+		if currentOK && current != nil && (liveTestRuntimeForExecutionEpoch(current, tr.durableExecutionFence, executionFenceAtStart) || current.passiveOperationToken != "" || (isTerminalTestStatus(current.Status) && !isTerminalTestStatus(managedTest.Status))) {
 			tr.mu.Unlock()
 			continue
 		}
-		if currentOK && sameStoredTestIdentity(current, record) && current.cancel == nil && current.executionCtx == nil {
+		priorEpochPassiveFence = currentOK && sameStoredTestIdentity(current, record) && passiveExecutionFenceReleasable(current) && current.executionFence != "" && current.executionFence != executionFenceAtStart
+		if currentOK && sameStoredTestIdentity(current, record) && current.cancel == nil && current.executionCtx == nil && !priorEpochPassiveFence {
 			oldRefKey := current.RefKey
 			applyStoredManagedTestSnapshot(current, managedTest)
 			if current.runtimeHydrationError != "" && managedTest.runtimeHydrationError == "" && len(managedTest.groupSpecs) > 0 {
@@ -622,7 +702,13 @@ func sameStoredTestIdentity(test *ManagedTest, record *storage.TestRecord) bool 
 	if test == nil || record == nil || test.ID != record.ID {
 		return false
 	}
-	return normalizeProjectID(test.ProjectID) == normalizeProjectID(record.ProjectID) && test.CreatedAt.Equal(record.StartTime)
+	// PostgreSQL stores timestamps at microsecond precision. A freshly created
+	// in-memory test can retain finer Go nanoseconds until its first reload, so
+	// compare the immutable creation identity at the least precise supported
+	// backend boundary rather than falsely fencing every new PostgreSQL run.
+	createdAt := test.CreatedAt.UTC().Truncate(time.Microsecond)
+	storedAt := record.StartTime.UTC().Truncate(time.Microsecond)
+	return normalizeProjectID(test.ProjectID) == normalizeProjectID(record.ProjectID) && createdAt.Equal(storedAt)
 }
 
 // applyStoredManagedTestSnapshot updates only fields whose source of truth is
@@ -696,7 +782,11 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	test.QueuePosition = 0
 	test.EndedAt = &now
 	if test.Error == "" {
-		test.Error = "controller restarted before the run completed"
+		if previousStatus == "SHAKEOUT" {
+			test.Error = "controller restarted after script shakeout began; its outcome is ambiguous, so external shakeout actions were not replayed"
+		} else {
+			test.Error = "controller restarted before the run completed"
+		}
 	}
 	if err := tr.persistStoredTestStatus(test.ID, test.executionFence, test.Status, &now, test.Error); err != nil {
 		test.Status = previousStatus
@@ -1462,49 +1552,53 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		return nil
 	}
 	return &storage.TestRecord{
-		ID:                    test.ID,
-		RefKey:                test.RefKey,
-		MaterializationKey:    test.MaterializationKey,
-		Name:                  test.Name,
-		Status:                test.Status,
-		ApplicationID:         test.ApplicationID,
-		ReleaseID:             test.ReleaseID,
-		ScenarioID:            test.ScenarioID,
-		ProjectID:             normalizeProjectID(test.ProjectID),
-		FolderID:              test.FolderID,
-		DataPools:             cloneScenarioDataPoolBindings(test.DataPools),
-		ScenarioMode:          test.ScenarioMode,
-		ScriptShakeout:        test.ScriptShakeout,
-		ResourceBaseline:      test.ResourceBaseline,
-		StartDelay:            test.StartDelay,
-		Assignment:            test.Assignment,
-		TotalVUsers:           test.TotalVUsers,
-		Duration:              int64(test.Duration),
-		StartTime:             test.CreatedAt,
-		ScheduledStartAt:      cloneTimePtr(test.ScheduledStartAt),
-		StartedAt:             cloneTimePtr(test.StartedAt),
-		TimeslotID:            cloneStringPtr(test.TimeslotID),
-		PendingSince:          test.PendingSince,
-		PausedAt:              cloneTimePtr(test.PausedAt),
-		CumulativePause:       int64(test.CumulativePause),
-		CapacityWindowStartAt: cloneTimePtr(test.CapacityWindowStartAt),
-		CapacityWindowEndAt:   cloneTimePtr(test.CapacityWindowEndAt),
-		BaselinePinned:        test.BaselinePinned,
-		BaselinePinnedAt:      test.BaselinePinnedAt,
-		EndTime:               cloneTimePtr(test.EndedAt),
-		Error:                 test.Error,
-		CreatedBySubject:      test.CreatedBySubject,
-		CreatedByDisplayName:  test.CreatedByDisplayName,
-		StartedBySubject:      test.StartedBySubject,
-		StartedByDisplayName:  test.StartedByDisplayName,
-		StoppedBySubject:      test.StoppedBySubject,
-		StoppedByDisplayName:  test.StoppedByDisplayName,
-		StartAuthorization:    startAuthorizationForStorage(test.StartAuthorization),
-		ExecutionPlanApproval: test.ExecutionPlanApproval,
-		InitialProvenance:     initialProvenanceForStorage(test.initialArchiveProvenance),
-		Groups:                encodeStoredGroups(test.Groups),
-		GoalConfig:            test.GoalConfig,
-		RuntimeSettings:       test.RuntimeSettings,
+		ID:                             test.ID,
+		RefKey:                         test.RefKey,
+		MaterializationKey:             test.MaterializationKey,
+		Name:                           test.Name,
+		Status:                         test.Status,
+		ApplicationID:                  test.ApplicationID,
+		ReleaseID:                      test.ReleaseID,
+		ScenarioID:                     test.ScenarioID,
+		ProjectID:                      normalizeProjectID(test.ProjectID),
+		FolderID:                       test.FolderID,
+		DataPools:                      cloneScenarioDataPoolBindings(test.DataPools),
+		ScenarioMode:                   test.ScenarioMode,
+		ScriptShakeout:                 test.ScriptShakeout,
+		ResourceBaseline:               test.ResourceBaseline,
+		StartDelay:                     test.StartDelay,
+		Assignment:                     test.Assignment,
+		TotalVUsers:                    test.TotalVUsers,
+		Duration:                       int64(test.Duration),
+		StartTime:                      test.CreatedAt,
+		ScheduledStartAt:               cloneTimePtr(test.ScheduledStartAt),
+		StartedAt:                      cloneTimePtr(test.StartedAt),
+		TimeslotID:                     cloneStringPtr(test.TimeslotID),
+		PendingSince:                   test.PendingSince,
+		PausedAt:                       cloneTimePtr(test.PausedAt),
+		CumulativePause:                int64(test.CumulativePause),
+		CapacityWindowStartAt:          cloneTimePtr(test.CapacityWindowStartAt),
+		CapacityWindowEndAt:            cloneTimePtr(test.CapacityWindowEndAt),
+		BaselinePinned:                 test.BaselinePinned,
+		BaselinePinnedAt:               test.BaselinePinnedAt,
+		EndTime:                        cloneTimePtr(test.EndedAt),
+		Error:                          test.Error,
+		CreatedBySubject:               test.CreatedBySubject,
+		CreatedByDisplayName:           test.CreatedByDisplayName,
+		StartedBySubject:               test.StartedBySubject,
+		StartedByDisplayName:           test.StartedByDisplayName,
+		StoppedBySubject:               test.StoppedBySubject,
+		StoppedByDisplayName:           test.StoppedByDisplayName,
+		StartAuthorization:             startAuthorizationForStorage(test.StartAuthorization),
+		ExecutionPlanApproval:          test.ExecutionPlanApproval,
+		InitialProvenance:              initialProvenanceForStorage(test.initialArchiveProvenance),
+		ExpectedProjectUpdatedAt:       test.expectedProjectUpdatedAt,
+		ExpectedApplicationUpdatedAt:   test.expectedApplicationUpdatedAt,
+		ExpectedReleaseUpdatedAt:       test.expectedReleaseUpdatedAt,
+		ExpectedStartAdmissionRevision: test.expectedStartAdmissionRevision,
+		Groups:                         encodeStoredGroups(test.Groups),
+		GoalConfig:                     test.GoalConfig,
+		RuntimeSettings:                test.RuntimeSettings,
 	}
 }
 
@@ -1514,31 +1608,72 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 		if err != nil {
 			return err
 		}
-		if tr.durableExecutionFence {
-			if test == nil {
-				return fmt.Errorf("test is required")
-			}
-			if test.executionFence == "" {
-				return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, test.ID)
-			}
-			store, ok := tr.testStore.(interface {
-				SaveTestIfLeaseHeld(*storage.TestRecord, string, string) (bool, error)
-			})
-			if !ok {
-				return fmt.Errorf("test persistence does not support execution-lease fencing")
-			}
-			saved, err := store.SaveTestIfLeaseHeld(record, executionLeaseName, test.executionFence)
-			if err != nil {
-				return err
-			}
-			if !saved {
-				return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, test.ID)
-			}
-			return nil
+		executionFence := ""
+		if test != nil {
+			executionFence = test.executionFence
 		}
-		return tr.testStore.SaveTest(record)
+		return tr.saveManagedTestRecordSnapshot(record, executionFence)
 	}
 	return nil
+}
+
+// saveManagedTestRecordSnapshot persists a caller-owned immutable projection.
+// It is safe to call after releasing tr.mu and retains the same execution-lease
+// fence as saveManagedTestRecord.
+func (tr *TestRunner) saveManagedTestRecordSnapshot(record *storage.TestRecord, executionFence string) error {
+	if tr == nil || tr.testStore == nil {
+		return nil
+	}
+	if record == nil {
+		return fmt.Errorf("test record is required")
+	}
+	if tr.durableExecutionFence {
+		if strings.TrimSpace(executionFence) == "" {
+			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, record.ID)
+		}
+		store, ok := tr.testStore.(interface {
+			SaveTestIfLeaseHeld(*storage.TestRecord, string, string) (bool, error)
+		})
+		if !ok {
+			return fmt.Errorf("test persistence does not support execution-lease fencing")
+		}
+		saved, err := store.SaveTestIfLeaseHeld(record, executionLeaseName, executionFence)
+		if err != nil {
+			return err
+		}
+		if !saved {
+			return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, record.ID)
+		}
+		return nil
+	}
+	return tr.testStore.SaveTest(record)
+}
+
+// persistManagedTestShakeoutTransition publishes only the lifecycle evidence
+// owned by a completed shakeout. The storage CAS prevents this off-lock write
+// from resurrecting a row concurrently aborted, deleted, or replaced.
+func (tr *TestRunner) persistManagedTestShakeoutTransition(transition storage.TestShakeoutTransition) error {
+	if tr == nil || tr.testStore == nil {
+		return nil
+	}
+	store, ok := tr.testStore.(interface {
+		TransitionTestFromShakeout(storage.TestShakeoutTransition) (storage.TestStatusTransitionResult, error)
+	})
+	if !ok {
+		return errors.New("test persistence does not support conditional shakeout transitions")
+	}
+	result, err := store.TransitionTestFromShakeout(transition)
+	if err != nil {
+		return err
+	}
+	switch result {
+	case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
+		return nil
+	case storage.TestStatusTransitionMissing:
+		return errStoredTestMissing
+	default:
+		return errStoredTestTransitionFenced
+	}
 }
 
 // buildManagedTestRecordForSave preserves immutable compiled group snapshots
@@ -1575,13 +1710,17 @@ type initialArchiveProvenanceStore interface {
 	SaveTestInitialProvenanceIfLeaseHeld(id, projectID string, provenance any, leaseName, leaseOwnerID string) (bool, error)
 }
 
-// persistInitialArchiveProvenance writes only the immutable provenance column.
+// persistInitialArchiveProvenance writes only the immutable provenance column
+// and returns the authoritative write-once value. The targeted storage method
+// reports that the row matched, not whether the candidate or an already-stored
+// snapshot won its CASE expression, so durable stores are re-read before an
+// archive writer is constructed.
 // A full-row SaveTest here could race a concurrent lifecycle mutation and then
 // replay stale status/configuration over it. The targeted storage operation is
 // also execution-lease fenced in HA mode.
-func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provenance *RunArchiveProvenance) error {
+func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provenance *RunArchiveProvenance) (RunArchiveProvenance, error) {
 	if tr == nil || test == nil || provenance == nil {
-		return fmt.Errorf("test and initial archive provenance are required")
+		return RunArchiveProvenance{}, fmt.Errorf("test and initial archive provenance are required")
 	}
 	masked := maskRunArchiveProvenance(*provenance)
 	tr.mu.Lock()
@@ -1592,11 +1731,12 @@ func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provena
 	projectID := normalizeProjectID(test.ProjectID)
 	executionFence := test.executionFence
 	durableFence := tr.durableExecutionFence
-	stored := initialProvenanceForStorage(test.initialArchiveProvenance)
+	authoritativeLocal := maskRunArchiveProvenance(*test.initialArchiveProvenance)
+	stored := initialProvenanceForStorage(&authoritativeLocal)
 	tr.mu.Unlock()
 
 	if tr.testStore == nil {
-		return nil
+		return authoritativeLocal, nil
 	}
 	store, ok := tr.testStore.(initialArchiveProvenanceStore)
 	if !ok {
@@ -1605,29 +1745,52 @@ func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provena
 		// runner lock so it remains race-free; production SQL stores implement the
 		// non-blocking targeted path above.
 		tr.mu.Lock()
-		defer tr.mu.Unlock()
-		return tr.saveManagedTestRecord(test)
+		err := tr.saveManagedTestRecord(test)
+		tr.mu.Unlock()
+		if err != nil {
+			return RunArchiveProvenance{}, err
+		}
+		return tr.reloadAuthoritativeInitialArchiveProvenance(test, id, projectID)
 	}
 	var saved bool
 	var err error
 	if durableFence {
 		if executionFence == "" {
-			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, id)
+			return RunArchiveProvenance{}, fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, id)
 		}
 		saved, err = store.SaveTestInitialProvenanceIfLeaseHeld(id, projectID, stored, executionLeaseName, executionFence)
 	} else {
 		saved, err = store.SaveTestInitialProvenance(id, projectID, stored)
 	}
 	if err != nil {
-		return err
+		return RunArchiveProvenance{}, err
 	}
 	if !saved {
 		if durableFence {
-			return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, id)
+			return RunArchiveProvenance{}, fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, id)
 		}
-		return fmt.Errorf("test %s was not found in project %s", id, projectID)
+		return RunArchiveProvenance{}, fmt.Errorf("test %s was not found in project %s", id, projectID)
 	}
-	return nil
+	return tr.reloadAuthoritativeInitialArchiveProvenance(test, id, projectID)
+}
+
+func (tr *TestRunner) reloadAuthoritativeInitialArchiveProvenance(test *ManagedTest, id, projectID string) (RunArchiveProvenance, error) {
+	record, err := tr.testStore.GetTest(id)
+	if err != nil {
+		return RunArchiveProvenance{}, fmt.Errorf("reload durable initial archive provenance for test %s: %w", id, err)
+	}
+	if record == nil || normalizeProjectID(record.ProjectID) != projectID {
+		return RunArchiveProvenance{}, fmt.Errorf("test %s was not found in project %s after initial provenance write", id, projectID)
+	}
+	authoritative := decodeStoredInitialProvenance(record.InitialProvenance)
+	if authoritative == nil {
+		return RunArchiveProvenance{}, fmt.Errorf("test %s has no durable initial archive provenance after write", id)
+	}
+	masked := maskRunArchiveProvenance(*authoritative)
+	tr.mu.Lock()
+	test.initialArchiveProvenance = &masked
+	tr.mu.Unlock()
+	return maskRunArchiveProvenance(masked), nil
 }
 
 func (tr *TestRunner) AttributeTestCreated(id string, subject string, displayName string) {

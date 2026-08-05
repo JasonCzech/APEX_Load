@@ -2,12 +2,15 @@ package api
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,10 +19,75 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type directImportRollbackTestStore struct {
+	*storage.SQLiteStore
+
+	renewStarted  chan struct{}
+	renewContinue chan struct{}
+	renewOnce     sync.Once
+
+	mu               sync.Mutex
+	failNextClaimCAS bool
+	failScriptDelete bool
+}
+
+func (s *directImportRollbackTestStore) RenewDirectImportReceipt(
+	id, ownerToken string,
+	now time.Time,
+	lease time.Duration,
+) (bool, error) {
+	if s.renewStarted != nil {
+		s.renewOnce.Do(func() { close(s.renewStarted) })
+		<-s.renewContinue
+	}
+	return s.SQLiteStore.RenewDirectImportReceipt(id, ownerToken, now, lease)
+}
+
+func (s *directImportRollbackTestStore) CompareAndSwapSetting(
+	key, expected, value string,
+) (bool, error) {
+	s.mu.Lock()
+	if key == libraryImportClaimsSettingKey && s.failNextClaimCAS {
+		s.failNextClaimCAS = false
+		s.mu.Unlock()
+		return false, errors.New("injected durable claim release failure")
+	}
+	s.mu.Unlock()
+	return s.SQLiteStore.CompareAndSwapSetting(key, expected, value)
+}
+
+func (s *directImportRollbackTestStore) failClaimReleaseOnce() {
+	s.mu.Lock()
+	s.failNextClaimCAS = true
+	s.mu.Unlock()
+}
+
+func (s *directImportRollbackTestStore) DeleteScriptIfUnchanged(
+	id string,
+	expected time.Time,
+) (bool, error) {
+	s.mu.Lock()
+	fail := s.failScriptDelete
+	s.mu.Unlock()
+	if fail {
+		return false, errors.New("injected asset compensation failure")
+	}
+	return s.SQLiteStore.DeleteScriptIfUnchanged(id, expected)
+}
+
+func (s *directImportRollbackTestStore) setFailScriptDelete(fail bool) {
+	s.mu.Lock()
+	s.failScriptDelete = fail
+	s.mu.Unlock()
+}
+
 type failOnceDirectImportReceiptStore struct {
 	*storage.SQLiteStore
-	claims       int
-	failComplete bool
+	claims          int
+	failComplete    bool
+	releaseStarted  chan struct{}
+	releaseContinue chan struct{}
+	releaseOnce     sync.Once
 }
 
 func (s *failOnceDirectImportReceiptStore) ClaimDirectImportReceipt(
@@ -50,6 +118,17 @@ func (s *failOnceDirectImportReceiptStore) CompleteDirectImportReceipt(
 	return s.SQLiteStore.CompleteDirectImportReceipt(
 		id, ownerToken, scriptIDs, scenarioID, now,
 	)
+}
+
+func (s *failOnceDirectImportReceiptStore) ReleaseDirectImportReceipt(
+	id, ownerToken string,
+	now time.Time,
+) (bool, error) {
+	if s.releaseStarted != nil {
+		s.releaseOnce.Do(func() { close(s.releaseStarted) })
+		<-s.releaseContinue
+	}
+	return s.SQLiteStore.ReleaseDirectImportReceipt(id, ownerToken, now)
 }
 
 func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
@@ -167,6 +246,585 @@ func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("changed request with same operation id status = %d, want 409 body=%s",
 			conflict.Code, conflict.Body.String())
+	}
+}
+
+func TestDirectImportRollbackStopsClaimHeartbeatAfterReceiptOwnershipMoves(t *testing.T) {
+	server, store := newAuditTestServer(t)
+	defer store.Close()
+	attempt, replay, err := server.claimDirectImportAttempt(storage.DefaultProjectID, "jmeter", "rollback-owner-move", directImportSHA256("request"))
+	if err != nil {
+		t.Fatalf("claim receipt: %v", err)
+	}
+	if replay || attempt == nil {
+		t.Fatalf("claim = %#v replay=%v", attempt, replay)
+	}
+	tx, err := newCreateImportTransaction(server, "jmeter", []*dsl.Script{{
+		ID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", Name: "claim heartbeat", ProjectID: storage.DefaultProjectID, Protocol: "http",
+	}}, "", nil)
+	if err != nil {
+		t.Fatalf("create import transaction: %v", err)
+	}
+	done := tx.claims.done
+	attempt.ownerToken = "different-owner-token"
+	if err := attempt.rollback(tx); err == nil || !strings.Contains(err.Error(), "ownership moved") {
+		t.Fatalf("rollback error = %v, want moved-ownership error", err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("library-claim heartbeat remained active after fenced compensation was skipped")
+	}
+	if !tx.closed || tx.claims != nil {
+		t.Fatalf("transaction lifecycle = closed:%v claims:%#v", tx.closed, tx.claims)
+	}
+}
+
+func TestDirectImportRollbackKeepsClaimsLeasedUntilReceiptRenewal(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "rollback-ordering.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &directImportRollbackTestStore{
+		SQLiteStore:   base,
+		renewStarted:  make(chan struct{}),
+		renewContinue: make(chan struct{}),
+	}
+	server := NewServer(ServerConfig{Store: store})
+	attempt, replay, err := server.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		"rollback-ordering",
+		directImportSHA256("request"),
+	)
+	if err != nil || replay || attempt == nil {
+		t.Fatalf("claim receipt = %#v replay=%v err=%v", attempt, replay, err)
+	}
+	script := libraryTestScript(
+		"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		"rollback ordering",
+		storage.DefaultProjectID,
+		"/rollback-ordering",
+	)
+	transaction, err := newCreateImportTransaction(
+		server,
+		"jmeter",
+		[]*dsl.Script{script},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := transaction.createScript(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rollbackDone := make(chan error, 1)
+	go func() { rollbackDone <- attempt.rollback(transaction) }()
+	releasedRenewal := false
+	defer func() {
+		if !releasedRenewal {
+			close(store.renewContinue)
+		}
+	}()
+	select {
+	case <-store.renewStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("rollback did not reach the receipt-renewal barrier")
+	}
+
+	claims, err := server.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 1 || !claims[0].ExpiresAt.After(time.Now().UTC()) {
+		t.Fatalf("claims expired before receipt ownership was fenced: %#v", claims)
+	}
+	replacement := NewServer(ServerConfig{Store: base})
+	if err := replacement.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("concurrent recovery while renewal was blocked: %v", err)
+	}
+	if _, err := base.GetScript(stored.ID); err != nil {
+		t.Fatalf("concurrent recovery compensated a still-fenced asset: %v", err)
+	}
+
+	close(store.renewContinue)
+	releasedRenewal = true
+	select {
+	case err := <-rollbackDone:
+		if err != nil {
+			t.Fatalf("rollback after receipt renewal: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("rollback did not finish after receipt renewal continued")
+	}
+	if _, err := base.GetScript(stored.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("owned rollback left the imported script behind: %v", err)
+	}
+	claims, err = server.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		t.Fatalf("owned rollback left durable claims behind: %#v", claims)
+	}
+}
+
+func TestDirectImportRollbackAbandonsReceiptAfterClaimReleaseError(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "rollback-abandon.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &directImportRollbackTestStore{SQLiteStore: base}
+	server := NewServer(ServerConfig{Store: store})
+	attempt, replay, err := server.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		"rollback-abandon-after-compensation",
+		directImportSHA256("request"),
+	)
+	if err != nil || replay || attempt == nil {
+		t.Fatalf("claim receipt = %#v replay=%v err=%v", attempt, replay, err)
+	}
+	script := libraryTestScript(
+		"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+		"rollback abandonment",
+		storage.DefaultProjectID,
+		"/rollback-abandonment",
+	)
+	transaction, err := newCreateImportTransaction(
+		server,
+		"jmeter",
+		[]*dsl.Script{script},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := transaction.createScript(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction.stopClaimHeartbeat()
+	store.failClaimReleaseOnce()
+	err = attempt.rollback(transaction)
+	if err == nil || !strings.Contains(err.Error(), "injected durable claim release failure") {
+		t.Fatalf("rollback error = %v, want injected claim-release failure", err)
+	}
+	if _, err := base.GetScript(stored.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("asset compensation did not finish before claim-release failure: %v", err)
+	}
+
+	retry, err := base.ClaimDirectImportReceipt(
+		attempt.receipt.ProjectID,
+		attempt.receipt.SourceProfile,
+		attempt.receipt.OperationKeyHash,
+		attempt.receipt.RequestSHA256,
+		"replacement-owner",
+		time.Now().UTC(),
+		directImportReceiptLease(),
+	)
+	if err != nil {
+		t.Fatalf("receipt remained busy after compensated rollback: %v", err)
+	}
+	if retry == nil || !retry.Created {
+		t.Fatalf("replacement receipt = %#v, want a newly created claim", retry)
+	}
+	if abandoned, err := base.AbandonDirectImportReceipt(retry.Receipt.ID, "replacement-owner"); err != nil || !abandoned {
+		t.Fatalf("clean up replacement receipt = %t, %v", abandoned, err)
+	}
+}
+
+func TestDirectImportRollbackRetainsReceiptAfterAssetCompensationFailure(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "rollback-asset-failure.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &directImportRollbackTestStore{SQLiteStore: base}
+	server := NewServer(ServerConfig{Store: store})
+	attempt, replay, err := server.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		"rollback-asset-compensation-failure",
+		directImportSHA256("request"),
+	)
+	if err != nil || replay || attempt == nil || !attempt.created {
+		t.Fatalf("claim receipt = %#v replay=%v err=%v", attempt, replay, err)
+	}
+	script := libraryTestScript(
+		deterministicDirectImportAssetID(attempt.receipt.ID, "script", 0),
+		"rollback asset failure",
+		storage.DefaultProjectID,
+		"/rollback-asset-failure",
+	)
+	transaction, err := newCreateImportTransaction(
+		server,
+		"jmeter",
+		[]*dsl.Script{script},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := transaction.createScript(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.setFailScriptDelete(true)
+	err = attempt.rollback(transaction)
+	if !errors.Is(err, errCreateImportAssetCompensation) ||
+		!strings.Contains(err.Error(), "injected asset compensation failure") {
+		t.Fatalf("rollback error = %v, want asset-compensation failure", err)
+	}
+	if _, err := base.GetScript(stored.ID); err != nil {
+		t.Fatalf("failed compensation unexpectedly removed the asset: %v", err)
+	}
+
+	retry, err := base.ClaimDirectImportReceipt(
+		attempt.receipt.ProjectID,
+		attempt.receipt.SourceProfile,
+		attempt.receipt.OperationKeyHash,
+		attempt.receipt.RequestSHA256,
+		"replacement-owner",
+		time.Now().UTC(),
+		directImportReceiptLease(),
+	)
+	if err != nil {
+		t.Fatalf("reclaim retained receipt: %v", err)
+	}
+	if retry == nil || retry.Created || retry.Receipt.ID != attempt.receipt.ID {
+		t.Fatalf("replacement receipt = %#v, want retained id %s", retry, attempt.receipt.ID)
+	}
+
+	store.setFailScriptDelete(false)
+	replacement := NewServer(ServerConfig{Store: store})
+	if err := replacement.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("recover retained failed compensation: %v", err)
+	}
+	if _, err := base.GetScript(stored.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("recovery left the failed-compensation asset behind: %v", err)
+	}
+	claims, err := replacement.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		t.Fatalf("recovered failed-compensation claims remain: %#v", claims)
+	}
+	if abandoned, err := base.AbandonDirectImportReceipt(retry.Receipt.ID, "replacement-owner"); err != nil || !abandoned {
+		t.Fatalf("clean up retained receipt = %t, %v", abandoned, err)
+	}
+}
+
+func TestStaleDirectImportAdoptionWaitsForUncommittedClaims(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "stale-adoption-claims.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &failOnceDirectImportReceiptStore{
+		SQLiteStore:     base,
+		releaseStarted:  make(chan struct{}),
+		releaseContinue: make(chan struct{}),
+	}
+	first := NewServer(ServerConfig{Store: store})
+	const (
+		operationID   = "stale-adoption-live-claims"
+		requestDigest = "stale-adoption-request-digest"
+	)
+	firstAttempt, replay, err := first.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || replay || firstAttempt == nil || !firstAttempt.created {
+		t.Fatalf("first receipt = %#v replay=%v err=%v", firstAttempt, replay, err)
+	}
+	firstScript := libraryTestScript(
+		deterministicDirectImportAssetID(firstAttempt.receipt.ID, "script", 0),
+		"stalled direct import",
+		storage.DefaultProjectID,
+		"/stalled",
+	)
+	firstTransaction, err := newCreateImportTransaction(
+		first,
+		"jmeter",
+		[]*dsl.Script{firstScript},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstStored, err := firstTransaction.createScript(firstScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The first owner is stalled after its final create. The receipt clock is
+	// advanced by the test store so a retry can take it over without waiting,
+	// while the first owner's claim heartbeat remains live in real time.
+	second := NewServer(ServerConfig{Store: store})
+	secondAttempt, replay, err := second.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || replay || secondAttempt == nil || secondAttempt.created {
+		t.Fatalf("stale takeover receipt = %#v replay=%v err=%v", secondAttempt, replay, err)
+	}
+	if err := second.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("recover before stale adoption: %v", err)
+	}
+	if err := secondAttempt.renew(); err != nil {
+		t.Fatalf("renew stale takeover: %v", err)
+	}
+	fenceDone := make(chan error, 1)
+	go func() {
+		fenceDone <- second.fenceDirectImportAssetAdoption(
+			secondAttempt,
+			storage.DefaultProjectID,
+			[]string{firstStored.ID},
+			"",
+		)
+	}()
+	releasedFence := false
+	defer func() {
+		if !releasedFence {
+			close(store.releaseContinue)
+		}
+	}()
+	select {
+	case <-store.releaseStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale adoption did not reach the live-claim release barrier")
+	}
+	// The old transaction commits after the takeover has observed its claim but
+	// before that takeover relinquishes receipt ownership.
+	if err := firstTransaction.commit(); err != nil {
+		t.Fatalf("old transaction commit at adoption barrier: %v", err)
+	}
+	close(store.releaseContinue)
+	releasedFence = true
+	select {
+	case err = <-fenceDone:
+		if !errors.Is(err, errDirectImportAssetsClaimed) {
+			t.Fatalf("stale adoption fence error = %v, want active-claims error", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stale adoption fence did not finish after receipt release continued")
+	}
+	if _, err := base.GetScript(firstStored.ID); err != nil {
+		t.Fatalf("blocked stale adoption changed the old owner's asset: %v", err)
+	}
+	if completed, err := base.CompleteDirectImportReceipt(
+		secondAttempt.receipt.ID,
+		secondAttempt.ownerToken,
+		[]string{firstStored.ID},
+		"",
+		time.Now().UTC(),
+	); err != nil || completed {
+		t.Fatalf("blocked takeover completed its released receipt = %t, %v", completed, err)
+	}
+
+	// The released receipt row must survive that race so the next retry adopts
+	// these exact IDs instead of creating duplicates.
+	claims, err := second.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		t.Fatalf("terminal old-owner claims remain: %#v", claims)
+	}
+
+	third := NewServer(ServerConfig{Store: store})
+	thirdAttempt, replay, err := third.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || replay || thirdAttempt == nil || thirdAttempt.created {
+		t.Fatalf("post-recovery receipt = %#v replay=%v err=%v", thirdAttempt, replay, err)
+	}
+	if thirdAttempt.receipt.ID != firstAttempt.receipt.ID {
+		t.Fatalf("released receipt id = %s, want retained id %s", thirdAttempt.receipt.ID, firstAttempt.receipt.ID)
+	}
+	if err := third.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("clean terminal claims before adoption: %v", err)
+	}
+	if err := thirdAttempt.renew(); err != nil {
+		t.Fatalf("renew retained receipt: %v", err)
+	}
+	if err := third.fenceDirectImportAssetAdoption(
+		thirdAttempt,
+		storage.DefaultProjectID,
+		[]string{firstStored.ID},
+		"",
+	); err != nil {
+		t.Fatalf("terminal claims still blocked adoption: %v", err)
+	}
+	adopted, scenario, err := third.loadDirectImportAssetsByIDs(
+		storage.DefaultProjectID,
+		[]string{firstStored.ID},
+		"",
+	)
+	if err != nil || scenario != nil || !directImportPreparedAssetsMatch(
+		third,
+		adopted,
+		[]*dsl.Script{firstScript},
+		nil,
+		nil,
+	) {
+		t.Fatalf("retained receipt could not adopt exact assets: scripts=%#v scenario=%#v err=%v", adopted, scenario, err)
+	}
+	if err := thirdAttempt.complete(adopted, nil); err != nil {
+		t.Fatalf("complete retained receipt adoption: %v", err)
+	}
+	if err := third.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("late recovery after completed receipt: %v", err)
+	}
+	if _, err := base.GetScript(firstStored.ID); err != nil {
+		t.Fatalf("late recovery deleted the completed retry asset: %v", err)
+	}
+	replayed, replay, err := third.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || !replay || replayed == nil || replayed.receipt.ID != firstAttempt.receipt.ID {
+		t.Fatalf("completed retained receipt replay = %#v replay=%v err=%v", replayed, replay, err)
+	}
+}
+
+func TestLostUnmutatedClaimsCannotDeleteCompletedDirectImportAsset(t *testing.T) {
+	t.Setenv("APEXLOAD_LIBRARY_IMPORT_CLAIM_TTL", "5m")
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "unmutated-claim-race.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer base.Close()
+	store := &failOnceDirectImportReceiptStore{SQLiteStore: base}
+	first := NewServer(ServerConfig{Store: store})
+	const (
+		operationID   = "unmutated-claim-completed-asset"
+		requestDigest = "unmutated-claim-request-digest"
+	)
+	firstAttempt, replay, err := first.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || replay || firstAttempt == nil || !firstAttempt.created {
+		t.Fatalf("first receipt = %#v replay=%v err=%v", firstAttempt, replay, err)
+	}
+	script := libraryTestScript(
+		deterministicDirectImportAssetID(firstAttempt.receipt.ID, "script", 0),
+		"completed claim-race asset",
+		storage.DefaultProjectID,
+		"/completed-claim-race",
+	)
+	committedTransaction, err := newCreateImportTransaction(
+		first,
+		"jmeter",
+		[]*dsl.Script{script},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := committedTransaction.createScript(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := committedTransaction.commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	second := NewServer(ServerConfig{Store: store})
+	secondAttempt, replay, err := second.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || replay || secondAttempt == nil || secondAttempt.created {
+		t.Fatalf("stale takeover receipt = %#v replay=%v err=%v", secondAttempt, replay, err)
+	}
+	if err := second.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatal(err)
+	}
+	if err := secondAttempt.renew(); err != nil {
+		t.Fatal(err)
+	}
+	if err := second.fenceDirectImportAssetAdoption(
+		secondAttempt,
+		storage.DefaultProjectID,
+		[]string{stored.ID},
+		"",
+	); err != nil {
+		t.Fatalf("unexpected pre-race adoption fence: %v", err)
+	}
+
+	// A losing request acquires matching claims after the takeover's check but
+	// before receipt completion. It has not started any asset write.
+	losingTransaction, err := newCreateImportTransaction(
+		first,
+		"jmeter",
+		[]*dsl.Script{script},
+		"",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if losingTransaction.mutationStarted {
+		t.Fatal("new transaction unexpectedly started an asset mutation")
+	}
+	if err := secondAttempt.complete([]*StoredScript{stored}, nil); err != nil {
+		t.Fatalf("complete takeover receipt: %v", err)
+	}
+	if err := firstAttempt.rollback(losingTransaction); err == nil ||
+		!strings.Contains(err.Error(), "ownership moved") {
+		t.Fatalf("losing no-op rollback error = %v, want ownership moved", err)
+	}
+	if err := second.recoverExpiredLibraryImportClaims(); err != nil {
+		t.Fatalf("recover after losing no-op claims: %v", err)
+	}
+	if _, err := base.GetScript(stored.ID); err != nil {
+		t.Fatalf("no-op claim recovery deleted a completed receipt asset: %v", err)
+	}
+	claims, err := second.loadLibraryImportClaims()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claims) != 0 {
+		t.Fatalf("terminal no-op claims remain: %#v", claims)
+	}
+	replayed, replay, err := second.claimDirectImportAttempt(
+		storage.DefaultProjectID,
+		"jmeter",
+		operationID,
+		requestDigest,
+	)
+	if err != nil || !replay || replayed == nil || replayed.receipt.ID != firstAttempt.receipt.ID {
+		t.Fatalf("completed receipt replay = %#v replay=%v err=%v", replayed, replay, err)
 	}
 }
 

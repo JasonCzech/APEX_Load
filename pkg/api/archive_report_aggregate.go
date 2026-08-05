@@ -380,12 +380,6 @@ func mergeArchiveSOAPFaultTimelineBucket(values map[time.Time]*RunArchiveSOAPFau
 	bucket.Total++
 	incrementArchiveCount(bucket.ByCode, faultCode)
 	incrementArchiveCount(bucket.ByCategory, faultCategory)
-	if len(bucket.ByCode) == 0 {
-		bucket.ByCode = nil
-	}
-	if len(bucket.ByCategory) == 0 {
-		bucket.ByCategory = nil
-	}
 }
 
 func archiveSOAPFaultBucketTimestamp(value time.Time) time.Time {

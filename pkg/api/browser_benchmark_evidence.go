@@ -27,22 +27,23 @@ type BrowserBenchmarkHardware struct {
 }
 
 type BrowserBenchmarkProfile struct {
-	ID                      string                          `json:"id"`
-	Name                    string                          `json:"name"`
-	BrowserEngine           string                          `json:"browser_engine"`
-	DeviceProfile           string                          `json:"device_profile"`
-	DeviceClass             string                          `json:"device_class"`
-	Platform                string                          `json:"platform"`
-	Status                  string                          `json:"status"`
-	EvidenceLevel           string                          `json:"evidence_level"`
-	ArtifactPath            string                          `json:"artifact_path"`
-	Acceptance              BrowserBenchmarkAcceptance      `json:"acceptance"`
-	DensityEnvelope         BrowserBenchmarkDensityEnvelope `json:"density_envelope"`
-	BenchmarkCommands       []string                        `json:"benchmark_commands"`
-	Evidence                []string                        `json:"evidence"`
-	ReleaseGate             bool                            `json:"release_gate"`
-	HighDensityClaimAllowed bool                            `json:"high_density_claim_allowed"`
-	Notes                   []string                        `json:"notes,omitempty"`
+	ID                        string                          `json:"id"`
+	Name                      string                          `json:"name"`
+	BrowserEngine             string                          `json:"browser_engine"`
+	DeviceProfile             string                          `json:"device_profile"`
+	DeviceClass               string                          `json:"device_class"`
+	Platform                  string                          `json:"platform"`
+	Status                    string                          `json:"status"`
+	MeasuredBaselineAvailable bool                            `json:"measured_baseline_available"`
+	EvidenceLevel             string                          `json:"evidence_level"`
+	ArtifactPath              string                          `json:"artifact_path"`
+	Acceptance                BrowserBenchmarkAcceptance      `json:"acceptance"`
+	DensityEnvelope           BrowserBenchmarkDensityEnvelope `json:"density_envelope"`
+	BenchmarkCommands         []string                        `json:"benchmark_commands"`
+	Evidence                  []string                        `json:"evidence"`
+	ReleaseGate               bool                            `json:"release_gate"`
+	HighDensityClaimAllowed   bool                            `json:"high_density_claim_allowed"`
+	Notes                     []string                        `json:"notes,omitempty"`
 }
 
 type BrowserBenchmarkAcceptance struct {
@@ -94,7 +95,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			DeviceProfile: "desktop_1080p",
 			DeviceClass:   "desktop",
 			Platform:      "desktop",
-			Status:        "baseline_artifact_published",
+			Status:        "acceptance_contract_published",
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#desktop-chromium-1080p",
 			Acceptance: BrowserBenchmarkAcceptance{
@@ -122,7 +123,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			DeviceProfile: "pixel_8",
 			DeviceClass:   "mobile",
 			Platform:      "android",
-			Status:        "baseline_artifact_published",
+			Status:        "acceptance_contract_published",
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#mobile-chromium-pixel-8",
 			Acceptance: BrowserBenchmarkAcceptance{
@@ -150,7 +151,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 			DeviceProfile: "iphone_15_pro",
 			DeviceClass:   "mobile",
 			Platform:      "ios",
-			Status:        "baseline_artifact_published",
+			Status:        "acceptance_contract_published",
 			EvidenceLevel: "code+docs+release_artifact_required",
 			ArtifactPath:  browserBenchmarkArtifactEvidence + "#mobile-webkit-iphone-15-pro",
 			Acceptance: BrowserBenchmarkAcceptance{

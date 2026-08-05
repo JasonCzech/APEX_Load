@@ -11,13 +11,15 @@ export type TopbarRunSummary = Pick<TestSummary, 'id' | 'name' | 'status'> & Par
 
 const ACTIVE_RUN_STATUS_PRIORITY: Record<string, number> = {
   RUNNING: 0,
-  INITIALIZING: 1,
-  PAUSED: 2,
-  STOPPING: 3,
-  PENDING: 4,
-  QUEUED: 5,
-  RESERVED: 6,
-  SCHEDULED: 7,
+  SHAKEOUT: 1,
+  INITIALIZING: 2,
+  PAUSED: 3,
+  STOPPING: 4,
+  SHAKEOUT_REVIEW: 5,
+  PENDING: 6,
+  QUEUED: 7,
+  RESERVED: 8,
+  SCHEDULED: 9,
 }
 
 export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions = {}): string {

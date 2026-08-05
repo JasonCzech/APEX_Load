@@ -109,6 +109,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		if script.Name == "" {
 			script.Name = stored.Name
 		}
+		script, req.trustedPreservedImport = resolveTrustedStoredReplayEcho(script, stored.Script)
 	} else {
 		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}

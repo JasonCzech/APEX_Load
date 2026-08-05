@@ -96,6 +96,7 @@ export default function RunReportPage({
   const activeVerdictSaveRef = useRef<{ key: string; promise: Promise<boolean> } | null>(null)
   const activeLensRef = useRef(activeLens)
   const testIDRef = useRef(testId)
+  const effectiveCompareIDRef = useRef('')
   const archiveReportRef = useRef(archiveModel.archiveReport)
   activeLensRef.current = activeLens
   testIDRef.current = testId
@@ -114,6 +115,7 @@ export default function RunReportPage({
 
   const suggestedCompareId = test?.comparison_baseline?.source_test_id || ''
   const effectiveCompareId = compareId || suggestedCompareId
+  effectiveCompareIDRef.current = effectiveCompareId
   const baselineReadyTest = useMemo(() => baselineTest && isCompletedTestStatus(baselineTest.status) ? baselineTest : null, [baselineTest])
   const { archiveSummaryHistory: baselineSummaryHistory, archiveSummariesLoading: baselineSummaryLoading } = useExecutionArchiveSummaryHistory(baselineReadyTest)
 
@@ -272,7 +274,10 @@ export default function RunReportPage({
 
   const saveOverride = useCallback((status: string, explanation: string): Promise<boolean> => {
     const current = annotations
-    if (!current) return Promise.resolve(false)
+    if (!current) {
+      setAnnotationsError('Report annotations are unavailable. Reload the report before saving a verdict override.')
+      return Promise.resolve(false)
+    }
     const requestLens = activeLens
     const requestTestID = testId
     const requestRevision = verdictRevisionRef.current
@@ -362,14 +367,21 @@ export default function RunReportPage({
   }), [discardVerdictDraft, testId])
   useNavigationGuard(verdictNavigationGuard, verdictDirty)
 
-  const pinBaseline = async () => {
-    if (!effectiveCompareId) return
+  const pinBaseline = async (): Promise<boolean> => {
+    if (!effectiveCompareId) return false
+    const requestTestID = testId
+    const requestCompareID = effectiveCompareId
     try {
-      const updated = await api.pinComparisonBaseline(effectiveCompareId)
-      if (updated.id === testId) setTest(updated)
+      await api.pinComparisonBaseline(requestCompareID)
+      const refreshed = await api.getTest(requestTestID)
+      if (testIDRef.current !== requestTestID || effectiveCompareIDRef.current !== requestCompareID) return false
+      setTest(refreshed)
       setBaselineError('')
+      return true
     } catch (error: unknown) {
+      if (testIDRef.current !== requestTestID || effectiveCompareIDRef.current !== requestCompareID) return false
       setBaselineError(getErrorMessage(error, 'Unable to pin the comparison baseline'))
+      return false
     }
   }
 
@@ -417,6 +429,7 @@ export default function RunReportPage({
           status={verdictDraft.status}
           explanation={verdictDraft.explanation}
           saving={savingAnnotations || annotationsLoading}
+          disabled={!annotations}
           onStatusChange={updateVerdictStatus}
           onExplanationChange={updateVerdictExplanation}
           onSaveOverride={saveOverride}

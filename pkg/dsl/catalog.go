@@ -9,8 +9,10 @@ import (
 )
 
 // FieldKind classifies a declared action field for schema generation and
-// editor tooling. It mirrors JSON value kinds plus "enum" for closed string
-// sets and "any" for fields whose type depends on the action.
+// editor tooling. It mirrors JSON value kinds plus "enum" for curated string
+// choices and "any" for fields whose type depends on the action. Enum choices
+// are editor suggestions unless FieldSpec.SchemaEnum marks a validator-enforced
+// closed set; protocol validators remain authoritative for compatibility aliases.
 type FieldKind string
 
 const (
@@ -30,12 +32,18 @@ const (
 // without; one-of-several constraints are expressed in Doc and enforced by
 // the owning ActionSpec.Validate function.
 type FieldSpec struct {
-	Name     string    `json:"name"`
-	Required bool      `json:"required,omitempty"`
-	Kind     FieldKind `json:"kind"`
-	Enum     []string  `json:"enum,omitempty"`
-	Maximum  int64     `json:"maximum,omitempty"`
-	Doc      string    `json:"doc,omitempty"`
+	Name           string    `json:"name"`
+	Required       bool      `json:"required,omitempty"`
+	Kind           FieldKind `json:"kind"`
+	Enum           []string  `json:"enum,omitempty"`
+	EnumAliases    []string  `json:"enum_aliases,omitempty"`
+	SchemaEnum     bool      `json:"schema_enum,omitempty"`
+	EnumCaseFold   bool      `json:"enum_case_fold,omitempty"`
+	EnumTrimSpace  bool      `json:"enum_trim_space,omitempty"`
+	EnumAllowEmpty bool      `json:"enum_allow_empty,omitempty"`
+	EnumAllowBlank bool      `json:"enum_allow_blank,omitempty"`
+	Maximum        int64     `json:"maximum,omitempty"`
+	Doc            string    `json:"doc,omitempty"`
 }
 
 // ActionSpec is the declarative contract for one DSL action type: which
@@ -45,11 +53,16 @@ type FieldSpec struct {
 // by the validator, the generated JSON Schema, the action reference doc, and
 // the dashboard editor.
 type ActionSpec struct {
-	Type      string      `json:"type"`
-	Aliases   []string    `json:"aliases,omitempty"`
-	Protocols []string    `json:"protocols"`
-	Summary   string      `json:"summary"`
-	Fields    []FieldSpec `json:"fields,omitempty"`
+	Type      string   `json:"type"`
+	Aliases   []string `json:"aliases,omitempty"`
+	Protocols []string `json:"protocols"`
+	Summary   string   `json:"summary"`
+	// ExecutionPosture describes whether the action can execute in the bundled
+	// runtime or needs an external runner. ExecutionNote carries the operator-
+	// facing qualification rendered by every generated catalog surface.
+	ExecutionPosture string      `json:"execution_posture,omitempty"`
+	ExecutionNote    string      `json:"execution_note,omitempty"`
+	Fields           []FieldSpec `json:"fields,omitempty"`
 	// RequireOneOf lists alternative-field groups: for each group, at least
 	// one of the named fields (top-level or params.* path) must be set.
 	// Groups mirror the one-of rules the Validate funcs enforce, expressed
@@ -151,9 +164,8 @@ func SpecForActionType(actionType string) (ActionSpec, bool) {
 }
 
 // protocolActionSpec resolves an action type within one protocol family,
-// matching only specs that list the family explicitly. Engine ("*") specs
-// are intentionally excluded: the validator intercepts engine actions before
-// protocol dispatch, so protocol validators must keep rejecting them.
+// matching only specs that list the family explicitly. Engine ("*") specs are
+// validated by the common lifecycle path before protocol-specific dispatch.
 func protocolActionSpec(family, actionType string) (*ActionSpec, bool) {
 	spec, ok := actionCatalogIndex()[actionType]
 	if !ok {
@@ -191,18 +203,14 @@ func AllActionSpecs() []ActionSpec {
 }
 
 // ActionSpecsForProtocol returns the specs usable in scripts of the given
-// protocol, sorted by canonical type. Engine actions are included for every
-// family except jms and kafka, whose script validators accept only their own
-// action types.
+// protocol, sorted by canonical type. Engine actions are valid for every
+// protocol family and execute through the common engine lifecycle path.
 func ActionSpecsForProtocol(protocol string) []ActionSpec {
 	family := ProtocolFamily(protocol)
-	allowEngine := family != "jms" && family != "kafka"
 	var specs []ActionSpec
 	for _, spec := range actionCatalogList() {
 		if spec.EngineAction() {
-			if allowEngine {
-				specs = append(specs, *spec)
-			}
+			specs = append(specs, *spec)
 			continue
 		}
 		for _, candidate := range spec.Protocols {

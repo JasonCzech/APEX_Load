@@ -5,6 +5,8 @@ import (
 	"math"
 	"regexp"
 	"strings"
+
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 // browserActionSpecs declares the browser protocol action types. The
@@ -32,7 +34,7 @@ func browserActionSpecs() []ActionSpec {
 	// inline target/selector or an object-repository binding.
 	locatorRequireOneOf := []string{"target", "selector", "object_ref"}
 	navigationFields := []FieldSpec{
-		{Name: "params.wait_until", Kind: FieldKindEnum, Enum: []string{"load", "domcontentloaded", "networkidle", "commit"}, Doc: "Navigation readiness point; defaults to Playwright's load event."},
+		{Name: "params.wait_until", Kind: FieldKindEnum, Enum: []string{"load", "domcontentloaded", "networkidle", "commit"}, EnumAliases: []string{"network_idle"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Navigation readiness point; defaults to Playwright's load event."},
 		fieldSync, fieldCapture,
 	}
 	navigationValidate := browserValidator(nil, browserNavigationChecks)
@@ -88,10 +90,10 @@ func browserActionSpecs() []ActionSpec {
 			Summary:      "Clicks an element.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields: locatorFields(
-				FieldSpec{Name: "params.button", Kind: FieldKindEnum, Enum: []string{"left", "right", "middle"}, Doc: "Mouse button to use; defaults to left."},
+				FieldSpec{Name: "params.button", Kind: FieldKindEnum, Enum: []string{"left", "right", "middle"}, EnumAliases: []string{"primary", "secondary", "auxiliary", "aux"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively."},
 				FieldSpec{Name: "params.modifiers", Kind: FieldKindArray, Doc: "Modifier keys held for the click, such as Control, Shift, Alt, Meta, or ControlOrMeta."},
 			),
-			Validate: browserValidator(browserRequireElementLocator, nil),
+			Validate: browserValidator(browserRequireElementLocator, browserMouseButtonChecks),
 		},
 		{
 			Type:         "browser_download",
@@ -125,10 +127,10 @@ func browserActionSpecs() []ActionSpec {
 			Summary:      "Double-clicks an element.",
 			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields: locatorFields(
-				FieldSpec{Name: "params.button", Kind: FieldKindEnum, Enum: []string{"left", "right", "middle"}, Doc: "Mouse button to use; defaults to left."},
+				FieldSpec{Name: "params.button", Kind: FieldKindEnum, Enum: []string{"left", "right", "middle"}, EnumAliases: []string{"primary", "secondary", "auxiliary", "aux"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively."},
 				FieldSpec{Name: "params.modifiers", Kind: FieldKindArray, Doc: "Modifier keys held for the double-click, such as Control, Shift, Alt, Meta, or ControlOrMeta."},
 			),
-			Validate: browserValidator(browserRequireElementLocator, nil),
+			Validate: browserValidator(browserRequireElementLocator, browserMouseButtonChecks),
 		},
 		{
 			Type:         "browser_hover",
@@ -219,7 +221,7 @@ func browserActionSpecs() []ActionSpec {
 			Summary:      "Swipes from an element in a direction (touch input).",
 			RequireOneOf: [][]string{locatorRequireOneOf},
 			Fields: locatorFields(
-				FieldSpec{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"left", "right", "up", "down"}, Doc: "Swipe direction."},
+				FieldSpec{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"left", "right", "up", "down"}, SchemaEnum: true, Doc: "Swipe direction."},
 				FieldSpec{Name: "params.distance", Kind: FieldKindInt, Doc: "Swipe distance in pixels; must be greater than zero."},
 			),
 			Validate: browserValidator(browserRequireElementLocator, browserSwipeChecks),
@@ -243,7 +245,7 @@ func browserActionSpecs() []ActionSpec {
 				{Name: "wait_for", Kind: FieldKindObject, Doc: "Wait condition: {type, value, timeout_ms}. One of wait_for, selector, or target is required."},
 				fieldSelector,
 				{Name: "target", Kind: FieldKindString, Doc: "Element locator alternative to selector."},
-				{Name: "params.operator", Kind: FieldKindEnum, Enum: []string{"=", "==", "===", "!=", "!==", ">", ">=", "<", "<="}, Doc: "Element-count comparison operator used with params.count; defaults to >= when count is set."},
+				{Name: "params.operator", Kind: FieldKindEnum, Enum: []string{"=", "==", "===", "!=", "!==", ">", ">=", "<", "<="}, SchemaEnum: true, Doc: "Element-count comparison operator used with params.count; defaults to >= when count is set."},
 				{Name: "params.count", Kind: FieldKindInt, Doc: "Required element count for count-based waits; zero or greater."},
 			},
 			Validate: browserValidator(browserRequireWaitCondition, browserWaitChecks),
@@ -257,7 +259,7 @@ func browserActionSpecs() []ActionSpec {
 				{Name: "params.url_contains", Kind: FieldKindString, Doc: "URL substring to match; target is used when this is empty."},
 				{Name: "params.url", Kind: FieldKindString, Doc: "Exact response URL to match."},
 				{Name: "params.url_regex", Kind: FieldKindString, Doc: "Regular expression matched against response URL."},
-				{Name: "params.method", Kind: FieldKindEnum, Enum: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}, Doc: "HTTP method filter."},
+				{Name: "params.method", Kind: FieldKindEnum, Enum: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "HTTP method filter."},
 				{Name: "params.status", Kind: FieldKindInt, Doc: "Expected HTTP status code; alias of params.status_code."},
 				{Name: "params.status_code", Kind: FieldKindInt, Doc: "Expected HTTP status code."},
 				{Name: "params.resource_type", Kind: FieldKindString, Doc: "Browser resource type filter, such as xhr, fetch, document, script, or image."},
@@ -286,9 +288,9 @@ func browserActionSpecs() []ActionSpec {
 			Summary:   "Waits for a WebSocket open event or frame observed in the replayed browser page.",
 			Fields: []FieldSpec{
 				{Name: "params.url_contains", Kind: FieldKindString, Doc: "Substring that must appear in the WebSocket URL."},
-				{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"open", "sent", "received"}, Doc: "Observed event direction."},
+				{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"open", "sent", "received"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Observed event direction."},
 				{Name: "params.match", Kind: FieldKindString, Doc: "Payload match text or regex."},
-				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"contains", "exact", "regex"}, Doc: "Payload comparison mode."},
+				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"contains", "exact", "regex"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Payload comparison mode."},
 				{Name: "params.timeout_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: "Maximum wait in milliseconds."},
 				{Name: "params.count", Kind: FieldKindInt, Doc: "Number of matching events required."},
 				fieldCapture,
@@ -301,9 +303,9 @@ func browserActionSpecs() []ActionSpec {
 			Summary:   "Asserts that matching WebSocket events have been observed in the replayed browser page.",
 			Fields: []FieldSpec{
 				{Name: "params.url_contains", Kind: FieldKindString, Doc: "Substring that must appear in the WebSocket URL."},
-				{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"open", "sent", "received"}, Doc: "Observed event direction."},
+				{Name: "params.direction", Kind: FieldKindEnum, Enum: []string{"open", "sent", "received"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Observed event direction."},
 				{Name: "params.match", Kind: FieldKindString, Doc: "Payload match text or regex."},
-				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"contains", "exact", "regex"}, Doc: "Payload comparison mode."},
+				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"contains", "exact", "regex"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Payload comparison mode."},
 				{Name: "params.count", Kind: FieldKindInt, Doc: "Number of matching events required."},
 				fieldCapture,
 			},
@@ -363,12 +365,12 @@ func browserActionSpecs() []ActionSpec {
 			Protocols: []string{"browser"},
 			Summary:   "Handles the next native dialog (alert/confirm/prompt) by accepting or dismissing it.",
 			Fields: []FieldSpec{
-				{Name: "params.action", Kind: FieldKindEnum, Enum: []string{"accept", "dismiss"}, Doc: "How to respond: accept or dismiss (required)."},
+				{Name: "params.action", Required: true, Kind: FieldKindEnum, Enum: []string{"accept", "dismiss"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, Doc: "How to respond: accept or dismiss (required)."},
 				{Name: "params.dialog_type", Kind: FieldKindEnum, Enum: []string{"alert", "confirm", "prompt", "beforeunload"}, Doc: "Expected dialog kind for documentation/validation."},
 				{Name: "params.expected_message", Kind: FieldKindString, Doc: "If set, the captured dialog message must contain this text."},
-				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"exact", "contains", "normalized"}, Doc: "Message comparison mode; recorder-origin dialogs default to contains."},
+				{Name: "params.match_mode", Kind: FieldKindEnum, Enum: []string{"exact", "contains", "normalized"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Message comparison mode; recorder-origin dialogs default to contains."},
 				{Name: "params.prompt_text", Kind: FieldKindString, Doc: "Text entered into a prompt dialog when accepting."},
-				{Name: "params.wait_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: "How long to wait for the dialog to appear (default 5000; maximum 3600000)."},
+				{Name: "params.wait_ms", Kind: FieldKindInt, Maximum: MaxConfiguredProtocolTimeoutMS, Doc: fmt.Sprintf("How long to wait for the dialog to appear (default %d; maximum 3600000).", browserprotocol.DefaultDialogWaitMS)},
 				fieldCapture,
 			},
 			Validate: browserValidator(nil, browserHandleDialogChecks),
@@ -527,6 +529,26 @@ func browserOpenWindowChecks(label string, action Action) []string {
 		}
 	}
 	return nil
+}
+
+func browserMouseButtonChecks(label string, action Action) []string {
+	if action.Params == nil {
+		return nil
+	}
+	raw, present := action.Params["button"]
+	if !present || raw == nil {
+		return nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return []string{fmt.Sprintf("%s: params.button must be a string", label)}
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "left", "right", "middle", "primary", "secondary", "auxiliary", "aux":
+		return nil
+	default:
+		return []string{fmt.Sprintf("%s: params.button must be one of left, right, middle (aliases primary, secondary, auxiliary, and aux are also accepted), got %q", label, value)}
+	}
 }
 
 func browserWSChecks(label string, action Action) []string {

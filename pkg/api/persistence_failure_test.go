@@ -76,6 +76,20 @@ func TestCreateScriptDurableFailsClosedWithoutAtomicCreateOnlyStore(t *testing.T
 type failingTestPersistence struct{ err error }
 
 func (s failingTestPersistence) SaveTest(*storage.TestRecord) error { return s.err }
+
+// CreateTestIfAbsent / CreateTestIfAbsentIfLeaseHeld satisfy
+// createOnlyTestPersistence. Creation now fails closed for any store that cannot
+// atomically validate parent-revision evidence, so a fault-injection store that
+// only implements SaveTest would be rejected at that gate and never reach the
+// forced persistence failure these tests exist to exercise. Returning the
+// injected error from the create-only path keeps the failure under test intact.
+func (s failingTestPersistence) CreateTestIfAbsent(*storage.TestRecord) (bool, error) {
+	return false, s.err
+}
+
+func (s failingTestPersistence) CreateTestIfAbsentIfLeaseHeld(*storage.TestRecord, string, string) (bool, error) {
+	return false, s.err
+}
 func (s failingTestPersistence) GetTest(string) (*storage.TestRecord, error) {
 	return nil, s.err
 }

@@ -1630,6 +1630,35 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('HAR replay accounting')
   })
 
+  it('rejects an oversized comparison HAR before it reaches conversion', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)
+    })
+    const fileInputs = container.querySelectorAll<HTMLInputElement>('input[type="file"]')
+    const primary = new File(['{"log":{"entries":[]}}'], 'capture.har', { type: 'application/json' })
+    const oversized = new File(['{}'], 'comparison.har', { type: 'application/json' })
+    Object.defineProperty(oversized, 'size', { configurable: true, value: 51 * 1024 * 1024 })
+
+    await act(async () => {
+      Object.defineProperty(fileInputs[0], 'files', { configurable: true, value: [primary] })
+      fileInputs[0].dispatchEvent(new Event('change', { bubbles: true }))
+      Object.defineProperty(fileInputs[1], 'files', { configurable: true, value: [oversized] })
+      fileInputs[1].dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('comparison.har is 51.0 MB; imports are limited')
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.importHAR).toHaveBeenCalledWith(primary, expect.objectContaining({
+      secondary_file: undefined,
+      artifact_mode: 'design_har',
+    }))
+  })
+
   it('rejects unsupported dropped import files before conversion', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="har" projectId="project-1" />)

@@ -18,6 +18,7 @@ const { apiFetchMock, downloadBlobMock, hasDesktopApiCapabilityMock, saveApiReso
 
 const apiMock = {
   getBrowserRecording: vi.fn(),
+  getRawBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
   forceStopBrowserRecording: vi.fn(),
   pauseBrowserRecording: vi.fn(),
@@ -188,6 +189,7 @@ describe('BrowserRecorderControlPanel', () => {
       blob: vi.fn().mockResolvedValue(new Blob(['{"log":{}}'])),
     })
     apiMock.getBrowserRecording.mockResolvedValue({ session: recordingSession })
+    apiMock.getRawBrowserRecording.mockRejectedValue(Object.assign(new Error('raw view forbidden'), { status: 403 }))
     apiMock.stopBrowserRecording.mockResolvedValue({ session: stoppedSession })
     apiMock.forceStopBrowserRecording.mockResolvedValue({ session: forceStoppedSession })
     apiMock.previewBrowserRecordingConversion.mockResolvedValue({
@@ -321,6 +323,49 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('hunter2')
     // No conversion controls while recording.
     expect(container.textContent).not.toContain('Save to Script Library')
+    expect(apiMock.getRawBrowserRecording).not.toHaveBeenCalled()
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
+  })
+
+  it('loads retained step thumbnails only after an explicit authorized request', async () => {
+    const thumbnail = 'data:image/jpeg;base64,dGh1bWJuYWls'
+    apiMock.getRawBrowserRecording.mockResolvedValue({
+      session: {
+        ...recordingSession,
+        steps: [{ ...recordingSession.steps[1], thumbnail }],
+      },
+    })
+
+    await renderPanel()
+
+    expect(apiMock.getRawBrowserRecording).not.toHaveBeenCalled()
+    expect(container.querySelector('.brp-step-thumbnail')).toBeNull()
+    await clickButton('Load thumbnails')
+
+    expect(container.querySelector<HTMLImageElement>('.brp-step-thumbnail')?.src).toBe(thumbnail)
+    expect(apiMock.getRawBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(apiMock.getRawBrowserRecording).toHaveBeenCalledWith('brec-1')
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
+  })
+
+  it('keeps live polling on the disclosure-safe session endpoint', async () => {
+    vi.useFakeTimers()
+    try {
+      await renderPanel()
+      apiMock.getBrowserRecording.mockClear()
+      apiMock.getRawBrowserRecording.mockClear()
+
+      await act(async () => {
+        vi.advanceTimersByTime(3_100)
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+
+      expect(apiMock.getBrowserRecording).toHaveBeenCalled()
+      expect(apiMock.getRawBrowserRecording).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('ignores a late response from the previously selected recording session', async () => {
@@ -456,7 +501,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('#5')
   })
 
-  it('renders the full step history and filters it with search', async () => {
+  it('caps stopped step history until expanded and filters it with search', async () => {
     apiMock.getBrowserRecording.mockResolvedValue({
       session: {
         ...stoppedSession,
@@ -473,8 +518,15 @@ describe('BrowserRecorderControlPanel', () => {
     })
     await renderPanel()
 
-    expect(container.textContent).toContain('#1')
-    expect(container.textContent).toContain('#30')
+    const visibleStepNumbers = () => Array.from(container.querySelectorAll('.brp-step-seq')).map(node => node.textContent)
+    expect(visibleStepNumbers()).not.toContain('#1')
+    expect(visibleStepNumbers()).toContain('#30')
+    expect(container.querySelectorAll('.rec-feed-item')).toHaveLength(25)
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Show all 30 steps')?.click()
+    })
+    expect(visibleStepNumbers()).toContain('#1')
+    expect(container.querySelectorAll('.rec-feed-item')).toHaveLength(30)
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search recorded steps"]')
     expect(search).not.toBeNull()
     await act(async () => {

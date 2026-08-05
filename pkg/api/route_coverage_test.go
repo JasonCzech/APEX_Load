@@ -37,7 +37,11 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	"GET /api/v1/system/execution-readiness": true,
 	// The exchange is the pre-authentication boundary: it validates a signed
 	// GitHub Actions ID token and returns a short-lived project CI token.
-	"POST /api/v1/auth/ci/github/exchange":              true,
+	"POST /api/v1/auth/ci/github/exchange": true,
+	// Local browser recording pairs before an authenticated bridge session
+	// exists; the handler requires a high-entropy, expiring token and applies
+	// per-client lockout to failed attempts.
+	"POST /api/v1/bridge/pair":                          true,
 	"POST /api/v1/integrations/github/webhook":          true,
 	"POST /api/v1/monitoring/collectors/{id}/heartbeat": true,
 }

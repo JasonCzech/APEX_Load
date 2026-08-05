@@ -3,7 +3,6 @@ package scrub
 import (
 	"encoding/json"
 	"io"
-	"net/url"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/credential"
@@ -95,21 +94,6 @@ func RedactCredentialBody(body string) string {
 		return redactNestedStaticQuery(body)
 	}
 	if strings.Contains(trimmed, "=") {
-		values, err := url.ParseQuery(trimmed)
-		if err == nil {
-			changed := false
-			for key := range values {
-				if isCredentialField(key) {
-					for i := range values[key] {
-						values[key][i] = Redacted
-					}
-					changed = true
-				}
-			}
-			if changed {
-				return redactNestedStaticQuery(values.Encode())
-			}
-		}
 		if redacted := redactSensitiveQueryAssignments(body, isCredentialField); redacted != body {
 			return redacted
 		}

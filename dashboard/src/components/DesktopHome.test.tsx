@@ -8,6 +8,22 @@ import DesktopHome from './DesktopHome'
 import type { DesktopStatusResponse } from '../types/library'
 import type { RecentItem } from '../desktop/desktopRecents'
 
+const desktopMocks = vi.hoisted(() => ({
+  filesFromDroppedPaths: vi.fn(),
+  dropHandler: undefined as ((paths: string[]) => void) | undefined,
+}))
+
+vi.mock('../desktop/desktopBridge', () => ({ isDesktopSurface: () => true }))
+vi.mock('../desktop/desktopFiles', () => ({
+  filesFromDroppedPaths: desktopMocks.filesFromDroppedPaths,
+  nativeFileReadErrorMessage: (error: unknown) => error instanceof Error ? error.message : 'Unable to read dropped file.',
+}))
+vi.mock('../desktop/useDesktopFileDrop', () => ({
+  useDesktopFileDrop: (_ref: unknown, handler: (paths: string[]) => void, enabled: boolean) => {
+    desktopMocks.dropHandler = enabled ? handler : undefined
+  },
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const status: DesktopStatusResponse = {
@@ -29,6 +45,8 @@ describe('DesktopHome', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    desktopMocks.dropHandler = undefined
+    desktopMocks.filesFromDroppedPaths.mockResolvedValue([])
   })
 
   afterEach(async () => {
@@ -126,5 +144,30 @@ describe('DesktopHome', () => {
     })
     expect(container.textContent).toContain('Local engine failed to start')
     expect(container.textContent).toContain('disk full')
+  })
+
+  it('reports a nonempty desktop drop that contains no supported files', async () => {
+    const onDropFiles = vi.fn()
+    const onDropError = vi.fn()
+    await act(async () => {
+      root.render(
+        <DesktopHome
+          status={status}
+          recents={[]}
+          onQuickAction={() => {}}
+          onOpenRecent={() => {}}
+          onClearRecents={() => {}}
+          onDropFiles={onDropFiles}
+          onDropError={onDropError}
+        />,
+      )
+    })
+    await act(async () => {
+      desktopMocks.dropHandler?.(['/tmp/unsupported.exe'])
+      await Promise.resolve()
+    })
+
+    expect(onDropFiles).not.toHaveBeenCalled()
+    expect(onDropError).toHaveBeenCalledWith('The dropped selection did not contain a supported import file.')
   })
 })

@@ -225,6 +225,47 @@ func TestQueuedRunRevisionSourceBoundScriptIgnoresLiveLibraryState(t *testing.T)
 	}
 }
 
+func TestQueuedRunRevisionRefKeyInheritsReleaseEvidence(t *testing.T) {
+	server, store := newRuntimeOverrideTestServer(t)
+	now := time.Now().UTC()
+	if err := store.SaveApplication(&storage.Application{
+		ID: "revision-ref-app", ProjectID: storage.DefaultProjectID, Name: "Revision Ref", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveApplication: %v", err)
+	}
+	if err := store.SaveRelease(&storage.Release{
+		ID: "revision-ref-release", ApplicationID: "revision-ref-app", ProjectID: storage.DefaultProjectID,
+		Name: "Revision Ref", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("SaveRelease: %v", err)
+	}
+	script := httpScript("revision-ref-release-script", "Revision ref release")
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
+	source, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Release source", Duration: "1m", ScriptID: script.ID, VUsers: 1,
+		ApplicationID: "revision-ref-app", ReleaseID: "revision-ref-release",
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(source): %v", err)
+	}
+	if source.RefKey == "" {
+		t.Fatal("source ref key is empty")
+	}
+
+	revision, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Release revision", RevisionSourceTestID: source.RefKey,
+		Groups: createGroupEntriesFromManagedTest(source),
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(revision by ref key): %v", err)
+	}
+	if revision.ApplicationID != source.ApplicationID || revision.ReleaseID != source.ReleaseID {
+		t.Fatalf("revision release context = %q/%q, want source %q/%q", revision.ApplicationID, revision.ReleaseID, source.ApplicationID, source.ReleaseID)
+	}
+}
+
 func TestQueuedRunRevisionUsesSnapshotWhenScenarioCacheEntryIsMissing(t *testing.T) {
 	server, _ := newRuntimeOverrideTestServer(t)
 	script := httpScript("revision-missing-scenario-script", "Missing scenario source")

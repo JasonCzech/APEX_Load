@@ -86,6 +86,7 @@ import {
   settingsIssuesForField,
   splitListDraft,
   TELEMETRY_BUDGET_DEFAULTS,
+  updateNotificationWebhookDraft,
   validateOptionalPositiveInteger,
   validateProjectDraft,
   validateProjectQuotaField,
@@ -1432,13 +1433,19 @@ export default function SettingsPage({
         ...prev,
         archive_retention: { ...prev.archive_retention, enabled: Boolean(value) },
       }))
-    } else {
-      updateCapacityDraftNumber('archive_retention.default_retention_days', String(value), parsed => {
+    } else if (key === 'default_retention_days' || key === 'har_retention_days') {
+      const field = `archive_retention.${key}`
+      updateCapacityDraftNumber(field, String(value), parsed => {
         setSettings(prev => ({
           ...prev,
-          archive_retention: { ...prev.archive_retention, default_retention_days: parsed },
+          archive_retention: { ...prev.archive_retention, [key]: parsed },
         }))
       })
+    } else if (key === 'har_artifact_dir') {
+      setSettings(prev => ({
+        ...prev,
+        archive_retention: { ...prev.archive_retention, har_artifact_dir: String(value) },
+      }))
     }
     setArchiveRetentionActionMessage('')
     setArchiveRetentionActionError('')
@@ -2669,7 +2676,7 @@ export default function SettingsPage({
       notifications: {
         ...current.notifications,
         webhooks: current.notifications.webhooks.map((webhook, webhookIndex) => (
-          webhookIndex === index ? { ...webhook, ...updates } : webhook
+          webhookIndex === index ? updateNotificationWebhookDraft(webhook, updates) : webhook
         )),
       },
     }))
@@ -4528,6 +4535,34 @@ export default function SettingsPage({
                 />
               </div>
               {renderFieldIssues('archive_retention.default_retention_days')}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-label">HAR Retention Days</span>
+                  <span className="setting-desc">Browser HAR artifacts can contain request and response bodies, so they use this shorter retention window.</span>
+                </div>
+                <input
+                  className="settings-input settings-input-number"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={capacityFieldDrafts['archive_retention.har_retention_days'] ?? String(settings.archive_retention.har_retention_days ?? 7)}
+                  onChange={event => updateArchiveRetention('har_retention_days', event.target.value)}
+                />
+              </div>
+              {renderFieldIssues('archive_retention.har_retention_days')}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <span className="setting-label">HAR Artifact Directory</span>
+                  <span className="setting-desc">Optional runtime directory swept for retained browser HAR artifacts. Leave blank to use the controller default.</span>
+                </div>
+                <input
+                  className="settings-input"
+                  type="text"
+                  value={settings.archive_retention.har_artifact_dir ?? ''}
+                  onChange={event => updateArchiveRetention('har_artifact_dir', event.target.value)}
+                  placeholder="Controller default"
+                />
+              </div>
               <div className="settings-inline-actions">
                 <button className="btn btn-secondary" type="button" onClick={planArchiveRetention} disabled={!canManageSystem}>
                   Plan Retention

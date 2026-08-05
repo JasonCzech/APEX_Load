@@ -91,6 +91,25 @@ func (s *Server) handleProtocolBundleSupportMatrix(w http.ResponseWriter, r *htt
 func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 	entries := []ProtocolBundleSupportEntry{
 		{
+			ID:                  "web-api-bruno",
+			Bundle:              "web_api",
+			Protocol:            "bruno",
+			DisplayName:         "Bruno Collection Runner",
+			Status:              "external_runner_required",
+			ExecutionPosture:    "version_pinned_node_runner",
+			RunnerRequirement:   "bruno_node_runner",
+			EntitlementRequired: "web_api",
+			Importance:          "P1",
+			DensityEnvelope:     "up to 256 governed sessions per generator; constrained by the configured runner process policy",
+			SupportedInputs:     []string{"Bruno collections, environments, scripts, and tests imported through the governed inspection workflow"},
+			RuntimeCoverage:     []string{"version-pinned Bruno 3.5.2 compatibility runner", "request execution", "environment projection", "egress broker enforcement"},
+			ImportCoverage:      []string{"native collection inspection", "credential projection", "review artifacts", "commit and rollback"},
+			RemainingGaps:       []string{"runner must be explicitly configured and allowed by project egress policy"},
+			RecommendedWorkflow: "Inspect and approve the collection, configure the pinned runner and egress policy, then replay before promotion.",
+			Source:              "apexload-native",
+			Evidence:            []string{"pkg/protocol/bruno", "runners/bruno", "docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md"},
+		},
+		{
 			ID:                  "database-sql",
 			Bundle:              "database",
 			Protocol:            "database",
@@ -347,6 +366,7 @@ func protocolBundleCounts(entries []ProtocolBundleSupportEntry) map[string]map[s
 func protocolBundleRunnerClasses() []ProtocolBundleRunnerClass {
 	return []ProtocolBundleRunnerClass{
 		{ID: "go_generator", DisplayName: "Linux Go Generator", OS: "linux", PlacementLabels: []string{"runner_os=linux", "runtime=go"}, Protocols: []string{"database", "dns", "ftp", "smtp", "pop3", "imap", "ldap", "winsock", "oracle_web", "siebel_web", "web_http_html"}, CapacitySignal: "active_slots/reserved_slots plus protocol density envelope", Notes: "High-density protocol execution remains here."},
+		{ID: "bruno_node_runner", DisplayName: "Version-pinned Bruno Node Runner", OS: "linux_or_windows", PlacementLabels: []string{"runtime=bruno"}, Protocols: []string{"bruno"}, CapacitySignal: "advertised bruno runtime capacity and process-session limit", Notes: "Disabled until runner and egress policy are explicitly configured."},
 		{ID: "oracle_client_generator", DisplayName: "Oracle Client Generator", OS: "linux_or_windows", PlacementLabels: []string{"client=oracle", "runtime=go_or_bridge"}, Protocols: []string{"oracle_2_tier"}, CapacitySignal: "client sessions and DB connection policy"},
 		{ID: "windows_sap_gui_runner", DisplayName: "Windows SAP GUI Runner", OS: "windows", PlacementLabels: []string{"runner_os=windows", "client=sap_gui"}, Protocols: []string{"sap_gui"}, CapacitySignal: "desktop_session_capacity", Notes: "Low-density desktop execution only."},
 		{ID: "java_vuser_jvm_runner", DisplayName: "Java Vuser JVM Runner", OS: "linux_or_windows", PlacementLabels: []string{"runtime=java_vuser"}, Protocols: []string{"java_vuser"}, CapacitySignal: "advertised java_vuser MaxVUsers and available persistent JVM slots", Notes: "Combined imports require java_vuser_persistent_lifecycle_v1, java_vuser_session_frame_token_v1, and strong descendant-process containment. Windows Job Objects or a narrowly delegated Linux cgroup qualify; stock non-privileged sidecars remain legacy-only."},
@@ -357,6 +377,7 @@ func protocolBundleRunnerClasses() []ProtocolBundleRunnerClass {
 
 func protocolBundleEntitlements() []ProtocolBundleEntitlement {
 	return []ProtocolBundleEntitlement{
+		{ID: "web_api", DisplayName: "Web / API Protocol Bundle", Bundles: []string{"web_api"}, Protocols: []string{"bruno"}, Default: "enabled_with_runner_policy", Governance: "Bruno execution additionally requires an approved version-pinned runner and egress policy."},
 		{ID: "database", DisplayName: "Database Protocol Bundle", Bundles: []string{"database"}, Protocols: []string{"database", "oracle_2_tier"}, Default: "disabled_until_project_admin_enables", Governance: "Requires project-admin approval and non-production data classification for write-capable scripts."},
 		{ID: "network", DisplayName: "Network Protocol Bundle", Bundles: []string{"network"}, Protocols: []string{"dns", "ftp", "smtp", "pop3", "imap", "ldap", "winsock", "mapi", "tuxedo"}, Default: "disabled_until_project_admin_enables", Governance: "Requires endpoint allow-list and credential review for mail/directory protocols."},
 		{ID: "oracle_e_business", DisplayName: "Oracle E-Business Protocol Bundle", Bundles: []string{"oracle_e_business"}, Protocols: []string{"devweb", "jmeter", "gatling", "oracle_nca", "oracle_web", "siebel_web", "web_http_html"}, Default: "disabled_until_project_admin_enables", Governance: "Requires packaged-app correlation review before promotion."},
@@ -368,6 +389,7 @@ func protocolBundleEntitlements() []ProtocolBundleEntitlement {
 
 func protocolBundleSources() []ProtocolBundleSource {
 	return []ProtocolBundleSource{
+		{ID: "apexload-native", Title: "APEX Load native runtime inventory", URL: "pkg/protocol/builtin", ValidatedOn: "2026-08-04"},
 		{ID: "license-bundles-2025", Title: "OpenText Professional Performance Engineering and OpenText Enterprise Performance Engineering License Bundles", URL: "https://www.opentext.com/media/solution-overview/opentext-professional-performance-engineering-and-opentext-enterprise-performance-engineering-license-bundles-slo-en.pdf", ValidatedOn: "2026-05-19"},
 		{ID: "license-bundles-2023", Title: "LoadRunner Professional and LoadRunner Enterprise 2023 License Bundles", URL: "https://www.opentext.com/assets/documents/en-US/pdf/loadrunner-professional-and-loadrunner-enterprise-license-bundles-flyer-en.pdf", ValidatedOn: "2026-05-19"},
 		{ID: "sap-solutions-2024", Title: "OpenText Performance Engineering for SAP Solutions", URL: "https://www.opentext.com/media/data-sheet/opentext-performance-engineering-for-sap-solutions-ds-en.pdf", ValidatedOn: "2026-05-19"},

@@ -10,12 +10,19 @@ import (
 func TestTranslateDynamicJMeterFunctions(t *testing.T) {
 	var diagnostics diag.Collector
 	got := TranslateDynamic(`/orders/${__UUID()}?ts=${__time()}&n=${__Random(10,20)}&s=${__RandomString(8,abcdef,seed)}&c=${__counter(FALSE,checkoutCounter)}&t=${__threadNum}`, &diagnostics, "sampler")
-	want := `/orders/{{fn.uuid()}}?ts={{fn.timestamp.unix_ms}}&n={{fn.random(10,20)}}&s={{fn.random_string(8)}}&c={{var.checkoutCounter}}&t={{var.jmeter_thread_num}}`
+	want := `/orders/{{fn.uuid()}}?ts={{fn.timestamp.unix_ms}}&n={{fn.random(10,20)}}&s={{fn.random_string(8)}}&c={{param.jmeter_global_counter_checkoutCounter}}&t={{param.jmeter_thread_num}}`
 	if got != want {
 		t.Fatalf("TranslateDynamic() = %q, want %q", got, want)
 	}
-	if len(diagnostics.Items()) != 0 {
-		t.Fatalf("diagnostics = %#v, want none", diagnostics.Items())
+	if len(diagnostics.Items()) != 1 || diagnostics.Items()[0].Severity != diag.Warning {
+		t.Fatalf("diagnostics = %#v, want cross-thread counter review warning", diagnostics.Items())
+	}
+}
+
+func TestTranslateDynamicSanitizesCounterNamesForParameterBinding(t *testing.T) {
+	got := TranslateDynamic(`${__counter(TRUE,checkout:counter)}`, nil, "")
+	if want := `{{param.jmeter_counter_checkout_counter}}`; got != want {
+		t.Fatalf("TranslateDynamic() = %q, want %q", got, want)
 	}
 }
 

@@ -31,6 +31,7 @@ type metricsStoreSpy struct {
 	savedHistoryMetrics   any
 	saveHistoryCalls      int
 	savedScripts          []*dsl.Script
+	scriptsByID           map[string]*dsl.Script
 	deletedScriptIDs      []string
 	savedTests            []*storage.TestRecord
 	deletedTestIDs        []string
@@ -43,6 +44,8 @@ type metricsStoreSpy struct {
 	limitedHistoryCalls   int
 	limitedHistoryLimit   int
 	archiveByTestID       map[string]*storage.RunArchiveRecord
+	scenariosByID         map[string]*storage.Scenario
+	scenarioScriptsByID   map[string][]storage.ScenarioScript
 	schedulesByID         map[string]*storage.ScenarioSchedule
 	occurrencesByID       map[string]*storage.ScenarioScheduleOccurrence
 	approvalsByID         map[string]*storage.ScenarioScheduleApproval
@@ -117,24 +120,81 @@ func (b *blockingScaleExecutionBackendSpy) ScaleVUsers(_ *TestRunner, _ *Managed
 	return nil
 }
 
+// StartAdmissionRevision satisfies startAdmissionRevisionPersistence so the
+// durable start-admission fence stays ARMED for tests built on this spy rather
+// than being bypassed via testOnlyAllowUnfencedDeploymentLeaseStart. The spy
+// keeps its durable state in memory and never mutates admission-relevant state
+// concurrently with start-evidence evaluation, so a stable revision is the
+// truthful answer here: the fence's before/after comparison correctly observes
+// "nothing changed" and the evidence snapshot is genuinely coherent. Tests that
+// exercise the fence's change-detection supply their own revision store (see
+// admission_storage_regression_test.go, scheduler_start_revision_regression_test.go).
+func (s *metricsStoreSpy) StartAdmissionRevision() (int64, error) {
+	return 1, nil
+}
+
 func (s *metricsStoreSpy) SaveScript(script *dsl.Script) error {
-	s.savedScripts = append(s.savedScripts, script)
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	clone := cloneScriptDefinition(script)
+	s.savedScripts = append(s.savedScripts, clone)
+	s.ensureDurableScriptsLocked()
+	s.scriptsByID[clone.ID] = cloneScriptDefinition(clone)
 	return nil
 }
 func (s *metricsStoreSpy) GetScript(id string) (*dsl.Script, error) {
-	for i := len(s.savedScripts) - 1; i >= 0; i-- {
-		if s.savedScripts[i] != nil && s.savedScripts[i].ID == id {
-			return cloneScriptDefinition(s.savedScripts[i]), nil
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	if s.scriptsByID != nil {
+		if script := s.scriptsByID[id]; script != nil {
+			return cloneScriptDefinition(script), nil
+		}
+		return nil, nil
+	}
+	for _, script := range s.listedScripts {
+		if script != nil && script.ID == id {
+			return cloneScriptDefinition(script), nil
 		}
 	}
 	return nil, nil
 }
 func (s *metricsStoreSpy) ListScripts(projectID string, folderID *string) ([]*dsl.Script, error) {
-	return s.listedScripts, nil
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	source := s.listedScripts
+	if s.scriptsByID != nil {
+		source = make([]*dsl.Script, 0, len(s.scriptsByID))
+		for _, script := range s.scriptsByID {
+			source = append(source, script)
+		}
+	}
+	out := make([]*dsl.Script, 0, len(source))
+	for _, script := range source {
+		if script != nil {
+			out = append(out, cloneScriptDefinition(script))
+		}
+	}
+	return out, nil
 }
 func (s *metricsStoreSpy) DeleteScript(id string) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	s.deletedScriptIDs = append(s.deletedScriptIDs, id)
+	s.ensureDurableScriptsLocked()
+	delete(s.scriptsByID, id)
 	return nil
+}
+
+func (s *metricsStoreSpy) ensureDurableScriptsLocked() {
+	if s.scriptsByID != nil {
+		return
+	}
+	s.scriptsByID = make(map[string]*dsl.Script, len(s.listedScripts))
+	for _, script := range s.listedScripts {
+		if script != nil {
+			s.scriptsByID[script.ID] = cloneScriptDefinition(script)
+		}
+	}
 }
 func (s *metricsStoreSpy) MoveScript(id string, folderID *string) error { return nil }
 func (s *metricsStoreSpy) SaveScriptRecording(record *storage.ScriptRecordingRecord) error {
@@ -157,7 +217,57 @@ func (s *metricsStoreSpy) SaveTestStartIfNoDeploymentLease(test *storage.TestRec
 func (s *metricsStoreSpy) SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease(test *storage.TestRecord, _ string, _ string, _ string, _ string, _ string) (bool, error) {
 	return true, s.SaveTest(test)
 }
-func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error) { return nil, nil }
+func (s *metricsStoreSpy) TransitionTestToPending(transition storage.TestPendingTransition) (storage.TestStatusTransitionResult, error) {
+	for i := len(s.savedTests) - 1; i >= 0; i-- {
+		stored := s.savedTests[i]
+		if stored == nil || stored.ID != transition.ID {
+			continue
+		}
+		if stored.RefKey != transition.RefKey || normalizeProjectID(stored.ProjectID) != normalizeProjectID(transition.ProjectID) ||
+			!strings.EqualFold(stored.Status, transition.ExpectedStatus) || !stored.StartTime.Equal(transition.StartTime) {
+			return storage.TestStatusTransitionFenced, nil
+		}
+		updated := *stored
+		updated.Status = "PENDING"
+		updated.PendingSince = cloneTimePtr(&transition.PendingSince)
+		updated.StartAuthorization = transition.StartAuthorization
+		updated.StartedBySubject = transition.StartedBySubject
+		updated.StartedByDisplayName = transition.StartedByDisplayName
+		s.savedTests = append(s.savedTests, &updated)
+		return storage.TestStatusTransitionUpdated, nil
+	}
+	return storage.TestStatusTransitionMissing, nil
+}
+
+func (s *metricsStoreSpy) TransitionTestFromShakeout(transition storage.TestShakeoutTransition) (storage.TestStatusTransitionResult, error) {
+	for i := len(s.savedTests) - 1; i >= 0; i-- {
+		stored := s.savedTests[i]
+		if stored == nil || stored.ID != transition.ID {
+			continue
+		}
+		if stored.RefKey != transition.RefKey || normalizeProjectID(stored.ProjectID) != normalizeProjectID(transition.ProjectID) ||
+			!strings.EqualFold(stored.Status, "SHAKEOUT") || !stored.StartTime.Equal(transition.StartTime) {
+			return storage.TestStatusTransitionFenced, nil
+		}
+		updated := *stored
+		updated.Status = transition.Status
+		updated.PendingSince = cloneTimePtr(transition.PendingSince)
+		updated.Error = transition.Error
+		updated.StartAuthorization = transition.StartAuthorization
+		s.savedTests = append(s.savedTests, &updated)
+		return storage.TestStatusTransitionUpdated, nil
+	}
+	return storage.TestStatusTransitionMissing, nil
+}
+func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error) {
+	for i := len(s.savedTests) - 1; i >= 0; i-- {
+		if s.savedTests[i] != nil && s.savedTests[i].ID == id {
+			copy := *s.savedTests[i]
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
 func (s *metricsStoreSpy) ListTests(projectID string, folderID *string) ([]*storage.TestRecord, error) {
 	return s.listedTests, nil
 }
@@ -233,14 +343,49 @@ func (s *metricsStoreSpy) ListReleasesByProject(projectID string, includeArchive
 func (s *metricsStoreSpy) ArchiveRelease(id string) error { return nil }
 func (s *metricsStoreSpy) DeleteRelease(id string) error  { return nil }
 func (s *metricsStoreSpy) SaveScenario(scenario *storage.Scenario, scripts []storage.ScenarioScript) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	if s.scenariosByID == nil {
+		s.scenariosByID = make(map[string]*storage.Scenario)
+	}
+	if s.scenarioScriptsByID == nil {
+		s.scenarioScriptsByID = make(map[string][]storage.ScenarioScript)
+	}
+	clone := *scenario
+	s.scenariosByID[scenario.ID] = &clone
+	s.scenarioScriptsByID[scenario.ID] = cloneStorageScenarioScripts(scripts)
 	return nil
 }
 func (s *metricsStoreSpy) GetScenario(id string) (*storage.Scenario, []storage.ScenarioScript, error) {
-	return nil, nil, nil
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	scenario := s.scenariosByID[id]
+	if scenario == nil {
+		return nil, nil, nil
+	}
+	clone := *scenario
+	return &clone, cloneStorageScenarioScripts(s.scenarioScriptsByID[id]), nil
 }
-func (s *metricsStoreSpy) ListScenarios() ([]*storage.Scenario, error) { return nil, nil }
-func (s *metricsStoreSpy) DeleteScenario(id string) error              { return nil }
+func (s *metricsStoreSpy) ListScenarios() ([]*storage.Scenario, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	out := make([]*storage.Scenario, 0, len(s.scenariosByID))
+	for _, scenario := range s.scenariosByID {
+		clone := *scenario
+		out = append(out, &clone)
+	}
+	return out, nil
+}
+func (s *metricsStoreSpy) DeleteScenario(id string) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
+	delete(s.scenariosByID, id)
+	delete(s.scenarioScriptsByID, id)
+	return nil
+}
 func (s *metricsStoreSpy) SaveScenarioSchedule(schedule *storage.ScenarioSchedule) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	if s.schedulesByID == nil {
 		s.schedulesByID = make(map[string]*storage.ScenarioSchedule)
 	}
@@ -257,30 +402,51 @@ func (s *metricsStoreSpy) SaveScenarioSchedule(schedule *storage.ScenarioSchedul
 	return nil
 }
 func (s *metricsStoreSpy) GetScenarioSchedule(id string) (*storage.ScenarioSchedule, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	if s.schedulesByID == nil {
 		return nil, nil
 	}
-	return s.schedulesByID[id], nil
+	return cloneScenarioSchedule(s.schedulesByID[id]), nil
 }
 func (s *metricsStoreSpy) ListScenarioSchedules(scenarioID string) ([]*storage.ScenarioSchedule, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	out := []*storage.ScenarioSchedule{}
 	for _, schedule := range s.schedulesByID {
 		if schedule.ScenarioID == scenarioID {
-			out = append(out, schedule)
+			out = append(out, cloneScenarioSchedule(schedule))
 		}
 	}
 	return out, nil
 }
 func (s *metricsStoreSpy) ListAllScenarioSchedules() ([]*storage.ScenarioSchedule, error) {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	out := make([]*storage.ScenarioSchedule, 0, len(s.schedulesByID))
 	for _, schedule := range s.schedulesByID {
-		out = append(out, schedule)
+		out = append(out, cloneScenarioSchedule(schedule))
 	}
 	return out, nil
 }
 func (s *metricsStoreSpy) DeleteScenarioSchedule(id string) error {
+	s.scheduleMu.Lock()
+	defer s.scheduleMu.Unlock()
 	delete(s.schedulesByID, id)
 	return nil
+}
+
+func cloneStorageScenarioScripts(scripts []storage.ScenarioScript) []storage.ScenarioScript {
+	cloned := make([]storage.ScenarioScript, len(scripts))
+	for index, script := range scripts {
+		cloned[index] = script
+		cloned[index].Stages = append([]storage.LoadStage(nil), script.Stages...)
+		if script.Iterations != nil {
+			iterations := *script.Iterations
+			cloned[index].Iterations = &iterations
+		}
+	}
+	return cloned
 }
 func (s *metricsStoreSpy) SaveScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurrence) error {
 	s.scheduleMu.Lock()
@@ -5559,7 +5725,11 @@ func TestNextPromotablePendingTestPrefersUnusedReservedProjectShare(t *testing.T
 	runner.tests[regular.ID].PendingSince = &older
 	runner.tests[critical.ID].Status = "PENDING"
 	runner.tests[critical.ID].PendingSince = &newer
-	next := runner.nextPromotablePendingTestLocked()
+	projectQuotas := map[*ManagedTest]projectQuotaEvidence{
+		runner.tests[regular.ID]:  {projectID: "regular-project", loaded: true},
+		runner.tests[critical.ID]: {projectID: "critical-project", loaded: true},
+	}
+	next := runner.nextPromotablePendingTestExcludingWithTimeslotsLocked(nil, time.Now(), nil, nil, projectQuotas)
 	runner.mu.Unlock()
 
 	if next == nil || next.ID != critical.ID {
@@ -5569,6 +5739,12 @@ func TestNextPromotablePendingTestPrefersUnusedReservedProjectShare(t *testing.T
 
 func TestPromotePendingTestsWritesSystemAuditEvent(t *testing.T) {
 	store := &metricsStoreSpy{}
+	// Promotion loads durable project quota evidence and drops any pending test
+	// whose project no longer resolves, so the project must exist for the test to
+	// be a promotion candidate at all (see promotePendingTestsWithTerm).
+	store.projectsByID = map[string]*storage.Project{
+		"project-promotion": {ID: "project-promotion", Name: "Promotion"},
+	}
 	hub := NewHub()
 	runner := NewTestRunner(10, hub, store)
 	runner.StoreScript(&dsl.Script{
@@ -5647,7 +5823,11 @@ func TestNextPromotablePendingTestBalancesActiveProjectLoad(t *testing.T) {
 	runner.tests[pendingA.ID].PendingSince = &older
 	runner.tests[pendingB.ID].Status = "PENDING"
 	runner.tests[pendingB.ID].PendingSince = &newer
-	next := runner.nextPromotablePendingTestLocked()
+	projectQuotas := map[*ManagedTest]projectQuotaEvidence{
+		runner.tests[pendingA.ID]: {projectID: "project-a", loaded: true},
+		runner.tests[pendingB.ID]: {projectID: "project-b", loaded: true},
+	}
+	next := runner.nextPromotablePendingTestExcludingWithTimeslotsLocked(nil, time.Now(), nil, nil, projectQuotas)
 	runner.mu.Unlock()
 
 	if next == nil || next.ID != pendingB.ID {
@@ -6180,7 +6360,7 @@ func TestNextScenarioScheduleRunRecomputesAfterAdvance(t *testing.T) {
 
 func TestScenarioSchedulerRunDueSchedulesCreatesAndStartsRun(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 	runner.setExecutionBackend(backend)
 	runner.StoreScript(&dsl.Script{
@@ -6718,7 +6898,7 @@ func TestScenarioSchedulerReconcilesMaterializedOccurrenceAfterRestart(t *testin
 
 func TestScenarioSchedulerLeasePreventsStandbyControllerMaterialization(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(2, NewHub(), store)
+	runner := NewTestRunner(2, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
 	runner.setExecutionBackend(backend)
 	runner.StoreScript(&dsl.Script{
@@ -6955,7 +7135,7 @@ func TestScenarioSchedulerAppliesMissedRunPolicies(t *testing.T) {
 
 func TestScenarioSchedulerCatchUpAllMaterializesEachMissedOccurrence(t *testing.T) {
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(8, NewHub(), store)
+	runner := NewTestRunner(8, NewHub(), store, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &scheduleExecutionBackend{started: make(chan string, 10)}
 	runner.setExecutionBackend(backend)
 	runner.StoreScript(&dsl.Script{

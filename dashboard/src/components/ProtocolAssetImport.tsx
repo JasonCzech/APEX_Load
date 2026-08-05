@@ -1915,7 +1915,27 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             <>
               <label className="sample-import-field sample-import-span-2">
                 <span>Comparison HAR</span>
-                <input type="file" accept={labels.accept} onChange={event => { invalidateConversionSource(); setSecondaryHARFile(event.target.files?.[0] || null) }} />
+                <input
+                  type="file"
+                  accept={labels.accept}
+                  onChange={event => {
+                    invalidateConversionSource()
+                    const candidate = event.currentTarget.files?.[0] || null
+                    if (!candidate) {
+                      setSecondaryHARFile(null)
+                      return
+                    }
+                    const validationError = validateImportFile('har', candidate)
+                    if (validationError) {
+                      setSecondaryHARFile(null)
+                      setMessageError(validationError)
+                      event.currentTarget.value = ''
+                      return
+                    }
+                    setMessageError('')
+                    setSecondaryHARFile(candidate)
+                  }}
+                />
                 <small>{secondaryHARFile ? secondaryHARFile.name : 'Optional second recording for correlation diff'}</small>
               </label>
               <label className="sample-import-field">

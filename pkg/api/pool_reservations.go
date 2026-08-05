@@ -175,18 +175,12 @@ func (tr *TestRunner) poolSharedGeneratorUsageLocked(poolID, excludeTestID strin
 	return total
 }
 
-// evaluatePoolReservedCapacityBlockLocked holds a pool-pinned run when admitting
-// it would push the pool's shared (unreserved) usage past what is left after other
-// projects' pool reservations — protecting reserved pool capacity, exactly like the
-// global reserved-capacity gate but within the pool's member envelope.
-func (tr *TestRunner) evaluatePoolReservedCapacityBlockLocked(test *ManagedTest, excludeTestID string) (bool, string) {
+func (tr *TestRunner) evaluatePoolReservedCapacityBlockWithTimeslotsLocked(test *ManagedTest, excludeTestID string, now time.Time, activeSlots []*storage.CapacityReservation, reservationErr error) (bool, string) {
 	poolID := testAssignedPoolID(test)
 	if poolID == "" {
 		return false, ""
 	}
-	now := time.Now()
-	activeSlots, err := tr.boundTimeslotsActiveAtLocked(now)
-	if err != nil {
+	if reservationErr != nil {
 		// Fail closed: a pool reservation we cannot read may be protecting capacity.
 		return true, "waiting for reservation state to become available"
 	}

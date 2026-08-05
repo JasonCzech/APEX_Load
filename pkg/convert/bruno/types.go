@@ -90,6 +90,9 @@ type Result struct {
 	SanitizedArchive []byte                  `json:"-"`
 	OriginalUpload   []byte                  `json:"-"`
 	InspectedAt      time.Time               `json:"inspected_at"`
+	// nativeRequestPasses is retained only for focused importer regression tests
+	// and performance diagnostics; it is never serialized.
+	nativeRequestPasses int
 }
 
 type Manifest struct {

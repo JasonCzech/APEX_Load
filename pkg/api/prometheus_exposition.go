@@ -184,6 +184,7 @@ func writeTelemetryPipelineMetrics(body *strings.Builder, snapshot []testLiveMet
 	writeCounter("apexload_telemetry_dropped_results_total", "Collector metric samples dropped by test.", func(t *TelemetryHealth) float64 { return float64(t.DroppedResults) })
 	writeCounter("apexload_telemetry_shedded_arrivals_total", "Open-workload arrivals shed by test.", func(t *TelemetryHealth) float64 { return float64(t.SheddedArrivals) })
 	writeCounter("apexload_telemetry_dropped_subscriber_batches_total", "Generator metrics batches dropped because stream subscribers were full.", func(t *TelemetryHealth) float64 { return float64(t.DroppedSubscriberBatches) })
+	writeCounter("apexload_telemetry_missing_metric_windows_total", "Live generator metric windows inferred missing from batch-sequence gaps.", func(t *TelemetryHealth) float64 { return float64(t.MissingMetricWindows) })
 	writeCounter("apexload_websocket_dropped_messages_total", "WebSocket messages dropped by test.", func(t *TelemetryHealth) float64 { return float64(t.WebsocketDroppedMessages) })
 	writeCounter("apexload_websocket_dropped_events_total", "WebSocket broadcast events dropped by test.", func(t *TelemetryHealth) float64 { return float64(t.WebsocketDroppedEvents) })
 	writeGauge("apexload_telemetry_sample_age_ms", "Age of the latest telemetry sample in milliseconds.", func(t *TelemetryHealth) float64 { return t.SampleAgeMs })

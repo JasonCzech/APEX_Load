@@ -34,6 +34,23 @@ kept for planning or audit context only.
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |
 | [deployments/README.md](../deployments/README.md) | Current | Deployment chooser |
 
+## Specialized Current References
+
+These focused references are also current. They are kept separate from the primary-guide list because they describe a single runtime, importer, migration, or evidence surface.
+
+| Document | Purpose |
+| --- | --- |
+| [JAVA_VUSER_RUNTIME.md](JAVA_VUSER_RUNTIME.md) | Governed Java Vuser runner contract and operations |
+| [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md) | Executable, bounded, and review-only Web/API support dispositions |
+| [SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md](SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md) | SQLite-to-PostgreSQL and HA cutover procedure |
+| [SAPGUI_RUNNER_SPEC.md](SAPGUI_RUNNER_SPEC.md) | SAP GUI external-runner contract |
+| [LOADRUNNER_WEB_FUNCTION_COVERAGE.md](LOADRUNNER_WEB_FUNCTION_COVERAGE.md) | Generated LoadRunner Web conversion coverage |
+| [LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md](LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md) | Generated Java LR function coverage |
+| [LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md](LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md) | Generated Java Vuser import coverage |
+| [LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md](LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md) | Generated TruClient step coverage |
+
+Other Markdown files in this directory are either linked from one of the guides above, explicitly classified below as roadmap/planning material, or retained audit history. A file's presence is not itself a claim that it is a current product contract.
+
 ## Generated References
 
 | Document | Status | Source |

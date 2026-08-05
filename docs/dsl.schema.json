@@ -433,12 +433,7 @@
                 "properties": {
                   "wait_until": {
                     "description": "Navigation readiness point; defaults to Playwright's load event.",
-                    "enum": [
-                      "load",
-                      "domcontentloaded",
-                      "networkidle",
-                      "commit"
-                    ],
+                    "pattern": "^\\s*(?:[lL][oO][aA][dD]|[dD][oO][mM][cC][oO][nN][tT][eE][nN][tT][lL][oO][aA][dD][eE][dD]|[nN][eE][tT][wW][oO][rR][kK][iI][dD][lL][eE]|[cC][oO][mM][mM][iI][tT]|[nN][eE][tT][wW][oO][rR][kK]_[iI][dD][lL][eE]|)\\s*$",
                     "type": "string"
                   }
                 },
@@ -572,12 +567,8 @@
               "params": {
                 "properties": {
                   "button": {
-                    "description": "Mouse button to use; defaults to left.",
-                    "enum": [
-                      "left",
-                      "right",
-                      "middle"
-                    ],
+                    "description": "Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively.",
+                    "pattern": "^\\s*(?:[lL][eE][fF][tT]|[rR][iI][gG][hH][tT]|[mM][iI][dD][dD][lL][eE]|[pP][rR][iI][mM][aA][rR][yY]|[sS][eE][cC][oO][nN][dD][aA][rR][yY]|[aA][uU][xX][iI][lL][iI][aA][rR][yY]|[aA][uU][xX]|)\\s*$",
                     "type": "string"
                   },
                   "modifiers": {
@@ -650,12 +641,8 @@
               "params": {
                 "properties": {
                   "button": {
-                    "description": "Mouse button to use; defaults to left.",
-                    "enum": [
-                      "left",
-                      "right",
-                      "middle"
-                    ],
+                    "description": "Mouse button to use; defaults to left. The runtime also accepts primary, secondary, auxiliary, and aux aliases case-insensitively.",
+                    "pattern": "^\\s*(?:[lL][eE][fF][tT]|[rR][iI][gG][hH][tT]|[mM][iI][dD][dD][lL][eE]|[pP][rR][iI][mM][aA][rR][yY]|[sS][eE][cC][oO][nN][dD][aA][rR][yY]|[aA][uU][xX][iI][lL][iI][aA][rR][yY]|[aA][uU][xX]|)\\s*$",
                     "type": "string"
                   },
                   "modifiers": {
@@ -967,12 +954,7 @@
                 "properties": {
                   "wait_until": {
                     "description": "Navigation readiness point; defaults to Playwright's load event.",
-                    "enum": [
-                      "load",
-                      "domcontentloaded",
-                      "networkidle",
-                      "commit"
-                    ],
+                    "pattern": "^\\s*(?:[lL][oO][aA][dD]|[dD][oO][mM][cC][oO][nN][tT][eE][nN][tT][lL][oO][aA][dD][eE][dD]|[nN][eE][tT][wW][oO][rR][kK][iI][dD][lL][eE]|[cC][oO][mM][mM][iI][tT]|[nN][eE][tT][wW][oO][rR][kK]_[iI][dD][lL][eE]|)\\s*$",
                     "type": "string"
                   }
                 },
@@ -1009,15 +991,12 @@
                 "properties": {
                   "action": {
                     "description": "How to respond: accept or dismiss (required).",
-                    "enum": [
-                      "accept",
-                      "dismiss"
-                    ],
+                    "pattern": "^\\s*(?:[aA][cC][cC][eE][pP][tT]|[dD][iI][sS][mM][iI][sS][sS])\\s*$",
                     "type": "string"
                   },
                   "dialog_type": {
                     "description": "Expected dialog kind for documentation/validation.",
-                    "enum": [
+                    "examples": [
                       "alert",
                       "confirm",
                       "prompt",
@@ -1031,11 +1010,7 @@
                   },
                   "match_mode": {
                     "description": "Message comparison mode; recorder-origin dialogs default to contains.",
-                    "enum": [
-                      "exact",
-                      "contains",
-                      "normalized"
-                    ],
+                    "pattern": "^\\s*(?:[eE][xX][aA][cC][tT]|[cC][oO][nN][tT][aA][iI][nN][sS]|[nN][oO][rR][mM][aA][lL][iI][zZ][eE][dD]|)\\s*$",
                     "type": "string"
                   },
                   "prompt_text": {
@@ -1043,14 +1018,20 @@
                     "type": "string"
                   },
                   "wait_ms": {
-                    "description": "How long to wait for the dialog to appear (default 5000; maximum 3600000).",
+                    "description": "How long to wait for the dialog to appear (default 1000; maximum 3600000).",
                     "maximum": 3600000,
                     "type": "integer"
                   }
                 },
+                "required": [
+                  "action"
+                ],
                 "type": "object"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -1420,12 +1401,7 @@
                 "properties": {
                   "wait_until": {
                     "description": "Navigation readiness point; defaults to Playwright's load event.",
-                    "enum": [
-                      "load",
-                      "domcontentloaded",
-                      "networkidle",
-                      "commit"
-                    ],
+                    "pattern": "^\\s*(?:[lL][oO][aA][dD]|[dD][oO][mM][cC][oO][nN][tT][eE][nN][tT][lL][oO][aA][dD][eE][dD]|[nN][eE][tT][wW][oO][rR][kK][iI][dD][lL][eE]|[cC][oO][mM][mM][iI][tT]|[nN][eE][tT][wW][oO][rR][kK]_[iI][dD][lL][eE]|)\\s*$",
                     "type": "string"
                   }
                 },
@@ -2140,15 +2116,7 @@
                   },
                   "method": {
                     "description": "HTTP method filter.",
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "PATCH",
-                      "DELETE",
-                      "HEAD",
-                      "OPTIONS"
-                    ],
+                    "pattern": "^\\s*(?:[gG][eE][tT]|[pP][oO][sS][tT]|[pP][uU][tT]|[pP][aA][tT][cC][hH]|[dD][eE][lL][eE][tT][eE]|[hH][eE][aA][dD]|[oO][pP][tT][iI][oO][nN][sS]|)\\s*$",
                     "type": "string"
                   },
                   "resource_type": {
@@ -2218,11 +2186,7 @@
                   },
                   "direction": {
                     "description": "Observed event direction.",
-                    "enum": [
-                      "open",
-                      "sent",
-                      "received"
-                    ],
+                    "pattern": "^\\s*(?:[oO][pP][eE][nN]|[sS][eE][nN][tT]|[rR][eE][cC][eE][iI][vV][eE][dD]|)\\s*$",
                     "type": "string"
                   },
                   "match": {
@@ -2231,11 +2195,7 @@
                   },
                   "match_mode": {
                     "description": "Payload comparison mode.",
-                    "enum": [
-                      "contains",
-                      "exact",
-                      "regex"
-                    ],
+                    "pattern": "^\\s*(?:[cC][oO][nN][tT][aA][iI][nN][sS]|[eE][xX][aA][cC][tT]|[rR][eE][gG][eE][xX]|)\\s*$",
                     "type": "string"
                   },
                   "url_contains": {
@@ -2276,11 +2236,7 @@
                   },
                   "direction": {
                     "description": "Observed event direction.",
-                    "enum": [
-                      "open",
-                      "sent",
-                      "received"
-                    ],
+                    "pattern": "^\\s*(?:[oO][pP][eE][nN]|[sS][eE][nN][tT]|[rR][eE][cC][eE][iI][vV][eE][dD]|)\\s*$",
                     "type": "string"
                   },
                   "match": {
@@ -2289,11 +2245,7 @@
                   },
                   "match_mode": {
                     "description": "Payload comparison mode.",
-                    "enum": [
-                      "contains",
-                      "exact",
-                      "regex"
-                    ],
+                    "pattern": "^\\s*(?:[cC][oO][nN][tT][aA][iI][nN][sS]|[eE][xX][aA][cC][tT]|[rR][eE][gG][eE][xX]|)\\s*$",
                     "type": "string"
                   },
                   "timeout_ms": {
@@ -2352,10 +2304,7 @@
                   },
                   "execution": {
                     "description": "Data-iteration execution mode; requests remain in Bruno source order within each iteration.",
-                    "enum": [
-                      "sequential",
-                      "parallel"
-                    ],
+                    "pattern": "^\\s*(?:[sS][eE][qQ][uU][eE][nN][tT][iI][aA][lL]|[pP][aA][rR][aA][lL][lL][eE][lL]|)\\s*$",
                     "type": "string"
                   },
                   "global_environment": {
@@ -2385,12 +2334,7 @@
                   },
                   "selection": {
                     "description": "Selection kind; defaults to collection.",
-                    "enum": [
-                      "collection",
-                      "folder",
-                      "request",
-                      "tag"
-                    ],
+                    "pattern": "^\\s*(?:[cC][oO][lL][lL][eE][cC][tT][iI][oO][nN]|[fF][oO][lL][dD][eE][rR]|[rR][eE][qQ][uU][eE][sS][tT]|[tT][aA][gG]|)\\s*$",
                     "type": "string"
                   },
                   "stream_timeout_ms": {
@@ -2878,14 +2822,7 @@
                 "properties": {
                   "record_type": {
                     "description": "DNS record type; defaults to A.",
-                    "enum": [
-                      "A",
-                      "AAAA",
-                      "CNAME",
-                      "MX",
-                      "NS",
-                      "TXT"
-                    ],
+                    "pattern": "^\\s*(?:[aA]|[aA][aA][aA][aA]|[cC][nN][aA][mM][eE]|[mM][xX]|[nN][sS]|[tT][xX][tT]|)\\s*$",
                     "type": "string"
                   }
                 },
@@ -3638,19 +3575,15 @@
                     "type": "object"
                   },
                   "method": {
-                    "description": "Source lifecycle method name or legacy full lifecycle sequence to invoke.",
-                    "enum": [
-                      "init",
-                      "vuser_init",
-                      "initialize",
-                      "action",
-                      "Action",
-                      "run",
-                      "end",
-                      "vuser_end",
-                      "teardown",
-                      "full_lifecycle"
+                    "anyOf": [
+                      {
+                        "const": ""
+                      },
+                      {
+                        "pattern": "^\\s*(?:[iI][nN][iI][tT]|[vV][uU][sS][eE][rR]_[iI][nN][iI][tT]|[iI][nN][iI][tT][iI][aA][lL][iI][zZ][eE]|[aA][cC][tT][iI][oO][nN]|[rR][uU][nN]|[eE][nN][dD]|[vV][uU][sS][eE][rR]_[eE][nN][dD]|[tT][eE][aA][rR][dD][oO][wW][nN]|[fF][uU][lL][lL]_[lL][iI][fF][eE][cC][yY][cC][lL][eE])\\s*$"
+                      }
                     ],
+                    "description": "Source lifecycle method name or legacy full lifecycle sequence to invoke.",
                     "type": "string"
                   },
                   "runner_requirement": {
@@ -3724,7 +3657,7 @@
                   },
                   "destination_type": {
                     "description": "Destination kind; falls back to config.jms.destination_type.",
-                    "enum": [
+                    "examples": [
                       "queue",
                       "topic"
                     ],
@@ -3846,7 +3779,7 @@
                   },
                   "destination_type": {
                     "description": "Destination kind; falls back to config.jms.destination_type.",
-                    "enum": [
+                    "examples": [
                       "queue",
                       "topic"
                     ],
@@ -3866,11 +3799,7 @@
                   },
                   "sub_queue": {
                     "description": "Azure Service Bus sub-queue to receive from (requires jms_servicebus_real).",
-                    "enum": [
-                      "none",
-                      "dead_letter",
-                      "transfer_dead_letter"
-                    ],
+                    "pattern": "^\\s*(?:[nN][oO][nN][eE]|[dD][eE][aA][dD]_[lL][eE][tT][tT][eE][rR]|[tT][rR][aA][nN][sS][fF][eE][rR]_[dD][eE][aA][dD]_[lL][eE][tT][tT][eE][rR]|)\\s*$",
                     "type": "string"
                   },
                   "subscription": {
@@ -3879,11 +3808,7 @@
                   },
                   "subscription_mode": {
                     "description": "Topic subscription mode. A subscription is identified by name: multiple consumers using the same subscription name compete for its messages (shared), while distinct names each get their own copy (fan-out). durable persists the named subscription on Solace/AMQP; non_durable/shared do not. Service Bus subscriptions are natively durable.",
-                    "enum": [
-                      "non_durable",
-                      "durable",
-                      "shared"
-                    ],
+                    "pattern": "^\\s*(?:[nN][oO][nN]_[dD][uU][rR][aA][bB][lL][eE]|[dD][uU][rR][aA][bB][lL][eE]|[sS][hH][aA][rR][eE][dD]|)\\s*$",
                     "type": "string"
                   },
                   "timeout_ms": {
@@ -3940,10 +3865,7 @@
                   },
                   "delivery_mode": {
                     "description": "Per-message delivery mode; falls back to config.jms.delivery_mode. Applied by the AMQP/Solace adapter.",
-                    "enum": [
-                      "persistent",
-                      "non_persistent"
-                    ],
+                    "pattern": "^\\s*(?:[pP][eE][rR][sS][iI][sS][tT][eE][nN][tT]|[nN][oO][nN]_[pP][eE][rR][sS][iI][sS][tT][eE][nN][tT]|)\\s*$",
                     "type": "string"
                   },
                   "destination": {
@@ -3952,7 +3874,7 @@
                   },
                   "destination_type": {
                     "description": "Destination kind; falls back to config.jms.destination_type.",
-                    "enum": [
+                    "examples": [
                       "queue",
                       "topic"
                     ],
@@ -3968,13 +3890,7 @@
                   },
                   "message_type": {
                     "description": "JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body.",
-                    "enum": [
-                      "text",
-                      "bytes",
-                      "map",
-                      "stream",
-                      "object"
-                    ],
+                    "pattern": "^\\s*(?:[tT][eE][xX][tT]|[bB][yY][tT][eE][sS]|[mM][aA][pP]|[sS][tT][rR][eE][aA][mM]|[oO][bB][jJ][eE][cC][tT]|)\\s*$",
                     "type": "string"
                   },
                   "partition_key": {
@@ -4035,7 +3951,7 @@
                   },
                   "destination_type": {
                     "description": "Source destination kind; falls back to config.jms.destination_type.",
-                    "enum": [
+                    "examples": [
                       "queue",
                       "topic"
                     ],
@@ -4146,10 +4062,7 @@
                   },
                   "delivery_mode": {
                     "description": "Per-message delivery mode of the request; falls back to config.jms.delivery_mode.",
-                    "enum": [
-                      "persistent",
-                      "non_persistent"
-                    ],
+                    "pattern": "^\\s*(?:[pP][eE][rR][sS][iI][sS][tT][eE][nN][tT]|[nN][oO][nN]_[pP][eE][rR][sS][iI][sS][tT][eE][nN][tT]|)\\s*$",
                     "type": "string"
                   },
                   "destination": {
@@ -4158,7 +4071,7 @@
                   },
                   "destination_type": {
                     "description": "Destination kind; falls back to config.jms.destination_type.",
-                    "enum": [
+                    "examples": [
                       "queue",
                       "topic"
                     ],
@@ -4174,13 +4087,7 @@
                   },
                   "message_type": {
                     "description": "JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body.",
-                    "enum": [
-                      "text",
-                      "bytes",
-                      "map",
-                      "stream",
-                      "object"
-                    ],
+                    "pattern": "^\\s*(?:[tT][eE][xX][tT]|[bB][yY][tT][eE][sS]|[mM][aA][pP]|[sS][tT][rR][eE][aA][mM]|[oO][bB][jJ][eE][cC][tT]|)\\s*$",
                     "type": "string"
                   },
                   "partition_key": {
@@ -4270,7 +4177,7 @@
                   },
                   "destination_type": {
                     "description": "Destination kind; falls back to config.jms.destination_type.",
-                    "enum": [
+                    "examples": [
                       "queue",
                       "topic"
                     ],
@@ -4406,12 +4313,7 @@
                   },
                   "disposition": {
                     "description": "How to settle the message (default complete).",
-                    "enum": [
-                      "complete",
-                      "abandon",
-                      "dead_letter",
-                      "defer"
-                    ],
+                    "pattern": "^\\s*(?:[cC][oO][mM][pP][lL][eE][tT][eE]|[aA][bB][aA][nN][dD][oO][nN]|[dD][eE][aA][dD]_[lL][eE][tT][tT][eE][rR]|[dD][eE][fF][eE][rR]|)\\s*$",
                     "type": "string"
                   },
                   "settlement_token": {
@@ -4482,7 +4384,18 @@
             ]
           },
           "then": {
-            "description": "Commits consumer group offsets."
+            "description": "Commits consumer group offsets.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "consumer_group": {
+                    "description": "Consumer group identity; falls back to config.kafka.consumer_group.",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
           }
         },
         {
@@ -4520,6 +4433,10 @@
             "properties": {
               "params": {
                 "properties": {
+                  "consumer_group": {
+                    "description": "Consumer group override; falls back to config.kafka.consumer_group.",
+                    "type": "string"
+                  },
                   "timeout_ms": {
                     "description": "Consume timeout in milliseconds; falls back to config.kafka.timeout_ms.",
                     "type": "integer"
@@ -4568,6 +4485,10 @@
               },
               "params": {
                 "properties": {
+                  "correlation_id": {
+                    "description": "Explicit record correlation ID; when omitted kafka_request_reply generates one.",
+                    "type": "string"
+                  },
                   "key": {
                     "description": "Record key (drives key-hash partitioning).",
                     "type": "string"
@@ -4616,6 +4537,10 @@
               },
               "params": {
                 "properties": {
+                  "correlation_id": {
+                    "description": "Explicit request correlation ID; generated automatically when omitted.",
+                    "type": "string"
+                  },
                   "reply_to": {
                     "description": "Reply topic.",
                     "type": "string"
@@ -4658,6 +4583,10 @@
             "properties": {
               "params": {
                 "properties": {
+                  "consumer_group": {
+                    "description": "Consumer group override; falls back to config.kafka.consumer_group.",
+                    "type": "string"
+                  },
                   "offset": {
                     "description": "Target offset: a number, \"earliest\", or \"latest\"."
                   },
@@ -4893,7 +4822,7 @@
                 ]
               }
             ],
-            "description": "Preserves a raw SAP GUI scripting call for review-gated replay.",
+            "description": "Preserves a raw SAP GUI scripting call for review-gated replay. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -4912,7 +4841,8 @@
                 "description": "Control ID or raw receiver path.",
                 "type": "string"
               }
-            }
+            },
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -4929,7 +4859,7 @@
             ]
           },
           "then": {
-            "description": "Connects to a SAP GUI application server or connection entry.",
+            "description": "Connects to a SAP GUI application server or connection entry. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -4944,7 +4874,8 @@
                 "description": "Connection string or SAP GUI connection entry.",
                 "type": "string"
               }
-            }
+            },
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -4961,7 +4892,7 @@
             ]
           },
           "then": {
-            "description": "Executes a SAP GUI grid operation.",
+            "description": "Executes a SAP GUI grid operation. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -4971,7 +4902,7 @@
                   },
                   "method": {
                     "description": "Typed operation.",
-                    "enum": [
+                    "examples": [
                       "select_row",
                       "select_cell",
                       "double_click_cell",
@@ -5000,7 +4931,8 @@
             },
             "required": [
               "target"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5017,7 +4949,7 @@
             ]
           },
           "then": {
-            "description": "Logs on to a SAP GUI session.",
+            "description": "Logs on to a SAP GUI session. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -5040,7 +4972,8 @@
                 },
                 "type": "object"
               }
-            }
+            },
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5080,7 +5013,7 @@
                 ]
               }
             ],
-            "description": "Presses a button or sends a virtual key.",
+            "description": "Presses a button or sends a virtual key. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -5099,7 +5032,8 @@
                 "description": "Button/control ID when pressing a control.",
                 "type": "string"
               }
-            }
+            },
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5163,7 +5097,7 @@
                 ]
               }
             ],
-            "description": "Selects an item by text, index, or ID.",
+            "description": "Selects an item by text, index, or ID. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -5193,7 +5127,8 @@
             },
             "required": [
               "target"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5210,13 +5145,13 @@
             ]
           },
           "then": {
-            "description": "Sets a value on a SAP GUI control.",
+            "description": "Sets a value on a SAP GUI control. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
                   "control": {
                     "description": "Recorded control family.",
-                    "enum": [
+                    "examples": [
                       "text",
                       "combo",
                       "checkbox",
@@ -5250,7 +5185,8 @@
             "required": [
               "target",
               "value"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5267,7 +5203,7 @@
             ]
           },
           "then": {
-            "description": "Waits for SAP GUI status, screen change, or session-idle synchronization.",
+            "description": "Waits for SAP GUI status, screen change, or session-idle synchronization. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -5277,7 +5213,7 @@
                   },
                   "wait_for": {
                     "description": "Synchronization mode.",
-                    "enum": [
+                    "examples": [
                       "status_bar",
                       "screen_change",
                       "session_idle"
@@ -5291,7 +5227,8 @@
                 "description": "Optional control/status target.",
                 "type": "string"
               }
-            }
+            },
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5308,7 +5245,7 @@
             ]
           },
           "then": {
-            "description": "Executes a SAP GUI table operation.",
+            "description": "Executes a SAP GUI table operation. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -5318,7 +5255,7 @@
                   },
                   "method": {
                     "description": "Typed operation.",
-                    "enum": [
+                    "examples": [
                       "select_row",
                       "set_cell",
                       "get_cell",
@@ -5345,7 +5282,8 @@
             },
             "required": [
               "target"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5362,7 +5300,7 @@
             ]
           },
           "then": {
-            "description": "Executes a SAP GUI tree operation.",
+            "description": "Executes a SAP GUI tree operation. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
@@ -5372,7 +5310,7 @@
                   },
                   "method": {
                     "description": "Typed operation.",
-                    "enum": [
+                    "examples": [
                       "select_node",
                       "expand_node",
                       "collapse_node",
@@ -5398,7 +5336,8 @@
             },
             "required": [
               "target"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5415,13 +5354,13 @@
             ]
           },
           "then": {
-            "description": "Verifies a SAP GUI control value or status text.",
+            "description": "Verifies a SAP GUI control value or status text. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
                   "method": {
                     "description": "Comparison method.",
-                    "enum": [
+                    "examples": [
                       "equals",
                       "contains",
                       "matches"
@@ -5443,7 +5382,8 @@
             "required": [
               "target",
               "value"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5460,13 +5400,13 @@
             ]
           },
           "then": {
-            "description": "Activates, maximizes, resizes, or closes a SAP GUI window.",
+            "description": "Activates, maximizes, resizes, or closes a SAP GUI window. Authorable and importable, but not executable in the bundled runtime. Launch requires a qualified Windows SAP GUI runner, which is not shipped with APEX Load.",
             "properties": {
               "params": {
                 "properties": {
                   "method": {
                     "description": "Window operation.",
-                    "enum": [
+                    "examples": [
                       "activate",
                       "maximize",
                       "resize",
@@ -5484,7 +5424,8 @@
             },
             "required": [
               "target"
-            ]
+            ],
+            "x-execution-posture": "external_runner_required"
           }
         },
         {
@@ -5671,7 +5612,7 @@
                   },
                   "level": {
                     "description": "Log level; defaults to info.",
-                    "enum": [
+                    "examples": [
                       "debug",
                       "info",
                       "error"
@@ -6191,10 +6132,7 @@
                 "properties": {
                   "type": {
                     "description": "Message frame type; defaults to text.",
-                    "enum": [
-                      "text",
-                      "binary"
-                    ],
+                    "pattern": "^\\s*(?:text|binary|)\\s*$",
                     "type": "string"
                   }
                 },

@@ -6,7 +6,7 @@ import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage,
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
-import { type JavaClasspathAsset, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
+import { type JavaClasspathAsset, type ReplayPreflight, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
 import DropIngestOverlay from './DropIngestOverlay'
 import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
@@ -17,6 +17,7 @@ import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRe
 import { getImportSummary } from './scriptEditorImportModel'
 import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
+import ReplayPreflightCard from './ReplayPreflightCard'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
@@ -285,6 +286,17 @@ function getEnterpriseArchiveResultScripts(result: EnterpriseArchiveImportResult
   return result.script ? [result.script] : []
 }
 
+function getEnterpriseArchiveReplayPreflight(
+  script: ScriptDefinition | null,
+  result: EnterpriseArchiveImportResult | null,
+): ReplayPreflight | null {
+  const lanePreflight = script?.metadata?.import?.preserved?.replay_preflight
+  if (lanePreflight && typeof lanePreflight === 'object' && !Array.isArray(lanePreflight)) {
+    return lanePreflight as ReplayPreflight
+  }
+  return result?.preflight || null
+}
+
 function enterpriseArchiveResultScriptIsSaved(item: EnterpriseArchiveImportQueueItem, scriptIndex: number): boolean {
   return Object.prototype.hasOwnProperty.call(item.savedResultScripts, scriptIndex)
 }
@@ -361,6 +373,7 @@ function buildEnterpriseArchiveImportQueueItem(file: File, id: string): Enterpri
     file,
     harFile: null,
     supplementalFiles: [],
+    lastRequiredFileCandidates: [],
     status: 'queued',
     result: null,
     reviewMode: null,
@@ -432,6 +445,7 @@ interface EnterpriseArchiveImportQueueItem {
   file: File
   harFile: File | null
   supplementalFiles: File[]
+  lastRequiredFileCandidates: RequiredFileCandidate[]
   status: EnterpriseArchiveImportQueueStatus
   result: EnterpriseArchiveImportResult | null
   reviewMode: ReviewMode | null
@@ -945,6 +959,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       ...item,
       status: 'queued',
       result: null,
+      lastRequiredFileCandidates: [],
       reviewMode: null,
       reviewOptionsIdentity: '',
       error: '',
@@ -1024,9 +1039,16 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   }, [projectId, selectedItem?.id, selectedItem?.reviewGeneration])
   useEffect(() => {
     const activeSave = reviewArtifactSaveInFlightRef.current
-    setReviewArtifactSaving(Boolean(activeSave))
+    setReviewArtifactSaving(Boolean(
+      activeSave
+      && activeSave.itemId === selectedItem?.id
+      && activeSave.generation === selectedItem?.reviewGeneration
+      && activeSave.scriptIndex === activeResultScriptIndex
+      && activeSave.projectId === projectId,
+    ))
   }, [activeResultScriptIndex, projectId, reviewScope, selectedItem?.id, selectedItem?.reviewGeneration])
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
+  const replayPreflight = getEnterpriseArchiveReplayPreflight(importedScript, result)
   const selectedResultScriptSaved = Boolean(
     selectedItem
     && enterpriseArchiveResultScriptIsSaved(selectedItem, activeResultScriptIndex),
@@ -1066,10 +1088,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const fidelityReport = result?.fidelity_report ?? result?.summary?.fidelity_report ?? null
-  const requiredFileCandidates = useMemo(
+  const currentRequiredFileCandidates = useMemo(
     () => parseRequiredJavaFilesFromFidelityBlockers(fidelityReport?.blockers || []),
     [fidelityReport?.blockers],
   )
+  const requiredFileCandidates = useMemo(
+    () => result ? currentRequiredFileCandidates : (selectedItem?.lastRequiredFileCandidates || []),
+    [currentRequiredFileCandidates, result, selectedItem?.lastRequiredFileCandidates],
+  )
+  const requiredFileReviewIsStale = !result && requiredFileCandidates.length > 0
   const matchedRequiredFileKeys = useMemo(() => {
     const availableNames = new Set(
       selectedSupplementalFiles.map(file => file.name.trim().toLowerCase()).filter(Boolean),
@@ -1443,10 +1470,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       }
       return
     }
+    const sourceItemId = selectedItem?.id || ''
     void (async () => {
       const currentScript = await prepareImportedScriptForEditor()
       if (currentScript) {
-        void discardQueuedSourceSecretSessions()
+        void discardQueuedSourceSecretSessions(
+          importItemsRef.current,
+          sourceItemId ? [sourceItemId] : [],
+        )
         onEdit(currentScript, focus)
       }
     })()
@@ -1959,6 +1990,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     setImportItems(items => items.map(item => item.id !== itemId ? item : {
       ...item,
       ...(typeof patch === 'function' ? patch(item) : patch),
+      lastRequiredFileCandidates: item.result
+        ? parseRequiredJavaFilesFromFidelityBlockers(
+            (item.result.fidelity_report ?? item.result.summary?.fidelity_report)?.blockers || [],
+          )
+        : item.lastRequiredFileCandidates,
       status: 'queued',
       result: null,
       reviewMode: null,
@@ -2417,18 +2453,19 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const previousReplayWarnings = selectedItem.replayValidationWarnings
     const clientReplaySessionId = createReplaySessionId()
     const requestToken = nextRequestToken(replayRequestTokensRef.current, sourceItemId)
-    const requestIsCurrent = () => {
+    const requestOwnsSourceItem = () => {
       const current = importItemsRef.current.find(item => item.id === sourceItemId)
       const currentScripts = getEnterpriseArchiveResultScripts(current?.result || null)
       return replayRequestTokensRef.current.get(sourceItemId) === requestToken
-        && selectedItemIdRef.current === sourceItemId
-        && selectedResultScriptIndexRef.current === sourceScriptIndex
         && reviewProjectIdRef.current === sourceProjectId
         && current?.reviewOptionsIdentity === sourceOptionsIdentity
         && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
         && current?.reviewGeneration === sourceGeneration
         && currentScripts[sourceScriptIndex] === script
     }
+    const requestIsCurrent = () => requestOwnsSourceItem()
+      && selectedItemIdRef.current === sourceItemId
+      && selectedResultScriptIndexRef.current === sourceScriptIndex
 
     updateImportItem(sourceItemId, {
       replayValidationLoading: true,
@@ -2477,7 +2514,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       })
       return false
     } finally {
-      if (requestIsCurrent()) updateImportItem(sourceItemId, { replayValidationLoading: false })
+      if (requestOwnsSourceItem()) updateImportItem(sourceItemId, { replayValidationLoading: false })
       if (replayStartScopeRef.current === startScope) replayStartScopeRef.current = null
     }
   }
@@ -3114,6 +3151,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   ? `${matchedRequiredFileKeys.size}/${requiredFileCandidates.length} detected dependency file${requiredFileCandidates.length === 1 ? '' : 's'} attached.`
                   : 'No unresolved required files detected in the current review.'}
               </p>
+              {requiredFileReviewIsStale && (
+                <p role="status">Review is stale; re-validate to refresh unresolved required files.</p>
+              )}
             </div>
             <div className="lr-required-files-actions">
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => supplementalFileRef.current?.click()} disabled={!selectedItem}>
@@ -3492,6 +3532,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
               className="lr-validation-review-overview"
               hidden={validationReviewTab !== 'overview'}
             >
+            {replayPreflight && <ReplayPreflightCard preflight={replayPreflight} />}
             {saveBlockedByProtocolGate && detectedProtocol && (
               <div className="lr-warnings lr-protocol-gate">
                 <div className="lr-review-section">
