@@ -18,6 +18,7 @@ const apiMock = {
   downloadReleaseTrend: vi.fn(),
   getReleaseTrend: vi.fn(),
   getLoadComparison: vi.fn(),
+  listScenarios: vi.fn(),
 }
 
 vi.mock('../utils/fileUtils', () => ({
@@ -257,6 +258,7 @@ describe('DashboardPage', () => {
       points: [],
       summary: { latest_regressed: false, avg_response_trend_pct: 0, error_pct_trend: 0 },
     })
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [], count: 0 })
     apiMock.getLoadComparison.mockResolvedValue({
       application_id: 'app-1',
       scope: 'transaction',
