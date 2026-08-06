@@ -426,8 +426,11 @@ function DashboardTestListStatus({ scopeReady, ready, loading, refreshing, error
   }
 
   if (refreshing || loading) {
+    // Background polling runs every few seconds, so this indicator must stay out
+    // of the layout flow: rendering a block here shifts every dashboard tab down
+    // and back on each poll, which reads as the page "bouncing".
     return (
-      <div className="dash-empty small" role="status" aria-live="polite">
+      <div className="dash-refresh-status" role="status" aria-live="off">
         <span>Refreshing dashboard runs…</span>
       </div>
     )
@@ -754,6 +757,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
   const [trendDownloadError, setTrendDownloadError] = useState('')
+  const [scenarioNames, setScenarioNames] = useState<Record<string, string>>({})
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [selectedPerformanceTestIds, setSelectedPerformanceTestIds] = useState<Set<string>>(new Set())
   const performanceSelectAllRef = useRef<HTMLInputElement | null>(null)
@@ -773,6 +777,29 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     error: testListError || dashboardTailError,
     onRefresh: refreshDashboardCatalog,
   }), [dashboardCatalogReady, dashboardScopeReady, dashboardTailError, dashboardTailLoading, refreshDashboardCatalog, testListError, testListLoading, testListRefreshing])
+
+  // Scenario display names for the Release Trend filter. Runs only carry a
+  // scenario_id, so this resolves labels — lazily, the first time the tab that
+  // needs them is opened, and best-effort: the filter falls back to raw ids.
+  useEffect(() => {
+    if (activeDashboardTab !== 'releaseTrend' || !activeProjectId) return
+    let cancelled = false
+    void api.listScenarios(activeProjectId)
+      .then(response => {
+        if (cancelled) return
+        const names: Record<string, string> = {}
+        ;(response.scenarios || []).forEach(scenario => {
+          if (scenario.id) names[scenario.id] = scenario.name || scenario.id
+        })
+        setScenarioNames(names)
+      })
+      .catch(() => {
+        if (!cancelled) setScenarioNames({})
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeDashboardTab, activeProjectId, api])
 
   useEffect(() => {
     if (!dashboardScopeReady) {
@@ -885,6 +912,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const latestReleaseRun = releaseCompleted[0]
   const activeLiveMetrics = activeTests.map(test => test.live_metrics).filter(Boolean)
+
+  // Run metadata by id, so the Release Trend panel can resolve each trend point's
+  // scenario without refetching the catalog.
+  const releaseTestsById = useMemo(() => {
+    const byId: Record<string, TestSummary> = {}
+    releaseTests.forEach(test => { byId[test.id] = test })
+    return byId
+  }, [releaseTests])
 
   const archivedReleaseRuns = useMemo(() =>
     releaseCompleted
@@ -1777,7 +1812,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         {testListState.ready && activeDashboardTab === 'releaseTrend' && (
           <section className="dash-section dash-release-trend-analysis">
             {activeRelease?.id ? (
-              <ReleaseTrendPanel releaseId={activeRelease.id} getReleaseTrend={api.getReleaseTrend} />
+              <ReleaseTrendPanel
+                releaseId={activeRelease.id}
+                getReleaseTrend={api.getReleaseTrend}
+                releaseOptions={dashboardReleaseOptions}
+                onReleaseChange={setActiveRelease}
+                runsById={releaseTestsById}
+                reportsById={archiveReports}
+                scenarioNames={scenarioNames}
+                onOpenRun={onSelectTest}
+                onOpenRunArchive={onOpenTestArchive}
+              />
             ) : (
               <div className="dash-empty small">
                 <span>Select a release to view release trend analysis.</span>

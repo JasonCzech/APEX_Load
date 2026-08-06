@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
-import type { ReleaseTrend } from '../types'
+import type { Release, ReleaseTrend, RunArchiveReport, TestSummary } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -34,6 +34,62 @@ function trendFixture(): ReleaseTrend {
     ],
     summary: { latest_regressed: true, latest_regressions: ['error rate regressed', 'SLA newly breached'], avg_response_trend_pct: 40, error_pct_trend: 3 },
   }
+}
+
+function runFixture(id: string, scenarioId: string): TestSummary {
+  return {
+    id,
+    name: `Run ${id}`,
+    status: 'COMPLETE',
+    scenario_id: scenarioId,
+    release_id: 'rel-1',
+    groups: [],
+    total_vusers: 25,
+    duration: '10m',
+    created_at: '2026-06-01T09:00:00Z',
+  } as TestSummary
+}
+
+function reportFixture(actions: Record<string, { transactions: number; avg: number; errorPct: number }>): RunArchiveReport {
+  return {
+    manifest: { test_id: 'x' },
+    overview: { transactions: 1000, errors: 10, error_pct: 1, avg_response_ms: 100, min_response_ms: 10, max_response_ms: 900, p95_ms: 220, resource_samples: 4, interval_summaries: 4, peak_tps: 50, peak_active_vusers: 100 },
+    by_action: Object.fromEntries(Object.entries(actions).map(([name, stats]) => [name, {
+      transactions: stats.transactions,
+      errors: 0,
+      error_pct: stats.errorPct,
+      avg_response_ms: stats.avg,
+      min_response_ms: 5,
+      max_response_ms: stats.avg * 3,
+      p95_ms: stats.avg * 2,
+    }])),
+    resource_peaks: { cpu_process_pct: 41.5, mem_process_mb: 900, net_sent_kbps: 10, net_recv_kbps: 10, disk_read_kbps: 0, disk_write_kbps: 0 },
+  } as unknown as RunArchiveReport
+}
+
+function clickRow(runId: string) {
+  const row = container.querySelector(`[data-testid="release-trend-row-${runId}"]`) as HTMLElement
+  expect(row).toBeTruthy()
+  act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+}
+
+function selectByLabel(label: string): HTMLSelectElement {
+  const field = Array.from(container.querySelectorAll('.release-trend-filter'))
+    .find(node => node.querySelector('span')?.textContent === label)
+  expect(field).toBeTruthy()
+  return field!.querySelector('select') as HTMLSelectElement
+}
+
+const detailProps = {
+  runsById: {
+    a: runFixture('a', 'scenario-checkout'),
+    b: runFixture('b', 'scenario-search'),
+  },
+  reportsById: {
+    a: reportFixture({ Checkout: { transactions: 600, avg: 90, errorPct: 0 }, Search: { transactions: 400, avg: 40, errorPct: 0 } }),
+    b: reportFixture({ Checkout: { transactions: 500, avg: 150, errorPct: 2.5 } }),
+  },
+  scenarioNames: { 'scenario-checkout': 'Checkout Peak', 'scenario-search': 'Search Browse' },
 }
 
 describe('ReleaseTrendPanel', () => {
@@ -104,5 +160,109 @@ describe('ReleaseTrendPanel', () => {
 
     expect(container.textContent).toContain('Current Release Run')
     expect(container.textContent).not.toContain('Stale Release Run')
+  })
+
+  it('filters the series by scenario', async () => {
+    const getReleaseTrend = vi.fn().mockResolvedValue(trendFixture())
+    await act(async () => {
+      root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={getReleaseTrend} {...detailProps} />)
+    })
+    await flush()
+
+    expect(container.textContent).toContain('Checkout Peak')
+    expect(container.textContent).toContain('Search Browse')
+
+    const scenarioSelect = selectByLabel('Scenario')
+    await act(async () => {
+      scenarioSelect.value = 'scenario-checkout'
+      scenarioSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="release-trend-row-a"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="release-trend-row-b"]')).toBeNull()
+    expect(container.textContent).toContain('Showing 1 of 2 runs')
+  })
+
+  it('scopes the table to a selected transaction and hides runs without it', async () => {
+    const getReleaseTrend = vi.fn().mockResolvedValue(trendFixture())
+    await act(async () => {
+      root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={getReleaseTrend} {...detailProps} />)
+    })
+    await flush()
+
+    const transactionSelect = selectByLabel('Transaction')
+    await act(async () => {
+      transactionSelect.value = 'Search'
+      transactionSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    // Only run "a" recorded the Search transaction, and its metrics replace the
+    // run-level ones.
+    expect(container.querySelector('[data-testid="release-trend-row-a"]')).toBeTruthy()
+    expect(container.querySelector('[data-testid="release-trend-row-b"]')).toBeNull()
+    expect(container.querySelector('[data-testid="release-trend-scope-note"]')?.textContent).toContain('Search')
+    expect(container.querySelector('[data-testid="release-trend-row-a"]')?.textContent).toContain('40.0')
+  })
+
+  it('populates the detail area from the selected run and collapses on reselect', async () => {
+    const getReleaseTrend = vi.fn().mockResolvedValue(trendFixture())
+    const onOpenRunArchive = vi.fn()
+    await act(async () => {
+      root.render(
+        <ReleaseTrendPanel
+          releaseId="rel-1"
+          getReleaseTrend={getReleaseTrend}
+          onOpenRunArchive={onOpenRunArchive}
+          {...detailProps}
+        />,
+      )
+    })
+    await flush()
+
+    expect(container.querySelector('[data-testid="release-trend-detail"]')?.textContent)
+      .toContain('Select a run above')
+
+    clickRow('b')
+    const detail = container.querySelector('[data-testid="release-trend-detail"]') as HTMLElement
+    expect(detail.textContent).toContain('Run B')
+    expect(detail.textContent).toContain('Search Browse')
+    // Run-over-run deltas, the transaction breakdown, and archived resource peaks.
+    expect(detail.textContent).toContain('+40ms')
+    expect(detail.textContent).toContain('Checkout')
+    expect(detail.textContent).toContain('41.5%')
+    expect(detail.textContent).toContain('SLA newly breached')
+
+    clickRow('b')
+    expect(container.querySelector('[data-testid="release-trend-detail"]')?.textContent)
+      .toContain('Select a run above')
+  })
+
+  it('switches releases from the release filter', async () => {
+    const getReleaseTrend = vi.fn().mockResolvedValue(trendFixture())
+    const onReleaseChange = vi.fn()
+    const releaseOptions: Release[] = [
+      { id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '', updated_at: '' },
+      { id: 'rel-2', application_id: 'app-1', name: 'Sprint 25', created_at: '', updated_at: '' },
+    ]
+    await act(async () => {
+      root.render(
+        <ReleaseTrendPanel
+          releaseId="rel-1"
+          getReleaseTrend={getReleaseTrend}
+          releaseOptions={releaseOptions}
+          onReleaseChange={onReleaseChange}
+        />,
+      )
+    })
+    await flush()
+
+    const releaseSelect = selectByLabel('Release')
+    expect(releaseSelect.value).toBe('rel-1')
+    await act(async () => {
+      releaseSelect.value = 'rel-2'
+      releaseSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(onReleaseChange).toHaveBeenCalledWith(releaseOptions[1])
   })
 })
