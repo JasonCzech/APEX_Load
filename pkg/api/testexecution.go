@@ -731,7 +731,7 @@ func (tr *TestRunner) markTestPendingLockedWithExpectedTerm(test *ManagedTest, r
 		// pending_since is already durable. Do not issue another durable lifecycle
 		// CAS with the revision captured by the original QUEUED->PENDING decision,
 		// which would retry forever after unrelated admission content advances.
-		tr.broadcastEvent("test_pending", test)
+		tr.broadcastEvent("test_pending", cloneManagedTestLifecycleEvent(test))
 		return nil
 	}
 	if tr.testStore != nil {
@@ -835,7 +835,7 @@ func (tr *TestRunner) markTestPendingLockedWithExpectedTerm(test *ManagedTest, r
 		}
 	}
 	tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, operationExecutionFence, operationExecutionGeneration)
-	tr.broadcastEvent("test_pending", test)
+	tr.broadcastEvent("test_pending", cloneManagedTestLifecycleEvent(test))
 	return nil
 }
 
@@ -1876,7 +1876,7 @@ func (tr *TestRunner) beginScriptShakeoutWithEvidenceLocked(id string, opts Star
 		return nil, fmt.Errorf("persist script shakeout state: %w", err)
 	}
 	releasePassiveOperationTokenLocked(test)
-	tr.broadcastEvent("script_shakeout_started", test)
+	tr.broadcastEvent("script_shakeout_started", cloneManagedTestLifecycleEvent(test))
 
 	return test, nil
 }
@@ -2324,10 +2324,10 @@ func (tr *TestRunner) persistPendingScriptShakeoutOutcomeLocked(test *ManagedTes
 	releasePassiveExecutionFenceLocked(test)
 	tr.schedulePassiveTransitionRescanAfterTermChangeLocked(test.ID, operationIdentity, executionFence, executionGeneration)
 	if report.Passed {
-		tr.broadcastEvent("script_shakeout_passed", test)
+		tr.broadcastEvent("script_shakeout_passed", cloneManagedTestLifecycleEvent(test))
 		return nil
 	}
-	tr.broadcastEvent("script_shakeout_failed", test)
+	tr.broadcastEvent("script_shakeout_failed", cloneManagedTestLifecycleEvent(test))
 	return &ScriptShakeoutGateError{TestID: test.ID, Report: &report}
 }
 
@@ -5392,7 +5392,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 				return err
 			}
 			releasePassiveOperationTokenLocked(pending)
-			tr.broadcastEvent("script_shakeout_started", pending)
+			tr.broadcastEvent("script_shakeout_started", cloneManagedTestLifecycleEvent(pending))
 			tr.mu.Unlock()
 
 			report, operationErr := tr.runScriptShakeoutReport(pending)

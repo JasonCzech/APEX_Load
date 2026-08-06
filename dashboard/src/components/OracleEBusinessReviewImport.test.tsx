@@ -109,6 +109,43 @@ describe('OracleEBusinessReviewImport', () => {
 
     expect(container.textContent).toContain('Review Pack')
   })
+
+  it('allows the same source file to be reselected by clearing the file input', async () => {
+    await act(async () => {
+      root.render(<OracleEBusinessReviewImport />)
+    })
+    await flushPromises()
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(input).not.toBeNull()
+    if (!input) return
+
+    const makeFiles = (name: string, content: string) => {
+      const file = new File([content], name)
+      const files = {
+        length: 1,
+        item: (index: number) => index === 0 ? file : null,
+        0: file,
+        [Symbol.iterator]: function* () {
+          yield file
+        },
+      } as unknown as FileList
+      return files
+    }
+
+    Object.defineProperty(input, 'files', { value: makeFiles('notes.txt', 'oracle'), configurable: true })
+
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(input.value).toBe('')
+
+    Object.defineProperty(input, 'files', { value: makeFiles('notes.txt', 'oracle-2'), configurable: true })
+    await act(async () => {
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(input.value).toBe('')
+  })
 })
 
 async function flushPromises() {

@@ -20,6 +20,21 @@ func TestOrderReplayOpsIsTotalAndProducePrecedesConsume(t *testing.T) {
 	}
 }
 
+func TestOrderReplayOpsBreaksTiesWithSecondaryKeys(t *testing.T) {
+	ordered := orderReplayOps([]kafkaOp{
+		{name: "alpha", kind: "produce", targetProtocol: targetKafka, topic: "invoices", channelName: "c1"},
+		{name: "zeta", kind: "produce", targetProtocol: targetKafka, topic: "invoices", channelName: "c2"},
+		{name: "beta", kind: "produce", targetProtocol: targetKafka, topic: "invoices", channelName: "c1"},
+		{name: "produce", kind: "produce", targetProtocol: targetKafka, topic: "invoices", channelName: "c1"},
+		{name: "consume", kind: "consume", targetProtocol: targetKafka, topic: "invoices", channelName: "c1"},
+	})
+	got := []string{ordered[0].name, ordered[1].name, ordered[2].name, ordered[3].name, ordered[4].name}
+	want := []string{"alpha", "beta", "produce", "zeta", "consume"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("ordered operations = %v, want %v", got, want)
+	}
+}
+
 const asyncAPI3 = `
 asyncapi: 3.0.0
 info:
@@ -584,8 +599,18 @@ operations:
 	if result.Script.Actions[0].Target != "orders.components" || result.Script.Actions[1].Target != "orders.components" {
 		t.Fatalf("targets = %+v, want dereferenced component channel topic", result.Script.Actions)
 	}
-	if !strings.Contains(result.Script.Actions[0].Body, "orderId") || !strings.Contains(result.Script.Actions[1].Body, "cancelId") {
-		t.Fatalf("operation.messages payloads not preserved: first=%s second=%s", result.Script.Actions[0].Body, result.Script.Actions[1].Body)
+	foundOrderID := false
+	foundCancelID := false
+	for _, action := range result.Script.Actions {
+		if strings.Contains(action.Body, "orderId") {
+			foundOrderID = true
+		}
+		if strings.Contains(action.Body, "cancelId") {
+			foundCancelID = true
+		}
+	}
+	if !foundOrderID || !foundCancelID {
+		t.Fatalf("operation.messages payloads not preserved: got actions=%+v", result.Script.Actions)
 	}
 }
 

@@ -1014,7 +1014,7 @@ func (tr *TestRunner) createTestWithIDAndTermAttempt(req CreateTestRequest, broa
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
 
 	if broadcast && !test.creationAdopted {
-		tr.broadcastEvent("test_created", test)
+		tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 	}
 	created := cloneManagedTestForReadLocked(test)
 	tr.mu.Unlock()

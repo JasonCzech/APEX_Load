@@ -203,7 +203,8 @@ describe('useWebSocket', () => {
       MockWebSocket.instances[0]?.onclose?.(new CloseEvent('close'))
     })
     act(() => {
-      vi.advanceTimersByTime(3000)
+      // 3s base backoff plus the full 1s reconnect jitter window.
+      vi.advanceTimersByTime(4000)
     })
     await act(async () => {
       MockWebSocket.instances[1]?.onopen?.(new Event('open'))

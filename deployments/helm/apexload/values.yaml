@@ -82,6 +82,10 @@ controller:
   # set explicitly. Empty derives https://<ingress.host>.
   publicURL: ""
   ciOIDCAudience: ""
+  # Set a custom bind address for the controller API. The numeric port
+  # portion is propagated into container and service ports, including
+  # EndpointSlice.
+  addr: ":8080"
   ha:
     enabled: false
     # EndpointSlice address family for the leader-only controller Service.

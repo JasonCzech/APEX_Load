@@ -261,8 +261,8 @@ func (s *Server) handleExportScript(w http.ResponseWriter, r *http.Request) {
 
 	// Optional: specify output directory via request body
 	var req scriptExportRequest
-	if r.Body != nil {
-		json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
 	}
 
 	filename := req.Filename

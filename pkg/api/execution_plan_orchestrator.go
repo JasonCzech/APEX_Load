@@ -713,7 +713,7 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 		run := st.toStorageRun()
 		tr.seqMu.Unlock()
 
-		tr.broadcastEvent("test_created", test)
+		tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 		tr.broadcastExecutionPlanEvent("execution_plan_entry_started", run, &run.Entries[idx])
 		if subject != "" {
 			tr.AttributeTestCreated(test.ID, subject, displayName)

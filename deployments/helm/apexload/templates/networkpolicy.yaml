@@ -1,4 +1,13 @@
 {{- if .Values.networkPolicy.enabled }}
+{{- $controllerAddr := trim (default ":8080" .Values.controller.addr) }}
+{{- $controllerHTTPPort := regexFind "[0-9]+$" $controllerAddr }}
+{{- if not $controllerHTTPPort }}
+{{- fail "controller.addr must include a numeric port, for example :8080 or 127.0.0.1:8080" }}
+{{- end }}
+{{- $controllerHTTPPortInt := atoi $controllerHTTPPort }}
+{{- if or (lt $controllerHTTPPortInt 1) (gt $controllerHTTPPortInt 65535) }}
+{{- fail (printf "controller.addr port must be within 1-65535, got %s" $controllerHTTPPort) }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -36,7 +45,7 @@ spec:
               kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
       ports:
         - protocol: TCP
-          port: 8080
+          port: {{ $controllerHTTPPortInt }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

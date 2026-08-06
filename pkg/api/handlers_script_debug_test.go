@@ -1491,3 +1491,44 @@ func waitForScriptDebugEventCount(t *testing.T, manager *ScriptDebugManager, ses
 	t.Fatalf("session = %#v, want %d events and status %s", session, count, status)
 	return nil
 }
+
+func TestHandleStartScriptDebugDraftScriptRejectsMalformedAndMultiJSONBodies(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	cases := []struct {
+		name          string
+		body          string
+		expectedError string
+	}{
+		{
+			name:          "empty body",
+			body:          "",
+			expectedError: "request body is required",
+		},
+		{
+			name:          "malformed json",
+			body:          "{",
+			expectedError: "invalid request body",
+		},
+		{
+			name:          "multiple json values",
+			body:          `{"project_id":"project-a","script":{"name":"Draft","version":"1.0.0","protocol":"http","actions":[{"name":"load","type":"GET","method":"GET","target":"/"}]}} {"project_id":"project-a"}`,
+			expectedError: "multiple JSON values are not allowed",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+			if !strings.Contains(resp.Body.String(), tc.expectedError) {
+				t.Fatalf("body = %q, want %q", resp.Body.String(), tc.expectedError)
+			}
+		})
+	}
+}

@@ -192,15 +192,19 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
   const hasRunSelectionControls = testOptions.length > 0
   const noSelectedRuns = hasRunSelectionControls && consideredTestIdList?.length === 0
 
-  const load = useCallback(async () => {
+  const applyComparison = useCallback(async (isActive: () => boolean) => {
     if (!applicationId) {
-      setComparison(null)
+      if (isActive()) {
+        setComparison(null)
+      }
       return
     }
     if (noSelectedRuns) {
-      setComparison(emptyLoadComparison(applicationId, scope, requestedKey))
-      setLoading(false)
-      setError('')
+      if (isActive()) {
+        setComparison(emptyLoadComparison(applicationId, scope, requestedKey))
+        setError('')
+        setLoading(false)
+      }
       return
     }
     setLoading(true)
@@ -210,50 +214,32 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
       const next = testIds
         ? await getLoadComparison(applicationId, scope, requestedKey, { testIds })
         : await getLoadComparison(applicationId, scope, requestedKey)
-      setComparison(next)
+      if (isActive()) {
+        setComparison(next)
+      }
     } catch (err) {
-      setComparison(null)
-      setError(err instanceof Error ? err.message : 'Failed to load comparison.')
+      if (isActive()) {
+        setComparison(null)
+        setError(err instanceof Error ? err.message : 'Failed to load comparison.')
+      }
     } finally {
-      setLoading(false)
+      if (isActive()) {
+        setLoading(false)
+      }
     }
   }, [applicationId, consideredTestIdsKey, getLoadComparison, hasRunSelectionControls, noSelectedRuns, requestedKey, scope])
 
+  const load = useCallback(async () => {
+    await applyComparison(() => true)
+  }, [applyComparison])
+
   useEffect(() => {
     let cancelled = false
-    const run = async () => {
-      if (!applicationId) {
-        setComparison(null)
-        return
-      }
-      if (noSelectedRuns) {
-        setComparison(emptyLoadComparison(applicationId, scope, requestedKey))
-        setLoading(false)
-        setError('')
-        return
-      }
-      setLoading(true)
-      setError('')
-      try {
-        const testIds = hasRunSelectionControls ? consideredTestIdsKey.split('\u001f').filter(Boolean) : undefined
-        const next = testIds
-          ? await getLoadComparison(applicationId, scope, requestedKey, { testIds })
-          : await getLoadComparison(applicationId, scope, requestedKey)
-        if (!cancelled) setComparison(next)
-      } catch (err) {
-        if (!cancelled) {
-          setComparison(null)
-          setError(err instanceof Error ? err.message : 'Failed to load comparison.')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    void run()
+    void applyComparison(() => !cancelled)
     return () => {
       cancelled = true
     }
-  }, [applicationId, consideredTestIdsKey, getLoadComparison, hasRunSelectionControls, noSelectedRuns, requestedKey, scope])
+  }, [applyComparison])
 
   const selectedValue = requestedKey && comparison?.options.some(option => option.key === requestedKey)
     ? requestedKey

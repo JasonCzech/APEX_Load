@@ -4301,6 +4301,11 @@ export interface operations {
           };
         };
       };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "401": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -4312,6 +4317,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -4542,6 +4552,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -6895,6 +6910,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -8024,7 +8044,7 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "import_detected_credential_values"?: boolean;
@@ -9294,6 +9314,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -9345,6 +9370,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -21430,6 +21460,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -22316,6 +22351,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -23283,6 +23323,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -47069,6 +47114,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -49122,6 +49172,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -49792,6 +49847,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -49878,7 +49938,7 @@ export interface operations {
         "remote_test_id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "override_capacity_shortfall"?: boolean;
@@ -50975,7 +51035,7 @@ export interface operations {
         "remote_test_id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "override_capacity_shortfall"?: boolean;
@@ -52072,7 +52132,7 @@ export interface operations {
         "remote_test_id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "override_capacity_shortfall"?: boolean;
@@ -53169,7 +53229,7 @@ export interface operations {
         "remote_test_id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "override_capacity_shortfall"?: boolean;
@@ -54266,7 +54326,7 @@ export interface operations {
         "remote_test_id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "override_capacity_shortfall"?: boolean;
@@ -55432,7 +55492,7 @@ export interface operations {
   };
   "handleReplayDraftScript": {
     parameters?: never;
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "group_name"?: string;
@@ -56014,6 +56074,7 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }) | null;
+          "start_paused"?: boolean;
           "variables"?: Record<string, string>;
         };
       };
@@ -56105,7 +56166,7 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "group_name"?: string;
@@ -56687,6 +56748,7 @@ export interface operations {
             "updated_at"?: string;
             "version"?: string;
           }) | null;
+          "start_paused"?: boolean;
           "variables"?: Record<string, string>;
         };
       };
@@ -61316,6 +61378,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -63284,6 +63351,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -63353,7 +63425,7 @@ export interface operations {
   };
   "handleStartReplaySessionDraftScript": {
     parameters?: never;
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "break_on_failure"?: boolean;
@@ -64412,7 +64484,7 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "break_on_failure"?: boolean;
@@ -65472,7 +65544,7 @@ export interface operations {
   };
   "handleStartScriptDebugDraftScript": {
     parameters?: never;
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "break_on_failure"?: boolean;
@@ -66531,7 +66603,7 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "break_on_failure"?: boolean;
@@ -67595,7 +67667,7 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "override_capacity_shortfall"?: boolean;
@@ -73165,7 +73237,7 @@ export interface operations {
         "application/json": {
           "archived_at"?: (string) | null;
           "description"?: unknown;
-          "name": string;
+          "name"?: (string) | null;
           "schema"?: unknown;
           "updated_at": string;
         };
@@ -81788,6 +81860,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

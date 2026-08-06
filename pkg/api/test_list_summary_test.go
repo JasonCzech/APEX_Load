@@ -154,7 +154,7 @@ func TestIsActiveTestListStatus(t *testing.T) {
 	}
 }
 
-func TestSortTestListUsesDeterministicNewestFirstOrder(t *testing.T) {
+func TestSortTestListPrefersActiveTestsFirst(t *testing.T) {
 	olderActive := &ManagedTest{ID: "active", Status: "RUNNING", CreatedAt: time.Unix(1, 0)}
 	newerComplete := &ManagedTest{ID: "complete", Status: "COMPLETE", CreatedAt: time.Unix(2, 0)}
 	sameTimeLast := &ManagedTest{ID: "same-z", Status: "COMPLETE", CreatedAt: time.Unix(3, 0)}
@@ -163,7 +163,7 @@ func TestSortTestListUsesDeterministicNewestFirstOrder(t *testing.T) {
 
 	sortTestList(tests)
 
-	want := []string{"same-a", "same-z", "complete", "active"}
+	want := []string{"active", "same-a", "same-z", "complete"}
 	for index, id := range want {
 		if tests[index].ID != id {
 			t.Fatalf("tests[%d] = %q, want %q (order=%v)", index, tests[index].ID, id, []string{tests[0].ID, tests[1].ID, tests[2].ID, tests[3].ID})
@@ -203,8 +203,8 @@ func TestListTestSummaryPageBuildsOnlyTheBoundedWindow(t *testing.T) {
 	if total != 2 {
 		t.Fatalf("total = %d, want 2", total)
 	}
-	if len(page) != 1 || page[0].ID != "complete" {
-		t.Fatalf("page = %#v, want the newest run regardless of status", page)
+	if len(page) != 1 || page[0].ID != "active" {
+		t.Fatalf("page = %#v, want the active run to be prioritized first", page)
 	}
 	if page[0].History != nil {
 		t.Fatal("summary page retained full history")
@@ -310,7 +310,9 @@ func TestHandleListTestsReturnsBoundedSummaryMetadata(t *testing.T) {
 	if recorder.Code != 200 || response.Count != 1 || response.Total != 2 || response.Limit != 1 || !response.Summary {
 		t.Fatalf("unexpected response metadata: status=%d response=%+v", recorder.Code, response)
 	}
-	if len(response.Tests) != 1 || response.Tests[0].ID != "run-2" || response.Tests[0].History != nil {
+	// run-1 is older but RUNNING, so the active-first tiebreak in sortTestList
+	// puts it ahead of the newer terminal run-2 inside the bounded window.
+	if len(response.Tests) != 1 || response.Tests[0].ID != "run-1" || response.Tests[0].History != nil {
 		t.Fatalf("unexpected summary page: %#v", response.Tests)
 	}
 }

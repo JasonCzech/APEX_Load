@@ -2326,7 +2326,7 @@ export function ScriptRuntimeSettingsView({
             onChange={e => updateField('config.web_runtime', {
               ...script.config.web_runtime,
               source_ips: e.target.value
-                .split('\n')
+                .split(/\r?\n/)
                 .map(value => value.trim())
                 .filter(Boolean),
             })}

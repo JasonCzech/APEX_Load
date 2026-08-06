@@ -156,7 +156,7 @@ export default function TablePaginationManager() {
   }, [cleanupManagedTable])
 
   useEffect(() => {
-    pageStatesRef.current = pageStates
+    pageStatesRef.current = { ...pageStates }
     managedTablesRef.current.forEach(managed => {
       applyTablePageState(managed.table, normalizePageState(pageStates[managed.id], managed.totalRows))
     })

@@ -97,6 +97,7 @@ export default function RunReportPage({
   const activeLensRef = useRef(activeLens)
   const testIDRef = useRef(testId)
   const effectiveCompareIDRef = useRef('')
+  const pinCompareStamp = useRef(0)
   const archiveReportRef = useRef(archiveModel.archiveReport)
   activeLensRef.current = activeLens
   testIDRef.current = testId
@@ -142,6 +143,9 @@ export default function RunReportPage({
   useEffect(() => {
     setCompareId(initialCompare || '')
   }, [initialCompare])
+  useEffect(() => {
+    pinCompareStamp.current += 1
+  }, [effectiveCompareId])
 
   useEffect(() => {
     if (!test) return
@@ -371,12 +375,16 @@ export default function RunReportPage({
     if (!effectiveCompareId) return false
     const requestTestID = testId
     const requestCompareID = effectiveCompareId
+    const requestPinStamp = pinCompareStamp.current
     try {
       await api.pinComparisonBaseline(requestCompareID)
-      const refreshed = await api.getTest(requestTestID)
-      if (testIDRef.current !== requestTestID || effectiveCompareIDRef.current !== requestCompareID) return false
-      setTest(refreshed)
       setBaselineError('')
+      if (testIDRef.current !== requestTestID || effectiveCompareIDRef.current !== requestCompareID) {
+        return true
+      }
+      if (pinCompareStamp.current !== requestPinStamp) return true
+      const refreshed = await api.getTest(requestTestID)
+      setTest(refreshed)
       return true
     } catch (error: unknown) {
       if (testIDRef.current !== requestTestID || effectiveCompareIDRef.current !== requestCompareID) return false

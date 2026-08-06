@@ -18,7 +18,12 @@ const consolidatedDataSourceName = "imported_params"
 const dataParamConfidence = 0.6
 
 var (
-	queryPairPattern  = regexp.MustCompile(`([A-Za-z0-9_.\-\[\]]+)=([^&#\s"']+)`)
+	// The leading alternation anchors each pair to a real separator so a key is
+	// never harvested out of the middle of a longer token. `^` is matched in
+	// multi-line mode and whitespace is accepted as a separator because bodies
+	// are not always a bare query string starting at offset 0. `;` is a pair
+	// separator, so it is excluded from the value class as well.
+	queryPairPattern  = regexp.MustCompile(`(?m)(?:^|[?&;\s])([A-Za-z0-9_.\-\[\]]+)=([^&;#\s"']+)`)
 	jsonStringPattern = regexp.MustCompile(`"([A-Za-z0-9_.\-]+)"\s*:\s*"((?:[^"\\]|\\.)*)"`)
 	jsonNumberPattern = regexp.MustCompile(`"([A-Za-z0-9_.\-]+)"\s*:\s*(-?\d+(?:\.\d+)?)`)
 )
@@ -99,11 +104,13 @@ func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBu
 		return err
 	}
 	for _, match := range matches {
-		key, value := query[match[2]:match[3]], query[match[4]:match[5]]
+		keyStart, keyEnd := match[2], match[3]
+		valueStart, valueEnd := match[4], match[5]
+		key, value := query[keyStart:keyEnd], query[valueStart:valueEnd]
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
 		}
-		search, buildReplace := delimitedPairReplacement(action.Target, queryStart+1+match[0], queryStart+1+match[1], key)
+		search, buildReplace := delimitedPairReplacement(action.Target, queryStart+1+match[2], queryStart+1+match[1], key)
 		collector.add(key, value, "query parameter", section, index, action,
 			"target", search, buildReplace)
 	}
@@ -165,7 +172,7 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
 		}
-		search, buildReplace := delimitedPairReplacement(action.Body, match[0], match[1], key)
+		search, buildReplace := delimitedPairReplacement(action.Body, match[2], match[1], key)
 		collector.add(key, value, "form field", section, index, action,
 			"body", search, buildReplace)
 	}
@@ -174,11 +181,11 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 
 func delimitedPairReplacement(value string, pairStart, pairEnd int, key string) (string, func(string) string) {
 	searchStart := pairStart
-	if searchStart > 0 && (value[searchStart-1] == '?' || value[searchStart-1] == '&') {
+	if searchStart > 0 && (value[searchStart-1] == '?' || value[searchStart-1] == '&' || value[searchStart-1] == ';') {
 		searchStart--
 	}
 	searchEnd := pairEnd
-	if searchEnd < len(value) && (value[searchEnd] == '&' || value[searchEnd] == '#') {
+	if searchEnd < len(value) && (value[searchEnd] == '&' || value[searchEnd] == ';' || value[searchEnd] == '#') {
 		searchEnd++
 	}
 	prefix := value[searchStart:pairStart]

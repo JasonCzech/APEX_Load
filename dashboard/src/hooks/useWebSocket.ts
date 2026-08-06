@@ -20,7 +20,11 @@ interface UseWebSocketOptions {
 // undefined to the resolved active project during initial load — into a single
 // socket, so the connection indicator doesn't flap through connecting/disconnected.
 const CONNECT_DEBOUNCE_MS = 150
-const RECONNECT_DELAY_MS = 3000
+const RECONNECT_BASE_DELAY_MS = 3000
+const RECONNECT_MAX_DELAY_MS = 30000
+// Spread the reconnect storm after a controller restart: without jitter every
+// dashboard backs off on the identical schedule and retries in lockstep.
+const RECONNECT_JITTER_MS = 1000
 
 export function useWebSocket({ testId, projectId, enabled = true, onMessage, onOpen, bridge }: UseWebSocketOptions = {}) {
   const [connectionState, setConnectionState] = useState<WebSocketConnectionState>(
@@ -28,6 +32,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
   )
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimer = useRef<number | null>(null)
+  const reconnectAttempts = useRef(0)
   const shouldReconnectRef = useRef(true)
   const onMessageRef = useRef(onMessage)
   onMessageRef.current = onMessage
@@ -75,6 +80,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
     ws.onopen = () => {
       if (!isCurrentConnection()) return
       setConnectionState('connected')
+      reconnectAttempts.current = 0
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current)
         reconnectTimer.current = null
@@ -99,9 +105,15 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
       if (connectionScopeRef.current.generation !== connectionGeneration) return
       setConnectionState('disconnected')
       if (!shouldReconnectRef.current) return
+      reconnectAttempts.current += 1
+      const delay = Math.min(
+        RECONNECT_BASE_DELAY_MS * 2 ** Math.min(reconnectAttempts.current - 1, 10),
+        RECONNECT_MAX_DELAY_MS,
+      )
+      const jitter = Math.floor(Math.random() * RECONNECT_JITTER_MS)
       reconnectTimer.current = window.setTimeout(() => {
         if (shouldReconnectRef.current) connect()
-      }, RECONNECT_DELAY_MS)
+      }, delay + jitter)
     }
 
     ws.onerror = () => {
@@ -111,6 +123,7 @@ export function useWebSocket({ testId, projectId, enabled = true, onMessage, onO
 
   useEffect(() => {
     shouldReconnectRef.current = true
+    reconnectAttempts.current = 0
     setConnectionState(enabled ? 'connecting' : 'disconnected')
 
     let debounceTimer: number | null = null

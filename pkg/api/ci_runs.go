@@ -31,6 +31,7 @@ const (
 	ciRunMaxNameBytes   = 256
 	ciRunMaxVariables   = 128
 	ciRunMaxValueBytes  = 16 << 10
+	ciAbortMaxBodyBytes = 1024
 
 	ciExternalErrorMaxBytes     = 32 << 10
 	ciExternalSLADetailMaxBytes = 4 << 10
@@ -646,8 +647,17 @@ func (s *Server) handleAbortCIRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var abortReq ciAbortRequest
-	if r.Body != nil {
-		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&abortReq)
+	if r.ContentLength != 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, ciAbortMaxBodyBytes)
+		if err := decodeRequestBody(r, &abortReq); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds the configured size limit")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
 	}
 	abortReason := normalizeCIAbortReason(abortReq.Reason)
 	if !ciRunTerminal(test.Status) {

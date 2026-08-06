@@ -1809,7 +1809,7 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 	}
 	tr.tests[test.ID] = test
 	tr.indexRefKeyLocked(test.RefKey, test.ID)
-	tr.broadcastEvent("test_created", test)
+	tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 	// The launch window was just evaluated above; skip the redundant re-check.
 	prepared, releaseStartLifecycle, err := tr.prepareTestStartForScheduleSweepLockedWithTerm(test.ID, StartTestOptions{
 		SkipLaunchWindowPreflight:        true,
@@ -2367,7 +2367,7 @@ func (tr *TestRunner) failScheduledTestBeforeLaunchIfStatusAndTermLocked(
 	if current.cancel != nil {
 		current.cancel()
 	}
-	tr.broadcastEvent("test_failed", current)
+	tr.broadcastEvent("test_failed", cloneManagedTestLifecycleEvent(current))
 	compactTerminalManagedTestLocked(current)
 	return true, releaseErr
 }

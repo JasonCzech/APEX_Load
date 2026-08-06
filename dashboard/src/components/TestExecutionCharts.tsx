@@ -1984,7 +1984,13 @@ export default function TestExecutionCharts({
     })
   }
 
-  const renderMetricsTable = (chart: ChartConfig, rows: ChartMetricRow[], visibleMetricKeys: string[], chartData: MetricsHistoryPoint[]) => {
+  const renderMetricsTable = (
+    chart: ChartConfig,
+    rows: ChartMetricRow[],
+    visibleMetricKeys: string[],
+    chartData: MetricsHistoryPoint[],
+    summaries: Record<string, ChartMetricSummary>,
+  ) => {
     if (rows.length === 0) {
       return (
         <div className="chart-metrics-empty">
@@ -1994,8 +2000,6 @@ export default function TestExecutionCharts({
     }
     const canFilter = rows.length > 1
     const allVisible = visibleMetricKeys.length === rows.length
-    const summaries: Record<string, ChartMetricSummary> = {}
-    rows.forEach(row => { summaries[row.key] = chartMetricSummary(chartData, row.key) })
     const sort = tableSortByChart[chart.id]
     const sortedRows = sortMetricTableRows(rows, summaries, sort)
     const selectedKey = selectedMetricByChart[chart.id] ?? null
@@ -2035,7 +2039,7 @@ export default function TestExecutionCharts({
           </thead>
           <tbody>
             {sortedRows.map(row => {
-              const summary = summaries[row.key]
+              const summary = summaries[row.key] ?? { samples: 0 }
               const visible = visibleMetricKeys.includes(row.key)
               const selected = selectedKey === row.key
               return (
@@ -2082,9 +2086,9 @@ export default function TestExecutionCharts({
   const renderAccessibleMetricsTable = (
     rows: ChartMetricRow[],
     visibleMetricKeys: string[],
-    chartData: MetricsHistoryPoint[],
     chartTitle: string,
     tableId: string,
+    summaries: Record<string, ChartMetricSummary>,
   ) => {
     const visibleRows = rows.filter(row => visibleMetricKeys.includes(row.key))
     if (visibleRows.length === 0) return null
@@ -2102,7 +2106,7 @@ export default function TestExecutionCharts({
         </thead>
         <tbody>
           {visibleRows.map(row => {
-            const summary = chartMetricSummary(chartData, row.key)
+            const summary = summaries[row.key] ?? { samples: 0 }
             return (
               <tr key={row.key}>
                 <th>{row.label}</th>
@@ -2470,6 +2474,10 @@ export default function TestExecutionCharts({
                 displayChartData,
               })
             }
+            const metricSummaries = metricRows.reduce<Record<string, ChartMetricSummary>>((accumulator, row) => {
+              accumulator[row.key] = chartMetricSummary(chartData, row.key)
+              return accumulator
+            }, {})
             const displayMetricKey = (key: string) => smoothedMetricKeySet.has(key) ? smoothedGraphMetricKey(key) : key
             const primaryMetricKeysForDomain = visibleMetricKeys.filter(key => (
               !visibleOverlayKeysForTitle.includes(key as OverlayMetricKey)
@@ -2990,12 +2998,12 @@ export default function TestExecutionCharts({
                   </ResponsiveContainer>
                   )}
                 </div>
-                {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, displayChartData, chartTitle, accessibleTableId)}
+                {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, chartTitle, accessibleTableId, metricSummaries)}
 
           {chart.id === 'latency' && renderLatencySeriesLegend(metricRows, visibleMetricKeys, includeArtStdDevBand)}
           {chart.id === 'network_latency' && showDetails && renderRouteLatencyDetails()}
           {chart.id === 'generator_impact' && showDetails && renderGeneratorImpactDetails()}
-          {showDetails && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData)}
+            {showDetails && renderMetricsTable(chart, metricRows, visibleMetricKeys, chartData, metricSummaries)}
             </div>
             )
           })}

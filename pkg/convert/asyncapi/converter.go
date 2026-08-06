@@ -653,8 +653,16 @@ func orderReplayOps(ops []kafkaOp) []kafkaOp {
 			return 2
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		a, b := out[i], out[j]
+	type indexedOp struct {
+		op  kafkaOp
+		idx int
+	}
+	indexed := make([]indexedOp, 0, len(out))
+	for idx, op := range out {
+		indexed = append(indexed, indexedOp{op: op, idx: idx})
+	}
+	sort.Slice(indexed, func(i, j int) bool {
+		a, b := indexed[i].op, indexed[j].op
 		if a.targetProtocol != b.targetProtocol {
 			return a.targetProtocol < b.targetProtocol
 		}
@@ -663,8 +671,25 @@ func orderReplayOps(ops []kafkaOp) []kafkaOp {
 		if aOrder != bOrder {
 			return aOrder < bOrder
 		}
-		return kindRank(a.kind) < kindRank(b.kind)
+		aKind := kindRank(a.kind)
+		bKind := kindRank(b.kind)
+		if aKind != bKind {
+			return aKind < bKind
+		}
+		if a.name != b.name {
+			return a.name < b.name
+		}
+		if a.channelName != b.channelName {
+			return a.channelName < b.channelName
+		}
+		if a.replyTopic != b.replyTopic {
+			return a.replyTopic < b.replyTopic
+		}
+		return indexed[i].idx < indexed[j].idx
 	})
+	for i, ordered := range indexed {
+		out[i] = ordered.op
+	}
 	return out
 }
 

@@ -531,6 +531,57 @@ describe('TestExecutionCharts context menu', () => {
     expect(tpsChart?.querySelector('button[aria-label="Expand Transactions Per Second"]')).not.toBeNull()
   })
 
+  it('uses one summary source for visible measurements and screen-reader tables', async () => {
+    const longFilteredData = Array.from({ length: 520 }, (_, index) => ({
+      time: `10:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}`,
+      vusers: index + 1,
+      tps: index / 10,
+      avgMs: index * 1.5 + 100,
+      errorPct: index % 13 === 0 ? 0.4 : 0.0,
+      p50: index * 1.5 + 110,
+      p90: index * 1.5 + 130,
+      p99: index * 1.5 + 150,
+    }))
+
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          filteredData={longFilteredData}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          onChartMouseDown={vi.fn()}
+          onChartMouseMove={vi.fn()}
+          onZoom={vi.fn()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          latestLatency={{ targets: [] }}
+        />,
+      )
+    })
+
+    const responseChart = Array.from(container.querySelectorAll('.chart-card')).find(chart => chart.textContent?.includes('Response Time (ms)'))
+    expect(responseChart).not.toBeNull()
+    if (!responseChart) return
+
+    const visibleRows = Array.from(responseChart.querySelectorAll('.chart-metrics-table tbody tr'))
+    const a11yRows = Array.from(responseChart.querySelectorAll('table.chart-a11y-table tbody tr'))
+
+    expect(visibleRows.length).toBeGreaterThan(0)
+    expect(a11yRows.length).toBeGreaterThan(0)
+    expect(visibleRows.length).toBe(a11yRows.length)
+
+    const normalize = (rows: Element[]) => rows.map(row => row.textContent?.replace(/\s+/g, ' ').trim())
+    expect(normalize(visibleRows)).toEqual(normalize(a11yRows))
+  })
+
   it('adds dash patterns when group colors repeat', async () => {
     await act(async () => {
       root.render(

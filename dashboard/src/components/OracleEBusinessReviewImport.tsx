@@ -99,7 +99,15 @@ export default function OracleEBusinessReviewImport({ projectId, onClose }: Prop
           </label>
           <label className="sample-import-field sample-import-span-2">
             <span>Source Files</span>
-            <input type="file" multiple accept=".txt,.log,.json,.har,.js,.xml,.html,.htm,text/plain,application/json,text/xml,application/xml" onChange={event => void handleFiles(event.target.files)} />
+            <input
+              type="file"
+              multiple
+              accept=".txt,.log,.json,.har,.js,.xml,.html,.htm,text/plain,application/json,text/xml,application/xml"
+              onChange={event => {
+                void handleFiles(event.currentTarget.files)
+                event.currentTarget.value = ''
+              }}
+            />
             <small>{files.length ? files.map(file => file.name).join(', ') : 'Optional supporting files for review'}</small>
           </label>
         </div>

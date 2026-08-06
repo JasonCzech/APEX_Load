@@ -159,3 +159,9 @@ deck_build/*.pptx
 # Java Vuser runs locally. They are runtime state, not source.
 /uams.properties
 /uams_mm.store
+
+# Local build scratch. .gomodcache is a repo-local GOMODCACHE override and .tmp
+# is scratch output from local runs; both grow to hundreds of MB to tens of GB
+# and must never be staged.
+/.gomodcache/
+/.tmp/

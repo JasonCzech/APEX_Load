@@ -245,7 +245,7 @@ func (tr *TestRunner) failInterruptedParallelExecutionPlanRun(run *storage.Execu
 		return executionPlanPersistenceError("complete recovered parallel execution-plan run "+run.ID, err)
 	}
 	for _, test := range createdTests {
-		tr.broadcastEvent("test_created", test)
+		tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 	}
 	tr.consumeExecutionPlanApprovalWithTerm(approval, run.ID, leaseTerm)
 	tr.handoffParallelExecutionPlanTestsWithTerm(&recovered, leaseTerm)
@@ -589,7 +589,7 @@ func (tr *TestRunner) materializeRecoveredSequentialTest(action sequentialPlanRe
 		cleanupErr := tr.failExecutionPlanStagedTestWithTerm(test.ID, err.Error(), action.leaseTerm, snapshot.MaterializationKey)
 		return nil, errors.Join(err, cleanupErr)
 	}
-	tr.broadcastEvent("test_created", test)
+	tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 	if snapshot.AttribSubject != "" {
 		tr.AttributeTestCreated(test.ID, snapshot.AttribSubject, snapshot.AttribName)
 	}

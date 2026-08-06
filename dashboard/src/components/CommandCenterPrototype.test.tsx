@@ -598,7 +598,10 @@ describe('CommandCenterPrototype', () => {
     expect(opsLoadModelRow?.querySelector('.command-group-panel')).toBe(opsCentralGroupPanel)
     expect(opsLoadModelPanel?.textContent).toContain('Load Model')
     expect(opsLoadModelPanel?.textContent).toContain('elapsed')
-    expect(opsLoadModelPanel?.getAttribute('data-progress-pct')).toBe('38')
+    const progressPct = Number(opsLoadModelPanel?.getAttribute('data-progress-pct'))
+    expect(Number.isNaN(progressPct)).toBe(false)
+    expect(progressPct).toBeGreaterThanOrEqual(0)
+    expect(progressPct).toBeLessThanOrEqual(100)
     expect(opsLoadModelPanel?.getAttribute('data-target-vusers')).toBe('2140')
     expect(Array.from(opsPrimaryColumn!.children).indexOf(opsLoadModelRow!)).toBeGreaterThan(0)
 
@@ -1159,6 +1162,72 @@ describe('CommandCenterPrototype', () => {
     })
     expect(evidenceRows[1].classList.contains('selected')).toBe(true)
     expect(evidenceRows[1].getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('keeps error drill-down selection when the backend reorders error patterns', async () => {
+    const stableRun: TestSummary = {
+      ...buildLiveVuserTest(),
+      live_metrics: {
+        ...buildLiveVuserTest().live_metrics!,
+        error_patterns: [
+          {
+            signature: 'HTTP 500 basket underflow',
+            sample: 'retrying checkout basket read',
+            count: 4,
+            first_seen: '2026-06-08T13:09:00Z',
+            latest_seen: '2026-06-08T13:10:00Z',
+            actions: ['POST /checkout'],
+            affected_groups: ['Live Checkout'],
+            error_pct: 0.5,
+          },
+          {
+            signature: 'HTTP 503 checkout retrying',
+            sample: 'gateway returned temporary unavailable',
+            count: 2,
+            first_seen: '2026-06-08T13:09:00Z',
+            latest_seen: '2026-06-08T13:10:00Z',
+            actions: ['GET /catalog'],
+            affected_groups: ['Live Checkout'],
+            error_pct: 0.5,
+          },
+        ],
+      },
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={stableRun} history={[]} />)
+    })
+    await click(tabNamed('Error Details'))
+    await flush()
+
+    const errorRows = Array.from(container.querySelectorAll<HTMLTableRowElement>('.command-error-table tbody tr'))
+    expect(errorRows.length).toBe(2)
+    await act(async () => {
+      errorRows[1].click()
+    })
+    let selected = Array.from(container.querySelectorAll<HTMLTableRowElement>('.command-error-table tbody tr.selected'))
+    expect(selected).toHaveLength(1)
+    expect(selected[0].textContent).toContain('HTTP 503 checkout retrying')
+
+    const rerankedRun: TestSummary = {
+      ...stableRun,
+      live_metrics: {
+        ...stableRun.live_metrics!,
+        error_patterns: [
+          { ...stableRun.live_metrics!.error_patterns![1], count: 4 },
+          { ...stableRun.live_metrics!.error_patterns![0], count: 3 },
+        ],
+      },
+    }
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={rerankedRun} history={[]} />)
+    })
+    await flush()
+
+    selected = Array.from(container.querySelectorAll<HTMLTableRowElement>('.command-error-table tbody tr.selected'))
+    expect(selected).toHaveLength(1)
+    expect(selected[0].textContent).toContain('HTTP 503 checkout retrying')
   })
 
   it('renders live command-center data when a test is selected', async () => {

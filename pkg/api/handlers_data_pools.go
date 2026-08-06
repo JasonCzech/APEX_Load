@@ -246,7 +246,9 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Name        string          `json:"name"`
+		// Name is optional for metadata-only updates but must be non-empty when
+		// explicitly provided.
+		Name        *string         `json:"name"`
 		Description json.RawMessage `json:"description"`
 		Schema      json.RawMessage `json:"schema"`
 		UpdatedAt   time.Time       `json:"updated_at"`
@@ -259,7 +261,16 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wasArchived := existing.ArchivedAt != nil
-	existing.Name = strings.TrimSpace(req.Name)
+	if req.Name != nil {
+		existing.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Name == nil {
+		// No rename requested.
+	} else if existing.Name == "" {
+		writeError(w, http.StatusBadRequest, "data pool name is required")
+		return
+	}
+
 	if len(req.Description) > 0 {
 		if strings.TrimSpace(string(req.Description)) == "null" {
 			existing.Description = ""
@@ -287,10 +298,6 @@ func (s *Server) handleUpdateDataPool(w http.ResponseWriter, r *http.Request) {
 			}
 			existing.ArchivedAt = &archivedAt
 		}
-	}
-	if existing.Name == "" {
-		writeError(w, http.StatusBadRequest, "data pool name is required")
-		return
 	}
 	updater, ok := s.store.(interface {
 		UpdateDataPoolIfUnchanged(pool *storage.SharedDataPool, expectedUpdatedAt time.Time) (bool, error)

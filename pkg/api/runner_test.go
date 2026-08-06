@@ -4827,6 +4827,35 @@ func TestBroadcastEventDoesNotDeadlockWhenHoldingRunnerLock(t *testing.T) {
 	}
 }
 
+func TestCloneManagedTestLifecycleEventCopiesOnlyLifecycleFields(t *testing.T) {
+	test := &ManagedTest{
+		ID:        "test-1",
+		Name:      "Original",
+		Status:    "QUEUED",
+		ProjectID: "project-a",
+		Groups:    []TestGroup{{Name: "buyers"}},
+	}
+
+	snapshot := cloneManagedTestLifecycleEvent(test)
+	if snapshot == nil {
+		t.Fatal("snapshot is nil")
+	}
+	if snapshot.ID != "test-1" || snapshot.Name != "Original" || snapshot.Status != "QUEUED" || snapshot.ProjectID != "project-a" {
+		t.Fatalf("unexpected lifecycle snapshot: %#v", snapshot)
+	}
+
+	test.ID = "test-2"
+	test.Name = "Modified"
+	test.Status = "FAILED"
+	test.ProjectID = "project-b"
+	if snapshot.ID != "test-1" || snapshot.Name != "Original" || snapshot.Status != "QUEUED" || snapshot.ProjectID != "project-a" {
+		t.Fatalf("snapshot aliased lifecycle fields: %#v", snapshot)
+	}
+	if snapshot.Groups != nil {
+		t.Fatalf("snapshot unexpectedly copied groups: %#v", snapshot.Groups)
+	}
+}
+
 func TestProcessMetricsSnapshotBroadcastsAlertAndStopRequest(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(2, hub, nil)

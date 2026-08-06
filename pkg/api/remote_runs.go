@@ -285,10 +285,8 @@ func (s *Server) handleRemoteRunAction(action string) http.HandlerFunc {
 		var body any
 		if action == "start" {
 			var req StartTestOptions
-			if r.Body != nil && r.ContentLength != 0 {
-				if !decodeJSONBody(w, r, &req) {
-					return
-				}
+			if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+				return
 			}
 			body = req
 		}
