@@ -185,6 +185,11 @@ func sortTestList(tests []*ManagedTest) {
 		if tests[j] == nil {
 			return true
 		}
+		activeI := isActiveTestListStatus(tests[i].Status)
+		activeJ := isActiveTestListStatus(tests[j].Status)
+		if activeI != activeJ {
+			return activeI
+		}
 		if tests[i].CreatedAt.Equal(tests[j].CreatedAt) {
 			return tests[i].ID < tests[j].ID
 		}
@@ -231,10 +236,8 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	var req StartTestOptions
-	if r.Body != nil && r.ContentLength != 0 {
-		if !decodeJSONBody(w, r, &req) {
-			return
-		}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.actor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}

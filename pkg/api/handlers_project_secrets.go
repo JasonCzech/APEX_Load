@@ -454,10 +454,8 @@ func (s *Server) handleCloneScriptDraft(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req cloneScriptDraftRequest
-	if r.Body != nil && r.ContentLength != 0 {
-		if !decodeJSONBody(w, r, &req) {
-			return
-		}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
 	}
 	rawDraft := cloneScriptDefinition(stored.Script)
 	rawDraft.ID = ""

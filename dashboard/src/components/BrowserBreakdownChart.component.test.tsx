@@ -11,7 +11,14 @@ import type { BrowserBreakdownDatum, BrowserBreakdownSeries } from './browserBre
 vi.mock('recharts', () => ({
   CartesianGrid: () => <div data-testid="cartesian-grid" />,
   Legend: () => <div data-testid="legend" />,
-  Line: ({ name }: { name?: string }) => <div data-testid="line-series">{name}</div>,
+  Line: ({ name, stroke }: { name?: string; stroke?: string }) => (
+    <div
+      data-testid="line-series"
+      data-stroke={stroke}
+    >
+      {name}
+    </div>
+  ),
   LineChart: ({ children }: { children?: ReactNode }) => <div data-testid="line-chart">{children}</div>,
   ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div data-testid="responsive-container">{children}</div>,
   Tooltip: () => <div data-testid="tooltip" />,
@@ -82,5 +89,34 @@ describe('BrowserBreakdownChart', () => {
       'left',
       'right',
     ])
+  })
+
+  it('ensures duplicate incoming stroke values are visually distinct', async () => {
+    const series: BrowserBreakdownSeries[] = [
+      { dataKey: 'lcp', name: 'LCP', stroke: '#00a3ff', valueFormat: 'ms', yAxisId: 'timings' },
+      { dataKey: 'lcp-2', name: 'LCP Fallback', stroke: '#00a3ff', valueFormat: 'ms', yAxisId: 'timings' },
+      { dataKey: 'inp', name: 'INP', stroke: '#00ff94', valueFormat: 'ms', yAxisId: 'timings' },
+    ]
+    const data: BrowserBreakdownDatum[] = [
+      { segment: 'Chromium', lcp: 180, 'lcp-2': 181, inp: 42 },
+    ]
+
+    await act(async () => {
+      root.render(
+        <BrowserBreakdownChart
+          title="Browser Engine Comparison"
+          data={data}
+          series={series}
+        />,
+      )
+    })
+
+    const lineSeries = Array.from(container.querySelectorAll('[data-testid="line-series"]'))
+    const strokes = lineSeries.map(line => line.getAttribute('data-stroke'))
+    expect(strokes[0]).toBe('#00a3ff')
+    expect(strokes[2]).toBe('#00ff94')
+    expect(strokes[1]).toBeTruthy()
+    expect(strokes[1]).not.toBe(strokes[0])
+    expect(strokes[1]).not.toBe(strokes[2])
   })
 })

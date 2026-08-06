@@ -136,6 +136,33 @@ const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'dynatrace', label: 'Dynatrace Events API v2' },
 ] as const
 
+const NOTIFICATION_EVENTS = [
+  'test_created',
+  'test_pending',
+  'test_started',
+  'test_stopping',
+  'test_paused',
+  'test_resumed',
+  'test_failed',
+  'test_complete',
+  'telemetry_degraded',
+  'telemetry_breached',
+  'telemetry_recovered',
+  'threshold_alert',
+  'fleet_alert',
+  'fleet_alert_acknowledged',
+  'fleet_alert_unacknowledged',
+  'fleet_degraded',
+] as const
+
+const NOTIFICATION_EVENT_OPTIONS = NOTIFICATION_EVENTS.map((eventType) => ({
+  value: eventType,
+  label: eventType
+    .split('_')
+    .map(part => part ? `${part[0].toUpperCase()}${part.slice(1)}` : '')
+    .join(' '),
+}))
+
 const DATA_POOL_ROW_PAGE_SIZE = 100
 
 const TELEMETRY_BUDGET_ROWS: Array<{ key: TelemetryBudgetKey; label: string; desc: string }> = [
@@ -610,9 +637,17 @@ export default function SettingsPage({
     applicationRepository?.id || '',
   ].join('\u0000')
   const effectiveAuthAccessLoading = loadedEffectiveAuthAccessScope !== effectiveAuthAccessScope
+  // Mirrored in a ref so the loader below can read the last-loaded scope without
+  // taking it as a dependency — depending on it would re-run the effect from its
+  // own `finally` and double-fetch on every scope change.
+  const loadedEffectiveAuthAccessScopeRef = useRef(loadedEffectiveAuthAccessScope)
+  loadedEffectiveAuthAccessScopeRef.current = loadedEffectiveAuthAccessScope
 
   useEffect(() => {
     let cancelled = false
+    // A refresh of the scope we already hold results for keeps those results on
+    // failure; a genuine scope change must not show the previous scope's data.
+    const shouldPreserveAccessResults = loadedEffectiveAuthAccessScopeRef.current === effectiveAuthAccessScope
     const loadEffectiveAccess = async () => {
       try {
         const response = await api.getAuthEffectiveAccess(effectiveAuthAccessProjectId, {
@@ -624,7 +659,9 @@ export default function SettingsPage({
         }
       } catch {
         if (!cancelled) {
-          setEffectiveAuthAccessResources([])
+          if (!shouldPreserveAccessResults) {
+            setEffectiveAuthAccessResources([])
+          }
         }
       } finally {
         if (!cancelled) setLoadedEffectiveAuthAccessScope(effectiveAuthAccessScope)
@@ -2684,6 +2721,34 @@ export default function SettingsPage({
     setRequestError('')
   }
 
+  const updateNotificationWebhookEvents = (index: number, eventType: string, enabled: boolean) => {
+    setSettings(current => {
+      const webhook = current.notifications.webhooks[index]
+      if (!webhook) return current
+      const currentEvents = webhook.events || []
+      const nextEvents = enabled
+        ? [...new Set([...currentEvents, eventType])]
+        : currentEvents.filter((value) => value !== eventType)
+
+      const canonicalOrder = NOTIFICATION_EVENTS.filter(event => nextEvents.includes(event))
+      const unknownEvents = nextEvents.filter((value) => !NOTIFICATION_EVENTS.includes(value as typeof NOTIFICATION_EVENTS[number]))
+      const nextOrderedEvents = [...canonicalOrder, ...unknownEvents]
+      return {
+        ...current,
+        notifications: {
+          ...current.notifications,
+          webhooks: current.notifications.webhooks.map((currentWebhook, webhookIndex) => (
+            webhookIndex === index
+              ? { ...currentWebhook, events: nextOrderedEvents }
+              : currentWebhook
+          )),
+        },
+      }
+    })
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const removeNotificationWebhook = (index: number) => {
     setSettings(current => ({
       ...current,
@@ -3241,7 +3306,7 @@ export default function SettingsPage({
                     </div>
                     <input
                       className="settings-input cell-mono"
-					  aria-label="Trusted headers login URL"
+                      aria-label="Trusted headers login URL"
                       value={settings.auth.login_url || ''}
                       onChange={(e) => updateAuth('login_url', e.target.value)}
                       placeholder="https://login.example.com/apexload/start"
@@ -5872,7 +5937,7 @@ export default function SettingsPage({
                       <div className="project-redaction-rule-header">
                         <div>
                           <strong>{webhook.name?.trim() || `Webhook ${index + 1}`}</strong>
-                          <p className="setting-desc">All test lifecycle and telemetry health events are sent. Event filtering is supported by the backend and can be added to the UI later.</p>
+                          <p className="setting-desc">Configure which events this webhook receives. Empty means it receives all events.</p>
                         </div>
                         <button className="btn btn-sm btn-ghost" type="button" onClick={() => removeNotificationWebhook(index)}>
                           Remove
@@ -5960,6 +6025,23 @@ export default function SettingsPage({
                           </label>
                         </div>
                       )}
+
+                      <div className="project-redaction-rule-field">
+                        <span>Webhook Event Filters</span>
+                        <div className="settings-notification-webhook-events">
+                          {NOTIFICATION_EVENT_OPTIONS.map(option => (
+                            <label key={`${webhook.url}-${index}-${option.value}`} className="settings-notification-webhook-event">
+                              <input
+                                type="checkbox"
+                                checked={ (webhook.events || []).includes(option.value) }
+                                onChange={event => updateNotificationWebhookEvents(index, option.value, Boolean(event.target.checked))}
+                                data-testid={`notification-webhook-${index}-event-${option.value}`}
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
 
                       <div className="setting-row">
                         <div className="setting-info">

@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/jmespath/go-jmespath"
 )
@@ -136,11 +138,11 @@ func JMESPath(expr string, body []byte) (string, error) {
 // Regex returns the first submatch (group 1 if present, else the whole match) of
 // expr against body.
 func Regex(expr string, body []byte) (string, error) {
-	re, err := regexp.Compile(expr)
-	if err != nil {
-		return "", err
+	cached := cachedRegex(expr)
+	if cached.compileErr != nil {
+		return "", cached.compileErr
 	}
-	match := re.FindSubmatch(body)
+	match := cached.re.FindSubmatch(body)
 	if len(match) == 0 {
 		return "", fmt.Errorf("%w: regex %q", ErrNotFound, expr)
 	}
@@ -148,6 +150,47 @@ func Regex(expr string, body []byte) (string, error) {
 		return string(match[1]), nil
 	}
 	return string(match[0]), nil
+}
+
+type cachedRegexp struct {
+	re         *regexp.Regexp
+	compileErr error
+}
+
+// regexCompileCacheMaxEntries bounds the compile cache. Extractor expressions
+// come from converted scripts, so the live working set is small, but the cache
+// is process-global and outlives every run — without a bound it would retain a
+// compiled program for every expression the controller has ever seen. On
+// overflow the cache is dropped wholesale rather than evicted per-entry: a
+// rebuild costs one compile per live expression and keeps the hot path
+// lock-free.
+const regexCompileCacheMaxEntries = 1024
+
+var (
+	regexCompileCache     sync.Map
+	regexCompileCacheSize atomic.Int64
+)
+
+func cachedRegex(expr string) cachedRegexp {
+	if cached, ok := regexCompileCache.Load(expr); ok {
+		return cached.(cachedRegexp)
+	}
+	re, err := regexp.Compile(expr)
+	cached := cachedRegexp{re: re, compileErr: err}
+	if _, loaded := regexCompileCache.LoadOrStore(expr, cached); !loaded {
+		if regexCompileCacheSize.Add(1) > regexCompileCacheMaxEntries {
+			resetRegexCompileCache()
+		}
+	}
+	return cached
+}
+
+func resetRegexCompileCache() {
+	regexCompileCache.Range(func(key, _ any) bool {
+		regexCompileCache.Delete(key)
+		return true
+	})
+	regexCompileCacheSize.Store(0)
 }
 
 // Boundary extracts the text between a left and right boundary, expressed as

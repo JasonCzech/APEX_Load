@@ -16306,6 +16306,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: Unprocessable Entity
           content:
@@ -16391,6 +16397,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -16647,6 +16659,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -17062,6 +17080,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: Requires Authentication
@@ -17120,6 +17144,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -18058,6 +18088,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -22777,6 +22813,12 @@ paths:
                   - test_id
                   - tps
                   - transactions
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -22791,6 +22833,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -24433,12 +24481,12 @@ paths:
                 description: {}
                 name:
                   type: string
+                  nullable: true
                 schema: {}
                 updated_at:
                   type: string
                   format: date-time
               required:
-                - name
                 - updated_at
       responses:
         "200":
@@ -29458,6 +29506,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -39119,6 +39173,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "422":
           description: Unprocessable Entity
           content:
@@ -39185,6 +39245,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -48962,7 +49028,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
       operationId: handleRemoteRunActionAbort
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -52245,7 +52310,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
       operationId: handleRemoteRunActionPause
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -55528,7 +55592,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
       operationId: handleRemoteRunActionResume
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -58811,7 +58874,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
       operationId: handleRemoteRunActionStart
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -62094,7 +62156,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
       operationId: handleRemoteRunActionStop
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -82820,6 +82881,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin'
@@ -82883,6 +82950,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           content:
             application/json:
               schema:
@@ -104334,6 +104407,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -104666,7 +104745,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       operationId: handleCloneScriptDraft
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -104736,7 +104814,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
       operationId: handleStartScriptDebugScript
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -107779,6 +107856,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "500":
           description: Internal Server Error
           content:
@@ -108326,7 +108409,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
       operationId: handleReplayScript
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -109784,6 +109866,8 @@ paths:
                     version:
                       type: string
                   nullable: true
+                start_paused:
+                  type: boolean
                 variables:
                   type: object
                   additionalProperties:
@@ -109843,7 +109927,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
       operationId: handleStartReplaySessionScript
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -132292,7 +132375,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       operationId: handleStartScriptDebugDraftScript
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -147607,7 +147689,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       operationId: handleReplayDraftScript
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -149065,6 +149146,8 @@ paths:
                     version:
                       type: string
                   nullable: true
+                start_paused:
+                  type: boolean
                 variables:
                   type: object
                   additionalProperties:
@@ -149112,7 +149195,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
       operationId: handleStartReplaySessionDraftScript
       requestBody:
-        required: true
         content:
           application/json:
             schema:
@@ -195769,7 +195851,6 @@ paths:
       description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
       operationId: handleStartTest
       requestBody:
-        required: true
         content:
           application/json:
             schema:

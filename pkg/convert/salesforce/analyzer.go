@@ -432,9 +432,54 @@ func headerMap(headers []struct {
 }
 
 func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
+	type normalizedURL struct {
+		raw    string
+		parsed bool
+		scheme string
+		host   string
+		path   string
+		query  string
+	}
+	parseNormalized := func(raw string) normalizedURL {
+		raw = strings.TrimSpace(raw)
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return normalizedURL{raw: raw}
+		}
+		return normalizedURL{
+			raw:    raw,
+			parsed: true,
+			scheme: strings.ToLower(parsed.Scheme),
+			host:   strings.ToLower(parsed.Host),
+			path:   parsed.EscapedPath(),
+			query:  parsed.RawQuery,
+		}
+	}
+	refURLs := make(map[int]normalizedURL, len(refs))
+	entryURLs := make(map[int]normalizedURL, len(entries))
+	for refIndex, ref := range refs {
+		refURLs[refIndex] = parseNormalized(ref.URL)
+	}
+	for _, entry := range entries {
+		entryURLs[entry.ID] = parseNormalized(entry.URL)
+	}
+	equivalentNormalized := func(refURL, entryURL normalizedURL) bool {
+		if refURL.raw == entryURL.raw {
+			return true
+		}
+		if !refURL.parsed || !entryURL.parsed {
+			return false
+		}
+		return refURL.scheme == entryURL.scheme &&
+			refURL.host == entryURL.host &&
+			refURL.path == entryURL.path &&
+			refURL.query == entryURL.query
+	}
+
 	matches := make(map[int]int)
 	used := make(map[int]bool)
 	for refIndex, ref := range refs {
+		refURL := refURLs[refIndex]
 		bestID := 0
 		bestScore := -1
 		for _, entry := range entries {
@@ -444,7 +489,7 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 			if !strings.EqualFold(ref.Method, entry.Method) {
 				continue
 			}
-			if !equivalentURL(ref.URL, entry.URL) {
+			if !equivalentNormalized(refURL, entryURLs[entry.ID]) {
 				continue
 			}
 			if score := harMatchScore(ref, entry); score > bestScore {

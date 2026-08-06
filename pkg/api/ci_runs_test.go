@@ -936,6 +936,123 @@ func TestCIRunGetAndAbortRevalidateAPIKeyFallbackWithoutBreakingOIDC(t *testing.
 	}
 }
 
+func TestAbortCIRunRejectsMalformedBody(t *testing.T) {
+	server, store := newCIContractTestServer(t, ciRunSourceTestPolicy())
+	script := ciTestScript("https://api.example.test")
+	script.ID = "ci-abort-malformed-body-script"
+	script.ProjectID = "project-ci"
+	stored, err := server.runner.StoreScriptDurable(script)
+	if err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
+
+	source := ciTestRunSource("1")
+	metadata := ciRunMetadata{
+		SchemaVersion: ciRunSchemaVersion, Source: source, ScriptIdentity: "script_id:" + stored.ID,
+		PolicyRevision: ciRunSourceTestPolicy().Revision, IdempotencySHA: sha256String("abort-malformed-body"),
+	}
+	materializationKey, err := encodeCIRunMetadata(metadata)
+	if err != nil {
+		t.Fatalf("encodeCIRunMetadata: %v", err)
+	}
+
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		RequestedTestID: "c8ecf9b5-3a1b-4b4d-97a8-8c6f9f7aef31", Name: "CI abort malformed body", ProjectID: "project-ci",
+		ScriptID: stored.ID, VUsers: 1, Duration: "1m", MaterializationKey: materializationKey,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	expiresAt := time.Now().Add(time.Hour)
+	account := &storage.ServiceAccount{
+		ID: "ci-abort-malformed-body-key", Name: "CI abort malformed body key", Active: true, KeyHash: "ci-abort-malformed-body-key-hash",
+		ProjectRoles: map[string][]string{"project-ci": {RoleCIRunner}},
+		Scopes:       []string{"tests:run", "results:read"}, ExpiresAt: &expiresAt,
+	}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatalf("SaveServiceAccount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/"+testRun.ID+"/abort", strings.NewReader(`{`))
+	req = withAuthenticatedContext(req, authResolution{ServiceAccount: &AuthenticatedServiceAccount{ID: account.ID, Scopes: append([]string(nil), account.Scopes...)}})
+	req.SetPathValue("id", testRun.ID)
+	resp := httptest.NewRecorder()
+	server.handleAbortCIRun(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("bad request status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	var parsed map[string]string
+	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("malformed abort response was not JSON: %v", err)
+	}
+	if !strings.Contains(parsed["error"], "invalid request body") {
+		t.Fatalf("bad abort response = %#v", parsed)
+	}
+
+	latest, ok := server.runner.GetTest(testRun.ID)
+	if !ok || latest.Status != "QUEUED" {
+		t.Fatalf("malformed abort changed run state: %#v", latest)
+	}
+}
+
+func TestAbortCIRunRejectsOversizeBody(t *testing.T) {
+	server, store := newCIContractTestServer(t, ciRunSourceTestPolicy())
+	script := ciTestScript("https://api.example.test")
+	script.ID = "ci-abort-oversize-body-script"
+	script.ProjectID = "project-ci"
+	if _, err := server.runner.StoreScriptDurable(script); err != nil {
+		t.Fatalf("StoreScriptDurable: %v", err)
+	}
+
+	source := ciTestRunSource("1")
+	metadata := ciRunMetadata{
+		SchemaVersion: ciRunSchemaVersion, Source: source, ScriptIdentity: "script_id:" + script.ID,
+		PolicyRevision: ciRunSourceTestPolicy().Revision, IdempotencySHA: sha256String("abort-oversize-body"),
+	}
+	materializationKey, err := encodeCIRunMetadata(metadata)
+	if err != nil {
+		t.Fatalf("encodeCIRunMetadata: %v", err)
+	}
+	runID := "c8ecf9b5-3a1b-4b4d-97a8-8c6f9f7aef32"
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		RequestedTestID: runID, Name: "CI abort oversize body", ProjectID: "project-ci",
+		ScriptID: script.ID, VUsers: 1, Duration: "1m", MaterializationKey: materializationKey,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	expiresAt := time.Now().Add(time.Hour)
+	account := &storage.ServiceAccount{
+		ID: "ci-abort-oversize-body-key", Name: "CI abort oversize body key", Active: true, KeyHash: "ci-abort-oversize-body-key-hash",
+		ProjectRoles: map[string][]string{"project-ci": {RoleCIRunner}},
+		Scopes:       []string{"tests:run", "results:read"}, ExpiresAt: &expiresAt,
+	}
+	if err := store.SaveServiceAccount(account); err != nil {
+		t.Fatalf("SaveServiceAccount: %v", err)
+	}
+
+	reason := strings.Repeat("x", ciAbortMaxBodyBytes+1)
+	body := fmt.Sprintf(`{"reason":"%s"}`, reason)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs/"+testRun.ID+"/abort", strings.NewReader(body))
+	req = withAuthenticatedContext(req, authResolution{ServiceAccount: &AuthenticatedServiceAccount{ID: account.ID, Scopes: append([]string(nil), account.Scopes...)}})
+	req.SetPathValue("id", testRun.ID)
+	resp := httptest.NewRecorder()
+	server.handleAbortCIRun(resp, req)
+
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusRequestEntityTooLarge, resp.Body.String())
+	}
+	var parsed map[string]string
+	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("oversize abort response was not JSON: %v", err)
+	}
+	if !strings.Contains(parsed["error"], "request body exceeds the configured size limit") {
+		t.Fatalf("unexpected oversize abort response = %#v", parsed)
+	}
+}
+
 func TestCreateCIRunIdempotencyReusesAttemptAndSeparatesNewAttempt(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {

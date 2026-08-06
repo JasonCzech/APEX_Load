@@ -106,6 +106,52 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     })
   })
 
+  it('parses CRLF source IP entries as separate lines', () => {
+    const onUpdateField = vi.fn()
+    const script: ScriptDefinition = {
+      name: 'Imported web script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: {
+        base_url: '',
+        web_runtime: {},
+      },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="web_runtime"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    const sourceIpTextarea = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Source IP pool"]')
+    expect(sourceIpTextarea).toBeTruthy()
+    if (!sourceIpTextarea) return
+
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    setValue?.call(sourceIpTextarea, '10.0.0.5\r\n10.0.0.6\r\n')
+    sourceIpTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.web_runtime',
+      expect.objectContaining({
+        source_ips: ['10.0.0.5', '10.0.0.6'],
+      }),
+    )
+  })
+
   it('renders the governed Java Env Settings subsections without a Base URL', () => {
     const onUpdateField = vi.fn()
     act(() => {

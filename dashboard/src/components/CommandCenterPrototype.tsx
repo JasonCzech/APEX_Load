@@ -382,9 +382,9 @@ const MOCK_GROUP_METRICS: Record<string, GroupLiveMetrics> = GROUPS.reduce((metr
     transactions: group.transactions,
     errors: group.errors,
     tps: group.tps,
-    target_tps: group.tps * 1.12,
+    target_tps: group.tps,
     throughput_gap_pct: 7.8,
-    throughput_target_missed: group.key === 'browse',
+    throughput_target_missed: false,
     avg_response_ms: group.art,
     p50_ms: group.art * 0.72,
     p90_ms: group.art * 1.55,
@@ -393,18 +393,21 @@ const MOCK_GROUP_METRICS: Record<string, GroupLiveMetrics> = GROUPS.reduce((metr
   }
   return metrics
 }, {} as Record<string, GroupLiveMetrics>)
+const MOCK_TOTAL_TRANSACTIONS = GROUPS.reduce((sum, group) => sum + group.transactions, 0)
+const MOCK_TOTAL_ERRORS = GROUPS.reduce((sum, group) => sum + group.errors, 0)
+const MOCK_TOTAL_TPS = GROUPS.reduce((sum, group) => sum + group.tps, 0)
 
 const MOCK_LIVE_METRICS: LiveMetrics = {
   timestamp: '2026-06-08T16:24:00Z',
   active_vusers: GROUPS.reduce((sum, group) => sum + group.current, 0),
-  tps: GROUPS.reduce((sum, group) => sum + group.tps, 0),
-  target_tps: 1500,
+  tps: MOCK_TOTAL_TPS,
+  target_tps: MOCK_TOTAL_TPS,
   throughput_gap_pct: 6.4,
-  throughput_target_missed: true,
+  throughput_target_missed: false,
   avg_response_ms: 274,
-  error_pct: 1.02,
-  total_transactions: GROUPS.reduce((sum, group) => sum + group.transactions, 0),
-  total_errors: GROUPS.reduce((sum, group) => sum + group.errors, 0),
+  error_pct: Math.round((MOCK_TOTAL_ERRORS / MOCK_TOTAL_TRANSACTIONS) * 1000) / 10,
+  total_transactions: MOCK_TOTAL_TRANSACTIONS,
+  total_errors: MOCK_TOTAL_ERRORS,
   p50_ms: 174,
   p90_ms: 512,
   p95_ms: 714,
@@ -874,8 +877,19 @@ function buildLiveErrorPatterns(metrics?: LiveMetrics): ErrorPattern[] {
   return (metrics?.error_patterns || []).map((pattern, index) => {
     const rate = pattern.error_pct ?? (metrics?.total_transactions ? pattern.count / metrics.total_transactions * 100 : 0)
     const group = pattern.affected_groups?.join(', ') || 'Multiple groups'
+    // Fall back to the pattern's identifying evidence when the backend supplied
+    // no signature, and to the index when there is no evidence either. The
+    // joined string is never empty, so it can't chain into a `||` fallback.
+    const evidenceParts = [
+      pattern.snapshot_url || '',
+      pattern.status_code == null ? '' : String(pattern.status_code),
+      pattern.first_seen || '',
+      pattern.actions?.[0] || '',
+    ]
+    const signatureId = pattern.signature
+      || (evidenceParts.some(Boolean) ? evidenceParts.join('\u001f') : `pattern-${index}`)
     return {
-      id: `live-${pattern.signature || `pattern-${index}`}`,
+      id: `live-${signatureId}`,
       signature: pattern.signature,
       title: pattern.signature || `Error pattern ${index + 1}`,
       group,
@@ -944,10 +958,6 @@ export default function CommandCenterPrototype({
   const discoveringRuns = runDiscoveryState.scopeKey === discoveryScopeKey && runDiscoveryState.discovering
   const discoveryGenerationRef = useRef(0)
   const testId = testIdProp || autoSelectedTestId || undefined
-  const scopedThresholdAlerts = useMemo(
-    () => testId ? thresholdAlerts.filter(alert => alert.testId === testId) : [],
-    [testId, thresholdAlerts],
-  )
   const [variant, setVariant] = useState<VariantId>('ops')
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
@@ -1205,8 +1215,22 @@ export default function CommandCenterPrototype({
         status: streamStatus || activeLiveTest.status,
         live_metrics: liveMetrics || activeLiveTest.live_metrics,
       }
-    : hasLiveRoute ? loadingTest : emptyMode ? EMPTY_COMMAND_CENTER_TEST : MOCK_TEST,
-  [activeLiveTest, emptyMode, hasLiveRoute, liveMetrics, loadingTest, streamStatus])
+    : hasLiveRoute
+      ? loadingTest
+      : emptyMode
+        ? EMPTY_COMMAND_CENTER_TEST
+        : prototypeMode
+          ? MOCK_TEST
+          : EMPTY_COMMAND_CENTER_TEST,
+  [activeLiveTest, emptyMode, hasLiveRoute, liveMetrics, loadingTest, prototypeMode, streamStatus])
+  const scopedThresholdAlerts = useMemo(
+    () => {
+      const activeTestId = displayTest.id || testId
+      if (!activeTestId) return []
+      return thresholdAlerts.filter(alert => alert.testId === activeTestId)
+    },
+    [displayTest.id, testId, thresholdAlerts],
+  )
 
   useEffect(() => {
     if (!liveMode) return
@@ -1328,7 +1352,7 @@ export default function CommandCenterPrototype({
   const totalDurationSeconds = parseDurationToSeconds(displayTest.duration)
   const remainingSeconds = liveMode
     ? computeRemainingSeconds(displayTest, runStatus)
-    : prototypeMode && runStatus !== 'STOPPING' && runStatus !== 'ABORTED' ? 37 * 60 + 18 : 0
+    : 0
   const historicalRun = liveMode && isHistoricalRunStatus(runStatus)
   const allGraphWallGroupsVisible = groups.length === 0 || graphWallGroups.length === groups.length
   const noGraphWallGroupsVisible = groups.length > 0 && graphWallGroups.length === 0

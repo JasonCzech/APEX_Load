@@ -1000,3 +1000,18 @@ func (tr *TestRunner) broadcastEvent(eventType string, test *ManagedTest) {
 		})
 	}
 }
+
+// cloneManagedTestLifecycleEvent returns a lightweight immutable lifecycle
+// snapshot used for asynchronous broadcasts. Callers should snapshot while holding
+// tr.mu to avoid races with in-progress lifecycle transitions.
+func cloneManagedTestLifecycleEvent(test *ManagedTest) *ManagedTest {
+	if test == nil {
+		return nil
+	}
+	return &ManagedTest{
+		ID:        test.ID,
+		ProjectID: test.ProjectID,
+		Name:      test.Name,
+		Status:    test.Status,
+	}
+}

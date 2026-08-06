@@ -70,7 +70,7 @@ func (s *Server) handleStartScriptDebugDraftScript(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -100,10 +100,8 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 	}
 
 	var req ScriptDebugStartRequest
-	if r.Body != nil && r.ContentLength != 0 {
-		if !decodeJSONBody(w, r, &req) {
-			return
-		}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
 	}
 
 	script := stored.Script
@@ -133,7 +131,7 @@ func (s *Server) handleStartReplaySessionDraftScript(w http.ResponseWriter, r *h
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -164,10 +162,8 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 	}
 
 	var req ScriptDebugStartRequest
-	if r.Body != nil && r.ContentLength != 0 {
-		if !decodeJSONBody(w, r, &req) {
-			return
-		}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
 	}
 
 	script := stored.Script

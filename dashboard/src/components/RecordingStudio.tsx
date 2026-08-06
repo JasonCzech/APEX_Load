@@ -1088,16 +1088,19 @@ export default function RecordingStudio({
     }
   };
 
-  const showFeedback = (msg: string, type: "success" | "error" = "success") => {
-    setFeedback(msg);
-    setFeedbackType(type);
-    if (feedbackTimerRef.current !== null)
-      window.clearTimeout(feedbackTimerRef.current);
-    feedbackTimerRef.current = window.setTimeout(() => {
-      feedbackTimerRef.current = null;
-      setFeedback("");
-    }, 4000);
-  };
+  const showFeedback = useCallback(
+    (msg: string, type: "success" | "error" = "success") => {
+      setFeedback(msg);
+      setFeedbackType(type);
+      if (feedbackTimerRef.current !== null)
+        window.clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = window.setTimeout(() => {
+        feedbackTimerRef.current = null;
+        setFeedback("");
+      }, 4000);
+    },
+    [],
+  );
 
   const refresh = useCallback(async () => {
     const projectId = activeProject?.id;
@@ -1642,54 +1645,75 @@ export default function RecordingStudio({
     }
   };
 
-  const handlePreviewConversion = async (session: RecordingSession) => {
-    const sourceGeneration = advanceConvertedReviewGeneration();
-    const sourceScope = refreshScopeRef.current;
-    const sourceProjectId = sourceScope.projectId;
-    const requestIsCurrent = () =>
-      refreshScopeRef.current === sourceScope &&
-      convertedReviewGenerationRef.current === sourceGeneration;
-    try {
-      setConvertedParameterizationApplying(false);
-      setConvertedCredentialActionInProgress(false);
-      convertedPreparedScriptRef.current = null;
-      convertedSourceRecordingSessionIDRef.current = session.id;
-      setConvertedPreparedSecrets(null);
-      const result = await convertTask.run(
-        async () => {
-          const response = await api.previewRecordingConversion(
-            session.id,
-            session.name,
-            parameterizeInputs,
-          );
-          if (!requestIsCurrent()) {
-            sourceSecretSessions.discardUnaccepted(
+  const runRecordingConversion = useCallback(
+    async (session: RecordingSession, mode: "script" | "review") => {
+      const sourceGeneration = advanceConvertedReviewGeneration();
+      const sourceScope = refreshScopeRef.current;
+      const sourceProjectId = sourceScope.projectId;
+      const requestIsCurrent = () =>
+        refreshScopeRef.current === sourceScope &&
+        convertedReviewGenerationRef.current === sourceGeneration;
+      try {
+        setConvertedParameterizationApplying(false);
+        setConvertedCredentialActionInProgress(false);
+        convertedPreparedScriptRef.current = null;
+        convertedSourceRecordingSessionIDRef.current = session.id;
+        setConvertedPreparedSecrets(null);
+        const result = await convertTask.run(
+          async () => {
+            const response = await api.previewRecordingConversion(
+              session.id,
+              session.name,
+              parameterizeInputs,
+            );
+            if (!requestIsCurrent()) {
+              sourceSecretSessions.discardUnaccepted(
+                sourceProjectId,
+                response.source_secret_session_id,
+              );
+              throw new Error(
+                "The recording source changed while conversion was running.",
+              );
+            }
+            sourceSecretSessions.replace(
+              "converted",
               sourceProjectId,
               response.source_secret_session_id,
             );
-            throw new Error(
-              "The recording source changed while conversion was running.",
-            );
-          }
-          sourceSecretSessions.replace(
-            "converted",
-            sourceProjectId,
-            response.source_secret_session_id,
-          );
-          return response;
-        },
-        { clearValue: true },
-      );
-      if (!requestIsCurrent()) return;
-      showFeedback(
-        `Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`,
-      );
-    } catch (e: any) {
-      if (requestIsCurrent()) {
-        sourceSecretSessions.clear("converted");
-        showFeedback(e.message, "error");
+            return response;
+          },
+          { clearValue: true },
+        );
+        if (!requestIsCurrent()) return;
+        const message = mode === "script"
+          ? `Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`
+          : `Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`;
+        showFeedback(message);
+      } catch (e: any) {
+        if (requestIsCurrent()) {
+          sourceSecretSessions.clear("converted");
+          showFeedback(e.message, "error");
+        }
       }
-    }
+    },
+    [
+      advanceConvertedReviewGeneration,
+      convertedReviewGenerationRef,
+      convertTask,
+      parameterizeInputs,
+      refreshScopeRef,
+      api,
+      sourceSecretSessions,
+      showFeedback,
+    ],
+  );
+
+  const handlePreviewConversion = async (session: RecordingSession) => {
+    void runRecordingConversion(session, "review");
+  };
+
+  const handleConvert = async (session: RecordingSession) => {
+    void runRecordingConversion(session, "script");
   };
 
   const handleExportHAR = async (session: RecordingSession) => {
@@ -1795,56 +1819,6 @@ export default function RecordingStudio({
     } catch (e: any) {
       if (requestIsCurrent()) {
         sourceSecretSessions.clear("salesforce");
-        showFeedback(e.message, "error");
-      }
-    }
-  };
-
-  const handleConvert = async (session: RecordingSession) => {
-    const sourceGeneration = advanceConvertedReviewGeneration();
-    const sourceScope = refreshScopeRef.current;
-    const sourceProjectId = sourceScope.projectId;
-    const requestIsCurrent = () =>
-      refreshScopeRef.current === sourceScope &&
-      convertedReviewGenerationRef.current === sourceGeneration;
-    try {
-      setConvertedParameterizationApplying(false);
-      setConvertedCredentialActionInProgress(false);
-      convertedPreparedScriptRef.current = null;
-      convertedSourceRecordingSessionIDRef.current = session.id;
-      setConvertedPreparedSecrets(null);
-      const result = await convertTask.run(
-        async () => {
-          const response = await api.previewRecordingConversion(
-            session.id,
-            session.name,
-            parameterizeInputs,
-          );
-          if (!requestIsCurrent()) {
-            sourceSecretSessions.discardUnaccepted(
-              sourceProjectId,
-              response.source_secret_session_id,
-            );
-            throw new Error(
-              "The recording source changed while conversion was running.",
-            );
-          }
-          sourceSecretSessions.replace(
-            "converted",
-            sourceProjectId,
-            response.source_secret_session_id,
-          );
-          return response;
-        },
-        { clearValue: true },
-      );
-      if (!requestIsCurrent()) return;
-      showFeedback(
-        `Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`,
-      );
-    } catch (e: any) {
-      if (requestIsCurrent()) {
-        sourceSecretSessions.clear("converted");
         showFeedback(e.message, "error");
       }
     }

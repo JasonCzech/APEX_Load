@@ -26,6 +26,10 @@ const mocks = vi.hoisted(() => ({
     setTest: vi.fn(),
     error: '',
   },
+  compareBar: {
+    pinResult: undefined as boolean | undefined,
+    pinError: undefined as string | undefined,
+  },
   archiveModel: {
     hasArchive: false,
     archiveError: '',
@@ -126,7 +130,20 @@ vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: () => <section
 vi.mock('./runReport/RunReportDiagnostics', () => ({ default: () => <section data-testid="diagnostics" /> }))
 vi.mock('./runReport/RunReportCompareBar', () => ({
   default: ({ onPinBaseline }: { onPinBaseline: () => Promise<boolean> }) => (
-    <section data-testid="compare"><button type="button" onClick={() => void onPinBaseline()}>Pin test baseline</button></section>
+    <section data-testid="compare">
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            mocks.compareBar.pinResult = await onPinBaseline()
+          } catch (error: unknown) {
+            mocks.compareBar.pinError = error instanceof Error ? error.message : 'Unable to pin baseline'
+          }
+        }}
+      >
+        Pin test baseline
+      </button>
+    </section>
   ),
 }))
 vi.mock('./runReport/RunReportExportActions', () => ({ default: () => <section data-testid="exports" /> }))
@@ -203,6 +220,8 @@ describe('RunReportPage', () => {
     onOpenCommandCenter = vi.fn<(id?: string) => void>()
     onOpenLegacyArchive = vi.fn<(id: string) => void>()
     onNavigateReport = vi.fn<(next: { lens?: 'executive' | 'engineer' | 'audit'; compare?: string }) => void>()
+    mocks.compareBar.pinResult = undefined
+    mocks.compareBar.pinError = undefined
   })
 
   afterEach(async () => {
@@ -275,7 +294,7 @@ describe('RunReportPage', () => {
     expect(mocks.polling.setTest).toHaveBeenCalledWith(refreshed)
   })
 
-  it('ignores a delayed pin refresh after the comparison changes', async () => {
+  it('returns a successful pin result when the comparison changes before delayed refresh', async () => {
     const current = { ...buildTest('COMPLETE'), comparison_baseline: { source_test_id: 'baseline-1', source_test_name: 'Baseline 1' } }
     const baseline = (id: string) => ({ ...buildTest('COMPLETE'), id, name: id })
     let resolveRefresh!: (value: TestSummary) => void
@@ -308,7 +327,51 @@ describe('RunReportPage', () => {
       await pendingRefresh
     })
 
-    expect(mocks.polling.setTest).not.toHaveBeenCalled()
+    expect(mocks.compareBar.pinError).toBeUndefined()
+    expect(mocks.compareBar.pinResult).toBe(true)
+    expect(mocks.polling.setTest).toHaveBeenCalled()
+  })
+
+  it('returns a successful pin result even when the comparison changes before the refresh', async () => {
+    const current = { ...buildTest('COMPLETE'), comparison_baseline: { source_test_id: 'baseline-1', source_test_name: 'Baseline 1' } }
+    let releaseRefresh: (() => void) | undefined
+    const pendingRefresh = new Promise<void>(resolve => {
+      releaseRefresh = resolve
+    })
+    let getTestCalled = false
+    mocks.polling.test = current
+    mocks.archiveModel.archiveReport = {} as RunArchiveReport
+    mocks.api.getTest.mockImplementation(async (id: string) => {
+      if (id === 'run-1') {
+        getTestCalled = true
+        await pendingRefresh
+        return { ...current, comparison_baseline: { ...current.comparison_baseline, pinned_at: '2026-08-05T12:00:00Z' } }
+      }
+      return { ...buildTest('COMPLETE'), id, name: id }
+    })
+    mocks.api.pinComparisonBaseline.mockResolvedValue({} as any)
+    mocks.api.getTestArchiveReport.mockResolvedValue({})
+    mocks.api.getTestArchiveAnalysis.mockResolvedValue({ nodes: [], edges: [], stats: {} })
+
+    const render = (initialCompare: string) => (
+      <RunReportPage
+        testId="run-1"
+        initialCompare={initialCompare}
+        onOpenCommandCenter={onOpenCommandCenter}
+        onOpenLegacyArchive={onOpenLegacyArchive}
+        onNavigateReport={onNavigateReport}
+      />
+    )
+    await act(async () => root.render(render('baseline-1')))
+    await flush()
+    await act(async () => buttonByText(container, 'Pin test baseline')?.click())
+    await act(async () => root.render(render('baseline-2')))
+    await act(async () => releaseRefresh?.())
+
+    expect(getTestCalled).toBe(true)
+    expect(mocks.compareBar.pinError).toBeUndefined()
+    expect(mocks.compareBar.pinResult).toBe(true)
+    expect(mocks.polling.setTest).toHaveBeenCalled()
   })
 
   it('disables verdict saving when report annotations cannot be loaded', async () => {

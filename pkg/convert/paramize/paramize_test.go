@@ -166,6 +166,76 @@ func TestSuggestDataParamSkipsTemplatedAndNonMatching(t *testing.T) {
 	}
 }
 
+func TestSuggestDataParamsPreserveWholeKeyBoundaries(t *testing.T) {
+	script := httpScript(dsl.Action{
+		Name:   "query key boundary",
+		Type:   "http_request",
+		Target: "/users?session_id=abc&id=123",
+		Method: "GET",
+		Body:   "session_id=abc&id=123",
+	}, dsl.Action{
+		Name:   "form body",
+		Type:   "http_request",
+		Target: "/submit",
+		Method: "POST",
+		Body:   "order_id=xyz&user_id=987",
+	})
+	result := Suggest(script, allClasses())
+	params := findByKind(result.Suggestions, KindDataParam)
+	if len(params) != 4 {
+		t.Fatalf("expected 4 data-param suggestions, got %d (%+v)", len(params), params)
+	}
+	countByVar := map[string]int{}
+	for _, p := range params {
+		if p.VarName == "id" || p.VarName == "session_id" || p.VarName == "order_id" || p.VarName == "user_id" {
+			countByVar[p.VarName]++
+			continue
+		}
+		t.Fatalf("unexpected data-param variable %q", p.VarName)
+	}
+	for _, v := range []string{"id", "session_id", "order_id", "user_id"} {
+		if countByVar[v] != 1 {
+			t.Fatalf("expected variable %q exactly once, got %+v", v, countByVar)
+		}
+	}
+}
+
+// The pair pattern anchors on a separator so a key is never harvested out of
+// the middle of a longer token. That anchor must still admit `;`-separated
+// pairs and bodies that do not start at offset 0.
+func TestSuggestDataParamsHandleSemicolonAndOffsetPairs(t *testing.T) {
+	script := httpScript(dsl.Action{
+		Name:   "semicolon separated query",
+		Type:   "http_request",
+		Target: "/report?order_id=abc;user_id=987",
+		Method: "GET",
+	}, dsl.Action{
+		Name:   "body with leading whitespace",
+		Type:   "http_request",
+		Target: "/submit",
+		Method: "POST",
+		Body:   "  session_id=xyz",
+	})
+	result := Suggest(script, allClasses())
+
+	values := map[string]string{}
+	for _, p := range findByKind(result.Suggestions, KindDataParam) {
+		values[p.VarName] = p.SampleValue
+	}
+	// Without `;` in the value class, order_id would swallow "abc;user_id=987"
+	// and user_id would never be suggested at all.
+	if values["order_id"] != "abc" {
+		t.Fatalf("order_id = %q, want %q (semicolon must terminate the value)", values["order_id"], "abc")
+	}
+	if values["user_id"] != "987" {
+		t.Fatalf("user_id = %q, want %q (semicolon must start a new pair)", values["user_id"], "987")
+	}
+	// Without multi-line/whitespace anchoring, an indented body drops its first pair.
+	if values["session_id"] != "xyz" {
+		t.Fatalf("session_id = %q, want %q (offset body pair must still match)", values["session_id"], "xyz")
+	}
+}
+
 func TestSuggestDataParamGroupsRepeatedValues(t *testing.T) {
 	script := httpScript(
 		dsl.Action{Name: "step1", Type: "http_request", Target: "/users?user_id=777"},

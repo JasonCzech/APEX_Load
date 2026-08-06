@@ -658,7 +658,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		case "decodeJSONBody", "decodeRequestBody":
 			analysis.jsonRequest = true
 			setInferredRequestSchema(call, variableTypes, typeDefinitions, analysis)
-		case "decodeOptionalJSONBody":
+		case "decodeOptionalJSONBody", "decodeOptionalJSONBodyAllowingUnknownFields":
 			analysis.jsonRequest = true
 			analysis.optionalJSONBody = true
 			setInferredRequestSchema(call, variableTypes, typeDefinitions, analysis)
@@ -1031,7 +1031,7 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"PUT /api/v1/applications/{id}":                                                                 {"updated_at"},
 		"PUT /api/v1/releases/{id}":                                                                     {"updated_at"},
 		"POST /api/v1/data-pools":                                                                       {"name"},
-		"PUT /api/v1/data-pools/{id}":                                                                   {"name", "updated_at"},
+		"PUT /api/v1/data-pools/{id}":                                                                   {"updated_at"},
 		"POST /api/v1/data-pools/{id}/rows":                                                             {"data"},
 		"PUT /api/v1/data-pools/{id}/rows/{row_id}":                                                     {"data", "version"},
 		"PATCH /api/v1/tests/{id}/groups/{group}/runtime-settings":                                      {"expected_revision", "fields"},

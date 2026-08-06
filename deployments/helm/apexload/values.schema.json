@@ -79,6 +79,10 @@
           "type": "string",
           "pattern": "^$|^[^\\s\\x00-\\x1F\\x7F]{1,512}$"
         },
+        "addr": {
+          "type": "string",
+          "pattern": "^(|[A-Za-z0-9._-]*|\\[[0-9A-Fa-f:.]+\\]):[0-9]{1,5}$"
+        },
         "ha": {
           "type": "object",
           "properties": {

@@ -185,6 +185,67 @@ func TestConvertOpenAPIServerVariablesStyleExplodeAndOperationSecurity(t *testin
 	}
 }
 
+func TestConvertOpenAPI2XXWildcardUsesRangeAssertionAndSchema(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `{
+  "openapi": "3.0.3",
+  "info": {"title": "Health", "version": "1.0"},
+  "servers": [{"url": "https://api.example.test"}],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "healthCheck",
+        "responses": {
+          "2XX": {
+            "description": "status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "healthId": {"type": "string"},
+                    "state": {"type": "string"},
+                    "latencyMs": {"type": "integer"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "healthCheck")
+	foundRange := false
+	for _, assertion := range action.Assertions {
+		if assertion.Type == "status_code_range" && assertion.Min == 200 && assertion.Max == 299 {
+			foundRange = true
+		}
+		if assertion.Type == "status_code" && assertion.Expected == 2 {
+			t.Fatalf("unexpected narrow status_code assertion from wildcard response: %+v", assertion)
+		}
+	}
+	if !foundRange {
+		t.Fatalf("assertions = %#v, want 2xx status_code_range", action.Assertions)
+	}
+	// Only identity-shaped fields (id/uuid/key/url) yield extractors, so healthId
+	// — not state or latencyMs — is what proves the 2XX schema was resolved.
+	foundExtractor := false
+	for _, extractor := range action.Extractors {
+		if extractor.Source == "body" && extractor.Type == "jsonpath" && extractor.Expression == "$.healthId" {
+			foundExtractor = true
+		}
+	}
+	if !foundExtractor {
+		t.Fatalf("extractors = %#v, want healthId jsonpath extractor", action.Extractors)
+	}
+}
+
 func TestConvertOpenAPICRUDChainExtractsAndPrunesDataSeeds(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Content: `{

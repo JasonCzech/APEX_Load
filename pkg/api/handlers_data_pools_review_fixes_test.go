@@ -1018,6 +1018,64 @@ func TestUpdateDataPoolArchivedAtPresenceSemantics(t *testing.T) {
 	}
 }
 
+func TestUpdateDataPoolAllowsMetadataOnlyUpdatesWithoutName(t *testing.T) {
+	server, store, _ := newImportExportTestServer(t)
+	pool := &storage.SharedDataPool{
+		ID:          "metadata-only-pool",
+		Name:        "Original Name",
+		ProjectID:   storage.DefaultProjectID,
+		Description: "original",
+		Schema:      map[string]string{"id": "string"},
+		CreatedAt:   time.Now().UTC().Add(-time.Hour),
+		UpdatedAt:   time.Now().UTC().Add(-time.Minute),
+	}
+	if err := store.SaveDataPool(pool); err != nil {
+		t.Fatalf("seed pool: %v", err)
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"description": "updated description",
+		"schema":      map[string]string{"id": "int"},
+		"updated_at":  pool.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s, want 200", resp.Code, resp.Body.String())
+	}
+	updated, err := store.GetDataPool(pool.ID)
+	if err != nil {
+		t.Fatalf("GetDataPool after update: %v", err)
+	}
+	if updated.Name != "Original Name" {
+		t.Fatalf("name changed unexpectedly: got=%q want=%q", updated.Name, "Original Name")
+	}
+	if updated.Description != "updated description" || updated.Schema["id"] != "int" {
+		t.Fatalf("metadata updates not applied: %#v", updated)
+	}
+
+	body, err = json.Marshal(map[string]any{
+		"name":        "",
+		"description": "still-updated",
+		"updated_at":  updated.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyReq := httptest.NewRequest(http.MethodPut, "/api/v1/data-pools/"+pool.ID, strings.NewReader(string(body)))
+	emptyReq.Header.Set("Content-Type", "application/json")
+	emptyResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(emptyResp, emptyReq)
+	if emptyResp.Code != http.StatusBadRequest {
+		t.Fatalf("empty name status = %d body=%s, want 400", emptyResp.Code, emptyResp.Body.String())
+	}
+}
+
 func TestValidateScenarioLoadModelReportsArchivedPoolAsBlockedItem(t *testing.T) {
 	server, scriptID, poolID := seedDataPoolContractServer(t)
 	pool, err := server.store.GetDataPool(poolID)

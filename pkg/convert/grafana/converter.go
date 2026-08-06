@@ -695,7 +695,7 @@ func panelKind(panelType string) (string, bool) {
 	switch panelType {
 	case "timeseries", "graph":
 		return PanelKindLine, true
-	case "stat", "gauge":
+	case "stat", "gauge", "singlestat":
 		return PanelKindSingleValue, true
 	case "table":
 		return PanelKindTable, true

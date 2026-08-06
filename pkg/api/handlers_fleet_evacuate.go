@@ -175,26 +175,48 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, response)
 }
 
+// decodeOptionalJSONBody decodes an absent-or-present JSON body and rejects
+// unknown fields. Request-size enforcement comes from the global
+// requestMaxBodyBytes middleware, which wraps every body in a MaxBytesReader.
 func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeOptionalJSONBodyWithStrictness(w, r, dst, true)
+}
+
+// decodeOptionalJSONBodyAllowingUnknownFields is the tolerant variant, for
+// routes that were historically served by decodeJSONBody. Those routes accept
+// bodies from other controller replicas and from dashboards that may be a
+// version ahead, so an unrecognized field must be ignored rather than rejected.
+func decodeOptionalJSONBodyAllowingUnknownFields(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeOptionalJSONBodyWithStrictness(w, r, dst, false)
+}
+
+func decodeOptionalJSONBodyWithStrictness(w http.ResponseWriter, r *http.Request, dst any, disallowUnknownFields bool) bool {
 	if r == nil || r.Body == nil {
 		return true
 	}
 	defer r.Body.Close()
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
-	decoder.DisallowUnknownFields()
+	decoder := json.NewDecoder(r.Body)
+	if disallowUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
 	if err := decoder.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			return true
 		}
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body exceeds the configured size limit")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		return false
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		if err == nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: multiple JSON values are not allowed")
+			writeError(w, http.StatusBadRequest, "invalid request body: multiple JSON values are not allowed")
 		} else {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
 		}
 		return false
 	}

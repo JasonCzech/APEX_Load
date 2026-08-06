@@ -483,7 +483,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 			// deleting them could corrupt a run the database already accepted.
 			tr.enqueueExecutionPlanRunRecordRetryAfterWithTerm(finalRun, func() {
 				for _, test := range createdTests {
-					tr.broadcastEvent("test_created", test)
+					tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 				}
 				tr.consumeExecutionPlanApprovalWithTerm(gateApproval, finalRun.ID, leaseTerm)
 				tr.handoffParallelExecutionPlanTestsWithTerm(finalRun, leaseTerm)
@@ -515,7 +515,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 		return nil, persistErr
 	}
 	for _, test := range createdTests {
-		tr.broadcastEvent("test_created", test)
+		tr.broadcastEvent("test_created", cloneManagedTestLifecycleEvent(test))
 	}
 	tr.consumeExecutionPlanApprovalWithTerm(gateApproval, finalRun.ID, leaseTerm)
 	tr.handoffParallelExecutionPlanTestsWithTerm(finalRun, leaseTerm)

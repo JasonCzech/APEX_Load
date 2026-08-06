@@ -5,7 +5,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -145,11 +144,7 @@ export default function ReportCharts({ report }: Props) {
               <XAxis type="number" tick={{ fontSize: 11, fill: INK }} stroke={GRID} />
               <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11, fill: INK }} stroke={GRID} />
               <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="avg" name="Avg ms" radius={[0, 3, 3, 0]}>
-                {actionBars.map((entry) => (
-                  <Cell key={entry.name} fill={ACCENT} />
-                ))}
-              </Bar>
+              <Bar dataKey="avg" name="Avg ms" radius={[0, 3, 3, 0]} fill={ACCENT} />
             </BarChart>
           </ResponsiveContainer>
         </ReportChartCard>

@@ -1428,5 +1428,5 @@ func (tr *TestRunner) markScheduledStartError(id string, message string) {
 		slog.Warn("failed to persist scheduled start error", "test_id", id, "error", err)
 		return
 	}
-	tr.broadcastEvent("test_schedule_blocked", test)
+	tr.broadcastEvent("test_schedule_blocked", cloneManagedTestLifecycleEvent(test))
 }

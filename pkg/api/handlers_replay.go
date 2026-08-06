@@ -49,6 +49,7 @@ type ReplayScriptRequest struct {
 	GroupName       string                 `json:"group_name,omitempty"`
 	ProjectID       string                 `json:"project_id,omitempty"`
 	ReplaySessionID string                 `json:"replay_session_id,omitempty"`
+	StartPaused     bool                   `json:"start_paused,omitempty"`
 	Variables       map[string]string      `json:"variables,omitempty"`
 	RedactionRules  []engine.RedactionRule `json:"redaction_rules,omitempty"`
 	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
@@ -64,7 +65,7 @@ func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "request body is required")
 		return
 	}
-	if !decodeJSONBody(w, r, &req) {
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
 	if req.Script == nil {
@@ -94,10 +95,8 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ReplayScriptRequest
-	if r.Body != nil && r.ContentLength != 0 {
-		if !decodeJSONBody(w, r, &req) {
-			return
-		}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
 	}
 
 	script := stored.Script

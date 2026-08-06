@@ -1480,40 +1480,36 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     ].slice(0, 8))
   }, [])
 
+  const applyHistoryChange = useCallback((nextScript: ScriptData, successMessage: string) => {
+    setScript(nextScript)
+    setJsonText(formatScriptJson(nextScript))
+    setJsonDirty(false)
+    setSuccess(successMessage)
+    setError('')
+  }, [setError, setJsonDirty, setJsonText, setScript, setSuccess])
+
   const undoEditorChange = useCallback(() => {
-    setEditorHistory(previous => {
-      const priorScript = previous.past[previous.past.length - 1]
-      if (!priorScript) return previous
-      const nextPast = previous.past.slice(0, -1)
-      const current = JSON.parse(JSON.stringify(script)) as ScriptData
-      setScript(priorScript)
-      setJsonText(formatScriptJson(priorScript))
-      setJsonDirty(false)
-      setSuccess('Undid the last guided authoring change.')
-      setError('')
-      return {
-        past: nextPast,
-        future: [current, ...previous.future].slice(0, 30),
-      }
-    })
-  }, [script, setEditorHistory, setError, setJsonDirty, setJsonText, setScript, setSuccess])
+    if (!editorHistory.past.length) return
+    const priorScript = editorHistory.past[editorHistory.past.length - 1]
+    const current = JSON.parse(JSON.stringify(script)) as ScriptData
+    setEditorHistory(previous => ({
+      past: previous.past.slice(0, -1),
+      future: [current, ...previous.future].slice(0, 30),
+    }))
+    applyHistoryChange(priorScript, 'Undid the last guided authoring change.')
+  }, [applyHistoryChange, editorHistory.past, script, setEditorHistory])
 
   const redoEditorChange = useCallback(() => {
-    setEditorHistory(previous => {
-      const [nextScript, ...remainingFuture] = previous.future
-      if (!nextScript) return previous
-      const current = JSON.parse(JSON.stringify(script)) as ScriptData
-      setScript(nextScript)
-      setJsonText(formatScriptJson(nextScript))
-      setJsonDirty(false)
-      setSuccess('Redid the guided authoring change.')
-      setError('')
-      return {
-        past: [...previous.past, current].slice(-30),
-        future: remainingFuture,
-      }
-    })
-  }, [script, setEditorHistory, setError, setJsonDirty, setJsonText, setScript, setSuccess])
+    if (!editorHistory.future.length) return
+    const [nextScript, ...remainingFuture] = editorHistory.future
+    if (!nextScript) return
+    const current = JSON.parse(JSON.stringify(script)) as ScriptData
+    setEditorHistory(previous => ({
+      past: [...previous.past, current].slice(-30),
+      future: remainingFuture,
+    }))
+    applyHistoryChange(nextScript, 'Redid the guided authoring change.')
+  }, [applyHistoryChange, editorHistory.future, script, setEditorHistory])
 
   useEffect(() => {
     if (!replayScreenshotSelection) return
@@ -3381,6 +3377,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const scriptCodeActiveRange = jsonDirty || jsonParseMessage
     ? null
     : lineRangeForTargetPath(scriptDslDocument.ranges, scriptCodeActivePath)
+  const safeParameterMatchRanges = jsonDirty || jsonParseMessage ? [] : parameterMatchRanges
   const autoParameterCandidateMatchRanges = jsonDirty || jsonParseMessage
     ? []
     : findCandidateLiteralRangeInJson(
@@ -5050,7 +5047,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           assistExtensions: scriptAssistExtensions,
           candidateMatchRanges: autoParameterCandidateMatchRanges,
           jumpToLineRequest: jsonLineJumpRequest,
-          parameterMatchRanges,
+          parameterMatchRanges: safeParameterMatchRanges,
           resolvedValues: workspaceTab === 'debug' && hasReplayVariableInspectorData ? replayVariableInspector : null,
           ariaLabel: 'Source',
           title: 'Source',

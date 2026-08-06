@@ -777,7 +777,7 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 		path     string
 		required []string
 	}{
-		{path: "/api/v1/data-pools/{id}", required: []string{"name", "updated_at"}},
+		{path: "/api/v1/data-pools/{id}", required: []string{"updated_at"}},
 		{path: "/api/v1/data-pools/{id}/rows/{row_id}", required: []string{"data", "version"}},
 	} {
 		operation := spec.Paths[contract.path]["put"]

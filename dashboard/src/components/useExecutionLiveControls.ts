@@ -109,14 +109,11 @@ export function useExecutionLiveControls(
 
     try {
       const rampDuration = vuserRampEnabled ? vuserRampDuration.trim() : ''
-      const options = rampDuration
-        ? { action, ramp_duration: rampDuration }
-        : { action }
-      if (rampDuration) {
-        await api.scaleVUsers(testId, groupName, target, options)
-      } else {
-        await api.scaleVUsers(testId, groupName, target, options)
+      const options = {
+        action,
+        ...(rampDuration ? { ramp_duration: rampDuration } : {}),
       }
+      await api.scaleVUsers(testId, groupName, target, options)
       if (action === 'pause') {
         showControlFeedback(rampDuration
           ? `Pausing ${groupName} VUsers over ${rampDuration}`

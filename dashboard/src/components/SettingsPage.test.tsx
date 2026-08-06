@@ -3114,7 +3114,7 @@ describe('SettingsPage', () => {
     expect(formatSelect).toBeTruthy()
     if (!nameInput || !urlInput || !formatSelect) return
 
-    await setFieldValue(nameInput, 'Slack Alerts')
+    await setFieldValue(nameInput, 'Slack Alerts Updated')
     await setFieldValue(urlInput, 'https://hooks.slack.test/services/T000/B000/abc123')
     await setFieldValue(formatSelect, 'slack')
 
@@ -3131,7 +3131,7 @@ describe('SettingsPage', () => {
     expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
       notifications: {
         webhooks: [expect.objectContaining({
-          name: 'Slack Alerts',
+          name: 'Slack Alerts Updated',
           enabled: true,
           url: 'https://hooks.slack.test/services/T000/B000/abc123',
           format: 'slack',
@@ -3139,6 +3139,82 @@ describe('SettingsPage', () => {
       },
     }))
     expect(container.textContent).toContain('Settings saved.')
+  })
+
+  it('persists selected notification webhook event filters', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+    const baseline = await apiMock.getSystemSettings()
+    const webhook = {
+      name: 'Slack Alerts',
+      enabled: true,
+      url: 'https://hooks.slack.test/services/T000/B000/abc123',
+      format: 'slack' as const,
+      events: ['test_created', 'test_failed'],
+      api_token: '',
+      entity_selector: '',
+    }
+    apiMock.getSystemSettings.mockResolvedValue({
+      ...baseline,
+      notifications: {
+        webhooks: [webhook],
+      },
+    })
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Integrations')
+    const integrationsSection = container.querySelector('#settings-section-integrations')
+    expect(integrationsSection).toBeTruthy()
+    if (!integrationsSection) return
+
+    await selectSettingsSubnav(integrationsSection, 'Notifications')
+
+    const webhookCard = integrationsSection.querySelector('.settings-notification-webhook-card')
+    expect(webhookCard).toBeTruthy()
+    if (!webhookCard) return
+
+    const testCreatedCheckbox = webhookCard.querySelector<HTMLInputElement>('input[data-testid="notification-webhook-0-event-test_created"]')
+    const testFailedCheckbox = webhookCard.querySelector<HTMLInputElement>('input[data-testid="notification-webhook-0-event-test_failed"]')
+    expect(testCreatedCheckbox).toBeTruthy()
+    expect(testFailedCheckbox).toBeTruthy()
+    expect(testCreatedCheckbox?.disabled).toBe(false)
+    expect(testFailedCheckbox?.disabled).toBe(false)
+    if (!testCreatedCheckbox || !testFailedCheckbox) return
+
+    const nameInput = webhookCard.querySelector('input[placeholder="Perf Alerts"]') as HTMLInputElement | null
+    const urlInput = webhookCard.querySelector('input[placeholder="https://hooks.slack.com/services/..."]') as HTMLInputElement | null
+    const formatSelect = webhookCard.querySelector('select') as HTMLSelectElement | null
+    expect(nameInput).toBeTruthy()
+    expect(urlInput).toBeTruthy()
+    expect(formatSelect).toBeTruthy()
+    if (!nameInput || !urlInput || !formatSelect) return
+
+    expect(testCreatedCheckbox.checked).toBe(true)
+    expect(testFailedCheckbox.checked).toBe(true)
+    await setFieldValue(nameInput, 'Slack Alerts Updated')
+    expect(nameInput.value).toBe('Slack Alerts Updated')
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      notifications: {
+        webhooks: [expect.objectContaining({
+          events: ['test_created', 'test_failed'],
+        })],
+      },
+    }))
   })
 
   it('saves Dynatrace notification metadata through system settings', async () => {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,5 +86,42 @@ func TestDecodeJSONBody(t *testing.T) {
 				t.Fatalf("error = %q, want prefix %q", envelope["error"], "invalid request body")
 			}
 		})
+	}
+}
+
+func TestDecodeOptionalJSONBodyRejectsConfiguredBodyLimit(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"overflow"}`))
+	rec := httptest.NewRecorder()
+	req.Body = http.MaxBytesReader(rec, req.Body, 8)
+
+	var got struct {
+		Name string `json:"name"`
+	}
+	ok := decodeOptionalJSONBody(rec, req, &got)
+	if ok {
+		t.Fatal("decodeOptionalJSONBody returned true for a capped body that should exceed the cap")
+	}
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !strings.Contains(rec.Body.String(), `"request body exceeds the configured size limit"`) {
+		t.Fatalf("response body = %q, expected oversize error", rec.Body.String())
+	}
+}
+
+func TestDecodeOptionalJSONBodyAcceptsLargePayloadsWithoutHelperSmallCap(t *testing.T) {
+	largeReason := strings.Repeat("x", 70000)
+	body := fmt.Sprintf(`{"reason":"%s"}`, largeReason)
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	var payload struct {
+		Reason string `json:"reason"`
+	}
+	if ok := decodeOptionalJSONBody(rec, req, &payload); !ok {
+		t.Fatalf("decodeOptionalJSONBody returned false: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := payload.Reason; got != largeReason {
+		t.Fatalf("reason length = %d, want %d", len(got), len(largeReason))
 	}
 }

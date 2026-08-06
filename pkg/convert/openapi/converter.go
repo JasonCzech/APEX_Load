@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
@@ -3101,20 +3102,33 @@ func firstSuccessStatus(responses map[string]any) (int, string, bool) {
 	}
 	keys := sortedMapKeys(responses)
 	for _, key := range keys {
-		if len(key) == 3 && key[0] == '2' {
-			var status int
-			if _, err := fmt.Sscanf(key, "%d", &status); err == nil {
-				return status, key, true
-			}
-			if strings.EqualFold(key, "2XX") {
-				return 200, key, true
-			}
+		status := strings.ToUpper(strings.TrimSpace(key))
+		if status == "2XX" {
+			return http.StatusOK, key, true
+		}
+		parsed, ok := parseExactHTTPStatus(status)
+		if ok && parsed >= 200 && parsed <= 299 {
+			return parsed, key, true
 		}
 	}
 	if _, ok := responses["default"]; ok {
 		return 200, "default", true
 	}
 	return 0, "", false
+}
+
+func parseExactHTTPStatus(value string) (int, bool) {
+	if len(value) != 3 {
+		return 0, false
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	if parsed < 100 || parsed > 599 {
+		return 0, false
+	}
+	return parsed, true
 }
 
 func templatePath(path string, params []parameter, res resolver, location string, columns columnRegistry) (string, []string) {

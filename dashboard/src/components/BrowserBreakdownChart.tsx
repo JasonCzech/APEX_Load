@@ -7,6 +7,7 @@ import {
   formatBrowserBreakdownTooltipValue,
 } from './browserBreakdownModel'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { comparisonRunColor } from './resultsComparisonChartModel'
 
 interface BrowserBreakdownChartProps {
   title: string
@@ -31,6 +32,27 @@ export default function BrowserBreakdownChart({
 
   const hasScoreAxis = series.some(item => item.yAxisId === 'cls')
   const seriesByKey = new Map(series.map(item => [item.dataKey, item]))
+  const resolvedSeries = (() => {
+    const usedStrokes = new Set<string>()
+    return series.map((item, index) => {
+      const duplicateOffset = index % 10
+      let stroke = item.stroke
+      if (usedStrokes.has(stroke)) {
+        for (let offset = 0; offset <= series.length; offset += 1) {
+          const candidate = comparisonRunColor((duplicateOffset + offset) % 10)
+          if (!usedStrokes.has(candidate)) {
+            stroke = candidate
+            break
+          }
+        }
+      }
+      usedStrokes.add(stroke)
+      return {
+        ...item,
+        stroke,
+      }
+    })
+  })()
 
   return (
     <div className="results-compare-chart-card">
@@ -75,7 +97,7 @@ export default function BrowserBreakdownChart({
             isAnimationActive={false}
           />
           <Legend />
-          {series.map(item => (
+          {resolvedSeries.map(item => (
             <Line
               key={item.dataKey}
               yAxisId={item.yAxisId || 'timings'}

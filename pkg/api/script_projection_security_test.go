@@ -857,6 +857,26 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 	if strings.Contains(string(data), "global-password") || !strings.Contains(string(data), maskedScriptSecret) {
 		t.Fatalf("private export was not projected: %s", data)
 	}
+
+	exportBadReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/export", strings.NewReader(`{`))
+	exportBadReq.SetPathValue("id", stored.ID)
+	bad := httptest.NewRecorder()
+	server.handleExportScript(bad, exportBadReq)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("bad export status = %d body=%s", bad.Code, bad.Body.String())
+	}
+	var badBody map[string]string
+	if err := json.Unmarshal(bad.Body.Bytes(), &badBody); err != nil {
+		t.Fatalf("bad export response was not JSON: %v", err)
+	}
+	if !strings.Contains(badBody["error"], "invalid request body") {
+		t.Fatalf("bad export response = %#v, want invalid request body", badBody)
+	}
+
+	_, err = os.Stat(filepath.Join(exportDir, "private"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("bad export should not create an export file without filename field")
+	}
 }
 
 func TestStoredScriptResponseMasksDecodedBase64JSONWithoutMutatingStoredWire(t *testing.T) {

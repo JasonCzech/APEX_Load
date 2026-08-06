@@ -565,6 +565,86 @@ describe('GitHubSyncModal (import)', () => {
     expect(onImported).not.toHaveBeenCalled()
   })
 
+  it('navigates to parent folders without dropping path separators', async () => {
+    const requestPaths: string[] = []
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input)
+      const method = init?.method || 'GET'
+      if (url.includes('/integrations/github/repos')) {
+        return jsonResponse({ repos: [{ name: 'scripts', full_name: 'org/scripts', owner: 'org', private: true, default_branch: 'main', html_url: '' }] })
+      }
+      if (url.includes('/integrations/github/branches')) {
+        return jsonResponse({ branches: [{ name: 'main', commit_sha: 'abc' }] })
+      }
+      if (url.includes('/integrations/github/contents')) {
+        const responseUrl = new URL(url, 'https://example.test')
+        const requestPath = responseUrl.searchParams.get('path') || ''
+        requestPaths.push(requestPath)
+        if (requestPath === '') {
+          return jsonResponse({ type: 'dir', entries: [{ name: 'alpha', path: 'alpha', type: 'dir', sha: 'dir-1', size: 0 }] })
+        }
+        if (requestPath === 'alpha') {
+          return jsonResponse({ type: 'dir', entries: [{ name: 'beta', path: 'alpha/beta', type: 'dir', sha: 'dir-2', size: 0 }] })
+        }
+        if (requestPath === 'alpha/beta') {
+          return jsonResponse({ type: 'dir', entries: [{ name: 'gamma', path: 'alpha/beta/gamma', type: 'dir', sha: 'dir-3', size: 0 }] })
+        }
+        if (requestPath === 'alpha/beta/gamma') {
+          return jsonResponse({ type: 'dir', entries: [{ name: 'leaf.json', path: 'alpha/beta/gamma/leaf.json', type: 'file', sha: 'file-1', size: 5 }] })
+        }
+      }
+      if (url.includes('/scripts/import/github') && method === 'POST') {
+        return jsonResponse({
+          script: importDraftResponse,
+          parameterization: importParameterization,
+          ...(importDraftExpiresAt ? { import_draft_expires_at: importDraftExpiresAt } : {}),
+          secret_binding_requirements: [{
+            id: 'binding-1',
+            path: 'actions[0].headers.Authorization',
+            label: 'Login · Authorization header',
+            context: 'Bearer credential in the Login action',
+            suggested_name: 'LOGIN_TOKEN',
+            replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+            destination_value_preserved: destinationValuePreserved,
+          }],
+        })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<GitHubSyncModal mode="import" config={config} projectId="team-a" onClose={() => {}} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Browse alpha"]')?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Browse alpha/beta"]')?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Browse alpha/beta/gamma"]')?.click()
+    })
+    await flushPromises()
+
+    const backButton = container.querySelector<HTMLButtonElement>('button[aria-label="Browse parent directory"]')
+    expect(backButton).toBeTruthy()
+    await act(async () => {
+      backButton?.click()
+    })
+    await flushPromises()
+
+    expect(requestPaths).toContain('alpha/beta')
+    expect(requestPaths).not.toContain('alphabeta')
+  })
+
   it('reports a script that commits after Cancel instead of leaving it untracked', async () => {
     let resolveCreate!: (response: Response) => void
     createResponse = new Promise<Response>(resolve => {
