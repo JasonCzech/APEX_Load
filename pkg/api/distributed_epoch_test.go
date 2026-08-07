@@ -13,6 +13,8 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"google.golang.org/grpc/codes"
+	grpcStatus "google.golang.org/grpc/status"
 )
 
 type epochRenewalFakeClient struct {
@@ -535,6 +537,95 @@ func TestStagedAssignmentLeaseKeeperRenewsBeforeLiveTopologyCommit(t *testing.T)
 		t.Fatal("staged replacement lease keeper did not stop after its assignment was fenced")
 	}
 	cancel()
+}
+
+// scopedEpochRenewalFakeClient separates the two execution-fencing scopes that
+// epochRenewalFakeClient deliberately conflates, so a test can prove which one a
+// keeper actually renews.
+type scopedEpochRenewalFakeClient struct {
+	startupLifecycleFakeClient
+	processCalls atomic.Int32
+	testCalls    atomic.Int32
+	notified     chan struct{}
+}
+
+func (c *scopedEpochRenewalFakeClient) ClaimExecutionEpoch(_ context.Context, generation uint64, _ string, _ time.Duration) (generatorrpc.ExecutionEpochResult, error) {
+	c.processCalls.Add(1)
+	return generatorrpc.ExecutionEpochResult{Accepted: true, CurrentGeneration: generation}, nil
+}
+
+func (c *scopedEpochRenewalFakeClient) ClaimTestExecutionEpoch(_ context.Context, _ string, generation uint64, _ string, _ time.Duration) (generatorrpc.ExecutionEpochResult, error) {
+	c.testCalls.Add(1)
+	if c.notified != nil {
+		select {
+		case c.notified <- struct{}{}:
+		default:
+		}
+	}
+	return generatorrpc.ExecutionEpochResult{Accepted: true, CurrentGeneration: generation}, nil
+}
+
+// A staged target is in no other renewal set until topology commit publishes it,
+// and its assignment lease is both rejected by and clamped to the generator's
+// process epoch. Renewing only the assignment scope here would silently delegate
+// the staged process epoch to the controller-lifetime fleet keeper.
+func TestStagedAssignmentLeaseKeeperRenewsProcessEpochAndAssignmentLease(t *testing.T) {
+	now := time.Now().UTC()
+	leadership := newExecutionLeadership(nil, "staged-scopes")
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = "staged-scopes/1"
+	leadership.durableGeneration = 44
+	leadership.localLeaseDeadline = now.Add(300 * time.Millisecond)
+	leadership.mu.Unlock()
+	client := &scopedEpochRenewalFakeClient{notified: make(chan struct{}, 8)}
+	runner := &TestRunner{leadership: leadership}
+	backend := &distributedExecutionBackend{timeout: 20 * time.Millisecond}
+	testRun := &ManagedTest{ID: "staged-scopes-run"}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		backend.maintainStagedGeneratorTestExecutionLeases(ctx, runner, testRun, 44, map[string]generatorClient{"new": client})
+		close(done)
+	}()
+	waitForEpochTestSignal(t, client.notified, "staged assignment lease renewal")
+	if got := client.processCalls.Load(); got < 1 {
+		t.Fatalf("staged process execution epoch claims = %d, want at least 1 alongside the assignment lease", got)
+	}
+
+	backend.fenceTestExecutionLease(testRun, "new")
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("staged lease keeper did not stop after its assignment was fenced")
+	}
+	// A fenced assignment must not have its process epoch refreshed by this
+	// keeper either; the fleet keeper owns that target from here on.
+	processAfterFence := client.processCalls.Load()
+	time.Sleep(150 * time.Millisecond)
+	if got := client.processCalls.Load(); got != processAfterFence {
+		t.Fatalf("staged keeper renewed a fenced target's process epoch: %d -> %d", processAfterFence, got)
+	}
+}
+
+func TestGeneratorExecutionEpochSessionExpiredMatchesOnlyLapsedProcessEpochs(t *testing.T) {
+	lapsed := grpcStatus.Error(codes.FailedPrecondition, generatorrpc.ExecutionGenerationSessionExpiredMessage)
+	wrapped := errors.Join(
+		fmt.Errorf("renew generator gen-b execution generation: %w", lapsed),
+		errors.New("unrelated"),
+	)
+	if !generatorExecutionEpochSessionExpired(wrapped) {
+		t.Fatal("lapsed process epoch was not recognized through the fan-out wrappers")
+	}
+	mismatched := fmt.Errorf("renew generator gen-b execution generation: %w",
+		grpcStatus.Errorf(codes.FailedPrecondition, "execution generation %d is not active; current generation is %d", 7, 8))
+	if generatorExecutionEpochSessionExpired(mismatched) {
+		t.Fatal("a generation mismatch was misreported as a lapsed process epoch")
+	}
+	if generatorExecutionEpochSessionExpired(nil) || generatorExecutionEpochSessionExpired(errors.New("plain")) {
+		t.Fatal("non-gRPC errors were misreported as a lapsed process epoch")
+	}
 }
 
 func TestStagedAssignmentLeaseKeeperHandsOffToSingleTopologyOwner(t *testing.T) {
