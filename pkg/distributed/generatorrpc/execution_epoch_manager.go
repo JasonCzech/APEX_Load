@@ -266,7 +266,7 @@ func (manager *executionEpochManager) validateMutationLocked(generation uint64, 
 		return status.Errorf(codes.FailedPrecondition, "execution generation %d is not active; current generation is %d", generation, manager.executionGeneration)
 	}
 	if manager.executionExpiresAt.IsZero() || !now.Before(manager.executionExpiresAt) {
-		return status.Error(codes.FailedPrecondition, "execution generation session has expired")
+		return status.Error(codes.FailedPrecondition, ExecutionGenerationSessionExpiredMessage)
 	}
 	if manager.executionEpochFencing {
 		return status.Error(codes.Unavailable, "previous execution generation is still being fenced")

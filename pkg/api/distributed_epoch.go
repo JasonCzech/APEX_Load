@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"google.golang.org/grpc/codes"
+	grpcStatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -577,6 +579,87 @@ func (b *distributedExecutionBackend) renewGeneratorTestExecutionClients(ctx con
 	return errors.Join(failures...)
 }
 
+// claimGeneratorProcessExecutionEpochClients renews the process-scoped
+// execution epoch (Service.executionExpiresAt) on an explicit client set.
+//
+// Staged clients are deliberately absent from test.remoteClientsByTarget until
+// topology commit, so neither renewGeneratorExecutionEpoch nor
+// renewGeneratorTestExecutionClients covers them, and both of those renew only
+// the narrower assignment lease anyway. Without this the staged set depends
+// entirely on the controller-lifetime fleet keeper
+// (maintainGeneratorExecutionEpoch) happening to include the same target, and a
+// lapsed process epoch does not merely reject the next assignment claim: the
+// generator force-stops and deletes the staged assignment outright.
+func (b *distributedExecutionBackend) claimGeneratorProcessExecutionEpochClients(ctx context.Context, clients map[string]generatorClient, generation uint64, leaseOwnerID string, leaseDeadline time.Time) error {
+	if len(clients) == 0 {
+		return nil
+	}
+	targets := make([]string, 0, len(clients))
+	for target := range clients {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	jobs := make(chan string, len(targets))
+	errCh := make(chan error, len(targets))
+	for _, target := range targets {
+		jobs <- target
+	}
+	close(jobs)
+	workerCount := min(maxGeneratorEpochKeeperWorkers, len(targets))
+	// Same fairness bound as renewGeneratorTestExecutionClients: one saturated
+	// worker round may not consume the whole remaining lease window, or the first
+	// unreachable targets would starve healthy ones later in deterministic order.
+	rounds := (len(targets) + workerCount - 1) / workerCount
+	transit := b.generatorEpochKeeperTransit()
+	if fairTransit := time.Until(leaseDeadline) / time.Duration(3*rounds); fairTransit < transit {
+		transit = fairTransit
+	}
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for target := range jobs {
+				client := clients[target]
+				if client == nil {
+					errCh <- fmt.Errorf("renew generator %s process execution epoch: client is unavailable", target)
+					continue
+				}
+				if err := claimGeneratorExecutionEpoch(ctx, client, generation, leaseOwnerID, leaseDeadline, transit); err != nil {
+					errCh <- fmt.Errorf("renew generator %s process execution epoch: %w", target, err)
+					continue
+				}
+				errCh <- nil
+			}
+		}()
+	}
+	workers.Wait()
+	failures := make([]error, 0)
+	for range targets {
+		if err := <-errCh; err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// generatorExecutionEpochSessionExpired reports whether any error in the tree is
+// a generator rejection caused by a lapsed process-scoped execution epoch, as
+// opposed to a generation mismatch or a fenced assignment. errors.As walks both
+// %w wrapping and errors.Join trees, so this survives the per-target fan-out
+// wrappers in renewGeneratorTestExecutionClients.
+func generatorExecutionEpochSessionExpired(err error) bool {
+	if err == nil {
+		return false
+	}
+	var grpcErr interface{ GRPCStatus() *grpcStatus.Status }
+	if !errors.As(err, &grpcErr) {
+		return false
+	}
+	state := grpcErr.GRPCStatus()
+	return state.Code() == codes.FailedPrecondition && state.Message() == generatorrpc.ExecutionGenerationSessionExpiredMessage
+}
+
 func (b *distributedExecutionBackend) handoffStagedGeneratorTestExecutionLeaseKeeper(ctx context.Context, tr *TestRunner, test *ManagedTest, generation uint64, stopStaged context.CancelFunc) {
 	// Publish the successor goroutine before cancelling the setup owner. The
 	// already-established lease remains valid during scheduling, while this
@@ -590,6 +673,13 @@ func (b *distributedExecutionBackend) handoffStagedGeneratorTestExecutionLeaseKe
 // maintainStagedGeneratorTestExecutionLeases keeps initial or evacuation
 // assignments fenced while they remain intentionally absent from the live
 // topology. The normal per-run renewal loop takes over after topology commit.
+//
+// Both scopes are renewed here. The assignment lease is clamped to, and
+// rejected by, the generator's process epoch, and a staged target is in no
+// other renewal set until commit publishes it, so renewing only the assignment
+// lease would silently delegate the staged epoch's liveness to the
+// controller-lifetime fleet keeper. The generator-loss evacuation fence makes
+// that fatal rather than merely racy: see waitForLostGeneratorEpochFence.
 func (b *distributedExecutionBackend) maintainStagedGeneratorTestExecutionLeases(ctx context.Context, tr *TestRunner, test *ManagedTest, generation uint64, clients map[string]generatorClient) {
 	if test == nil {
 		return
@@ -612,7 +702,15 @@ func (b *distributedExecutionBackend) maintainStagedGeneratorTestExecutionLeases
 		if len(currentClients) == 0 {
 			return
 		}
-		renewalErr := b.renewGeneratorTestExecutionClients(ctx, test.ID, currentClients, generation, leaseOwnerID, leaseDeadline)
+		// Process epoch first: the assignment claim is both rejected and clamped
+		// against it, so renewing in the other order would leave the assignment
+		// lease pinned to a deadline that is about to lapse.
+		epochErr := b.claimGeneratorProcessExecutionEpochClients(ctx, currentClients, generation, leaseOwnerID, leaseDeadline)
+		renewalErr := errors.Join(epochErr, b.renewGeneratorTestExecutionClients(ctx, test.ID, currentClients, generation, leaseOwnerID, leaseDeadline))
+		// Cancellation is the normal handoff/teardown path, not a renewal fault.
+		if renewalErr != nil && ctx.Err() == nil {
+			slog.Warn("staged generator execution lease renewal failed", "test_id", test.ID, "generation", generation, "error", renewalErr)
+		}
 		remaining := time.Until(leaseDeadline)
 		if remaining <= 0 {
 			return
