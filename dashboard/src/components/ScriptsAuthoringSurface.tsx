@@ -108,7 +108,8 @@ function ScriptsAuthoringContent({
   onReturnToDraftSource,
 }: ScriptsAuthoringSurfaceProps) {
   // Nothing supplies the folderId prop today: ScriptsAuthoringShell, the only
-  // caller, does not pass one, and FolderTree is mounted nowhere. Every import
+  // caller does not pass one, and the current authoring surface has no folder
+  // hierarchy selector. Every import
   // and recorder surface already accepted a destination folder, so the plumbing
   // existed while silently always resolving to the project root. This state, fed
   // by the control below, is what makes that plumbing do anything. The prop is

@@ -2,7 +2,7 @@
   "name": "apexload",
   "outputfilename": "apexload",
   "frontend:dir": "../dashboard",
-  "frontend:install": "npm ci --ignore-scripts",
+  "frontend:install": "npm run check:node && npm ci --ignore-scripts",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",

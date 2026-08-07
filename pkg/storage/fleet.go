@@ -12,26 +12,42 @@ var (
 	// ErrFleetPoolNotActive prevents a stale preflight read from launching a new
 	// provisioning attempt after an administrator suspended the pool.
 	ErrFleetPoolNotActive = errors.New("fleet pool is not active")
+	// ErrGeneratorAlreadyInPool enforces one generator, one pool. A pool carries
+	// at most one domain, so a generator in two pools could be claimed by two
+	// domains at once and the domain scoping would mean nothing.
+	ErrGeneratorAlreadyInPool = errors.New("generator already belongs to another fleet pool")
 )
 
 // FleetPool is a named, cloud-managed group of load generators with sizing
 // configuration — the managed-fleet analog of LoadRunner Enterprise host pools.
-// Credentials/provisioning config are intentionally NOT modeled here yet; they
-// arrive with a real provider integration so this surface carries no secrets.
+// Credentials are still NOT modeled here: a pool references a registered
+// ClusterConnection by ID, and that connection owns the credential.
 type FleetPool struct {
-	ID            string             `json:"id"`
-	Name          string             `json:"name"`
-	Description   string             `json:"description,omitempty"`
-	CloudProvider string             `json:"cloud_provider"` // kubernetes, aws, azure, gcp, static
-	Region        string             `json:"region,omitempty"`
-	MinSize       int                `json:"min_size,omitempty"`
-	MaxSize       int                `json:"max_size,omitempty"`
-	DesiredSize   int                `json:"desired_size,omitempty"`
-	Status        string             `json:"status"` // active, suspended, error
-	Tags          map[string]string  `json:"tags,omitempty"`
-	CreatedAt     time.Time          `json:"created_at"`
-	UpdatedAt     time.Time          `json:"updated_at"`
-	Members       []*FleetPoolMember `json:"members,omitempty"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description,omitempty"`
+	CloudProvider string            `json:"cloud_provider"` // kubernetes, aws, azure, gcp, static
+	Region        string            `json:"region,omitempty"`
+	MinSize       int               `json:"min_size,omitempty"`
+	MaxSize       int               `json:"max_size,omitempty"`
+	DesiredSize   int               `json:"desired_size,omitempty"`
+	Status        string            `json:"status"` // active, suspended, error
+	Tags          map[string]string `json:"tags,omitempty"`
+	// ClusterID binds the pool to a registered cluster connection. Empty means
+	// the controller's env-configured provisioner, which is what every pool
+	// created before the cluster registry uses.
+	ClusterID string `json:"cluster_id,omitempty"`
+	// DomainID scopes the pool to a domain, which subjects it to that domain's
+	// deployment target. Empty means UNSCOPED: the constraint does not apply,
+	// which is what every pool created before domain targets carries and is why
+	// adding a target can never break an existing deployment.
+	DomainID string `json:"domain_id,omitempty"`
+	// Allocation is the pod resource budget and node placement applied to this
+	// pool's generators. Nil means the workload's own manifest decides.
+	Allocation *PoolAllocation    `json:"allocation,omitempty"`
+	CreatedAt  time.Time          `json:"created_at"`
+	UpdatedAt  time.Time          `json:"updated_at"`
+	Members    []*FleetPoolMember `json:"members,omitempty"`
 }
 
 // FleetPoolMember links a generator to a pool.

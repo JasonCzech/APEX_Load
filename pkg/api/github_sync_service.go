@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -93,6 +94,27 @@ func (b *githubSyncSummaryBuilder) setPullRequest(branch, pullURL string, pullNu
 	b.summary.Branch = branch
 	b.summary.PullURL = pullURL
 	b.summary.PullNumber = pullNumber
+}
+
+// githubSyncJobLogReasons reads back the leading failure reasons from a
+// persisted summary. The summary is already credential-scrubbed and
+// length-bounded by sanitizeGitHubSyncSummaryItem, so these strings are safe to
+// log verbatim.
+func githubSyncJobLogReasons(summaryJSON string) (firstError string, firstConflict string) {
+	if strings.TrimSpace(summaryJSON) == "" {
+		return "", ""
+	}
+	var summary githubSyncSummary
+	if err := json.Unmarshal([]byte(summaryJSON), &summary); err != nil {
+		return "", ""
+	}
+	if len(summary.Errors) > 0 {
+		firstError = summary.Errors[0].Error
+	}
+	if len(summary.Conflicts) > 0 {
+		firstConflict = summary.Conflicts[0].Error
+	}
+	return firstError, firstConflict
 }
 
 func (b *githubSyncSummaryBuilder) JSON() string {
@@ -188,6 +210,24 @@ func (svc *githubSyncService) Run(ctx context.Context, resolved *githubResolvedC
 	job.CompletedAt = &completed
 	if job.Errors > 0 || job.Conflicts > 0 {
 		job.Status = "partial"
+		// The dashboard renders the counters; the per-file reasons live in the
+		// (scrubbed, bounded) summary. Emit one aggregated server-side line per
+		// degraded job carrying the leading reasons, so an operator looking at
+		// logs alone is not left with an unexplained "partial".
+		firstError, firstConflict := githubSyncJobLogReasons(job.SummaryJSON)
+		slog.Warn("github sync job completed with failures",
+			"job_id", job.ID,
+			"kind", job.Kind,
+			"owner", job.Owner,
+			"repo", job.Repo,
+			"branch", job.Branch,
+			"total", job.Total,
+			"processed", job.Processed,
+			"errors", job.Errors,
+			"conflicts", job.Conflicts,
+			"first_error", firstError,
+			"first_conflict", firstConflict,
+		)
 	}
 	if err := svc.store.SaveGitHubSyncJob(job); err != nil {
 		return job, fmt.Errorf("persist completed GitHub sync job: %w", err)
@@ -381,6 +421,27 @@ func (svc *githubSyncService) runImport(ctx context.Context, client *githubClien
 	}
 }
 
+// githubSyncUnpushableScriptIssue explains why a listed script is not a valid
+// push candidate. These rejections are counted as conflicts, so without a reason
+// the job payload claimed a conflict the operator could not attribute to
+// anything.
+func githubSyncUnpushableScriptIssue(stored *StoredScript) githubSyncSummaryItem {
+	switch {
+	case stored == nil:
+		return githubSyncSummaryItem{Error: "skipped an unreadable script entry"}
+	case stored.Script == nil:
+		return githubSyncSummaryItem{
+			Error:    "script has no stored definition to push",
+			ScriptID: stored.ID,
+		}
+	default:
+		return githubSyncSummaryItem{
+			Error:    "script is not owned by the synchronized project",
+			ScriptID: stored.ID,
+		}
+	}
+}
+
 func normalizedGitHubImportTargetKey(target storage.GitHubScriptSyncTarget) string {
 	return strings.Join([]string{
 		strings.ToLower(strings.TrimSpace(target.Owner)),
@@ -464,7 +525,12 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 	pathCollision := false
 	for _, stored := range scripts {
 		if stored == nil || stored.Script == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(job.ProjectID) || normalizeProjectID(stored.Script.ProjectID) != normalizeProjectID(job.ProjectID) {
+			// Record why this script was rejected. Bumping the counter alone
+			// surfaced an unexplained "partial" job in the dashboard with no way
+			// for an operator to tell which script was skipped or why.
 			job.Conflicts++
+			summary.addConflict(githubSyncUnpushableScriptIssue(stored))
+			refreshSummary()
 			continue
 		}
 		if len(selected) > 0 {
@@ -550,11 +616,26 @@ func (svc *githubSyncService) runPush(ctx context.Context, resolved *githubResol
 			candidate.stored.ID, candidate.claimID, time.Now().UTC().Add(githubScriptSyncClaimTTL),
 		)
 		if err != nil {
+			// A claim-renewal failure aborts the remaining bulk write. Reporting
+			// it as a bare counter left the job looking like an unattributed
+			// partial success; name the script and the cause instead.
 			job.Errors++
+			summary.addError(githubSyncSummaryItem{
+				Error:      "failed to renew github sync claim: " + err.Error(),
+				ScriptID:   candidate.stored.ID,
+				TargetPath: candidate.targetPath,
+			})
+			refreshSummary()
 			return false
 		}
 		if !renewed {
 			job.Conflicts++
+			summary.addConflict(githubSyncSummaryItem{
+				Error:      "github sync claim expired before the remaining writes could proceed",
+				ScriptID:   candidate.stored.ID,
+				TargetPath: candidate.targetPath,
+			})
+			refreshSummary()
 			return false
 		}
 		return true

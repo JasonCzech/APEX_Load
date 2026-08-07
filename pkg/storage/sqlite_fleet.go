@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // ---- helpers -------------------------------------------------------------
@@ -51,15 +53,19 @@ func (s *SQLiteStore) SaveFleetPool(pool *FleetPool) error {
 	}
 	pool.UpdatedAt = now
 	_, err := s.db.Exec(`INSERT INTO fleet_pools (
-			id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json,
+			cluster_id, allocation_json, domain_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name=excluded.name, description=excluded.description, cloud_provider=excluded.cloud_provider,
 			region=excluded.region, min_size=excluded.min_size, max_size=excluded.max_size,
 			desired_size=excluded.desired_size, status=excluded.status, tags_json=excluded.tags_json,
+			cluster_id=excluded.cluster_id, allocation_json=excluded.allocation_json,
+			domain_id=excluded.domain_id,
 			updated_at=excluded.updated_at`,
 		pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region, pool.MinSize, pool.MaxSize,
-		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.CreatedAt, pool.UpdatedAt)
+		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID, marshalAllocation(pool.Allocation),
+		pool.DomainID, pool.CreatedAt, pool.UpdatedAt)
 	return err
 }
 
@@ -86,9 +92,11 @@ func (s *SQLiteStore) CreateFleetPoolWithMembers(pool *FleetPool, members []*Fle
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(`INSERT INTO fleet_pools (
-		id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region,
-		pool.MinSize, pool.MaxSize, pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.CreatedAt, pool.UpdatedAt); err != nil {
+		id, name, description, cloud_provider, region, min_size, max_size, desired_size, status, tags_json,
+		cluster_id, allocation_json, domain_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, pool.ID, pool.Name, pool.Description, pool.CloudProvider, pool.Region,
+		pool.MinSize, pool.MaxSize, pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID,
+		marshalAllocation(pool.Allocation), pool.DomainID, pool.CreatedAt, pool.UpdatedAt); err != nil {
 		return err
 	}
 	if err := replaceFleetPoolMembersTx(tx, pool.ID, members); err != nil {
@@ -123,9 +131,13 @@ func (s *SQLiteStore) UpdateFleetPoolIfUnchanged(pool *FleetPool, members []*Fle
 		return false, nil
 	}
 	pool.UpdatedAt = time.Now()
-	result, err := tx.Exec(`UPDATE fleet_pools SET name = ?, description = ?, cloud_provider = ?, region = ?, min_size = ?, max_size = ?, desired_size = ?, status = ?, tags_json = ?, updated_at = ?
+	// domain_id MUST be in this SET list. This method writes exactly what it is
+	// given, so omitting the column would silently reset a constrained pool to
+	// unscoped on every unrelated edit — a silent widening of blast radius.
+	result, err := tx.Exec(`UPDATE fleet_pools SET name = ?, description = ?, cloud_provider = ?, region = ?, min_size = ?, max_size = ?, desired_size = ?, status = ?, tags_json = ?, cluster_id = ?, allocation_json = ?, domain_id = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, pool.Name, pool.Description, pool.CloudProvider, pool.Region, pool.MinSize, pool.MaxSize,
-		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.UpdatedAt, pool.ID, currentUpdatedRaw)
+		pool.DesiredSize, pool.Status, marshalTags(pool.Tags), pool.ClusterID, marshalAllocation(pool.Allocation),
+		pool.DomainID, pool.UpdatedAt, pool.ID, currentUpdatedRaw)
 	if err != nil {
 		return false, err
 	}
@@ -159,17 +171,21 @@ func (s *SQLiteStore) UpdateFleetPoolDesiredSize(id string, desiredSize int, upd
 }
 
 const fleetPoolSelect = `SELECT id, name, COALESCE(description, ''), cloud_provider, COALESCE(region, ''),
-	min_size, max_size, desired_size, COALESCE(status, 'active'), COALESCE(tags_json, ''), created_at, updated_at
+	min_size, max_size, desired_size, COALESCE(status, 'active'), COALESCE(tags_json, ''),
+	COALESCE(cluster_id, ''), COALESCE(allocation_json, ''), COALESCE(domain_id, ''), created_at, updated_at
 	FROM fleet_pools`
 
 func scanFleetPool(row capacityRowScanner) (*FleetPool, error) {
 	var pool FleetPool
 	var tagsJSON string
+	var allocationJSON string
 	if err := row.Scan(&pool.ID, &pool.Name, &pool.Description, &pool.CloudProvider, &pool.Region,
-		&pool.MinSize, &pool.MaxSize, &pool.DesiredSize, &pool.Status, &tagsJSON, &pool.CreatedAt, &pool.UpdatedAt); err != nil {
+		&pool.MinSize, &pool.MaxSize, &pool.DesiredSize, &pool.Status, &tagsJSON,
+		&pool.ClusterID, &allocationJSON, &pool.DomainID, &pool.CreatedAt, &pool.UpdatedAt); err != nil {
 		return nil, err
 	}
 	pool.Tags = unmarshalTags(tagsJSON)
+	pool.Allocation = unmarshalAllocation(allocationJSON)
 	return &pool, nil
 }
 
@@ -293,6 +309,41 @@ func (s *SQLiteStore) SaveFleetPoolMembers(poolID string, members []*FleetPoolMe
 func replaceFleetPoolMembersTx(tx *storeTx, poolID string, members []*FleetPoolMember) error {
 	if _, err := tx.Exec(`DELETE FROM fleet_pool_members WHERE pool_id = ?`, poolID); err != nil {
 		return err
+	}
+	// Release the legacy metadata pointer for generators this replace drops.
+	// Without it the members table says the generator is free while the pointer
+	// still names this pool, so it would be counted in the pool's runtime
+	// targets and simultaneously claimable by another pool.
+	retained := make(map[string]struct{}, len(members))
+	for _, m := range members {
+		if m != nil {
+			retained[m.GeneratorID] = struct{}{}
+		}
+	}
+	rows, err := tx.Query(`SELECT generator_id FROM generator_metadata WHERE fleet_pool_id = ?`, poolID)
+	if err != nil {
+		return err
+	}
+	orphaned := make([]string, 0)
+	for rows.Next() {
+		var generatorID string
+		if err := rows.Scan(&generatorID); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, keep := retained[generatorID]; !keep {
+			orphaned = append(orphaned, generatorID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, generatorID := range orphaned {
+		if _, err := tx.Exec(`UPDATE generator_metadata SET fleet_pool_id = NULL WHERE generator_id = ?`, generatorID); err != nil {
+			return err
+		}
 	}
 	for _, m := range members {
 		if m == nil {
@@ -428,10 +479,64 @@ func (s *SQLiteStore) PatchGeneratorMetadata(generatorID string, patch Generator
 		flag(patch.Target != nil), flag(patch.FleetPoolIDSet), flag(patch.Region != nil), flag(patch.ProviderID != nil), flag(patch.ProviderStatus != nil), flag(patch.Cordoned != nil), flag(patch.TagsSet)); err != nil {
 		return nil, err
 	}
+	// fleet_pool_members is the authoritative membership record, so a pool
+	// change made through generator metadata has to land there too. Without
+	// this the two sources drift and the one-generator-one-pool index never
+	// sees the binding.
+	if patch.FleetPoolIDSet {
+		if err := syncGeneratorPoolMembershipTx(tx, generatorID, patch.FleetPoolID); err != nil {
+			return nil, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return s.GetGeneratorMetadata(generatorID)
+}
+
+// syncGeneratorPoolMembershipTx mirrors a generator's metadata pool pointer into
+// fleet_pool_members. A nil poolID clears membership.
+//
+// A unique-index violation means another pool already owns the generator; it is
+// translated to ErrGeneratorAlreadyInPool so callers can answer 409 rather than
+// leaking a driver error. This is the backstop behind the API's pre-check.
+func syncGeneratorPoolMembershipTx(tx *storeTx, generatorID string, poolID *string) error {
+	if poolID == nil || strings.TrimSpace(*poolID) == "" {
+		_, err := tx.Exec(`DELETE FROM fleet_pool_members WHERE generator_id = ?`, generatorID)
+		return err
+	}
+	pool := strings.TrimSpace(*poolID)
+	var target string
+	if err := tx.QueryRow(`SELECT COALESCE(target, '') FROM generator_metadata WHERE generator_id = ?`,
+		generatorID).Scan(&target); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	// Upsert on (pool_id, generator_id) the same way replaceFleetPoolMembersTx
+	// does, so re-patching a generator's target does not reset joined_at and
+	// reorder ListFleetPoolMembers. A generator held by a DIFFERENT pool misses
+	// this conflict target and trips the unique index on generator_id instead,
+	// which is the cross-pool rejection.
+	if _, err := tx.Exec(`INSERT INTO fleet_pool_members (id, pool_id, generator_id, target, status, joined_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(pool_id, generator_id) DO UPDATE SET target=excluded.target`,
+		uuid.New().String(), pool, generatorID, target, "provisioned", time.Now()); err != nil {
+		if isUniqueConstraintErr(err) {
+			return ErrGeneratorAlreadyInPool
+		}
+		return err
+	}
+	return nil
+}
+
+// isUniqueConstraintErr matches both dialects' unique-violation text, since the
+// storage layer talks to SQLite and PostgreSQL through the same driver surface.
+func isUniqueConstraintErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique constraint") || strings.Contains(message, "unique index") ||
+		strings.Contains(message, "duplicate key")
 }
 
 const generatorMetadataSelect = `SELECT generator_id, COALESCE(target, ''), fleet_pool_id, COALESCE(region, ''),

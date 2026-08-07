@@ -41,6 +41,14 @@ async function flushTableScan() {
   })
 }
 
+// The MutationObserver path defers to requestAnimationFrame, so DOM changes made
+// after mount need a longer wait than the initial synchronous scan.
+async function flushObservedTableScan() {
+  await act(async () => {
+    await new Promise(resolve => window.setTimeout(resolve, 60))
+  })
+}
+
 describe('TablePaginationManager', () => {
   let container: HTMLDivElement
   let root: Root
@@ -115,6 +123,38 @@ describe('TablePaginationManager', () => {
     expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-30 of 30')
     expect(previousButton.disabled).toBe(true)
     expect(nextButton.disabled).toBe(true)
+  })
+
+  it('forgets the page of a table that leaves the DOM instead of resurrecting it on re-entry', async () => {
+    const { host, table } = buildTable(30)
+
+    act(() => {
+      root.render(<TablePaginationManager />)
+    })
+    await flushTableScan()
+
+    const nextButton = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Next') as HTMLButtonElement
+    act(() => {
+      nextButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 11-20 of 30')
+
+    // The table unmounts (e.g. the operator navigates away from the section)…
+    act(() => {
+      host.remove()
+    })
+    await flushObservedTableScan()
+    expect(document.querySelector('.table-pagination-toolbar')).toBeNull()
+
+    // …and the same element comes back. Its page bookkeeping was discarded with
+    // it, so the toolbar and the rows must agree on page 1.
+    act(() => {
+      document.body.appendChild(host)
+    })
+    await flushObservedTableScan()
+
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-10 of 30')
+    expect(visibleRowTexts(table)).toEqual(Array.from({ length: 10 }, (_, index) => `Row ${index + 1}`))
   })
 
   it('does not add controls for short tables', async () => {

@@ -20,9 +20,17 @@ type sidecarAdapter struct {
 	command string
 	cfg     config
 	limiter *sidecarProcessLimiter
+	// pool forces the long-lived pooled transport regardless of the operator
+	// environment. It is only set by tests; production selects the pool through
+	// sidecarPersistentEnabled/sidecarPoolFor.
+	pool *sidecarPool
 }
 
 type sidecarRequest struct {
+	// ID correlates one request line with its response line on the long-lived
+	// pooled transport. It is empty (and therefore omitted) in the default
+	// one-process-per-action mode, so the legacy wire contract is unchanged.
+	ID               string         `json:"id,omitempty"`
 	Operation        string         `json:"operation"`
 	Provider         string         `json:"provider,omitempty"`
 	Config           config         `json:"config,omitempty"`
@@ -35,6 +43,9 @@ type sidecarRequest struct {
 }
 
 type sidecarResponse struct {
+	// ID must echo sidecarRequest.ID on the pooled transport; it is ignored in
+	// one-process-per-action mode.
+	ID       string  `json:"id,omitempty"`
 	Message  message `json:"message,omitempty"`
 	Request  message `json:"request,omitempty"`
 	Response message `json:"response,omitempty"`
@@ -150,6 +161,30 @@ func (a sidecarAdapter) run(ctx context.Context, req sidecarRequest, timeout tim
 	}
 	defer release()
 
+	// Persistent mode reuses a pooled, long-lived process instead of forking one
+	// process per messaging action. See sidecar_pool.go for the wire contract.
+	if pool := a.persistentPool(); pool != nil {
+		return runPooledSidecar(runCtx, pool, req)
+	}
+	return a.runOneShot(runCtx, cancel, req)
+}
+
+// persistentPool returns the pooled transport when the operator enabled it, or
+// nil to keep the default one-process-per-action behaviour.
+func (a sidecarAdapter) persistentPool() *sidecarPool {
+	if a.pool != nil {
+		return a.pool
+	}
+	if !sidecarPersistentEnabled() {
+		return nil
+	}
+	return sidecarPoolFor(a.command, a.cfg)
+}
+
+// runOneShot is the original transport: fork the sidecar, hand it one JSON
+// request on stdin, read one JSON response, let the process exit.
+func (a sidecarAdapter) runOneShot(runCtx context.Context, cancel context.CancelFunc, req sidecarRequest) (sidecarResponse, error) {
+	fields := strings.Fields(a.command)
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return sidecarResponse{}, fmt.Errorf("marshal jms sidecar request: %w", err)

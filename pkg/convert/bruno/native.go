@@ -13,11 +13,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -147,14 +149,50 @@ type nativeHTTPParam struct {
 	SourceIndex int
 }
 
+// nativeLayerCache memoizes the parsed collection/folder metadata layers of a
+// single import pass. Without it every request re-parses each of its ancestor
+// folder.yml documents, so metadata parsing is O(requests x depth): a
+// 3,000-request collection nested four folders deep parses the same handful of
+// folder documents ~12,000 times per pass. Downstream consumers treat
+// nativeLayer as immutable — mergeNativeLayers only reads it and
+// buildNativeCandidate only reads Path/UID — so handing the same parsed value
+// to every request is safe. Request layers are deliberately not cached: callers
+// overwrite their Name/UID/Sequence fallbacks and each request file is parsed
+// once per pass anyway. Keying on the path alone is exact because the cache is
+// only ever fed from nativeMetadataFiles, which resolves each directory to a
+// single collection/folder document and rejects ambiguous ones.
+type nativeLayerCache struct {
+	entries map[string]nativeLayer
+}
+
+func newNativeLayerCache() *nativeLayerCache {
+	return &nativeLayerCache{entries: make(map[string]nativeLayer)}
+}
+
+func (c *nativeLayerCache) metadataLayer(file sourceFile) (nativeLayer, error) {
+	if c == nil {
+		return parseNativeLayer(file, false)
+	}
+	if cached, ok := c.entries[file.Path]; ok {
+		return cached, nil
+	}
+	layer, err := parseNativeLayer(file, false)
+	if err != nil {
+		return nativeLayer{}, err
+	}
+	c.entries[file.Path] = layer
+	return layer, nil
+}
+
 func validateNativeEffectiveCredentialShapes(files []sourceFile, root string) error {
 	collectionFile, folderFiles, err := nativeMetadataFiles(files, root)
 	if err != nil {
 		return err
 	}
+	layerCache := newNativeLayerCache()
 	var collectionLayer nativeLayer
 	if collectionFile != nil {
-		collectionLayer, err = parseNativeLayer(*collectionFile, false)
+		collectionLayer, err = layerCache.metadataLayer(*collectionFile)
 		if err != nil {
 			return fmt.Errorf("parse Bruno collection metadata %q: %w", collectionFile.Path, err)
 		}
@@ -184,7 +222,7 @@ func validateNativeEffectiveCredentialShapes(files []sourceFile, root string) er
 			if !exists {
 				continue
 			}
-			folderLayer, folderErr := parseNativeLayer(folderFile, false)
+			folderLayer, folderErr := layerCache.metadataLayer(folderFile)
 			if folderErr != nil {
 				return fmt.Errorf("parse Bruno folder metadata %q: %w", folderFile.Path, folderErr)
 			}
@@ -216,16 +254,36 @@ func nativeRequestScripts(
 		return nil, nil, nil, findings, err
 	}
 
+	layerCache := newNativeLayerCache()
 	var collectionLayer nativeLayer
 	if collectionFile != nil {
-		collectionLayer, err = parseNativeLayer(*collectionFile, false)
+		collectionLayer, err = layerCache.metadataLayer(*collectionFile)
 		if err != nil {
 			return nil, nil, nil, findings, fmt.Errorf("parse Bruno collection metadata %q: %w", collectionFile.Path, err)
 		}
 	}
 
+	// Per-request failures are collected rather than returned on the first hit.
+	// The bundle is still rejected as a whole — a partial native import would
+	// silently drop requests, which the importer's no-silent-drop contract
+	// forbids — but the operator now learns about every offending request from a
+	// single inspect instead of re-uploading a large collection once per bad file.
+	failures := &nativeRequestFailures{}
+
 	requestFiles := make(map[string]sourceFile)
+	// Requests rejected by the container-format gate below are recorded so the
+	// ordered-item walk does not report them a second time as "not found in the
+	// sanitized bundle".
+	rejectedRequestFiles := make(map[string]struct{})
 	for _, file := range files {
+		// A wholly legacy bundle would otherwise report one failure per file, and
+		// the joined message is returned verbatim to the HTTP client. Stopping
+		// here also stops populating rejectedRequestFiles, which is safe because
+		// the ordered-item walk below is saturated too and breaks on its first
+		// iteration, so it cannot double-report an unrecorded rejection.
+		if failures.saturated() {
+			break
+		}
 		if classifyFileRole(file.Path, file.Data) != "request" {
 			continue
 		}
@@ -235,23 +293,36 @@ func nativeRequestScripts(
 		}
 		extension := strings.ToLower(path.Ext(file.Path))
 		if extension != ".yml" && extension != ".yaml" {
-			return nil, nil, nil, findings, fmt.Errorf(
+			failures.add(fmt.Errorf(
 				"native_requests supports OpenCollection YAML HTTP items only; %q has unsupported extension %q",
 				relative,
 				extension,
-			)
+			))
+			rejectedRequestFiles[relative] = struct{}{}
+			continue
 		}
 		requestFiles[relative] = file
 	}
 
 	orderedItems := flattenNativeHTTPItems(collection.Items)
 	if unsupported := nativeUnsupportedItemTypes(collection.Items); len(unsupported) > 0 {
-		return nil, nil, nil, findings, fmt.Errorf(
-			"native_requests supports OpenCollection YAML HTTP items only; canonical mode is required for: %s",
-			strings.Join(unsupported, ", "),
-		)
+		// Aggregate rather than return directly: container-format failures
+		// collected above would otherwise be discarded, and the operator would
+		// only learn about them after fixing the item types and re-uploading.
+		if !failures.saturated() {
+			failures.add(fmt.Errorf(
+				"native_requests supports OpenCollection YAML HTTP items only; canonical mode is required for: %s",
+				strings.Join(unsupported, ", "),
+			))
+		}
+		return nil, nil, nil, findings, failures.err()
 	}
 	if len(orderedItems) == 0 {
+		// Rejected containers are the reason there is nothing to import; report
+		// them rather than the generic "no requests" message.
+		if err := failures.err(); err != nil {
+			return nil, nil, nil, findings, err
+		}
 		return nil, nil, nil, findings, fmt.Errorf("native_requests found no OpenCollection YAML HTTP requests")
 	}
 
@@ -274,13 +345,22 @@ func nativeRequestScripts(
 	}
 
 	for _, item := range orderedItems {
+		if failures.saturated() {
+			break
+		}
 		file, ok := requestFiles[item.Path]
 		if !ok {
-			return nil, nil, nil, findings, fmt.Errorf("native request source %q was not found in the sanitized bundle", item.Path)
+			if _, rejected := rejectedRequestFiles[item.Path]; rejected {
+				// Already reported by the container-format gate.
+				continue
+			}
+			failures.add(fmt.Errorf("native request source %q was not found in the sanitized bundle", item.Path))
+			continue
 		}
 		layer, err := parseNativeLayer(file, true)
 		if err != nil {
-			return nil, nil, nil, findings, fmt.Errorf("parse Bruno request %q: %w", file.Path, err)
+			failures.add(fmt.Errorf("parse Bruno request %q: %w", file.Path, err))
+			continue
 		}
 		layer.Name = firstNonEmptyNative(layer.Name, item.Name)
 		layer.UID = firstNonEmptyNative(layer.UID, item.UID)
@@ -293,6 +373,7 @@ func nativeRequestScripts(
 			layers = append(layers, collectionLayer)
 		}
 		ancestorPaths := nativeAncestorPaths(path.Dir(item.Path))
+		ancestorFailed := false
 		for _, ancestor := range ancestorPaths {
 			fullPath := ancestor
 			if root != "" {
@@ -302,11 +383,16 @@ func nativeRequestScripts(
 			if !exists {
 				continue
 			}
-			folderLayer, parseErr := parseNativeLayer(folderFile, false)
+			folderLayer, parseErr := layerCache.metadataLayer(folderFile)
 			if parseErr != nil {
-				return nil, nil, nil, findings, fmt.Errorf("parse Bruno folder metadata %q: %w", folderFile.Path, parseErr)
+				failures.add(fmt.Errorf("parse Bruno folder metadata %q: %w", folderFile.Path, parseErr))
+				ancestorFailed = true
+				break
 			}
 			layers = append(layers, folderLayer)
+		}
+		if ancestorFailed {
+			continue
 		}
 		layers = append(layers, layer)
 
@@ -324,21 +410,28 @@ func nativeRequestScripts(
 			manifestHashes,
 		)
 		if buildErr != nil {
-			return nil, nil, nil, findings, buildErr
+			failures.add(buildErr)
+			continue
 		}
+		conflicted := false
 		for _, requirement := range candidate.SecretRequirements {
 			if existing, exists := aggregateRequirements[requirement.ID]; exists {
 				if existing.Value != "" && requirement.Value != "" &&
 					existing.Value != requirement.Value {
-					return nil, nil, nil, findings, fmt.Errorf(
+					failures.add(fmt.Errorf(
 						"native credential requirement %q resolves to conflicting values across requests",
 						requirement.SuggestedName,
-					)
+					))
+					conflicted = true
+					break
 				}
 				aggregateRequirements[requirement.ID] = mergeNativeSecretRequirements(existing, requirement)
 			} else {
 				aggregateRequirements[requirement.ID] = requirement
 			}
+		}
+		if conflicted {
+			continue
 		}
 		for _, missing := range candidate.MissingVariables {
 			aggregateMissing[missing] = struct{}{}
@@ -351,6 +444,9 @@ func nativeRequestScripts(
 			findings = append(findings, finding)
 		}
 		candidates = append(candidates, candidate)
+	}
+	if err := failures.err(); err != nil {
+		return nil, nil, nil, findings, err
 	}
 
 	aggregateRequirementList := make([]SecretRequirement, 0, len(aggregateRequirements))
@@ -367,25 +463,114 @@ func nativeRequestScripts(
 	return candidates, aggregateRequirementList, missing, findings, nil
 }
 
+// maxReportedNativeRequestFailures bounds both the size of the aggregated
+// import error and the work a wholly malformed bundle can force: once this many
+// distinct failures have been collected the remaining files/requests are not
+// inspected.
+const maxReportedNativeRequestFailures = 10
+
+// nativeRequestFailures accumulates per-file import failures so one bad file no
+// longer hides every other broken request in the same collection. Distinct
+// messages are kept in first-seen order, which is deterministic because source
+// files are path-sorted and request items are traversed in collection order.
+type nativeRequestFailures struct {
+	// subject names what the aggregated message is counting. It defaults to
+	// "Bruno requests"; the pre-parse YAML validator sets it to "Bruno YAML
+	// documents" because it also rejects collection and folder metadata.
+	subject  string
+	failures []error
+	seen     map[string]struct{}
+	skipped  bool
+}
+
+func (f *nativeRequestFailures) add(err error) {
+	if err == nil {
+		return
+	}
+	if f.seen == nil {
+		f.seen = make(map[string]struct{})
+	}
+	message := err.Error()
+	if _, duplicate := f.seen[message]; duplicate {
+		return
+	}
+	f.seen[message] = struct{}{}
+	f.failures = append(f.failures, err)
+}
+
+func (f *nativeRequestFailures) saturated() bool {
+	if len(f.failures) >= maxReportedNativeRequestFailures {
+		f.skipped = true
+		return true
+	}
+	return false
+}
+
+func (f *nativeRequestFailures) err() error {
+	switch len(f.failures) {
+	case 0:
+		return nil
+	case 1:
+		// Preserve the single-failure message (and its wrapped chain) exactly as
+		// it read before failures were aggregated.
+		return f.failures[0]
+	}
+	messages := make([]string, 0, len(f.failures))
+	for _, failure := range f.failures {
+		messages = append(messages, failure.Error())
+	}
+	subject := f.subject
+	if subject == "" {
+		subject = "Bruno requests"
+	}
+	suffix := ""
+	if f.skipped {
+		suffix = "; remaining " + subject + " were not inspected"
+	}
+	return fmt.Errorf(
+		"%d %s could not be imported%s: %s",
+		len(f.failures),
+		subject,
+		suffix,
+		strings.Join(messages, "; "),
+	)
+}
+
+// validateNativeYAMLFiles rejects malformed per-document YAML (duplicate or
+// non-scalar mapping keys, merge aliases, unsupported layer shapes) before any
+// layer is parsed. Like the per-request projection below it reports every
+// offending document from a single inspect rather than stopping at the first
+// one: malformed request shape is the most common authoring error, and aborting
+// on file one forces a fix-and-re-upload loop over a large collection. The
+// bundle is still rejected as a whole.
 func validateNativeYAMLFiles(files []sourceFile) error {
+	failures := &nativeRequestFailures{subject: "Bruno YAML documents"}
 	for _, file := range files {
+		if failures.saturated() {
+			break
+		}
 		extension := strings.ToLower(path.Ext(file.Path))
 		if extension != ".yml" && extension != ".yaml" {
 			continue
 		}
-		switch classifyFileRole(file.Path, file.Data) {
+		// classifyFileRole hashes and (on a cache miss) parses the file, so it is
+		// resolved once per file rather than once per use.
+		role := classifyFileRole(file.Path, file.Data)
+		switch role {
 		case "collection", "folder", "request":
 		default:
 			continue
 		}
 		if err := validateNativeYAMLMappingKeys(file.Data); err != nil {
-			return fmt.Errorf("Bruno YAML %q: %w", file.Path, err)
+			failures.add(fmt.Errorf("Bruno YAML %q: %w", file.Path, err))
+			continue
 		}
-		if err := validateNativeLayerShape(file, classifyFileRole(file.Path, file.Data)); err != nil {
-			return fmt.Errorf("Bruno YAML %q: %w", file.Path, err)
+		if err := validateNativeLayerShape(file, role); err != nil {
+			failures.add(fmt.Errorf("Bruno YAML %q: %w", file.Path, err))
+			continue
 		}
 	}
-	return nil
+	return failures.err()
 }
 
 func validateNativeYAMLMappingKeys(data []byte) error {
@@ -586,7 +771,14 @@ func nativeAncestorPaths(folder string) []string {
 	return out
 }
 
+// nativeLayerParses counts the YAML documents parseNativeLayer has actually
+// parsed. It exists only so importer performance regression tests can assert
+// that folder/collection metadata is parsed once per pass instead of once per
+// request, and is never read in production.
+var nativeLayerParses atomic.Int64
+
 func parseNativeLayer(file sourceFile, request bool) (nativeLayer, error) {
+	nativeLayerParses.Add(1)
 	var document map[string]any
 	if err := yaml.Unmarshal(file.Data, &document); err != nil {
 		return nativeLayer{}, err
@@ -2795,9 +2987,8 @@ func nativeComposedHeaderSecretRequirement(
 	nameHash := sha256.Sum256([]byte("bruno-native-header-name\x00" + sourcePath + "\x00" + identity))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(nameHash[:6]))
 	name := secretName(sourcePath, "header_"+headerName)
-	const maxLogicalSecretNameBytes = 249
-	if len(name)+len(suffix) > maxLogicalSecretNameBytes {
-		name = strings.TrimRight(name[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	if len(name)+len(suffix) > credential.MaxLogicalNameBytes {
+		name = strings.TrimRight(name[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	}
 	name += suffix
 	idHash := sha256.Sum256([]byte("bruno-native-header\x00" + sourcePath + "\x00" + identity))
@@ -2827,9 +3018,8 @@ func nativeVariableSecretRequirement(
 	nameHash := sha256.Sum256([]byte("bruno-native-variable-name\x00" + sourceIdentity))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(nameHash[:6]))
 	name := secretName(variable.SourcePath, variable.Name)
-	const maxLogicalSecretNameBytes = 249
-	if len(name)+len(suffix) > maxLogicalSecretNameBytes {
-		name = strings.TrimRight(name[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	if len(name)+len(suffix) > credential.MaxLogicalNameBytes {
+		name = strings.TrimRight(name[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	}
 	name += suffix
 	idHash := sha256.Sum256([]byte("bruno-native-variable\x00" + sourceIdentity))
@@ -2855,9 +3045,8 @@ func nativeAuthSecretRequirement(
 	nameHash := sha256.Sum256([]byte("bruno-native-auth-name\x00" + sourcePath + "\x00" + identity))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(nameHash[:6]))
 	name := secretName(sourcePath, "auth_"+field)
-	const maxLogicalSecretNameBytes = 249
-	if len(name)+len(suffix) > maxLogicalSecretNameBytes {
-		name = strings.TrimRight(name[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	if len(name)+len(suffix) > credential.MaxLogicalNameBytes {
+		name = strings.TrimRight(name[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	}
 	name += suffix
 	idHash := sha256.Sum256([]byte("bruno-native-auth\x00" + sourcePath + "\x00" + identity))
@@ -2884,9 +3073,8 @@ func nativeBodyFieldSecretRequirement(
 	nameHash := sha256.Sum256([]byte("bruno-native-body-field-name\x00" + sourcePath + "\x00" + identity))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(nameHash[:6]))
 	name := secretName(sourcePath, "body_"+bodyKind+"_"+field)
-	const maxLogicalSecretNameBytes = 249
-	if len(name)+len(suffix) > maxLogicalSecretNameBytes {
-		name = strings.TrimRight(name[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	if len(name)+len(suffix) > credential.MaxLogicalNameBytes {
+		name = strings.TrimRight(name[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	}
 	name += suffix
 	idHash := sha256.Sum256([]byte("bruno-native-body-field\x00" + sourcePath + "\x00" + identity))

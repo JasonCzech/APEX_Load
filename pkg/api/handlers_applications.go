@@ -47,6 +47,26 @@ func (s *Server) handleListApplications(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Application.ProjectID is optional; normalizeProjectID maps an unset one to
+	// the default project, so a project-less application follows that project's
+	// visibility rather than becoming invisible to everyone.
+	_, visibleProjects, unrestricted, err := s.visibleScopeForRequest(r, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !unrestricted {
+		filtered := make([]*storage.Application, 0, len(applications))
+		for _, application := range applications {
+			if application == nil {
+				continue
+			}
+			if _, ok := visibleProjects[normalizeProjectID(application.ProjectID)]; ok {
+				filtered = append(filtered, application)
+			}
+		}
+		applications = filtered
+	}
 	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
 		normalizedProjectID := normalizeProjectID(projectID)
 		filtered := make([]*storage.Application, 0, len(applications))

@@ -1,0 +1,58 @@
+# OPT-IN remote-controller access — not included in kustomization.yaml.
+#
+# Apply this ONLY when an APEX Load controller running somewhere else registers
+# this cluster as a `eks` cluster connection. A controller running inside this
+# cluster does not need it: it registers the cluster as kind `in_cluster` and
+# authorizes through its own ServiceAccount.
+#
+# EKS authentication and Kubernetes authorization are two separate steps, and
+# both fail with 401/403:
+#
+#   1. The EKS access entry (deployments/aws/terraform/irsa.tf) maps the
+#      controller's IAM role into the cluster as a member of the
+#      "apexload-controllers" group. Without it, STS accepts the credential and
+#      the API server rejects an unknown principal.
+#   2. This RoleBinding gives that group permissions. Without it, the principal
+#      is known and still authorized for nothing.
+#
+# The cluster-connection Test button distinguishes them: `sts_identity` green
+# with `api_server` red means step 1 or 2 is missing, and the probe message
+# reports the exact caller ARN.
+#
+# Requires restart-controls.example.yaml in the same overlay — that is where the
+# least-privilege Role is defined. Bound to a group rather than to the
+# principal's default username so this manifest carries no account ID.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-remote-controller
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: remote-cluster-access
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-restart-controls
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: apexload-controllers
+---
+# Node reads are cluster-scoped, so they need a ClusterRoleBinding rather than a
+# RoleBinding. This is optional: without it the capacity probe degrades to a
+# warning and node-pool discovery and pod-fit checks are simply unavailable —
+# scaling still works. Requires node-read.optional.yaml in the same overlay.
+#
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRoleBinding
+# metadata:
+#   name: apexload-remote-controller-node-read
+# roleRef:
+#   apiGroup: rbac.authorization.k8s.io
+#   kind: ClusterRole
+#   name: apexload-node-read
+# subjects:
+#   - apiGroup: rbac.authorization.k8s.io
+#     kind: Group
+#     name: apexload-controllers

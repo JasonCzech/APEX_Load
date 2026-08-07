@@ -650,7 +650,7 @@ describe('SecretBindingReview', () => {
     expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe('write-only-value')
   })
 
-  it('preserves edits only for the explicitly marked same-scope generation transition', async () => {
+  it('preserves edits for a same-scope generation and clears them on project change', async () => {
     const reviewRef = { current: null as SecretBindingReviewHandle | null }
     const onApply = vi.fn().mockResolvedValue(undefined)
     const renderReview = async (reviewGeneration: string, projectId: string) => {
@@ -674,7 +674,6 @@ describe('SecretBindingReview', () => {
     act(() => {
       setInput(nameInput, 'CUSTOM_TOKEN')
       setInput(valueInput, 'write-only-value')
-      reviewRef.current?.preserveEditsForNextReviewGeneration()
     })
 
     await renderReview('generation-b', 'project-1')
@@ -689,7 +688,6 @@ describe('SecretBindingReview', () => {
       value: 'write-only-value',
     }])
 
-    act(() => reviewRef.current?.preserveEditsForNextReviewGeneration())
     await renderReview('generation-c', 'project-2')
     expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('ORDER_API_TOKEN')
     expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe('')

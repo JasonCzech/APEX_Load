@@ -702,3 +702,131 @@ func TestSOAPClearCacheAndCookiesNilInnerAreSafe(t *testing.T) {
 		t.Fatalf("ClearCookies on uninitialized protocol: %v", err)
 	}
 }
+
+// The rest of this suite hand-builds a configuration the engine never produces:
+// actions with DiscardResponseBodyOnSuccess left false, and (mostly) an
+// explicit soap_fault_fail_on_fault=true. Production is the opposite on both
+// axes. pkg/engine/vuser_resolve.go sets DiscardResponseBodyOnSuccess on EVERY
+// action unless the script's log level is "extended" WITH the "data_returned"
+// option, and pkg/engine/config_protocols.go only emits
+// soap_fault_fail_on_fault when the script explicitly opts in. So the default
+// load-run shape — discard on, fault handling off — was the one shape nothing
+// covered, which is exactly where the fault-detection-versus-discard ordering
+// can regress silently.
+func TestSOAPExecuteUnderProductionDefaultResponseBodyDiscard(t *testing.T) {
+	const faultEnvelope = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><soapenv:Fault><faultcode>soapenv:Server</faultcode><faultstring>downstream unavailable</faultstring></soapenv:Fault></soapenv:Body></soapenv:Envelope>`
+	const okEnvelope = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><PingResponse>pong</PingResponse></soapenv:Body></soapenv:Envelope>`
+
+	cases := []struct {
+		name           string
+		status         int
+		body           string
+		wantSuccess    bool
+		wantBodyKept   bool
+		wantFaultCode  string
+		wantFaultClass string
+	}{
+		{
+			// The High this suite could not see: a 2xx SOAP Fault must still be
+			// detected and reported even though the retention policy discards
+			// the body of a successful sample.
+			name:           "fault returned with http 200",
+			status:         http.StatusOK,
+			body:           faultEnvelope,
+			wantSuccess:    true,
+			wantBodyKept:   false,
+			wantFaultCode:  "soapenv:Server",
+			wantFaultClass: "server",
+		},
+		{
+			// The retention policy itself must survive the reordering: a clean
+			// success still drops its body.
+			name:         "successful response",
+			status:       http.StatusOK,
+			body:         okEnvelope,
+			wantSuccess:  true,
+			wantBodyKept: false,
+		},
+		{
+			// A failed sample keeps its evidence regardless of the flag.
+			name:           "fault returned with http 500",
+			status:         http.StatusInternalServerError,
+			body:           faultEnvelope,
+			wantSuccess:    false,
+			wantBodyKept:   true,
+			wantFaultCode:  "soapenv:Server",
+			wantFaultClass: "server",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer ts.Close()
+
+			s := &SOAP{}
+			// Production default: no soap_fault_fail_on_fault key at all.
+			if err := s.Init(context.Background(), map[string]any{"base_url": ts.URL}); err != nil {
+				t.Fatalf("Init returned error: %v", err)
+			}
+			defer func() { _ = s.Teardown(context.Background()) }()
+
+			result, err := s.Execute(context.Background(), &protocol.Action{
+				Name:                         "Ping",
+				Target:                       "/PingService",
+				Body:                         []byte(`<Envelope><Body><Ping/></Body></Envelope>`),
+				DiscardResponseBodyOnSuccess: true,
+			})
+			if err != nil {
+				t.Fatalf("Execute returned error: %v", err)
+			}
+			if result == nil {
+				t.Fatal("Execute returned a nil result")
+			}
+			if result.Success != tc.wantSuccess {
+				t.Fatalf("Success = %v, want %v (error=%q)", result.Success, tc.wantSuccess, result.ErrorMessage)
+			}
+			if kept := result.ResponseBody != ""; kept != tc.wantBodyKept {
+				t.Fatalf("response body retained = %v, want %v (body=%q)", kept, tc.wantBodyKept, result.ResponseBody)
+			}
+			if tc.wantFaultCode == "" {
+				if result.ServerTelemetry != nil && result.ServerTelemetry.SOAPFaultCode != "" {
+					t.Fatalf("SOAPFaultCode = %q, want none", result.ServerTelemetry.SOAPFaultCode)
+				}
+				if result.Extractions["soap_fault_code"] != "" {
+					t.Fatalf("soap_fault_code = %q, want none", result.Extractions["soap_fault_code"])
+				}
+			} else {
+				if result.ServerTelemetry == nil {
+					t.Fatal("ServerTelemetry = nil, want SOAP fault telemetry")
+				}
+				if result.ServerTelemetry.SOAPFaultCode != tc.wantFaultCode {
+					t.Fatalf("SOAPFaultCode = %q, want %q", result.ServerTelemetry.SOAPFaultCode, tc.wantFaultCode)
+				}
+				if result.ServerTelemetry.SOAPFaultCategory != tc.wantFaultClass {
+					t.Fatalf("SOAPFaultCategory = %q, want %q", result.ServerTelemetry.SOAPFaultCategory, tc.wantFaultClass)
+				}
+				if result.Extractions["soap_fault_code"] != tc.wantFaultCode {
+					t.Fatalf("soap_fault_code extraction = %q, want %q", result.Extractions["soap_fault_code"], tc.wantFaultCode)
+				}
+				if result.Extractions["soap_fault_category"] != tc.wantFaultClass {
+					t.Fatalf("soap_fault_category extraction = %q, want %q", result.Extractions["soap_fault_category"], tc.wantFaultClass)
+				}
+			}
+			// Protocol metadata is derived before the discard and must survive it.
+			if result.Extractions["soap_version"] != "1.1" {
+				t.Fatalf("soap_version = %q, want 1.1", result.Extractions["soap_version"])
+			}
+			if result.Extractions["soap_endpoint"] != ts.URL+"/PingService" {
+				t.Fatalf("soap_endpoint = %q, want %q", result.Extractions["soap_endpoint"], ts.URL+"/PingService")
+			}
+			if result.Extractions["soap_operation"] != "Ping" {
+				t.Fatalf("soap_operation = %q, want Ping", result.Extractions["soap_operation"])
+			}
+		})
+	}
+}

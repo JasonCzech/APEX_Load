@@ -431,70 +431,125 @@ func headerMap(headers []struct {
 	return out
 }
 
+// normalizedURL is the comparison form of a request URL: the trimmed raw text plus
+// the case-folded scheme/host and the exact escaped path/query. Parsing is expensive
+// relative to the rest of the matcher, so every URL is normalized exactly once.
+type normalizedURL struct {
+	raw    string
+	parsed bool
+	scheme string
+	host   string
+	path   string
+	query  string
+}
+
+func parseNormalizedURL(raw string) normalizedURL {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return normalizedURL{raw: raw}
+	}
+	return normalizedURL{
+		raw:    raw,
+		parsed: true,
+		scheme: strings.ToLower(parsed.Scheme),
+		host:   strings.ToLower(parsed.Host),
+		path:   parsed.EscapedPath(),
+		query:  parsed.RawQuery,
+	}
+}
+
+// equivalentNormalizedURL reports whether two normalized URLs address the same
+// resource. Unparseable URLs only ever match their identical raw text.
+func equivalentNormalizedURL(left, right normalizedURL) bool {
+	if left.raw == right.raw {
+		return true
+	}
+	if !left.parsed || !right.parsed {
+		return false
+	}
+	return left.scheme == right.scheme &&
+		left.host == right.host &&
+		left.path == right.path &&
+		left.query == right.query
+}
+
+// bucketKey returns a lookup key with the property that two normalized URLs are
+// equivalent under equivalentNormalizedURL exactly when their keys are equal:
+//   - Both parsed: identical raw text yields identical components (url.Parse is
+//     deterministic), so raw equality is subsumed by component equality.
+//   - Neither parsed: only raw equality can match, which is the key.
+//   - Mixed: the keys differ by prefix, and identical raw text cannot produce
+//     different parse outcomes, so the pair is genuinely non-equivalent.
+func (n normalizedURL) bucketKey() string {
+	if !n.parsed {
+		return "raw\x00" + n.raw
+	}
+	return "url\x00" + n.scheme + "\x00" + n.host + "\x00" + n.path + "\x00" + n.query
+}
+
+// harCandidate caches everything the matcher needs from one HAR entry. The URL
+// normalization, the canonical request body, and the Salesforce classification are
+// pure functions of the entry, so computing them once per entry (rather than once
+// per ref x entry pair) leaves matching results unchanged.
+type harCandidate struct {
+	entry harEntry
+	url   normalizedURL
+	body  string
+	kind  string
+}
+
 func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
-	type normalizedURL struct {
-		raw    string
-		parsed bool
-		scheme string
-		host   string
-		path   string
-		query  string
-	}
-	parseNormalized := func(raw string) normalizedURL {
-		raw = strings.TrimSpace(raw)
-		parsed, err := url.Parse(raw)
-		if err != nil {
-			return normalizedURL{raw: raw}
-		}
-		return normalizedURL{
-			raw:    raw,
-			parsed: true,
-			scheme: strings.ToLower(parsed.Scheme),
-			host:   strings.ToLower(parsed.Host),
-			path:   parsed.EscapedPath(),
-			query:  parsed.RawQuery,
-		}
-	}
-	refURLs := make(map[int]normalizedURL, len(refs))
-	entryURLs := make(map[int]normalizedURL, len(entries))
-	for refIndex, ref := range refs {
-		refURLs[refIndex] = parseNormalized(ref.URL)
-	}
-	for _, entry := range entries {
-		entryURLs[entry.ID] = parseNormalized(entry.URL)
-	}
-	equivalentNormalized := func(refURL, entryURL normalizedURL) bool {
-		if refURL.raw == entryURL.raw {
-			return true
-		}
-		if !refURL.parsed || !entryURL.parsed {
-			return false
-		}
-		return refURL.scheme == entryURL.scheme &&
-			refURL.host == entryURL.host &&
-			refURL.path == entryURL.path &&
-			refURL.query == entryURL.query
+	matches := make(map[int]int)
+	if len(refs) == 0 || len(entries) == 0 {
+		return matches
 	}
 
-	matches := make(map[int]int)
+	candidates := make([]harCandidate, len(entries))
+	byURL := make(map[string][]int, len(entries))
+	for index, entry := range entries {
+		candidate := harCandidate{
+			entry: entry,
+			url:   parseNormalizedURL(entry.URL),
+			body:  canonicalRequestBody(entry.RequestBody),
+			kind:  classifyHARRequest(entry),
+		}
+		candidates[index] = candidate
+		key := candidate.url.bucketKey()
+		byURL[key] = append(byURL[key], index)
+	}
+
 	used := make(map[int]bool)
 	for refIndex, ref := range refs {
-		refURL := refURLs[refIndex]
+		refURL := parseNormalizedURL(ref.URL)
+		actionBody := ""
+		if ref.Action != nil {
+			actionBody = ref.Action.Body
+		}
+		refBody := canonicalRequestBody(actionBody)
+		descriptor := ""
+		if ref.Descriptor != "" {
+			descriptor = strings.ToLower(ref.Descriptor)
+		}
 		bestID := 0
 		bestScore := -1
-		for _, entry := range entries {
-			if used[entry.ID] {
+		// Only URL-equivalent entries can match, so the scan is limited to the
+		// bucket instead of every entry. Bucket order mirrors document order, so
+		// the first-best tie-break is preserved.
+		for _, index := range byURL[refURL.bucketKey()] {
+			candidate := candidates[index]
+			if used[candidate.entry.ID] {
 				continue
 			}
-			if !strings.EqualFold(ref.Method, entry.Method) {
+			if !strings.EqualFold(ref.Method, candidate.entry.Method) {
 				continue
 			}
-			if !equivalentNormalized(refURL, entryURLs[entry.ID]) {
+			if !equivalentNormalizedURL(refURL, candidate.url) {
 				continue
 			}
-			if score := harMatchScore(ref, entry); score > bestScore {
+			if score := harMatchScore(refBody, descriptor, ref.Kind, candidate); score > bestScore {
 				bestScore = score
-				bestID = entry.ID
+				bestID = candidate.entry.ID
 			}
 		}
 		if bestID != 0 {
@@ -505,23 +560,20 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 	return matches
 }
 
-func harMatchScore(ref actionRef, entry harEntry) int {
+// harMatchScore ranks one candidate entry against a ref whose body/descriptor have
+// already been canonicalized by the caller.
+func harMatchScore(refBody, lowerDescriptor, refKind string, candidate harCandidate) int {
 	score := 1
-	actionBody := ""
-	if ref.Action != nil {
-		actionBody = ref.Action.Body
-	}
-	refBody := canonicalRequestBody(actionBody)
-	entryBody := canonicalRequestBody(entry.RequestBody)
+	entryBody := candidate.body
 	if refBody != "" || entryBody != "" {
 		if refBody != "" && refBody == entryBody {
 			score += 100
 		}
 	}
-	if ref.Descriptor != "" && strings.Contains(canonicalRequestBody(entry.RequestBody), strings.ToLower(ref.Descriptor)) {
+	if lowerDescriptor != "" && strings.Contains(entryBody, lowerDescriptor) {
 		score += 25
 	}
-	if ref.Kind != "" && ref.Kind == classifyHARRequest(entry) {
+	if refKind != "" && refKind == candidate.kind {
 		score += 10
 	}
 	return score

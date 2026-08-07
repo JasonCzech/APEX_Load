@@ -1293,6 +1293,7 @@ interface ParameterDefinitionGroup {
   sourceName: string
   sourceType: string
   rowCount: number | null
+  hasDataSource: boolean
   parameters: Array<{ index: number; parameter: ParameterConfig }>
 }
 
@@ -1308,7 +1309,11 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
     const matchedSource = sourceName ? dataSourceByName.get(sourceName) : undefined
     const sourceFile = (matchedSource?.path || matchedSource?.name || sourceName || formatGeneratedParameterSource(parameter)).trim()
     const sourceType = (matchedSource?.type || parameter.type || 'list').trim()
-    const rowCount = matchedSource ? summarizeInlineData(matchedSource).rows : null
+    // A path/storage_ref/staged_asset source has no inline preview, so its row
+    // count is unknown ('—') rather than zero.
+    const rowCount = matchedSource && !getExternalDataSourceReference(matchedSource)
+      ? summarizeInlineData(matchedSource).rows
+      : null
     const key = matchedSource?.name || sourceName || `type:${sourceType || sourceFile}`
     let group = groupByKey.get(key)
 
@@ -1319,6 +1324,7 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
         sourceName: matchedSource?.name || sourceName,
         sourceType,
         rowCount,
+        hasDataSource: Boolean(matchedSource),
         parameters: [],
       }
       groupByKey.set(key, group)
@@ -1332,7 +1338,7 @@ function buildParameterDefinitionGroups(parameters: ParameterConfig[], dataSourc
 }
 
 function isUserDefinedParameterFileGroup(group: ParameterDefinitionGroup): boolean {
-  if (group.rowCount === null) return false
+  if (!group.hasDataSource) return false
   const sourceType = (group.sourceType || '').trim().toLowerCase()
   const sourceFile = (group.sourceFile || '').trim().toLowerCase()
   return sourceType === 'csv' || sourceType === 'dat' || sourceFile.endsWith('.csv') || sourceFile.endsWith('.dat')
@@ -2422,7 +2428,11 @@ interface ParameterSettingsDialogProps {
 }
 
 function parseParameterListInput(value: string): string[] {
-  return value.split('\n').map(entry => entry.trim()).filter(Boolean)
+  // One value per line, kept verbatim: surrounding whitespace and deliberately
+  // blank entries are real values, and dropping the trailing blank line would
+  // swallow the newline the operator just typed to start the next value.
+  const entries = value.split(/\r?\n/)
+  return entries.length === 1 && entries[0] === '' ? [] : entries
 }
 
 function numberInputValue(value: number | undefined, fallback: number | ''): number | string {

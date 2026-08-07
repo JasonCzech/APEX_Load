@@ -20,8 +20,9 @@ var (
 // detectK6ResidualSource performs a conservative lexical remainder check after
 // the constrained importer has identified every HTTP call it understands.
 // Anything other than core imports, function scaffolding, comments, punctuation,
-// and those calls is source behavior that the generated DSL does not reproduce.
-func detectK6ResidualSource(content string, requests []parsedHTTPRequest) []int {
+// those calls, and the statically translated spans is source behavior that the
+// generated DSL does not reproduce.
+func detectK6ResidualSource(content string, requests []parsedHTTPRequest, translated []k6Span) []int {
 	masked := []byte(content)
 	lineIndex := sourceview.NewLineIndex(content)
 	residual := map[int]struct{}{}
@@ -41,6 +42,10 @@ func detectK6ResidualSource(content string, requests []parsedHTTPRequest) []int 
 			maskK6Span(masked, lineStart, request.StartOffset)
 		}
 		maskK6Span(masked, request.StartOffset, request.EndOffset)
+	}
+
+	for _, span := range translated {
+		maskK6Span(masked, span.Start, span.End)
 	}
 
 	for _, match := range importPattern.FindAllStringIndex(content, -1) {

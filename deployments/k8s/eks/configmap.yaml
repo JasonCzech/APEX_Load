@@ -1,0 +1,108 @@
+# Non-secret data-platform configuration for EKS. Secrets (database DSN,
+# Redis connection string) live in the apexload-data-platform Secret — see
+# secret.example.yaml, or sync them from Secrets Manager with the CSI driver.
+#
+# Values marked CHANGE-ME come from the Terraform outputs in
+# deployments/aws/terraform (see its README for the mapping).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apexload-data-platform
+  labels:
+    app.kubernetes.io/name: apexload
+    app.kubernetes.io/component: data-platform
+data:
+  # --- Persistence: Amazon RDS for PostgreSQL ---
+  APEXLOAD_STORE: postgres
+  APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"
+  APEXLOAD_DATABASE_MAX_IDLE_CONNS: "10"
+  APEXLOAD_DATABASE_CONN_MAX_LIFETIME: 30m
+  APEXLOAD_TIMESCALEDB: "false"
+
+  # --- Run-evidence archives: Amazon S3 ---
+  # Authentication uses the pod's IRSA / Pod Identity role; no static keys.
+  APEXLOAD_ARCHIVE_BACKEND: s3
+  APEXLOAD_ARCHIVE_BUCKET: changeme-apexload-archives # CHANGE-ME: terraform output archive_bucket_name
+  APEXLOAD_ARCHIVE_PREFIX: production/run-evidence
+  # Set explicitly rather than relying on AWS_REGION below: it makes the bucket
+  # URL self-contained, and it is what a cross-region archive bucket would need.
+  APEXLOAD_ARCHIVE_REGION: changeme-region # CHANGE-ME: terraform output aws_region
+  AWS_REGION: changeme-region # CHANGE-ME: terraform output aws_region
+
+  # --- Live state / HA fanout: Amazon ElastiCache for Redis ---
+  APEXLOAD_CACHE_BACKEND: redis
+  APEXLOAD_REDIS_KEY_PREFIX: apexload:prod
+  APEXLOAD_REDIS_TIMEOUT: 2s
+  APEXLOAD_REDIS_FANOUT_CHANNEL: telemetry:fanout
+
+  # --- Script secrets: AWS Secrets Manager via IRSA ---
+  # No static credential required: the pod's IRSA role is signed into every
+  # Secrets Manager request automatically.
+  APEXLOAD_AWS_SECRETS_MANAGER_REGION: changeme-region # CHANGE-ME: terraform output aws_region
+  # Controller-only opt-in for governed Project Secrets rotation. The generator
+  # StatefulSet deliberately does not import this setting.
+  APEXLOAD_AWS_SECRETS_MANAGER_WRITE_ENABLED: "true"
+
+  # --- Credential envelope wrapping: AWS KMS ---
+  # Cluster-connection credentials and project-secret ciphertext are sealed with
+  # a data key wrapped by this customer managed key, so the master key never
+  # sits in the database. Set EXACTLY ONE wrapping key: configuring both this
+  # and APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID is refused at startup, because
+  # silently picking one would make every envelope sealed by the other
+  # permanently unreadable.
+  #
+  # It must be a full key ARN. Aliases are rejected: an alias can be repointed
+  # at a different key, which would strand existing ciphertext.
+  APEXLOAD_WRAPPING_KMS_KEY_ID: arn:aws:kms:changeme-region:000000000000:key/change-me # CHANGE-ME: terraform output wrapping_kms_key_arn
+
+  # --- Azure Event Hubs is not provisioned by the AWS module ---
+  # Event Hubs remains a supported protocol TARGET from an EKS deployment (it is
+  # a load-test payload concern, not infrastructure), but nothing here creates a
+  # namespace. Configure it per script exactly as the AKS overlay documents.
+  #
+  # --- Azure messaging allow-list (unused unless targeting Event Hubs) ---
+  # Exact comma-separated namespaces that may receive workload-identity tokens.
+  # Keep empty to disable AAD messaging auth; SAS connection strings still work.
+  APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES: "" # e.g. namespace.servicebus.windows.net
+  # Event Hubs connectivity is per-script (config.eventhubs), not controller env.
+  # Two supported auth modes once the terraform module provisions a namespace:
+  #   1. AAD / workload identity (recommended): set config.eventhubs.auth_type=aad
+  #      and config.eventhubs.namespace to `terraform output eventhubs_namespace`.
+  #      Terraform already grants the controller/generator identities the
+  #      "Azure Event Hubs Data Sender" (+ "Data Receiver" for the probe) roles.
+  #   2. SAS connection string: reference the Key Vault secrets terraform writes
+  #      ({{secret.eventhubs-send-connection-string}} /
+  #      {{secret.eventhubs-listen-connection-string}}) from
+  #      config.eventhubs.connection_string_secret.
+  # The native eventhubs adapter requires generator/controller images built with
+  # -tags eventhubs_real; the default image fail-closes on non-mock scripts.
+
+  # --- Generator fleet: DNS discovery against the headless service ---
+  # The dns:// scheme makes the controller re-resolve the headless service on
+  # an interval, so generators added/removed by KEDA are tracked automatically.
+  APEXLOAD_GENERATORS: dns://apexload-generator.apexload.svc.cluster.local:9090
+  APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 15s
+  APEXLOAD_GENERATOR_TIMEOUT: 10s
+  APEXLOAD_GENERATOR_AUTOSCALING_OWNER: keda
+
+  # --- Controller<->generator gRPC transport security ---
+  # Generators run with APEXLOAD_ENV=production and refuse to start on a
+  # plaintext, tokenless channel, so the controller must dial them over mTLS.
+  # Certificates are mounted from the apexload-controller-grpc-tls Secret (see
+  # the onprem certificates.example.yaml for a cert-manager issuance example).
+  # The shared auth token lives in the apexload-data-platform Secret. The
+  # server-name override lets the controller verify the generator cert's DNS
+  # SAN even though dns:// discovery dials pod IPs.
+  APEXLOAD_GRPC_TLS_CERT: /etc/apexload/grpc-tls/tls.crt
+  APEXLOAD_GRPC_TLS_KEY: /etc/apexload/grpc-tls/tls.key
+  APEXLOAD_GRPC_TLS_CA: /etc/apexload/grpc-tls/ca.crt
+  APEXLOAD_GRPC_TLS_SERVER_NAME: apexload-generator.apexload.svc.cluster.local
+
+  # --- Observability: metrics on a dedicated port ---
+  # Keeps the scrape surface off the API port so NetworkPolicy can grant the
+  # monitoring namespace metrics access without exposing the API.
+  APEXLOAD_METRICS_ADDR: ":9091"
+
+  # --- Governance / hardening ---
+  APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: "600"
+  APEXLOAD_IDEMPOTENCY_KEY_TTL: 15m

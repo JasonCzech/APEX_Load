@@ -13,14 +13,36 @@ import (
 // Secret-bearing body fields, lifted from the sample importer's sanitization
 // pass so all importers share one definition.
 var (
-	secretFieldNames          = `password|passcode|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|bearer[_-]?token|api[_-]?token|api[_-]?key|apikey|client[_-]?secret|secret|credential|credentials`
-	jsonSecretPattern         = regexp.MustCompile(`(?i)("(` + secretFieldNames + `)"\s*:\s*")((?:[^"\\]|\\.)+)(")`)
-	jsonNumericSecretPattern  = regexp.MustCompile(`(?i)("(` + secretFieldNames + `)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(\s*(?:[,}\]]|$))`)
-	formSecretPattern         = regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)=)([^&\s]+)`)
+	secretFieldNames         = `password|passcode|token|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|bearer[_-]?token|api[_-]?token|api[_-]?key|apikey|client[_-]?secret|secret|credential|credentials`
+	jsonSecretPattern        = regexp.MustCompile(`(?i)("(` + secretFieldNames + `)"\s*:\s*")((?:[^"\\]|\\.)+)(")`)
+	jsonNumericSecretPattern = regexp.MustCompile(`(?i)("(` + secretFieldNames + `)"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(\s*(?:[,}\]]|$))`)
+	// The value class mirrors pkg/scrub's sensitiveParamPattern: quotes and pair
+	// separators end the credential. A permissive class swallows the rest of a
+	// multipart or XML body — the replacement drops the matched value, so every
+	// unrelated byte after the credential is deleted from the sanitized body and
+	// from the literal an accepted suggestion rewrites.
+	formSecretPattern = regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)=)([^&\s;#"']+)`)
+	// Quoted pairs — XML/SOAP attributes and quoted form pairs — end at the
+	// closing quote, which formSecretPattern's value class deliberately excludes,
+	// so without these the credential would be left in the body untouched. RE2 has
+	// no backreference, so each quote style is its own pattern (the same split
+	// pkg/scrub uses for xmlNamespaceDouble/SingleAttr) rather than one ["']
+	// class, which would end `token="it's"` at the apostrophe and corrupt the tail.
+	quotedSecretRules = []quotedSecretRule{
+		{quote: `"`, pattern: regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)\s*=\s*")([^"\r\n]+)(")`)},
+		{quote: `'`, pattern: regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)\s*=\s*')([^'\r\n]+)(')`)},
+	}
 	secretTemplateEnvelope    = regexp.MustCompile(`^\{\{\s*([^{}\r\n]{1,256}?)\s*\}\}$`)
 	secretTemplateReference   = regexp.MustCompile(`^(?:var|param|data|env|secret|file)\.[A-Za-z0-9_.-]+$`)
 	authorizationSchemeSyntax = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._~+-]*$`)
 )
+
+// quotedSecretRule pairs a quoted-pair pattern with the quote byte that gates
+// it, so bodies without that quote skip the scan (and its work budget) entirely.
+type quotedSecretRule struct {
+	quote   string
+	pattern *regexp.Regexp
+}
 
 // SanitizeBodySecrets redacts known secret fields in JSON or form-encoded
 // bodies, preserving values whose entire credential is already supplied by a
@@ -56,6 +78,19 @@ func SanitizeBodySecrets(body string) string {
 		}
 		return match[1] + "{{secret.redacted}}"
 	})
+	for _, rule := range quotedSecretRules {
+		if !strings.Contains(result, rule.quote) {
+			continue
+		}
+		pattern := rule.pattern
+		result = pattern.ReplaceAllStringFunc(result, func(segment string) string {
+			match := pattern.FindStringSubmatch(segment)
+			if len(match) < 5 || isWholeSecretTemplate(match[3]) {
+				return segment
+			}
+			return match[1] + "{{secret.redacted}}" + match[4]
+		})
+	}
 	return result
 }
 
@@ -162,6 +197,30 @@ func collectBodySecrets(collector *secretCollector, budget *suggestionRegexBudge
 			SearchText:  match[0],
 			ReplaceText: match[1] + "{{env." + envKey + "}}",
 		}, "{{env."+envKey+"}}")
+	}
+	for _, rule := range quotedSecretRules {
+		if !strings.Contains(action.Body, rule.quote) {
+			continue
+		}
+		quotedMatches, err := budget.findAllSubmatches(rule.pattern, action.Body)
+		if err != nil {
+			return err
+		}
+		for _, match := range quotedMatches {
+			if len(match) < 5 || isWholeSecretTemplate(match[3]) {
+				continue
+			}
+			fieldName, value := match[2], match[3]
+			envKey := EnvKey(fieldName)
+			collector.add(fieldName, value, "form field", Location{
+				Section:     section,
+				ActionIndex: index,
+				ActionName:  action.Name,
+				Field:       "body",
+				SearchText:  match[0],
+				ReplaceText: match[1] + "{{env." + envKey + "}}" + match[4],
+			}, "{{env."+envKey+"}}")
+		}
 	}
 	return nil
 }

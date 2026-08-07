@@ -203,10 +203,14 @@ Controller runtime configuration:
 - `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
 - `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`
 - `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
+- `APEXLOAD_CONTROLLER_HA`: set `true` (or `1`/`yes`/`on`/`enabled`) before running more than one controller replica; it installs the durable execution-leader lease so only the lease holder runs tests and followers answer `503` on execution routes. When it is unset every replica behaves as its own leader and independently runs the scheduler sweep, queued-run promotion/reconciliation, provisioning recovery, archive finalization recovery, and retention mutations. Replicas must also share PostgreSQL, Redis/Valkey, and the archive backend. See [HA Controller Behavior](docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md#ha-controller-behavior)
+- `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION`: how long terminal scenario and execution-plan schedule occurrences are retained (default `2160h`, or 90 days); set `0` to disable pruning. `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION_INTERVAL` controls the leader-only prune cadence (default `6h`). Each pass removes at most 1,000 rows from each occurrence table.
 - `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend. `dns://host:port` entries enable dynamic discovery of a Kubernetes headless service
 - `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`: re-resolve interval for `dns://` generator entries (default `15s`)
 - `APEXLOAD_GENERATOR_TIMEOUT`: timeout for controller-to-generator RPCs (default `10s`)
-- `APEXLOAD_GENERATOR_LISTEN_ADDR`: generator gRPC bind address (default `:9090`); each local generator process needs a distinct address
+- `APEXLOAD_GENERATOR_LISTEN_ADDR`: generator gRPC bind address (default `:9090`, fallback alias `APEXLOAD_GENERATOR_ADDR`); each local generator process needs a distinct address
+- `APEXLOAD_GENERATOR_MAX_VUSERS`: maximum VUsers a single generator process accepts (default `10000`)
+- `APEXLOAD_GENERATOR_HEARTBEAT_INTERVAL`: generator heartbeat interval (default `5s`)
 - `APEXLOAD_LOG_LEVEL`: structured controller/generator log level: `debug`, `info`, `warn`, or `error` (default `info`; legacy `LOG_LEVEL` is accepted when the prefixed variable is unset)
 - `APEXLOAD_GRPC_TLS_CERT`/`APEXLOAD_GRPC_TLS_KEY`/`APEXLOAD_GRPC_TLS_CA`: TLS/mTLS for the controller↔generator gRPC channel (symmetric contract: cert/key = this process's identity, CA = trust for the peer; setting the CA on the generator requires verified client certs). `APEXLOAD_GRPC_TLS_SERVER_NAME` overrides certificate verification when targets are pod IPs from `dns://` discovery
 - `APEXLOAD_GRPC_AUTH_TOKEN`: shared bearer token required on every generator RPC — application-layer auth that holds even when the CNI does not enforce NetworkPolicies. When distributed targets are configured in `production`/`prod`, controller and generator startup fail closed unless the channel uses mTLS or verified TLS plus this token; token-only client authentication requires at least 32 bytes (generate 32 random bytes, commonly encoded as 64 hex characters).
@@ -429,7 +433,7 @@ pkg/
 
 dashboard/           # React 18 + TypeScript frontend
   src/
-    components/     # React components (Sidebar, FolderTree, ScriptsPage, etc.)
+    components/     # React components (Sidebar, ScriptsPage, TestHub, etc.)
     hooks/         # Custom hooks (useApi, useWebSocket)
     types.ts       # TypeScript interfaces
     main.tsx       # Vite entry point

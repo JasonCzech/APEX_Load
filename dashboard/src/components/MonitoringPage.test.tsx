@@ -648,7 +648,9 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Fleet')
 
-    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-pools', 'generator-metadata'])
+    // Cluster connections precede pools, and allocation follows them: connect a
+    // cluster, place a pool on it, then allocate that pool's host resources.
+    expect(visibleMonitorCardIds()).toEqual(['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'])
     expect(container.textContent).toContain('Generators')
     expect(container.textContent).toContain('Fleet Alerts')
     expect(container.textContent).toContain('No generator inventory was returned by the controller.')
@@ -770,6 +772,37 @@ describe('MonitoringPage', () => {
     expect(capacityCard?.classList.contains('stale')).toBe(true)
     expect(capacityCard?.textContent).toContain('Stale')
     expect(container.querySelector('.monitor-last-refreshed')?.textContent).toContain('stale card')
+  })
+
+  it('does not report fleet alerts as clear when the alert feed is unavailable', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'healthy', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [{
+        target: 'generator-a:9090',
+        generator_id: 'generator-a',
+        status: 'connected',
+        available_capacity: 8,
+        active_vusers: 0,
+        cpu_percent: 10,
+        memory_bytes: 1024,
+        goroutine_count: 12,
+        cpu_limit_cores: 2,
+        memory_limit_bytes: 2048,
+        max_vusers: 8,
+      }],
+    })
+    apiMock.getFleetAlerts.mockRejectedValue(new Error('fleet alerts unavailable'))
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" activeCategoryId="fleet" />)
+    })
+    await flushAsyncWork()
+
+    const alertCard = container.querySelector<HTMLElement>('[data-card-id="fleet-alerts"]')
+    expect(alertCard).not.toBeNull()
+    expect(alertCard?.textContent).toContain('Fleet alert status is unavailable')
+    expect(alertCard?.textContent).not.toContain('No fleet placement alerts detected')
   })
 
   it('retries every initial category when a hidden mount becomes visible', async () => {
@@ -1690,6 +1723,37 @@ describe('MonitoringPage', () => {
     expect(august5.events.map(item => item.id)).toEqual(['spanning'])
     expect(august6.events.map(item => item.id)).toEqual(['spanning'])
     expect([august4, august5, august6].map(day => day.continuingEventCount)).toEqual([1, 1, 1])
+  })
+
+  it('spans day-scale and bare-number workload durations when the calendar omits end_at', () => {
+    const durationEvent = (id: string, duration: string): RunCalendarEvent => ({
+      id,
+      source: 'cron',
+      run_type: 'scheduled',
+      title: id,
+      status: 'scheduled',
+      start_at: new Date(2026, 7, 3, 22).toISOString(),
+      workload: { duration },
+      user: {},
+      topology: {},
+    })
+    const anchor = new Date(2026, 7, 5, 12)
+
+    const dayUnit = buildRunCalendarModel('week', anchor, [durationEvent('soak-2d', '2d')])
+    expect(dayUnit.days.find(day => day.key === '2026-08-03')!.startingEventCount).toBe(1)
+    expect(dayUnit.days.find(day => day.key === '2026-08-04')!.continuingEventCount).toBe(1)
+    expect(dayUnit.days.find(day => day.key === '2026-08-05')!.continuingEventCount).toBe(1)
+    expect(dayUnit.days.find(day => day.key === '2026-08-06')!.events).toEqual([])
+
+    // A bare number is minutes: 240 minutes from 22:00 crosses into the next day.
+    const bareNumber = buildRunCalendarModel('week', anchor, [durationEvent('soak-bare', '240')])
+    expect(bareNumber.days.find(day => day.key === '2026-08-03')!.startingEventCount).toBe(1)
+    expect(bareNumber.days.find(day => day.key === '2026-08-04')!.continuingEventCount).toBe(1)
+
+    // Unparseable durations still fall back to the one-minute floor.
+    const unparseable = buildRunCalendarModel('week', anchor, [durationEvent('soak-unknown', 'until stopped')])
+    expect(unparseable.days.find(day => day.key === '2026-08-03')!.startingEventCount).toBe(1)
+    expect(unparseable.days.find(day => day.key === '2026-08-04')!.events).toEqual([])
   })
 
   it('does not treat a same-origin backend service as the dashboard frontend', () => {

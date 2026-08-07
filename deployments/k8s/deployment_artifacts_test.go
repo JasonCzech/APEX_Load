@@ -19,9 +19,27 @@ var placeholderPattern = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
 // silently survives rendering and the KEDA scaler fails workload-identity auth,
 // stalling generator autoscaling.
 func TestRenderScriptHandlesEveryOverlayPlaceholder(t *testing.T) {
-	renderScript := readTextFile(t, "../../scripts/render-aks-manifests.sh")
+	for _, target := range []struct {
+		script string
+		dirs   []string
+	}{
+		{
+			script: "../../scripts/render-aks-manifests.sh",
+			dirs:   []string{"aks", "aks-azure-monitor", "aks-prometheus", "onprem-autoscaling"},
+		},
+		{
+			script: "../../scripts/render-eks-manifests.sh",
+			dirs:   []string{"eks", "eks-ha", "eks-prometheus"},
+		},
+	} {
+		assertRenderScriptCoversPlaceholders(t, target.script, target.dirs)
+	}
+}
 
-	overlayDirs := []string{"aks", "aks-azure-monitor", "aks-prometheus", "onprem-autoscaling"}
+func assertRenderScriptCoversPlaceholders(t *testing.T, scriptPath string, overlayDirs []string) {
+	t.Helper()
+	renderScript := readTextFile(t, scriptPath)
+
 	seen := map[string]bool{}
 	for _, dir := range overlayDirs {
 		entries, err := os.ReadDir(dir)
@@ -40,13 +58,13 @@ func TestRenderScriptHandlesEveryOverlayPlaceholder(t *testing.T) {
 				}
 				seen[name] = true
 				if !strings.Contains(renderScript, name) {
-					t.Errorf("overlay placeholder ${%s} (in %s/%s) has no substitution rule in render-aks-manifests.sh", name, dir, entry.Name())
+					t.Errorf("overlay placeholder ${%s} (in %s/%s) has no substitution rule in %s", name, dir, entry.Name(), scriptPath)
 				}
 			}
 		}
 	}
 	if len(seen) == 0 {
-		t.Fatal("no ${...} placeholders found across AKS overlays; test wiring is likely broken")
+		t.Fatalf("no ${...} placeholders found across the overlays for %s; test wiring is likely broken", scriptPath)
 	}
 }
 
@@ -85,7 +103,7 @@ func TestMonitoringOverlaysUseKustomizeBase(t *testing.T) {
 	if !strings.Contains(base, "prometheusrule.yaml") {
 		t.Fatal("monitoring Kustomize base must include the shared PrometheusRule")
 	}
-	for _, path := range []string{"aks-prometheus/kustomization.yaml", "onprem-autoscaling/kustomization.yaml"} {
+	for _, path := range []string{"aks-prometheus/kustomization.yaml", "eks-prometheus/kustomization.yaml", "onprem-autoscaling/kustomization.yaml"} {
 		content := readTextFile(t, path)
 		if !strings.Contains(content, "../monitoring") || strings.Contains(content, "../monitoring/prometheusrule.yaml") {
 			t.Fatalf("%s must reference the monitoring directory base, not a sibling file", path)
@@ -96,6 +114,7 @@ func TestMonitoringOverlaysUseKustomizeBase(t *testing.T) {
 func TestKEDAScaledObjectsProtectActiveDemand(t *testing.T) {
 	for _, path := range []string{
 		"aks/generator-keda-scaledobject.yaml",
+		"eks/generator-keda-scaledobject.yaml",
 		"onprem/generator-keda-scaledobject.yaml",
 		"local/generator-keda-scaledobject.yaml",
 	} {
@@ -119,6 +138,7 @@ func TestKEDAScaledObjectsProtectActiveDemand(t *testing.T) {
 func TestKEDAScaledObjectsKeepScaleDownStabilization(t *testing.T) {
 	for _, path := range []string{
 		"aks/generator-keda-scaledobject.yaml",
+		"eks/generator-keda-scaledobject.yaml",
 		"onprem/generator-keda-scaledobject.yaml",
 		"local/generator-keda-scaledobject.yaml",
 		"onprem-autoscaling/generator-keda-scaledobject.yaml",
@@ -137,6 +157,7 @@ func TestGeneratorManifestsUseGRPCHealthProbes(t *testing.T) {
 		"local/generator-statefulset.yaml",
 		"onprem/generator-statefulset.yaml",
 		"aks/generator-statefulset.yaml",
+		"eks/generator-statefulset.yaml",
 		"../helm/apexload/templates/generator.yaml",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -158,6 +179,7 @@ func TestProductionGeneratorManifestsPersistExecutionFenceState(t *testing.T) {
 	for _, path := range []string{
 		"onprem/generator-statefulset.yaml",
 		"aks/generator-statefulset.yaml",
+		"eks/generator-statefulset.yaml",
 		"../helm/apexload/templates/generator.yaml",
 	} {
 		t.Run(path, func(t *testing.T) {
@@ -191,7 +213,7 @@ func TestProductionGeneratorManifestsPersistExecutionFenceState(t *testing.T) {
 }
 
 func TestHAOverlaysSetReplicasAndFlagTogether(t *testing.T) {
-	for _, path := range []string{"onprem-ha/kustomization.yaml", "aks-ha/kustomization.yaml"} {
+	for _, path := range []string{"onprem-ha/kustomization.yaml", "aks-ha/kustomization.yaml", "eks-ha/kustomization.yaml"} {
 		t.Run(path, func(t *testing.T) {
 			content := readTextFile(t, path)
 			for _, check := range []string{"path: /spec/replicas", "value: 2", "APEXLOAD_CONTROLLER_HA", `value: "true"`} {
@@ -372,6 +394,34 @@ func TestProjectSecretsProvidersAreWiredForSupportedDeployments(t *testing.T) {
 		t.Fatal("AKS generators must never receive Azure Key Vault write authority")
 	}
 
+	// The EKS twin: the controller enables Secrets Manager rotation, and the
+	// generator must never receive it. Generators execute user-supplied
+	// scripts, so rotation authority there would let a script rewrite the
+	// credentials every other script reads.
+	eksConfig := readTextFile(t, "eks/configmap.yaml")
+	eksGenerator := readTextFile(t, "eks/generator-statefulset.yaml")
+	if !strings.Contains(eksConfig, `APEXLOAD_AWS_SECRETS_MANAGER_WRITE_ENABLED: "true"`) {
+		t.Fatal("EKS controller ConfigMap must enable the governed AWS Secrets Manager Project Secrets provider")
+	}
+	if strings.Contains(eksGenerator, "APEXLOAD_AWS_SECRETS_MANAGER_WRITE_ENABLED") {
+		t.Fatal("EKS generators must never receive AWS Secrets Manager write authority")
+	}
+	// The wrapping key must be pinned by ARN. An alias can be repointed at a
+	// different key, which would strand every existing envelope.
+	if !strings.Contains(eksConfig, "APEXLOAD_WRAPPING_KMS_KEY_ID: arn:aws:kms:") {
+		t.Fatal("EKS ConfigMap must pin the KMS wrapping key by full ARN, never by alias")
+	}
+
+	irsa := readTextFile(t, "../aws/terraform/irsa.tf")
+	controllerPolicy := regexp.MustCompile(`(?s)data "aws_iam_policy_document" "controller" \{.*?\n\}`).FindString(irsa)
+	if !strings.Contains(controllerPolicy, "secretsmanager:PutSecretValue") {
+		t.Fatal("Terraform must grant the controller Secrets Manager rotation authority")
+	}
+	generatorPolicy := regexp.MustCompile(`(?s)data "aws_iam_policy_document" "generator" \{.*?\n\}`).FindString(irsa)
+	if strings.Contains(generatorPolicy, "secretsmanager:PutSecretValue") {
+		t.Fatal("Terraform must keep generator Secrets Manager authority read-only")
+	}
+
 	identity := readTextFile(t, "../azure/terraform/identity.tf")
 	controllerRole := regexp.MustCompile(`(?s)resource "azurerm_role_assignment" "workload_keyvault" \{.*?\n\}`).FindString(identity)
 	if !strings.Contains(controllerRole, `role_definition_name = "Key Vault Secrets Officer"`) {
@@ -393,6 +443,11 @@ func TestProductionDeploymentsSecureDistributedSecretDelivery(t *testing.T) {
 			name:       "AKS",
 			controller: readTextFile(t, "aks/configmap.yaml"),
 			generator:  readTextFile(t, "aks/generator-statefulset.yaml"),
+		},
+		{
+			name:       "EKS",
+			controller: readTextFile(t, "eks/configmap.yaml"),
+			generator:  readTextFile(t, "eks/generator-statefulset.yaml"),
 		},
 		{
 			name:       "on-prem",
@@ -560,6 +615,141 @@ func TestTerraformValidatesAKSGeneratorCapacity(t *testing.T) {
 		t.Fatal(err)
 	} else if tfMemory != memory {
 		t.Fatalf("terraform generator_pod_memory_mib = %d, want AKS request %d", tfMemory, memory)
+	}
+}
+
+// TestTerraformValidatesEKSGeneratorCapacity is the AWS twin of the AKS check.
+// KEDA will request more replicas than the node group can schedule; the surplus
+// pods sit Pending and the load test silently runs under its declared
+// concurrency, which looks like a product limit rather than a sizing mistake.
+func TestTerraformValidatesEKSGeneratorCapacity(t *testing.T) {
+	variables := readTextFile(t, "../aws/terraform/variables.tf")
+	main := readTextFile(t, "../aws/terraform/main.tf")
+	eks := readTextFile(t, "../aws/terraform/eks.tf")
+
+	for _, check := range []string{
+		`variable "generator_keda_max_replicas"`,
+		`variable "generator_pod_cpu_millicores"`,
+		`variable "generator_pod_memory_mib"`,
+		`variable "generator_node_reserved_fraction"`,
+		"generator_schedulable_pods",
+		"local.generator_schedulable_pods >= var.generator_keda_max_replicas",
+	} {
+		if !strings.Contains(variables+main+eks, check) {
+			t.Fatalf("terraform generator capacity validation missing %q", check)
+		}
+	}
+
+	keda := readTextFile(t, "eks/generator-keda-scaledobject.yaml")
+	kedaMax, err := findYAMLInt(keda, "maxReplicaCount")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tfKedaMax, err := findTerraformDefaultNumber(variables, "generator_keda_max_replicas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tfKedaMax != kedaMax {
+		t.Fatalf("terraform generator_keda_max_replicas = %d, want EKS KEDA maxReplicaCount %d", tfKedaMax, kedaMax)
+	}
+
+	statefulSet := readTextFile(t, "eks/generator-statefulset.yaml")
+	cpu, err := findYAMLResourceRequest(statefulSet, "cpu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tfCPU, err := findTerraformDefaultNumber(variables, "generator_pod_cpu_millicores"); err != nil {
+		t.Fatal(err)
+	} else if tfCPU != cpu {
+		t.Fatalf("terraform generator_pod_cpu_millicores = %d, want EKS request %d", tfCPU, cpu)
+	}
+
+	memory, err := findYAMLResourceRequest(statefulSet, "memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tfMemory, err := findTerraformDefaultNumber(variables, "generator_pod_memory_mib"); err != nil {
+		t.Fatal(err)
+	} else if tfMemory != memory {
+		t.Fatalf("terraform generator_pod_memory_mib = %d, want EKS request %d", tfMemory, memory)
+	}
+}
+
+// TestGeneratorNodePlacementMatchesProvisionedNodes pins the pair that makes
+// generator scheduling work at all: the pod template's nodeSelector key/value
+// must be a label Terraform actually puts on the generator nodes, and the taint
+// reserving those nodes must have a matching toleration.
+//
+// A mismatch is silent and total — every generator pod stays Pending, which
+// reads as a product failure rather than a one-line label typo.
+func TestGeneratorNodePlacementMatchesProvisionedNodes(t *testing.T) {
+	for _, deployment := range []struct {
+		name         string
+		statefulSet  string
+		terraform    string
+		labelPattern string
+		taintPattern string
+	}{
+		{
+			name:         "AKS",
+			statefulSet:  "aks/generator-statefulset.yaml",
+			terraform:    "../azure/terraform/aks.tf",
+			labelPattern: `"apexload\.io/node-pool"\s*=\s*"generators"`,
+			taintPattern: `apexload\.io/dedicated=generators:NoSchedule`,
+		},
+		{
+			name:         "EKS",
+			statefulSet:  "eks/generator-statefulset.yaml",
+			terraform:    "../aws/terraform/eks.tf",
+			labelPattern: `"apexload\.io/node-pool"\s*=\s*"generators"`,
+			taintPattern: `key\s*=\s*"apexload\.io/dedicated"`,
+		},
+	} {
+		t.Run(deployment.name, func(t *testing.T) {
+			statefulSet := readTextFile(t, deployment.statefulSet)
+			terraform := readTextFile(t, deployment.terraform)
+
+			// What the pod demands.
+			nodeSelector := regexp.MustCompile(`(?s)nodeSelector:\s*\n\s*apexload\.io/node-pool:\s*(\S+)`).FindStringSubmatch(statefulSet)
+			if nodeSelector == nil {
+				t.Fatalf("%s generator StatefulSet has no apexload.io/node-pool nodeSelector", deployment.name)
+			}
+			if nodeSelector[1] != "generators" {
+				t.Fatalf("%s generator nodeSelector value = %q, want generators", deployment.name, nodeSelector[1])
+			}
+
+			// What Terraform actually labels the nodes with.
+			if !regexp.MustCompile(deployment.labelPattern).MatchString(terraform) {
+				t.Fatalf("%s Terraform does not label generator nodes apexload.io/node-pool=generators; every generator pod would stay Pending", deployment.name)
+			}
+
+			// The taint that reserves the nodes, and its toleration.
+			if !regexp.MustCompile(deployment.taintPattern).MatchString(terraform) {
+				t.Fatalf("%s Terraform does not taint generator nodes; controller and system pods would steal load-generation CPU", deployment.name)
+			}
+			if !strings.Contains(statefulSet, "apexload.io/dedicated") {
+				t.Fatalf("%s generator StatefulSet has no toleration for the dedicated-node taint", deployment.name)
+			}
+		})
+	}
+}
+
+// TestEKSRawApplyUsesRenderer keeps the overlay from being applied directly:
+// the raw manifests carry CHANGE-ME values and ${PLACEHOLDER}s that only the
+// render script substitutes.
+func TestEKSRawApplyUsesRenderer(t *testing.T) {
+	makefile := readTextFile(t, "../../Makefile")
+	for _, check := range []string{
+		"k8s-eks-render:",
+		"./scripts/render-eks-manifests.sh",
+		"k8s-eks-apply: k8s-eks-render",
+	} {
+		if !strings.Contains(makefile, check) {
+			t.Fatalf("Makefile missing EKS render wiring %q", check)
+		}
+	}
+	if strings.Contains(makefile, "k8s-eks-apply:\n\tkubectl apply -k deployments/k8s/eks") {
+		t.Fatal("k8s-eks-apply must render before applying; the raw overlay still carries placeholders")
 	}
 }
 

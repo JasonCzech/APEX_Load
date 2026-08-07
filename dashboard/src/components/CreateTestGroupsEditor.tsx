@@ -1,7 +1,9 @@
-import { StoredScript, ScenarioDraftGroup, ScenarioMode, SystemInventoryGenerator } from '../types'
+import { useRef } from 'react'
+
+import { LoadStageDraft, StoredScript, ScenarioDraftGroup, ScenarioMode, SystemInventoryGenerator } from '../types'
 import DurationField from './DurationField'
 import GroupPlacementEditor from './GroupPlacementEditor'
-import { clampVUsersForRole, maxVUsersForRole, OBSERVER_MAX_VUSERS } from './observerGroupModel'
+import { clampVUsersForRole, maxVUsersForRole, stagePeakVUsers, OBSERVER_MAX_VUSERS } from './observerGroupModel'
 
 interface Props {
   scenarioMode: ScenarioMode
@@ -20,6 +22,22 @@ function isBrowserScript(scripts: StoredScript[], scriptId: string): boolean {
   return scripts.some((script) => script.id === scriptId && script.protocol === 'browser')
 }
 
+// What the observer clamp overwrote, so leaving the observer role can put it
+// back. Only the editor's own clamp is undone: the restore is skipped unless
+// the group still holds exactly the values the clamp wrote.
+type ObserverClampSnapshot = {
+  clampedVUsers: number
+  clampedStages?: LoadStageDraft[]
+  previousVUsers: number
+  previousStages?: LoadStageDraft[]
+}
+
+function sameStageTargets(left?: LoadStageDraft[], right?: LoadStageDraft[]): boolean {
+  if (!left || !right) return !left && !right
+  if (left.length !== right.length) return false
+  return left.every((stage, index) => stage.target_vusers === right[index].target_vusers)
+}
+
 export default function CreateTestGroupsEditor({
   scenarioMode,
   groups,
@@ -32,6 +50,64 @@ export default function CreateTestGroupsEditor({
   generatorInventory,
   availableLabels,
 }: Props) {
+  // Keyed by group index -- the same handle onUpdateGroup uses. Removing a
+  // group shifts the indexes, so the map is dropped wholesale on removal.
+  const observerClampSnapshots = useRef(new Map<number, ObserverClampSnapshot>())
+
+  // The observer envelope is validated against a group's *peak* demand
+  // (effectiveGroupVUsers), so switching into the role has to clamp the stage
+  // targets as well as the group VUsers, or a staged group is left unsaveable
+  // with no stage editor on this surface to repair it. Clamping is destructive
+  // and rewrites the interior of the schedule, not just its peak, so record
+  // what it overwrote.
+  function clampGroupIntoObserverRole(idx: number, group: ScenarioDraftGroup): Partial<ScenarioDraftGroup> {
+    // Route the clamp through the shared envelope invariant rather than
+    // re-deriving it here, so this editor stays in step with the other
+    // role-switch consumer (TestHub) on the whole rule -- the role ceiling,
+    // the integral-VUser rule and the minimum of 1.
+    const clampedVUsers = clampVUsersForRole(group.vusers, 'observer', 1)
+    const clampedStages = group.stages?.map(stage => ({
+      ...stage,
+      ...(stage.target_vusers !== undefined
+        ? { target_vusers: clampVUsersForRole(stage.target_vusers, 'observer') }
+        : {}),
+    }))
+    const vusersChanged = clampedVUsers !== group.vusers
+    const stagesChanged = clampedStages !== undefined && !sameStageTargets(clampedStages, group.stages)
+    if (vusersChanged || stagesChanged) {
+      observerClampSnapshots.current.set(idx, {
+        clampedVUsers,
+        clampedStages: stagesChanged ? clampedStages : group.stages,
+        previousVUsers: group.vusers,
+        previousStages: group.stages,
+      })
+    } else {
+      observerClampSnapshots.current.delete(idx)
+    }
+    return {
+      ...(vusersChanged ? { vusers: clampedVUsers } : {}),
+      ...(stagesChanged ? { stages: clampedStages } : {}),
+    }
+  }
+
+  // Leaving the observer role undoes this editor's own clamp. Without it a
+  // mis-click silently ships a flattened schedule: the round-tripped draft now
+  // validates, and no control on this surface can bring the original stage
+  // targets back.
+  function restoreObserverClamp(idx: number, group: ScenarioDraftGroup): Partial<ScenarioDraftGroup> {
+    const snapshot = observerClampSnapshots.current.get(idx)
+    observerClampSnapshots.current.delete(idx)
+    if (!snapshot) return {}
+    // Anything the user changed since the clamp is theirs, not ours to revert.
+    if (group.vusers !== snapshot.clampedVUsers || !sameStageTargets(group.stages, snapshot.clampedStages)) {
+      return {}
+    }
+    return {
+      vusers: snapshot.previousVUsers,
+      ...(snapshot.previousStages ? { stages: snapshot.previousStages } : {}),
+    }
+  }
+
   return (
     <div className="groups-section">
       <div className="groups-header">
@@ -46,7 +122,16 @@ export default function CreateTestGroupsEditor({
         </button>
       </div>
 
-      {groups.map((group, idx) => (
+      {groups.map((group, idx) => {
+      // A staged group's demand is owned by its stages: the shared validator
+      // rejects any VUsers value other than the peak, and this surface renders
+      // no stage editor. Presenting the field as editable there offers exactly
+      // one accepted value, so it is locked and annotated instead -- but only
+      // once the invariant actually holds, otherwise locking would strand a
+      // mismatched draft with no way to repair it.
+      const stagePeak = stagePeakVUsers(group.stages)
+      const vusersOwnedByStages = stagePeak > 0 && group.vusers === stagePeak
+      return (
         <div key={idx} className="group-row">
           <div className="group-number">{idx + 1}</div>
           <div className="group-fields">
@@ -66,9 +151,12 @@ export default function CreateTestGroupsEditor({
                 onChange={(event) => {
                   const scriptId = event.target.value
                   const nextIsBrowser = isBrowserScript(scripts, scriptId)
+                  const leavesObserver = group.role === 'observer' && !nextIsBrowser
                   onUpdateGroup(idx, {
                     scriptId,
-                    ...(group.role === 'observer' && !nextIsBrowser ? { role: 'load' as const } : {}),
+                    ...(leavesObserver
+                      ? { role: 'load' as const, ...restoreObserverClamp(idx, group) }
+                      : {}),
                   })
                 }}
                 required
@@ -82,7 +170,11 @@ export default function CreateTestGroupsEditor({
               </select>
             </label>
             <label className="narrow">
-              <span>{scenarioMode === 'goal_oriented' ? 'Seed VUsers' : 'VUsers'}</span>
+              <span>
+                {scenarioMode === 'goal_oriented'
+                  ? 'Seed VUsers'
+                  : (stagePeak > 0 ? 'Peak VUsers (stage-derived)' : 'VUsers')}
+              </span>
               <input
                 type="number"
                 value={group.vusers}
@@ -91,8 +183,16 @@ export default function CreateTestGroupsEditor({
                 })}
                 min={1}
                 max={maxVUsersForRole(group.role)}
+                disabled={vusersOwnedByStages}
                 required
               />
+              {stagePeak > 0 && (
+                <small>
+                  {vusersOwnedByStages
+                    ? `This staged group is fixed at its peak stage target of ${stagePeak} VUsers. Edit the scenario stages to change it.`
+                    : `This staged group must match its peak stage target of ${stagePeak} VUsers.`}
+                </small>
+              )}
             </label>
             <DurationField
               className="narrow"
@@ -138,9 +238,9 @@ export default function CreateTestGroupsEditor({
                   const role = event.target.value as ScenarioDraftGroup['role']
                   onUpdateGroup(idx, {
                     role,
-                    ...(role === 'observer' && group.vusers > OBSERVER_MAX_VUSERS
-                      ? { vusers: OBSERVER_MAX_VUSERS }
-                      : {}),
+                    ...(role === 'observer'
+                      ? clampGroupIntoObserverRole(idx, group)
+                      : restoreObserverClamp(idx, group)),
                   })
                 }}
                 title="Observer canaries are small browser groups that continuously report Web Vitals and stay pinned during goal-based scaling."
@@ -169,7 +269,12 @@ export default function CreateTestGroupsEditor({
               <button
                 type="button"
                 className="btn-remove"
-                onClick={() => onRemoveGroup(idx)}
+                onClick={() => {
+                  // Removal renumbers every later group, so index-keyed
+                  // snapshots would restore onto the wrong group.
+                  observerClampSnapshots.current.clear()
+                  onRemoveGroup(idx)
+                }}
                 title="Remove group"
               >
                 x
@@ -177,7 +282,8 @@ export default function CreateTestGroupsEditor({
             )}
           </div>
         </div>
-      ))}
+      )
+      })}
     </div>
   )
 }

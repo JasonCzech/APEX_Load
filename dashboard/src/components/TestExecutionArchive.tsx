@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 
 import { BrowserDeviceLiveMetrics, BrowserEngineLiveMetrics, BrowserLiveMetrics, BrowserPlatformLiveMetrics, MetricsHistoryPoint, RunArchiveAnalysisEdge, RunArchiveAnalysisNode, RunArchiveAnalysisResponse, RunArchiveAnalysisStats, RunArchiveActionStats, RunArchiveReport, RunArchiveSOAPFaultTimelineBucket, RunArchiveSOAPPayloadTimelineBucket, RunArchiveTransactionDrilldown, TestSummary, TransactionEvent } from '../types'
 import BrowserBreakdownChart from './BrowserBreakdownChart'
@@ -807,25 +807,51 @@ export default function TestExecutionArchive({
   const [browserBreakdown, setBrowserBreakdown] = useState<BrowserBreakdown>('device')
   const [summaryTimelineExpanded, setSummaryTimelineExpanded] = useState(false)
   const [summaryTimelineErrorsOnly, setSummaryTimelineErrorsOnly] = useState(false)
-  const soapOperationEntries = archiveSOAPOperationEntries.length > 0 ? archiveSOAPOperationEntries : buildArchiveStatsEntries(archiveReport?.by_soap_operation)
-  const regionEntries = buildArchiveStatsEntries(archiveReport?.by_region)
-  const networkProfileEntries = buildArchiveStatsEntries(archiveReport?.by_network_profile)
-  const soapFaultCodeEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_code)
-  const soapFaultCategoryEntries = buildArchiveCountEntries(archiveReport?.by_soap_fault_category)
-  const soapFaultTimelineEntries = buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline)
-  const soapPayloadTimelineEntries = buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline)
-  const summaryTimelineEntriesAll = buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline)
-  const summaryTimelineErrorCount = summaryTimelineEntriesAll.filter(p => p.total_errors > 0).length
-  const summaryTimelineFiltered = summaryTimelineErrorsOnly ? summaryTimelineEntriesAll.filter(p => p.total_errors > 0) : summaryTimelineEntriesAll
+  const archiveDerived = useMemo(() => ({
+    soapOperationEntries: buildArchiveStatsEntries(archiveReport?.by_soap_operation),
+    regionEntries: buildArchiveStatsEntries(archiveReport?.by_region),
+    networkProfileEntries: buildArchiveStatsEntries(archiveReport?.by_network_profile),
+    soapFaultCodeEntries: buildArchiveCountEntries(archiveReport?.by_soap_fault_code),
+    soapFaultCategoryEntries: buildArchiveCountEntries(archiveReport?.by_soap_fault_category),
+    soapFaultTimelineEntries: buildArchiveFaultTimelineEntries(archiveReport?.soap_fault_timeline),
+    soapPayloadTimelineEntries: buildArchivePayloadTimelineEntries(archiveReport?.soap_payload_timeline),
+    summaryTimelineEntries: buildArchiveSummaryTimelineEntries(archiveReport?.summary_timeline),
+    runtimeBrowserSummary: formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser),
+  }), [archiveReport])
+  const soapOperationEntries = archiveSOAPOperationEntries.length > 0
+    ? archiveSOAPOperationEntries
+    : archiveDerived.soapOperationEntries
+  const {
+    regionEntries,
+    networkProfileEntries,
+    soapFaultCodeEntries,
+    soapFaultCategoryEntries,
+    soapFaultTimelineEntries,
+    soapPayloadTimelineEntries,
+    runtimeBrowserSummary,
+  } = archiveDerived
+  const summaryTimelineEntriesAll = archiveDerived.summaryTimelineEntries
+  const summaryTimelineErrorCount = useMemo(
+    () => summaryTimelineEntriesAll.filter(p => p.total_errors > 0).length,
+    [summaryTimelineEntriesAll],
+  )
+  const summaryTimelineFiltered = useMemo(
+    () => summaryTimelineErrorsOnly ? summaryTimelineEntriesAll.filter(p => p.total_errors > 0) : summaryTimelineEntriesAll,
+    [summaryTimelineEntriesAll, summaryTimelineErrorsOnly],
+  )
   const SUMMARY_TIMELINE_COLLAPSED_LIMIT = 12
   const summaryTimelineNeedsCollapse = summaryTimelineFiltered.length > SUMMARY_TIMELINE_COLLAPSED_LIMIT
   const summaryTimelineEntries = summaryTimelineExpanded || !summaryTimelineNeedsCollapse ? summaryTimelineFiltered : summaryTimelineFiltered.slice(0, SUMMARY_TIMELINE_COLLAPSED_LIMIT)
-  const runtimeBrowserSummary = formatBrowserRuntimeSummary(archiveReport?.manifest.provenance?.runtime_settings?.browser)
-  const compactMetadataPanels = archiveReport ? buildArchiveCompactPanels(archiveReport, test, runtimeBrowserSummary) : []
+  const compactMetadataPanels = useMemo(
+    () => archiveReport ? buildArchiveCompactPanels(archiveReport, test, runtimeBrowserSummary) : [],
+    [archiveReport, runtimeBrowserSummary, test],
+  )
   const selectedActionStats = archiveReport?.by_action?.[selectedArchiveAction]
-  const archiveAnalysisNodes = sortArchiveAnalysisNodes(archiveAnalysis?.graph.nodes || [], test.id)
-  const archiveAnalysisEdges = sortArchiveAnalysisEdges(archiveAnalysis?.graph.edges || [], test.id)
-  const archiveAnalysisNodeByID = new Map((archiveAnalysis?.graph.nodes || []).map(node => [node.id, node]))
+  const { archiveAnalysisNodes, archiveAnalysisEdges, archiveAnalysisNodeByID } = useMemo(() => ({
+    archiveAnalysisNodes: sortArchiveAnalysisNodes(archiveAnalysis?.graph.nodes || [], test.id),
+    archiveAnalysisEdges: sortArchiveAnalysisEdges(archiveAnalysis?.graph.edges || [], test.id),
+    archiveAnalysisNodeByID: new Map((archiveAnalysis?.graph.nodes || []).map(node => [node.id, node])),
+  }), [archiveAnalysis, test.id])
   const showArchiveAnalysis = archiveAnalysisLoading || Boolean(archiveAnalysis) || Boolean(archiveAnalysisError)
   const archiveAnalysisHasBaseline = Boolean(archiveAnalysis?.baseline_id)
   const showAllViews = view === 'all'

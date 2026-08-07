@@ -48,6 +48,75 @@ describe('CommandCenterPrototype', () => {
     expect(liveEvidenceCacheKey('run-a', 'HTTP 500')).not.toBe(liveEvidenceCacheKey('run-b', 'HTTP 500'))
   })
 
+  // The demo fixtures are only reachable through `prototypeMode`, which nothing
+  // in App.tsx sets. A static import would put all of them back into the chunk
+  // every production Command Center session downloads, so the separation has to
+  // be asserted at the module-graph level -- rendering cannot observe it.
+  it('keeps the prototype demo fixtures out of the production Command Center chunk', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync, readdirSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const owner = `${cwd}/src/components/CommandCenterPrototype.tsx`
+    const fixtureModule = `${cwd}/src/components/commandCenterPrototypeFixtures.ts`
+    const source = readFileSync(owner, 'utf8') as string
+
+    // The tree walk below exempts the owner -- it is the one shipped module
+    // allowed to name the fixture chunk -- so this block is the owner's only
+    // line of defence, and it must not be line-anchored. A regex that requires
+    // the specifier to share a physical line with the `import` keyword misses a
+    // multi-line static value import, an `export ... from` re-export and
+    // `require`, each of which statically merges the 19 KB fixture module back
+    // into the eagerly-loaded Command Center chunk. So: match the two sanctioned
+    // references with newline-tolerant patterns, then erase them and require
+    // that nothing else in the file names the module by path at all.
+    // A value import must be dynamic; the only static one may be `import type`,
+    // which the compiler erases and therefore never reaches the bundle.
+    const sanctionedTypeImport = /import\s+type\s(?:(?!\bfrom\b)[\s\S])*?from\s*['"][^'"]*\/commandCenterPrototypeFixtures['"]/g
+    const sanctionedDynamicImport = /\bimport\(\s*['"][^'"]*\/commandCenterPrototypeFixtures['"]\s*\)/g
+    expect([...source.matchAll(sanctionedTypeImport)]).toHaveLength(1)
+    expect([...source.matchAll(sanctionedDynamicImport)]).toHaveLength(1)
+    // The needle keeps the path separator so that reading a member off the
+    // resolved dynamic module (`module.commandCenterPrototypeFixtures`) stays
+    // legal while any specifier -- './', '../components/', anything -- does not.
+    const unsanctionedReferences = source
+      .replace(sanctionedTypeImport, '')
+      .replace(sanctionedDynamicImport, '')
+    expect(unsanctionedReferences).not.toContain('/commandCenterPrototypeFixtures')
+
+    // Pinning CommandCenterPrototype.tsx alone is not enough: a static import
+    // from ANY other eagerly-loaded module (for example commandCenterScenarioRows.ts,
+    // which this component imports statically) pulls the fixtures back into the
+    // production graph while the assertions above still pass. Walk the tree and
+    // require that no other shipped module references the fixture module at all.
+    // Only the owner and the fixture module itself are exempt here, and the owner
+    // is fully covered by the erase-and-assert check above -- not unguarded.
+    const modules: string[] = []
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true }) as Array<{ name: string; isDirectory(): boolean }>) {
+        const full = `${directory}/${entry.name}`
+        if (entry.isDirectory()) {
+          walk(full)
+          continue
+        }
+        if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue
+        modules.push(full)
+      }
+    }
+    walk(`${cwd}/src`)
+    // Guards the walk itself: a scanner that silently stops matching would make
+    // the offender list trivially empty.
+    expect(modules.length).toBeGreaterThan(300)
+    const offenders = modules
+      .filter(file => file !== owner && file !== fixtureModule)
+      .filter(file => (readFileSync(file, 'utf8') as string).includes('commandCenterPrototypeFixtures'))
+      .map(file => file.slice(cwd.length + 1))
+    expect(offenders).toEqual([])
+
+    // App.tsx must not opt the production route into prototypeMode either.
+    const appSource = readFileSync(`${cwd}/src/App.tsx`, 'utf8') as string
+    expect(appSource).not.toContain('prototypeMode')
+  })
+
   it('starts an authored first-stage ramp-down at the group peak', () => {
     const group = commandGroup('Checkout', 100)
     const testGroup = {
@@ -880,6 +949,82 @@ describe('CommandCenterPrototype', () => {
       }),
     )
     expect(container.textContent).toContain('Live Checkout VUser target applied at 60.')
+  })
+
+  it('accepts the full load-group VUser limit instead of a prototype-scale ceiling', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({
+      test_id: 'live-vuser-1',
+      group: 'Live Checkout',
+      action: 'run',
+      target_vusers: 1_000_000,
+      status: 'scaled',
+    }))
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const targetInput = inputByLabel('Live Checkout target VUsers')
+    expect(targetInput.max).toBe('1000000')
+    await changeNumberInput(targetInput, '1000000')
+    await click(buttonNamed('Apply'))
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/vusers'),
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ group: 'Live Checkout', target_vusers: 1_000_000, action: 'run' }),
+      }),
+    )
+    expect(container.textContent).toContain('Live Checkout VUser target applied at 1,000,000.')
+  })
+
+  // The staged-target clamp silently rewrites operator input, so it needs a case
+  // that actually crosses the ceiling: every other VUser case in this suite sits
+  // at or below the limit, which cannot tell a working clamp from a missing one.
+  it('clamps an over-ceiling VUser target down to the load-group limit', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}))
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const targetInput = inputByLabel('Live Checkout target VUsers')
+    await changeNumberInput(targetInput, '1500000')
+
+    expect(targetInput.value).toBe('1000000')
+    expect(container.textContent).toContain('Live Checkout target staged at 1,000,000 VUsers.')
+  })
+
+  it('clamps observer-canary VUser targets to the observer ceiling', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}))
+
+    const baseTest = buildLiveVuserTest()
+    await act(async () => {
+      root.render(<CommandCenterPrototype
+        testId="live-vuser-1"
+        initialTest={{
+          ...baseTest,
+          total_vusers: 5,
+          groups: [{ ...baseTest.groups[0], protocol: 'browser', role: 'observer', vusers: 5 }],
+          live_metrics: {
+            ...baseTest.live_metrics!,
+            active_vusers: 4,
+            groups: {
+              'Live Checkout': { ...baseTest.live_metrics!.groups!['Live Checkout'], vusers: 4 },
+            },
+          },
+        }}
+        history={[]}
+      />)
+    })
+
+    const targetInput = inputByLabel('Live Checkout target VUsers')
+    expect(targetInput.max).toBe('10')
+    await changeNumberInput(targetInput, '50')
+
+    expect(targetInput.value).toBe('10')
+    expect(container.textContent).toContain('Live Checkout target staged at 10 VUsers.')
   })
 
   it('applies live VUser targets gradually with the card ramp duration', async () => {
@@ -1910,6 +2055,12 @@ describe('CommandCenterPrototype', () => {
   async function renderPrototype() {
     await act(async () => {
       root.render(<CommandCenterPrototype prototypeMode />)
+    })
+    // prototypeMode pulls its demo fixtures through a dynamic import so they
+    // stay out of the production Command Center chunk. Awaiting the same module
+    // settles the component's own import and flushes the resulting render.
+    await act(async () => {
+      await import('./commandCenterPrototypeFixtures')
     })
   }
 

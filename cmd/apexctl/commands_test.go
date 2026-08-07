@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,41 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/api"
 )
+
+// The status/wait help must publish the exit-code contract so CI can tell a
+// load-test verdict from a controller/transport failure, and the documented
+// numbers must track the exitCode* constants.
+func TestCtlUsageDocumentsExitCodeContract(t *testing.T) {
+	usage := ctlUsage()
+	if !strings.Contains(usage, "Exit Codes (apexctl status, apexctl wait):") {
+		t.Fatalf("ctlUsage() does not document exit codes:\n%s", usage)
+	}
+	documented := []struct {
+		code  int
+		label string
+	}{
+		{exitCodeSuccess, "Success"},
+		{exitCodeTestFailure, "Test verdict failure"},
+		{exitCodeUsageOrConfiguration, "Usage or configuration error"},
+		{exitCodeControllerOrTransport, "Controller or transport failure"},
+	}
+	for _, entry := range documented {
+		line := fmt.Sprintf("  %d  %s", entry.code, entry.label)
+		if !strings.Contains(usage, line) {
+			t.Fatalf("ctlUsage() is missing %q:\n%s", line, usage)
+		}
+	}
+	if exitCodeTestFailure == exitCodeControllerOrTransport {
+		t.Fatal("SLA breach and transport failure must not share an exit code")
+	}
+	// The wait path must actually honour the documented split.
+	if got := testRunExitCode(true, "COMPLETE", true, nil); got != exitCodeTestFailure {
+		t.Fatalf("SLA breach exit code = %d, want %d as documented", got, exitCodeTestFailure)
+	}
+	if got := testRunExitCode(true, "", false, fmt.Errorf("dial tcp: refused")); got != exitCodeControllerOrTransport {
+		t.Fatalf("transport failure exit code = %d, want %d as documented", got, exitCodeControllerOrTransport)
+	}
+}
 
 func TestIsTerminalStatus(t *testing.T) {
 	terminal := []string{"COMPLETE", "FAILED", "ABORTED"}

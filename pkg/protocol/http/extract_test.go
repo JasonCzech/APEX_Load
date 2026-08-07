@@ -274,6 +274,98 @@ func TestExtractJMESPath_NumericComparisons(t *testing.T) {
 	}
 }
 
+func TestExtractJMESPath_NumericPredicateKeepsPlainNumberFormatting(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		expr string
+		want string
+	}{
+		{
+			name: "large integer id",
+			body: `{"items":[{"count":1,"id":1000000},{"count":2,"id":2000000}]}`,
+			expr: "items[?count > `1`].id | [0]",
+			want: "2000000",
+		},
+		{
+			name: "small fractional id",
+			body: `{"items":[{"count":1,"id":0.001},{"count":2,"id":0.000034}]}`,
+			expr: "items[?count > `1`].id | [0]",
+			want: "0.000034",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := extractJMESPath(test.expr, []byte(test.body))
+			if err != nil {
+				t.Fatalf("extractJMESPath(%q): %v", test.expr, err)
+			}
+			if got != test.want {
+				t.Fatalf("extractJMESPath(%q) = %q, want %q", test.expr, got, test.want)
+			}
+		})
+	}
+}
+
+func TestExtractJMESPathStructuralSelectionSkipsNormalizedReevaluation(t *testing.T) {
+	var builder strings.Builder
+	builder.WriteString(`{"items":[`)
+	const items = 400
+	for index := 0; index < items; index++ {
+		if index > 0 {
+			builder.WriteByte(',')
+		}
+		fmt.Fprintf(&builder, `{"count":%d,"id":%d,"name":"row-%d"}`, index, 1000000+index, index)
+	}
+	builder.WriteString(`]}`)
+	body := []byte(builder.String())
+
+	got, err := extractJMESPath("items[200].id", body)
+	if err != nil {
+		t.Fatalf("extractJMESPath(): %v", err)
+	}
+	if want := "1000200"; got != want {
+		t.Fatalf("extractJMESPath() = %q, want %q", got, want)
+	}
+
+	decodeAllocs := testing.AllocsPerRun(20, func() {
+		if _, err := decodeExtractorJSON(body); err != nil {
+			t.Fatalf("decodeExtractorJSON(): %v", err)
+		}
+	})
+	extractAllocs := testing.AllocsPerRun(20, func() {
+		if _, err := extractJMESPath("items[200].id", body); err != nil {
+			t.Fatalf("extractJMESPath(): %v", err)
+		}
+	})
+	// A path selection cannot observe number representation, so it must not pay
+	// for the normalized tree copy on top of the decode every response already
+	// performs. The copy is proportional to the document, so a small relative
+	// margin over the decode is enough to detect its return.
+	if limit := 1.02*decodeAllocs + 32; extractAllocs > limit {
+		t.Fatalf("structural extraction allocated %.0f, want <= %.0f (decode alone allocates %.0f)",
+			extractAllocs, limit, decodeAllocs)
+	}
+}
+
+func TestJMESPathNumberRepresentationSensitiveClassification(t *testing.T) {
+	for expr, want := range map[string]bool{
+		"data.orderId":                          false,
+		"items[200].id":                         false,
+		"items[*].name | [0]":                   false,
+		"items[?enabled].name":                  false,
+		"items[?count > `1`].id | [0]":          true,
+		"items[?id == `9007199254740993`].name": true,
+		"length(items)":                         true,
+		"sum(items[*].count)":                   true,
+		"!items":                                true,
+	} {
+		if got := jmesPathNumberRepresentationSensitive(expr); got != want {
+			t.Fatalf("jmesPathNumberRepresentationSensitive(%q) = %t, want %t", expr, got, want)
+		}
+	}
+}
+
 func TestExtractJMESPath_PreservesUnrepresentableScalarNumber(t *testing.T) {
 	got, err := extractJMESPath("value", []byte(`{"value":1e400}`))
 	if err != nil {

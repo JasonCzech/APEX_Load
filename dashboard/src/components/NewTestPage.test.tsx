@@ -1479,6 +1479,266 @@ describe('NewTestPage', () => {
     expect(apiMock.startTest).not.toHaveBeenCalled()
   })
 
+  it('keeps inherited error handling selectable as Script default and overrides only the edited half', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
+    const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    expect(continueSelect).toBeTruthy()
+    expect(snapshotSelect).toBeTruthy()
+    if (!continueSelect || !snapshotSelect) return
+
+    // The scenario leaves runtime_settings.error_handling unset, so both selects must offer and
+    // display the inherit option rather than silently reading as an explicit Disabled.
+    for (const select of [continueSelect, snapshotSelect]) {
+      const inheritOption = Array.from(select.options).find(option => option.value === '')
+      expect(inheritOption?.textContent).toBe('Script default')
+      expect(select.value).toBe('')
+      expect(select.options[select.selectedIndex]?.textContent).toBe('Script default')
+    }
+
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(true)
+
+    await act(async () => {
+      setSelectValue(snapshotSelect, 'true')
+    })
+    expect(saveButton?.disabled).toBe(false)
+    expect(continueSelect.value).toBe('')
+
+    await act(async () => {
+      setSelectValue(snapshotSelect, '')
+    })
+    expect(saveButton?.disabled).toBe(true)
+
+    await act(async () => {
+      setSelectValue(snapshotSelect, 'true')
+    })
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        runtime_settings: { error_handling: { snapshot_on_error: true } },
+      })],
+    }))
+  })
+
+  it('carries the untouched error handling half into the group override payload', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: { error_handling: { continue_on_error: true } },
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+              runtime_settings: { error_handling: { snapshot_on_error: false } },
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
+    const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    expect(continueSelect).toBeTruthy()
+    expect(snapshotSelect).toBeTruthy()
+    if (!continueSelect || !snapshotSelect) return
+    // The group carries its own error_handling section, and the API applies the winning
+    // section wholesale (mergeRuntimeSettings + applyRuntimeOverrides), so the scenario's
+    // continue_on_error:true is NOT inherited here — the group section omits it, which
+    // executes as false. The dialog has to open on what the run would actually do.
+    expect(continueSelect.value).toBe('false')
+    expect(snapshotSelect.value).toBe('false')
+
+    await act(async () => {
+      setSelectValue(snapshotSelect, 'true')
+    })
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // The API replaces error_handling wholesale, and the group already carries its own
+    // section, so the scenario's continue_on_error:true must NOT be folded back in on save.
+    // The saved section has to match what the dialog displayed (continue Disabled): the
+    // group section stays authoritative and the omitted half keeps executing as false.
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        runtime_settings: { error_handling: { snapshot_on_error: true } },
+      })],
+    }))
+  })
+
+  it('seeds the untouched error handling half from the run defaults when the group has no section', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: { error_handling: { continue_on_error: true } },
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const continueSelect = findControlByLabel<HTMLSelectElement>(modal, 'Continue on error', 'select')
+    const snapshotSelect = findControlByLabel<HTMLSelectElement>(modal, 'Snapshot on error', 'select')
+    expect(continueSelect).toBeTruthy()
+    expect(snapshotSelect).toBeTruthy()
+    if (!continueSelect || !snapshotSelect) return
+    // No group section of its own, so the scenario's section is the one that executes.
+    expect(continueSelect.value).toBe('true')
+    expect(snapshotSelect.value).toBe('false')
+
+    await act(async () => {
+      setSelectValue(snapshotSelect, 'true')
+    })
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    // Writing a group section pins BOTH halves, so the displayed continue_on_error:true has to
+    // be carried into it — dropping it would silently flip the group to stop-on-first-error.
+    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
+      groups: [expect.objectContaining({
+        script_id: 'script-1',
+        runtime_settings: { error_handling: { continue_on_error: true, snapshot_on_error: true } },
+      })],
+    }))
+  })
+
   it('edits and round-trips random interval bounds in the per-script run editor', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [{

@@ -57,6 +57,7 @@ func TestBuildDesktopLocalScript(t *testing.T) {
 		"WAILS_CONFIG_LOCK",
 		"cmp -s",
 		"go env GOBIN",
+		"npm run check:node",
 		"npm ci --ignore-scripts",
 	}
 	for _, check := range checks {

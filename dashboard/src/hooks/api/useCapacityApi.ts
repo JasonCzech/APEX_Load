@@ -6,6 +6,7 @@ import {
   CapacityTimeslotListResponse,
 } from '../../types/capacity'
 import { request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
@@ -20,62 +21,62 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 
 export function useCapacityApi() {
   const listTimeslots = useCallback(
-    (params?: { project_id?: string; limit?: number; offset?: number }) =>
-      request<CapacityTimeslotListResponse>(`/capacity/timeslots${buildQuery({ ...params })}`),
+    (params?: { project_id?: string; limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<CapacityTimeslotListResponse>(`/capacity/timeslots${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getTimeslot = useCallback(
-    (id: string) => request<CapacityTimeslot>(`/capacity/timeslots/${id}`),
+    (id: string, options?: ApiCallOptions) => request<CapacityTimeslot>(`/capacity/timeslots/${id}`, withCallOptions(undefined, options)),
     [],
   )
 
   const createTimeslot = useCallback(
-    (body: Partial<CapacityTimeslot>) =>
-      request<CapacityTimeslot>('/capacity/timeslots', { method: 'POST', body: JSON.stringify(body) }),
+    (body: Partial<CapacityTimeslot>, options?: ApiCallOptions) =>
+      request<CapacityTimeslot>('/capacity/timeslots', withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const updateTimeslot = useCallback(
-    (id: string, body: Partial<CapacityTimeslot>) =>
-      request<CapacityTimeslot>(`/capacity/timeslots/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    (id: string, body: Partial<CapacityTimeslot>, options?: ApiCallOptions) =>
+      request<CapacityTimeslot>(`/capacity/timeslots/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const deleteTimeslot = useCallback(
-    (id: string) => request<{ deleted: string }>(`/capacity/timeslots/${id}`, { method: 'DELETE' }),
+    (id: string, options?: ApiCallOptions) => request<{ deleted: string }>(`/capacity/timeslots/${id}`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
   const checkTimeslotAvailability = useCallback(
-    (body: { project_id: string; start_at: string; end_at: string }) =>
-      request<CapacityTimeslotAvailabilityResponse>('/capacity/timeslots/availability', {
+    (body: { project_id: string; start_at: string; end_at: string }, options?: ApiCallOptions) =>
+      request<CapacityTimeslotAvailabilityResponse>('/capacity/timeslots/availability', withCallOptions({
         method: 'POST',
         body: JSON.stringify(body),
-      }),
+      }, options)),
     [],
   )
 
   const approveTimeslot = useCallback(
-    (id: string, body?: { conflict_override?: boolean; reason?: string }) =>
-      request<CapacityTimeslot>(`/capacity/timeslots/${id}/approve`, {
+    (id: string, body?: { conflict_override?: boolean; reason?: string }, options?: ApiCallOptions) =>
+      request<CapacityTimeslot>(`/capacity/timeslots/${id}/approve`, withCallOptions({
         method: 'POST',
         ...(body ? { body: JSON.stringify(body) } : {}),
-      }),
+      }, options)),
     [],
   )
 
   const rejectTimeslot = useCallback(
-    (id: string) => request<CapacityTimeslot>(`/capacity/timeslots/${id}/reject`, { method: 'POST' }),
+    (id: string, options?: ApiCallOptions) => request<CapacityTimeslot>(`/capacity/timeslots/${id}/reject`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const bindTimeslot = useCallback(
-    (id: string, testId: string) =>
-      request<CapacityTimeslot>(`/capacity/timeslots/${id}/bind`, {
+    (id: string, testId: string, options?: ApiCallOptions) =>
+      request<CapacityTimeslot>(`/capacity/timeslots/${id}/bind`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ test_id: testId }),
-      }),
+      }, options)),
     [],
   )
 

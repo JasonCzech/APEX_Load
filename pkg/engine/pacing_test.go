@@ -203,12 +203,49 @@ func TestTokenBucketAddsTokensForElapsedIntervals(t *testing.T) {
 	}
 }
 
+// TestTokenBucketAddsNoTokensWhilePaused covers the pause guard inside
+// addTokensForElapsed directly, because no end-to-end pause test can. fill()
+// drops its timer channel when it applies a pause, so a timer never fires during
+// a paused window and the interleaving the guard exists for is never provoked:
+// fill() can already have received from the timer and be blocked on tb.mu inside
+// addTokensForElapsed when SetPaused(true) takes the lock, flips paused and
+// drains. Without the guard that in-flight tick buffers a credit *after* the
+// drain, where it sits for the whole paused window and is released the instant
+// WaitContext stops seeing paused — the burst the pause exists to prevent.
+// Calling addTokensForElapsed directly pins the guard without racing for that
+// window.
+func TestTokenBucketAddsNoTokensWhilePaused(t *testing.T) {
+	tb := &TokenBucket{
+		tokens:   make(chan struct{}, 10),
+		interval: time.Millisecond,
+	}
+	tb.paused = true
+	tb.addTokensForElapsed(5 * tb.interval)
+	if got := len(tb.tokens); got != 0 {
+		t.Fatalf("paused token bucket buffered %d credits from an in-flight tick, want 0", got)
+	}
+
+	// The same call on a running bucket has to issue credit, otherwise the
+	// assertion above would hold for a bucket that simply never earns tokens for
+	// this input and would stop meaning anything.
+	tb.paused = false
+	tb.addTokensForElapsed(5 * tb.interval)
+	if got := len(tb.tokens); got != 5 {
+		t.Fatalf("running token bucket issued %d credits for 5 elapsed intervals, want 5", got)
+	}
+}
+
 func TestTokenBucketDoesNotAccumulatePausedCredits(t *testing.T) {
 	tb := NewTokenBucket(20) // one token every 50ms
 	defer tb.Stop()
 	time.Sleep(70 * time.Millisecond)
 	tb.SetPaused(true)
 	time.Sleep(120 * time.Millisecond)
+	// This reads 0 for any bucket whose SetPaused still discards buffered
+	// credits: fill() stops ticking once the pause is applied, so nothing can be
+	// added back afterwards. What it pins is therefore the drain in SetPaused,
+	// not the pause guard in addTokensForElapsed — that guard is covered by
+	// TestTokenBucketAddsNoTokensWhilePaused.
 	if got := len(tb.tokens); got != 0 {
 		t.Fatalf("paused token bucket buffered %d credits, want 0", got)
 	}
@@ -223,6 +260,68 @@ func TestTokenBucketDoesNotAccumulatePausedCredits(t *testing.T) {
 	defer eventualCancel()
 	if !tb.WaitContext(eventualCtx) {
 		t.Fatal("token bucket did not issue a newly earned credit after resume")
+	}
+}
+
+// TestTokenBucketResumePreservesPrePauseIntervalProgress pins the soft-pause
+// contract from the other side of TestTokenBucketDoesNotAccumulatePausedCredits:
+// pausing must not grant credit for wall time spent paused, but it also must not
+// throw away the portion of the current fill interval that had already elapsed.
+// Resuming a slow bucket used to cost a full extra interval of dead time before
+// the first paced iteration could run.
+func TestTokenBucketResumePreservesPrePauseIntervalProgress(t *testing.T) {
+	tb := NewTokenBucket(2.5) // one token every 400ms
+	defer tb.Stop()
+
+	// Burn most of the first fill interval, then pause before it elapses. The
+	// credit guard has to run before SetPaused(true): pausing drains tb.tokens,
+	// so a check placed after the pause reads 0 no matter how early the bucket
+	// started issuing credit and can never observe the regression it names.
+	time.Sleep(300 * time.Millisecond)
+	if got := len(tb.tokens); got != 0 {
+		t.Fatalf("token bucket issued %d credits before the first interval elapsed", got)
+	}
+	tb.SetPaused(true)
+	time.Sleep(150 * time.Millisecond)
+
+	tb.SetPaused(false)
+	start := time.Now()
+	// Roughly 100ms of the interval remained when the pause began, so the first
+	// post-resume credit must arrive well inside another full 400ms interval.
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	if !tb.WaitContext(ctx) {
+		t.Fatalf("no credit within %v of resume: pausing restarted the fill interval from scratch", time.Since(start))
+	}
+}
+
+// TestTokenBucketIgnoresResetWithoutAPauseTransition covers the coalescing
+// window in the reset signal. SetPaused writes the new state and then pokes a
+// buffered-by-1 channel, so a pause that is immediately undone — the generator
+// service rolls back a failed pause by resuming the same engines microseconds
+// later, see rollbackPauseParticipants — reaches the fill goroutine either as a
+// single signal or as two signals that both observe the settled running state.
+// A reset carrying no net transition must leave the in-flight fill interval
+// alone; restarting it there costs a full pacing interval of throughput for a
+// pause that never actually took effect.
+func TestTokenBucketIgnoresResetWithoutAPauseTransition(t *testing.T) {
+	tb := NewTokenBucket(2.5) // one token every 400ms
+	defer tb.Stop()
+
+	// Burn most of the first fill interval, then deliver reset signals that carry
+	// no pause transition, exactly as a pause/rollback pair does.
+	time.Sleep(300 * time.Millisecond)
+	if got := len(tb.tokens); got != 0 {
+		t.Fatalf("token bucket issued %d credits before the first interval elapsed", got)
+	}
+	tb.signalTimerReset()
+	tb.signalTimerReset()
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	if !tb.WaitContext(ctx) {
+		t.Fatalf("no credit within %v of a no-op reset: the fill interval was restarted from scratch", time.Since(start))
 	}
 }
 

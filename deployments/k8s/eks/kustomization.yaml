@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: apexload
+resources:
+  - namespace.yaml
+  - serviceaccounts.yaml
+  - configmap.yaml
+  - controller-service.yaml
+  - controller-deployment.yaml
+  - controller-import-assets-pvc.yaml
+  - controller-ingress.yaml
+  - generator-service.yaml
+  - generator-statefulset.yaml
+  - generator-keda-scaledobject.yaml
+  - network-policy.yaml
+  - pdb.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: apexload
+      app.kubernetes.io/managed-by: kustomize
+
+# Point at your ACR. CI does this dynamically with:
+#   kustomize edit set image apexload-controller=$ACR/apexload-controller:$TAG
+images:
+  - name: apexload-controller
+    newName: changeme.dkr.ecr.changeme-region.amazonaws.com/apexload-controller # CHANGE-ME: terraform output ecr_controller_repository_url
+    newTag: 0.1.0
+  - name: apexload-generator
+    newName: changeme.dkr.ecr.changeme-region.amazonaws.com/apexload-generator # CHANGE-ME: terraform output ecr_generator_repository_url
+    newTag: 0.1.0

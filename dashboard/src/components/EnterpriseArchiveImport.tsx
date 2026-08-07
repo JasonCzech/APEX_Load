@@ -935,9 +935,16 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   }, [])
   const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
     void discardQueuedSourceSecretSessions(importItemsRef.current, itemIds)
+    const activeScriptSave = scriptSaveInFlightRef.current
+    const invalidatesActiveScriptSave = Boolean(
+      activeScriptSave && (!itemIds || itemIds.includes(activeScriptSave.itemId)),
+    )
     const invalidatesActiveReviewArtifactSave = fenceOperationScopes(itemIds)
-    setWorkingMode(null)
-    setScriptSaveInProgress(false)
+    // A queue-item fence does not stop a running validate/convert batch, and
+    // clearing workingMode would re-enable Validate so the operator could fence
+    // their own batch from under it. Only a whole-surface fence resets it.
+    if (!itemIds) setWorkingMode(null)
+    if (!itemIds || invalidatesActiveScriptSave) setScriptSaveInProgress(false)
     if (invalidatesActiveReviewArtifactSave) {
       setReviewArtifactSaving(false)
     }
@@ -1123,7 +1130,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
   const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
-  const importSummary = getImportSummary(importMetadata)
+  // Re-normalizing the whole preserved-import blob on every keystroke in the
+  // review form is pure waste: it only changes when the imported script does.
+  const importSummary = useMemo(() => getImportSummary(importMetadata), [importMetadata])
   const reviewSummary: EnterpriseArchiveImportSummary | null = result?.summary || null
   const salesforceReview = reviewSummary?.salesforce_review || null
   const salesforceNativeScript = salesforceReview?.native_preview?.script || null
@@ -1289,7 +1298,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           ? `Review the generated script, preserved metadata, and warnings. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
                 : 'Review the generated script, preserved metadata, and warnings before saving.'))))
   const runtimeBlockingSettings = importSummary.runtimeSettingReadiness?.blocking_settings || []
-  const generatedDataSources = importedScript
+  // summarizeInlineData parses every inline data source, so keep it keyed to the
+  // imported script rather than re-running it on unrelated review-form state.
+  const generatedDataSources = useMemo(() => importedScript
     ? (importedScript.data_sources || []).map((source, index) => {
       const summary = summarizeInlineData(source)
       const columns = source.first_row_header === false
@@ -1302,18 +1313,32 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         columns: columns.length > 0 ? columns : summary.columns,
       }
     })
-    : []
-  const firstCorrelationSourceTarget = importSummary.correlationSuggestions
-    .map((correlation) => findFirstImportedActionTarget(importedScript, [correlation.found_at]))
-    .find((target): target is { location: string; actionName: string } => Boolean(target)) || null
-  const firstCorrelationUsageTarget = importSummary.correlationSuggestions
-    .map((correlation) => findFirstImportedActionTarget(importedScript, correlation.used_at))
-    .find((target): target is { location: string; actionName: string } => Boolean(target)) || null
+    : [], [importedScript])
+  // These scans only need the first hit, so stop at it instead of walking every
+  // correlation suggestion (and every action behind it) on each render.
+  const firstCorrelationSourceTarget = useMemo(() => {
+    for (const correlation of importSummary.correlationSuggestions) {
+      const target = findFirstImportedActionTarget(importedScript, [correlation.found_at])
+      if (target) return target
+    }
+    return null
+  }, [importSummary.correlationSuggestions, importedScript])
+  const firstCorrelationUsageTarget = useMemo(() => {
+    for (const correlation of importSummary.correlationSuggestions) {
+      const target = findFirstImportedActionTarget(importedScript, correlation.used_at)
+      if (target) return target
+    }
+    return null
+  }, [importSummary.correlationSuggestions, importedScript])
   const firstRuntimeBlockingArea = findFirstImportedRuntimeArea(runtimeBlockingSettings)
   const firstRuntimeParityArea = findFirstImportedRuntimeArea(importSummary.runtimeSettingsParity)
-  const firstMappedParameterDataSourceName = importSummary.parameterFileSections
-    .map((section) => findImportedParameterMappingDataSourceName(generatedDataSources, section.values))
-    .find((sourceName): sourceName is string => Boolean(sourceName)) || null
+  const firstMappedParameterDataSourceName = useMemo(() => {
+    for (const section of importSummary.parameterFileSections) {
+      const sourceName = findImportedParameterMappingDataSourceName(generatedDataSources, section.values)
+      if (sourceName) return sourceName
+    }
+    return null
+  }, [generatedDataSources, importSummary.parameterFileSections])
   const firstGeneratedDataSourceName = generatedDataSources[0]?.name || null
   const firstUnsupportedTargetAction = repairSuggestions
     .find((suggestion) => suggestion.category === 'unsupported' && Boolean(suggestion.target_action?.trim()))
@@ -2199,11 +2224,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       item.id,
       nextRequestToken(itemRequestTokensRef.current, item.id),
     ]))
+    const operationIsCurrent = () => operationGenerationRef.current === operationGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
     const requestIsCurrent = (item: EnterpriseArchiveImportQueueItem) => {
       const current = importItemsRef.current.find(candidate => candidate.id === item.id)
-      return operationGenerationRef.current === operationGeneration
-        && reviewProjectIdRef.current === sourceProjectId
-        && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+      return operationIsCurrent()
         && itemRequestTokensRef.current.get(item.id) === requestTokens.get(item.id)
         && current?.file === item.file
         && current.harFile === item.harFile
@@ -2216,6 +2242,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     const conversionItemPatches = new Map<string, Partial<EnterpriseArchiveImportQueueItem>>()
     let successCount = 0
     let failureCount = 0
+    let skippedCount = 0
 
     setWorkingMode('convert')
     setError('')
@@ -2239,7 +2266,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
       : item))
 
     for (const item of targetItems) {
-      if (!requestIsCurrent(item)) break
+      // A whole-operation fence (unmount, project switch, a newly started run)
+      // abandons the batch, but a single fenced queue row must only skip its own
+      // archive so the archives queued behind it still convert.
+      if (!operationIsCurrent()) break
+      if (!requestIsCurrent(item)) {
+        skippedCount += 1
+        continue
+      }
       let conversionResult: EnterpriseArchiveImportResult | null = null
       const itemSavedScripts: StoredScript[] = []
       try {
@@ -2255,6 +2289,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           ...(options.salesforce_native ? { salesforce_native: true } : {}),
         })
         if (!requestIsCurrent(item)) {
+          skippedCount += 1
           if (sourceProjectId && conversionResult.source_secret_session_id) {
             await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
           }
@@ -2311,21 +2346,20 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           continue
         }
 
+        // conversionRequiresBrowserReplay above holds every browser-protocol
+        // result in review and skips this loop, so nothing that reaches here is a
+        // browser import. The TrueClient promotion review is attached on the
+        // reviewed-save path instead, which is the only path that owns a replay
+        // session — this batch clears replayValidationSession before it starts,
+        // so attaching it here could only ever record "replay not run".
         for (const script of scriptsToSave) {
           if (!requestIsCurrent(item)) break
-          const scriptToSave = isBrowserImport(script)
-            ? attachTrueClientPromotionReview(script, {
-              compatReport: getTrueClient2CompatReport(conversionResult, getImportMetadata(script)),
-              replaySession: item.replayValidationSession,
-              replayWarnings: item.replayValidationWarnings || [],
-              importWarnings: conversionResult.warnings || [],
-            })
-            : script
-          const savedScript = await api.createScript(scriptToSave, sourceProjectId, folderId)
-          itemSavedScripts.push(withFallbackPersistedScript(savedScript, scriptToSave))
+          const savedScript = await api.createScript(script, sourceProjectId, folderId)
+          itemSavedScripts.push(withFallbackPersistedScript(savedScript, script))
         }
 
         if (!requestIsCurrent(item)) {
+          skippedCount += 1
           await rollbackStaleCreatedScripts(itemSavedScripts)
           if (sourceProjectId && conversionResult.source_secret_session_id) {
             await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
@@ -2336,6 +2370,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
         }
         if (!requestIsCurrent(item)) {
+          skippedCount += 1
           await rollbackStaleCreatedScripts(itemSavedScripts)
           continue
         }
@@ -2356,6 +2391,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
         updateImportItem(item.id, patch)
       } catch (error: unknown) {
         if (!requestIsCurrent(item)) {
+          skippedCount += 1
           await rollbackStaleCreatedScripts(itemSavedScripts)
           if (sourceProjectId && conversionResult?.source_secret_session_id) {
             await discardSourceSecretSession(sourceProjectId, conversionResult.source_secret_session_id)
@@ -2388,12 +2424,16 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     if (operationGenerationRef.current !== operationGeneration || reviewProjectIdRef.current !== sourceProjectId) return
     setWorkingMode(null)
 
+    // Archives fenced mid-batch (a removed queue row, a re-attached source file)
+    // are neither converted nor failed, so name them instead of quietly dropping
+    // them out of the completion count.
+    const skippedSuffix = skippedCount > 0 ? `; ${skippedCount} archive${skippedCount === 1 ? '' : 's'} skipped` : ''
     if (savedScripts.length > 0) {
       const projectedItems = importItemsRef.current.map(item => {
         const patch = conversionItemPatches.get(item.id)
         return patch ? { ...item, ...patch } : item
       })
-      const savedNotice = `Converted and saved ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}.`
+      const savedNotice = `Converted and saved ${savedScripts.length} script${savedScripts.length === 1 ? '' : 's'} to the library${failureCount > 0 ? `; ${failureCount} archive${failureCount === 1 ? '' : 's'} failed` : ''}${skippedSuffix}.`
       await publishSavedEnterpriseArchiveScripts(
         projectedItems,
         savedScripts,
@@ -2406,7 +2446,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
     }
 
     if (targetItems.length > 1) {
-      setNotice(`Converted ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}.`)
+      setNotice(`Converted ${successCount} of ${targetItems.length} enterprise script archive${targetItems.length === 1 ? '' : 's'}${failureCount > 0 ? `; ${failureCount} failed` : ''}${skippedSuffix}.`)
     }
   }
 

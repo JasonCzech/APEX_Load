@@ -156,8 +156,34 @@ func newFakeBrowserRecorder(session *recbrowser.Session) *fakeBrowserRecorderBac
 
 // install wires the fake into a manager's factory and captures the options
 // (including OnEvent) the manager passes in.
+//
+// Only the FIRST Start receives this fake. Every later one gets an independent
+// backend with its own artifact, because that is what the real factory does:
+// each recording session constructs its own recorder and owns its own
+// *recbrowser.Session.
+//
+// Handing the same fake to every Start let two live sessions share one artifact
+// and mutate it under two different session mutexes — a data race the real
+// backend cannot produce. It is reachable whenever a test starts a second
+// recording while the first is still finishing (ForceStop frees the active slot
+// immediately, while the first session's graceful stop is still in flight).
 func (f *fakeBrowserRecorderBackend) install(m *BrowserRecordingManager) {
+	var issuedMu sync.Mutex
+	issued := 0
 	m.factory = func(opts recbrowser.Options) browserRecorderBackend {
+		issuedMu.Lock()
+		issued++
+		first := issued == 1
+		ordinal := issued
+		issuedMu.Unlock()
+
+		if !first {
+			return newFakeBrowserRecorder(&recbrowser.Session{
+				ID:        fmt.Sprintf("rec_fake_%d", ordinal),
+				StartedAt: time.Now(),
+				StartURL:  opts.StartURL,
+			})
+		}
 		f.mu.Lock()
 		f.opts = opts
 		if f.session.StartURL == "" {
@@ -529,6 +555,32 @@ func TestBrowserRecordingManagerStopRequested(t *testing.T) {
 	// The slot frees up for the next recording.
 	if _, err := m.Start(BrowserRecordingStartRequest{Name: "Next", StartURL: "https://shop.example/"}); err != nil {
 		t.Errorf("Start() after stop error: %v", err)
+	}
+}
+
+func TestBrowserRecordingListSummaryReportsArtifactAvailability(t *testing.T) {
+	m := NewBrowserRecordingManager(NewHub())
+	artifact := recordedBrowserArtifact()
+	artifact.StorageState = []byte(`{"cookies":[]}`)
+	fake := newFakeBrowserRecorder(artifact)
+	fake.install(m)
+
+	started, err := m.Start(BrowserRecordingStartRequest{Name: "Checkout", StartURL: "https://shop.example/login", ProjectID: "proj-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Stop(started.ID); !ok {
+		t.Fatal("Stop() did not find session")
+	}
+	waitForRecordingStatus(t, m, started.ID, BrowserRecordingStopped)
+
+	// List and every WS broadcast go through summary(), not fullSnapshot.
+	listed := m.List("proj-1")
+	if len(listed) != 1 {
+		t.Fatalf("List() = %d sessions, want 1", len(listed))
+	}
+	if !listed[0].HARAvailable || !listed[0].StorageStateReady {
+		t.Fatalf("list summary = har_available %t storage_state_available %t, want both true", listed[0].HARAvailable, listed[0].StorageStateReady)
 	}
 }
 

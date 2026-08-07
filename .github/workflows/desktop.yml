@@ -118,7 +118,7 @@ jobs:
           HTTPS_PROXY: ${{ vars.HTTPS_PROXY }}
           NO_PROXY: ${{ vars.NO_PROXY }}
           NODE_EXTRA_CA_CERTS: ${{ vars.NODE_EXTRA_CA_CERTS }}
-        run: cd dashboard && npm ci --ignore-scripts && npm run build
+        run: cd dashboard && npm run check:node && npm ci --ignore-scripts && npm run build
 
       - name: Resolve friendly build version
         id: version

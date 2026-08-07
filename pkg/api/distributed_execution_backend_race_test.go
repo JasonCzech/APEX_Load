@@ -68,17 +68,38 @@ func TestDistributedControlMethodsRaceTeardown(t *testing.T) {
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 
+	// -race alone only proves the reads are synchronised; it says nothing about the
+	// value each control call resolved. Every generator call in this test is wired to
+	// succeed (raceFakeGeneratorClient) and the dialer always returns that client, so a
+	// control call that loses the remote* maps to a concurrent teardown must still
+	// resolve a client through remoteTarget and return nil. A non-nil error here means
+	// the snapshot produced an unusable view of the topology — the wrong-result failure
+	// mode that a data-race detector cannot see.
+	var resultMu sync.Mutex
+	calls := 0
+	failures := map[string]error{}
+	record := func(name string, err error) {
+		resultMu.Lock()
+		defer resultMu.Unlock()
+		calls++
+		if err != nil {
+			if _, seen := failures[name]; !seen {
+				failures[name] = err
+			}
+		}
+	}
+
 	// StopTest/AdjustDuration/stopRemainingRemoteTargets all read the remote* maps via
 	// the snapshot helpers (clientsFromSnapshot + the remoteTargetStates copy). ScaleVUsers
 	// and Pause/Resume use the identical snapshot pattern but need a live heartbeat/metrics
 	// stream to reach their gRPC bodies, so they are exercised by the integration suites.
-	readers := []func(){
-		func() { _ = b.StopTest(tr, test) },
-		func() { _ = b.AdjustDuration(tr, test, time.Second) },
-		func() { _ = b.stopRemainingRemoteTargets(tr, test, true) },
+	readers := map[string]func() error{
+		"StopTest":                   func() error { return b.StopTest(tr, test) },
+		"AdjustDuration":             func() error { return b.AdjustDuration(tr, test, time.Second) },
+		"stopRemainingRemoteTargets": func() error { return b.stopRemainingRemoteTargets(tr, test, true) },
 	}
-	for _, fn := range readers {
-		fn := fn
+	for name, fn := range readers {
+		name, fn := name, fn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -87,7 +108,7 @@ func TestDistributedControlMethodsRaceTeardown(t *testing.T) {
 				case <-stop:
 					return
 				default:
-					fn()
+					record(name, fn())
 				}
 			}
 		}()
@@ -114,4 +135,13 @@ func TestDistributedControlMethodsRaceTeardown(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	close(stop)
 	wg.Wait()
+
+	resultMu.Lock()
+	defer resultMu.Unlock()
+	if calls == 0 {
+		t.Fatal("no distributed control calls ran against the concurrent teardown")
+	}
+	for name, err := range failures {
+		t.Errorf("%s failed while the remote topology was being torn down and repopulated: %v", name, err)
+	}
 }

@@ -1,0 +1,122 @@
+# PREREQUISITE — read before applying.
+#
+# The controller replicas share the import-assets volume, so its PVC needs
+# ReadWriteMany. Unlike AKS (which ships azurefile-csi), EKS has NO built-in
+# ReadWriteMany StorageClass: without the two steps below the PVC stays Pending
+# and the controller pods never schedule.
+#
+#   1. Install the EFS CSI driver:
+#        aws eks create-addon --cluster-name <cluster> --addon-name aws-efs-csi-driver
+#
+#   2. Create the StorageClass this overlay references, pointing at the
+#      filesystem Terraform provisioned (terraform output efs_file_system_id):
+#
+#        apiVersion: storage.k8s.io/v1
+#        kind: StorageClass
+#        metadata:
+#          name: efs-sc
+#        provisioner: efs.csi.aws.com
+#        parameters:
+#          provisioningMode: efs-ap
+#          fileSystemId: <terraform output efs_file_system_id>
+#          directoryPerms: "700"
+#
+# The single-controller (non-HA) deployment needs neither step.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: apexload
+resources:
+  - ../eks
+  - active-controller-endpoint.yaml
+patches:
+  - target:
+      kind: Deployment
+      name: apexload-controller
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_CONTROLLER_HA
+          value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_SLICE
+          value: apexload-controller-active
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_SERVICE
+          value: apexload-controller-active
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE
+          value: /var/run/secrets/apexload-active-endpoint/token
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_CA_FILE
+          value: /var/run/secrets/apexload-active-endpoint/ca.crt
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: active-endpoint-identity
+          mountPath: /var/run/secrets/apexload-active-endpoint
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: active-endpoint-identity
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+  - target:
+      kind: Service
+      name: apexload-controller-active
+    patch: |-
+      - op: remove
+        path: /spec/selector
+  - target:
+      kind: PersistentVolumeClaim
+      name: apexload-controller-import-assets
+    patch: |-
+      - op: replace
+        path: /spec/accessModes
+        value:
+          - ReadWriteMany
+      - op: add
+        path: /spec/storageClassName
+        value: efs-sc

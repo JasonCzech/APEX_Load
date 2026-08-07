@@ -222,7 +222,7 @@ These overstatements existed in earlier docs and are now corrected:
 | P1 | Benchmark evidence — publish one reproducible density benchmark | S–M |
 | P2 | RealBrowser-class high-density browser **load** (DOM-aware record/replay already shipped; at-scale browser VUsers remain canary-scoped) | L |
 | P2 | Region/load-zone distribution with per-region response metrics | M |
-| P3 | Enterprise hardening — real OTel spans, Vault/mTLS, test-level quota enforcement | M each |
+| P3 | Enterprise hardening — Vault/mTLS, test-level quota enforcement | M each |
 
 ---
 
@@ -562,7 +562,7 @@ DevWeb is OpenText's JavaScript-based protocol-level HTTP testing engine. APEX L
 
 ### Protocol Bundle Coverage
 
-APEX Load's protocol bundle support is code-owned. Published through `GET /api/v1/protocol-bundles/support-matrix`.
+APEX Load's protocol bundle support is code-owned. Bundle entitlements, runner-pool placement, and the Database / Network / Oracle E-Business / Templates / SAP rows are published through `GET /api/v1/protocol-bundles/support-matrix`, whose `web_api` entries cover the governed Bruno collection runner. The protocol-level **Web / API** rows are published through `GET /api/v1/scripts/web-api/support-matrix` (HTTP, SOAP/WSDL, Java-over-HTTP, WebSocket, gRPC, JMS, Bruno, browser canaries) and `GET /api/v1/protocols/native-support-matrix` (WebSocket, gRPC, JMS Solace / Azure Service Bus / IBM MQ, Kafka).
 
 Bundles correspond to OpenText LoadRunner Enterprise protocol-bundle groups.
 

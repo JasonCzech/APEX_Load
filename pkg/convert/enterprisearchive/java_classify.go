@@ -137,6 +137,19 @@ type JavaProfile struct {
 	ReviewFamilies  []string
 }
 
+// classifyJavaArchive and classifyJavaArchiveWithReachability are the classifier
+// of the retired executable Java lanes: they pick the protocol surface those
+// lanes branched on. Both are still production resident and still compiled in,
+// but neither has a production caller. ConvertJava (java_import.go) builds an
+// empty JavaProfile inline and never classifies, so editing a rule below cannot
+// change any real import — the only callers are the quarantined lane
+// orchestration in java_native_analysis_test.go and this package's classifier
+// unit tests. The guard that keeps production from calling them again lives in
+// java_native_lanes_test.go.
+//
+// Promotion gating, source mapping and transaction accounting on the live path
+// are driven by ConvertJava's own single lifecycle-reachability pass
+// (java_import.go), not by anything here.
 func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, files map[string]string) JavaProfile {
 	return classifyJavaArchiveWithReachability(
 		program,
@@ -146,10 +159,9 @@ func classifyJavaArchive(program javaProgram, projectConfig *ProjectConfig, file
 	)
 }
 
-// classifyJavaArchiveWithReachability keeps live conversion to one full
-// lifecycle-reachability pass. Standalone classifier callers retain the wrapper
-// above, while ConvertJava threads the same result into classification, source
-// mapping, transaction accounting, and promotion gating.
+// classifyJavaArchiveWithReachability is the same retired classifier for callers
+// that already hold a lifecycle-reachability pass and must not pay for a second
+// one; see the wrapper above for why neither function is on a live path.
 func classifyJavaArchiveWithReachability(
 	program javaProgram,
 	projectConfig *ProjectConfig,
@@ -5598,6 +5610,11 @@ func inferJavaReviewFamilies(text string) []string {
 	return families
 }
 
+// newJavaScriptForSurface builds the per-surface script shell the retired
+// executable lanes filled in. It is still production resident and still compiled
+// in, but it has no production caller: the lane orchestration that drove it is
+// quarantined in java_native_lanes_test.go, which is also where the guard lives
+// that keeps production from calling it again.
 func newJavaScriptForSurface(opts ConvertOptions, profile JavaProfile, surface javaSurface) *dsl.Script {
 	name := convertutil.FirstNonEmpty(opts.ScriptName, "Converted_Java_Vuser")
 	if len(profile.Surfaces) > 1 {

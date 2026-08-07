@@ -107,6 +107,35 @@ export type {
   ProvisionerInfo,
 } from './types/fleet'
 export type {
+  AWSCredentialMode,
+  AllocationPreflight,
+  ClusterAuthMode,
+  ClusterCapacityResponse,
+  ClusterConnection,
+  ClusterConnectionInput,
+  ClusterConnectionListResponse,
+  ClusterKind,
+  ClusterNodeCapacity,
+  ClusterNodePool,
+  ClusterProbe,
+  ClusterQuota,
+  ClusterTLSMode,
+  ClusterTestResult,
+  ClusterWorkload,
+  PoolAllocation,
+  PoolAllocationInput,
+  PoolAllocationResponse,
+  Toleration,
+} from './types/cluster'
+export type {
+  ConflictingFleetPool,
+  DeploymentProvider,
+  DomainDeploymentTarget,
+  DomainDeploymentTargetConflict,
+  DomainDeploymentTargetInput,
+  DomainDeploymentTargetListResponse,
+} from './types/deploymentTarget'
+export type {
   BrowserBenchmarkAcceptance,
   BrowserBenchmarkDensityEnvelope,
   BrowserBenchmarkEvidenceResponse,

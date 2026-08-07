@@ -119,8 +119,8 @@ func TestEstimateCapacityAdvisoryUsesBrowserVUserDensity(t *testing.T) {
 	if advisory.BrowserVUsers != 30 {
 		t.Fatalf("browser vusers = %d, want 30", advisory.BrowserVUsers)
 	}
-	if advisory.MaxBrowserVUsersPerGenerator != 25 {
-		t.Fatalf("max browser vusers per generator = %d, want 25", advisory.MaxBrowserVUsersPerGenerator)
+	if advisory.MaxBrowserVUsersPerGenerator != 5 {
+		t.Fatalf("max browser vusers per generator = %d, want the claimable diagnostic canary envelope of 5", advisory.MaxBrowserVUsersPerGenerator)
 	}
 	if advisory.MaxBrowserCanaryVUsersPerGenerator != 5 {
 		t.Fatalf("max browser canary vusers per generator = %d, want 5", advisory.MaxBrowserCanaryVUsersPerGenerator)
@@ -131,17 +131,77 @@ func TestEstimateCapacityAdvisoryUsesBrowserVUserDensity(t *testing.T) {
 	if !advisory.BrowserDensityOverrideRequired || !advisory.BrowserBenchmarkEvidenceRequired {
 		t.Fatalf("browser density gates = override %v evidence %v, want both required", advisory.BrowserDensityOverrideRequired, advisory.BrowserBenchmarkEvidenceRequired)
 	}
-	if advisory.DimensionRecommendations.VUsers != 2 {
-		t.Fatalf("vuser recommendation = %d, want 2", advisory.DimensionRecommendations.VUsers)
+	if advisory.DimensionRecommendations.VUsers != 1 {
+		t.Fatalf("vuser recommendation = %d, want the blocking density gate to govern instead of a duplicate vuser shortfall", advisory.DimensionRecommendations.VUsers)
 	}
-	if !advisory.RequiresOverride {
-		t.Fatal("expected browser density shortfall to require override with one available generator")
+	if !advisory.RequiresOverride || advisory.Bottleneck != "memory" {
+		t.Fatalf("requires override = %v bottleneck = %q, want browser memory footprint shortfall with one available generator", advisory.RequiresOverride, advisory.Bottleneck)
 	}
 	if advisory.EstimatedPerVUser.MemoryMB < 250 {
 		t.Fatalf("browser per-vuser memory = %v, want mobile browser scale estimate", advisory.EstimatedPerVUser.MemoryMB)
 	}
 	if !containsSubstring(advisory.Warnings, "Browser VUsers launch real browser runtimes") {
 		t.Fatalf("warnings = %#v, want browser runtime guidance", advisory.Warnings)
+	}
+}
+
+func TestEstimateCapacityAdvisoryPublishesClaimableBrowserDensity(t *testing.T) {
+	browserAdvisory := func(device string, availableGenerators int) *CapacityAdvisory {
+		settings := defaultSystemSettings(4)
+		settings.CapacityPlanning.HeadroomPct = 0
+		settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators = availableGenerators
+		return estimateCapacityAdvisory(settings, []TestGroup{{
+			Name:     "ux canary",
+			Protocol: "browser",
+			VUsers:   30,
+			script: &dsl.Script{
+				Protocol: "browser",
+				Config: dsl.ScriptConfig{
+					Browser: dsl.BrowserConfig{DeviceProfile: device},
+				},
+				Actions: []dsl.Action{{Name: "Open", Type: "browser_navigate", Target: "https://example.test"}},
+			},
+		}}, 30, 10*time.Minute, false, nil)
+	}
+
+	// iphone_se is a low device tier (40 VUsers/generator in the resource model),
+	// ipad_air mid (32) and iphone_15_pro high (25). None of those densities is
+	// claimable, so all three must publish the diagnostic canary envelope.
+	for _, device := range []string{"iphone_se", "ipad_air", "iphone_15_pro"} {
+		advisory := browserAdvisory(device, 8)
+		if advisory == nil {
+			t.Fatalf("%s: expected advisory", device)
+		}
+		if advisory.BrowserDensityReleaseGate != browserDensityReleaseGateClear {
+			t.Fatalf("%s: release gate = %q, want clear for 30 VUsers across 8 generators", device, advisory.BrowserDensityReleaseGate)
+		}
+		if advisory.MaxBrowserVUsersPerGenerator != advisory.MaxBrowserCanaryVUsersPerGenerator {
+			t.Fatalf("%s: published density = %d but the enforced canary envelope is %d", device, advisory.MaxBrowserVUsersPerGenerator, advisory.MaxBrowserCanaryVUsersPerGenerator)
+		}
+		if advisory.DimensionRecommendations.VUsers != 6 {
+			t.Fatalf("%s: vuser recommendation = %d, want 30 VUsers sized at the 5 VUser/generator canary envelope", device, advisory.DimensionRecommendations.VUsers)
+		}
+
+		// Provisioning exactly what the advisory recommends must not be refused by
+		// the release gate published in the same response.
+		sized := browserAdvisory(device, advisory.RecommendedGenerators)
+		if sized == nil {
+			t.Fatalf("%s: expected sized advisory", device)
+		}
+		if sized.BrowserDensityReleaseGate != browserDensityReleaseGateClear || sized.BrowserDensityOverrideRequired {
+			t.Fatalf("%s: sizing to the recommended %d generators still trips the density gate (%q, override required %v)", device, advisory.RecommendedGenerators, sized.BrowserDensityReleaseGate, sized.BrowserDensityOverrideRequired)
+		}
+		if sized.RequiresOverride {
+			t.Fatalf("%s: sizing to the recommended %d generators still reports a capacity shortfall: %#v", device, advisory.RecommendedGenerators, sized)
+		}
+	}
+
+	// The device-tier model still drives the resource footprint even though it no
+	// longer sets the published density.
+	lowTier := browserAdvisory("iphone_se", 8)
+	highTier := browserAdvisory("iphone_15_pro", 8)
+	if highTier.EstimatedPerVUser.MemoryMB <= lowTier.EstimatedPerVUser.MemoryMB {
+		t.Fatalf("per-vuser memory low tier = %v high tier = %v, want device-tier footprint to remain in the CPU/memory math", lowTier.EstimatedPerVUser.MemoryMB, highTier.EstimatedPerVUser.MemoryMB)
 	}
 }
 
@@ -224,8 +284,8 @@ func TestEstimateCapacityAdvisoryUsesRuntimeBrowserOverrideForDensity(t *testing
 	if advisory.BrowserVUsers != 35 {
 		t.Fatalf("browser vusers = %d, want 35", advisory.BrowserVUsers)
 	}
-	if advisory.MaxBrowserVUsersPerGenerator != 40 {
-		t.Fatalf("max browser vusers per generator = %d, want runtime override iphone_se density", advisory.MaxBrowserVUsersPerGenerator)
+	if advisory.MaxBrowserVUsersPerGenerator != 5 {
+		t.Fatalf("max browser vusers per generator = %d, want the claimable canary envelope even for the low-tier iphone_se runtime override", advisory.MaxBrowserVUsersPerGenerator)
 	}
 	if advisory.DimensionRecommendations.VUsers != 1 {
 		t.Fatalf("vuser recommendation = %d, want mixed scenario to cap only browser vusers by browser density", advisory.DimensionRecommendations.VUsers)

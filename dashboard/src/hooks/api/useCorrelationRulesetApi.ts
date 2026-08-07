@@ -6,6 +6,7 @@ import type {
   CorrelationRulesetListResponse,
 } from '../../types/correlationRulesets'
 import { request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
@@ -20,42 +21,42 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 
 export function useCorrelationRulesetApi() {
   const listCorrelationRulesets = useCallback(
-    (params?: { project_id?: string; limit?: number; offset?: number }) =>
-      request<CorrelationRulesetListResponse>(`/correlation-rulesets${buildQuery({ ...params })}`),
+    (params?: { project_id?: string; limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<CorrelationRulesetListResponse>(`/correlation-rulesets${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getCorrelationRuleset = useCallback(
-    (id: string) => request<CorrelationRuleset>(`/correlation-rulesets/${id}`),
+    (id: string, options?: ApiCallOptions) => request<CorrelationRuleset>(`/correlation-rulesets/${id}`, withCallOptions(undefined, options)),
     [],
   )
 
   const createCorrelationRuleset = useCallback(
-    (body: Partial<CorrelationRuleset>) =>
-      request<CorrelationRuleset>('/correlation-rulesets', { method: 'POST', body: JSON.stringify(body) }),
+    (body: Partial<CorrelationRuleset>, options?: ApiCallOptions) =>
+      request<CorrelationRuleset>('/correlation-rulesets', withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const updateCorrelationRuleset = useCallback(
-    (id: string, body: Partial<CorrelationRuleset> & { expected_updated_at: string }) =>
-      request<CorrelationRuleset>(`/correlation-rulesets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    (id: string, body: Partial<CorrelationRuleset> & { expected_updated_at: string }, options?: ApiCallOptions) =>
+      request<CorrelationRuleset>(`/correlation-rulesets/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const deleteCorrelationRuleset = useCallback(
-    (id: string) => request<{ deleted: string }>(`/correlation-rulesets/${id}`, { method: 'DELETE' }),
+    (id: string, options?: ApiCallOptions) => request<{ deleted: string }>(`/correlation-rulesets/${id}`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
   const discoverCorrelationRulesetFromScript = useCallback(
-    (body: { script_id: string; name?: string }) =>
-      request<CorrelationRuleset>('/correlation-rulesets/discover-from-script', { method: 'POST', body: JSON.stringify(body) }),
+    (body: { script_id: string; name?: string }, options?: ApiCallOptions) =>
+      request<CorrelationRuleset>('/correlation-rulesets/discover-from-script', withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const applyCorrelationRulesetToScript = useCallback(
-    (id: string, body: { script_id: string; apply?: boolean; preview_token?: string }) =>
-      request<CorrelationRulesetApplyResponse>(`/correlation-rulesets/${id}/apply-to-script`, { method: 'POST', body: JSON.stringify(body) }),
+    (id: string, body: { script_id: string; apply?: boolean; preview_token?: string }, options?: ApiCallOptions) =>
+      request<CorrelationRulesetApplyResponse>(`/correlation-rulesets/${id}/apply-to-script`, withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
     [],
   )
 

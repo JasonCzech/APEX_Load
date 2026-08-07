@@ -13,7 +13,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks + opt-in OTLP traces for controller HTTP, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Controller aggregates with t-digest for percentiles. OpenTelemetry metrics/log export is not implemented.
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
-- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service uses the launcher in `deployments/azure/appservice/` with PostgreSQL and static generator targets. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.)
+- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service uses the launcher in `deployments/azure/appservice/` with PostgreSQL and static generator targets. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.) System administrators can additionally register N external clusters (generic Kubernetes via a ServiceAccount token, AKS via an Azure AD service principal) from the dashboard and set per-pool CPU/memory and node placement — see [docs/CLUSTER_CONNECTIONS.md](docs/CLUSTER_CONNECTIONS.md). Node reads for pool/zone discovery need the opt-in `deployments/k8s/aks/node-read.optional.yaml` ClusterRole; everything degrades gracefully without it.
 
 ## Module Path
 `github.com/jasonczech/apexload`
@@ -43,8 +43,34 @@ pkg/
   refkey/        — Human-readable, environment-aware reference keys
   buildinfo/     — Build metadata (version/commit/build-time) via -ldflags
   config/        — Configuration types
-  kubeops/       — In-cluster Kubernetes operations (generator pod restart/drain)
+  kubeops/       — Kubernetes operations (generator pod restart/drain, scaling, node/quota reads).
+                   Pluggable auth via TokenSource: in-cluster service-account file, static
+                   token, or Azure AD service principal for AKS. NewRemoteClient reaches
+                   registered external clusters; see docs/CLUSTER_CONNECTIONS.md.
   recordagent/   — Local recording-agent runtime (Playwright/Chromium provisioning + bridge)
+  collectoragent/ — Dependency-free monitoring-collector agent (token auth, heartbeat + host metric packs)
+  telemetry/     — Opt-in OpenTelemetry tracing setup + HTTP instrumentation (off unless APEXLOAD_OTEL_ENABLED)
+  debugserver/   — Optional net/http/pprof listener, gated by APEXLOAD_PPROF_ADDR
+  runtimetuning/ — GOMAXPROCS/GOMEMLIMIT resolution from cgroup limits
+  perfevidence/  — Controlled local performance probes + component evidence reports
+  Java execution stack:
+  javarunner/    — Shared policy-enforcing Java Vuser primitives (classpath, command, containment);
+                   deliberately depends on neither dsl nor protocol so authoring and execution share it
+  javasidecar/   — Credential-minimized loopback HTTP contract to the external Java Vuser runner container
+  Secrets, credentials, and disclosure:
+  secretstore/   — Project-scoped secret providers (env, Azure Key Vault, AWS Secrets Manager) + migration
+  keywrap/       — Protocol-neutral envelope-key wrapping (master key, Azure/AWS KMS providers)
+  credential/    — Source-neutral credential naming/classification shared by importers, scrub, and paramize
+  scriptdisclosure/ — Irreversible disclosure-safe projections of executable scripts
+  identitypolicy/ — Binds process credentials to operator-approved remote identities before token use
+  netpolicy/     — Shared outbound-network trust decisions (public-IP / SSRF guard)
+  Import and asset plumbing:
+  dslwalk/       — Bounded deterministic traversal of every action incl. nested control flow
+  importsession/ — Importer-neutral protected short-lived inspection sessions
+  importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
+  fileasset/     — Bounded local file/asset opening for import paths
+  internal/      — Cross-package internal guards: archiveingest, boundedcache, boundedtext, diskspace,
+                   filelock, subprocessguard, zipbounds
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)
 dashboard/       — React 18 + TypeScript + Recharts SPA
@@ -61,6 +87,14 @@ deployments/
     appservice/  — Node.js launcher wrapper for Azure App Service deployments
   .github/workflows/ — Authoritative CI/CD workflows
 ```
+
+The `pkg/` listing above is machine-checked: `check_package_inventory` in
+`scripts/check-docs.py` fails the CI documentation job if a top-level `pkg/`
+directory has no entry line of its own in the `pkg/` section of this block, so a
+new package means a new line here. Only that section counts, and only a line
+whose first token is the directory name — a mention elsewhere in the fence
+(`cmd/controller/`, the top-level `api/` tree) or a nested entry like
+`api/static/` does not stand in for the package's own line.
 
 ## Key Design Decisions
 - 1 goroutine = 1 VUser (~2–4 KB stack)

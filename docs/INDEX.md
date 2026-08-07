@@ -41,15 +41,43 @@ These focused references are also current. They are kept separate from the prima
 | Document | Purpose |
 | --- | --- |
 | [JAVA_VUSER_RUNTIME.md](JAVA_VUSER_RUNTIME.md) | Governed Java Vuser runner contract and operations |
+| [JMS_SIDECAR.md](JMS_SIDECAR.md) | JMS Solace external sidecar bridge: operator environment, transports, and containment |
+| [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
+| [AI_ASSISTED_WORKFLOWS.md](AI_ASSISTED_WORKFLOWS.md) | Governed assisted-authoring workflow and API contract |
+| [AKS_INTEGRATION_READINESS.md](AKS_INTEGRATION_READINESS.md) | Current AKS capability and production-readiness boundaries |
+| [EKS_INTEGRATION_READINESS.md](EKS_INTEGRATION_READINESS.md) | Current Amazon EKS capability and production-readiness boundaries |
+| [APEX_LOAD_REST_API_COMPARISON.md](APEX_LOAD_REST_API_COMPARISON.md) | API-layer comparison with LoadRunner Enterprise |
+| [BENCHMARK_HARNESS_OVERHEAD.md](BENCHMARK_HARNESS_OVERHEAD.md) | Reproducible metrics hot-path benchmark artifact |
+| [BROWSER_BENCHMARK_ARTIFACTS.md](BROWSER_BENCHMARK_ARTIFACTS.md) | Browser benchmark artifact manifest and evidence contract |
+| [CICD_INTEGRATION.md](CICD_INTEGRATION.md) | CI/CD gate integration patterns and examples |
+| [CLUSTER_CONNECTIONS.md](CLUSTER_CONNECTIONS.md) | Registering external Kubernetes/AKS/EKS control planes and per-pool host resource allocation |
+| [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning and migration reference |
+| [ENTERPRISE_AUTHORING_CONTRACT.md](ENTERPRISE_AUTHORING_CONTRACT.md) | Shared enterprise authoring lifecycle contract |
+| [ENTERPRISE_AUTOSCALING_SIGNALS.md](ENTERPRISE_AUTOSCALING_SIGNALS.md) | HPA/KEDA signal contract for generator scaling |
+| [ENTERPRISE_GENERATOR_FLEET_MODEL.md](ENTERPRISE_GENERATOR_FLEET_MODEL.md) | Generator fleet inventory and allocation contract |
+| [ENTERPRISE_GOVERNANCE_MODEL.md](ENTERPRISE_GOVERNANCE_MODEL.md) | Project-first ownership and governance model |
+| [ENTERPRISE_LOAD_MODEL_CONTRACT.md](ENTERPRISE_LOAD_MODEL_CONTRACT.md) | Workload-shape support and authoring contract |
+| [ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md](ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md) | Production platform reference architecture |
+| [EVALUATOR_COMPETITIVE_ONE_PAGER.md](EVALUATOR_COMPETITIVE_ONE_PAGER.md) | Concise evaluator positioning and supported-scope summary |
+| [EVALUATOR_TRUST_PACK.md](EVALUATOR_TRUST_PACK.md) | Reproducible evaluator evidence workflow |
+| [GITHUB_INTEGRATION.md](GITHUB_INTEGRATION.md) | GitHub Enterprise authentication and script workflow |
+| [KUBERNETES_RESTART_CONTROLS.md](KUBERNETES_RESTART_CONTROLS.md) | Governed controller and generator restart controls |
 | [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md) | Executable, bounded, and review-only Web/API support dispositions |
 | [SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md](SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md) | SQLite-to-PostgreSQL and HA cutover procedure |
 | [SAPGUI_RUNNER_SPEC.md](SAPGUI_RUNNER_SPEC.md) | SAP GUI external-runner contract |
+| [MOBILE_BROWSER_BENCHMARK_RUNBOOK.md](MOBILE_BROWSER_BENCHMARK_RUNBOOK.md) | Repeatable mobile browser evidence collection |
+| [OPTIN_TEST_SUITES.md](OPTIN_TEST_SUITES.md) | Machine-enforced inventory of build-tag and environment-gated test suites and how to run them |
+| [PROJECT_SECRETS.md](PROJECT_SECRETS.md) | Project secret providers, API behavior, and operational guidance |
+| [RELEASE_EVIDENCE_MANIFEST.md](RELEASE_EVIDENCE_MANIFEST.md) | Required evidence behind release and parity claims |
+| [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
+| [SCHEDULING_TIMEZONE_BEHAVIOR_CHANGE.md](SCHEDULING_TIMEZONE_BEHAVIOR_CHANGE.md) | Cron timezone and DST behavior migration note |
+| [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow and routes |
 | [LOADRUNNER_WEB_FUNCTION_COVERAGE.md](LOADRUNNER_WEB_FUNCTION_COVERAGE.md) | Generated LoadRunner Web conversion coverage |
 | [LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md](LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md) | Generated Java LR function coverage |
 | [LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md](LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md) | Generated Java Vuser import coverage |
 | [LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md](LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md) | Generated TruClient step coverage |
 
-Other Markdown files in this directory are either linked from one of the guides above, explicitly classified below as roadmap/planning material, or retained audit history. A file's presence is not itself a claim that it is a current product contract.
+Every Markdown file directly under `docs/`, other than this index itself, appears in one of the tables on this page — current guide, specialized reference, generated artifact, or roadmap/planning material. That is machine-enforced: `check_index_membership` in `scripts/check-docs.py` fails the CI documentation job if a `docs/*.md` file is not linked from a table row here, so adding a document means adding a row — a mention in prose does not satisfy the check. Listing is not itself a claim that a file is a current product contract; the Status column says that. Point-in-time material under `docs/reviews/` and `docs/archive/` is excluded from both this index and the check.
 
 ## Generated References
 
@@ -80,6 +108,9 @@ not the source of truth for current API or DSL contracts.
 | [AUTH_RBAC_FOLLOW_UP_TICKETS.md](AUTH_RBAC_FOLLOW_UP_TICKETS.md) | Roadmap/detail |
 | [ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md) | Roadmap/detail |
 | [SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md](SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md) | Roadmap/detail |
+| [RUNTIME_TELEMETRY_SLA_PLAN.md](RUNTIME_TELEMETRY_SLA_PLAN.md) | Roadmap/detail |
+| [RUN_REPORT_IMPLEMENTATION_PLAN.md](RUN_REPORT_IMPLEMENTATION_PLAN.md) | Proposed implementation plan |
+| [SCRIPT_EDITOR_INTERACTION_MODEL.md](SCRIPT_EDITOR_INTERACTION_MODEL.md) | Approved design direction and phased plan |
 
 ## Historical
 

@@ -19,7 +19,13 @@ import (
 // finalizeK6HTTPRequest is the source-adapter boundary: JavaScript recognition
 // has already happened, and only the effective static request enters the shared
 // request/security/finalization pipeline.
-func finalizeK6HTTPRequest(parsed parsedHTTPRequest, index int, target, body, sourceFile string, registry *credentialpolicy.NameRegistry) (dsl.Action, requestimport.Report, error) {
+func finalizeK6HTTPRequest(
+	parsed parsedHTTPRequest,
+	index int,
+	target, body, sourceFile string,
+	registry *credentialpolicy.NameRegistry,
+	translated k6ActionTranslation,
+) (dsl.Action, requestimport.Report, error) {
 	actionName := fmt.Sprintf("%s_%02d", titleMethod(parsed.Method), index+1)
 	source := credentialpolicy.SourceRef{
 		Format:  "k6",
@@ -86,7 +92,12 @@ func finalizeK6HTTPRequest(parsed parsedHTTPRequest, index int, target, body, so
 			Registry:   registry,
 			NamePrefix: "K6",
 		},
-		Overlay:  requestimport.ActionOverlay{Type: "request"},
+		Overlay: requestimport.ActionOverlay{
+			Type:           "request",
+			Assertions:     translated.Assertions,
+			ThinkTime:      translated.ThinkTime,
+			ThinkTimeAfter: translated.ThinkTimeAfter,
+		},
 		Findings: findings,
 	})
 	if err != nil {

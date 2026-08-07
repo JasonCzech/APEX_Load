@@ -13,11 +13,19 @@ export function clampVUsersForRole(value: number, role: GroupRole, minimum = 0):
   return Math.min(maxVUsersForRole(role), Math.max(minimum, finiteValue))
 }
 
-export function effectiveGroupVUsers(group: GroupDemand): number {
-  const stagePeak = (group.stages || []).reduce((peak, stage) => {
+// The single definition of "this group's demand is owned by its stages".
+// Every consumer -- the validator below, the effective-demand helper and the
+// editors -- must agree on it, otherwise a surface can present a VUsers value
+// the validator will not accept.
+export function stagePeakVUsers(stages?: Array<{ target_vusers?: number }>): number {
+  return (stages || []).reduce((peak, stage) => {
     const target = Number(stage.target_vusers)
     return Number.isFinite(target) ? Math.max(peak, target) : peak
   }, 0)
+}
+
+export function effectiveGroupVUsers(group: GroupDemand): number {
+  const stagePeak = stagePeakVUsers(group.stages)
   return stagePeak > 0 ? stagePeak : Number(group.vusers) || 0
 }
 
@@ -33,7 +41,7 @@ export function validateAggregateVUserDemand(groups: GroupDemand[], label = 'Tes
         return `${label}: group ${groupIndex + 1} stage ${stageIndex + 1} target VUsers must be a non-negative whole number.`
       }
     }
-    const stagePeak = (group.stages || []).reduce((peak, stage) => Math.max(peak, Number(stage.target_vusers) || 0), 0)
+    const stagePeak = stagePeakVUsers(group.stages)
     if (stagePeak > 0 && Number(group.vusers) !== stagePeak) {
       return `${label}: group ${groupIndex + 1} VUsers must match its peak stage target of ${stagePeak}.`
     }

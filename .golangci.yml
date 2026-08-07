@@ -3,13 +3,46 @@ version: "2"
 run:
   timeout: 10m
 
+# Policy for this file: only enable linters that pass cleanly on the tree as it
+# stands. A gate that is red on arrival gets ignored, and mass-rewriting the
+# repository to satisfy a style linter is not worth the churn. When adding a
+# linter, run `golangci-lint run ./...` first and drop it if it reports
+# pre-existing violations.
+#
+# Evaluated and rejected (violation counts on the tree at the time of writing,
+# capped at 50 per linter): mnd 50+, canonicalheader 50+, copyloopvar 50+,
+# wastedassign 38, nilerr 32, predeclared 28, errchkjson 24, ineffassign 23,
+# iface 12, recvcheck 10, interfacebloat 9, mirror 8, dupword 8, errname 7,
+# fatcontext 6, protogetter 4, bodyclose 3, nilnil 3, sqlclosecheck 3,
+# gosmopolitan 3, rowserrcheck 2, makezero 1, usetesting 1. Several of those
+# are worth revisiting as standalone cleanups; none belong in a "cheap hygiene"
+# gate.
 linters:
   default: none
   enable:
+    # Correctness — these find bug shapes the compiler and `go vet` miss.
     - govet
+    - asasalint # []any spread into a variadic ...any parameter
+    - durationcheck # time.Duration multiplied by another Duration
+    - reassign # mutating another package's exported package-level vars
+    - spancheck # OpenTelemetry spans that are never ended
+    # Toolchain hygiene — a malformed directive fails silently and open.
+    - gocheckcompilerdirectives # e.g. a typo'd //go:generate / //go:embed
+    - nolintlint # malformed or no-longer-needed //nolint directives
+    - testableexamples # Example funcs whose output is never asserted
+    # Supply-chain hygiene — source that does not read the way it executes.
+    - asciicheck # non-ASCII homoglyphs in identifiers
+    - bidichk # bidirectional-override "trojan source" characters
+    # Readability.
+    - exptostd # golang.org/x/exp helpers that are now in the stdlib
+    - goprintffuncname
     - misspell
     - unconvert
   exclusions:
+    paths:
+      # Vendored JavaScript packages ship Go sources (for example
+      # node_modules/flatted/golang) that are not ours to lint or fix.
+      - node_modules
     rules:
       # Unicode transliteration fixtures intentionally contain words such as
       # "AEther" that the English-only spell checker treats as misspellings.
@@ -20,6 +53,9 @@ linters:
 formatters:
   enable:
     - gofmt
+  exclusions:
+    paths:
+      - node_modules
   settings:
     gofmt:
       # Match the repository's documented plain `gofmt` gate.

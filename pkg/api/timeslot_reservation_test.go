@@ -5,6 +5,8 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -274,5 +276,82 @@ func TestReservationAwareAdmissionBlocksOtherTenant(t *testing.T) {
 	stillBlocked, _ := evaluateReservedCapacityBlockWithLoadedEvidenceForTest(t, runner, testB, "")
 	if stillBlocked {
 		t.Fatal("with no bound timeslot, project-b should admit")
+	}
+}
+
+// countingCapacityBindingListStore counts the bulk reciprocal-binding query the
+// HA list-read refresh issues, so a request burst can be measured.
+type countingCapacityBindingListStore struct {
+	storage.Store
+	calls   atomic.Int32
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *countingCapacityBindingListStore) ListTestCapacityBindings(testIDs []string) ([]storage.TestCapacityBindingState, error) {
+	if s.calls.Add(1) == 1 {
+		s.once.Do(func() { close(s.entered) })
+		<-s.release
+	}
+	return s.Store.(interface {
+		ListTestCapacityBindings([]string) ([]storage.TestCapacityBindingState, error)
+	}).ListTestCapacityBindings(testIDs)
+}
+
+// TestCapacityBindingHAListRefreshCoalescesRequestBurst pins the coalescing
+// contract of refreshCapacityBindingsForHAListRead now that it runs on the
+// shared haRefreshCoalescer: concurrent list reads issue one reciprocal-binding
+// query, and a later sequential read still issues a fresh one so it can observe
+// a cross-replica mutation.
+func TestCapacityBindingHAListRefreshCoalescesRequestBurst(t *testing.T) {
+	base, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "coalesce-bindings.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer base.Close()
+	store := &countingCapacityBindingListStore{
+		Store:   base,
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	releaseQuery := sync.OnceFunc(func() { close(store.release) })
+	defer releaseQuery()
+	now := time.Now().UTC()
+	if err := base.SaveTest(&storage.TestRecord{
+		ID: "coalesce-test", Name: "coalesce", Status: "QUEUED", ProjectID: storage.DefaultProjectID,
+		StartTime: now, Duration: int64(10 * time.Minute), Groups: []any{},
+	}); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
+	leadership := newExecutionLeadership(base, "coalesce-follower")
+	runner := NewTestRunner(2, NewHub(), store, WithExecutionLeadership(leadership))
+
+	const callers = 20
+	var group sync.WaitGroup
+	group.Add(callers)
+	for range callers {
+		go func() {
+			defer group.Done()
+			runner.refreshCapacityBindingsForHAListRead()
+		}()
+	}
+	select {
+	case <-store.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no caller reached the reciprocal-binding query")
+	}
+	// Hold the query open until every other caller has provably parked on the
+	// shared refresh rather than queueing its own.
+	awaitRefreshParked(t, &runner.capacityBindingRefresh, callers-1)
+	releaseQuery()
+	group.Wait()
+	if got := store.calls.Load(); got != 1 {
+		t.Fatalf("ListTestCapacityBindings calls during the burst = %d, want 1", got)
+	}
+
+	runner.refreshCapacityBindingsForHAListRead()
+	if got := store.calls.Load(); got != 2 {
+		t.Fatalf("ListTestCapacityBindings calls after a sequential read = %d, want 2", got)
 	}
 }

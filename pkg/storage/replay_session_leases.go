@@ -251,8 +251,8 @@ func (s *SQLiteStore) deleteReplaySessionLease(ctx context.Context, sessionID, o
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	result, err := s.db.db.ExecContext(ctx, rewriteSQL(`DELETE FROM replay_session_leases
-		WHERE session_id = ? AND owner_token = ? AND project_id = ? AND state = ?`, s.db.dialect),
+	result, err := s.db.ExecContext(ctx, `DELETE FROM replay_session_leases
+		WHERE session_id = ? AND owner_token = ? AND project_id = ? AND state = ?`,
 		sessionID, ownerToken, projectID, state)
 	if err != nil {
 		return false, fmt.Errorf("release replay session lease: %w", err)
@@ -278,19 +278,15 @@ func validateReplaySessionLeaseIdentity(sessionID, ownerToken, projectID string,
 }
 
 func (s *SQLiteStore) beginReplaySessionLeaseTransaction(ctx context.Context) (*storeTx, error) {
-	tx, err := s.db.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &storeTx{tx: tx, dialect: s.db.dialect}, nil
+	return s.db.BeginTx(ctx, nil)
 }
 
 func replayLeaseExecContext(ctx context.Context, tx *storeTx, query string, args ...any) (sql.Result, error) {
-	return tx.tx.ExecContext(ctx, rewriteSQL(query, tx.dialect), args...)
+	return tx.ExecContext(ctx, query, args...)
 }
 
 func replayLeaseQueryRowContext(ctx context.Context, tx *storeTx, query string, args ...any) *sql.Row {
-	return tx.tx.QueryRowContext(ctx, rewriteSQL(query, tx.dialect), args...)
+	return tx.QueryRowContext(ctx, query, args...)
 }
 
 func preciseDatabaseTimeContext(ctx context.Context, tx *storeTx, dialect storeDialect) (time.Time, error) {

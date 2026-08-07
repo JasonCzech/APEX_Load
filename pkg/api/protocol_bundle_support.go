@@ -268,7 +268,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"does not replace native SAP GUI desktop protocol parity"},
 			RecommendedWorkflow: "Use HTTP/API load for density and browser canaries for SAP Web/Fiori client evidence.",
 			Source:              "sap-solutions-2024",
-			Evidence:            []string{"docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
+			Evidence:            []string{"pkg/protocol/http", "pkg/protocol/browser", "pkg/convert/enterprisearchive", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {

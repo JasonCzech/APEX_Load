@@ -80,6 +80,25 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Scope filtering runs before the query-param filters so a caller cannot
+	// use ?domain_id= to reach a domain they hold no binding on.
+	_, visibleProjects, unrestricted, err := s.visibleScopeForRequest(r, projects)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !unrestricted {
+		filtered := make([]*storage.Project, 0, len(projects))
+		for _, project := range projects {
+			if project == nil {
+				continue
+			}
+			if _, ok := visibleProjects[normalizeProjectID(project.ID)]; ok {
+				filtered = append(filtered, project)
+			}
+		}
+		projects = filtered
+	}
 	if domainID := strings.TrimSpace(r.URL.Query().Get("domain_id")); domainID != "" {
 		normalizedDomainID := normalizeDomainID(domainID)
 		filtered := make([]*storage.Project, 0, len(projects))

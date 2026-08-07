@@ -101,6 +101,14 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	// disclosure projection while returning the editable executable draft
 	// unchanged to the already-authorized importing operator.
 	projectedScripts := maskScriptResponseValue(scripts)
+	// Projecting the script tree is the dominant cost of this builder: it
+	// marshals/unmarshals the whole tree and then re-projects every script node
+	// through the typed dsl.Script boundary. The parameterization trust pass
+	// below needs exactly this projection of `scripts`, so hold on to it instead
+	// of letting importParameterizationScripts recompute it. Nothing between
+	// here and that call mutates `scripts`, and the projection is only read
+	// (never placed in the response), so sharing it is behaviour-preserving.
+	parameterizationProjection := projectedScripts
 	secretBindingRequirements := secretBindingRequirementsForImportScripts(projectedScripts)
 	secretBindingRequirements = annotateSecretBindingDestinationValues(
 		secretBindingRequirements,
@@ -154,7 +162,10 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	if parameterization == nil {
 		parameterization = &paramize.Result{Suggestions: []paramize.Suggestion{}}
 	} else {
-		parameterization = sanitizeImportParameterization(parameterization, scripts)
+		parameterization = sanitizeImportParameterization(
+			parameterization,
+			projectedImportScripts{value: parameterizationProjection},
+		)
 	}
 
 	response := map[string]any{
@@ -710,10 +721,24 @@ func trustedParameterizationIDs(scriptValues ...any) (map[string]bool, map[strin
 	return ids, scoped, len(scripts) > 0
 }
 
+// projectedImportScripts marks a value that has already passed through
+// maskScriptResponseValue. Callers that computed the projection for another
+// purpose wrap it so importParameterizationScripts reuses it instead of
+// re-serializing the same script tree. The wrapped value must never be mutated
+// after wrapping.
+type projectedImportScripts struct {
+	value any
+}
+
 func importParameterizationScripts(values ...any) []*dsl.Script {
 	result := make([]*dsl.Script, 0)
 	for _, value := range values {
-		projected := maskScriptResponseValue(value)
+		var projected any
+		if preProjected, ok := value.(projectedImportScripts); ok {
+			projected = preProjected.value
+		} else {
+			projected = maskScriptResponseValue(value)
+		}
 		nodes := make([]map[string]any, 0)
 		collectScriptJSONNodes(projected, &nodes)
 		for _, node := range nodes {

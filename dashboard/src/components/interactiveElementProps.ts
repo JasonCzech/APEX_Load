@@ -10,6 +10,10 @@ export function interactiveElementProps<T extends HTMLElement>(onActivate: (even
       onActivate(event)
     },
     onKeyDown(event: KeyboardEvent<T>) {
+      // A keydown that bubbled up from a nested control belongs to that control.
+      // Preventing its default here would cancel the browser's synthesized click,
+      // so neither the child nor this wrapper would activate.
+      if (event.target !== event.currentTarget) return
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault()
         onActivate(event)

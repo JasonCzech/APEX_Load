@@ -1,6 +1,8 @@
 // Fleet-management transport contracts. UI-only state belongs with the
 // consuming feature rather than in this transport module.
 
+import type { PoolAllocation } from './cluster'
+
 export interface ProvisionerInfo {
   name: string
   can_provision: boolean
@@ -77,6 +79,14 @@ export interface FleetPool {
   desired_size?: number
   status: string
   tags?: Record<string, string>
+  /** Registered cluster connection this pool scales in; empty means the
+   *  controller's env-configured provisioner. */
+  cluster_id?: string
+  /** The domain this pool is scoped to. Empty/absent means UNSCOPED: the
+   *  domain deployment-target constraint does not apply to it. */
+  domain_id?: string
+  /** Host-resource budget and node placement for this pool's generator pods. */
+  allocation?: PoolAllocation
   created_at: string
   updated_at: string
   members?: FleetPoolMember[]

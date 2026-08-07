@@ -70,11 +70,7 @@ func TestBrowserProtocolExecuteBrowserActions(t *testing.T) {
 		"browser_viewport_width":      1280,
 		"browser_viewport_height":     720,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 

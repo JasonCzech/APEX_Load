@@ -825,6 +825,311 @@ func TestTerminalEvacuationUncertaintyStillRetriesUncommittedParticipantStop(t *
 	}
 }
 
+func TestFailClosedGeneratorLossEvacuationTerminalizesWithoutDeadSourceAcknowledgement(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	remote, _ := newTestGeneratorRPCClient(t, "gen-b", 10)
+	// The replacement loses its assignment response and then every rollback
+	// stop, so the evacuation exits through the uncertain fail-closed path.
+	replacement := &stagedEvacuationFaultClient{
+		generatorClient:     remote,
+		loseAssignResponses: 1,
+		loseStopResponses:   durableTransitionAttempts,
+	}
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 250*time.Millisecond, func(context.Context, string) (generatorClient, error) {
+		return replacement, nil
+	})
+	// The source pod is gone: no exact-generation stop can ever be acknowledged.
+	source := newFaultEvacuationGeneratorClient("gen-a", 3)
+	source.loseInitialStopResponses = 1 << 30
+	started := time.Now()
+	script := &dsl.Script{ID: "buyers-script", Name: "Buyers", Protocol: "http"}
+	test := &ManagedTest{
+		ID:         "run-evacuation-dead-source",
+		ScenarioID: "managed-evacuation-scenario",
+		Status:     "RUNNING",
+		Duration:   time.Minute,
+		StartedAt:  &started,
+		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+		},
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
+	}
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.tests[test.ID] = test
+
+	_, err := backend.evacuateGenerator(runner, test, "gen-a", false, true)
+	var uncertain *distributedEvacuationUncertainError
+	if !errors.As(err, &uncertain) {
+		t.Fatalf("evacuateGenerator error = %v, want distributedEvacuationUncertainError", err)
+	}
+	runner.mu.RLock()
+	status, failure := test.Status, test.Error
+	runner.mu.RUnlock()
+	if status != "FAILED" {
+		t.Fatalf("status = %q after fail-closed cleanup with a dead source, want FAILED", status)
+	}
+	if !strings.Contains(failure, "unreachable generators left to execution-lease expiry") || !strings.Contains(failure, "gen-a") {
+		t.Fatalf("run error = %q, want the unreachable gen-a reconciliation note", failure)
+	}
+	if source.faultStops() < durableTransitionAttempts {
+		t.Fatalf("dead source stop attempts = %d, want at least %d before it was tolerated", source.faultStops(), durableTransitionAttempts)
+	}
+	if replacement.stops() <= durableTransitionAttempts {
+		t.Fatalf("replacement stop attempts = %d, want a fail-closed stop after %d rollback attempts", replacement.stops(), durableTransitionAttempts)
+	}
+}
+
+// renewEvacuationExecutionLease mimics the controller's lease keeper, which
+// keeps the execution lease alive while an evacuation runs. Tests that exercise
+// the lost-generator epoch fence need it: the fence deliberately waits past the
+// deadline it sampled, so a static deadline would make leadership lapse at
+// exactly the moment the fence completes and mask the behaviour under test with
+// a leadership-change failure.
+func renewEvacuationExecutionLease(t *testing.T, runner *TestRunner, ttl time.Duration) {
+	t.Helper()
+	stop := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(ttl / 8)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				runner.leadership.mu.Lock()
+				runner.leadership.localLeaseDeadline = time.Now().Add(ttl)
+				runner.leadership.mu.Unlock()
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		<-stopped
+	})
+}
+
+// A generator that is actually gone — OOM-killed pod, drained or decommissioned
+// node — can never acknowledge an exact-generation StopTest, and that is the
+// primary loss mode tolerate_generator_loss advertises. The automatic
+// stream-loss path must fence such a source by execution-lease epoch expiry and
+// carry the run on to its replacement. Requiring the dead source's ACK instead
+// would escalate a single generator loss into a whole-fleet force-stop, leaving
+// the run wedged non-terminal in STOPPING while a terminal retry re-sent stops
+// the source can never answer — strictly worse than leaving the flag off.
+func TestGeneratorLossEvacuationSurvivesDeadSourceAndKeepsTheRunOnItsReplacement(t *testing.T) {
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
+	listener := bufconn.Listen(1024 * 1024)
+	grpcServer := grpc.NewServer()
+	service := generatorrpc.NewService("generator-b", 10, generatorrpc.WithExecution())
+	pb.RegisterGeneratorControlServer(grpcServer, service)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = service.Shutdown(ctx)
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+
+	var replacementRequests atomic.Int64
+	sut := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		replacementRequests.Add(1)
+	}))
+	t.Cleanup(sut.Close)
+
+	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 250*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
+		if target != "gen-b" {
+			return nil, errors.New("lost generator is unreachable")
+		}
+		return generatorrpc.Dial(
+			ctx,
+			target,
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithBlock(),
+		)
+	})
+	// The source pod is gone. Every exact-generation stop fails forever, exactly
+	// as a gRPC Unavailable against a deleted pod would.
+	source := newFaultEvacuationGeneratorClient("gen-a", 2)
+	source.loseInitialStopResponses = 1 << 30
+	script := &dsl.Script{
+		ID:       "buyers-script",
+		Name:     "Buyers",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: sut.URL},
+		Actions:  []dsl.Action{{Name: "home", Type: "GET", Target: "/"}},
+	}
+	runCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	started := time.Now()
+	test := &ManagedTest{
+		ID:           "run-evacuation-dead-source-survives",
+		Name:         "dead source survives",
+		ScenarioID:   "managed-evacuation-scenario",
+		Status:       "RUNNING",
+		Duration:     time.Minute,
+		StartedAt:    &started,
+		executionCtx: runCtx,
+		cancel:       cancel,
+		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
+		remoteGroupShards: map[string][]GeneratorShardSummary{
+			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		},
+		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+	}
+	hub := NewHub()
+	go hub.Run()
+	t.Cleanup(hub.Stop)
+	runner := NewTestRunner(1, hub, nil)
+	runner.tests[test.ID] = test
+	// The fence deliberately waits out a whole lease window. Keep it wide enough
+	// that scheduler jitter cannot expire a generator session mid-fence and turn
+	// this into a lease-plumbing failure rather than the behaviour under test.
+	const leaseTTL = 3 * time.Second
+	configureEvacuationExecutionLease(runner, test, 91, "dead-source-evacuation/91", leaseTTL)
+	renewEvacuationExecutionLease(t, runner, leaseTTL)
+	// A staged replacement is deliberately absent from the live topology, so its
+	// process-level execution epoch is renewed only by the controller-lifetime
+	// fleet keeper (server.go starts this for every distributed backend). The
+	// fence waits past the deadline that keeper's first claim was derived from,
+	// and an assignment lease can never outlive its process epoch, so without
+	// the keeper the post-fence lease renewal fails FailedPrecondition.
+	keeperCtx, stopKeeper := context.WithCancel(context.Background())
+	keeperDone := make(chan struct{})
+	go func() {
+		defer close(keeperDone)
+		backend.maintainGeneratorExecutionEpoch(keeperCtx, runner)
+	}()
+	t.Cleanup(func() {
+		stopKeeper()
+		<-keeperDone
+	})
+
+	// The automatic path: gen-a's metrics stream dies because the pod died.
+	if !backend.tolerateMetricsStreamLoss(runner, test, "gen-a", errors.New("rpc error: code = Unavailable desc = transport is closing")) {
+		t.Fatal("lost generator was not tolerated; the run was failed instead of evacuated")
+	}
+
+	runner.mu.RLock()
+	status, failure, finalizing := test.Status, test.Error, test.remoteFinalizing
+	shards := cloneGeneratorShardSummaries(test.remoteGroupShards["buyers"])
+	_, sourceRetained := test.remoteClientsByTarget["gen-a"]
+	replacementClient := test.remoteClientsByTarget["gen-b"]
+	replacementStream := test.remoteMetricsStreamsByTarget["gen-b"]
+	sourceState := test.remoteTargetStates["gen-a"]
+	runner.mu.RUnlock()
+
+	if status != "RUNNING" {
+		t.Fatalf("status = %q after tolerated loss of a dead generator, want RUNNING", status)
+	}
+	if finalizing {
+		t.Fatal("a tolerated generator loss must not put the run into remote finalization")
+	}
+	if strings.TrimSpace(failure) != "" {
+		t.Fatalf("run error = %q, want no failure after a tolerated generator loss", failure)
+	}
+	if len(shards) != 1 || shards[0].Target != "gen-b" || shards[0].VUsers != 2 {
+		t.Fatalf("buyers shards = %+v, want the 2 VUsers rehomed onto gen-b", shards)
+	}
+	if sourceRetained {
+		t.Fatal("dead source remains in the run client set and would keep receiving lifecycle controls")
+	}
+	if replacementClient == nil || replacementStream == nil {
+		t.Fatalf("replacement was not published: client=%v stream=%v", replacementClient, replacementStream)
+	}
+	if !remoteTargetStateDone(sourceState) {
+		t.Fatalf("dead source target state = %q, want an evacuated sentinel", sourceState)
+	}
+	if source.faultStops() < durableTransitionAttempts {
+		t.Fatalf("dead source stop attempts = %d, want at least %d before the epoch fence took over", source.faultStops(), durableTransitionAttempts)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for service.ActiveVUsers() != 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := service.ActiveVUsers(); got != 2 {
+		t.Fatalf("replacement active VUsers = %d, want the evacuated 2 still under load", got)
+	}
+	for replacementRequests.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if replacementRequests.Load() == 0 {
+		t.Fatal("replacement generator never issued load after the dead source was fenced")
+	}
+
+	cancel()
+	backend.closeRemoteResources(runner, test)
+	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID, ExecutionGeneration: 91}); err != nil {
+		t.Fatalf("cleanup StopTest: %v", err)
+	}
+}
+
+// The lost-generator fence runs while the evacuation mutex and the topology
+// write gate are held, so a run that can no longer commit must not keep them for
+// the rest of the execution-lease TTL: an operator stop that reserves STOPPING
+// has to be observed while the fence is still waiting.
+func TestLostGeneratorEpochFenceAbortsWhenTheRunStopsWaitingForTheLeaseTTL(t *testing.T) {
+	now := time.Now().UTC()
+	leadership := newExecutionLeadership(nil, "lost-generator-fence")
+	leadership.mu.Lock()
+	leadership.leader.Store(true)
+	leadership.leaseOwnerID = "lost-generator-fence/1"
+	leadership.durableGeneration = 17
+	leadership.localLeaseDeadline = now.Add(30 * time.Second)
+	leadership.mu.Unlock()
+
+	executionCtx, cancelExecution := context.WithCancel(context.Background())
+	defer cancelExecution()
+	test := &ManagedTest{
+		ID:                      "run-lost-generator-fence",
+		Status:                  "RUNNING",
+		executionCtx:            executionCtx,
+		executionGeneration:     17,
+		remoteControlGeneration: 4,
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, leadership: leadership}
+
+	fenced := make(chan error, 1)
+	go func() {
+		fenced <- waitForLostGeneratorEpochFence(executionCtx, runner, test, "RUNNING", 4, 17)
+	}()
+	select {
+	case err := <-fenced:
+		t.Fatalf("fence returned %v before the lease deadline while the run was still committable", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// An operator stop reserves STOPPING without taking the topology gate, which
+	// is exactly the transition the fence must notice while it waits.
+	runner.mu.Lock()
+	test.Status = "STOPPING"
+	runner.mu.Unlock()
+	select {
+	case err := <-fenced:
+		if err == nil {
+			t.Fatal("fence reported the lost generator as fenced after the run was stopped")
+		}
+		if !strings.Contains(err.Error(), "abandoned while fencing lost generator") {
+			t.Fatalf("fence error = %v, want an abandoned-evacuation error", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fence held the evacuation and topology locks after the run was stopped")
+	}
+}
+
 func TestDistributedEvacuateGeneratorRefusesBrowserGroups(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
 	clientA := newEvacuationFakeGeneratorClient("gen-a:9090")

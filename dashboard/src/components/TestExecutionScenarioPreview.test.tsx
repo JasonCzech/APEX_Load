@@ -16,12 +16,16 @@ vi.mock('recharts', () => {
     ResponsiveContainer: Mock,
     AreaChart: Mock,
     Area: () => null,
-    XAxis: ({ label }: { label?: string | { value?: string } }) => <div data-testid="mock-x-axis" data-label={labelText(label)} />,
+    XAxis: ({ label, type, domain }: { label?: string | { value?: string }; type?: string; domain?: Array<string | number> }) => (
+      <div data-testid="mock-x-axis" data-label={labelText(label)} data-type={type || ''} data-domain={domain?.join(',') || ''} />
+    ),
     YAxis: ({ label }: { label?: string | { value?: string } }) => <div data-testid="mock-y-axis" data-label={labelText(label)} />,
     CartesianGrid: () => null,
     Tooltip: () => null,
     Legend: () => null,
-    ReferenceArea: () => null,
+    ReferenceArea: ({ x1, x2 }: { x1?: number | string; x2?: number | string }) => (
+      <div data-testid="mock-reference-area" data-x1={String(x1 ?? '')} data-x2={String(x2 ?? '')} />
+    ),
   }
 })
 
@@ -401,5 +405,72 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(onCancelShakeoutRun).toHaveBeenCalledTimes(1)
     expect(onContinueAfterShakeoutFailure).toHaveBeenCalledTimes(1)
+  })
+
+  it('shades phase bands against a numeric time axis so boundaries off the sampled points still map', async () => {
+    // 10m steady run with a resource baseline: sampled every 42s, so none of the phase
+    // boundaries (300, 900, 960) is a sampled value. A category axis cannot map them.
+    const totalSeconds = 1260
+    const points: Array<Record<string, number>> = []
+    for (let second = 0; second <= totalSeconds; second += 42) {
+      points.push({ second, group0: 10, total: 10 })
+    }
+
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-bands',
+            name: 'Baseline Scenario',
+            status: 'QUEUED',
+            total_vusers: 10,
+            duration: '10m',
+            resource_baseline: true,
+            created_at: '2026-05-12T20:00:00Z',
+            groups: [{
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+            }],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{
+            points,
+            totalVUsers: 10,
+            totalSeconds,
+            steadySeconds: 600,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 300,
+            postBaselineSeconds: 300,
+          }}
+          queuedScenarioRows={[]}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript={null}
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+
+    const xAxis = container.querySelector('[data-testid="mock-x-axis"]')
+    expect(xAxis?.getAttribute('data-type')).toBe('number')
+    expect(xAxis?.getAttribute('data-domain')).toBe('0,dataMax')
+
+    const bands = Array.from(container.querySelectorAll('[data-testid="mock-reference-area"]'))
+      .map(band => [band.getAttribute('data-x1'), band.getAttribute('data-x2')])
+    expect(bands).toEqual([['300', '900'], ['0', '300'], ['960', '1260']])
+    const sampledSeconds = new Set(points.map(point => point.second))
+    expect([300, 900, 960].some(boundary => sampledSeconds.has(boundary))).toBe(false)
   })
 })

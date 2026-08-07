@@ -72,6 +72,15 @@ function hasOpenAPISourceMarkers(content: string): boolean {
   }
 }
 
+// Chrome DevTools Recorder exports are a `steps` array whose entries carry a
+// recorder step `type` and ranked `selectors` candidates. Matched with regexes
+// so a recording larger than the 128 KiB sniff window still classifies.
+function hasRecorderSourceMarkers(content: string): boolean {
+  if (!/"steps"\s*:\s*\[/.test(content)) return false
+  if (/"selectors"\s*:\s*\[/.test(content)) return true
+  return /"type"\s*:\s*"(?:setViewport|emulateNetworkConditions|navigate|click|doubleClick|hover|change|keyDown|keyUp|waitForElement|waitForExpression|scroll|close|customStep)"/.test(content)
+}
+
 function scriptImportTargetFromContent(content: string): NativeImportTarget | null {
   if (/\bload\.(?:WebRequest|initialize|action|sleep|Transaction)\b/.test(content)) {
     return { launcher: 'devweb' }
@@ -101,6 +110,7 @@ export async function nativeImportTargetForFile(file: File): Promise<NativeImpor
   if (!inspectContent) return namedTarget
   const content = await file.slice(0, 128 * 1024).text()
   if (hasBrunoSourceMarkers(content)) return { launcher: 'bruno', mode: 'native_requests' }
+  if (hasRecorderSourceMarkers(content)) return { launcher: 'recorder_export' }
   if (hasOpenAPISourceMarkers(content)) return { launcher: 'openapi' }
   return name.endsWith('.yaml') || name.endsWith('.yml') ? { launcher: 'yaml_chooser' } : namedTarget
 }

@@ -83,7 +83,7 @@ Expected production values include `metadata_store=postgres`, a reachable archiv
 
 1. Configure all controllers with the same PostgreSQL URL, shared object archive backend, Redis/Valkey URL, production auth mode, and `APEXLOAD_CONTROLLER_HA=true`. Do not add replicas until PostgreSQL, shared archives, Redis/Valkey coordination, and the execution lease are healthy.
 2. Start one controller and verify readiness.
-3. Start additional controller replicas with `APEXLOAD_CONTROLLER_HA=true` and identical shared-service settings.
+3. Start additional controller replicas with `APEXLOAD_CONTROLLER_HA=true` and identical shared-service settings. See [HA Controller Behavior](ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md#ha-controller-behavior) for the execution-leader lease contract.
 4. Verify scripts, scenarios, schedules, recent runs, reports, archive downloads, service accounts, and audit queries.
 5. Keep the SQLite backup until at least one full reporting and retention cycle completes.
 

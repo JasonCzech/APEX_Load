@@ -320,6 +320,7 @@ WAILS_CONFIG_PUBLISH=""
 # build so stale or partially installed dependencies can never reach Vite.
 (
   cd "${ROOT_DIR}/dashboard"
+  npm run check:node
   npm ci --ignore-scripts
 )
 

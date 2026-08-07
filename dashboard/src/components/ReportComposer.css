@@ -354,6 +354,13 @@
   margin-bottom: 8px;
 }
 
+/* Explains a chart's colour encoding so the highlight is never colour-alone. */
+.report-chart-note {
+  font: 400 11px/1.4 "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--muted);
+  margin: -4px 0 8px;
+}
+
 .report-empty {
   color: var(--muted);
   font-size: 13px;

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -499,19 +500,40 @@ func convertDatabaseFunction(fn ParsedFunction) (dsl.Action, bool) {
 }
 
 func extractSQLText(fn ParsedFunction) string {
-	candidates := make([]string, 0, len(fn.RawArgs)+len(fn.Args)+1)
-	candidates = append(candidates, fn.Body)
-	for _, raw := range fn.RawArgs {
-		candidates = append(candidates, raw)
+	// ParsedFunction.Args is a map, so ranging it directly would let Go's
+	// randomized map order pick the winning statement whenever a function
+	// carries more than one SQL-bearing argument. Order the keys first (the
+	// same case-insensitive order extractDatabaseBinds uses) so the imported
+	// SQL is a pure function of the parsed source.
+	argKeys := make([]string, 0, len(fn.Args))
+	for key := range fn.Args {
+		argKeys = append(argKeys, key)
 	}
-	for key, value := range fn.Args {
+	sort.SliceStable(argKeys, func(i, j int) bool {
+		leftKey := strings.ToLower(argKeys[i])
+		rightKey := strings.ToLower(argKeys[j])
+		if leftKey != rightKey {
+			return leftKey < rightKey
+		}
+		return argKeys[i] < argKeys[j]
+	})
+	namedSQLArgs := make([]string, 0, len(argKeys))
+	otherArgs := make([]string, 0, len(argKeys))
+	for _, key := range argKeys {
 		lowerKey := strings.ToLower(key)
 		if strings.Contains(lowerKey, "sql") || strings.Contains(lowerKey, "query") || strings.Contains(lowerKey, "statement") {
-			candidates = append([]string{value}, candidates...)
-		} else {
-			candidates = append(candidates, value)
+			namedSQLArgs = append(namedSQLArgs, fn.Args[key])
+			continue
 		}
+		otherArgs = append(otherArgs, fn.Args[key])
 	}
+	// Precedence is unchanged: explicitly SQL-named args beat the body, which
+	// beats positional raw args, which beat unnamed args.
+	candidates := make([]string, 0, len(fn.RawArgs)+len(fn.Args)+1)
+	candidates = append(candidates, namedSQLArgs...)
+	candidates = append(candidates, fn.Body)
+	candidates = append(candidates, fn.RawArgs...)
+	candidates = append(candidates, otherArgs...)
 	for _, candidate := range candidates {
 		candidate = normalizeSQLCandidate(candidate)
 		if candidate == "" {
@@ -547,11 +569,40 @@ func extractDatabaseBinds(fn ParsedFunction, sql string) []any {
 	if ordered := orderedExplicitBinds(fn); len(ordered) > 0 {
 		return ordered
 	}
-	binds := make([]any, 0)
+	type namedBind struct {
+		key   string
+		value string
+	}
+	namedBinds := make([]namedBind, 0)
 	for key, value := range fn.Args {
 		if strings.HasPrefix(strings.ToLower(key), "param") || strings.Contains(strings.ToLower(key), "bind") {
-			binds = append(binds, value)
+			namedBinds = append(namedBinds, namedBind{key: key, value: value})
 		}
+	}
+	// ParsedFunction.Args is a map, so its iteration order cannot represent
+	// positional database binds. Prefer the numeric suffix convention used by
+	// legacy converters (param1, param2, …), then fall back to a stable
+	// case-insensitive key order for named binds that have no position.
+	sort.SliceStable(namedBinds, func(i, j int) bool {
+		leftPosition, leftHasPosition := databaseBindPosition(namedBinds[i].key)
+		rightPosition, rightHasPosition := databaseBindPosition(namedBinds[j].key)
+		switch {
+		case leftHasPosition && rightHasPosition && leftPosition != rightPosition:
+			return leftPosition < rightPosition
+		case leftHasPosition != rightHasPosition:
+			return leftHasPosition
+		default:
+			leftKey := strings.ToLower(namedBinds[i].key)
+			rightKey := strings.ToLower(namedBinds[j].key)
+			if leftKey != rightKey {
+				return leftKey < rightKey
+			}
+			return namedBinds[i].key < namedBinds[j].key
+		}
+	})
+	binds := make([]any, 0, len(namedBinds)+len(fn.RawArgs))
+	for _, bind := range namedBinds {
+		binds = append(binds, bind.value)
 	}
 	for _, raw := range fn.RawArgs {
 		if raw == sql || strings.Contains(raw, "SQL=") || strings.Contains(strings.ToLower(raw), "select ") {
@@ -562,6 +613,26 @@ func extractDatabaseBinds(fn ParsedFunction, sql string) []any {
 		}
 	}
 	return binds
+}
+
+func databaseBindPosition(key string) (int, bool) {
+	key = strings.TrimSpace(key)
+	end := len(key)
+	start := end
+	for start > 0 && key[start-1] >= '0' && key[start-1] <= '9' {
+		start--
+	}
+	if start == end {
+		return 0, false
+	}
+	if start > 0 && key[start-1] == '-' {
+		return 0, false
+	}
+	position, err := strconv.Atoi(key[start:])
+	if err != nil || position < 0 {
+		return 0, false
+	}
+	return position, true
 }
 
 // orderedExplicitBinds returns the positional binds encoded into RawArgs with the

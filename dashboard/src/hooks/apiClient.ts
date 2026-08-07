@@ -32,7 +32,7 @@ type ApiErrorPayload = {
   [key: string]: unknown;
 };
 
-type ApiRequestOptions = RequestInit & {
+export type ApiRequestOptions = RequestInit & {
   timeoutMs?: number;
 };
 

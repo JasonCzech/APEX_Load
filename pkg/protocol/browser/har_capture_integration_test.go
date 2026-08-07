@@ -58,7 +58,7 @@ func runHARCaptureSessionWithManualRequest(t *testing.T, policy string, harDir s
 		"browser_har_capture": policy,
 		"browser_har_dir":     harDir,
 	}); err != nil {
-		t.Skipf("browser runtime unavailable: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 
 	result, err := b.Execute(context.Background(), &protocol.Action{

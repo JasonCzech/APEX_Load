@@ -43,11 +43,7 @@ func TestBrowserProtocolExecutesSelectAction(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -94,11 +90,7 @@ func TestBrowserProtocolExecutesScrollAction(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -158,11 +150,7 @@ func TestBrowserProtocolExecutesHistoryNavigationActions(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -222,11 +210,7 @@ func TestBrowserProtocolBackForwardAllowsSameURLHistory(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -267,11 +251,7 @@ func TestBrowserProtocolWaitsForNetworkResponse(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -335,11 +315,7 @@ func TestBrowserProtocolExecutesDownloadAction(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -404,11 +380,7 @@ func TestBrowserProtocolUsesHTTPCredentials(t *testing.T) {
 		"browser_http_credentials_origin":   server.URL,
 		"browser_http_credentials_send":     "unauthorized",
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -445,11 +417,7 @@ func TestBrowserProtocolAppliesLocaleTimezoneAndGeolocation(t *testing.T) {
 		"browser_geolocation_longitude": 2.3522,
 		"browser_geolocation_accuracy":  20.0,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -531,11 +499,7 @@ func TestBrowserWaitHonorsShortSelectorTimeout(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 

@@ -74,6 +74,21 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 		writeScriptImportResponse(w, http.StatusBadRequest, response)
 		return
 	}
+	// Build the response BEFORE handing the script to the replay manager.
+	//
+	// buildRecorderImportResponse mutates the script — markCredentialPreserving
+	// ImportScript writes into script.Metadata.Import.Preserved — while Start
+	// hands that same *dsl.Script to a goroutine that immediately serializes it
+	// (ReplayScript → snapshotReferencedSecretsContext → ReferencedSecretNames).
+	// Doing it the other way round was a concurrent map write against a map
+	// read, which in Go is not merely a race: it is a fatal runtime throw that
+	// takes the whole controller down mid-import.
+	//
+	// Ordering it this way is also the more correct behaviour — the replay now
+	// runs against exactly the script the response describes, credential policy
+	// included, rather than a pre-mutation version of it.
+	response := s.buildRecorderImportResponse(r, result, preflight)
+
 	ignoreThink := true
 	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())
 	replay, replayErr := s.browserReplay.Start(result.Script.ID, result.Script, BrowserReplayStartRequest{
@@ -88,7 +103,6 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 		writeBrowserReplayStartError(w, replayErr)
 		return
 	}
-	response := s.buildRecorderImportResponse(r, result, preflight)
 	response["replay_session_id"] = replay.ID
 	response["replay_session"] = replay
 	writeScriptImportResponse(w, http.StatusCreated, response)

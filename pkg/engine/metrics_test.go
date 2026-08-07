@@ -156,6 +156,21 @@ func TestMetricsCollector_AggregateProducesIdleSnapshot(t *testing.T) {
 	}
 }
 
+func TestMetricsCollector_IdleSnapshotToggleIsConcurrentSafe(t *testing.T) {
+	mc := NewMetricsCollector(100)
+	mc.Start(time.Millisecond)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 1_000; i++ {
+			mc.EnableIdleSnapshots(i%2 == 0)
+		}
+	}()
+	<-done
+	mc.Stop()
+}
+
 // TestMetricsCollector_EmptyWindowSnapshotEmission pins down when an empty
 // aggregation window (no completed transactions) still produces a zero-valued,
 // timestamped snapshot. The key case is "active VUsers but nothing completing"

@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
 import { EditorView } from '@codemirror/view'
@@ -66,6 +66,37 @@ function MetadataJsonViewer({ metadata }: { metadata: ScriptImportMetadata }) {
         />
       </div>
     </section>
+  )
+}
+
+export function DraftJSONReview({
+  reviewBaselineScript,
+  script,
+  jsonTextLength,
+}: {
+  reviewBaselineScript: ScriptDefinition | null
+  script: ScriptDefinition
+  jsonTextLength: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const previews = useMemo(() => {
+    if (!expanded || jsonTextLength > IMPORT_JSON_PREVIEW_MAX_CHARS) return null
+    return {
+      baseline: JSON.stringify(reviewBaselineScript, null, 2),
+      current: JSON.stringify(script, null, 2),
+    }
+  }, [expanded, jsonTextLength, reviewBaselineScript, script])
+
+  return (
+    <details className="utility-json-review" onToggle={event => setExpanded(event.currentTarget.open)}>
+      <summary>Review baseline vs current JSON</summary>
+      {expanded && (
+        <div className="utility-json-grid">
+          <div><strong>Review Baseline</strong>{previews ? <pre>{previews.baseline}</pre> : <div className="utility-empty-state">Script too large to preview inline.</div>}</div>
+          <div><strong>Current Draft</strong>{previews ? <pre>{previews.current}</pre> : <div className="utility-empty-state">Script too large to preview inline.</div>}</div>
+        </div>
+      )}
+    </details>
   )
 }
 
@@ -622,13 +653,7 @@ export function ImportReviewCommitPanel({
             <span className="metric-badge">{draftDiffSummary.dataSourceChanges} data</span>
           </div>
           {draftDiffSummary.details.length > 0 ? <ul className="utility-list">{draftDiffSummary.details.map((detail, index) => <li key={`imported-diff-${index}`} className="utility-list-item">{detail}</li>)}</ul> : <div className="utility-empty-state">Current draft still matches the review baseline.</div>}
-          <details className="utility-json-review">
-            <summary>Review baseline vs current JSON</summary>
-            <div className="utility-json-grid">
-              <div><strong>Review Baseline</strong>{jsonTextLength > IMPORT_JSON_PREVIEW_MAX_CHARS ? <div className="utility-empty-state">Script too large to preview inline.</div> : <pre>{JSON.stringify(reviewBaselineScript, null, 2)}</pre>}</div>
-              <div><strong>Current Draft</strong>{jsonTextLength > IMPORT_JSON_PREVIEW_MAX_CHARS ? <div className="utility-empty-state">Script too large to preview inline.</div> : <pre>{JSON.stringify(script, null, 2)}</pre>}</div>
-            </div>
-          </details>
+          <DraftJSONReview reviewBaselineScript={reviewBaselineScript} script={script} jsonTextLength={jsonTextLength} />
         </div>
       )}
 

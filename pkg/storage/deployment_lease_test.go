@@ -75,6 +75,49 @@ func TestDeploymentLeaseOwnershipTTLAndTokenConfidentiality(t *testing.T) {
 	}
 }
 
+func TestGetDeploymentLeaseIsReadOnly(t *testing.T) {
+	store, _ := newDeploymentLeaseTestStores(t)
+	const name = "read-only-deployment-lease"
+
+	lease, err := store.GetDeploymentLease(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease == nil || lease.Name != name || lease.Active {
+		t.Fatalf("missing lease read = %#v", lease)
+	}
+	var rows int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM deployment_leases WHERE name=?`, name).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("GetDeploymentLease created %d durable guard row(s)", rows)
+	}
+
+	acquired, _, err := store.AcquireDeploymentLease(name, "owner-read", "hash-read", time.Minute, DeploymentLeaseContext{RunID: "42"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updatedBefore time.Time
+	if err := store.db.QueryRow(`SELECT updated_at FROM deployment_leases WHERE name=?`, name).Scan(&updatedBefore); err != nil {
+		t.Fatal(err)
+	}
+	lease, err = store.GetDeploymentLease(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !lease.Active || lease.OwnerID != acquired.OwnerID || lease.Context.RunID != "42" {
+		t.Fatalf("active lease read = %#v", lease)
+	}
+	var updatedAfter time.Time
+	if err := store.db.QueryRow(`SELECT updated_at FROM deployment_leases WHERE name=?`, name).Scan(&updatedAfter); err != nil {
+		t.Fatal(err)
+	}
+	if !updatedAfter.Equal(updatedBefore) {
+		t.Fatalf("GetDeploymentLease changed updated_at from %s to %s", updatedBefore, updatedAfter)
+	}
+}
+
 func TestDeploymentLeaseReleaseIsIdempotentForTheSameOwnershipProof(t *testing.T) {
 	store, _ := newDeploymentLeaseTestStores(t)
 	const (

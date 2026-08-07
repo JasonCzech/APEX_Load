@@ -82,9 +82,11 @@ func (k kubernetesFleetScaler) Describe() ProvisionerInfo {
 	}
 }
 
-// workloadForPool resolves the StatefulSet to scale: a pool tag
-// "kubernetes.statefulset" overrides the controller's default generator workload.
-func (k kubernetesFleetScaler) workloadForPool(pool *storage.FleetPool) string {
+// generatorWorkloadForPool resolves the StatefulSet a pool operates on: a pool
+// tag "kubernetes.statefulset" overrides the caller's default generator
+// workload. Scaling and allocation must agree on this, or a pool would scale
+// one StatefulSet while its pod resources were patched onto another.
+func generatorWorkloadForPool(pool *storage.FleetPool, defaultWorkload string) string {
 	if pool != nil {
 		if name := strings.TrimSpace(pool.Tags["kubernetes.statefulset"]); name != "" {
 			// Only honor a tag that names a generator StatefulSet: it must equal the
@@ -92,14 +94,19 @@ func (k kubernetesFleetScaler) workloadForPool(pool *storage.FleetPool) string {
 			// "apexload-generator-eu"). This stops a mistyped or malicious pool tag
 			// from scaling an unrelated co-tenant StatefulSet in the controller's
 			// namespace; anything else falls back to the default workload.
-			if k.defaultWorkload != "" && (name == k.defaultWorkload || strings.HasPrefix(name, k.defaultWorkload+"-")) {
+			if defaultWorkload != "" && (name == defaultWorkload || strings.HasPrefix(name, defaultWorkload+"-")) {
 				return name
 			}
 			slog.Warn("ignoring fleet pool kubernetes.statefulset tag that is not a generator workload",
-				"tag", name, "default_workload", k.defaultWorkload)
+				"tag", name, "default_workload", defaultWorkload)
 		}
 	}
-	return k.defaultWorkload
+	return defaultWorkload
+}
+
+// workloadForPool resolves the StatefulSet to scale for this scaler's cluster.
+func (k kubernetesFleetScaler) workloadForPool(pool *storage.FleetPool) string {
+	return generatorWorkloadForPool(pool, k.defaultWorkload)
 }
 
 func (k kubernetesFleetScaler) ScalePool(ctx context.Context, pool *storage.FleetPool, desiredCount int) (string, int, error) {

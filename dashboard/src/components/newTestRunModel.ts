@@ -176,11 +176,6 @@ function formatRuntimeBooleanValue(value?: boolean | null) {
   return value ? 'Enabled' : 'Disabled'
 }
 
-function formatRuntimeContinueOnError(scenario?: StoredScenario | null) {
-  const value = scenario?.runtime_settings?.error_handling?.continue_on_error
-  return formatRuntimeBooleanValue(value)
-}
-
 function formatEnabledValue(value?: boolean) {
   return value ? 'Enabled' : 'Disabled'
 }
@@ -195,10 +190,93 @@ function formatRuntimeText(value: string | undefined | null, fallback: string) {
   return formatted.charAt(0).toUpperCase() + formatted.slice(1)
 }
 
-function formatRuntimeErrorHandlingTableValue(continueOnError?: boolean, snapshotOnError?: boolean) {
+// error_handling is applied as a whole section, twice over:
+//   * mergeRuntimeSettings (pkg/api/runtime_overrides.go) swaps the root section for
+//     the group's outright whenever the group carries one — it never merges fields;
+//   * applyRuntimeOverrides then assigns script.Config.ErrorHandling = *overrides.ErrorHandling,
+//     and dsl.ErrorHandlingConfig stores plain bools, so every key the winning section
+//     omits executes as false rather than as the script's own value.
+// Two consequences this file has to honour everywhere it reports error handling:
+//   1. ANY section in the chain — even a retry-only one that names neither boolean —
+//      pins BOTH halves, driving the unnamed half to false. 'Script default' is
+//      therefore keyed off section presence (sectionPinned), not off the two booleans:
+//      only when nothing in the override -> group -> scenario/run-default chain supplies
+//      a section does the run inherit the script's own config.error_handling, which this
+//      page never loads.
+//   2. The chain is resolved SECTION-wise, not field-wise. The first non-empty section
+//      wins entirely; lower levels contribute nothing, not even a half the winner omits.
+function formatRuntimeErrorHandlingTableValue(continueOnError?: boolean, snapshotOnError?: boolean, sectionPinned = false) {
+  if (!sectionPinned && continueOnError === undefined && snapshotOnError === undefined) return 'Script default'
   const continueLabel = continueOnError ? 'Continue' : 'Stop'
   const snapshotLabel = snapshotOnError ? 'Snapshot' : 'No snapshot'
   return `${continueLabel} / ${snapshotLabel}`
+}
+
+/** True when an error_handling section carries any value, retry fields included. */
+export function errorHandlingSectionIsPinned(errorHandling?: RuntimeSettingsOverride['error_handling']) {
+  if (!errorHandling) return false
+  return Object.values(errorHandling).some(value => value !== undefined && value !== null && value !== '')
+}
+
+type ResolvedErrorHandling = {
+  continue_on_error: boolean | undefined
+  snapshot_on_error: boolean | undefined
+  error_handling_pinned: boolean
+}
+
+/**
+ * Read the two booleans out of ONE error_handling section the way the run will execute
+ * them: a section that omits a boolean executes it as false, so the resolved value is
+ * never undefined once a section exists. Only the absence of a section leaves both
+ * undefined, which is the single case that really does inherit the script's own config.
+ */
+function resolveErrorHandlingSectionValues(section?: RuntimeSettingsOverride['error_handling']): ResolvedErrorHandling {
+  if (!errorHandlingSectionIsPinned(section)) {
+    return { continue_on_error: undefined, snapshot_on_error: undefined, error_handling_pinned: false }
+  }
+  return {
+    continue_on_error: Boolean(section?.continue_on_error),
+    snapshot_on_error: Boolean(section?.snapshot_on_error),
+    error_handling_pinned: true,
+  }
+}
+
+// Mirrors buildRuntimeSettingsForRun: the flat continue_on_error/snapshot_on_error
+// run-default overrides are folded into the scenario's error_handling section, so
+// clearing one of them does not by itself remove a section the scenario supplies.
+function runDefaultErrorHandlingSection(runtimeOverrides: RunRuntimeOverrideDraft, scenarioRuntime?: RuntimeSettingsOverride) {
+  const merged = { ...(scenarioRuntime?.error_handling || {}) }
+  if (hasOwnKey(runtimeOverrides, 'continue_on_error')) {
+    if (runtimeOverrides.continue_on_error == null) delete merged.continue_on_error
+    else merged.continue_on_error = runtimeOverrides.continue_on_error
+  }
+  if (hasOwnKey(runtimeOverrides, 'snapshot_on_error')) {
+    if (runtimeOverrides.snapshot_on_error == null) delete merged.snapshot_on_error
+    else merged.snapshot_on_error = runtimeOverrides.snapshot_on_error
+  }
+  return merged
+}
+
+/**
+ * Section-wise resolution of the group chain, matching mergeRuntimeSettings: the first
+ * non-empty section in run-override -> stored-group -> run-default/scenario order is the
+ * one the backend transmits, and it is applied whole. Resolving the two booleans
+ * independently across levels would report a half the run discards.
+ */
+function resolveGroupErrorHandling(
+  overrideRuntime: RuntimeSettingsOverride | undefined,
+  groupRuntime: RuntimeSettingsOverride | undefined,
+  runDefaults: ResolvedErrorHandling,
+): ResolvedErrorHandling {
+  const section = [overrideRuntime?.error_handling, groupRuntime?.error_handling].find(errorHandlingSectionIsPinned)
+  if (!section) {
+    return {
+      continue_on_error: runDefaults.continue_on_error,
+      snapshot_on_error: runDefaults.snapshot_on_error,
+      error_handling_pinned: runDefaults.error_handling_pinned,
+    }
+  }
+  return resolveErrorHandlingSectionValues(section)
 }
 
 function formatRuntimeBrowserTableValue(browser?: RuntimeSettingsOverride['browser']) {
@@ -331,8 +409,7 @@ export function getEffectiveRuntimeDefaults(scenario: StoredScenario, overrides:
     browser: runtimeBrowser(scenarioRuntime),
     log_level: hasOwnKey(runtimeOverrides, 'log_level') ? runtimeOverrides.log_level || undefined : runtimeLogLevel(scenarioRuntime),
     auto_transactions: hasOwnKey(runtimeOverrides, 'auto_transactions') ? runtimeOverrides.auto_transactions || undefined : runtimeAutoTransactions(scenarioRuntime),
-    continue_on_error: hasOwnKey(runtimeOverrides, 'continue_on_error') ? runtimeOverrides.continue_on_error ?? undefined : scenarioRuntime?.error_handling?.continue_on_error,
-    snapshot_on_error: hasOwnKey(runtimeOverrides, 'snapshot_on_error') ? runtimeOverrides.snapshot_on_error ?? undefined : scenarioRuntime?.error_handling?.snapshot_on_error,
+    ...resolveErrorHandlingSectionValues(runDefaultErrorHandlingSection(runtimeOverrides, scenarioRuntime)),
   }
 }
 
@@ -379,8 +456,7 @@ export function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenar
     browser: runtimeBrowser(overrideRuntime) ?? runtimeBrowser(groupRuntime) ?? runDefaults.browser,
     log_level: runtimeLogLevel(overrideRuntime) ?? runtimeLogLevel(groupRuntime) ?? runDefaults.log_level,
     auto_transactions: runtimeAutoTransactions(overrideRuntime) ?? runtimeAutoTransactions(groupRuntime) ?? runDefaults.auto_transactions,
-    continue_on_error: overrideRuntime?.error_handling?.continue_on_error ?? groupRuntime?.error_handling?.continue_on_error ?? runDefaults.continue_on_error,
-    snapshot_on_error: overrideRuntime?.error_handling?.snapshot_on_error ?? groupRuntime?.error_handling?.snapshot_on_error ?? runDefaults.snapshot_on_error,
+    ...resolveGroupErrorHandling(overrideRuntime, groupRuntime, runDefaults),
   }
 }
 
@@ -549,6 +625,10 @@ function stagedRunGroupValue(group: ScenarioScriptGroup, elapsedSeconds: number)
 export function buildRunDefaultCards(scenario: StoredScenario | undefined, overrides: RunDefaultOverrides): RunDefaultCard[] {
   if (!scenario) return []
   const effectiveRuntime = getEffectiveRuntimeDefaults(scenario, overrides)
+  // Same whole-section rule as the group table: a scenario section that names neither
+  // boolean still executes both as false, so the scenario column must not claim the
+  // script's own setting is inherited.
+  const scenarioErrorHandling = resolveErrorHandlingSectionValues(scenario.runtime_settings?.error_handling)
   const duration = getEffectiveRunDuration(scenario, overrides)
   const scriptShakeout = hasOwnKey(overrides, 'script_shakeout') ? overrides.script_shakeout : scenario.script_shakeout
   const resourceBaseline = hasOwnKey(overrides, 'resource_baseline') ? overrides.resource_baseline : scenario.resource_baseline
@@ -605,7 +685,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'continue_on_error',
       label: 'Continue On Error',
       value: formatRuntimeBooleanValue(effectiveRuntime.continue_on_error),
-      scenarioValue: formatRuntimeContinueOnError(scenario),
+      scenarioValue: formatRuntimeBooleanValue(scenarioErrorHandling.continue_on_error),
       isDefault: effectiveRuntime.continue_on_error === undefined,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'continue_on_error'),
     },
@@ -613,7 +693,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'snapshot_on_error',
       label: 'Snapshot On Error',
       value: formatRuntimeBooleanValue(effectiveRuntime.snapshot_on_error),
-      scenarioValue: formatRuntimeBooleanValue(scenario.runtime_settings?.error_handling?.snapshot_on_error),
+      scenarioValue: formatRuntimeBooleanValue(scenarioErrorHandling.snapshot_on_error),
       isDefault: effectiveRuntime.snapshot_on_error === undefined,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'snapshot_on_error'),
     },
@@ -793,7 +873,7 @@ export function buildGroupRuntimeTableValues(group: ScenarioScriptGroup, scenari
     thinkTime: formatRuntimeThinkTimeTableValue(runtime.think_time),
     logLevel: formatRuntimeText(runtime.log_level, 'Standard'),
     autoTransactions: formatRuntimeText(runtime.auto_transactions, 'None'),
-    errorHandling: formatRuntimeErrorHandlingTableValue(runtime.continue_on_error, runtime.snapshot_on_error),
+    errorHandling: formatRuntimeErrorHandlingTableValue(runtime.continue_on_error, runtime.snapshot_on_error, runtime.error_handling_pinned),
     browser: formatRuntimeBrowserTableValue(runtime.browser),
   }
 }
@@ -863,6 +943,9 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
     thinkTimeConfig: runtime.think_time
       ? { ...runtime.think_time, type: canonicalThinkTimeType(runtime.think_time.type) }
       : undefined,
+    // A pinned section resolves to a real boolean (an omitted half executes false), so the
+    // dialog pre-fills Enabled/Disabled; '' ('Script default') is reserved for the only
+    // case that really inherits the script's own config.error_handling.
     continue_on_error: runtime.continue_on_error === undefined ? '' : String(runtime.continue_on_error),
     snapshot_on_error: runtime.snapshot_on_error === undefined ? '' : String(runtime.snapshot_on_error),
     browser_device_profile: runtime.browser?.device_profile || '',

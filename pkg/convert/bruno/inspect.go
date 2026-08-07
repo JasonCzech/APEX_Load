@@ -12,9 +12,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -1284,7 +1286,6 @@ func (registry *secretSuggestionRegistry) reserve(name string) {
 }
 
 func (registry *secretSuggestionRegistry) claim(base string) string {
-	const maxLogicalSecretNameBytes = 249
 	if registry == nil {
 		return base
 	}
@@ -1296,7 +1297,7 @@ func (registry *secretSuggestionRegistry) claim(base string) string {
 		candidate := base
 		if count > 1 {
 			suffix := "_" + strconv.Itoa(count)
-			prefixBytes := maxLogicalSecretNameBytes - len(suffix)
+			prefixBytes := credential.MaxLogicalNameBytes - len(suffix)
 			if prefixBytes < 1 {
 				candidate = "S" + suffix
 			} else {
@@ -1344,7 +1345,6 @@ func newSecretRequirement(
 }
 
 func secretName(filename, key string) string {
-	const maxLogicalSecretNameBytes = 249
 	withoutExtension := strings.TrimSuffix(filename, path.Ext(filename))
 	segments := strings.Split(strings.Trim(withoutExtension, "/"), "/")
 	if len(segments) > 3 {
@@ -1366,12 +1366,12 @@ func secretName(filename, key string) string {
 	if name == "" {
 		name = "BRUNO_SECRET"
 	}
-	if len(name) <= maxLogicalSecretNameBytes {
+	if len(name) <= credential.MaxLogicalNameBytes {
 		return name
 	}
 	digest := sha256.Sum256([]byte(raw))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(digest[:6]))
-	prefix := strings.TrimRight(name[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	prefix := strings.TrimRight(name[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	return prefix + suffix
 }
 
@@ -1943,6 +1943,25 @@ func collectionNameFromRoot(root string, files []sourceFile) string {
 	return "Imported Bruno Collection"
 }
 
+// brunoRequestContentCache memoizes the structured branch of
+// isBrunoRequestContent. classifyFileRole consults it from more than a dozen
+// call sites per import (every sanitize pass, both manifest builds, and the
+// native validation passes), so an uncached parse turns a large collection into
+// tens of redundant yaml.Unmarshal calls per request file. The answer is a pure
+// function of the file bytes once the extension has selected the structured
+// branch, so a content-hash memo is exact.
+var brunoRequestContentCache = struct {
+	mu      sync.Mutex
+	entries map[[sha256.Size]byte]bool
+	// misses counts the parses actually performed. It exists only for importer
+	// performance regression tests and is never read in production.
+	misses int
+}{entries: make(map[[sha256.Size]byte]bool)}
+
+// maxBrunoRequestContentCacheEntries bounds the memo so a long-lived controller
+// cannot accumulate an entry for every file it has ever inspected.
+const maxBrunoRequestContentCacheEntries = 8192
+
 func isBrunoRequestContent(data []byte, extension string) bool {
 	extension = strings.ToLower(extension)
 	if extension == ".bru" {
@@ -1951,6 +1970,27 @@ func isBrunoRequestContent(data []byte, extension string) bool {
 	if extension != ".yml" && extension != ".yaml" && extension != ".json" {
 		return false
 	}
+	// .yml, .yaml and .json share one parse, so the content alone identifies the
+	// answer and the extension does not belong in the key.
+	key := sha256.Sum256(data)
+	brunoRequestContentCache.mu.Lock()
+	cached, hit := brunoRequestContentCache.entries[key]
+	brunoRequestContentCache.mu.Unlock()
+	if hit {
+		return cached
+	}
+	result := parseBrunoRequestContent(data)
+	brunoRequestContentCache.mu.Lock()
+	if len(brunoRequestContentCache.entries) >= maxBrunoRequestContentCacheEntries {
+		brunoRequestContentCache.entries = make(map[[sha256.Size]byte]bool, maxBrunoRequestContentCacheEntries)
+	}
+	brunoRequestContentCache.entries[key] = result
+	brunoRequestContentCache.misses++
+	brunoRequestContentCache.mu.Unlock()
+	return result
+}
+
+func parseBrunoRequestContent(data []byte) bool {
 	var value map[string]any
 	if yaml.Unmarshal(data, &value) != nil {
 		return false

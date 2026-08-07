@@ -16,8 +16,9 @@ APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
 APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 
-# Start generator
-go run ./cmd/generator
+# Start one generator per configured target address (each needs a distinct bind address)
+APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:9090 go run ./cmd/generator
+APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:9091 go run ./cmd/generator
 
 # Run test locally (no controller needed)
 go run ./cmd/apexctl run --script test.json --vusers 50 --duration 2m
@@ -127,7 +128,7 @@ The full route list is generated from the controller route catalog.
 ```
 
 **Supported protocol surfaces:** `http`, `soap`, `java_http`, `java_vuser`, `bruno`, `browser`,
-`websocket`, `grpc`, `jms`, `kafka`, `eventhubs`, `database`, and `network` families. Real broker adapters are opt-in
+`websocket`, `grpc`, `jms-solace`, `jms-ibmmq`, `jms-servicebus`, `kafka`, `eventhubs`, `database`, and `network` families. Real broker adapters are opt-in
 behind build tags; see [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 
 ## Browser And Mobile DSL
@@ -358,6 +359,11 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 | `APEXLOAD_ADDR` | `:8080` | HTTP server bind address |
 | `APEXLOAD_DB` | `apexload.db` | SQLite database path |
 | `APEXLOAD_LOG_LEVEL` | `info` | Controller/generator logging level (`debug`, `info`, `warn`, `error`); `LOG_LEVEL` is a legacy alias |
+| `APEXLOAD_GENERATORS` | unset | Comma-separated generator gRPC targets; when set, the controller uses the distributed backend |
+| `APEXLOAD_GENERATOR_TIMEOUT` | `10s` | Timeout for controller-to-generator RPCs |
+| `APEXLOAD_GENERATOR_LISTEN_ADDR` | `:9090` | Generator gRPC bind address (`APEXLOAD_GENERATOR_ADDR` is a fallback alias); each generator process on the same host needs a distinct address |
+| `APEXLOAD_GENERATOR_MAX_VUSERS` | `10000` | Maximum VUsers a single generator process accepts |
+| `APEXLOAD_GENERATOR_HEARTBEAT_INTERVAL` | `5s` | Generator heartbeat interval |
 
 ---
 

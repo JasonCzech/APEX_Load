@@ -652,9 +652,10 @@ func TestConvertInfersSourceFormTargetsAndIgnoresCommentedCode(t *testing.T) {
 	if form.Target != "/mi/login.jsp" {
 		t.Fatalf("form target = %q, want inferred /mi/login.jsp", form.Target)
 	}
-	if strings.Contains(form.Body, "disabled") {
-		t.Fatalf("form body included commented ITEMDATA: %s", form.Body)
-	}
+	// Structural, not a substring probe: assert the exact surviving field list.
+	// `!strings.Contains(body, "disabled")` also passes when the live "user" field
+	// was dropped, reordered, or duplicated.
+	assertFormBodyFields(t, form.Body, []formField{{"user", "{{var.username}}"}})
 	if form.Metadata["inferred_url_from"] != "source_form_context" {
 		t.Fatalf("metadata = %#v, want inferred URL marker", form.Metadata)
 	}
@@ -2093,8 +2094,15 @@ vuser_init()
 		t.Fatalf("c_cshc on_miss = %q, want fail", cshc.OnMiss)
 	}
 	recsession := result.Script.Init[1]
-	if !strings.Contains(recsession.Body, "{{var.c_cshc}}") {
-		t.Fatalf("recsession body = %q, want c_cshc variable use", recsession.Body)
+	// The single ITEMDATA row must stay a single field. A substring probe for
+	// "{{var.c_cshc}}" passes even if the value's embedded "&" separators were left
+	// unescaped and split the one "url" field into four bogus fields.
+	recsessionFields := parseFormBodyFields(recsession.Body)
+	if len(recsessionFields) != 1 || recsessionFields[0].Name != "url" {
+		t.Fatalf("recsession body = %q parsed to %s, want exactly one url field", recsession.Body, formatFormFields(recsessionFields))
+	}
+	if !strings.Contains(recsessionFields[0].Value, "{{var.c_cshc}}") || !strings.Contains(recsessionFields[0].Value, "{{var.c_sid}}") {
+		t.Fatalf("recsession url value = %q, want both correlated variables", recsessionFields[0].Value)
 	}
 	foundWarning := false
 	for _, warning := range result.Warnings {
@@ -2351,8 +2359,16 @@ vuser_end()
 	if strings.Contains(strings.ToLower(strings.Join(headerValues(address.Headers), "\n")), "application/json") {
 		t.Fatalf("RecContentType leaked into submit_data request headers: %#v", address.Headers)
 	}
-	if !strings.Contains(address.Body, "{{param.p_username}}") {
-		t.Fatalf("address body = %q, want parameterized username", address.Body)
+	// One ITEMDATA row carrying a JSON Aura message: it must remain exactly one
+	// field named "message", with the parameter reference inside it. A substring
+	// probe cannot tell that apart from a body whose JSON braces/ampersands leaked
+	// into extra fields.
+	addressFields := parseFormBodyFields(address.Body)
+	if len(addressFields) != 1 || addressFields[0].Name != "message" {
+		t.Fatalf("address body = %q parsed to %s, want exactly one message field", address.Body, formatFormFields(addressFields))
+	}
+	if !strings.Contains(addressFields[0].Value, "{{param.p_username}}") {
+		t.Fatalf("address message value = %q, want parameterized username", addressFields[0].Value)
 	}
 	checkout := sequenceChildByName(t, sequence, "Checkout_Aura")
 	if _, ok := checkout.Headers["X-SFDC-Page-Scope-Id"]; ok {

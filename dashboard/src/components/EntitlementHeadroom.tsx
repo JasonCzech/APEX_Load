@@ -4,13 +4,7 @@ import { useEntitlementsApi } from '../hooks/api/useEntitlementsApi'
 import { ApiError } from '../hooks/apiClient'
 import { EntitlementsUsageResponse } from '../types'
 import './parityPanels.css'
-
-function headroomTone(used: number, limit: number): { pct: number; cls: string } {
-  if (!limit || limit <= 0) return { pct: 0, cls: 'pp-bar-fill-success' }
-  const pct = Math.min(100, Math.round((used / limit) * 100))
-  const cls = pct >= 90 ? 'pp-bar-fill-danger' : pct >= 70 ? 'pp-bar-fill-warning' : 'pp-bar-fill-success'
-  return { pct, cls }
-}
+import { headroomTone } from './resourceHeadroomModel'
 
 // Compact, read-only "active tests vs concurrency limit" headroom strip.
 // Surfaced inline with usage data so operators see remaining concurrency at a glance.

@@ -411,6 +411,8 @@ export default function TestExecutionScenarioPreview({
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="second"
+                  type="number"
+                  domain={[0, 'dataMax']}
                   stroke="var(--text-muted)"
                   fontSize={11}
                   height={42}

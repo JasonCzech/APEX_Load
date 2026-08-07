@@ -77,6 +77,11 @@ export default function TablePaginationManager() {
   const nextIdRef = useRef(1)
   const managedTablesRef = useRef(new Map<number, ManagedTable>())
   const tableIdsRef = useRef(new WeakMap<HTMLTableElement, number>())
+  // Read-only mirror of `pageStates` so the imperative DOM pass (scanTables,
+  // which must stay referentially stable for the MutationObserver) can see the
+  // current page without subscribing to state. Never write through this ref:
+  // it is refreshed wholesale from state below, so any write here is silently
+  // discarded on the next state change. All mutations go through setPageStates.
   const pageStatesRef = useRef<Record<number, TablePageState>>({})
   const [pageStates, setPageStates] = useState<Record<number, TablePageState>>({})
   const [portals, setPortals] = useState<PortalEntry[]>([])
@@ -92,7 +97,8 @@ export default function TablePaginationManager() {
     })
     managed.container.remove()
     managedTablesRef.current.delete(id)
-    delete pageStatesRef.current[id]
+    // The matching pageStates entry is pruned by scanTables' reconciliation
+    // pass, which is the only place allowed to change that state.
   }, [])
 
   const scanTables = useCallback(() => {
@@ -123,13 +129,11 @@ export default function TablePaginationManager() {
         insertionTarget.parentElement?.insertBefore(container, insertionTarget)
         managed = { id, table, container, totalRows: getTableRows(table).length }
         managedTablesRef.current.set(id, managed)
-        pageStatesRef.current[id] = normalizePageState(pageStatesRef.current[id], managed.totalRows)
       } else {
         managed.totalRows = getTableRows(table).length
-        pageStatesRef.current[id] = normalizePageState(pageStatesRef.current[id], managed.totalRows)
       }
 
-      applyTablePageState(table, pageStatesRef.current[id] || DEFAULT_TABLE_PAGE_STATE)
+      applyTablePageState(table, normalizePageState(pageStatesRef.current[id], managed.totalRows))
     })
 
     Array.from(managedTablesRef.current.keys()).forEach(id => {
@@ -137,6 +141,33 @@ export default function TablePaginationManager() {
       if (!managed || !seenIds.has(id) || !document.body.contains(managed.table)) {
         cleanupManagedTable(id)
       }
+    })
+
+    // Reconcile the React state with what this scan observed: drop entries for
+    // tables that are no longer managed (otherwise a table that leaves and
+    // re-enters the DOM resumes a page the user never chose, and the record
+    // grows for the lifetime of the session) and clamp page indexes whose row
+    // count shrank underneath them.
+    const liveRowCounts = new Map<number, number>()
+    managedTablesRef.current.forEach(({ id, totalRows }) => liveRowCounts.set(id, totalRows))
+    setPageStates(current => {
+      let changed = false
+      const next: Record<number, TablePageState> = {}
+      Object.keys(current).forEach(key => {
+        const id = Number(key)
+        const totalRows = liveRowCounts.get(id)
+        if (totalRows === undefined) {
+          changed = true
+          return
+        }
+        const state = current[id]
+        const normalized = normalizePageState(state, totalRows)
+        if (normalized.pageIndex !== state.pageIndex || normalized.limit !== state.limit) {
+          changed = true
+        }
+        next[id] = normalized
+      })
+      return changed ? next : current
     })
 
     const nextPortals = Array.from(managedTablesRef.current.values()).map(({ id, container, totalRows }) => ({ id, container, totalRows }))
@@ -156,7 +187,7 @@ export default function TablePaginationManager() {
   }, [cleanupManagedTable])
 
   useEffect(() => {
-    pageStatesRef.current = { ...pageStates }
+    pageStatesRef.current = pageStates
     managedTablesRef.current.forEach(managed => {
       applyTablePageState(managed.table, normalizePageState(pageStates[managed.id], managed.totalRows))
     })

@@ -48,6 +48,7 @@ import {
   buildRuntimeSettingsForRun,
   cloneRuntimeSettingsForRun,
   emptyGroupEditDraft,
+  errorHandlingSectionIsPinned,
   formatGroupPlacement,
   generatorCanRunGroup,
   getEffectiveResourceBaseline,
@@ -2016,7 +2017,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       runtimeChanged = true
     }
     if (groupEditChanges.error_handling) {
-      const errorHandling = { ...(runtimeSettings.error_handling || effectiveRootRuntime.error_handling || {}) }
+      // The API applies error_handling as a whole SECTION (mergeRuntimeSettings copies the
+      // group's section over the run's, applyRuntimeOverrides then assigns it whole), so the
+      // winning section contributes every field and the levels underneath contribute nothing —
+      // not even a half the winner omits. Seed the untouched halves the same section-wise way
+      // the dialog resolved them for display (resolveGroupErrorHandling), otherwise the value
+      // saved is not the value shown: a group section that omits continue_on_error renders
+      // Disabled but would be written back as the root's Enabled.
+      const groupErrorHandling = runtimeSettings.error_handling
+      const errorHandling = errorHandlingSectionIsPinned(groupErrorHandling)
+        ? { ...groupErrorHandling }
+        : { ...(effectiveRootRuntime.error_handling || {}) }
       if (groupEditChanges.continue_on_error) {
         if (groupEditDraft.continue_on_error === '') delete errorHandling.continue_on_error
         else errorHandling.continue_on_error = groupEditDraft.continue_on_error === 'true'
@@ -3574,6 +3585,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
                       <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, continue_on_error: event.target.value }))}>
+                        <option value="">Script default</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
@@ -3581,6 +3593,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.snapshot_on_error)}>
                       <span>Snapshot on error <ChangedBadge changed={groupEditChanges.snapshot_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, snapshot_on_error: event.target.value }))}>
+                        <option value="">Script default</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>

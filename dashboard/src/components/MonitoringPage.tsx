@@ -12,7 +12,9 @@ import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from 
 import { formatThresholdAlertSummary, type ThresholdAlertEntry } from '../thresholdAlerts'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
+import ClustersCard from './ClustersCard'
 import FleetPoolsCard from './FleetPoolsCard'
+import PoolAllocationCard from './PoolAllocationCard'
 import FleetGeneratorsCard from './FleetGeneratorsCard'
 import TimeslotsPanel from './TimeslotsPanel'
 import { dialogBackdropProps } from './dialogBackdropProps'
@@ -36,10 +38,13 @@ interface Props {
 
 const EMPTY_GENERATORS: SystemInventoryResponse['generators'] = []
 const EMPTY_SERVICES: SystemServicesResponse['services'] = []
+const EMPTY_FLEET_ALERTS: FleetAlert[] = []
 
 const MONITOR_CATEGORIES = [
   { id: 'overview', label: 'Overview', cardIds: ['system-health', 'threshold-alerts', 'production-readiness'] },
-  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-pools', 'generator-metadata'] },
+  // Clusters come before pools: you connect a cluster, then place a pool on it,
+  // then allocate that pool's host resources.
+  { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit', 'fleet-clusters', 'fleet-pools', 'fleet-allocation', 'generator-metadata'] },
   { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
@@ -326,7 +331,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const [systemServices, setSystemServices] = useState<SystemServicesResponse | null>(null)
   const [apmProfiles, setApmProfiles] = useState<APMIntegrationProfilesResponse | null>(null)
   const [monitorPacks, setMonitorPacks] = useState<InfrastructureMonitorPacksResponse | null>(null)
-  const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[]>([])
+  // null means "never fetched successfully" so an unavailable fleet alert feed is
+  // never reported as "clear"; an empty array means "fetched, no alerts".
+  const [fleetAlerts, setFleetAlerts] = useState<FleetAlert[] | null>(null)
   const [fleetAlertActionError, setFleetAlertActionError] = useState<string | null>(null)
   const [fleetAlertActionBusy, setFleetAlertActionBusy] = useState<string | null>(null)
   const [fleetAuditEvents, setFleetAuditEvents] = useState<DashboardAuditEvent[]>([])
@@ -400,7 +407,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
     setScheduleHealth(null)
     setRunCalendar(null)
     setSelectedCalendarEventId(null)
-    setFleetAlerts([])
+    setFleetAlerts(null)
     setFleetAuditEvents([])
     setFleetCapacity(null)
     setProvisioner(null)
@@ -444,10 +451,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const generatorHeaderLabel = generators.length > 0
     ? `${generatorConnectedCount}/${generators.length} online`
     : 'no inventory'
-  const fleetAlertDangerCount = fleetAlerts.filter(alert => alert.severity === 'danger').length
-  const fleetAlertWarningCount = fleetAlerts.filter(alert => alert.severity === 'warning').length
-  const fleetAlertHeaderSeverity: MonitorSeverity = fleetAlertDangerCount > 0 ? 'danger' : fleetAlertWarningCount > 0 ? 'warning' : generators.length > 0 ? 'healthy' : 'unknown'
-  const fleetAlertHeaderLabel = fleetAlerts.length > 0 ? `${fleetAlerts.length} alert${fleetAlerts.length === 1 ? '' : 's'}` : generators.length > 0 ? 'clear' : 'no inventory'
+  const fleetAlertList = fleetAlerts ?? EMPTY_FLEET_ALERTS
+  // Not fetched yet, or the latest fetch failed: the feed cannot be summarised as clear.
+  const fleetAlertsUnknown = fleetAlerts === null || staleCardIds.includes('fleet-alerts')
+  const fleetAlertDangerCount = fleetAlertList.filter(alert => alert.severity === 'danger').length
+  const fleetAlertWarningCount = fleetAlertList.filter(alert => alert.severity === 'warning').length
+  const fleetAlertHeaderSeverity: MonitorSeverity = fleetAlertDangerCount > 0
+    ? 'danger'
+    : fleetAlertWarningCount > 0 ? 'warning' : fleetAlertsUnknown ? 'unknown' : generators.length > 0 ? 'healthy' : 'unknown'
+  const fleetAlertHeaderLabel = fleetAlertList.length > 0
+    ? `${fleetAlertList.length} alert${fleetAlertList.length === 1 ? '' : 's'}`
+    : fleetAlertsUnknown ? 'checking' : generators.length > 0 ? 'clear' : 'no inventory'
   const activeThresholdAlerts = thresholdAlerts.filter(alert => alert.active)
   const unacknowledgedThresholdAlerts = activeThresholdAlerts.filter(alert => !alert.acknowledged)
   const thresholdAlertHeaderSeverity: MonitorSeverity = unacknowledgedThresholdAlerts.some(alert => alert.action === 'stop_requested' || alert.metric === 'error_pct')
@@ -1322,15 +1336,17 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: (
         <div className="monitor-body">
-          {fleetAlerts.length === 0 ? (
+          {fleetAlertList.length === 0 ? (
             <p className="monitor-hint">
-              {generators.length ? 'No fleet placement alerts detected from live generator inventory.' : 'No generator inventory available for fleet alert evaluation.'}
+              {fleetAlertsUnknown
+                ? 'Fleet alert status is unavailable; the alert feed has not been retrieved.'
+                : generators.length ? 'No fleet placement alerts detected from live generator inventory.' : 'No generator inventory available for fleet alert evaluation.'}
             </p>
           ) : (
             <div className="monitor-scroll-area">
               {fleetAlertActionError && <p className="monitor-action-message text-danger">{fleetAlertActionError}</p>}
               <div className="monitor-warning-list">
-                {fleetAlerts.map(alert => (
+                {fleetAlertList.map(alert => (
                   <div key={alert.id || `${alert.type}:${alert.target}`} className="monitor-warning-row">
                     <p className={alert.severity === 'danger' ? 'text-danger' : ''}>
                       {alert.summary}
@@ -1457,6 +1473,18 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       content: <MonitoringCollectorsCard projectId={activeProject?.id} canManage={canManageSystem} />,
     },
     {
+      id: 'fleet-clusters',
+      title: 'Cluster Connections',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+          <path d="M5 5l2.5 2.5M16.5 16.5L19 19M19 5l-2.5 2.5M7.5 16.5L5 19" />
+        </svg>
+      ),
+      content: <ClustersCard canManage={canManageSystem} />,
+    },
+    {
       id: 'fleet-pools',
       title: 'Generator Pools',
       icon: (
@@ -1470,6 +1498,18 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       content: <FleetPoolsCard canManage={canManageSystem} />,
     },
     {
+      id: 'fleet-allocation',
+      title: 'Host Resource Allocation',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="4" rx="1" />
+          <rect x="3" y="10" width="12" height="4" rx="1" />
+          <rect x="3" y="16" width="7" height="4" rx="1" />
+        </svg>
+      ),
+      content: <PoolAllocationCard canManage={canManageSystem} />,
+    },
+    {
       id: 'generator-metadata',
       title: 'Generator Metadata',
       icon: (
@@ -1481,7 +1521,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <FleetGeneratorsCard canManage={canManageSystem} />,
     },
-  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlerts, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onAcknowledgeThresholdAlert, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, thresholdAlerts, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [activeProject?.id, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onAcknowledgeThresholdAlert, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, thresholdAlerts, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {
@@ -1576,7 +1616,9 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       {
         label: 'Fleet',
         severity: fleetAlertHeaderSeverity,
-        summary: generators.length === 0 ? 'No generator inventory reported.' : `${fleetAlerts.length} active fleet alert${fleetAlerts.length === 1 ? '' : 's'}.`,
+        summary: fleetAlertsUnknown && fleetAlertList.length === 0
+          ? 'Fleet alert status is unavailable.'
+          : generators.length === 0 ? 'No generator inventory reported.' : `${fleetAlertList.length} active fleet alert${fleetAlertList.length === 1 ? '' : 's'}.`,
       },
       {
         label: 'Schedules',
@@ -1584,7 +1626,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         summary: schedulePresentation.summary,
       },
     ]
-  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, thresholdAlertHeaderSeverity, unacknowledgedThresholdAlerts.length, fleetAlertHeaderSeverity, fleetAlerts, scheduleHeaderSeverity, schedulePresentation.summary])
+  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, thresholdAlertHeaderSeverity, unacknowledgedThresholdAlerts.length, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, scheduleHeaderSeverity, schedulePresentation.summary])
 
   const overallSeverity = useMemo(() => {
     if (severityEntries.some(e => e.severity === 'danger')) return 'danger'
@@ -2520,7 +2562,7 @@ function formatRunCalendarNotice(calendar: RunCalendarResponse | null) {
 function parseDurationMs(value?: string) {
   if (!value) return 60_000
   const compact = value.trim().toLowerCase()
-  const matches = compact.matchAll(/(\d+(?:\.\d+)?)(ms|s|m|h)/g)
+  const matches = compact.matchAll(/(\d+(?:\.\d+)?)(ms|s|m|h|d)/g)
   let total = 0
   for (const match of matches) {
     const amount = Number(match[1])
@@ -2529,7 +2571,11 @@ function parseDurationMs(value?: string) {
     if (unit === 's') total += amount * 1000
     if (unit === 'm') total += amount * 60_000
     if (unit === 'h') total += amount * 3_600_000
+    if (unit === 'd') total += amount * 86_400_000
   }
+  // Free-text durations reach the calendar verbatim (test.DurationStr, scenario.Duration),
+  // so a bare number is common; treat it as minutes rather than flooring to one minute.
+  if (total === 0 && /^\d+(?:\.\d+)?$/.test(compact)) total = Number(compact) * 60_000
   return total > 0 ? total : 60_000
 }
 

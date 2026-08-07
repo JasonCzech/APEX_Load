@@ -255,6 +255,9 @@ jobs:
             exit 1
           fi
 
+      - name: Validate documentation references
+        run: python3 scripts/check-docs.py
+
   go-tests:
     name: Go race tests
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
@@ -448,7 +451,9 @@ jobs:
 
       - name: Install dashboard dependencies
         working-directory: dashboard
-        run: npm ci --ignore-scripts
+        run: |
+          npm run check:node
+          npm ci --ignore-scripts
 
       - name: Audit all dependencies
         working-directory: dashboard
@@ -468,7 +473,9 @@ jobs:
 
       - name: Unit tests
         working-directory: dashboard
-        run: npm test
+        run: |
+          npm test
+          npm run test:node-version
 
       - name: Bundle checker tests
         working-directory: dashboard

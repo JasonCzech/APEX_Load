@@ -8,6 +8,7 @@ import {
   type ProjectSecretWrite,
 } from '../../types/secrets'
 import { request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 const PROJECT_SECRET_MUTATION_TIMEOUT_MS = 15000
 
@@ -37,73 +38,73 @@ function query(params: Record<string, string | undefined>) {
 }
 
 export function useProjectApi() {
-  const listProjects = useCallback((filters?: { domain_id?: string; category_id?: string }) => request<{ projects: Project[]; count: number }>(`/projects${query(filters || {})}`), [])
+  const listProjects = useCallback((filters?: { domain_id?: string; category_id?: string }, options?: ApiCallOptions) => request<{ projects: Project[]; count: number }>(`/projects${query(filters || {})}`, withCallOptions(undefined, options)), [])
 
   const createProject = useCallback(
-    (data: ProjectRequest) => request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
+    (data: ProjectRequest, options?: ApiCallOptions) => request<Project>('/projects', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const updateProject = useCallback(
-    (id: string, data: ProjectRequest) => request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: ProjectRequest, options?: ApiCallOptions) => request<Project>(`/projects/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
-  const deleteProject = useCallback((id: string) => request<DeleteEntityResponse>(`/projects/${id}`, { method: 'DELETE' }), [])
+  const deleteProject = useCallback((id: string, options?: ApiCallOptions) => request<DeleteEntityResponse>(`/projects/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
 
   const listProjectSecrets = useCallback(
-    (projectId: string) => request<ProjectSecretsResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`),
+    (projectId: string, options?: ApiCallOptions) => request<ProjectSecretsResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, withCallOptions(undefined, options)),
     [],
   )
 
   const getProjectSecretStatuses = useCallback(
-    (projectId: string, names: string[]) =>
-      request<ProjectSecretStatusesResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/status`, {
+    (projectId: string, names: string[], options?: ApiCallOptions) =>
+      request<ProjectSecretStatusesResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/status`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ names }),
-      }),
+      }, options)),
     [],
   )
 
   const createProjectSecrets = useCallback(
-    (projectId: string, secrets: ProjectSecretWrite[]) =>
-      request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, {
+    (projectId: string, secrets: ProjectSecretWrite[], options?: ApiCallOptions) =>
+      request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ secrets }),
         timeoutMs: PROJECT_SECRET_MUTATION_TIMEOUT_MS,
-      }),
+      }, options)),
     [],
   )
 
   const rotateProjectSecret = useCallback(
-    (projectId: string, name: string, value: string) =>
-      request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`, {
+    (projectId: string, name: string, value: string, options?: ApiCallOptions) =>
+      request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`, withCallOptions({
         method: 'PUT',
         body: JSON.stringify({ value }),
         timeoutMs: PROJECT_SECRET_MUTATION_TIMEOUT_MS,
-      }),
+      }, options)),
     [],
   )
 
   const listFolders = useCallback(
-    (projectId: string, category?: string) =>
-      request<{ folders: Folder[]; count: number }>(`/projects/${projectId}/folders${query({ category })}`),
+    (projectId: string, category?: string, options?: ApiCallOptions) =>
+      request<{ folders: Folder[]; count: number }>(`/projects/${projectId}/folders${query({ category })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const createFolder = useCallback(
-    (projectId: string, data: { name: string; category: string; parent_id?: string | null }) =>
-      request<Folder>(`/projects/${projectId}/folders`, { method: 'POST', body: JSON.stringify(data) }),
+    (projectId: string, data: { name: string; category: string; parent_id?: string | null }, options?: ApiCallOptions) =>
+      request<Folder>(`/projects/${projectId}/folders`, withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const updateFolder = useCallback(
-    (id: string, data: { name?: string; parent_id?: string | null }) =>
-      request<Folder>(`/folders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: { name?: string; parent_id?: string | null }, options?: ApiCallOptions) =>
+      request<Folder>(`/folders/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
-  const deleteFolder = useCallback((id: string) => request<DeleteEntityResponse>(`/folders/${id}`, { method: 'DELETE' }), [])
+  const deleteFolder = useCallback((id: string, options?: ApiCallOptions) => request<DeleteEntityResponse>(`/folders/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
 
   return useMemo(
     () => ({

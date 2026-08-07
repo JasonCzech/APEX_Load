@@ -18,6 +18,11 @@ func parseSamplerExtractors(node *treeNode, diagnostics *diag.Collector) ([]dsl.
 	var warnings []string
 	location := jmeterElementLocation(node.Element)
 	for _, child := range node.Children {
+		// JMeter never runs a disabled post-processor, so importing one would
+		// set a correlation variable the real plan leaves unset.
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
 		switch child.Element.Name {
 		case "RegexExtractor":
 			if ext := parseRegexExtractor(child.Element); ext.Name != "" && ext.Expression != "" {

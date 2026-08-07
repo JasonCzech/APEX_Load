@@ -43,6 +43,7 @@ import type {
   ScenarioScheduleOccurrence,
 } from '../../types/scheduling'
 import { apiFetch, request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 type ArchiveTransactionsParams = {
   limit?: number
@@ -313,8 +314,8 @@ function buildQuery(params?: Record<string, string | number | boolean | string[]
   return suffix ? `?${suffix}` : ''
 }
 
-async function fetchBlob(path: string): Promise<Blob> {
-  const res = await apiFetch(path)
+async function fetchBlob(path: string, options?: ApiCallOptions): Promise<Blob> {
+  const res = await apiFetch(path, withCallOptions(undefined, options))
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
     throw new Error(body.error || res.statusText)
@@ -324,7 +325,7 @@ async function fetchBlob(path: string): Promise<Blob> {
 
 export function useTestApi() {
   const listTests = useCallback(
-    (params?: { project_id?: string; folder_id?: string | null; application_id?: string; release_id?: string; scenario_id?: string; summary?: boolean; active_only?: boolean; limit?: number; offset?: number } | string, folderId?: string | null) => {
+    (params?: { project_id?: string; folder_id?: string | null; application_id?: string; release_id?: string; scenario_id?: string; summary?: boolean; active_only?: boolean; limit?: number; offset?: number } | string, folderId?: string | null, options?: ApiCallOptions) => {
       const queryParams = typeof params === 'string'
         ? { project_id: params, folder_id: folderId === undefined ? undefined : folderId || '' }
         : {
@@ -338,245 +339,245 @@ export function useTestApi() {
             limit: params?.limit,
             offset: params?.offset,
           }
-      return request<TestListResponse>(`/tests${buildQuery(queryParams)}`)
+      return request<TestListResponse>(`/tests${buildQuery(queryParams)}`, withCallOptions(undefined, options))
     },
     [],
   )
 
-  const getTest = useCallback((id: string, params?: GetTestParams) => {
+  const getTest = useCallback((id: string, params?: GetTestParams, options?: ApiCallOptions) => {
     const suffix = buildQuery({
       include: params?.includeHistory ? 'history' : undefined,
       since: params?.since,
       limit: params?.limit,
     })
-    return request<TestSummary>(`/tests/${id}${suffix}`)
+    return request<TestSummary>(`/tests/${id}${suffix}`, withCallOptions(undefined, options))
   }, [])
 
   const createTest = useCallback(
-    (data: TestCreateRequest) => request<TestSummary>('/tests', { method: 'POST', body: JSON.stringify(data) }),
+    (data: TestCreateRequest, options?: ApiCallOptions) => request<TestSummary>('/tests', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const estimateTest = useCallback(
-    (data: TestCreateRequest) => request<DraftCapacityEstimate>('/tests/estimate', { method: 'POST', body: JSON.stringify(data) }),
+    (data: TestCreateRequest, options?: ApiCallOptions) => request<DraftCapacityEstimate>('/tests/estimate', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const preflightTest = useCallback(
-    (data: LaunchPreflightRequest) => request<LaunchPreflightResponse>('/tests/preflight', { method: 'POST', body: JSON.stringify(data) }),
+    (data: LaunchPreflightRequest, options?: ApiCallOptions) => request<LaunchPreflightResponse>('/tests/preflight', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const listLoadModelTemplates = useCallback(
-    (params?: { shape_id?: string }) =>
-      request<LoadModelTemplatesResponse>(`/scenarios/load-models/templates${buildQuery({ shape_id: params?.shape_id })}`),
+    (params?: { shape_id?: string }, options?: ApiCallOptions) =>
+      request<LoadModelTemplatesResponse>(`/scenarios/load-models/templates${buildQuery({ shape_id: params?.shape_id })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getLoadModelSupportMatrix = useCallback(
-    () => request<LoadModelSupportMatrixResponse>('/scenarios/load-models/support-matrix'),
+    (options?: ApiCallOptions) => request<LoadModelSupportMatrixResponse>('/scenarios/load-models/support-matrix', withCallOptions(undefined, options)),
     [],
   )
 
   const validateScenarioLoadModel = useCallback(
-    (data: unknown) => request<LoadModelValidationReport>('/scenarios/validate-load-model', { method: 'POST', body: JSON.stringify(data) }),
+    (data: unknown, options?: ApiCallOptions) => request<LoadModelValidationReport>('/scenarios/validate-load-model', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const sizeScenarioFromGoal = useCallback(
-    (data: GoalSizingRequest) => request<GoalSizingReport>('/scenarios/size-from-goal', { method: 'POST', body: JSON.stringify(data) }),
+    (data: GoalSizingRequest, options?: ApiCallOptions) => request<GoalSizingReport>('/scenarios/size-from-goal', withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const startTest = useCallback(
-    (id: string, options?: StartTestOptions) =>
-      request<TestActionResponse>(`/tests/${id}/start`, {
+    (id: string, options?: StartTestOptions, callOptions?: ApiCallOptions) =>
+      request<TestActionResponse>(`/tests/${id}/start`, withCallOptions({
         method: 'POST',
         body: options ? JSON.stringify(options) : undefined,
-      }),
+      }, callOptions)),
     [],
   )
 
   const pinComparisonBaseline = useCallback(
-    (id: string) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, { method: 'POST' }),
+    (id: string, options?: ApiCallOptions) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const unpinComparisonBaseline = useCallback(
-    (id: string) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, { method: 'DELETE' }),
+    (id: string, options?: ApiCallOptions) => request<TestSummary>(`/tests/${id}/comparison-baseline/pin`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
-  const stopTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/stop`, { method: 'POST' }), [])
+  const stopTest = useCallback((id: string, options?: ApiCallOptions) => request<TestActionResponse>(`/tests/${id}/stop`, withCallOptions({ method: 'POST' }, options)), [])
 
-  const abortTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/abort`, { method: 'POST' }), [])
+  const abortTest = useCallback((id: string, options?: ApiCallOptions) => request<TestActionResponse>(`/tests/${id}/abort`, withCallOptions({ method: 'POST' }, options)), [])
 
-  const deleteTest = useCallback((id: string) => request<DeleteTestResponse>(`/tests/${id}`, { method: 'DELETE' }), [])
+  const deleteTest = useCallback((id: string, options?: ApiCallOptions) => request<DeleteTestResponse>(`/tests/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
   
-  const pauseTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/pause`, { method: 'POST' }), [])
+  const pauseTest = useCallback((id: string, options?: ApiCallOptions) => request<TestActionResponse>(`/tests/${id}/pause`, withCallOptions({ method: 'POST' }, options)), [])
   
-  const resumeTest = useCallback((id: string) => request<TestActionResponse>(`/tests/${id}/resume`, { method: 'POST' }), [])
+  const resumeTest = useCallback((id: string, options?: ApiCallOptions) => request<TestActionResponse>(`/tests/${id}/resume`, withCallOptions({ method: 'POST' }, options)), [])
 
   const createRemoteRun = useCallback(
-    (remoteId: string, data: RemoteRunCreateRequest) =>
-      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs`, {
+    (remoteId: string, data: RemoteRunCreateRequest, options?: ApiCallOptions) =>
+      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs`, withCallOptions({
         method: 'POST',
         body: JSON.stringify(data),
-      }),
+      }, options)),
     [],
   )
 
   const getRemoteRun = useCallback(
-    (remoteId: string, remoteTestId: string) =>
-      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs/${encodeURIComponent(remoteTestId)}`),
+    (remoteId: string, remoteTestId: string, options?: ApiCallOptions) =>
+      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs/${encodeURIComponent(remoteTestId)}`, withCallOptions(undefined, options)),
     [],
   )
 
   const controlRemoteRun = useCallback(
-    (remoteId: string, remoteTestId: string, action: 'start' | 'stop' | 'abort' | 'pause' | 'resume', options?: StartTestOptions) =>
-      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs/${encodeURIComponent(remoteTestId)}/${action}`, {
+    (remoteId: string, remoteTestId: string, action: 'start' | 'stop' | 'abort' | 'pause' | 'resume', options?: StartTestOptions, callOptions?: ApiCallOptions) =>
+      request<RemoteRunProxyResponse>(`/remotes/${encodeURIComponent(remoteId)}/runs/${encodeURIComponent(remoteTestId)}/${action}`, withCallOptions({
         method: 'POST',
         body: action === 'start' && options ? JSON.stringify(options) : undefined,
-      }),
+      }, callOptions)),
     [],
   )
 
   const listScenarioSchedules = useCallback(
-    (scenarioId: string) => request<ScenarioScheduleListResponse>(`/scenarios/${scenarioId}/schedules`),
+    (scenarioId: string, options?: ApiCallOptions) => request<ScenarioScheduleListResponse>(`/scenarios/${scenarioId}/schedules`, withCallOptions(undefined, options)),
     [],
   )
 
   const createScenarioSchedule = useCallback(
-    (scenarioId: string, data: ScenarioScheduleRequest) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules`, { method: 'POST', body: JSON.stringify(data) }),
+    (scenarioId: string, data: ScenarioScheduleRequest, options?: ApiCallOptions) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules`, withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const updateScenarioSchedule = useCallback(
-    (scenarioId: string, scheduleId: string, data: ScenarioScheduleRequest) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (scenarioId: string, scheduleId: string, data: ScenarioScheduleRequest, options?: ApiCallOptions) => request<ScenarioSchedule>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const deleteScenarioSchedule = useCallback(
-    (scenarioId: string, scheduleId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, { method: 'DELETE' }),
+    (scenarioId: string, scheduleId: string, options?: ApiCallOptions) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
   const previewScenarioSchedule = useCallback(
-    (scenarioId: string, data: ScenarioScheduleRequest, count = 5) => request<ScenarioSchedulePreview>(`/scenarios/${scenarioId}/schedules/preview?count=${count}`, { method: 'POST', body: JSON.stringify(data) }),
+    (scenarioId: string, data: ScenarioScheduleRequest, count = 5, options?: ApiCallOptions) => request<ScenarioSchedulePreview>(`/scenarios/${scenarioId}/schedules/preview?count=${count}`, withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const listScenarioScheduleOccurrences = useCallback(
-    (scenarioId: string, scheduleId: string) => request<ScenarioScheduleOccurrencesResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences`),
+    (scenarioId: string, scheduleId: string, options?: ApiCallOptions) => request<ScenarioScheduleOccurrencesResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences`, withCallOptions(undefined, options)),
     [],
   )
 
   const listScenarioScheduleApprovals = useCallback(
-    (scenarioId: string, scheduleId: string) => request<ScenarioScheduleApprovalsListResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals`),
+    (scenarioId: string, scheduleId: string, options?: ApiCallOptions) => request<ScenarioScheduleApprovalsListResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals`, withCallOptions(undefined, options)),
     [],
   )
 
   const deleteScenarioScheduleOccurrence = useCallback(
-    (scenarioId: string, scheduleId: string, occurrenceId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}`, { method: 'DELETE' }),
+    (scenarioId: string, scheduleId: string, occurrenceId: string, options?: ApiCallOptions) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
 	const resolveScenarioScheduleOccurrence = useCallback(
-		(scenarioId: string, scheduleId: string, occurrenceId: string, action: 'retry' | 'catch_up' | 'skip', expectedRevision?: number, reason?: string) =>
-			request<ScenarioScheduleOccurrenceResolutionResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}/resolve`, {
+		(scenarioId: string, scheduleId: string, occurrenceId: string, action: 'retry' | 'catch_up' | 'skip', expectedRevision?: number, reason?: string, options?: ApiCallOptions) =>
+			request<ScenarioScheduleOccurrenceResolutionResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}/resolve`, withCallOptions({
 				method: 'POST',
 				body: JSON.stringify({ action, expected_revision: expectedRevision, reason: reason || '' }),
-			}),
+			}, options)),
 		[],
 	)
 
-  const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
+  const getScheduleHealth = useCallback((options?: ApiCallOptions) => request<ScenarioScheduleHealth>('/schedules/health', withCallOptions(undefined, options)), [])
 
   const getRunCalendar = useCallback(
-    (params: RunCalendarParams) => request<RunCalendarResponse>(`/run-calendar${buildQuery(params)}`),
+    (params: RunCalendarParams, options?: ApiCallOptions) => request<RunCalendarResponse>(`/run-calendar${buildQuery(params)}`, withCallOptions(undefined, options)),
     [],
   )
 
   const approveScenarioScheduleApproval = useCallback(
-    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
-      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/approve`, {
+    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string, options?: ApiCallOptions) =>
+      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/approve`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ reason: reason || '' }),
-      }),
+      }, options)),
     [],
   )
 
   const rejectScenarioScheduleApproval = useCallback(
-    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string) =>
-      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/reject`, {
+    (scenarioId: string, scheduleId: string, approvalId: string, reason?: string, options?: ApiCallOptions) =>
+      request<ScenarioScheduleApprovalResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/approvals/${approvalId}/reject`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ reason: reason || '' }),
-      }),
+      }, options)),
     [],
   )
 
   const moveTest = useCallback(
-    (id: string, folderId: string | null) =>
-      request<MoveTestResponse>(`/tests/${id}/move`, { method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }),
+    (id: string, folderId: string | null, options?: ApiCallOptions) =>
+      request<MoveTestResponse>(`/tests/${id}/move`, withCallOptions({ method: 'PATCH', body: JSON.stringify({ folder_id: folderId }) }, options)),
     [],
   )
 
-  const getMetrics = useCallback((id: string, params?: MetricsParams) => {
+  const getMetrics = useCallback((id: string, params?: MetricsParams, options?: ApiCallOptions) => {
     const suffix = buildQuery({ groups: params?.groups, since: params?.since, limit: params?.limit })
-    return request<TestMetricsResponse>(`/tests/${id}/metrics${suffix}`)
+    return request<TestMetricsResponse>(`/tests/${id}/metrics${suffix}`, withCallOptions(undefined, options))
   }, [])
 
   const getTestErrorEvidence = useCallback(
-    (id: string, params: LiveErrorEvidenceParams) =>
+    (id: string, params: LiveErrorEvidenceParams, options?: ApiCallOptions) =>
       request<LiveErrorEvidenceResponse>(`/tests/${id}/errors/evidence${buildQuery({
         signature: params.signature,
         action: params.action,
         limit: params.limit,
-      })}`),
+      })}`, withCallOptions(undefined, options)),
     [],
   )
 
-  const getTestManifest = useCallback((id: string) => request<TestRunManifest>(`/tests/${id}/manifest`), [])
+  const getTestManifest = useCallback((id: string, options?: ApiCallOptions) => request<TestRunManifest>(`/tests/${id}/manifest`, withCallOptions(undefined, options)), [])
 
   const getTestGroupRuntimeSettings = useCallback(
-    (id: string, group: string) =>
-      request<TestGroupRuntimeSettingsView>(`/tests/${id}/groups/${encodeURIComponent(group)}/runtime-settings`),
+    (id: string, group: string, options?: ApiCallOptions) =>
+      request<TestGroupRuntimeSettingsView>(`/tests/${id}/groups/${encodeURIComponent(group)}/runtime-settings`, withCallOptions(undefined, options)),
     [],
   )
 
   const updateTestGroupRuntimeSettings = useCallback(
-    (id: string, group: string, data: { runtime_settings: RuntimeSettingsOverride; fields: string[]; expected_revision: string }) =>
-      request<TestGroupRuntimeSettingsUpdateResult>(`/tests/${id}/groups/${encodeURIComponent(group)}/runtime-settings`, {
+    (id: string, group: string, data: { runtime_settings: RuntimeSettingsOverride; fields: string[]; expected_revision: string }, options?: ApiCallOptions) =>
+      request<TestGroupRuntimeSettingsUpdateResult>(`/tests/${id}/groups/${encodeURIComponent(group)}/runtime-settings`, withCallOptions({
         method: 'PATCH',
         body: JSON.stringify(data),
-      }),
+      }, options)),
     [],
   )
 
   const getTestGroupParameters = useCallback(
-    (id: string, group: string) =>
-      request<TestGroupParametersView>(`/tests/${id}/groups/${encodeURIComponent(group)}/parameters`),
+    (id: string, group: string, options?: ApiCallOptions) =>
+      request<TestGroupParametersView>(`/tests/${id}/groups/${encodeURIComponent(group)}/parameters`, withCallOptions(undefined, options)),
     [],
   )
 
   const updateTestGroupParameters = useCallback(
-    (id: string, group: string, data: { parameters: ScriptParameterDefinition[]; expected_revision: string }) =>
-      request<TestGroupParametersUpdateResult>(`/tests/${id}/groups/${encodeURIComponent(group)}/parameters`, {
+    (id: string, group: string, data: { parameters: ScriptParameterDefinition[]; expected_revision: string }, options?: ApiCallOptions) =>
+      request<TestGroupParametersUpdateResult>(`/tests/${id}/groups/${encodeURIComponent(group)}/parameters`, withCallOptions({
         method: 'PUT',
         body: JSON.stringify(data),
-      }),
+      }, options)),
     [],
   )
 
-  const getTestArchiveManifest = useCallback((id: string) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`), [])
+  const getTestArchiveManifest = useCallback((id: string, options?: ApiCallOptions) => request<RunArchiveManifest>(`/tests/${id}/archive/manifest`, withCallOptions(undefined, options)), [])
 
   const verifyTestArchive = useCallback(
-    (id: string) => request<RunArchiveIntegrityReport>(`/tests/${id}/archive/verify`),
+    (id: string, options?: ApiCallOptions) => request<RunArchiveIntegrityReport>(`/tests/${id}/archive/verify`, withCallOptions(undefined, options)),
     [],
   )
 
   const getTestArchiveTransactions = useCallback(
-    (id: string, params?: ArchiveTransactionsParams) => {
+    (id: string, params?: ArchiveTransactionsParams, options?: ApiCallOptions) => {
       const suffix = buildQuery({
         limit: params?.limit,
         offset: params?.offset,
@@ -595,108 +596,108 @@ export function useTestApi() {
         sort_by: params?.sort_by,
         sort_dir: params?.sort_dir,
       })
-      return request<ArchiveTransactionsResponse>(`/tests/${id}/archive/transactions${suffix}`)
+      return request<ArchiveTransactionsResponse>(`/tests/${id}/archive/transactions${suffix}`, withCallOptions(undefined, options))
     },
     [],
   )
 
   const getTestArchiveResources = useCallback(
-    (id: string, params?: ArchiveListParams) => {
+    (id: string, params?: ArchiveListParams, options?: ApiCallOptions) => {
       const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, sample_limit: params?.sample_limit })
-      return request<ArchiveResourcesResponse>(`/tests/${id}/archive/resources${suffix}`)
+      return request<ArchiveResourcesResponse>(`/tests/${id}/archive/resources${suffix}`, withCallOptions(undefined, options))
     },
     [],
   )
 
   const getTestArchiveSummaries = useCallback(
-    (id: string, params?: ArchiveListParams) => {
+    (id: string, params?: ArchiveListParams, options?: ApiCallOptions) => {
       const suffix = buildQuery({ limit: params?.limit, offset: params?.offset, sample_limit: params?.sample_limit, action: params?.action, groups: params?.groups })
-      return request<ArchiveSummariesResponse>(`/tests/${id}/archive/summaries${suffix}`)
+      return request<ArchiveSummariesResponse>(`/tests/${id}/archive/summaries${suffix}`, withCallOptions(undefined, options))
     },
     [],
   )
 
-  const getTestArchiveReport = useCallback((id: string) => request<RunArchiveReport>(`/tests/${id}/archive/report`), [])
+  const getTestArchiveReport = useCallback((id: string, options?: ApiCallOptions) => request<RunArchiveReport>(`/tests/${id}/archive/report`, withCallOptions(undefined, options)), [])
 
   const getTestArchiveReports = useCallback(
-    (ids: string[], projectId: string) =>
-      request<ArchiveReportsBatchResponse>(`/tests/archive/reports${buildQuery({ project_id: projectId })}`, {
+    (ids: string[], projectId: string, options?: ApiCallOptions) =>
+      request<ArchiveReportsBatchResponse>(`/tests/archive/reports${buildQuery({ project_id: projectId })}`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ ids }),
-      }),
+      }, options)),
     [],
   )
 
   const getTestReportAnnotations = useCallback(
-    (id: string, profile: string) =>
-      request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`),
+    (id: string, profile: string, options?: ApiCallOptions) =>
+      request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const saveTestReportAnnotations = useCallback(
-    (id: string, profile: string, data: ReportAnnotationsInput) =>
-      request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, {
+    (id: string, profile: string, data: ReportAnnotationsInput, options?: ApiCallOptions) =>
+      request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, withCallOptions({
         method: 'PUT',
         body: JSON.stringify(data),
-      }),
+      }, options)),
     [],
   )
 
-  const listTestNotes = useCallback((id: string) => request<TestNotesResponse>(`/tests/${id}/notes`), [])
+  const listTestNotes = useCallback((id: string, options?: ApiCallOptions) => request<TestNotesResponse>(`/tests/${id}/notes`, withCallOptions(undefined, options)), [])
 
   const createTestNote = useCallback(
-    (id: string, body: string) =>
-      request<TestNote>(`/tests/${id}/notes`, {
+    (id: string, body: string, options?: ApiCallOptions) =>
+      request<TestNote>(`/tests/${id}/notes`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ body }),
-      }),
+      }, options)),
     [],
   )
 
   const updateTestNote = useCallback(
-    (id: string, noteId: string, body: string) =>
-      request<TestNote>(`/tests/${id}/notes/${noteId}`, {
+    (id: string, noteId: string, body: string, options?: ApiCallOptions) =>
+      request<TestNote>(`/tests/${id}/notes/${noteId}`, withCallOptions({
         method: 'PATCH',
         body: JSON.stringify({ body }),
-      }),
+      }, options)),
     [],
   )
 
   const deleteTestNote = useCallback(
-    (id: string, noteId: string) =>
-      request<DeleteTestNoteResponse>(`/tests/${id}/notes/${noteId}`, {
+    (id: string, noteId: string, options?: ApiCallOptions) =>
+      request<DeleteTestNoteResponse>(`/tests/${id}/notes/${noteId}`, withCallOptions({
         method: 'DELETE',
-      }),
+      }, options)),
     [],
   )
 
   const downloadTestReport = useCallback(
-    (id: string, profile: string) => fetchBlob(`/tests/${id}/report${buildQuery({ profile })}`),
+    (id: string, profile: string, options?: ApiCallOptions) => fetchBlob(`/tests/${id}/report${buildQuery({ profile })}`, options),
     [],
   )
 
   const publishTestToPowerBI = useCallback(
-    (id: string, options?: { force?: boolean }) =>
-      request<PowerBIPublishResponse>(`/tests/${id}/publish/powerbi`, {
+    (id: string, options?: { force?: boolean }, callOptions?: ApiCallOptions) =>
+      request<PowerBIPublishResponse>(`/tests/${id}/publish/powerbi`, withCallOptions({
         method: 'POST',
         body: JSON.stringify({ force: Boolean(options?.force) }),
-      }),
+      }, callOptions)),
     [],
   )
 
   const getPowerBIPublishStatus = useCallback(
-    (id: string) => request<PowerBIPublishStatusResponse>(`/tests/${id}/publish/powerbi`),
+    (id: string, options?: ApiCallOptions) => request<PowerBIPublishStatusResponse>(`/tests/${id}/publish/powerbi`, withCallOptions(undefined, options)),
     [],
   )
 
   const downloadTestReportFormat = useCallback(
-    (id: string, profile: string, format: 'pdf' | 'csv') =>
-      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`),
+    (id: string, profile: string, format: 'pdf' | 'csv', options?: ApiCallOptions) =>
+      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`, options),
     [],
   )
 
   const getTestArchiveAnalysis = useCallback(
-    (id: string, params?: ArchiveAnalysisParams) => {
+    (id: string, params?: ArchiveAnalysisParams, options?: ApiCallOptions) => {
       const suffix = buildQuery({
         baseline_id: params?.baseline_id,
         limit: params?.limit,
@@ -716,59 +717,59 @@ export function useTestApi() {
         sort_by: params?.sort_by,
         sort_dir: params?.sort_dir,
       })
-      return request<RunArchiveAnalysisResponse>(`/tests/${id}/archive/analysis${suffix}`)
+      return request<RunArchiveAnalysisResponse>(`/tests/${id}/archive/analysis${suffix}`, withCallOptions(undefined, options))
     },
     [],
   )
 
-  const downloadTestArchive = useCallback((id: string) => fetchBlob(`/tests/${id}/archive`), [])
+  const downloadTestArchive = useCallback((id: string, options?: ApiCallOptions) => fetchBlob(`/tests/${id}/archive`, options), [])
 
   const downloadTestArchiveComparison = useCallback(
-    (id: string, baselineId: string, breakdown: 'overall' | 'platform' | 'engine' | 'device', action?: string) =>
-      fetchBlob(`/tests/${id}/archive/comparison${buildQuery({ format: 'csv', baseline_id: baselineId, breakdown, action })}`),
+    (id: string, baselineId: string, breakdown: 'overall' | 'platform' | 'engine' | 'device', action?: string, options?: ApiCallOptions) =>
+      fetchBlob(`/tests/${id}/archive/comparison${buildQuery({ format: 'csv', baseline_id: baselineId, breakdown, action })}`, options),
     [],
   )
 
   const downloadTestArchiveMultiComparison = useCallback(
-    (baselineId: string, comparisonIds: string[], breakdown: 'overall' | 'platform' | 'engine' | 'device', action?: string) =>
-      fetchBlob(`/tests/${baselineId}/archive/comparison${buildQuery({ format: 'csv', comparison_ids: comparisonIds.join(','), breakdown, action })}`),
+    (baselineId: string, comparisonIds: string[], breakdown: 'overall' | 'platform' | 'engine' | 'device', action?: string, options?: ApiCallOptions) =>
+      fetchBlob(`/tests/${baselineId}/archive/comparison${buildQuery({ format: 'csv', comparison_ids: comparisonIds.join(','), breakdown, action })}`, options),
     [],
   )
 
   const downloadTestArchiveBrowserDiagnostics = useCallback(
-    (id: string) => fetchBlob(`/tests/${id}/archive/browser-diagnostics`),
+    (id: string, options?: ApiCallOptions) => fetchBlob(`/tests/${id}/archive/browser-diagnostics`, options),
     [],
   )
 
   const downloadTestArchiveArtifact = useCallback(
-    (id: string, name: string) => fetchBlob(`/tests/${id}/archive/files/${encodeURIComponent(name)}`),
+    (id: string, name: string, options?: ApiCallOptions) => fetchBlob(`/tests/${id}/archive/files/${encodeURIComponent(name)}`, options),
     [],
   )
 
   const scaleVUsers = useCallback(
-    (testId: string, group: string, targetVUsers: number, options?: ScaleVUsersOptions) =>
-      request<ScaleVUsersResponse>(`/tests/${testId}/vusers`, {
+    (testId: string, group: string, targetVUsers: number, options?: ScaleVUsersOptions, callOptions?: ApiCallOptions) =>
+      request<ScaleVUsersResponse>(`/tests/${testId}/vusers`, withCallOptions({
         method: 'PATCH',
         body: JSON.stringify({ group, target_vusers: targetVUsers, action: options?.action, ramp_duration: options?.ramp_duration }),
-      }),
+      }, callOptions)),
     [],
   )
 
   const updateGoalTarget = useCallback(
-    (testId: string, group: string, targetTps: number) =>
-      request<GoalTargetUpdateResponse>(`/tests/${testId}/goal-targets`, {
+    (testId: string, group: string, targetTps: number, options?: ApiCallOptions) =>
+      request<GoalTargetUpdateResponse>(`/tests/${testId}/goal-targets`, withCallOptions({
         method: 'PATCH',
         body: JSON.stringify({ group, target_tps: targetTps }),
-      }),
+      }, options)),
     [],
   )
 
   const adjustDuration = useCallback(
-    (testId: string, duration: string) =>
-      request<AdjustDurationResponse>(`/tests/${testId}/duration`, {
+    (testId: string, duration: string, options?: ApiCallOptions) =>
+      request<AdjustDurationResponse>(`/tests/${testId}/duration`, withCallOptions({
         method: 'PATCH',
         body: JSON.stringify({ duration }),
-      }),
+      }, options)),
     [],
   )
 

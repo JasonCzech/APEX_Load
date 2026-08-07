@@ -188,10 +188,41 @@ func validVersionedKeyVaultKeyPath(escapedPath string) bool {
 }
 
 func NewConfiguredKeyWrapper(allowKeyring bool) (KeyWrapper, error) {
-	if keyID := strings.TrimSpace(os.Getenv(KeyVaultKeyIDEnvVar)); keyID != "" {
-		return NewAzureKeyVaultKeyWrapper(keyID, nil, nil)
+	vaultKeyID := strings.TrimSpace(os.Getenv(KeyVaultKeyIDEnvVar))
+	kmsKeyARN := strings.TrimSpace(os.Getenv(KMSKeyIDEnvVar))
+	if vaultKeyID != "" && kmsKeyARN != "" {
+		// Silently picking one is not a misconfiguration, it is data loss:
+		// every envelope already sealed by the loser becomes permanently
+		// unreadable, and nothing would report why.
+		return nil, fmt.Errorf("both %s and %s are set; configure exactly one wrapping key",
+			KeyVaultKeyIDEnvVar, KMSKeyIDEnvVar)
+	}
+	if vaultKeyID != "" {
+		return NewAzureKeyVaultKeyWrapper(vaultKeyID, nil, nil)
+	}
+	if kmsKeyARN != "" {
+		return NewAwsKMSKeyWrapper(kmsKeyARN, nil, nil)
 	}
 	return NewLocalAESKeyWrapper(LocalKeyOptions{AllowKeyring: allowKeyring})
+}
+
+// ConfiguredWrappingProvider reports which wrapping key the environment selects
+// and whether the selection is ambiguous. Readiness uses it so an operator can
+// see a conflict; server startup only logs a warning when the wrapper fails to
+// build, which is easy to miss.
+func ConfiguredWrappingProvider() (provider string, conflict bool) {
+	vaultKeyID := strings.TrimSpace(os.Getenv(KeyVaultKeyIDEnvVar))
+	kmsKeyARN := strings.TrimSpace(os.Getenv(KMSKeyIDEnvVar))
+	switch {
+	case vaultKeyID != "" && kmsKeyARN != "":
+		return "conflict", true
+	case vaultKeyID != "":
+		return "azure_key_vault", false
+	case kmsKeyARN != "":
+		return "aws_kms", false
+	default:
+		return "local", false
+	}
 }
 
 // Azure Key Vault's RSA wrap API cannot authenticate AAD. Artifact and secret

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
@@ -316,6 +317,24 @@ func (db *storeDB) QueryRow(query string, args ...any) *sql.Row {
 	return db.db.QueryRow(rewriteSQL(query, db.dialect), args...)
 }
 
+// ExecContext/QueryContext/QueryRowContext are the context-carrying half of the
+// storeDB surface. Without them a caller that already holds a context has to
+// reach through to db.db and hand-write rewriteSQL at the call site, and one
+// forgotten rewrite silently ships SQLite-only SQL (`?` placeholders, DATETIME,
+// integer booleans) to PostgreSQL. TestStorageQueriesGoThroughTheDialectWrapper
+// keeps that bypass from reappearing.
+func (db *storeDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return db.db.ExecContext(ctx, rewriteSQL(query, db.dialect), args...)
+}
+
+func (db *storeDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return db.db.QueryContext(ctx, rewriteSQL(query, db.dialect), args...)
+}
+
+func (db *storeDB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return db.db.QueryRowContext(ctx, rewriteSQL(query, db.dialect), args...)
+}
+
 func (db *storeDB) Begin() (*storeTx, error) {
 	tx, err := db.db.Begin()
 	if err != nil {
@@ -369,9 +388,48 @@ func (tx *storeTx) Rollback() error {
 }
 
 var (
-	insertOrIgnorePattern = regexp.MustCompile(`(?is)^\s*INSERT\s+OR\s+IGNORE\s+INTO\s+(.+)$`)
-	inlineReferences      = regexp.MustCompile(`(?i)\s+REFERENCES\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)`)
-	trailingCreateComma   = regexp.MustCompile(`,\s*\)`)
+	insertOrIgnorePrefix = regexp.MustCompile(`(?is)^(\s*)INSERT\s+OR\s+IGNORE\s+INTO\s+`)
+	inlineReferences     = regexp.MustCompile(`(?i)\s+REFERENCES\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)`)
+	trailingCreateComma  = regexp.MustCompile(`,\s*\)`)
+	// postgresSQLRewrites translates SQLite SQL into Postgres SQL by SUBSTRING
+	// match: every entry is pinned to one column name written one exact way.
+	// There is no Postgres schema file to fall back on, so a boolean column that
+	// deviates from a pattern here (extra NOT NULL, a different default, a new
+	// name) silently stays INTEGER on Postgres while Go binds a real bool — a
+	// runtime-only break no SQLite test can see. Three guards keep the list
+	// self-policing against the live schema and the live SQL; extend the matching
+	// one whenever you add an entry:
+	//   - TestPostgresSchemaBooleanColumnsRewriteToBoolean (factory_test.go):
+	//     DDL column types + COALESCE(bool_col, 0|1) reads.
+	//   - TestPostgresBooleanColumnPredicatesAreDialectSafe
+	//     (postgres_boolean_predicate_test.go): `bool_col = 0|1` DML predicates,
+	//     including the bare `AND bool_col = 1` fragments this package appends to
+	//     base queries. It does NOT cover positional integer literals inside
+	//     INSERT ... VALUES (...), which are equally fatal on Postgres — bind
+	//     those with s.boolValue rather than writing 0/1 into the literal.
+	//   - TestPostgresRewrittenSchemaIsWellFormed
+	//     (postgres_schema_wellformed_test.go): the rewritten DDL still parses.
+	postgresSQLRewrites = []struct {
+		pattern     *regexp.Regexp
+		replacement string
+	}{
+		{regexp.MustCompile(`(?i)\bDATETIME\b`), "TIMESTAMPTZ"},
+		{regexp.MustCompile(`(?i)\bshakeout_enabled\s+INTEGER\s+DEFAULT\s+0\b`), "shakeout_enabled BOOLEAN DEFAULT FALSE"},
+		{regexp.MustCompile(`(?i)\bauto_promote_on_heal\s+INTEGER\s+DEFAULT\s+0\b`), "auto_promote_on_heal BOOLEAN DEFAULT FALSE"},
+		{regexp.MustCompile(`(?i)\bresource_baseline_enabled\s+INTEGER\s+DEFAULT\s+0\b`), "resource_baseline_enabled BOOLEAN DEFAULT FALSE"},
+		{regexp.MustCompile(`(?i)\benabled\s+INTEGER\s+DEFAULT\s+1\b`), "enabled BOOLEAN DEFAULT TRUE"},
+		{regexp.MustCompile(`(?i)\bbaseline_pinned\s+INTEGER\s+DEFAULT\s+0\b`), "baseline_pinned BOOLEAN DEFAULT FALSE"},
+		{regexp.MustCompile(`(?i)\bbase_missing\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+0\b`), "base_missing BOOLEAN NOT NULL DEFAULT FALSE"},
+		{regexp.MustCompile(`(?i)\bactive\s+INTEGER\s+NOT\s+NULL\s+DEFAULT\s+1\b`), "active BOOLEAN NOT NULL DEFAULT TRUE"},
+		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*shakeout_enabled\s*,\s*0\s*\)`), "COALESCE(shakeout_enabled, FALSE)"},
+		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*resource_baseline_enabled\s*,\s*0\s*\)`), "COALESCE(resource_baseline_enabled, FALSE)"},
+		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*auto_promote_on_heal\s*,\s*0\s*\)`), "COALESCE(auto_promote_on_heal, FALSE)"},
+		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*enabled\s*,\s*1\s*\)`), "COALESCE(enabled, TRUE)"},
+		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*baseline_pinned\s*,\s*0\s*\)`), "COALESCE(baseline_pinned, FALSE)"},
+		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*base_missing\s*,\s*0\s*\)`), "COALESCE(base_missing, FALSE)"},
+		{regexp.MustCompile(`(?i)\bactive\s*=\s*1\b`), "active = TRUE"},
+		{regexp.MustCompile(`(?i)\bsize_bytes\s+INTEGER\s+NOT\s+NULL\b`), "size_bytes BIGINT NOT NULL"},
+	}
 )
 
 func rewriteSQL(query string, dialect storeDialect) string {
@@ -379,37 +437,123 @@ func rewriteSQL(query string, dialect storeDialect) string {
 		return query
 	}
 	rewritten := query
-	rewritten = strings.ReplaceAll(rewritten, "DATETIME", "TIMESTAMPTZ")
-	rewritten = strings.ReplaceAll(rewritten, "datetime", "TIMESTAMPTZ")
-	if strings.Contains(strings.ToUpper(rewritten), "CREATE TABLE") || strings.Contains(strings.ToUpper(rewritten), "ALTER TABLE") {
-		rewritten = stripPostgresForeignKeyReferences(rewritten)
+	insertOrIgnore := insertOrIgnorePrefix.MatchString(rewritten)
+	if insertOrIgnore {
+		rewritten = insertOrIgnorePrefix.ReplaceAllString(rewritten, "${1}INSERT INTO ")
 	}
-	for _, replacement := range []struct {
-		old string
-		new string
-	}{
-		{"shakeout_enabled INTEGER DEFAULT 0", "shakeout_enabled BOOLEAN DEFAULT FALSE"},
-		{"auto_promote_on_heal INTEGER DEFAULT 0", "auto_promote_on_heal BOOLEAN DEFAULT FALSE"},
-		{"resource_baseline_enabled INTEGER DEFAULT 0", "resource_baseline_enabled BOOLEAN DEFAULT FALSE"},
-		{"enabled INTEGER DEFAULT 1", "enabled BOOLEAN DEFAULT TRUE"},
-		{"baseline_pinned INTEGER DEFAULT 0", "baseline_pinned BOOLEAN DEFAULT FALSE"},
-		{"base_missing INTEGER NOT NULL DEFAULT 0", "base_missing BOOLEAN NOT NULL DEFAULT FALSE"},
-		{"active INTEGER NOT NULL DEFAULT 1", "active BOOLEAN NOT NULL DEFAULT TRUE"},
-		{"ADD COLUMN active INTEGER NOT NULL DEFAULT 1", "ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE"},
-		{"COALESCE(shakeout_enabled, 0)", "COALESCE(shakeout_enabled, FALSE)"},
-		{"COALESCE(resource_baseline_enabled, 0)", "COALESCE(resource_baseline_enabled, FALSE)"},
-		{"COALESCE(auto_promote_on_heal, 0)", "COALESCE(auto_promote_on_heal, FALSE)"},
-		{"COALESCE(enabled, 1)", "COALESCE(enabled, TRUE)"},
-		{"COALESCE(baseline_pinned, 0)", "COALESCE(baseline_pinned, FALSE)"},
-		{" active = 1", " active = TRUE"},
-		{"size_bytes INTEGER NOT NULL", "size_bytes BIGINT NOT NULL"},
-	} {
-		rewritten = strings.ReplaceAll(rewritten, replacement.old, replacement.new)
-	}
-	if matches := insertOrIgnorePattern.FindStringSubmatch(rewritten); len(matches) == 2 {
-		rewritten = "INSERT INTO " + matches[1] + " ON CONFLICT DO NOTHING"
+	ddl := false
+	rewriteSQLCodeSegments(rewritten, func(code string) string {
+		upper := strings.ToUpper(code)
+		ddl = ddl || strings.Contains(upper, "CREATE TABLE") || strings.Contains(upper, "ALTER TABLE")
+		return code
+	})
+	rewritten = rewriteSQLCodeSegments(rewritten, func(code string) string {
+		if ddl {
+			code = stripPostgresForeignKeyReferences(code)
+		}
+		for _, rewrite := range postgresSQLRewrites {
+			code = rewrite.pattern.ReplaceAllString(code, rewrite.replacement)
+		}
+		return code
+	})
+	if insertOrIgnore {
+		rewritten = appendPostgresOnConflict(rewritten)
 	}
 	return rewriteQuestionPlaceholders(rewritten)
+}
+
+func appendPostgresOnConflict(query string) string {
+	trimmed := strings.TrimRightFunc(query, unicode.IsSpace)
+	trailing := query[len(trimmed):]
+	if strings.HasSuffix(trimmed, ";") {
+		return strings.TrimSuffix(trimmed, ";") + " ON CONFLICT DO NOTHING;" + trailing
+	}
+	return trimmed + " ON CONFLICT DO NOTHING" + trailing
+}
+
+// rewriteSQLCodeSegments applies transform only to executable SQL. Quoted
+// values/identifiers, line and block comments, and PostgreSQL dollar-quoted
+// bodies are copied byte-for-byte so dialect translation cannot corrupt user
+// values or procedural bodies that happen to contain schema-like text.
+func rewriteSQLCodeSegments(query string, transform func(string) string) string {
+	var output strings.Builder
+	output.Grow(len(query) + 16)
+	codeStart := 0
+	flushCode := func(end int) {
+		if end > codeStart {
+			output.WriteString(transform(query[codeStart:end]))
+		}
+	}
+	for index := 0; index < len(query); {
+		start := index
+		var end int
+		switch {
+		case query[index] == '\'' || query[index] == '"':
+			quote := query[index]
+			index++
+			for index < len(query) {
+				if query[index] != quote {
+					index++
+					continue
+				}
+				index++
+				if index < len(query) && query[index] == quote {
+					index++
+					continue
+				}
+				break
+			}
+			end = index
+		case index+1 < len(query) && query[index:index+2] == "--":
+			if newline := strings.IndexByte(query[index:], '\n'); newline >= 0 {
+				end = index + newline + 1
+			} else {
+				end = len(query)
+			}
+			index = end
+		case index+1 < len(query) && query[index:index+2] == "/*":
+			index += 2
+			depth := 1
+			for index < len(query) && depth > 0 {
+				switch {
+				case index+1 < len(query) && query[index:index+2] == "/*":
+					depth++
+					index += 2
+				case index+1 < len(query) && query[index:index+2] == "*/":
+					depth--
+					index += 2
+				default:
+					index++
+				}
+			}
+			end = index
+		case query[index] == '$':
+			tagEnd := index + 1
+			for tagEnd < len(query) && ((query[tagEnd] >= 'a' && query[tagEnd] <= 'z') || (query[tagEnd] >= 'A' && query[tagEnd] <= 'Z') || (query[tagEnd] >= '0' && query[tagEnd] <= '9') || query[tagEnd] == '_') {
+				tagEnd++
+			}
+			if tagEnd >= len(query) || query[tagEnd] != '$' {
+				index++
+				continue
+			}
+			tag := query[index : tagEnd+1]
+			bodyEnd := strings.Index(query[tagEnd+1:], tag)
+			if bodyEnd < 0 {
+				index++
+				continue
+			}
+			end = tagEnd + 1 + bodyEnd + len(tag)
+			index = end
+		default:
+			index++
+			continue
+		}
+		flushCode(start)
+		output.WriteString(query[start:end])
+		codeStart = end
+	}
+	flushCode(len(query))
+	return output.String()
 }
 
 func stripPostgresForeignKeyReferences(query string) string {
@@ -429,31 +573,21 @@ func stripPostgresForeignKeyReferences(query string) string {
 }
 
 func rewriteQuestionPlaceholders(query string) string {
-	var builder strings.Builder
-	builder.Grow(len(query) + 8)
 	placeholder := 1
-	inSingleQuote := false
-	for i := 0; i < len(query); i++ {
-		ch := query[i]
-		if ch == '\'' {
-			builder.WriteByte(ch)
-			if inSingleQuote && i+1 < len(query) && query[i+1] == '\'' {
-				i++
-				builder.WriteByte(query[i])
+	return rewriteSQLCodeSegments(query, func(code string) string {
+		var builder strings.Builder
+		builder.Grow(len(code) + 8)
+		for index := 0; index < len(code); index++ {
+			if code[index] != '?' {
+				builder.WriteByte(code[index])
 				continue
 			}
-			inSingleQuote = !inSingleQuote
-			continue
-		}
-		if ch == '?' && !inSingleQuote {
 			builder.WriteByte('$')
 			builder.WriteString(strconv.Itoa(placeholder))
 			placeholder++
-			continue
 		}
-		builder.WriteByte(ch)
-	}
-	return builder.String()
+		return builder.String()
+	})
 }
 
 // timescaleHypertable describes a table to convert into a TimescaleDB hypertable

@@ -212,6 +212,100 @@ describe('useWebSocket', () => {
     expect(onOpen).toHaveBeenCalledTimes(2)
   })
 
+  it('backs off exponentially with jitter and caps the reconnect delay', async () => {
+    // Pin the jitter to its maximum so the assertions can use exact boundaries:
+    // the socket must not reappear at delay - 1, and must reappear at delay.
+    vi.spyOn(Math, 'random').mockReturnValue(0.999999)
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await openSocket()
+
+    // 3s, 6s, 12s, 24s, then clamped to the 30s ceiling — each with the full
+    // 1s jitter window on top. A flat delay would fire every attempt at 3s.
+    const expected = [3000, 6000, 12000, 24000, 30000, 30000]
+    expected.forEach((base, attempt) => {
+      const socketCount = MockWebSocket.instances.length
+      act(() => {
+        MockWebSocket.instances[socketCount - 1]?.onclose?.(new CloseEvent('close'))
+      })
+      expect(state()?.getAttribute('data-connection-state')).toBe('disconnected')
+
+      act(() => {
+        vi.advanceTimersByTime(base + 999 - 1)
+      })
+      expect(MockWebSocket.instances, `attempt ${attempt + 1} reconnected before its backoff elapsed`).toHaveLength(socketCount)
+
+      act(() => {
+        vi.advanceTimersByTime(1)
+      })
+      expect(MockWebSocket.instances, `attempt ${attempt + 1} did not reconnect after its backoff`).toHaveLength(socketCount + 1)
+    })
+  })
+
+  it('resets the backoff once a reconnect succeeds', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await openSocket()
+
+    // Escalate to the second backoff step…
+    act(() => {
+      MockWebSocket.instances[0]?.onclose?.(new CloseEvent('close'))
+    })
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    act(() => {
+      MockWebSocket.instances[1]?.onclose?.(new CloseEvent('close'))
+    })
+    act(() => {
+      vi.advanceTimersByTime(6000)
+    })
+    expect(MockWebSocket.instances).toHaveLength(3)
+
+    // …then let the third socket actually open. The next drop must start over
+    // at the base delay rather than continuing to 12s.
+    await act(async () => {
+      MockWebSocket.instances[2]?.onopen?.(new Event('open'))
+    })
+    act(() => {
+      MockWebSocket.instances[2]?.onclose?.(new CloseEvent('close'))
+    })
+    act(() => {
+      vi.advanceTimersByTime(3000)
+    })
+    expect(MockWebSocket.instances).toHaveLength(4)
+  })
+
+  it('cancels a pending reconnect timer on teardown', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+
+    await act(async () => {
+      root.render(<Harness />)
+    })
+    await openSocket()
+    act(() => {
+      MockWebSocket.instances[0]?.onclose?.(new CloseEvent('close'))
+    })
+
+    await act(async () => {
+      root.unmount()
+    })
+    act(() => {
+      vi.advanceTimersByTime(60000)
+    })
+
+    // The unmounted hook must not resurrect a socket from its queued backoff.
+    expect(MockWebSocket.instances).toHaveLength(1)
+
+    // Re-create the root so the shared afterEach unmount stays valid.
+    root = createRoot(container)
+  })
+
   it('coalesces rapid projectId changes into a single socket', async () => {
     await act(async () => {
       root.render(<Harness projectId={undefined} />)

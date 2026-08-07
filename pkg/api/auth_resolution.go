@@ -536,6 +536,23 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{method: http.MethodPatch, exact: "/api/v1/system/generators/drain", scope: "settings:manage"},
 	{prefix: "/api/v1/system/restarts", scope: "settings:manage"},
 	{method: http.MethodPost, prefix: "/api/v1/system/deployment-lease/", scope: "deployments:manage"},
+	// Cluster connections hold control-plane credentials, so every mutating
+	// verb needs settings:manage. Without these rules the generic
+	// "/api/v1/system/" fallback below would map them to system:read, letting a
+	// read-scoped service account register or delete a cluster.
+	{method: http.MethodPost, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
+	{method: http.MethodPut, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
+	{method: http.MethodPatch, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
+	{method: http.MethodDelete, prefix: "/api/v1/system/clusters", scope: "settings:manage"},
+	// A domain deployment target decides which cloud a tenant's generators run
+	// in, so the same reasoning applies: without these, the generic
+	// "/api/v1/system/" fallback below would let a read-scoped service account
+	// repoint a whole domain. GET intentionally falls through to system:read,
+	// matching GET /api/v1/system/clusters.
+	{method: http.MethodPost, prefix: "/api/v1/system/deployment-targets", scope: "settings:manage"},
+	{method: http.MethodPut, prefix: "/api/v1/system/deployment-targets", scope: "settings:manage"},
+	{method: http.MethodPatch, prefix: "/api/v1/system/deployment-targets", scope: "settings:manage"},
+	{method: http.MethodDelete, prefix: "/api/v1/system/deployment-targets", scope: "settings:manage"},
 	{prefix: "/api/v1/system/", scope: "system:read"},
 	{method: http.MethodGet, prefix: "/api/v1/results", scope: "results:read"},
 	{method: http.MethodHead, prefix: "/api/v1/results", scope: "results:read"},

@@ -46,37 +46,7 @@ func (tr *TestRunner) PoolGeneratorEnvelopeSnapshot() (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	targetsByPool := make(map[string]map[string]struct{}, len(pools))
-	add := func(poolID, target string) {
-		poolID = strings.TrimSpace(poolID)
-		target = strings.TrimSpace(target)
-		if poolID == "" || target == "" {
-			return
-		}
-		if targetsByPool[poolID] == nil {
-			targetsByPool[poolID] = make(map[string]struct{})
-		}
-		targetsByPool[poolID][target] = struct{}{}
-	}
-	for _, pool := range pools {
-		if pool == nil {
-			continue
-		}
-		poolID := strings.TrimSpace(pool.ID)
-		if poolID != "" && targetsByPool[poolID] == nil {
-			targetsByPool[poolID] = make(map[string]struct{})
-		}
-		for _, member := range pool.Members {
-			if member != nil {
-				add(poolID, member.Target)
-			}
-		}
-	}
-	for _, item := range metadata {
-		if item != nil && item.FleetPoolID != nil {
-			add(*item.FleetPoolID, item.Target)
-		}
-	}
+	targetsByPool := fleetPoolTargetsByPool(pools, metadata)
 	envelopes := make(map[string]int, len(targetsByPool))
 	for poolID, targets := range targetsByPool {
 		envelopes[poolID] = len(targets)

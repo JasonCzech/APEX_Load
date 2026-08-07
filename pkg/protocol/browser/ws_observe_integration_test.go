@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	gorillawebsocket "github.com/gorilla/websocket"
@@ -45,11 +44,7 @@ func TestBrowserReplayWebSocketSession(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 

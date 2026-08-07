@@ -12,10 +12,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"github.com/jmespath/go-jmespath"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
 // ErrNotFound distinguishes a valid expression that found no response value
@@ -157,40 +158,33 @@ type cachedRegexp struct {
 	compileErr error
 }
 
-// regexCompileCacheMaxEntries bounds the compile cache. Extractor expressions
-// come from converted scripts, so the live working set is small, but the cache
-// is process-global and outlives every run — without a bound it would retain a
-// compiled program for every expression the controller has ever seen. On
-// overflow the cache is dropped wholesale rather than evicted per-entry: a
-// rebuild costs one compile per live expression and keeps the hot path
-// lock-free.
-const regexCompileCacheMaxEntries = 1024
+// regexCompileCache memoizes compiled extraction patterns. The cache is
+// process-global and outlives every run, and the expressions reaching it are
+// script-supplied — parameterised, and in a hostile script arbitrarily
+// shaped. Bounding entry count alone is therefore not enough: a handful of
+// multi-megabyte patterns would pin their key strings (and compiled programs)
+// for the life of the process. boundedcache bounds entries, per-key bytes and
+// total key bytes, evicting FIFO on any of them, and declines to retain an
+// oversized key at all — cachedRegex still returns a correctly compiled
+// pattern for those, it just recompiles them each time.
+var regexCompileCache = boundedcache.NewStringCache[cachedRegexp](0, 0, 0)
 
-var (
-	regexCompileCache     sync.Map
-	regexCompileCacheSize atomic.Int64
-)
+// regexCompileCount counts the regexp.Compile calls cachedRegex actually makes.
+// It exists so the memoization can be observed at all: an admitted cache entry
+// is immutable until eviction, so reading the cache back cannot distinguish
+// "the compiled program was reused" from "it was recompiled and the fresh copy
+// thrown away". Production never reads this; the increment sits on the cold
+// miss path next to the compile it counts.
+var regexCompileCount atomic.Int64
 
 func cachedRegex(expr string) cachedRegexp {
 	if cached, ok := regexCompileCache.Load(expr); ok {
-		return cached.(cachedRegexp)
+		return cached
 	}
+	regexCompileCount.Add(1)
 	re, err := regexp.Compile(expr)
-	cached := cachedRegexp{re: re, compileErr: err}
-	if _, loaded := regexCompileCache.LoadOrStore(expr, cached); !loaded {
-		if regexCompileCacheSize.Add(1) > regexCompileCacheMaxEntries {
-			resetRegexCompileCache()
-		}
-	}
-	return cached
-}
-
-func resetRegexCompileCache() {
-	regexCompileCache.Range(func(key, _ any) bool {
-		regexCompileCache.Delete(key)
-		return true
-	})
-	regexCompileCacheSize.Store(0)
+	actual, _ := regexCompileCache.LoadOrStore(expr, cachedRegexp{re: re, compileErr: err})
+	return actual
 }
 
 // Boundary extracts the text between a left and right boundary, expressed as

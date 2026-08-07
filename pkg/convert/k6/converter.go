@@ -75,10 +75,13 @@ type parsedHTTPRequest struct {
 	Body          string
 	Headers       map[string]string
 	ReviewReasons []string
-	StartOffset   int
-	EndOffset     int
-	StartLine     int
-	EndLine       int
+	// ResponseVar is the `const res = http.get(...)` binding, used to resolve
+	// check(res, ...) back to the request that produced the response.
+	ResponseVar string
+	StartOffset int
+	EndOffset   int
+	StartLine   int
+	EndLine     int
 }
 
 type sortedAction struct {
@@ -90,8 +93,6 @@ type sortedAction struct {
 var (
 	optionsBlockPattern  = regexp.MustCompile(`(?s)export\s+(?:const|let|var)\s+options\s*=\s*\{(.*?)\}\s*;`)
 	httpCallStartPattern = regexp.MustCompile(`\bhttp\.(get|post|put|patch|delete|del|head|options)\s*\(`)
-	sleepPattern         = regexp.MustCompile(`\bsleep\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)`)
-	checkPattern         = regexp.MustCompile(`\bcheck\s*\(`)
 	thresholdPattern     = regexp.MustCompile(`(?s)thresholds\s*:\s*\{(.*?)\}`)
 	vusPattern           = regexp.MustCompile(`\bvus\s*:\s*([0-9]+)`)
 	durationPattern      = regexp.MustCompile(`\bduration\s*:\s*['"]([^'"]+)['"]`)
@@ -157,7 +158,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		// placeholder from reaching transport.
 		result.Script.Config.BaseURL = "https://missing-base-url.apexload.invalid"
 	}
-	residualLines := detectK6ResidualSource(content, requests)
+	// Translate the statically analysable sleep()/check() idioms before the
+	// residual scan so faithfully reproduced statements stop gating the flow.
+	translation := translateK6StaticPatterns(content, requests)
+	residualLines := detectK6ResidualSource(content, requests, translation.translatedSpans)
 	if len(residualLines) > 0 && result.Script.Metadata != nil &&
 		result.Script.Metadata.Import != nil {
 		// Keep the exact, inert JavaScript in the durable destination whenever
@@ -178,7 +182,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if containsK6Reason(req.ReviewReasons, "dynamic_body_expression") {
 			body = ""
 		}
-		action, report, finalizeErr := finalizeK6HTTPRequest(req, idx, target, body, convertutil.FirstNonEmpty(reqFileName(result), "script.js"), credentialRegistry)
+		action, report, finalizeErr := finalizeK6HTTPRequest(req, idx, target, body, convertutil.FirstNonEmpty(reqFileName(result), "script.js"), credentialRegistry, translation.forRequest(idx))
 		if finalizeErr != nil {
 			return nil, finalizeErr
 		}
@@ -215,7 +219,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	diagnoseUnsupported(content, &diagnostics, &result.Stats, &unsorted, convertutil.FirstNonEmpty(reqFileName(result), "script.js"))
 	diagnoseK6ResidualSource(residualLines, &diagnostics, &result.Stats, convertutil.FirstNonEmpty(reqFileName(result), "script.js"))
-	applyK6FlowReviewGates(content, &unsorted, convertutil.FirstNonEmpty(reqFileName(result), "script.js"), residualLines)
+	applyK6FlowReviewGates(content, &unsorted, convertutil.FirstNonEmpty(reqFileName(result), "script.js"), residualLines, translation)
 
 	for i := 0; i < len(unsorted); i++ {
 		for j := i + 1; j < len(unsorted); j++ {
@@ -240,13 +244,35 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			reports = append(reports, report)
 		}
 	}
-	result.Stats.Checks = len(checkPattern.FindAllStringIndex(content, -1))
-	result.Stats.Sleeps = len(sleepPattern.FindAllStringIndex(content, -1))
-	if result.Stats.Checks > 0 {
-		result.Warnings = append(result.Warnings, "k6 check() calls are preserved as import evidence; recreate required checks as APEX Load assertions before promotion")
+	result.Stats.Checks = translation.checks()
+	result.Stats.Sleeps = translation.sleeps()
+	if len(translation.untranslatedChecks) > 0 {
+		result.Warnings = append(result.Warnings, "k6 check() calls outside the static status-code idiom are preserved as import evidence; recreate required checks as APEX Load assertions before promotion")
 	}
-	if result.Stats.Sleeps > 0 {
-		result.Warnings = append(result.Warnings, "k6 sleep() calls are summarized in import stats; review APEX think-time/pacing before promotion")
+	if len(translation.untranslatedSleeps) > 0 {
+		result.Warnings = append(result.Warnings, "k6 sleep() calls with non-literal durations (or with no preceding request) are summarized in import stats; review APEX think-time/pacing before promotion")
+	}
+	if len(residualLines) > 0 {
+		// Residual JavaScript already produces an unsupported diagnostic and a
+		// durable per-action gate, but the top-level warning list is what the
+		// import surfaces first. Say plainly that the draft is blocked.
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"k6 source outside the translated static subset remains at %s line %d and is omitted from the public draft; the affected requests stay blocked until the behavior is replaced",
+			convertutil.FirstNonEmpty(reqFileName(result), "script.js"), residualLines[0]))
+	}
+	if translation.translatedChecks > 0 || translation.translatedSleeps > 0 {
+		result.Assumptions = append(result.Assumptions, fmt.Sprintf(
+			"%d static check() status assertion(s) and %d literal sleep() call(s) were translated into APEX assertions and per-action think time; every other check/sleep form stays review-gated.",
+			translation.translatedChecks, translation.translatedSleeps))
+	}
+	if translation.translatedChecks > 0 {
+		// k6 check() is a metric: a failed check leaves the request successful
+		// and the iteration running. The APEX assertion it becomes fails the
+		// request, and under this draft's default error handling that ends the
+		// iteration. Disclose the fidelity change rather than let a k6-vs-APEX
+		// comparison diverge silently.
+		result.Assumptions = append(result.Assumptions,
+			"A failed k6 check() only records a check metric, but the translated APEX assertion fails the request and, with the draft's default stop-on-error handling, ends the iteration; set Continue On Error in runtime settings to match k6's behavior.")
 	}
 	unresolvedBindings := unresolvedK6CredentialBindings(reports)
 	finalized, err := requestimport.FinalizeScript(result.Script, reports, requestimport.FinalizeOptions{UnresolvedBindings: unresolvedBindings})
@@ -436,6 +462,7 @@ func parseHTTPRequests(content string) []parsedHTTPRequest {
 			Body:          body,
 			Headers:       headers,
 			ReviewReasons: uniqueSortedK6Strings(reviewReasons),
+			ResponseVar:   k6AssignedResponseVariable(content, match[0]),
 			StartOffset:   match[0],
 			EndOffset:     closeOffset + 1,
 			StartLine:     lineIndex.LineForOffset(match[0]),
@@ -811,6 +838,16 @@ func parseOptions(content string, result *ConvertResult) map[string]any {
 		}
 		out["stages"] = stageSummaries
 	}
+	if len(out) > 0 {
+		// options.vus/duration/stages are recorded as scenario metadata only -
+		// APEX scenario sizing, not the imported script, drives execution. The
+		// support matrix declares this construct only partly reproduced, so it
+		// owes the import review a signal of its own. Without this warning the
+		// load profile is dropped from every review surface and the only thing
+		// left is the generic "residual JavaScript" disclosure, which any
+		// non-static source produces whether or not options were parsed.
+		result.Warnings = append(result.Warnings, "k6 options (vus/duration/stages) were preserved as import evidence only; APEX scenario sizing remains the execution source of truth, so re-enter the load profile before promotion")
+	}
 	if thresholds := thresholdPattern.FindStringSubmatch(block); len(thresholds) > 1 {
 		result.Stats.Thresholds++
 		result.Warnings = append(result.Warnings, "k6 thresholds were detected; map release gates to APEX goal_config before execution")
@@ -881,7 +918,7 @@ func diagnoseUnsupported(content string, diagnostics *diag.Collector, stats *Con
 	}
 }
 
-func applyK6FlowReviewGates(content string, actions *[]sortedAction, sourceFile string, residualLines []int) {
+func applyK6FlowReviewGates(content string, actions *[]sortedAction, sourceFile string, residualLines []int, translation k6StaticTranslation) {
 	if actions == nil {
 		return
 	}
@@ -897,9 +934,20 @@ func applyK6FlowReviewGates(content string, actions *[]sortedAction, sourceFile 
 			sourceRefs[fmt.Sprintf("%s line %d", sourceFile, lineIndex.LineForOffset(match[0]))] = struct{}{}
 		}
 	}
-	addMatches("untranslated_check", checkPattern.FindAllStringIndex(content, -1))
+	addLines := func(code string, lines []int) {
+		if len(lines) == 0 {
+			return
+		}
+		reasons[code] = struct{}{}
+		for _, line := range lines {
+			sourceRefs[fmt.Sprintf("%s line %d", sourceFile, line)] = struct{}{}
+		}
+	}
+	// Only the occurrences the static pass could not reproduce still gate the
+	// flow; translated sleep()/check() statements are now real DSL behavior.
+	addLines("untranslated_check", translation.untranslatedChecks)
+	addLines("untranslated_sleep", translation.untranslatedSleeps)
 	addMatches("untranslated_threshold", thresholdPattern.FindAllStringIndex(content, -1))
-	addMatches("untranslated_sleep", sleepPattern.FindAllStringIndex(content, -1))
 	addMatches("unsupported_browser_behavior", browserPattern.FindAllStringIndex(content, -1))
 	addMatches("unsupported_module", requirePattern.FindAllStringIndex(content, -1))
 	addMatches("residual_control_flow", controlFlowPattern.FindAllStringIndex(content, -1))

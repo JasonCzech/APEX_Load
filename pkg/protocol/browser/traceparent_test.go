@@ -48,7 +48,7 @@ func TestBrowserTraceparentInjection(t *testing.T) {
 		"browser_headless":    true,
 		"browser_traceparent": true,
 	}); err != nil {
-		t.Skipf("browser runtime unavailable: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer func() { _ = b.Teardown(context.Background()) }()
 
@@ -100,7 +100,7 @@ func TestBrowserTraceparentDisabledByDefault(t *testing.T) {
 		"base_url":         server.URL,
 		"browser_headless": true,
 	}); err != nil {
-		t.Skipf("browser runtime unavailable: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer func() { _ = b.Teardown(context.Background()) }()
 

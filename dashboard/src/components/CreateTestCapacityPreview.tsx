@@ -77,7 +77,7 @@ export default function CreateTestCapacityPreview({ chartData, groups, draftEsti
                 stroke={GROUP_COLORS[index % GROUP_COLORS.length]}
                 fill={GROUP_COLORS[index % GROUP_COLORS.length]}
                 fillOpacity={0.4}
-                animationDuration={300}
+                isAnimationActive={false}
               />
             ))}
           </AreaChart>

@@ -120,8 +120,8 @@ func TestDesktopWailsBuildUsesImmutableDashboardInstall(t *testing.T) {
 	if err := json.Unmarshal(content, &configuration); err != nil {
 		t.Fatalf("parse Wails configuration: %v", err)
 	}
-	if got := configuration["frontend:install"]; got != "npm ci --ignore-scripts" {
-		t.Fatalf("Wails frontend install = %v, want immutable lockfile install", got)
+	if got := configuration["frontend:install"]; got != "npm run check:node && npm ci --ignore-scripts" {
+		t.Fatalf("Wails frontend install = %v, want pinned Node validation plus immutable lockfile install", got)
 	}
 	hooks, ok := configuration["postBuildHooks"].(map[string]any)
 	hook, _ := hooks["windows/*"].(string)
@@ -146,7 +146,14 @@ func TestClientPackageWorkflowValidatesOnPullRequests(t *testing.T) {
 		"pull_request:",
 		"branches: [main]",
 		"- '**/*.go'",
-		"node-version: 22.22.0",
+		// Derived from the repository pin rather than hardcoded. A correct pin
+		// bump is *forced* to edit this workflow's setup-node line, so a literal
+		// here failed on exactly the change it was meant to bless. The
+		// cross-file equality (every setup-node pin under .github == .nvmrc) is
+		// owned by dashboard/scripts/check-node-version.node-test.mjs; this
+		// entry only asserts the desktop workflow provisions a pinned Node
+		// toolchain at all.
+		"node-version: " + pinnedNodeVersion(t),
 		"cache: false",
 		"desktop/.wails-version",
 		"scripts/sign-windows-binary.sh",

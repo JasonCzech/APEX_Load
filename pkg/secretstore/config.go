@@ -11,14 +11,21 @@ import (
 )
 
 func NewConfigured(records storage.ProjectSecretCipherStore, wrapper keywrap.KeyWrapper) (Store, error) {
-	stores := make([]Store, 0, 3)
+	stores := make([]Store, 0, 4)
 	keyVault, err := NewAzureKeyVaultStoreFromEnv()
 	if err != nil {
 		return nil, err
 	}
-	if keyVault != nil {
-		if metadata, ok := records.(storage.ProjectSecretMetadataStore); ok {
+	secretsManager, err := NewAwsSecretsManagerStoreFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	if metadata, ok := records.(storage.ProjectSecretMetadataStore); ok {
+		if keyVault != nil {
 			keyVault.Metadata = metadata
+		}
+		if secretsManager != nil {
+			secretsManager.Metadata = metadata
 		}
 	}
 	// The encrypted database provider has a real atomic INSERT-if-absent and is
@@ -29,8 +36,15 @@ func NewConfigured(records storage.ProjectSecretCipherStore, wrapper keywrap.Key
 	if records != nil && wrapper != nil {
 		stores = append(stores, &DatabaseStore{Records: records, Wrapper: wrapper})
 	}
+	// Both external providers may be configured at once. Cross-provider
+	// clobbering is already prevented by the Provider mismatch check in each
+	// Replace, but note that Get is first-wins if the same physical name exists
+	// in both.
 	if keyVault != nil {
 		stores = append(stores, keyVault)
+	}
+	if secretsManager != nil {
+		stores = append(stores, secretsManager)
 	}
 	stores = append(stores, EnvironmentStore{})
 	return Chain{Stores: stores}, nil

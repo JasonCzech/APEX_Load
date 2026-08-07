@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -25,6 +26,8 @@ const (
 	maxKubernetesAPIResponseBytes int64 = 8 << 20
 	maxServiceAccountTokenBytes   int64 = 1 << 20
 	maxServiceAccountCABytes      int64 = 4 << 20
+
+	defaultRequestTimeout = 15 * time.Second
 )
 
 var (
@@ -49,9 +52,37 @@ func (e *KubernetesAPIError) Error() string {
 	return fmt.Sprintf("kubernetes API %s %s returned %d: %s", e.Method, e.Path, e.StatusCode, strings.TrimSpace(e.Body))
 }
 
+// TLS trust modes for the API server connection.
+const (
+	// TLSModeCustomCA verifies the API server against CAPEM or CAFile. This is
+	// the default; the zero value means custom CA.
+	TLSModeCustomCA = "custom_ca"
+	// TLSModeSystemRoots verifies against the host's root store, for clusters
+	// fronted by a publicly-trusted certificate.
+	TLSModeSystemRoots = "system_roots"
+)
+
 type Config struct {
 	Namespace         string
 	GeneratorSelector string
+
+	// TokenSource authenticates every API request. Nil means the in-cluster
+	// projected service-account token at TokenFile, preserving the original
+	// read-per-request behavior for rotation.
+	TokenSource TokenSource
+
+	// CAPEM is an inline PEM bundle for the API server's CA. It takes
+	// precedence over CAFile and is how registered remote clusters carry their
+	// trust anchor without touching the filesystem.
+	CAPEM string
+	// TLSMode selects the trust anchor. Empty means TLSModeCustomCA.
+	TLSMode string
+	// RequestTimeout bounds a single API call. Zero means 15s.
+	RequestTimeout time.Duration
+	// DialGuard, when non-nil, vets every resolved API server IP before the
+	// connection is made. It exists so pkg/api can apply its egress policy to
+	// administrator-supplied endpoints without kubeops importing that package.
+	DialGuard func(netip.Addr) error
 
 	// Test seams. Empty values use the standard in-cluster environment and
 	// service-account file paths.
@@ -77,13 +108,13 @@ type Client struct {
 	httpClient *http.Client
 }
 
+// NewInClusterClient builds a client for the cluster the controller runs in:
+// the API server comes from the standard environment variables and credentials
+// from the projected service-account files. Its signature and semantics are
+// unchanged by the pluggable-auth refactor — an unset TokenSource still means
+// "re-read the token file on every request".
 func NewInClusterClient(cfg Config) (*Client, error) {
-	cfg.Namespace = strings.TrimSpace(cfg.Namespace)
-	cfg.GeneratorSelector = strings.TrimSpace(cfg.GeneratorSelector)
 	cfg.APIServerURL = strings.TrimRight(strings.TrimSpace(cfg.APIServerURL), "/")
-	cfg.TokenFile = firstNonEmpty(strings.TrimSpace(cfg.TokenFile), DefaultTokenFile)
-	cfg.CAFile = firstNonEmpty(strings.TrimSpace(cfg.CAFile), DefaultCAFile)
-
 	if cfg.APIServerURL == "" {
 		host := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_HOST"))
 		port := strings.TrimSpace(os.Getenv("KUBERNETES_SERVICE_PORT"))
@@ -92,10 +123,86 @@ func NewInClusterClient(cfg Config) (*Client, error) {
 		}
 		cfg.APIServerURL = "https://" + net.JoinHostPort(host, port)
 	}
+	cfg.CAFile = firstNonEmpty(strings.TrimSpace(cfg.CAFile), DefaultCAFile)
+	return newClient(cfg)
+}
+
+// NewRemoteClient builds a client for a registered external cluster. Unlike
+// NewInClusterClient it never consults the in-cluster environment or the
+// service-account files: the endpoint, trust anchor, and credential must all
+// come from the caller, so a misconfigured connection can never silently fall
+// back to the controller's own cluster.
+func NewRemoteClient(cfg Config) (*Client, error) {
+	cfg.APIServerURL = strings.TrimRight(strings.TrimSpace(cfg.APIServerURL), "/")
+	if cfg.APIServerURL == "" {
+		return nil, fmt.Errorf("API server URL is required")
+	}
+	if err := ValidateAPIServerURL(cfg.APIServerURL); err != nil {
+		return nil, err
+	}
+	if cfg.TokenSource == nil {
+		return nil, fmt.Errorf("a token source is required for a remote cluster")
+	}
+	if strings.TrimSpace(cfg.CAPEM) == "" && normalizeTLSMode(cfg.TLSMode) != TLSModeSystemRoots {
+		return nil, fmt.Errorf("a CA certificate is required unless TLS mode is %q", TLSModeSystemRoots)
+	}
+	// A remote client must not inherit the in-cluster file defaults.
+	cfg.TokenFile = ""
+	cfg.CAFile = ""
+	return newClient(cfg)
+}
+
+// ValidateAPIServerURL enforces the transport-level shape of an API server
+// endpoint. Network-level policy (which IPs may be dialed) is the caller's
+// concern via Config.DialGuard.
+func ValidateAPIServerURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("API server URL is not a valid URL: %w", err)
+	}
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("API server URL must use https")
+	}
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("API server URL must include a host")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("API server URL must not embed credentials")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("API server URL must not include a query or fragment")
+	}
+	if strings.Trim(parsed.Path, "/") != "" {
+		return fmt.Errorf("API server URL must not include a path")
+	}
+	return nil
+}
+
+// newClient applies the shared normalization and invariants for both
+// constructors. It is the single place that defaults the token source, so no
+// code path can end up with a nil credential.
+func newClient(cfg Config) (*Client, error) {
+	cfg.Namespace = strings.TrimSpace(cfg.Namespace)
+	cfg.GeneratorSelector = strings.TrimSpace(cfg.GeneratorSelector)
+	cfg.CAPEM = strings.TrimSpace(cfg.CAPEM)
+	cfg.TLSMode = normalizeTLSMode(cfg.TLSMode)
 	if cfg.Namespace == "" {
 		return nil, fmt.Errorf("namespace is required")
 	}
+	if cfg.TokenSource == nil {
+		cfg.TokenSource = ServiceAccountFileTokenSource{Path: cfg.TokenFile}
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = defaultRequestTimeout
+	}
 	return &Client{cfg: cfg}, nil
+}
+
+func normalizeTLSMode(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), TLSModeSystemRoots) {
+		return TLSModeSystemRoots
+	}
+	return TLSModeCustomCA
 }
 
 func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
@@ -224,6 +331,12 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 		return nil, err
 	}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		// Drop any cached credential before the retry. A file-backed source
+		// re-reads per call and needs no hint, but a minted token (Azure AD)
+		// would otherwise re-present the same rejected bearer token.
+		if invalidating, ok := c.cfg.TokenSource.(invalidatingTokenSource); ok {
+			invalidating.Invalidate()
+		}
 		payload, status, err = c.doOnce(ctx, method, path, contentType, body)
 		if err != nil {
 			return nil, err
@@ -241,7 +354,7 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 }
 
 func (c *Client) doOnce(ctx context.Context, method, path, contentType string, body []byte) ([]byte, int, error) {
-	token, err := c.readToken()
+	token, err := c.cfg.TokenSource.Token(ctx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -275,26 +388,15 @@ func (c *Client) doOnce(ctx context.Context, method, path, contentType string, b
 	return payload, resp.StatusCode, nil
 }
 
-func (c *Client) readToken() (string, error) {
-	raw, err := readBoundedFile(c.cfg.TokenFile, maxServiceAccountTokenBytes)
-	if err != nil {
-		return "", fmt.Errorf("read Kubernetes service-account token: %w", err)
-	}
-	token := strings.TrimSpace(string(raw))
-	if token == "" {
-		return "", fmt.Errorf("Kubernetes service-account token is empty")
-	}
-	return token, nil
-}
-
 // resolveHTTPClient returns the shared HTTPS client, building it (and reading the
 // cluster CA) at most once and reusing it across calls. ListPods runs on every
 // dashboard-polled system-inventory request; rebuilding the client per call re-read
-// ca.crt from disk and dialed a fresh connection each time. The service-account
-// token is intentionally NOT cached — readToken re-reads it per call because it
-// rotates. On a build error the client is not cached, so a later call retries
-// (preserving the original lazy semantics: construction succeeds, the CA error
-// surfaces on first use).
+// ca.crt from disk and dialed a fresh connection each time. The bearer token is
+// intentionally NOT cached here — that is the TokenSource's concern, and the
+// in-cluster source re-reads per call because the projected token rotates. On a
+// build error the client is not cached, so a later call retries (preserving the
+// original lazy semantics: construction succeeds, the CA error surfaces on
+// first use).
 func (c *Client) resolveHTTPClient() (*http.Client, error) {
 	if c.cfg.HTTPClient != nil {
 		return c.cfg.HTTPClient, nil
@@ -304,7 +406,7 @@ func (c *Client) resolveHTTPClient() (*http.Client, error) {
 	if c.httpClient != nil {
 		return c.httpClient, nil
 	}
-	client, err := buildInClusterHTTPClient(c.cfg.CAFile)
+	client, err := buildHTTPClient(c.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -312,21 +414,73 @@ func (c *Client) resolveHTTPClient() (*http.Client, error) {
 	return c.httpClient, nil
 }
 
-func buildInClusterHTTPClient(caFile string) (*http.Client, error) {
-	roots := x509.NewCertPool()
-	ca, err := readBoundedFile(caFile, maxServiceAccountCABytes)
-	if err != nil {
-		return nil, fmt.Errorf("read Kubernetes service-account CA: %w", err)
+// buildHTTPClient assembles the TLS trust anchor and, for administrator-supplied
+// endpoints, the per-IP dial guard. Nil RootCAs means the host root store, which
+// is only reachable through an explicit TLSModeSystemRoots — there is deliberately
+// no way to skip verification.
+func buildHTTPClient(cfg Config) (*http.Client, error) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	switch {
+	case cfg.CAPEM != "":
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM([]byte(cfg.CAPEM)) {
+			return nil, fmt.Errorf("cluster CA certificate did not contain a PEM certificate")
+		}
+		tlsConfig.RootCAs = roots
+	case cfg.TLSMode == TLSModeSystemRoots:
+		// Leave RootCAs nil so crypto/tls uses the host root store.
+	default:
+		roots := x509.NewCertPool()
+		ca, err := readBoundedFile(cfg.CAFile, maxServiceAccountCABytes)
+		if err != nil {
+			return nil, fmt.Errorf("read Kubernetes service-account CA: %w", err)
+		}
+		if !roots.AppendCertsFromPEM(ca) {
+			return nil, fmt.Errorf("Kubernetes service-account CA did not contain a PEM certificate")
+		}
+		tlsConfig.RootCAs = roots
 	}
-	if !roots.AppendCertsFromPEM(ca) {
-		return nil, fmt.Errorf("Kubernetes service-account CA did not contain a PEM certificate")
+
+	transport := &http.Transport{TLSClientConfig: tlsConfig}
+	if cfg.DialGuard != nil {
+		transport.Proxy = nil
+		transport.DialContext = guardedDialContext(cfg.DialGuard)
 	}
-	return &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12},
-		},
-	}, nil
+	return &http.Client{Timeout: cfg.RequestTimeout, Transport: transport}, nil
+}
+
+// guardedDialContext resolves the host itself, vets every candidate address, and
+// dials the validated IP literal. Dialing the literal rather than the name is
+// what closes the DNS-rebinding window between the policy check and the connect.
+func guardedDialContext(guard func(netip.Addr) error) func(context.Context, string, string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+		if err != nil {
+			return nil, err
+		}
+		var lastErr error
+		for _, addr := range addrs {
+			addr = addr.Unmap()
+			if guardErr := guard(addr); guardErr != nil {
+				lastErr = guardErr
+				continue
+			}
+			conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(addr.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+		}
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no addresses resolved for %q", host)
+		}
+		return nil, lastErr
+	}
 }
 
 func readBoundedFile(path string, limit int64) ([]byte, error) {

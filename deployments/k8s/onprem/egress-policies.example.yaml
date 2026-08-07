@@ -102,7 +102,8 @@ spec:
           port: 6380
         - protocol: TCP
           port: 9000
-    # HTTPS for OIDC, webhooks (Slack/Teams/Dynatrace), GHES, remote write.
+    # HTTPS for OIDC, webhooks (Slack/Teams/Dynatrace), GHES, remote write,
+    # registered cluster connections, and the Azure AD login endpoint.
     # Narrow to corporate CIDRs if your endpoints allow it.
     - to:
         - ipBlock:
@@ -110,3 +111,10 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+        # Registered cluster connections whose API server is NOT on 443.
+        # AKS and most managed distributions use 443, but kubeadm, RKE2, k3s,
+        # and many on-prem clusters serve the API on 6443 — without this the
+        # connection test fails at the api_server probe with a dial timeout.
+        # Remove this rule if you register no such clusters.
+        - protocol: TCP
+          port: 6443

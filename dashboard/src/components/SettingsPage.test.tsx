@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SettingsPage from './SettingsPage'
 import { reconcileSettingsProjectSnapshots } from './settingsProjectCatalog'
 import type { WailsDesktopBridge } from '../desktop/desktopBridge'
-import type { DashboardAuthEffectiveAccessResource, Domain, Project, ProjectSettings } from '../types'
+import type { DashboardAuthEffectiveAccessResource, Domain, GitHubActionsPolicy, GitHubProjectPolicy, Project, ProjectSettings } from '../types'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { NavigationGuardRegisterContext, type NavigationGuard } from '../hooks/NavigationGuardProvider'
@@ -104,11 +104,23 @@ const applicationContextMock = {
   createAndSelectApplication: vi.fn(),
 }
 
+// SettingsPage reads its project catalog from this context, which App provides
+// already filtered to the active domain — it no longer calls listProjects.
 const projectContextMock = {
+  projects: [{ id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }] as Project[],
+  projectsError: '',
   activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
   setActiveProject: vi.fn(),
   createAndSelectProject: vi.fn(),
   updateProject: vi.fn(),
+}
+
+// Seeds the project catalog SettingsPage renders. It reads ProjectContext, which
+// App provides already filtered to the active domain; listProjects is still
+// stubbed for the tests that assert on the API surface itself.
+function seedProjectCatalog(projects: Project[]) {
+  projectContextMock.projects = projects
+  projectApiMock.listProjects.mockResolvedValue({ projects, count: projects.length })
 }
 
 const fleetApiMock = {
@@ -709,8 +721,7 @@ describe('SettingsPage', () => {
     repositoryApiMock.createDomain.mockResolvedValue({ domain: retailDomain, application_repository: { id: 'repo-retail', domain_id: retailDomain.id, name: 'Application Repository', created_at: '', updated_at: '' }, default_category: { id: 'category-retail', domain_id: retailDomain.id, repository_id: 'repo-retail', name: 'Uncategorized', created_at: '', updated_at: '' } })
     repositoryApiMock.updateDomain.mockResolvedValue(retailDomain)
     repositoryApiMock.deleteDomain.mockResolvedValue({ deleted: retailDomain.id })
-    projectApiMock.listProjects.mockResolvedValue({
-      projects: [
+    seedProjectCatalog([
         {
           id: 'project-1',
           name: 'Customer Portal',
@@ -727,9 +738,7 @@ describe('SettingsPage', () => {
           created_at: '2026-05-15T00:00:00Z',
           updated_at: '2026-05-15T00:00:00Z',
         },
-      ],
-      count: 1,
-    })
+      ])
     apiMock.listProjectSecrets.mockImplementation(async (projectId: string) => ({
       project_id: projectId,
       capabilities: {
@@ -972,8 +981,7 @@ describe('SettingsPage', () => {
   })
 
   it('opens Project Secrets for the requested project and scopes permissions to that selection', async () => {
-    projectApiMock.listProjects.mockResolvedValueOnce({
-      projects: [
+    seedProjectCatalog([
         {
           id: 'project-1',
           domain_id: 'domain-retail',
@@ -988,9 +996,7 @@ describe('SettingsPage', () => {
           created_at: '2026-05-16T00:00:00Z',
           updated_at: '2026-05-16T00:00:00Z',
         },
-      ],
-      count: 2,
-    })
+      ])
     apiMock.getAuthEffectiveAccess.mockImplementation(async (projectId?: string) => ({
       enabled: true,
       authenticated: true,
@@ -1295,8 +1301,7 @@ describe('SettingsPage', () => {
       authenticated: true,
       resources: domainAccessResources(true),
     })
-    projectApiMock.listProjects.mockResolvedValueOnce({
-      projects: [
+    seedProjectCatalog([
         {
           id: 'project-retail',
           domain_id: retailDomain.id,
@@ -1304,9 +1309,7 @@ describe('SettingsPage', () => {
           created_at: '2026-05-15T00:00:00Z',
           updated_at: '2026-05-15T00:00:00Z',
         },
-      ],
-      count: 1,
-    })
+      ])
 
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
@@ -1958,8 +1961,7 @@ describe('SettingsPage', () => {
   })
 
   it('preserves an existing GitHub automation_identity when saving project governance defaults', async () => {
-    projectApiMock.listProjects.mockResolvedValue({
-      projects: [
+    seedProjectCatalog([
         {
           id: 'project-1',
           name: 'Customer Portal',
@@ -1981,9 +1983,7 @@ describe('SettingsPage', () => {
           created_at: '2026-05-15T00:00:00Z',
           updated_at: '2026-05-15T00:00:00Z',
         },
-      ],
-      count: 1,
-    })
+      ])
     projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
       id,
       name: data.name,
@@ -2033,6 +2033,140 @@ describe('SettingsPage', () => {
     expect(projectApiMock.updateProject.mock.calls[0][1].settings?.max_vusers).toBe(300)
     const savedPolicy = projectApiMock.updateProject.mock.calls[0][1].settings?.github
     expect(savedPolicy?.automation_identity).toBe('apexload-bot')
+  })
+
+  // Invariant, not a single field: a governance save that never touches the GitHub
+  // form must round-trip the project's stored GitHub policy in full. Both known
+  // regressions here (dropped automation_identity, destroyed Actions trust policy)
+  // were instances of that one invariant, and pinning them field-by-field cannot
+  // catch the next field that gets left out of buildProjectGitHubDraft.
+  //
+  // Required<> is load-bearing at BOTH levels: adding a field to either policy
+  // type without adding it to these fixtures is a compile error, and adding it
+  // to the fixture without wiring it through the form fails the round-trip
+  // assert. Required<T> is shallow, so the nested Actions policy needs its own
+  // Required<GitHubActionsPolicy> annotation - without it the trust-boundary
+  // claim below would only hold at the granularity of "the object still exists".
+  it('round-trips every stored GitHub policy field through a governance save that does not touch the GitHub form', async () => {
+    // GitHub Actions authorization is a separate trust boundary with no control
+    // in this form at all; it must survive a source-policy save untouched. Every
+    // field is populated because the narrowing ones (allowed_target_hosts,
+    // allowed_protocols, allowed_environments, required_runner_environment)
+    // widen what an Actions OIDC token may launch if they are silently dropped.
+    const storedActionsPolicy: Required<GitHubActionsPolicy> = {
+      enabled: true,
+      issuer: 'https://token.actions.githubusercontent.com',
+      server_url: 'https://github.com',
+      audience: 'apexload',
+      allowed_repository_ids: ['123456'],
+      allowed_repositories: ['org/perf-scripts'],
+      allowed_refs: ['refs/heads/main'],
+      allowed_workflow_refs: ['org/perf-scripts/.github/workflows/load.yml@refs/heads/main'],
+      allowed_environments: ['staging'],
+      required_runner_environment: 'github-hosted',
+      max_vusers: 500,
+      max_duration_minutes: 30,
+      allowed_protocols: ['http', 'grpc'],
+      allowed_target_hosts: ['staging.internal.example.com'],
+      checks_enabled: true,
+      revision: 7,
+      updated_at: '2026-05-14T00:00:00Z',
+      updated_by: 'security-admin',
+    }
+    const storedGitHubPolicy: Required<GitHubProjectPolicy> = {
+      enabled: true,
+      allowed_repos: ['org/perf-scripts', 'org/other-scripts'],
+      allowed_branches: ['main', 'release/*'],
+      path_template: 'apexload/scripts/{project}/{ref_key}.json',
+      // Deliberately the opposite of every form default, so a field that is
+      // rebuilt from defaults instead of preserved shows up as a diff.
+      require_pull_request: false,
+      allow_direct_commit: true,
+      allow_import: false,
+      allow_push: false,
+      bulk_sync_enabled: true,
+      auto_sync_enabled: true,
+      checks_enabled: true,
+      app_installation_id: 12345678,
+      automation_identity: 'apexload-bot',
+      default_repo: 'org/perf-scripts',
+      default_branch: 'main',
+      default_sync_directory: 'apexload/scripts',
+      actions: storedActionsPolicy,
+    }
+    // Expected must not alias the fixture the component reads: seedProjectCatalog
+    // hands this very object to the component as selectedProject.settings.github,
+    // so asserting against it directly would let an in-place mutation on the save
+    // path change expected and actual together and stay invisible.
+    const expectedGitHubPolicy = structuredClone(storedGitHubPolicy)
+
+    seedProjectCatalog([
+      {
+        id: 'project-1',
+        name: 'Customer Portal',
+        settings: {
+          max_concurrent_tests: 2,
+          max_vusers: 250,
+          redaction_rules: [
+            {
+              name: 'customer id',
+              pattern: 'customer-[0-9]+',
+            },
+          ],
+          github: storedGitHubPolicy,
+        },
+        created_at: '2026-05-15T00:00:00Z',
+        updated_at: '2026-05-15T00:00:00Z',
+      },
+    ])
+    projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
+      id,
+      name: data.name,
+      settings: data.settings,
+      created_at: '2026-05-15T00:00:00Z',
+      updated_at: '2026-05-15T12:00:00Z',
+    }))
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+
+    await flushPromises()
+    await flushPromises()
+
+    await selectTopLevelSettingsTab('Projects & Compliance')
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    if (!projectSection) return
+
+    // Edit an unrelated governance field only. The GitHub Policy subsection is
+    // never opened, so nothing here is an intentional GitHub policy change.
+    await selectSettingsSubnav(projectSection, 'Limits')
+    const quotaInputs = Array.from(projectSection.querySelectorAll('input')).filter(input => input.placeholder === 'Unlimited') as HTMLInputElement[]
+    expect(quotaInputs).toHaveLength(4)
+    if (quotaInputs.length !== 4) return
+    await setFieldValue(quotaInputs[1], '300')
+
+    const saveButton = findButton('Save Project Governance')
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushPromises()
+
+    expect(projectApiMock.updateProject).toHaveBeenCalledTimes(1)
+    const savedSettings = projectApiMock.updateProject.mock.calls[0][1].settings
+    // The intended edit landed, so the round-trip below is a real save and not a no-op.
+    expect(savedSettings?.max_vusers).toBe(300)
+    expect(savedSettings?.github).toEqual(expectedGitHubPolicy)
+    // No key silently disappears from the persisted policy either, at the top
+    // level or inside the Actions trust boundary.
+    expect(Object.keys(savedSettings?.github ?? {}).sort()).toEqual(Object.keys(expectedGitHubPolicy).sort())
+    expect(Object.keys(savedSettings?.github?.actions ?? {}).sort()).toEqual(Object.keys(expectedGitHubPolicy.actions).sort())
   })
 
   it('disables project governance actions when effective RBAC denies project management', async () => {
@@ -2121,8 +2255,7 @@ describe('SettingsPage', () => {
   })
 
   it('does not report unsaved changes for a project that has per-pool quotas (no edits)', async () => {
-    projectApiMock.listProjects.mockResolvedValue({
-      projects: [
+    seedProjectCatalog([
         {
           id: 'project-pool',
           name: 'Pooled Project',
@@ -2164,9 +2297,7 @@ describe('SettingsPage', () => {
           created_at: '2026-05-15T00:00:00Z',
           updated_at: '2026-05-15T00:00:00Z',
         },
-      ],
-      count: 1,
-    })
+      ])
 
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
@@ -2239,7 +2370,7 @@ describe('SettingsPage', () => {
     }
     projectContextMock.activeProject = active
     projectContextMock.updateProject.mockResolvedValue(updated)
-    projectApiMock.listProjects.mockResolvedValue({ projects: [active, secondary], count: 2 })
+    seedProjectCatalog([active, secondary])
 
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
@@ -2287,7 +2418,7 @@ describe('SettingsPage', () => {
       updated_at: '2026-05-16T00:00:00Z',
     }
     projectContextMock.activeProject = active
-    projectApiMock.listProjects.mockResolvedValue({ projects: [active, original], count: 2 })
+    seedProjectCatalog([active, original])
     projectApiMock.updateProject.mockResolvedValue(updated)
     projectContextMock.updateProject.mockResolvedValue(updated)
     fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'pool-east', name: 'East', status: 'active' }], count: 1 })
@@ -2333,7 +2464,7 @@ describe('SettingsPage', () => {
 			updated_at: '2026-05-15T00:00:00Z',
 		}
 		projectContextMock.activeProject = original
-		projectApiMock.listProjects.mockResolvedValue({ projects: [original], count: 1 })
+		seedProjectCatalog([original])
 		projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
 			...original,
 			id,
@@ -2438,6 +2569,16 @@ describe('SettingsPage', () => {
 
     await setFieldValue(authModeSelect, 'trusted_headers')
 
+    // Trusted headers without a proxy gate is refused before save, mirroring the
+    // controller's production boot check.
+    expect(findButton('Save Changes')?.hasAttribute('disabled')).toBe(true)
+    expect(generalSection.textContent).toContain('requires a trusted proxy CIDR allowlist')
+
+    const trustedProxyCIDRs = findSettingInput(generalSection, 'Trusted Proxy CIDRs')
+    expect(trustedProxyCIDRs).toBeTruthy()
+    if (!trustedProxyCIDRs) return
+    await setFieldValue(trustedProxyCIDRs, '10.0.0.0/8')
+
     const saveButton = findButton('Save Changes')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
@@ -2453,6 +2594,7 @@ describe('SettingsPage', () => {
         provider_name: '',
         login_url: '',
         logout_url: '',
+        trusted_proxy_cidrs: ['10.0.0.0/8'],
         user_header: 'X-Auth-Request-User',
         roles_header: 'X-APEXLoad-Roles',
         project_roles_header: 'X-APEXLoad-Project-Roles',
@@ -3965,8 +4107,7 @@ describe('SettingsPage', () => {
       created_at: '2026-05-15T00:00:00Z',
       updated_at: '2026-05-15T00:00:00Z',
     }
-    projectApiMock.listProjects.mockResolvedValue({
-      projects: [
+    seedProjectCatalog([
         {
           id: 'project-1',
           name: 'Customer Portal',
@@ -3975,9 +4116,7 @@ describe('SettingsPage', () => {
           updated_at: '2026-05-15T00:00:00Z',
         },
         secondProject,
-      ],
-      count: 2,
-    })
+      ])
     projectApiMock.updateProject.mockImplementation(async (id: string, data: { name: string; settings?: ProjectSettings }) => ({
       id,
       name: data.name,
@@ -4028,7 +4167,7 @@ describe('SettingsPage', () => {
       updated_at: '',
     }
     const secondProject = { id: 'project-2', name: 'Payments', settings: {}, created_at: '', updated_at: '' }
-    projectApiMock.listProjects.mockResolvedValue({ projects: [firstProject, secondProject], count: 2 })
+    seedProjectCatalog([firstProject, secondProject])
     fleetApiMock.listFleetPools.mockResolvedValue({ fleet_pools: [{ id: 'pool-east', name: 'East', status: 'active' }], count: 1 })
 
     await act(async () => {
@@ -6024,6 +6163,44 @@ describe('SettingsPage', () => {
     expect(container.querySelector('#settings-capacity-panel-reservations')?.hasAttribute('hidden')).toBe(false)
     expect(window.localStorage.getItem('apexload.settings.focusSection')).toBeNull()
     expect(window.localStorage.getItem('apexload.settings.focusSubsection')).toBeNull()
+  })
+
+  it('renders the project catalog from the domain-scoped context instead of listing every project', async () => {
+    // App provides ProjectContext already filtered to the active domain. Reading
+    // it here is what keeps the Settings catalog in step with the domain picker;
+    // fetching independently is how it used to show every project in the install.
+    seedProjectCatalog([
+      { id: 'project-1', name: 'Customer Portal', domain_id: 'default', created_at: '', updated_at: '' },
+      { id: 'project-2', name: 'Retail Checkout', domain_id: 'default', created_at: '', updated_at: '' },
+    ])
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
+    })
+    await flushPromises()
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).toBeTruthy()
+    const cards = Array.from(projectSection?.querySelectorAll('.settings-app-card') || [])
+    expect(cards.map(card => card.querySelector('span')?.textContent)).toEqual([
+      'Customer Portal',
+      'Retail Checkout',
+    ])
+    // The catalog cannot show an out-of-scope project because it never asks for one.
+    expect(projectApiMock.listProjects).not.toHaveBeenCalled()
+  })
+
+  it('shows the active workspace scope as a breadcrumb in the page header', async () => {
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPageDomainHarness />)
+    })
+    await flushPromises()
+
+    const breadcrumb = container.querySelector('[data-testid="settings-scope-breadcrumb"]')
+    expect(breadcrumb).toBeTruthy()
+    const text = breadcrumb?.textContent || ''
+    expect(text).toContain(defaultDomain.name)
+    expect(text).toContain('Checkout')
   })
 })
 

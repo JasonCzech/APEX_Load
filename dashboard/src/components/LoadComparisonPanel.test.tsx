@@ -229,6 +229,37 @@ describe('LoadComparisonPanel', () => {
 
     expect(container.textContent).toContain('comparison unavailable')
   })
+
+  it('retries through the same shared fetch, preserving run scoping', async () => {
+    const getLoadComparison = vi.fn().mockRejectedValueOnce(new Error('comparison unavailable'))
+
+    await act(async () => {
+      root.render(
+        <LoadComparisonPanel
+          applicationId="app-1"
+          getLoadComparison={getLoadComparison}
+          testOptions={loadComparisonTestOptions()}
+          selectedTestIds={['run-b']}
+        />,
+      )
+    })
+    await flush()
+
+    expect(container.textContent).toContain('comparison unavailable')
+    expect(getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['run-b'] })
+
+    getLoadComparison.mockResolvedValueOnce(transactionComparison())
+    await act(async () => {
+      buttonByText('Retry')?.click()
+    })
+    await flush()
+    await flush()
+
+    // Retry must go through the same request builder as the effect, not a divergent copy.
+    expect(getLoadComparison).toHaveBeenCalledTimes(2)
+    expect(getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['run-b'] })
+    expect(container.textContent).not.toContain('comparison unavailable')
+  })
 })
 
 function transactionComparison(selectedKey = 'Checkout Flow'): LoadComparisonResponse {

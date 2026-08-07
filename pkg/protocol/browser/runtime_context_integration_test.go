@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -12,16 +11,17 @@ import (
 
 func TestBrowserInitSupportsWebKitEngineOrReturnsInstallGuidance(t *testing.T) {
 	b := &Browser{}
-	err := b.Init(context.Background(), map[string]any{
+	// The gate — not the error text — decides what a launch failure means. The
+	// old idiom here accepted any error whose message merely mentioned "webkit"
+	// as a PASS, and a real WebKit launch error always names the engine's
+	// install path, so a genuine regression on a machine with WebKit installed
+	// reported green with no skip marker at all.
+	if err := b.Init(context.Background(), map[string]any{
 		"browser_engine": "webkit",
-	})
-	if err == nil {
-		defer b.Teardown(context.Background())
-		return
+	}); err != nil {
+		requireBrowserRuntime(t, "webkit", err)
 	}
-	if !isWebKitRuntimeUnavailable(err) {
-		t.Fatalf("Init error = %v, want WebKit install guidance or successful startup", err)
-	}
+	defer b.Teardown(context.Background())
 }
 
 func TestBrowserProtocolExecuteWebKitActions(t *testing.T) {
@@ -54,10 +54,7 @@ func TestBrowserProtocolExecuteWebKitActions(t *testing.T) {
 		"browser_client_metrics": true,
 		"browser_device_profile": "iphone_15_pro",
 	}); err != nil {
-		if isWebKitRuntimeUnavailable(err) {
-			t.Skipf("webkit runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "webkit", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -175,11 +172,7 @@ func TestBrowserProtocolValidationMatrixAcrossRepresentativeDeviceProfiles(t *te
 				"browser_device_profile": tc.deviceProfile,
 			})
 			if err != nil {
-				lower := strings.ToLower(err.Error())
-				if isWebKitRuntimeUnavailable(err) || strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-					t.Skipf("browser runtime unavailable for %s/%s: %v", tc.engine, tc.deviceProfile, err)
-				}
-				t.Fatalf("Init returned error: %v", err)
+				requireBrowserRuntime(t, tc.engine, err)
 			}
 			defer b.Teardown(context.Background())
 
@@ -267,12 +260,4 @@ func TestBrowserProtocolValidationMatrixAcrossRepresentativeDeviceProfiles(t *te
 			}
 		})
 	}
-}
-
-func isWebKitRuntimeUnavailable(err error) bool {
-	if err == nil {
-		return false
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "webkit")
 }

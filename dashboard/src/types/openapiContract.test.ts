@@ -1,9 +1,24 @@
-import { describe, expect, expectTypeOf, it } from 'vitest'
+// @vitest-environment jsdom
 
+import { act, createElement } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
+
+import { useCapacityApi } from '../hooks/api/useCapacityApi'
+import { useMonitoringCollectorsApi } from '../hooks/api/useMonitoringCollectorsApi'
+import { useScriptApi } from '../hooks/api/useScriptApi'
+import { useTestApi } from '../hooks/api/useTestApi'
 import type {
   JsonRequestBody,
   JsonSuccessResponseBody,
 } from './generated/openapi'
+import {
+  captureFetch,
+  contractViolations,
+  decodeCapturedBody,
+  type CapturedRequest,
+  type RequiredKeysOf,
+} from './contractGuards'
 import type { BrowserReplayStartRequest } from './replay'
 
 type StartBody = JsonRequestBody<'handleStartScriptDebugScript'>
@@ -112,5 +127,357 @@ describe('generated OpenAPI transport helpers', () => {
     expectTypeOf<keyof BrowserReplayStartRequest>().toEqualTypeOf<keyof BrowserReplayBody>()
     expectTypeOf<'redaction_rules'>().toMatchTypeOf<keyof BrowserReplayStartRequest>()
     expectTypeOf<'log_level'>().not.toMatchTypeOf<keyof BrowserReplayStartRequest>()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Request bodies the dashboard actually puts on the wire.
+//
+// Everything above proves that the generated helper types resolve to concrete
+// object shapes. No layer of the suite used to go further: nothing checked that
+// a body the dashboard *sends* satisfies the contract of the handler it is sent
+// to, and the 35 component tests that touch these endpoints `vi.mock` the API
+// layer away entirely. The cases below drive the real domain hooks through the
+// real `apiClient` with only `fetch` stubbed, so the bytes under assertion are
+// the bytes a controller would receive.
+//
+// Each contract is checked twice over:
+//   * `tsc` — the runtime key lists are pinned to `RequiredKeysOf<generated>` /
+//     `keyof <generated>`, so a Go-side schema change breaks the build.
+//   * `vitest` — the captured body is checked against those lists, so a client
+//     that drops a required field or invents one the handler ignores fails.
+
+type CreateDataPoolBody = JsonRequestBody<'handleCreateDataPool'>
+type UpdateDataPoolBody = JsonRequestBody<'handleUpdateDataPool'>
+type ScenarioDataPoolsBody = JsonRequestBody<'handleUpdateScenarioDataPools'>
+type ScenarioDataPoolBindingBody = NonNullable<ScenarioDataPoolsBody['data_pools']>[number]
+type CreateCollectorBody = JsonRequestBody<'handleCreateMonitoringCollector'>
+type PatchCollectorBody = JsonRequestBody<'handlePatchMonitoringCollector'>
+type GoalTargetBody = JsonRequestBody<'handleUpdateGoalTarget'>
+type CreateScenarioScheduleBody = JsonRequestBody<'handleCreateScenarioSchedule'>
+type CreateTimeslotBody = JsonRequestBody<'handleCreateCapacityReservation'>
+type BindTimeslotBody = JsonRequestBody<'handleBindCapacityTimeslot'>
+
+const CREATE_DATA_POOL_CONTRACT = {
+  required: ['name'],
+  known: ['description', 'name', 'project_id', 'schema'],
+} as const
+
+// The Go handler uses `updated_at` as the optimistic-concurrency token, which
+// is why it is the one required field on an otherwise all-optional patch.
+const UPDATE_DATA_POOL_CONTRACT = {
+  required: ['updated_at'],
+  known: ['archived_at', 'description', 'name', 'schema', 'updated_at'],
+} as const
+
+const SCENARIO_DATA_POOLS_CONTRACT = {
+  required: [],
+  known: ['data_pools'],
+} as const
+
+const SCENARIO_DATA_POOL_BINDING_CONTRACT = {
+  required: [],
+  known: [
+    'access_mode',
+    'alias',
+    'created_at',
+    'id',
+    'pool_id',
+    'pool_name',
+    'scenario_id',
+    'selection_strategy',
+    'updated_at',
+  ],
+} as const
+
+const CREATE_COLLECTOR_CONTRACT = {
+  required: [],
+  known: [
+    'allowed_metric_packs',
+    'created_at',
+    'description',
+    'health',
+    'id',
+    'last_seen_at',
+    'name',
+    'project_id',
+    'updated_at',
+  ],
+} as const
+
+const PATCH_COLLECTOR_CONTRACT = {
+  required: [],
+  known: ['allowed_metric_packs', 'description', 'health', 'name'],
+} as const
+
+const GOAL_TARGET_CONTRACT = {
+  required: [],
+  known: ['group', 'target_tps'],
+} as const
+
+const CREATE_SCENARIO_SCHEDULE_CONTRACT = {
+  required: ['cron_expr', 'name'],
+  known: [
+    'approval_policy',
+    'availability_windows',
+    'blackout_windows',
+    'cron_expr',
+    'disabled_from',
+    'disabled_until',
+    'enabled',
+    'expected_revision',
+    'maintenance_windows',
+    'missed_run_policy',
+    'name',
+    'release_id',
+    'run_name_template',
+    'timeslot_id',
+    'timezone',
+  ],
+} as const
+
+const CREATE_TIMESLOT_CONTRACT = {
+  required: [],
+  known: [
+    'approval_id',
+    'approval_state',
+    'bound_test_id',
+    'bound_test_status',
+    'conflict_summary',
+    'created_at',
+    'end_at',
+    'id',
+    'project_id',
+    'requested_capacity',
+    'scenario_id',
+    'start_at',
+    'timezone',
+    'updated_at',
+  ],
+} as const
+
+const BIND_TIMESLOT_CONTRACT = {
+  required: [],
+  known: ['test_id'],
+} as const
+
+let capacityApi: ReturnType<typeof useCapacityApi>
+let collectorsApi: ReturnType<typeof useMonitoringCollectorsApi>
+let scriptApi: ReturnType<typeof useScriptApi>
+let testApi: ReturnType<typeof useTestApi>
+
+function CaptureApis() {
+  capacityApi = useCapacityApi()
+  collectorsApi = useMonitoringCollectorsApi()
+  scriptApi = useScriptApi()
+  testApi = useTestApi()
+  return null
+}
+
+describe('request bodies the dashboard sends versus the generated handler contract', () => {
+  let container: HTMLDivElement
+  let root: Root
+  let requests: CapturedRequest[]
+
+  beforeEach(async () => {
+    const capture = captureFetch({ ok: true })
+    requests = capture.requests
+    vi.stubGlobal('fetch', capture.fetchStub)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root.render(createElement(CaptureApis))
+    })
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount()
+    })
+    container.remove()
+    vi.unstubAllGlobals()
+  })
+
+  it('pins every runtime key list to the generated handler contract', () => {
+    expectTypeOf<(typeof CREATE_DATA_POOL_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<CreateDataPoolBody> & string
+    >()
+    expectTypeOf<(typeof CREATE_DATA_POOL_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof CreateDataPoolBody & string
+    >()
+    expectTypeOf<(typeof UPDATE_DATA_POOL_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<UpdateDataPoolBody> & string
+    >()
+    expectTypeOf<(typeof UPDATE_DATA_POOL_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof UpdateDataPoolBody & string
+    >()
+    expectTypeOf<(typeof SCENARIO_DATA_POOLS_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<ScenarioDataPoolsBody> & string
+    >()
+    expectTypeOf<(typeof SCENARIO_DATA_POOLS_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof ScenarioDataPoolsBody & string
+    >()
+    expectTypeOf<(typeof SCENARIO_DATA_POOL_BINDING_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<ScenarioDataPoolBindingBody> & string
+    >()
+    expectTypeOf<(typeof SCENARIO_DATA_POOL_BINDING_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof ScenarioDataPoolBindingBody & string
+    >()
+    expectTypeOf<(typeof CREATE_COLLECTOR_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<CreateCollectorBody> & string
+    >()
+    expectTypeOf<(typeof CREATE_COLLECTOR_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof CreateCollectorBody & string
+    >()
+    expectTypeOf<(typeof PATCH_COLLECTOR_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<PatchCollectorBody> & string
+    >()
+    expectTypeOf<(typeof PATCH_COLLECTOR_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof PatchCollectorBody & string
+    >()
+    expectTypeOf<(typeof GOAL_TARGET_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<GoalTargetBody> & string
+    >()
+    expectTypeOf<(typeof GOAL_TARGET_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof GoalTargetBody & string
+    >()
+    expectTypeOf<(typeof CREATE_SCENARIO_SCHEDULE_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<CreateScenarioScheduleBody> & string
+    >()
+    expectTypeOf<(typeof CREATE_SCENARIO_SCHEDULE_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof CreateScenarioScheduleBody & string
+    >()
+    expectTypeOf<(typeof CREATE_TIMESLOT_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<CreateTimeslotBody> & string
+    >()
+    expectTypeOf<(typeof CREATE_TIMESLOT_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof CreateTimeslotBody & string
+    >()
+    expectTypeOf<(typeof BIND_TIMESLOT_CONTRACT.required)[number]>().toEqualTypeOf<
+      RequiredKeysOf<BindTimeslotBody> & string
+    >()
+    expectTypeOf<(typeof BIND_TIMESLOT_CONTRACT.known)[number]>().toEqualTypeOf<
+      keyof BindTimeslotBody & string
+    >()
+    expect(true).toBe(true)
+  })
+
+  it('sends data-pool create and update bodies the handlers accept', async () => {
+    await act(async () => {
+      await scriptApi.createDataPool({
+        name: 'customers',
+        description: 'checkout identities',
+        project_id: 'project-1',
+        schema: { email: 'string' },
+      })
+    })
+    expect(requests[0].method).toBe('POST')
+    expect(contractViolations(decodeCapturedBody(requests[0]), CREATE_DATA_POOL_CONTRACT)).toEqual([])
+
+    await act(async () => {
+      await scriptApi.updateDataPool('pool-1', {
+        name: 'customers',
+        description: 'checkout identities',
+        // Optimistic-concurrency token; the handler requires it.
+        updated_at: '2026-08-02T10:00:00Z',
+      })
+    })
+    expect(requests[1].method).toBe('PUT')
+    expect(contractViolations(decodeCapturedBody(requests[1]), UPDATE_DATA_POOL_CONTRACT)).toEqual([])
+  })
+
+  it('sends a scenario data-pool binding body the handler accepts, bindings included', async () => {
+    await act(async () => {
+      await scriptApi.updateScenarioDataPools('scenario-1', [
+        {
+          pool_id: 'pool-1',
+          alias: 'customers',
+          access_mode: 'consume',
+          selection_strategy: 'unique',
+        },
+      ])
+    })
+
+    expect(requests[0].method).toBe('PUT')
+    const body = decodeCapturedBody(requests[0]) as Record<string, unknown>
+    expect(contractViolations(body, SCENARIO_DATA_POOLS_CONTRACT)).toEqual([])
+    const bindings = body.data_pools as Array<Record<string, unknown>>
+    expect(bindings).toHaveLength(1)
+    for (const binding of bindings) {
+      expect(contractViolations(binding, SCENARIO_DATA_POOL_BINDING_CONTRACT)).toEqual([])
+    }
+  })
+
+  it('sends monitoring-collector create and patch bodies the handlers accept', async () => {
+    await act(async () => {
+      await collectorsApi.createCollector({
+        project_id: 'project-1',
+        name: 'edge-collector',
+        description: 'us-east',
+        allowed_metric_packs: ['node', 'process'],
+      })
+    })
+    expect(contractViolations(decodeCapturedBody(requests[0]), CREATE_COLLECTOR_CONTRACT)).toEqual([])
+
+    await act(async () => {
+      await collectorsApi.patchCollector('collector-1', {
+        name: 'edge-collector-2',
+        health: 'degraded',
+        allowed_metric_packs: ['node'],
+      })
+    })
+    expect(requests[1].method).toBe('PATCH')
+    expect(contractViolations(decodeCapturedBody(requests[1]), PATCH_COLLECTOR_CONTRACT)).toEqual([])
+  })
+
+  it('sends a goal-target patch body the handler accepts', async () => {
+    await act(async () => {
+      await testApi.updateGoalTarget('test-1', 'checkout', 42.5)
+    })
+
+    expect(requests[0].method).toBe('PATCH')
+    expect(requests[0].url).toContain('/tests/test-1/goal-targets')
+    expect(contractViolations(decodeCapturedBody(requests[0]), GOAL_TARGET_CONTRACT)).toEqual([])
+  })
+
+  it('sends a scenario-schedule create body the handler accepts', async () => {
+    await act(async () => {
+      await testApi.createScenarioSchedule('scenario-1', {
+        name: 'Nightly',
+        cron_expr: '0 2 * * *',
+        timezone: 'America/New_York',
+        enabled: true,
+        approval_policy: 'auto',
+        missed_run_policy: 'skip',
+        blackout_windows: [{ name: 'freeze', start_time: '00:00', end_time: '06:00' }],
+        expected_revision: 4,
+      })
+    })
+
+    expect(requests[0].method).toBe('POST')
+    expect(
+      contractViolations(decodeCapturedBody(requests[0]), CREATE_SCENARIO_SCHEDULE_CONTRACT),
+    ).toEqual([])
+  })
+
+  it('sends capacity timeslot create and bind bodies the handlers accept', async () => {
+    await act(async () => {
+      await capacityApi.createTimeslot({
+        project_id: 'project-1',
+        scenario_id: 'scenario-1',
+        start_at: '2026-08-10T22:00:00Z',
+        end_at: '2026-08-10T23:00:00Z',
+        timezone: 'UTC',
+        requested_capacity: { generators: 4, vusers: 2000, protocol: 'http', pool_id: 'pool-a' },
+      })
+    })
+    expect(contractViolations(decodeCapturedBody(requests[0]), CREATE_TIMESLOT_CONTRACT)).toEqual([])
+
+    await act(async () => {
+      await capacityApi.bindTimeslot('timeslot-1', 'test-1')
+    })
+    expect(requests[1].url).toContain('/capacity/timeslots/timeslot-1/bind')
+    expect(contractViolations(decodeCapturedBody(requests[1]), BIND_TIMESLOT_CONTRACT)).toEqual([])
   })
 })

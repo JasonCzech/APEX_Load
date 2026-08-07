@@ -7,10 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../hooks/apiClient'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import ScriptsPage, {
+import ScriptsPage from './ScriptsPage'
+import {
   beginScriptSecretStatusRequest,
   isLatestScriptSecretStatusRequest,
-} from './ScriptsPage'
+} from './scriptSecretStatusRequest'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 

@@ -102,4 +102,19 @@ runtime:
     await expect(nativeImportTargetForFile(k6)).resolves.toEqual({ launcher: 'k6' })
     await expect(nativeImportTargetForFile(ambiguous)).resolves.toEqual({ launcher: 'k6' })
   })
+
+  it('routes Chrome DevTools Recorder JSON to the recorder importer instead of OpenAPI', async () => {
+    const recording = new File([JSON.stringify({
+      title: 'Checkout',
+      steps: [
+        { type: 'setViewport', width: 1200, height: 800 },
+        { type: 'navigate', url: 'https://example.com/checkout' },
+        { type: 'click', selectors: [['#submit'], ['xpath///*[@id="submit"]']], offsetX: 4, offsetY: 6 },
+      ],
+    })], 'checkout-recording.json', { type: 'application/json' })
+    const openapi = new File([JSON.stringify({ openapi: '3.1.0', paths: { '/orders': { get: {} } } })], 'orders.json', { type: 'application/json' })
+
+    await expect(nativeImportTargetForFile(recording)).resolves.toEqual({ launcher: 'recorder_export' })
+    await expect(nativeImportTargetForFile(openapi)).resolves.toEqual({ launcher: 'openapi' })
+  })
 })

@@ -74,6 +74,36 @@ func TestRoutePathTemplateMatches(t *testing.T) {
 	}
 }
 
+func TestCompiledRouteAuthCatalogPreservesPrecedenceAndMethodBuckets(t *testing.T) {
+	catalog := compileRouteAuthCatalog([]apiRouteAuthRule{
+		{Method: http.MethodGet, Path: "/items/{id}", Requirement: accessRequirement{MaxBodyBytes: 1}},
+		{Method: http.MethodGet, Path: "/items/special", Requirement: accessRequirement{MaxBodyBytes: 2}},
+		{Method: http.MethodPost, Path: "/items/{id}", Requirement: accessRequirement{MaxBodyBytes: 3}},
+	})
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		want   int64
+		found  bool
+	}{
+		{name: "literal beats earlier template", method: http.MethodGet, path: "/items/special", want: 2, found: true},
+		{name: "GET template", method: http.MethodGet, path: "/items/ordinary", want: 1, found: true},
+		{name: "POST template", method: http.MethodPost, path: "/items/ordinary", want: 3, found: true},
+		{name: "method isolated", method: http.MethodDelete, path: "/items/ordinary"},
+		{name: "segment count isolated", method: http.MethodGet, path: "/items/ordinary/deeper"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := accessRequirementFromCompiledRouteCatalog(catalog, tt.method, tt.path)
+			if ok != tt.found || got.MaxBodyBytes != tt.want {
+				t.Fatalf("lookup = (%d, %v), want (%d, %v)", got.MaxBodyBytes, ok, tt.want, tt.found)
+			}
+		})
+	}
+}
+
 // TestRouteCatalogHasNoDuplicateRules guards against two rules claiming the same
 // (method, path), which would make access resolution order-dependent.
 func TestRouteCatalogHasNoDuplicateRules(t *testing.T) {

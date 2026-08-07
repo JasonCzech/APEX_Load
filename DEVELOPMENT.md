@@ -205,8 +205,8 @@ dashboard/
 ├── src/
 │   ├── components/        # React components by page/feature
 │   │   ├── Sidebar.tsx                — Navigation sidebar
-│   │   ├── FolderTree.tsx            — Shared folder tree (Scripts, Scenarios, Results)
 │   │   ├── ScriptsPage.tsx           — Script management + authoring
+│   │   ├── ScriptsAuthoringSurface.tsx — Shared script import/editor surface
 │   │   ├── TestHub.tsx               — Scenarios and test execution
 │   │   ├── ResultsPage.tsx           — Historical results + comparison
 │   │   ├── CreateTestModal.tsx       — Test configuration UI
@@ -227,15 +227,14 @@ dashboard/
 
 ### Key React Components
 
-**FolderTree.tsx**
-- Shared tree navigation component used by Scripts, Scenarios, Results pages
-- Props: `folders`, `items`, `renderItemExtra` (for page-specific inline actions)
-- Renders folders hierarchically with inline item actions (Edit, Delete, etc.)
-
 **ScriptsPage.tsx**
 - Script library and editor interface
-- Displays scripts in FolderTree with inline protocol badge and Edit/Delete buttons
+- Displays local and federated scripts with health, release, and source filters
 - Actions: Create new drafts, open sample imports, import from LoadRunner/JMeter, edit inline, delete
+
+**ScriptsAuthoringSurface.tsx**
+- Hosts the shared import, recording, and editor workflows
+- Supplies a destination-folder selector for new imported or recorded scripts
 
 **TestHub.tsx**
 - Scenario (test configuration) management and execution
@@ -282,8 +281,9 @@ APEXLOAD_GENERATORS=127.0.0.1:9090,127.0.0.1:9091 \
 APEXLOAD_GENERATOR_TIMEOUT=10s \
 go run ./cmd/controller
 
-# Generator
-go run ./cmd/generator
+# Generators — one process per configured target address, each with a distinct bind address
+APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:9090 go run ./cmd/generator
+APEXLOAD_GENERATOR_LISTEN_ADDR=127.0.0.1:9091 go run ./cmd/generator
 ```
 
 Current distributed test coverage is centered on:

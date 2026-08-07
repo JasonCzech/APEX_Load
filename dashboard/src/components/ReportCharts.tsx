@@ -7,11 +7,13 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  Rectangle,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import type { BarShapeProps } from 'recharts'
 
 import { RunArchiveReport } from '../types'
 
@@ -27,6 +29,51 @@ const tooltipStyle = {
   borderRadius: 8,
   color: INK,
   fontSize: 12,
+}
+
+interface ActionBar {
+  name: string
+  avg: number
+  // True when this action's average is at or above the run-wide average, i.e.
+  // it is one of the actions dragging the run's response time up.
+  aboveRunAverage: boolean
+}
+
+const ACTION_BAR_RADIUS: [number, number, number, number] = [0, 3, 3, 0]
+
+// Per-bar paint. recharts 3 still ships <Cell>, but its typings mark it for
+// removal in v4; `shape` is the supported way to vary a bar's appearance per
+// datum, and unlike <Cell> it is honoured for every rendered rectangle.
+function actionBarFill(bar: ActionBar | undefined): string {
+  return bar?.aboveRunAverage ? ACCENT_2 : ACCENT
+}
+
+function ActionBarShape({ payload, x, y, width, height }: BarShapeProps) {
+  return (
+    <Rectangle
+      x={x}
+      y={y}
+      width={width}
+      height={height}
+      radius={ACTION_BAR_RADIUS}
+      fill={actionBarFill(payload as ActionBar | undefined)}
+    />
+  )
+}
+
+// Top 8 actions by transaction count, drawn slowest-first, each flagged against
+// the run-wide average response time so the chart can single out the offenders.
+function buildActionBars(report: RunArchiveReport): ActionBar[] {
+  const runAverage = report.overview?.avg_response_ms ?? 0
+  const entries = Object.entries(report.by_action || {})
+  entries.sort((a, b) => b[1].transactions - a[1].transactions)
+  return entries
+    .slice(0, 8)
+    .map(([name, stats]) => {
+      const avg = round(stats.avg_response_ms)
+      return { name, avg, aboveRunAverage: runAverage > 0 && avg >= round(runAverage) }
+    })
+    .sort((a, b) => b.avg - a.avg)
 }
 
 interface TimelinePoint {
@@ -64,14 +111,9 @@ export default function ReportCharts({ report }: Props) {
 
   const hasTarget = useMemo(() => timeline.some((point) => point.target > 0), [timeline])
 
-  const actionBars = useMemo(() => {
-    const entries = Object.entries(report.by_action || {})
-    entries.sort((a, b) => b[1].transactions - a[1].transactions)
-    return entries
-      .slice(0, 8)
-      .map(([name, stats]) => ({ name, avg: round(stats.avg_response_ms) }))
-      .sort((a, b) => b.avg - a.avg)
-  }, [report.by_action])
+  const actionBars = useMemo(() => buildActionBars(report), [report])
+  const runAverageMs = round(report.overview?.avg_response_ms ?? 0)
+  const highlightsSlowActions = actionBars.some((bar) => bar.aboveRunAverage)
 
   const hasTimeline = timeline.length >= 2
 
@@ -90,9 +132,9 @@ export default function ReportCharts({ report }: Props) {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK }} stroke={GRID} minTickGap={32} />
                 <YAxis tick={{ fontSize: 11, fill: INK }} stroke={GRID} width={48} />
                 <Tooltip contentStyle={tooltipStyle} />
-                <Line type="monotone" dataKey="tps" name="Actual TPS" stroke={ACCENT} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="tps" name="Actual TPS" stroke={ACCENT} strokeWidth={2} dot={false} isAnimationActive={false} />
                 {hasTarget && (
-                  <Line type="monotone" dataKey="target" name="Target TPS" stroke={ACCENT_2} strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                  <Line type="monotone" dataKey="target" name="Target TPS" stroke={ACCENT_2} strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
                 )}
               </LineChart>
             </ResponsiveContainer>
@@ -105,7 +147,7 @@ export default function ReportCharts({ report }: Props) {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK }} stroke={GRID} minTickGap={32} />
                 <YAxis tick={{ fontSize: 11, fill: INK }} stroke={GRID} width={48} />
                 <Tooltip contentStyle={tooltipStyle} />
-                <Area type="monotone" dataKey="p95" name="p95 latency" stroke={ACCENT} fill={ACCENT} fillOpacity={0.15} strokeWidth={2} />
+                <Area type="monotone" dataKey="p95" name="p95 latency" stroke={ACCENT} fill={ACCENT} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </ReportChartCard>
@@ -117,7 +159,7 @@ export default function ReportCharts({ report }: Props) {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK }} stroke={GRID} minTickGap={32} />
                 <YAxis tick={{ fontSize: 11, fill: INK }} stroke={GRID} width={48} />
                 <Tooltip contentStyle={tooltipStyle} />
-                <Line type="monotone" dataKey="errorPct" name="Error %" stroke={ACCENT_2} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="errorPct" name="Error %" stroke={ACCENT_2} strokeWidth={2} dot={false} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </ReportChartCard>
@@ -129,7 +171,7 @@ export default function ReportCharts({ report }: Props) {
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: INK }} stroke={GRID} minTickGap={32} />
                 <YAxis tick={{ fontSize: 11, fill: INK }} stroke={GRID} width={48} />
                 <Tooltip contentStyle={tooltipStyle} />
-                <Area type="monotone" dataKey="vusers" name="Active VUsers" stroke={ACCENT} fill={ACCENT} fillOpacity={0.15} strokeWidth={2} />
+                <Area type="monotone" dataKey="vusers" name="Active VUsers" stroke={ACCENT} fill={ACCENT} fillOpacity={0.15} strokeWidth={2} isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           </ReportChartCard>
@@ -137,14 +179,17 @@ export default function ReportCharts({ report }: Props) {
       )}
 
       {actionBars.length > 0 && (
-        <ReportChartCard title="Average Response Time by Action (ms)">
+        <ReportChartCard
+          title="Average Response Time by Action (ms)"
+          note={highlightsSlowActions ? `Highlighted bars are at or above the run average of ${runAverageMs} ms.` : undefined}
+        >
           <ResponsiveContainer width="100%" height={Math.max(160, actionBars.length * 34 + 24)}>
             <BarChart data={actionBars} layout="vertical" margin={{ top: 8, right: 32, bottom: 4, left: 8 }}>
               <CartesianGrid stroke={GRID} strokeDasharray="4 4" horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11, fill: INK }} stroke={GRID} />
               <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11, fill: INK }} stroke={GRID} />
               <Tooltip contentStyle={tooltipStyle} />
-              <Bar dataKey="avg" name="Avg ms" radius={[0, 3, 3, 0]} fill={ACCENT} />
+              <Bar dataKey="avg" name="Avg ms" radius={ACTION_BAR_RADIUS} fill={ACCENT} shape={ActionBarShape} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         </ReportChartCard>
@@ -153,10 +198,11 @@ export default function ReportCharts({ report }: Props) {
   )
 }
 
-function ReportChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ReportChartCard({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <figure className="report-chart-card">
       <figcaption>{title}</figcaption>
+      {note && <p className="report-chart-note">{note}</p>}
       {children}
     </figure>
   )

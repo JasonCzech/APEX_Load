@@ -4,6 +4,11 @@ import (
 	"strings"
 )
 
+// javaSOAPParsedActions is the entry point of the retired executable SOAP lane.
+// It is still production resident and still compiled in, but it has no
+// production caller: the lane orchestration that drove it is quarantined in
+// java_native_lanes_test.go, which is also where the guard lives that keeps
+// production from calling it again.
 func javaSOAPParsedActions(program javaProgram, files map[string]string) []*ParsedAction {
 	actions := make([]*ParsedAction, 0)
 	for _, phase := range []string{"init", "action", "teardown"} {

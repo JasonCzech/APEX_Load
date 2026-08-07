@@ -157,6 +157,7 @@ func TestAuthoritativeCIWorkflowContract(t *testing.T) {
 		"CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build",
 		"jms_servicebus_real",
 		"npm run lint:a11y",
+		"python3 scripts/check-docs.py",
 		"npm audit --audit-level=high",
 		"npm --prefix dashboard run e2e",
 		"terraform -chdir=deployments/azure/terraform init -backend=false -input=false -lockfile=readonly",
@@ -825,11 +826,25 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 		t.Fatalf("read Dockerfile: %v", err)
 	}
 	dockerfile := string(content)
+	// The dashboard builder must run the pinned Node on a digest-pinned Alpine
+	// image. Both halves are asserted here as a *property* instead of a literal
+	// `node:<version>-alpine<version>@sha256:<digest>` fragment: the literal was
+	// redundant with the generic digest-pinning loop below, and its only
+	// remaining effect was to fail on a correct pin-and-digest bump — the exact
+	// anti-pattern dashboard/scripts/check-node-version.node-test.mjs exists to
+	// avoid. That .mjs test owns `node image tag == .nvmrc`; this one owns the
+	// container supply-chain contract (alpine variant, full 64-hex digest, and
+	// that the pinned image is the stage the dashboard is built in).
+	nodeBuilder := regexp.MustCompile(`(?m)^FROM node:` + regexp.QuoteMeta(pinnedNodeVersion(t)) + `-alpine[0-9.]+@sha256:[0-9a-f]{64} AS dashboard-builder\b`)
+	if !nodeBuilder.MatchString(dockerfile) {
+		t.Errorf("Dockerfile must build the dashboard on FROM node:%s-alpine<version>@sha256:<64-hex digest> AS dashboard-builder", pinnedNodeVersion(t))
+	}
 	for _, required := range []string{
-		"node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34",
 		"golang:1.26.5-alpine3.24@sha256:",
 		"FROM alpine:3.24@sha256:",
 		"AS dashboard-builder",
+		"COPY dashboard/scripts/check-node-version.mjs ./dashboard/scripts/check-node-version.mjs",
+		"npm --prefix dashboard run check:node",
 		"npm --prefix dashboard ci --ignore-scripts",
 		"COPY docs/API_USER_GUIDE.md ./docs/API_USER_GUIDE.md",
 		"COPY docs/APPLICATION_USER_GUIDE.md ./docs/APPLICATION_USER_GUIDE.md",

@@ -1,6 +1,7 @@
 import { createContext, createElement, type PropsWithChildren, useContext, useMemo } from 'react'
 
 import { ApiError } from './apiClient'
+import { mergeApiServiceGroups } from './apiServiceRegistry'
 import { useApplicationApi } from './api/useApplicationApi'
 import { useBrowserRecorderApi } from './api/useBrowserRecorderApi'
 import { useRecorderApi } from './api/useRecorderApi'
@@ -38,25 +39,28 @@ function useApiServices() {
   const correlationRulesets = useCorrelationRulesetApi()
   const entitlements = useEntitlementsApi()
 
+  // Spread order is preserved by mergeApiServiceGroups; the group names are the
+  // labels a collision report points at.
   return useMemo(
-    () => ({
-      ...tests,
-      ...applications,
-      ...projects,
-      ...repository,
-      ...scripts,
-      ...system,
-      ...recorder,
-      ...browserRecorder,
-      ...library,
-      ...capacity,
-      ...fleet,
-      ...executionPlans,
-      ...monitoringCollectors,
-      ...objectRepositories,
-      ...correlationRulesets,
-      ...entitlements,
-    }),
+    () =>
+      mergeApiServiceGroups({
+        tests,
+        applications,
+        projects,
+        repository,
+        scripts,
+        system,
+        recorder,
+        browserRecorder,
+        library,
+        capacity,
+        fleet,
+        executionPlans,
+        monitoringCollectors,
+        objectRepositories,
+        correlationRulesets,
+        entitlements,
+      }),
     [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements],
   )
 }

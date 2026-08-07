@@ -152,20 +152,18 @@ func (tr *TestRunner) refreshTestsForHARead() {
 	// A follower list/read used to reload every test, history, and archive for
 	// every request. Concurrent dashboard polls therefore queued one complete DB
 	// scan each behind testReloadMu even though the first scan had already made
-	// the others redundant. Serialize the freshness check with the reload itself
-	// and let a short, bounded staleness window collapse a request burst to one
-	// durable refresh. Leadership acquisition still calls reloadStoredTests
-	// directly and always forces a full reconciliation.
-	tr.testReloadMu.Lock()
-	defer tr.testReloadMu.Unlock()
-	if !tr.haTestRefreshAt.IsZero() && time.Since(tr.haTestRefreshAt) < haTestRefreshInterval {
-		return
-	}
-	if err := tr.reloadStoredTestsLocked(); err != nil {
+	// the others redundant. The shared coalescer collapses a request burst onto
+	// one durable refresh and a short, bounded staleness window absorbs the
+	// polling cadence. testReloadMu is still taken around the reload itself so a
+	// follower read cannot interleave with the full reconciliation leadership
+	// acquisition performs through reloadStoredTests.
+	if err := tr.haTestRefresh.refresh(haTestRefreshInterval, func() error {
+		tr.testReloadMu.Lock()
+		defer tr.testReloadMu.Unlock()
+		return tr.reloadStoredTestsLocked()
+	}); err != nil {
 		slog.Warn("failed to refresh tests for HA read", "error", err)
-		return
 	}
-	tr.haTestRefreshAt = time.Now()
 }
 
 func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunComparisonBaseline {

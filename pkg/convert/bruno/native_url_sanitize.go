@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"gopkg.in/yaml.v3"
 )
@@ -258,9 +259,8 @@ func nativeURLSecretRequirement(
 	nameHash := sha256.Sum256([]byte("bruno-native-url-name\x00" + sourcePath + "\x00" + identity))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(nameHash[:6]))
 	suggested := secretName(sourcePath, "query_"+name)
-	const maxLogicalSecretNameBytes = 249
-	if len(suggested)+len(suffix) > maxLogicalSecretNameBytes {
-		suggested = strings.TrimRight(suggested[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	if len(suggested)+len(suffix) > credential.MaxLogicalNameBytes {
+		suggested = strings.TrimRight(suggested[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	}
 	suggested += suffix
 	idHash := sha256.Sum256([]byte("bruno-native-url\x00" + sourcePath + "\x00" + identity))

@@ -185,7 +185,7 @@ func (s *SQLiteStore) GetDeploymentLease(name string) (*DeploymentLease, error) 
 		return nil, err
 	}
 	defer tx.Rollback()
-	lease, _, err := lockDeploymentLeaseInTransaction(tx, s.db.dialect, name)
+	lease, err := readDeploymentLeaseInTransaction(tx, s.db.dialect, name)
 	if err != nil {
 		return nil, err
 	}
@@ -416,6 +416,33 @@ func lockDeploymentLeaseInTransaction(tx *storeTx, dialect storeDialect, name st
 	}
 	lease.Active = lease.OwnerID != "" && lease.TokenHash != "" && lease.ExpiresAt.After(now)
 	return &lease, now, nil
+}
+
+// readDeploymentLeaseInTransaction returns an inactive lease when no durable
+// row exists, without installing a guard row or taking a writer lock. Guard
+// creation and row fencing belong only to acquisition/start transitions; the
+// status endpoint must not mutate durable state on every poll.
+func readDeploymentLeaseInTransaction(tx *storeTx, dialect storeDialect, name string) (*DeploymentLease, error) {
+	query := `SELECT name, owner_id, token_hash, acquired_at, expires_at, updated_at, context_json FROM deployment_leases WHERE name=?`
+	var lease DeploymentLease
+	var contextJSON string
+	if err := tx.QueryRow(query, name).Scan(&lease.Name, &lease.OwnerID, &lease.TokenHash, &lease.AcquiredAt, &lease.ExpiresAt, &lease.UpdatedAt, &contextJSON); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &DeploymentLease{Name: name}, nil
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(contextJSON) != "" {
+		if err := json.Unmarshal([]byte(contextJSON), &lease.Context); err != nil {
+			return nil, fmt.Errorf("decode deployment lease context: %w", err)
+		}
+	}
+	now, err := preciseDatabaseTime(tx, dialect)
+	if err != nil {
+		return nil, fmt.Errorf("read deployment-lease database clock: %w", err)
+	}
+	lease.Active = lease.OwnerID != "" && lease.TokenHash != "" && lease.ExpiresAt.After(now)
+	return &lease, nil
 }
 
 func countExecutingTestsInTransaction(tx *storeTx) (int, error) {

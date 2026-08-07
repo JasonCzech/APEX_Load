@@ -77,6 +77,83 @@ func TestRewriteSQLForPostgres(t *testing.T) {
 	}
 }
 
+func TestRewriteSQLOnlyTransformsExecutableSQL(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "single quoted value",
+			query: `SELECT 'DATETIME COALESCE(enabled, 1) active = 1 ?' AS note, COALESCE(enabled, 1) FROM t WHERE id = ?`,
+			want:  `SELECT 'DATETIME COALESCE(enabled, 1) active = 1 ?' AS note, COALESCE(enabled, TRUE) FROM t WHERE id = $1`,
+		},
+		{
+			name:  "quoted identifier",
+			query: `SELECT "DATETIME?", CAST(? AS DATETIME)`,
+			want:  `SELECT "DATETIME?", CAST($1 AS TIMESTAMPTZ)`,
+		},
+		{
+			name:  "comments",
+			query: "SELECT ? -- DATETIME COALESCE(enabled, 1) ?\n, ? /* active = 1 ? */",
+			want:  "SELECT $1 -- DATETIME COALESCE(enabled, 1) ?\n, $2 /* active = 1 ? */",
+		},
+		{
+			name:  "nested block comment",
+			query: `SELECT ? /* DATETIME /* active = 1 ? */ COALESCE(enabled, 1) */ , ?`,
+			want:  `SELECT $1 /* DATETIME /* active = 1 ? */ COALESCE(enabled, 1) */ , $2`,
+		},
+		{
+			name:  "dollar quoted body",
+			query: `SELECT $fn$ DATETIME ? COALESCE(enabled, 1) $fn$, ?`,
+			want:  `SELECT $fn$ DATETIME ? COALESCE(enabled, 1) $fn$, $1`,
+		},
+		{
+			name:  "larger identifiers",
+			query: `SELECT event_datetime, not_enabled FROM t WHERE active = 1`,
+			want:  `SELECT event_datetime, not_enabled FROM t WHERE active = TRUE`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rewriteSQL(tt.query, storeDialectPostgres); got != tt.want {
+				t.Fatalf("rewriteSQL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRewriteSQLDDLDoesNotInspectProtectedText(t *testing.T) {
+	query := `CREATE TABLE child (
+		id TEXT PRIMARY KEY,
+		note TEXT DEFAULT 'REFERENCES parents(id) FOREIGN KEY DATETIME ?',
+		"DATETIME?" TEXT,
+		parent_id TEXT REFERENCES parents(id),
+		FOREIGN KEY(parent_id) REFERENCES parents(id)
+	)`
+	got := rewriteSQL(query, storeDialectPostgres)
+	for _, protected := range []string{
+		`'REFERENCES parents(id) FOREIGN KEY DATETIME ?'`,
+		`"DATETIME?"`,
+	} {
+		if !strings.Contains(got, protected) {
+			t.Fatalf("rewriteSQL() changed protected SQL text %q: %s", protected, got)
+		}
+	}
+	if strings.Contains(got, "parent_id TEXT REFERENCES") || strings.Contains(got, "FOREIGN KEY(parent_id)") {
+		t.Fatalf("rewriteSQL() retained executable foreign-key syntax: %s", got)
+	}
+}
+
+func TestRewriteSQLInsertOrIgnorePreservesStatementTerminator(t *testing.T) {
+	query := "  INSERT OR IGNORE INTO values_table (note, value) VALUES ('literal ?', ?);  \n"
+	want := "  INSERT INTO values_table (note, value) VALUES ('literal ?', $1) ON CONFLICT DO NOTHING;  \n"
+	if got := rewriteSQL(query, storeDialectPostgres); got != want {
+		t.Fatalf("rewriteSQL() = %q, want %q", got, want)
+	}
+}
+
 func TestPostgresAuthQueriesUseDialectSafePredicates(t *testing.T) {
 	got := rewriteSQL(`SELECT COUNT(DISTINCT u.id) FROM users u
 		JOIN user_role_bindings b ON b.user_id = u.id
@@ -132,24 +209,18 @@ func TestPostgresSchemaBooleanColumnsRewriteToBoolean(t *testing.T) {
 
 	intColumn := regexp.MustCompile(`(?i)\b([a-z_][a-z0-9_]*)\s+INTEGER\b`)
 
-	// Collect the boolean columns declared anywhere in the live schema.
-	boolCols := map[string]bool{}
-	for _, stmt := range stmts {
-		for _, m := range intColumn.FindAllStringSubmatch(stmt, -1) {
-			if name := strings.ToLower(m[1]); looksBooleanColumn(name) {
-				boolCols[name] = true
-			}
-		}
-	}
-	if len(boolCols) == 0 {
-		t.Fatal("no boolean columns detected in live schema — the schema accessors or naming heuristic are broken")
-	}
+	// The boolean columns are the naming-convention ones declared in the live
+	// schema UNION the ones the rewrite table itself declares BOOLEAN. Deriving
+	// them from looksBooleanColumn alone left base_missing — a rewrite-table
+	// BOOLEAN that matches no convention — out of the set, which is how
+	// COALESCE(base_missing, 0) shipped past this very check.
+	boolCols := schemaBooleanColumnNames(t)
 
 	// DDL side: after rewriting, no boolean column may remain INTEGER.
 	for _, stmt := range stmts {
 		rewritten := rewriteSQL(stmt, storeDialectPostgres)
 		for _, m := range intColumn.FindAllStringSubmatch(rewritten, -1) {
-			if name := strings.ToLower(m[1]); looksBooleanColumn(name) {
+			if name := strings.ToLower(m[1]); boolCols[name] {
 				t.Errorf("boolean column %q is still INTEGER after the Postgres rewrite — add a BOOLEAN entry to rewriteSQL.\nstatement: %s", name, strings.TrimSpace(stmt))
 			}
 		}

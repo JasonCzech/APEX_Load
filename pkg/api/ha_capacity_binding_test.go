@@ -260,7 +260,7 @@ func TestHATestReadRefreshesCapacityBindingInsideThrottleWindow(t *testing.T) {
 	}
 	// Suppress the full-map follower refresh. The single-object durable read must
 	// still reconcile the reciprocal binding immediately.
-	runner.haTestRefreshAt = time.Now()
+	runner.haTestRefresh.markFresh(time.Now())
 	if changed, err := store.UpdateCapacityReservationApprovalState(slotID, []string{"approved"}, "rejected", time.Now().UTC()); err != nil || !changed {
 		t.Fatalf("reject capacity reservation = (%v, %v)", changed, err)
 	}
@@ -339,7 +339,7 @@ func TestHAListReadsRefreshCrossReplicaCapacityBinding(t *testing.T) {
 				// A follower full-map refresh is deliberately suppressed here; a
 				// leader would skip it regardless. The list projection itself must
 				// reconcile the durable binding written by the other replica.
-				runner.haTestRefreshAt = time.Now()
+				runner.haTestRefresh.markFresh(time.Now())
 				if changed, err := remoteStore.UpdateCapacityReservationApprovalState(slotID, []string{"approved"}, "rejected", time.Now().UTC()); err != nil || !changed {
 					t.Fatalf("remote rejection = (%v, %v)", changed, err)
 				}

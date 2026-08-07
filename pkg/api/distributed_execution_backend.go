@@ -21,6 +21,9 @@ import (
 const (
 	maxDistributedTargetsPerRun       = 256
 	maxStartupRollbackStopConcurrency = 16
+	// maxDistributedStartupAssignmentWorkers bounds how many generators are
+	// staged and assigned concurrently during distributed startup.
+	maxDistributedStartupAssignmentWorkers = 16
 )
 
 func validateDistributedRunTargetCount(targets []string) error {
@@ -803,6 +806,15 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	distributedScripts := make(map[string]map[string]struct{})
 	loadByTarget := make(map[string]generatorLoadSnapshot)
 	startedTargets := make(map[string]struct{})
+	// Startup stages generators concurrently, so attempted-target bookkeeping is
+	// written from worker goroutines. cleanup only reads it after every worker
+	// has been joined.
+	var startedTargetsMu sync.Mutex
+	markStartedTarget := func(target string) {
+		startedTargetsMu.Lock()
+		startedTargets[target] = struct{}{}
+		startedTargetsMu.Unlock()
+	}
 	var stopInitialLeaseKeeper context.CancelFunc
 	cleanup := func(stopStarted bool) {
 		if stopInitialLeaseKeeper != nil {
@@ -1023,51 +1035,25 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		rampUp, rampDown, initStrategy := distributedGroupRuntimeConfig(test, group)
 
-		for _, shard := range shards {
-			if shard.Target == "" {
-				continue
-			}
-			if !distributedRunStartable(tr, test) {
-				cleanup(true)
-				return
-			}
-			target := shard.Target
-			client := clientsByTarget[target]
-			if client == nil {
-				failStartup(fmt.Sprintf("selected generator %q is not connected", target))
-				return
-			}
-			if distributedScripts[target] == nil {
-				distributedScripts[target] = make(map[string]struct{})
-			}
-
-			if _, ok := distributedScripts[target][group.ScriptID]; !ok {
-				rpcCtx, rpcCancel := context.WithTimeout(executionCtx, b.timeout)
-				_, distributeErr := client.DistributeScript(rpcCtx, generatorrpc.Script{
-					ID:                  group.ScriptID,
-					ExecutionGeneration: executionGeneration,
-					Content:             scriptContent,
-					ContentHash:         contentHash,
-				})
-				rpcCancel()
-				if distributeErr != nil {
-					failStartup(fmt.Sprintf("distribute script %q: %v", group.ScriptName, distributeErr))
-					return
-				}
-				distributedScripts[target][group.ScriptID] = struct{}{}
-			}
-			if !distributedRunStartable(tr, test) {
-				cleanup(true)
-				return
-			}
-
-			// AssignWork has uncertain commit semantics: a deadline or lost response
-			// can occur after the generator accepted the shard. Track every attempted
-			// target before the RPC so startup cleanup always issues an idempotent
-			// StopTest and cannot orphan load on an ambiguous result.
-			startedTargets[target] = struct{}{}
-			rpcCtx, rpcCancel := context.WithTimeout(executionCtx, b.timeout)
-			assignment, err := client.AssignWork(rpcCtx, generatorrpc.Assignment{
+		plans, planErr := planDistributedGroupTargetAssignments(shards, clientsByTarget, distributedScripts, group.ScriptID)
+		if planErr != nil {
+			failStartup(planErr.Error())
+			return
+		}
+		if !distributedRunStartable(tr, test) {
+			cleanup(true)
+			return
+		}
+		outcomes := b.assignDistributedGroupTargets(
+			executionCtx,
+			plans,
+			generatorrpc.Script{
+				ID:                  group.ScriptID,
+				ExecutionGeneration: executionGeneration,
+				Content:             scriptContent,
+				ContentHash:         contentHash,
+			},
+			generatorrpc.Assignment{
 				TestID:                    test.ID,
 				ExecutionGeneration:       executionGeneration,
 				ScenarioID:                test.ScenarioID,
@@ -1076,33 +1062,45 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				TargetDuration:            test.Duration,
 				ScriptID:                  group.ScriptID,
 				ExpectedScriptHash:        contentHash,
-				VUserCount:                int32(shard.VUsers),
 				RampUp:                    rampUp,
 				RampDown:                  rampDown,
 				InitStrategy:              initStrategy,
 				PreBaseline:               preBaseline,
 				PostBaseline:              postBaseline,
-				ShardOrdinal:              shard.ShardOrdinal,
-				ShardCount:                shard.ShardCount,
-				VUserIDOffset:             shard.VUserIDOffset,
 				DataFiles:                 dataFiles,
-				RedactionRules:            cloneRedactionRules(group.redactionRules),
+				RedactionRules:            group.redactionRules,
 				SecretBundle:              secretBundle,
 				SecretBundleID:            secretBundleID,
-			})
-			rpcCancel()
-			if err != nil {
-				failStartup(fmt.Sprintf("assign work for group %q on %q: %v", group.Name, target, err))
+			},
+			group.ScriptName,
+			func() bool { return distributedRunStartable(tr, test) },
+			markStartedTarget,
+		)
+		// Report in placement order so a fleet failure is reproducible instead of
+		// reflecting whichever generator happened to answer first.
+		for _, outcome := range outcomes {
+			if outcome.notStartable {
+				cleanup(true)
 				return
 			}
-			if !assignment.Accepted {
-				failStartup(fmt.Sprintf("generator rejected group %q on %q: %s", group.Name, target, assignment.ErrorMessage))
+			if outcome.err != nil {
+				failStartup(outcome.err.Error())
 				return
 			}
-			snapshot := loadByTarget[target]
-			snapshot.AvailableCapacity = assignment.AvailableCapacity
-			snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
-			loadByTarget[target] = snapshot
+		}
+		for index, plan := range plans {
+			if distributedScripts[plan.target] == nil {
+				distributedScripts[plan.target] = make(map[string]struct{})
+			}
+			if outcomes[index].scriptDistributed {
+				distributedScripts[plan.target][group.ScriptID] = struct{}{}
+			}
+			snapshot := loadByTarget[plan.target]
+			for shardIndex, shard := range plan.shards {
+				snapshot.AvailableCapacity = outcomes[index].results[shardIndex].AvailableCapacity
+				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			}
+			loadByTarget[plan.target] = snapshot
 		}
 	}
 
@@ -1182,6 +1180,146 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		b.handoffStagedGeneratorTestExecutionLeaseKeeper(executionCtx, tr, test, executionGeneration, stopInitialLeaseKeeper)
 		stopInitialLeaseKeeper = nil
 	}
+}
+
+// distributedTargetAssignmentPlan is the unit of startup work for one
+// generator: stage the group's script once (when that generator has not
+// received it yet) and then assign every shard placed on it, in placement
+// order.
+type distributedTargetAssignmentPlan struct {
+	target           string
+	client           generatorClient
+	shards           []GeneratorShardSummary
+	distributeScript bool
+}
+
+// distributedTargetAssignmentOutcome carries a plan's result back to the
+// single-threaded merge step. Nothing here is applied by the worker itself so
+// controller-side state stays deterministic regardless of completion order.
+type distributedTargetAssignmentOutcome struct {
+	target            string
+	notStartable      bool
+	err               error
+	scriptDistributed bool
+	results           []generatorrpc.AssignmentResult
+}
+
+// planDistributedGroupTargetAssignments buckets a group's shards by generator
+// in first-appearance order. Shard coordinates are already decided by
+// decorateDistributedShardCoordinates before this point, so the plan (and the
+// resulting assignment) never depends on RPC completion order.
+func planDistributedGroupTargetAssignments(shards []GeneratorShardSummary, clientsByTarget map[string]generatorClient, distributedScripts map[string]map[string]struct{}, scriptID string) ([]distributedTargetAssignmentPlan, error) {
+	plans := make([]distributedTargetAssignmentPlan, 0, len(shards))
+	indexByTarget := make(map[string]int, len(shards))
+	for _, shard := range shards {
+		if strings.TrimSpace(shard.Target) == "" {
+			continue
+		}
+		index, ok := indexByTarget[shard.Target]
+		if !ok {
+			client := clientsByTarget[shard.Target]
+			if client == nil {
+				return nil, fmt.Errorf("selected generator %q is not connected", shard.Target)
+			}
+			_, staged := distributedScripts[shard.Target][scriptID]
+			plans = append(plans, distributedTargetAssignmentPlan{
+				target:           shard.Target,
+				client:           client,
+				distributeScript: !staged,
+			})
+			index = len(plans) - 1
+			indexByTarget[shard.Target] = index
+		}
+		plans[index].shards = append(plans[index].shards, shard)
+	}
+	return plans, nil
+}
+
+// assignDistributedGroupTargets stages the script and assigns shards on every
+// planned generator concurrently, with bounded fan-out. Generators are
+// independent of each other during startup, so a fleet no longer pays the sum
+// of every per-target round trip. Outcomes are returned in plan order and every
+// queued plan runs to completion, so the caller can report the first failure in
+// placement order rather than whichever RPC happened to fail first.
+func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.Context, plans []distributedTargetAssignmentPlan, script generatorrpc.Script, template generatorrpc.Assignment, scriptName string, startable func() bool, markStarted func(string)) []distributedTargetAssignmentOutcome {
+	outcomes := make([]distributedTargetAssignmentOutcome, len(plans))
+	if len(plans) == 0 {
+		return outcomes
+	}
+	runPlan := func(index int) {
+		plan := plans[index]
+		outcome := distributedTargetAssignmentOutcome{target: plan.target, results: make([]generatorrpc.AssignmentResult, len(plan.shards))}
+		defer func() { outcomes[index] = outcome }()
+		if startable != nil && !startable() {
+			outcome.notStartable = true
+			return
+		}
+		if plan.distributeScript {
+			rpcCtx, rpcCancel := context.WithTimeout(ctx, b.timeout)
+			_, distributeErr := plan.client.DistributeScript(rpcCtx, script)
+			rpcCancel()
+			if distributeErr != nil {
+				outcome.err = fmt.Errorf("distribute script %q: %v", scriptName, distributeErr)
+				return
+			}
+			outcome.scriptDistributed = true
+		}
+		for shardIndex, shard := range plan.shards {
+			if startable != nil && !startable() {
+				outcome.notStartable = true
+				return
+			}
+			// AssignWork has uncertain commit semantics: a deadline or lost response
+			// can occur after the generator accepted the shard. Track every attempted
+			// target before the RPC so startup cleanup always issues an idempotent
+			// StopTest and cannot orphan load on an ambiguous result.
+			if markStarted != nil {
+				markStarted(plan.target)
+			}
+			assignment := template
+			assignment.VUserCount = int32(shard.VUsers)
+			assignment.ShardOrdinal = shard.ShardOrdinal
+			assignment.ShardCount = shard.ShardCount
+			assignment.VUserIDOffset = shard.VUserIDOffset
+			assignment.RedactionRules = cloneRedactionRules(template.RedactionRules)
+			rpcCtx, rpcCancel := context.WithTimeout(ctx, b.timeout)
+			result, assignErr := plan.client.AssignWork(rpcCtx, assignment)
+			rpcCancel()
+			if assignErr != nil {
+				outcome.err = fmt.Errorf("assign work for group %q on %q: %v", template.GroupName, plan.target, assignErr)
+				return
+			}
+			if !result.Accepted {
+				outcome.err = fmt.Errorf("generator rejected group %q on %q: %s", template.GroupName, plan.target, result.ErrorMessage)
+				return
+			}
+			outcome.results[shardIndex] = result
+		}
+	}
+	workerCount := min(len(plans), maxDistributedStartupAssignmentWorkers)
+	if workerCount <= 1 {
+		for index := range plans {
+			runPlan(index)
+		}
+		return outcomes
+	}
+	jobs := make(chan int)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for index := range jobs {
+				runPlan(index)
+			}
+		}()
+	}
+	for index := range plans {
+		jobs <- index
+	}
+	close(jobs)
+	workers.Wait()
+	return outcomes
 }
 
 func distributedRunStartable(tr *TestRunner, test *ManagedTest) bool {

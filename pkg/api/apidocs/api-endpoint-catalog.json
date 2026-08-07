@@ -1706,6 +1706,26 @@
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: write"
     },
     {
+      "method": "PUT",
+      "path": "/api/v1/fleet/pools/{id}/allocation",
+      "operationId": "handleUpdateFleetPoolAllocation",
+      "summary": "Update Fleet Pool Allocation",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fleet/pools/{id}/allocation/preflight",
+      "operationId": "handleFleetPoolAllocationPreflight",
+      "summary": "Fleet Pool Allocation Preflight",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: read"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/fleet/provision-requests",
       "operationId": "handleListProvisioningRequests",
@@ -4337,6 +4357,76 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/clusters",
+      "operationId": "handleListClusterConnections",
+      "summary": "List Cluster Connections",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/clusters",
+      "operationId": "handleCreateClusterConnection",
+      "summary": "Create Cluster Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/system/clusters/{id}",
+      "operationId": "handleDeleteClusterConnection",
+      "summary": "Delete Cluster Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/clusters/{id}",
+      "operationId": "handleGetClusterConnection",
+      "summary": "Get Cluster Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/system/clusters/{id}",
+      "operationId": "handleUpdateClusterConnection",
+      "summary": "Update Cluster Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/clusters/{id}/capacity",
+      "operationId": "handleGetClusterCapacity",
+      "summary": "Get Cluster Capacity",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/clusters/{id}/test",
+      "operationId": "handleTestClusterConnection",
+      "summary": "Test Cluster Connection",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/deployment-lease",
       "operationId": "handleGetDeploymentLease",
       "summary": "Get Deployment Lease",
@@ -4374,6 +4464,46 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: deployments:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/deployment-targets",
+      "operationId": "handleListDomainDeploymentTargets",
+      "summary": "List Domain Deployment Targets",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/system/deployment-targets/{id}",
+      "operationId": "handleDeleteDomainDeploymentTarget",
+      "summary": "Delete Domain Deployment Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/deployment-targets/{id}",
+      "operationId": "handleGetDomainDeploymentTarget",
+      "summary": "Get Domain Deployment Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: system:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/system/deployment-targets/{id}",
+      "operationId": "handleUpdateDomainDeploymentTarget",
+      "summary": "Update Domain Deployment Target",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage"
     },
     {
       "method": "GET",

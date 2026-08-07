@@ -1,4 +1,4 @@
-.PHONY: all build test test-jms-solace-real import-policy-locality performance-smoke performance-evidence clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner java-vuser-runner-legacy proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test test-jms-solace-real import-policy-locality performance-smoke performance-evidence clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner java-vuser-runner-legacy proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-eks-render k8s-eks-apply k8s-eks-status k8s-eks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= $(shell ./scripts/resolve-version.sh 2>/dev/null || echo 0.1.0)
 COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)
@@ -11,6 +11,7 @@ GOFLAGS := -trimpath
 WAILS ?= $(shell command -v wails 2>/dev/null)
 WAILS_PLATFORM ?=
 AKS_RENDERED_MANIFEST ?= /tmp/apexload-aks.yaml
+EKS_RENDERED_MANIFEST ?= /tmp/apexload-eks.yaml
 
 all: build
 
@@ -193,6 +194,18 @@ k8s-aks-status:
 
 k8s-aks-delete:
 	kubectl delete -k deployments/k8s/aks --ignore-not-found=true
+
+k8s-eks-render:
+	./scripts/render-eks-manifests.sh --output "$(EKS_RENDERED_MANIFEST)" --image-tag "$(VERSION)"
+
+k8s-eks-apply: k8s-eks-render
+	kubectl apply -f "$(EKS_RENDERED_MANIFEST)"
+
+k8s-eks-status:
+	kubectl -n apexload get pods,svc,ingress,scaledobject
+
+k8s-eks-delete:
+	kubectl delete -k deployments/k8s/eks --ignore-not-found=true
 
 k8s-local-preflight:
 	./deployments/k8s/local/preflight.sh

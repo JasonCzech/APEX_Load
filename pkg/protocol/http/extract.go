@@ -1062,6 +1062,17 @@ func normalizeJMESPathNumbersLossy(value any) any {
 	}
 }
 
+// jmesPathNumberRepresentationSensitive reports whether evaluating expr can
+// depend on document numbers being json.Number rather than float64. Only
+// comparisons, function calls, and literals inspect a value numerically; a pure
+// path/projection/multiselect selects the same nodes under either
+// representation, and go-jmespath's truthiness treats both as non-empty. The
+// scan is deliberately conservative: a quoted identifier that merely contains
+// one of these bytes costs the fast path, never correctness.
+func jmesPathNumberRepresentationSensitive(expr string) bool {
+	return strings.ContainsAny(expr, "<>=!(`")
+}
+
 func equivalentLossyJMESPathResult(left, right any) bool {
 	return reflect.DeepEqual(
 		normalizeJMESPathNumbersLossy(left),
@@ -1496,6 +1507,10 @@ func stringifyJSONLeaf(value any) string {
 		return v
 	case json.Number:
 		return v.String()
+	case float64:
+		// The normalized-number fallback in extractJMESPath returns float64 leaves;
+		// %v would render them in Go 'g' form (2e+06), so format them plainly.
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	case []any, map[string]any:
 		encoded, err := json.Marshal(v)
 		if err != nil {
@@ -1519,26 +1534,31 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 	}
 	originalResult, originalErr := compiled.Search(current)
 	result := originalResult
-	normalizedCurrent, hasUnsafeNumber := normalizeJMESPathNumbers(current)
-	normalizedResult, normalizedErr := compiled.Search(normalizedCurrent)
-	if hasUnsafeNumber && jmesPathComparisonTouchesUnsafeNumber(expr, collectUnsafeJMESPathNumbers(current)) {
-		return "", fmt.Errorf("evaluate JMESPath expression: numeric comparison is unsafe for values outside the exact float64 integer range")
-	}
-	if hasUnsafeNumber {
-		lossyResult, lossyErr := compiled.Search(normalizeJMESPathNumbersLossy(current))
-		if normalizedErr != nil || lossyErr != nil || !equivalentLossyJMESPathResult(normalizedResult, lossyResult) {
+	// Extraction runs on every response, so the normalized re-evaluation (a full
+	// tree copy plus a second Search) is reserved for expressions that can
+	// actually observe number representation.
+	if jmesPathNumberRepresentationSensitive(expr) {
+		normalizedCurrent, hasUnsafeNumber := normalizeJMESPathNumbers(current)
+		normalizedResult, normalizedErr := compiled.Search(normalizedCurrent)
+		if hasUnsafeNumber && jmesPathComparisonTouchesUnsafeNumber(expr, collectUnsafeJMESPathNumbers(current)) {
 			return "", fmt.Errorf("evaluate JMESPath expression: numeric comparison is unsafe for values outside the exact float64 integer range")
 		}
-	}
-	switch {
-	case normalizedErr == nil && (originalErr != nil || !equivalentJMESPathResult(originalResult, normalizedResult)):
-		// Numeric predicates can partially succeed against nonnumeric branches
-		// while silently omitting json.Number branches. Compare the complete
-		// result, not only empty/boolean shapes, before retaining exact numbers.
-		result = normalizedResult
-		originalErr = nil
-	case originalErr != nil:
-		originalErr = normalizedErr
+		if hasUnsafeNumber {
+			lossyResult, lossyErr := compiled.Search(normalizeJMESPathNumbersLossy(current))
+			if normalizedErr != nil || lossyErr != nil || !equivalentLossyJMESPathResult(normalizedResult, lossyResult) {
+				return "", fmt.Errorf("evaluate JMESPath expression: numeric comparison is unsafe for values outside the exact float64 integer range")
+			}
+		}
+		switch {
+		case normalizedErr == nil && (originalErr != nil || !equivalentJMESPathResult(originalResult, normalizedResult)):
+			// Numeric predicates can partially succeed against nonnumeric branches
+			// while silently omitting json.Number branches. Compare the complete
+			// result, not only empty/boolean shapes, before retaining exact numbers.
+			result = normalizedResult
+			originalErr = nil
+		case originalErr != nil:
+			originalErr = normalizedErr
+		}
 	}
 	if originalErr != nil {
 		return "", fmt.Errorf("evaluate JMESPath expression: %w", originalErr)

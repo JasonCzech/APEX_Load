@@ -1191,6 +1191,22 @@ func compactTerminalManagedTestLocked(test *ManagedTest) {
 	if len(test.History) > 1 {
 		test.History = []*LiveMetrics{test.History[len(test.History)-1]}
 	}
+	// The single retained point stays resident for the lifetime of the process,
+	// so release the cardinality-unbounded breakdowns it carries. A run that is
+	// terminalized in-process otherwise pins one map entry per distinct
+	// transaction/error/dependency/operation forever, while the same run
+	// re-hydrated after a restart never carries them at all.
+	var compactedTail *LiveMetrics
+	if len(test.History) == 1 {
+		compactedTail = compactTerminalLiveMetricsTail(test.History[0])
+		if test.LiveMetrics == test.History[0] {
+			test.LiveMetrics = compactedTail
+		}
+		test.History[0] = compactedTail
+	}
+	if test.LiveMetrics != nil && test.LiveMetrics != compactedTail {
+		test.LiveMetrics = compactTerminalLiveMetricsTail(test.LiveMetrics)
+	}
 	if len(test.History) == 0 {
 		test.historyBytes = 0
 		test.historyWeights = nil
@@ -1199,6 +1215,42 @@ func compactTerminalManagedTestLocked(test *ManagedTest) {
 	lastWeight := managedTestHistoryPointWeight(test.History[0], maxManagedTestHistoryBytes)
 	test.historyBytes = lastWeight
 	test.historyWeights = []int64{lastWeight}
+}
+
+// compactTerminalLiveMetricsTail returns a copy of point without the metric
+// collections whose size grows with the workload's cardinality rather than with
+// a fixed bound. Scalars, group/generator/browser rollups and telemetry are
+// retained because they are bounded by the run's own shape.
+//
+// The detailed terminal view is served from the run archive
+// (RunArchiveRecord) and the bounded run-snapshot cache, not from this resident
+// point: a terminal run re-hydrated at boot builds its tail from the typed
+// interval-summary columns (intervalSummaryRecordToLiveMetrics), which never
+// populate these fields. Dropping them here makes an in-process terminalized
+// run match that post-restart shape instead of pinning the full live maps until
+// the controller is restarted.
+//
+// Points that already carry none of them are returned unchanged so repeated
+// compaction of the same terminal run does not allocate.
+func compactTerminalLiveMetricsTail(point *LiveMetrics) *LiveMetrics {
+	if point == nil {
+		return nil
+	}
+	if point.ErrorBreakdown == nil && point.Transactions == nil && point.DependencyHealth == nil &&
+		point.DependencyMap == nil && point.ErrorPatterns == nil && point.SOAPOperations == nil &&
+		point.NetworkProfiles == nil && point.ErrorEvidence == nil {
+		return point
+	}
+	compacted := *point
+	compacted.ErrorBreakdown = nil
+	compacted.Transactions = nil
+	compacted.DependencyHealth = nil
+	compacted.DependencyMap = nil
+	compacted.ErrorPatterns = nil
+	compacted.SOAPOperations = nil
+	compacted.NetworkProfiles = nil
+	compacted.ErrorEvidence = nil
+	return &compacted
 }
 
 func (tr *TestRunner) loadStoredTerminalTestSummary(test *ManagedTest) {
@@ -1617,6 +1669,84 @@ func (tr *TestRunner) saveManagedTestRecord(test *ManagedTest) error {
 	return nil
 }
 
+// persistManagedTestVUserScale writes only the durable state a VUser scale
+// reservation owns: the group workload snapshot and the run's total VUsers. A
+// gradual ramp reserves once per ramp step, and routing every step through
+// saveManagedTestRecord re-validated tenant placement, locked the parent
+// release row, deep-copied every compiled group script and re-serialized every
+// unrelated JSON column of the run - all while tr.mu is held.
+//
+// The caller must hold tr.mu and must not release it before this returns: the
+// group payload references the live compiled scripts instead of deep-copying
+// them, and the store marshals it synchronously.
+//
+// Any store that does not implement the narrow capability, and any write that
+// matches no row, falls back to the full-row save so the durable outcome is
+// exactly what it was before.
+func (tr *TestRunner) persistManagedTestVUserScale(test *ManagedTest) error {
+	if tr == nil || tr.testStore == nil || test == nil {
+		return nil
+	}
+	update := storage.TestVUserScaleUpdate{
+		ID:          test.ID,
+		TotalVUsers: test.TotalVUsers,
+		Groups:      storedGroupsForLockedMarshal(test.Groups),
+	}
+	if tr.durableExecutionFence {
+		store, ok := tr.testStore.(storage.LeaseFencedTestVUserScaleWriter)
+		if !ok {
+			return tr.saveManagedTestRecord(test)
+		}
+		fence := strings.TrimSpace(test.executionFence)
+		if fence == "" {
+			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, test.ID)
+		}
+		updated, err := store.UpdateTestVUserScaleIfLeaseHeld(update, executionLeaseName, fence)
+		if err != nil {
+			return err
+		}
+		if updated {
+			return nil
+		}
+		// Either the epoch is gone or the row is; the full-row save reports the
+		// correct fenced error for the first and re-materializes for the second.
+		return tr.saveManagedTestRecord(test)
+	}
+	store, ok := tr.testStore.(storage.TestVUserScaleWriter)
+	if !ok {
+		return tr.saveManagedTestRecord(test)
+	}
+	updated, err := store.UpdateTestVUserScale(update)
+	if err != nil {
+		return err
+	}
+	if updated {
+		return nil
+	}
+	return tr.saveManagedTestRecord(test)
+}
+
+// storedGroupsForLockedMarshal builds the same durable group payload as
+// encodeStoredGroups without deep-copying the compiled scripts. It is only safe
+// for writes that are marshalled before tr.mu is released; encodeStoredGroups
+// remains the correct builder for record snapshots that outlive the lock.
+func storedGroupsForLockedMarshal(groups []TestGroup) any {
+	if len(groups) == 0 {
+		return []storedTestGroup{}
+	}
+	stored := make([]storedTestGroup, 0, len(groups))
+	for _, group := range groups {
+		stored = append(stored, storedTestGroup{
+			TestGroup:         group,
+			RuntimeScript:     group.script,
+			BaseScript:        group.baseScript,
+			SharedDataSources: group.sharedDataSources,
+			RedactionRules:    group.redactionRules,
+		})
+	}
+	return stored
+}
+
 // saveManagedTestRecordSnapshot persists a caller-owned immutable projection.
 // It is safe to call after releasing tr.mu and retains the same execution-lease
 // fence as saveManagedTestRecord.
@@ -1956,6 +2086,12 @@ func (tr *TestRunner) persistStoredTestStatus(testID string, executionFence stri
 	if tr.testStore == nil {
 		return nil
 	}
+	// Publish that a status write is in the storage driver right now. The
+	// run-driver panic backstop uses this to distinguish a terminal transition
+	// that is merely waiting on a stalled database from one wedged behind a lock
+	// nothing will release; see awaitPanicRecoveryStage.
+	tr.durableStatusWritesInFlight.Add(1)
+	defer tr.durableStatusWritesInFlight.Add(-1)
 	if tr.durableExecutionFence {
 		if strings.TrimSpace(executionFence) == "" {
 			return errNotExecutionLeader

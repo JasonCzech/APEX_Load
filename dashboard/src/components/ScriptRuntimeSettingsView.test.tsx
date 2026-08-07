@@ -508,6 +508,168 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
   })
 })
 
+describe('ScriptRuntimeSettingsView JMS TLS settings', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('edits config.jms.tls without dropping the rest of the JMS block', () => {
+    const onUpdateField = vi.fn()
+    const script: ScriptDefinition = {
+      name: 'Solace order feed',
+      version: '1.0.0',
+      protocol: 'jms-solace',
+      config: {
+        base_url: '',
+        jms: { provider: 'solace', broker_url: 'tcps://broker.example.com:55443', mock: false },
+      },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="jms"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    const caCert = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.closest('label')?.textContent?.includes('TLS CA Certificate Secret'))
+    expect(caCert).toBeTruthy()
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(caCert!, 'jms-broker-ca')
+      caCert!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.jms', {
+      provider: 'solace',
+      broker_url: 'tcps://broker.example.com:55443',
+      mock: false,
+      tls: { ca_cert_secret: 'jms-broker-ca' },
+    })
+  })
+})
+
+describe('ScriptRuntimeSettingsView Event Hubs settings', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  // Mirrors what pkg/convert/eventhubscapture emits for an Event Hubs Capture
+  // import: protocol "eventhubs" plus a populated config.eventhubs block.
+  function eventHubsScript(): ScriptDefinition {
+    return {
+      name: 'eventhubs-capture-import',
+      version: '1.0.0',
+      protocol: 'eventhubs',
+      config: {
+        base_url: '',
+        eventhubs: { mock: true, event_hub: 'orders' },
+      },
+      actions: [{ name: 'Produce', type: 'eventhubs_produce', target: 'orders', body: '{}' }],
+    }
+  }
+
+  function renderEventHubs(onUpdateField = vi.fn()) {
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="eventhubs"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={eventHubsScript()}
+        />,
+      )
+    })
+    return onUpdateField
+  }
+
+  it('renders the Event Hubs section for an imported capture script', () => {
+    renderEventHubs()
+    expect(container.textContent).toContain('Event Hubs Runtime')
+    expect(container.textContent).toContain('Observer Start Position')
+    const eventHub = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.closest('label')?.textContent?.includes('Event Hub'))
+    expect(eventHub?.value).toBe('orders')
+  })
+
+  it('edits config.eventhubs without dropping the fields it does not touch', () => {
+    const onUpdateField = renderEventHubs()
+    const consumerGroup = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.closest('label')?.textContent?.includes('Consumer Group'))
+    expect(consumerGroup).toBeTruthy()
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      setter?.call(consumerGroup!, 'replay-probe')
+      consumerGroup!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenCalledWith('config.eventhubs', {
+      mock: true,
+      event_hub: 'orders',
+      consumer_group: 'replay-probe',
+    })
+  })
+
+  it('hides the Event Hubs section for other protocols', () => {
+    const script = eventHubsScript()
+    script.protocol = 'http'
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="think"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    expect(container.textContent).not.toContain('Event Hubs Runtime')
+  })
+})
+
 describe('ScriptRuntimeSettingsView imported source runtime settings', () => {
   let container: HTMLDivElement
   let root: Root
@@ -611,5 +773,159 @@ describe('ScriptRuntimeSettingsView imported source runtime settings', () => {
       )
     })
     expect(container.textContent).not.toContain('Imported Source Runtime Settings')
+  })
+})
+
+// The SOAP, Java HTTP and Web HTTP/HTML sections were lifted out of the
+// ScriptRuntimeSettingsView render function into ScriptRuntimeSettingsProtocolSections.
+// These cases drive them through the view so the extracted props (script,
+// section activation, field writes, proxy summary) stay wired to the same
+// config paths the single-function version wrote to.
+describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  function renderView(script: ScriptDefinition, activeSection: 'soap' | 'java_http' | 'web_runtime', onUpdateField = vi.fn()) {
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection={activeSection}
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    return onUpdateField
+  }
+
+  // The left nav (rendered by ScriptRuntimeSettingsView itself) emits the same
+  // RuntimeSectionIcon glyph, section-label and section-summary as every section
+  // header, so a whole-container query is satisfied by the nav alone and stays
+  // green even when the extracted section renders no icon or ignores its props.
+  // Scope header assertions to the detail pane and to the named section's header.
+  function sectionHeader(label: string) {
+    const detail = container.querySelector('.runtime-settings-detail')
+    expect(detail).not.toBeNull()
+    const header = Array.from(detail!.querySelectorAll<HTMLElement>('.settings-section > .section-toggle'))
+      .find(toggle => toggle.querySelector('.section-label')?.textContent === label)
+    expect(header, `no "${label}" section header in the detail pane`).toBeTruthy()
+    return header!
+  }
+
+  function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+    act(() => {
+      const prototype = input instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype
+      Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+
+  it('edits a SOAP namespace URI without dropping the rest of the SOAP block', () => {
+    const script: ScriptDefinition = {
+      name: 'Order service',
+      version: '1.0.0',
+      protocol: 'soap',
+      config: {
+        base_url: 'https://soap.example.test',
+        soap: {
+          version: '1.1',
+          namespaces: { ord: 'https://example.test/orders' },
+          ws_security: { username_token: { username: 'svc' } },
+        },
+      },
+      actions: [],
+    }
+    const onUpdateField = renderView(script, 'soap')
+
+    expect(sectionHeader('SOAP Settings').querySelector('[data-runtime-section-icon="soap"]')).not.toBeNull()
+    const uriInput = container.querySelector<HTMLInputElement>('input.kv-val')
+    expect(uriInput?.value).toBe('https://example.test/orders')
+    typeInto(uriInput!, 'https://example.test/orders/v2')
+
+    expect(onUpdateField).toHaveBeenCalledWith('config.soap', {
+      version: '1.1',
+      namespaces: { ord: 'https://example.test/orders/v2' },
+      ws_security: { username_token: { username: 'svc' } },
+    })
+  })
+
+  it('edits a Java HTTP request mapping without dropping the rest of the java_http block', () => {
+    const script: ScriptDefinition = {
+      name: 'Java over HTTP',
+      version: '1.0.0',
+      protocol: 'java_http',
+      config: {
+        base_url: 'https://java.example.test',
+        java_http: {
+          codec: 'java_serialized_object_base64',
+          helper_mode: 'embedded',
+          request_mapping: { userId: 'payload.user' },
+        },
+      },
+      actions: [],
+    }
+    const onUpdateField = renderView(script, 'java_http')
+
+    expect(sectionHeader('Java HTTP Settings').querySelector('[data-runtime-section-icon="java_http"]')).not.toBeNull()
+    const mappingInputs = Array.from(container.querySelectorAll<HTMLInputElement>('.pair-row input'))
+    const valueInput = mappingInputs.find(input => input.value === 'payload.user')
+    expect(valueInput).toBeTruthy()
+    typeInto(valueInput!, 'payload.account.user')
+
+    expect(onUpdateField).toHaveBeenCalledWith('config.java_http', {
+      codec: 'java_serialized_object_base64',
+      helper_mode: 'embedded',
+      request_mapping: { userId: 'payload.account.user' },
+    })
+  })
+
+  it('edits the Web HTTP/HTML source IP pool and shows the proxy summary in the header', () => {
+    const script: ScriptDefinition = {
+      name: 'Web script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: {
+        base_url: 'https://shop.example.test',
+        http: { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080' } },
+        web_runtime: { source_ips: ['10.0.0.5'] },
+      },
+      actions: [],
+    }
+    const onUpdateField = renderView(script, 'web_runtime')
+
+    const webHeader = sectionHeader('Web HTTP/HTML Compatibility')
+    expect(webHeader.querySelector('[data-runtime-section-icon="web_runtime"]')).not.toBeNull()
+    // httpProxySummary is derived by the view and passed into the extracted section.
+    expect(webHeader.querySelector('.section-summary')?.textContent).toBe('Proxy configured')
+    const proxyURL = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.closest('label')?.textContent?.includes('Proxy URL'))
+    expect(proxyURL?.value).toBe('http://proxy.example.test:8080')
+
+    const sourceIPs = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Source IP pool"]')
+    expect(sourceIPs?.value).toBe('10.0.0.5')
+    typeInto(sourceIPs!, '10.0.0.5\n10.0.0.6')
+
+    expect(onUpdateField).toHaveBeenCalledWith('config.web_runtime', {
+      source_ips: ['10.0.0.5', '10.0.0.6'],
+    })
   })
 })

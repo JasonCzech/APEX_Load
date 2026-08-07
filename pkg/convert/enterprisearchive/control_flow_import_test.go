@@ -532,3 +532,86 @@ func TestConvertIfAroundLoopWarnsAboutNestingApproximation(t *testing.T) {
 		t.Errorf("expected nesting-approximation warning, got %v", result.Warnings)
 	}
 }
+
+// A translated outer loop whose body OPENS with an untranslated nested loop must
+// stay one block: splitting it would run the nested calls once, before the loop,
+// instead of once per outer pass.
+func TestConvertLoopBodyOpeningWithNestedLoopStaysOneBlock(t *testing.T) {
+	result := convertFlowSource(t, `int Action()
+{
+	for (i = 0; i < 3; i++)
+	{
+		for (j = 0; j < atoi(lr_eval_string("{Inner}")); j++)
+		{
+			web_url("inner", "URL=https://example.test/i", LAST);
+		}
+		web_url("tail", "URL=https://example.test/t", LAST);
+	}
+	return 0;
+}`)
+
+	actions := result.Script.Actions
+	if len(actions) != 1 || actions[0].Type != "control_loop" {
+		names := make([]string, 0, len(actions))
+		for _, action := range actions {
+			names = append(names, action.Name+"/"+action.Type)
+		}
+		t.Fatalf("actions = %v, want a single control_loop covering the whole outer body", names)
+	}
+	loop := actions[0]
+	if loop.Control == nil || loop.Control.Count != 3 {
+		t.Fatalf("loop control = %+v, want the outer loop's three passes", loop.Control)
+	}
+	targets := make([]string, 0, len(loop.Control.Steps))
+	for _, step := range loop.Control.Steps {
+		targets = append(targets, step.Name)
+	}
+	if len(loop.Control.Steps) != 2 {
+		t.Fatalf("loop steps = %v, want the nested call and the outer-only call", targets)
+	}
+	// The nested loop is untranslated, so its calls run once per outer pass; the
+	// warning tells operators to review metadata.source_loop, which must survive.
+	if display := metadataString(loop.Control.Steps[0].Metadata, sourceFlowLoopKey); !strings.Contains(display, ">>") {
+		t.Errorf("nested step loop context = %q, want the nested loop chain retained for review", display)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Errorf("structured script does not validate: %v", issues)
+	}
+}
+
+// The review's scenario: outer body [A, nested loop, B]. The wrapper covers all
+// three, and the nested call keeps its loop chain in metadata so the
+// untranslated-loop warning has something to point at.
+func TestConvertLoopBodyAroundNestedLoopKeepsNestedContext(t *testing.T) {
+	result := convertFlowSource(t, `int Action()
+{
+	for (i = 0; i < 3; i++)
+	{
+		web_url("head", "URL=https://example.test/a", LAST);
+		for (j = 0; j < atoi(lr_eval_string("{Inner}")); j++)
+		{
+			web_url("inner", "URL=https://example.test/i", LAST);
+		}
+		web_url("tail", "URL=https://example.test/t", LAST);
+	}
+	return 0;
+}`)
+
+	actions := result.Script.Actions
+	if len(actions) != 1 || actions[0].Type != "control_loop" {
+		t.Fatalf("actions = %+v, want a single control_loop", actions)
+	}
+	steps := actions[0].Control.Steps
+	if len(steps) != 3 {
+		t.Fatalf("loop steps = %+v, want head, inner and tail in one block", steps)
+	}
+	nestedContext := metadataString(steps[1].Metadata, sourceFlowLoopKey)
+	if !strings.Contains(nestedContext, ">>") {
+		t.Errorf("nested step loop context = %q, want the nested loop chain retained for review", nestedContext)
+	}
+	for _, index := range []int{0, 2} {
+		if display := metadataString(steps[index].Metadata, sourceFlowLoopKey); display != "" {
+			t.Errorf("step %d loop context = %q, want the wrapper to own the outer loop display", index, display)
+		}
+	}
+}

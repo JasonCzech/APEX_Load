@@ -60,6 +60,11 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	if err := store.SaveSetting("report:annotations:"+testID+":engineer", `{}`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := store.db.Exec(`INSERT INTO runtime_secret_provisioning_attempts
+		(id, project_id, test_id, actor_subject, secret_names_json, lease_expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, "secret-attempt-delete", project.ID, testID, "secret-attempt-owner", `[]`, now.Add(time.Hour), now); err != nil {
+		t.Fatal(err)
+	}
 
 	// Force a late failure after the binding release/outbox write. Both must roll
 	// back with the test deletion rather than leaving half-applied durable state.
@@ -83,6 +88,13 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	if _, err := store.GetTest(testID); err != nil {
 		t.Fatalf("test disappeared after rolled-back delete: %v", err)
 	}
+	var attemptCount int
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM runtime_secret_provisioning_attempts WHERE test_id = ?`, testID).Scan(&attemptCount); err != nil {
+		t.Fatal(err)
+	}
+	if attemptCount != 1 {
+		t.Fatalf("runtime secret attempt count after rolled-back delete = %d, want 1", attemptCount)
+	}
 
 	if _, err := store.db.Exec(`DROP TRIGGER reject_test_delete`); err != nil {
 		t.Fatal(err)
@@ -102,6 +114,12 @@ func TestDeleteTestAtomicallyReleasesReservationAndEnqueuesArchiveCleanup(t *tes
 	}
 	if _, err := store.GetRunArchive(testID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("GetRunArchive after delete err = %v, want sql.ErrNoRows", err)
+	}
+	if err := store.db.QueryRow(`SELECT COUNT(*) FROM runtime_secret_provisioning_attempts WHERE test_id = ?`, testID).Scan(&attemptCount); err != nil {
+		t.Fatal(err)
+	}
+	if attemptCount != 0 {
+		t.Fatalf("runtime secret attempt count after committed delete = %d, want 0", attemptCount)
 	}
 	job, err := store.GetArchiveCleanupJob(testID)
 	if err != nil {
@@ -180,6 +198,184 @@ func TestDeleteProjectRetainsAuditHistoryAndQueuesArchiveCleanup(t *testing.T) {
 	}
 	if job.ProjectID != projectID || job.ArchiveRecord.TestID != testID {
 		t.Fatalf("cleanup job = %+v, want deleted project's archive", job)
+	}
+}
+
+// stageMidRefreshArchiveDivergence reproduces the durable window that the
+// archive refresh flow opens in production: the intent row has already been
+// advanced to the NEW object (processArchiveFinalizationJobUnderFence calls
+// UpdateArchiveFinalizationRecordIfToken before publishing) while run_archives
+// still names the previous one. It returns (published, pending).
+func stageMidRefreshArchiveDivergence(t *testing.T, store *SQLiteStore, projectID, testID string) (RunArchiveRecord, RunArchiveRecord) {
+	t.Helper()
+	now := time.Now().UTC()
+	publishedRoot := "s3://archives/evidence/_versions/v1/published/" + testID
+	published := RunArchiveRecord{
+		TestID: testID, SchemaVersion: archiveRecordSchemaVersion, ArchiveBackend: "s3",
+		ArchivePath:  "/archive/staging/published/" + testID,
+		ManifestPath: "/archive/staging/published/" + testID + "/manifest.json",
+		ArchiveURI:   publishedRoot, ManifestURI: publishedRoot + "/manifest.json",
+		CreatedAt: now, CompletedAt: now,
+	}
+	if err := store.SaveRunArchive(&published); err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := store.BumpArchiveRefreshJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, rebound, err := store.RebindArchiveRefreshToFinalization(testID, refresh.IntentToken)
+	if err != nil || !rebound || intent == nil {
+		t.Fatalf("rebind refresh to finalization = %+v, %v, %v", intent, rebound, err)
+	}
+	pendingRoot := "s3://archives/evidence/_versions/v1/in-flight/" + testID
+	pending := RunArchiveRecord{
+		TestID: testID, SchemaVersion: archiveRecordSchemaVersion, ArchiveBackend: "s3",
+		ArchivePath:  "/archive/staging/in-flight/" + testID,
+		ManifestPath: "/archive/staging/in-flight/" + testID + "/manifest.json",
+		ArchiveURI:   pendingRoot, ManifestURI: pendingRoot + "/manifest.json",
+		CreatedAt: now, CompletedAt: now,
+	}
+	advanced, err := store.UpdateArchiveFinalizationRecordIfToken(testID, intent.IntentToken, &pending)
+	if err != nil || !advanced {
+		t.Fatalf("advance finalization record = %v, %v", advanced, err)
+	}
+	current, err := store.GetArchiveFinalizationJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ArchiveRecord.ArchiveURI != pending.ArchiveURI {
+		t.Fatalf("staged intent URI = %q, want %q", current.ArchiveRecord.ArchiveURI, pending.ArchiveURI)
+	}
+	catalog, err := store.GetRunArchive(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.ArchiveURI != published.ArchiveURI {
+		t.Fatalf("catalog URI = %q, want the pre-refresh %q", catalog.ArchiveURI, published.ArchiveURI)
+	}
+	return published, pending
+}
+
+func archiveVersionCleanupURIs(t *testing.T, store *SQLiteStore) map[string]bool {
+	t.Helper()
+	jobs, err := store.ListArchiveVersionCleanupJobs(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uris := map[string]bool{}
+	for _, job := range jobs {
+		uris[job.ArchiveRecord.ArchiveURI] = true
+	}
+	return uris
+}
+
+// TestDeleteTestMidArchiveRefreshQueuesBothTheCatalogedAndInFlightObjects covers
+// the intersection of two features the suite otherwise exercises separately:
+// a catalogued run archive (TestDeleteTestAtomicallyReleases...) and a pending
+// finalization intent (TestDeleteTestConvertsPendingArchiveFinalizationIntoCleanup).
+// Deleting during a refresh drops the intent row, so unless its object is queued
+// too the in-flight version is orphaned in object storage forever.
+func TestDeleteTestMidArchiveRefreshQueuesBothTheCatalogedAndInFlightObjects(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	projectID := "delete-mid-refresh"
+	testID := "delete-mid-refresh-test"
+	if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTest(&TestRecord{ID: testID, Name: testID, Status: "COMPLETE", ProjectID: projectID, StartTime: now}); err != nil {
+		t.Fatal(err)
+	}
+	published, pending := stageMidRefreshArchiveDivergence(t, store, projectID, testID)
+
+	if err := store.DeleteTest(testID); err != nil {
+		t.Fatal(err)
+	}
+	cleanup, err := store.GetArchiveCleanupJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleanup.ArchiveRecord.ArchiveURI != published.ArchiveURI {
+		t.Fatalf("primary cleanup URI = %q, want the catalogued %q", cleanup.ArchiveRecord.ArchiveURI, published.ArchiveURI)
+	}
+	uris := archiveVersionCleanupURIs(t, store)
+	if !uris[pending.ArchiveURI] {
+		t.Fatalf("in-flight refresh object %q was orphaned by test deletion; queued = %#v", pending.ArchiveURI, uris)
+	}
+	if uris[published.ArchiveURI] {
+		t.Fatalf("catalogued object %q was queued twice; queued = %#v", published.ArchiveURI, uris)
+	}
+	if _, err := store.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("finalization intent after delete err = %v, want sql.ErrNoRows", err)
+	}
+	if _, err := store.GetArchiveRefreshJob(testID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("refresh job after delete err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+// TestDeleteProjectMidArchiveRefreshQueuesBothTheCatalogedAndInFlightObjects is
+// the project-scoped half of the same intersection. deleteProjectGraphTx skips a
+// pending intent whenever the same test is already catalogued, which silently
+// discards a diverged in-flight object.
+func TestDeleteProjectMidArchiveRefreshQueuesBothTheCatalogedAndInFlightObjects(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	projectID := "delete-project-mid-refresh"
+	catalogedOnly := "delete-project-mid-refresh-cataloged"
+	diverged := "delete-project-mid-refresh-diverged"
+	if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{catalogedOnly, diverged} {
+		if err := store.SaveTest(&TestRecord{ID: id, Name: id, Status: "COMPLETE", ProjectID: projectID, StartTime: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	quiet := RunArchiveRecord{
+		TestID: catalogedOnly, SchemaVersion: archiveRecordSchemaVersion, ArchiveBackend: "s3",
+		ArchivePath:  "/archive/staging/quiet/" + catalogedOnly,
+		ManifestPath: "/archive/staging/quiet/" + catalogedOnly + "/manifest.json",
+		ArchiveURI:   "s3://archives/evidence/quiet/" + catalogedOnly,
+		ManifestURI:  "s3://archives/evidence/quiet/" + catalogedOnly + "/manifest.json",
+		CreatedAt:    now, CompletedAt: now,
+	}
+	if err := store.SaveRunArchive(&quiet); err != nil {
+		t.Fatal(err)
+	}
+	published, pending := stageMidRefreshArchiveDivergence(t, store, projectID, diverged)
+
+	if err := store.DeleteProject(projectID); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct {
+		testID string
+		uri    string
+	}{{catalogedOnly, quiet.ArchiveURI}, {diverged, published.ArchiveURI}} {
+		cleanup, err := store.GetArchiveCleanupJob(want.testID)
+		if err != nil {
+			t.Fatalf("cleanup job for %s: %v", want.testID, err)
+		}
+		if cleanup.ArchiveRecord.ArchiveURI != want.uri {
+			t.Fatalf("cleanup URI for %s = %q, want %q", want.testID, cleanup.ArchiveRecord.ArchiveURI, want.uri)
+		}
+	}
+	uris := archiveVersionCleanupURIs(t, store)
+	if !uris[pending.ArchiveURI] {
+		t.Fatalf("in-flight refresh object %q was orphaned by project deletion; queued = %#v", pending.ArchiveURI, uris)
+	}
+	if uris[published.ArchiveURI] || uris[quiet.ArchiveURI] {
+		t.Fatalf("catalogued objects were queued twice; queued = %#v", uris)
 	}
 }
 
@@ -497,5 +693,149 @@ func TestArchiveRefreshQueuesEverySupersededObjectVersionThroughFinalDeletion(t 
 	}
 	if len(jobs) != 2 {
 		t.Fatalf("test deletion discarded superseded cleanup jobs: %d", len(jobs))
+	}
+}
+
+// TestRetentionTombstoneMidArchiveRefreshQueuesTheInFlightObject is the
+// retention-path half of the same intersection the delete-path tests above
+// cover. Archive retention does not go through DeleteTest: it installs a
+// cleanup tombstone for the CATALOGUED publication and drops the pending
+// finalization intent in the same transaction. Object deletion is version
+// scoped (archiveDeletionRuntime narrows the bucket prefix to that
+// publication's version), so a refresh that already advanced the intent to a
+// different object leaves those bytes unreachable unless they are queued here.
+func TestRetentionTombstoneMidArchiveRefreshQueuesTheInFlightObject(t *testing.T) {
+	cases := []struct {
+		name      string
+		tombstone func(t *testing.T, store *SQLiteStore, job *ArchiveCleanupJob)
+	}{
+		{
+			name: "SaveArchiveCleanupJobIfArchiveUnchanged",
+			tombstone: func(t *testing.T, store *SQLiteStore, job *ArchiveCleanupJob) {
+				t.Helper()
+				created, err := store.SaveArchiveCleanupJobIfArchiveUnchanged(job)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !created {
+					t.Fatal("conditional retention tombstone was not created")
+				}
+			},
+		},
+		{
+			name: "SaveArchiveCleanupJob",
+			tombstone: func(t *testing.T, store *SQLiteStore, job *ArchiveCleanupJob) {
+				t.Helper()
+				if err := store.SaveArchiveCleanupJob(job); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+
+			now := time.Now().UTC()
+			projectID := "retention-mid-refresh"
+			testID := "retention-mid-refresh-test"
+			if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.SaveTest(&TestRecord{ID: testID, Name: testID, Status: "COMPLETE", ProjectID: projectID, StartTime: now}); err != nil {
+				t.Fatal(err)
+			}
+			published, pending := stageMidRefreshArchiveDivergence(t, store, projectID, testID)
+
+			record := published
+			tc.tombstone(t, store, &ArchiveCleanupJob{TestID: testID, ProjectID: projectID, ArchiveRecord: record})
+
+			cleanup, err := store.GetArchiveCleanupJob(testID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cleanup.ArchiveRecord.ArchiveURI != published.ArchiveURI {
+				t.Fatalf("primary cleanup URI = %q, want the catalogued %q", cleanup.ArchiveRecord.ArchiveURI, published.ArchiveURI)
+			}
+			if _, err := store.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("finalization intent after retention tombstone err = %v, want sql.ErrNoRows", err)
+			}
+			uris := archiveVersionCleanupURIs(t, store)
+			if !uris[pending.ArchiveURI] {
+				t.Fatalf("in-flight refresh object %q was orphaned by the retention tombstone; queued = %#v", pending.ArchiveURI, uris)
+			}
+			if uris[published.ArchiveURI] {
+				t.Fatalf("catalogued object %q was queued twice; queued = %#v", published.ArchiveURI, uris)
+			}
+		})
+	}
+}
+
+// TestRetentionTombstoneWithoutRefreshQueuesExactlyOneCleanup pins the ordinary
+// case against the fix above: when the intent and the catalog name the SAME
+// object there is nothing divergent to queue, so a retention tombstone must
+// still produce exactly one cleanup job and no version-cleanup rows.
+func TestRetentionTombstoneWithoutRefreshQueuesExactlyOneCleanup(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	projectID := "retention-no-refresh"
+	testID := "retention-no-refresh-test"
+	if err := store.SaveProject(&Project{ID: projectID, Name: projectID, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveTest(&TestRecord{ID: testID, Name: testID, Status: "COMPLETE", ProjectID: projectID, StartTime: now}); err != nil {
+		t.Fatal(err)
+	}
+	root := "s3://archives/evidence/_versions/v1/settled/" + testID
+	record := RunArchiveRecord{
+		TestID: testID, SchemaVersion: archiveRecordSchemaVersion, ArchiveBackend: "s3",
+		ArchivePath:  "/archive/staging/settled/" + testID,
+		ManifestPath: "/archive/staging/settled/" + testID + "/manifest.json",
+		ArchiveURI:   root, ManifestURI: root + "/manifest.json",
+		CreatedAt: now, CompletedAt: now,
+	}
+	if err := store.SaveRunArchive(&record); err != nil {
+		t.Fatal(err)
+	}
+	// Stage the intent too, naming the SAME object as the catalog. Without this
+	// row the tombstone never reaches the identical-pointer short circuit in
+	// enqueuePendingArchiveObjectCleanupTx, so the assertion below would hold
+	// even if that dedup were deleted.
+	intentRecord := record
+	if err := store.SaveArchiveFinalizationJob(&ArchiveFinalizationJob{
+		TestID: testID, ProjectID: projectID, ArchiveRecord: intentRecord, PersistArtifacts: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	intent, err := store.GetArchiveFinalizationJob(testID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intent.ArchiveRecord.ArchiveURI != record.ArchiveURI {
+		t.Fatalf("staged intent URI = %q, want the catalogued %q", intent.ArchiveRecord.ArchiveURI, record.ArchiveURI)
+	}
+	copyOfRecord := record
+	created, err := store.SaveArchiveCleanupJobIfArchiveUnchanged(&ArchiveCleanupJob{
+		TestID: testID, ProjectID: projectID, ArchiveRecord: copyOfRecord,
+	})
+	if err != nil || !created {
+		t.Fatalf("retention tombstone = %v, %v", created, err)
+	}
+	if _, err := store.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("finalization intent after retention tombstone err = %v, want sql.ErrNoRows", err)
+	}
+	uris := archiveVersionCleanupURIs(t, store)
+	if len(uris) != 0 {
+		t.Fatalf("retention tombstone queued version cleanups with no refresh in flight: %#v", uris)
 	}
 }

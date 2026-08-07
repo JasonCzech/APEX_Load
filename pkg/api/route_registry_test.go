@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -75,6 +76,66 @@ func TestControllerRouteDiscoveryIncludesModularCatalogs(t *testing.T) {
 	}
 }
 
+// boundHandlerMethodName recovers the *Server method a route binder actually
+// closed over. Every modular binder has the shape
+// `func(s *Server) http.Handler { return http.HandlerFunc(s.handleX) }`, and Go
+// compiles the method value `s.handleX` into a uniquely named wrapper
+// `<pkgpath>.(*Server).handleX-fm`, so the bound method is recoverable from the
+// handler's code pointer.
+func boundHandlerMethodName(handler http.Handler) (string, bool) {
+	handlerFunc, ok := handler.(http.HandlerFunc)
+	if !ok {
+		return "", false
+	}
+	fn := runtime.FuncForPC(reflect.ValueOf(handlerFunc).Pointer())
+	if fn == nil {
+		return "", false
+	}
+	name := strings.TrimSuffix(fn.Name(), "-fm")
+	if index := strings.LastIndex(name, "."); index >= 0 {
+		name = name[index+1:]
+	}
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
+// TestModularRouteHandlerIdentityMatchesBoundHandler closes the gap left by
+// TestControllerRouteDiscoveryIncludesModularCatalogs: discoveredRouteSpec reads
+// the handler name out of the third string literal passed to
+// newAuthenticatedAPIRoute/newPublicAPIRoute, which IS HandlerIdentity, so that
+// comparison is satisfied no matter which method the binder closure registers.
+// HandlerIdentity is the only input the OpenAPI/endpoint-catalog generators have
+// for a route's operation identity, so a binder that serves a different handler
+// than its identity claims would ship a silently wrong published contract. This
+// test binds the declared identity to the handler the mux actually receives.
+func TestModularRouteHandlerIdentityMatchesBoundHandler(t *testing.T) {
+	server := &Server{mux: http.NewServeMux()}
+	checked := 0
+	for _, catalog := range modularAPIRouteCatalogs {
+		for _, route := range catalog.Routes {
+			key := route.Method + " " + route.Path
+			if route.Handler == nil {
+				t.Errorf("route %s in catalog %q has no handler binder", key, catalog.Domain)
+				continue
+			}
+			bound, ok := boundHandlerMethodName(route.Handler(server))
+			if !ok {
+				t.Errorf("route %s in catalog %q binds a handler whose *Server method is not recoverable; keep binders as http.HandlerFunc(s.<method>) so HandlerIdentity stays verifiable", key, catalog.Domain)
+				continue
+			}
+			if bound != route.HandlerIdentity {
+				t.Errorf("route %s in catalog %q declares HandlerIdentity %q but registers %q", key, catalog.Domain, route.HandlerIdentity, bound)
+			}
+			checked++
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no modular route handler identities were verified")
+	}
+}
+
 func TestModularRouteAccessRulesFeedAuthorizationCatalog(t *testing.T) {
 	for _, catalog := range modularAPIRouteCatalogs {
 		for _, route := range catalog.Routes {
@@ -134,7 +195,9 @@ func TestAllSystemAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 23; got != want {
+	// 23 system routes, the 7 cluster-registry routes, and the 4
+	// domain deployment-target routes.
+	if got, want := len(modular), 34; got != want {
 		t.Fatalf("modular system route count = %d, want %d", got, want)
 	}
 
@@ -241,7 +304,8 @@ func TestSystemRouteCatalogPreservesAccessContracts(t *testing.T) {
 func TestCapacityAndFleetAPIRoutesUseModularCatalogs(t *testing.T) {
 	prefixCounts := map[string]int{
 		"/api/v1/capacity/": 9,
-		"/api/v1/fleet/":    21,
+		// 21 fleet routes plus the pool allocation PUT and preflight GET.
+		"/api/v1/fleet/": 23,
 	}
 
 	modular := make(map[string]apiRouteSpec)

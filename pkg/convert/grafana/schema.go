@@ -37,6 +37,37 @@ type rawPanel struct {
 	Repeat          json.RawMessage   `json:"repeat"`
 	Links           []json.RawMessage `json:"links"`
 	Transformations []json.RawMessage `json:"transformations"`
+
+	// Legacy singlestat fields. Dashboards in the accepted schema range
+	// (schemaVersion >= 16) predate fieldConfig, so a singlestat panel carries its
+	// unit in the root "format" field and its reduction in "valueName".
+	Format    string `json:"format,omitempty"`
+	ValueName string `json:"valueName,omitempty"`
+	// LegacyThresholds/LegacyColors are the pre-fieldConfig threshold configuration:
+	// a comma-separated list of levels plus one more color than there are levels.
+	// LegacyValueMaps/LegacyRangeMaps are the pre-fieldConfig value mappings. They
+	// are decoded (and therefore retained by CanonicalizeImportSource) so the
+	// converter can translate or report them instead of erasing them; on non-legacy
+	// panel types these keys carry unrelated shapes and are ignored. They are
+	// json.RawMessage rather than concrete types precisely because of that reuse: a
+	// decode error here would fail the whole import.
+	LegacyThresholds json.RawMessage `json:"thresholds,omitempty"`
+	LegacyColors     json.RawMessage `json:"colors,omitempty"`
+	LegacyValueMaps  json.RawMessage `json:"valueMaps,omitempty"`
+	LegacyRangeMaps  json.RawMessage `json:"rangeMaps,omitempty"`
+}
+
+// rawListLen reports how many entries a polymorphic JSON array field holds, and 0
+// when the value is absent, null, or not an array.
+func rawListLen(raw json.RawMessage) int {
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return 0
+	}
+	var items []json.RawMessage
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0
+	}
+	return len(items)
 }
 
 type rawGridPos struct {

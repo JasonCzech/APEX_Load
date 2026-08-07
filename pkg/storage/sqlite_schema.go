@@ -896,6 +896,80 @@ func schemaCreateTableStatements() []string {
 			lock_key TEXT PRIMARY KEY,
 			updated_at DATETIME NOT NULL
 		)`,
+		// cluster_connections registers the Kubernetes control planes a system
+		// administrator has connected. Credentials are stored only as keywrap
+		// envelopes (ciphertext + wrapped DEK), never in plaintext.
+		//
+		// tls_mode and aws_credential_mode are deliberately TEXT rather than
+		// booleans ("use system roots", "use ambient credentials"): a TEXT
+		// column passes through rewriteSQL untouched and needs none of the
+		// three coordinated Postgres boolean entries, and neither
+		// use_system_roots nor aws_ambient would match looksBooleanColumn, so
+		// they would silently escape the Postgres boolean rewrite guard test.
+		`CREATE TABLE IF NOT EXISTS cluster_connections (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			kind TEXT NOT NULL DEFAULT 'generic',
+			api_server_url TEXT,
+			namespace TEXT NOT NULL,
+			generator_selector TEXT,
+			generator_statefulset TEXT,
+			generator_container TEXT,
+			ca_certificate_pem TEXT,
+			tls_mode TEXT NOT NULL DEFAULT 'custom_ca',
+			auth_mode TEXT NOT NULL DEFAULT 'in_cluster',
+			azure_tenant_id TEXT,
+			azure_client_id TEXT,
+			azure_scope TEXT,
+			azure_authority TEXT,
+			client_secret_ciphertext TEXT,
+			client_secret_wrapped_key TEXT,
+			client_secret_env_var TEXT,
+			static_token_ciphertext TEXT,
+			static_token_wrapped_key TEXT,
+			aws_region TEXT,
+			aws_cluster_name TEXT,
+			aws_credential_mode TEXT,
+			aws_access_key_id TEXT,
+			aws_role_arn TEXT,
+			aws_sts_endpoint TEXT,
+			aws_secret_key_ciphertext TEXT,
+			aws_secret_key_wrapped_key TEXT,
+			aws_external_id_ciphertext TEXT,
+			aws_external_id_wrapped_key TEXT,
+			status TEXT NOT NULL DEFAULT 'active',
+			last_checked_at DATETIME,
+			last_check_status TEXT,
+			last_check_message TEXT,
+			labels_json TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		// domain_deployment_targets is the superuser's per-domain deployment
+		// constraint: which cloud a domain's fleet pools may scale into, and
+		// the cluster connection new pools inherit.
+		//
+		// The ABSENCE of a row means "unconstrained". No row is ever seeded, so
+		// every existing domain keeps exactly the behavior it has today — that
+		// is the entire backward-compatibility story for this feature.
+		//
+		// provider is TEXT for the same reason tls_mode is: it passes through
+		// rewriteSQL untouched and needs none of the coordinated Postgres
+		// boolean entries.
+		//
+		// default_cluster_id is NULLable rather than '' NOT NULL because SQLite
+		// runs with _pragma=foreign_keys(ON): an empty string satisfies no
+		// reference, but NULL does.
+		`CREATE TABLE IF NOT EXISTS domain_deployment_targets (
+			domain_id TEXT PRIMARY KEY,
+			provider TEXT NOT NULL,
+			default_cluster_id TEXT REFERENCES cluster_connections(id),
+			updated_by_subject TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(domain_id) REFERENCES domains(id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS fleet_pools (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -907,6 +981,9 @@ func schemaCreateTableStatements() []string {
 			desired_size INTEGER DEFAULT 0,
 			status TEXT NOT NULL DEFAULT 'active',
 			tags_json TEXT,
+			cluster_id TEXT NOT NULL DEFAULT '',
+			allocation_json TEXT NOT NULL DEFAULT '',
+			domain_id TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -1314,6 +1391,39 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "bruno_native_import_batches.receipt_version", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN receipt_version INTEGER NOT NULL DEFAULT 1`},
 		{name: "bruno_native_import_batches.request_digest_profile", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1'`},
 		{name: "bruno_native_import_batches.scripts_json", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN scripts_json TEXT NOT NULL DEFAULT '[]'`},
+		// An empty cluster_id means "use the controller's env-configured
+		// provisioner", which is exactly the behavior every pre-existing pool
+		// had. That default is what keeps the existing deployment path intact.
+		{name: "fleet_pools.cluster_id", query: `ALTER TABLE fleet_pools ADD COLUMN cluster_id TEXT NOT NULL DEFAULT ''`},
+		{name: "fleet_pools.allocation_json", query: `ALTER TABLE fleet_pools ADD COLUMN allocation_json TEXT NOT NULL DEFAULT ''`},
+		// An empty domain_id means the pool is NOT domain-scoped: the per-domain
+		// deployment-target constraint simply does not apply to it. That is
+		// deliberately the value every pre-existing row gets, so a superuser
+		// setting a target can never break a pool created before domain scoping
+		// existed. It mirrors cluster_id, which carries the same "empty means
+		// the old behavior" contract.
+		//
+		// Backfilling to DefaultDomainID (as projects.domain_id does) would be
+		// wrong here: project domain scoping is an org-chart concern, but pool
+		// domain scoping is a deploy blast-radius concern, and a backfill would
+		// silently subject every legacy pool to a constraint nobody chose.
+		//
+		// NO FOREIGN KEY is declared: SQLite runs with foreign_keys=ON and ''
+		// satisfies no reference. Integrity for a non-empty value is enforced
+		// on the write path instead.
+		{name: "fleet_pools.domain_id", query: `ALTER TABLE fleet_pools ADD COLUMN domain_id TEXT NOT NULL DEFAULT ''`},
+		// EKS support. Every column is TEXT so none of them needs a coordinated
+		// entry in rewriteSQL's boolean replacement list.
+		{name: "cluster_connections.aws_region", query: `ALTER TABLE cluster_connections ADD COLUMN aws_region TEXT`},
+		{name: "cluster_connections.aws_cluster_name", query: `ALTER TABLE cluster_connections ADD COLUMN aws_cluster_name TEXT`},
+		{name: "cluster_connections.aws_credential_mode", query: `ALTER TABLE cluster_connections ADD COLUMN aws_credential_mode TEXT`},
+		{name: "cluster_connections.aws_access_key_id", query: `ALTER TABLE cluster_connections ADD COLUMN aws_access_key_id TEXT`},
+		{name: "cluster_connections.aws_role_arn", query: `ALTER TABLE cluster_connections ADD COLUMN aws_role_arn TEXT`},
+		{name: "cluster_connections.aws_sts_endpoint", query: `ALTER TABLE cluster_connections ADD COLUMN aws_sts_endpoint TEXT`},
+		{name: "cluster_connections.aws_secret_key_ciphertext", query: `ALTER TABLE cluster_connections ADD COLUMN aws_secret_key_ciphertext TEXT`},
+		{name: "cluster_connections.aws_secret_key_wrapped_key", query: `ALTER TABLE cluster_connections ADD COLUMN aws_secret_key_wrapped_key TEXT`},
+		{name: "cluster_connections.aws_external_id_ciphertext", query: `ALTER TABLE cluster_connections ADD COLUMN aws_external_id_ciphertext TEXT`},
+		{name: "cluster_connections.aws_external_id_wrapped_key", query: `ALTER TABLE cluster_connections ADD COLUMN aws_external_id_wrapped_key TEXT`},
 	}
 }
 
@@ -1352,9 +1462,15 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_schedule_occurrences_test_id ON scenario_schedule_occurrences(test_id)`, "idx_scenario_schedule_occurrences_test_id"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_schedule_occurrences_schedule_time ON execution_plan_schedule_occurrences(schedule_id, planned_at)`, "idx_execution_plan_schedule_occurrences_schedule_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_schedule_occurrences_project_time ON execution_plan_schedule_occurrences(project_id, planned_at)`, "idx_execution_plan_schedule_occurrences_project_time"},
+	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_schedule_occurrences_retention ON execution_plan_schedule_occurrences(planned_at, status)`, "idx_execution_plan_schedule_occurrences_retention"},
+	{`CREATE INDEX IF NOT EXISTS idx_scenario_schedule_occurrences_retention ON scenario_schedule_occurrences(planned_at, status)`, "idx_scenario_schedule_occurrences_retention"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_state_expiry ON replay_session_leases(state, expires_at)`, "idx_replay_session_leases_state_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_project_state_expiry ON replay_session_leases(project_id, state, expires_at)`, "idx_replay_session_leases_project_state_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_expiry ON replay_session_leases(expires_at)`, "idx_replay_session_leases_expiry"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_cluster_connections_name ON cluster_connections(name)`, "idx_cluster_connections_name"},
+	{`CREATE INDEX IF NOT EXISTS idx_fleet_pools_cluster ON fleet_pools(cluster_id)`, "idx_fleet_pools_cluster"},
+	{`CREATE INDEX IF NOT EXISTS idx_fleet_pools_domain ON fleet_pools(domain_id)`, "idx_fleet_pools_domain"},
+	{`CREATE INDEX IF NOT EXISTS idx_domain_deployment_targets_cluster ON domain_deployment_targets(default_cluster_id)`, "idx_domain_deployment_targets_cluster"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_project_time ON capacity_reservations(project_id, start_at, end_at)`, "idx_capacity_reservations_project_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_bound_test ON capacity_reservations(bound_test_id)`, "idx_capacity_reservations_bound_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_tests_timeslot ON tests(timeslot_id)`, "idx_tests_timeslot"},
@@ -1362,6 +1478,16 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_shared_data_pools_project ON shared_data_pools(project_id)`, "idx_shared_data_pools_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_fleet_pool_members_pool ON fleet_pool_members(pool_id)`, "idx_fleet_pool_members_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_generator_metadata_pool ON generator_metadata(fleet_pool_id)`, "idx_generator_metadata_pool"},
+	// One generator, one pool. The table's own UNIQUE(pool_id, generator_id) only
+	// stops a duplicate row within a pool; this is what stops the same generator
+	// being claimed by two pools — and therefore by two domains.
+	// consolidateFleetPoolMembership deduplicates before this runs.
+	//
+	// PARTIAL on a non-empty generator_id: a member may legitimately be
+	// identified by target alone (see "target or generator_id is required"), and
+	// those rows all carry '' — a total index would treat every one of them as
+	// the same generator and reject the second pool that has one.
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_pool_members_generator ON fleet_pool_members(generator_id) WHERE generator_id != ''`, "idx_fleet_pool_members_generator"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
 	{`CREATE INDEX IF NOT EXISTS idx_fleet_alert_acks_acknowledged_at ON fleet_alert_acks(acknowledged_at)`, "idx_fleet_alert_acks_acknowledged_at"},
@@ -1471,6 +1597,11 @@ func (s *SQLiteStore) init() error {
 		return fmt.Errorf("failed to backfill github_script_links.remote_blob_sha: %w", err)
 	}
 	if err := s.backfillGitHubScriptSyncTargetOwners(); err != nil {
+		return err
+	}
+	// Must run before schemaIndexes: it deduplicates fleet_pool_members so the
+	// unique index on generator_id can be created on an existing installation.
+	if err := s.consolidateFleetPoolMembership(); err != nil {
 		return err
 	}
 

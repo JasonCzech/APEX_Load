@@ -109,6 +109,7 @@ export default function BrowserBreakdownChart({
               strokeDasharray={item.strokeDasharray}
               dot={{ r: 3 }}
               connectNulls
+              isAnimationActive={false}
             />
           ))}
         </LineChart>

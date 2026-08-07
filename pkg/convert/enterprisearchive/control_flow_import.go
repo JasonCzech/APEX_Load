@@ -369,6 +369,17 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 			loopDisplay := metadataString(action.Metadata, sourceFlowLoopKey)
 			loopExpr := metadataString(action.Metadata, sourceFlowLoopExprKey)
 			loopCount := metadataString(action.Metadata, sourceFlowLoopCountKey)
+			if loopExpr == "" && loopCount == "" {
+				// A loop body that OPENS with an untranslated nested loop tags its
+				// first actions "outer>>inner" with no translation of their own;
+				// the outer loop's translation only reaches its outer-only
+				// siblings later in the run. Adopt it so the outer loop stays one
+				// block instead of splitting and running the nested calls once,
+				// before the loop, instead of once per pass.
+				if id, display, expr, count, ok := sourceOuterLoopRunTranslation(actions, i); ok {
+					loopID, loopDisplay, loopExpr, loopCount = id, display, expr, count
+				}
+			}
 			if loopID != "" && (loopExpr != "" || loopCount != "") {
 				start := i
 				var group []dsl.Action
@@ -405,7 +416,7 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 					// imported loops with large fixed bounds.
 					wrapper.Control.MaxIterations = count
 				}
-				wrapper.Control.Steps = structureFlowActions(stripFlowTags(group, true),
+				wrapper.Control.Steps = structureFlowActions(stripFlowTags(group, true, loopID),
 					func(k int) string { return oldPath(start + k) },
 					func(k int) string { return fmt.Sprintf("%s.control.steps[%d]", wrapperPath, k) },
 					counters, pathMap, false)
@@ -442,7 +453,7 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 				Metadata: map[string]any{sourceFlowConditionKey: condDisplay},
 				Control: &dsl.ControlFlow{
 					Condition: &dsl.Condition{Expr: condExpr},
-					Steps:     stripFlowTags(group, false),
+					Steps:     stripFlowTags(group, false, ""),
 				},
 			}
 			for k := range group {
@@ -459,7 +470,7 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 					elseGroup = append(elseGroup, actions[i])
 					i++
 				}
-				wrapper.Control.Else = stripFlowTags(elseGroup, false)
+				wrapper.Control.Else = stripFlowTags(elseGroup, false, "")
 				for k := range elseGroup {
 					record(oldPath(elseStart+k), fmt.Sprintf("%s.control.else[%d]", wrapperPath, k))
 				}
@@ -474,6 +485,30 @@ func structureFlowActions(actions []dsl.Action, oldPath, newPath func(int) strin
 		i++
 	}
 	return out
+}
+
+// sourceOuterLoopRunTranslation looks ahead for the translated outer loop that
+// owns the run starting at index i. Only a single-frame loop context is ever
+// translated (tagSourceFlowMetadata requires len(fn.Loops) == 1), so the sole
+// candidate is the first frame of the current action's loop chain; ok is false
+// when no action in the run carries that frame's translation.
+func sourceOuterLoopRunTranslation(actions []dsl.Action, i int) (string, string, string, string, bool) {
+	outer, _, nested := strings.Cut(metadataString(actions[i].Metadata, sourceFlowLoopIDKey), ">>")
+	if !nested || outer == "" {
+		return "", "", "", "", false
+	}
+	for j := i; j < len(actions) &&
+		sourceLoopPathWithin(metadataString(actions[j].Metadata, sourceFlowLoopIDKey), outer); j++ {
+		if metadataString(actions[j].Metadata, sourceFlowLoopIDKey) != outer {
+			continue
+		}
+		expr := metadataString(actions[j].Metadata, sourceFlowLoopExprKey)
+		count := metadataString(actions[j].Metadata, sourceFlowLoopCountKey)
+		if expr != "" || count != "" {
+			return outer, metadataString(actions[j].Metadata, sourceFlowLoopKey), expr, count, true
+		}
+	}
+	return "", "", "", "", false
 }
 
 func sourceLoopPathWithin(candidate, parent string) bool {
@@ -506,12 +541,14 @@ func applyControlFlowThinkTime(action *dsl.Action) {
 
 // stripFlowTags removes internal flow metadata from grouped actions. When
 // keepCondition is true the condition tags survive so nested condition
-// grouping inside a loop body can still run.
-func stripFlowTags(actions []dsl.Action, keepCondition bool) []dsl.Action {
+// grouping inside a loop body can still run; wrapperLoopID is the loop the
+// group was wrapped in, so deeper (untranslated) loop contexts keep their
+// display tag.
+func stripFlowTags(actions []dsl.Action, keepCondition bool, wrapperLoopID string) []dsl.Action {
 	out := make([]dsl.Action, len(actions))
 	for i, action := range actions {
 		if keepCondition {
-			out[i] = stripLoopTagsOne(action)
+			out[i] = stripLoopTagsOne(action, wrapperLoopID)
 		} else {
 			out[i] = stripFlowTagsOne(action, false)
 		}
@@ -519,12 +556,17 @@ func stripFlowTags(actions []dsl.Action, keepCondition bool) []dsl.Action {
 	return out
 }
 
-func stripLoopTagsOne(action dsl.Action) dsl.Action {
+func stripLoopTagsOne(action dsl.Action, wrapperLoopID string) dsl.Action {
 	if len(action.Metadata) == 0 {
 		return action
 	}
 	metadata := cloneSourceAnyMap(action.Metadata)
-	delete(metadata, sourceFlowLoopKey)
+	// The wrapper carries the display for its own loop, but an action that sat in
+	// a nested, untranslated loop keeps its chain: the untranslated-loop warning
+	// sends operators to metadata.source_loop for exactly those calls.
+	if metadataString(metadata, sourceFlowLoopIDKey) == wrapperLoopID {
+		delete(metadata, sourceFlowLoopKey)
+	}
 	delete(metadata, sourceFlowLoopExprKey)
 	delete(metadata, sourceFlowLoopCountKey)
 	delete(metadata, sourceFlowLoopIDKey)

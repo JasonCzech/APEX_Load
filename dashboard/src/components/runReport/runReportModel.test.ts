@@ -24,11 +24,39 @@ describe('runReportModel', () => {
       [point('10:00:00', 1_000, { cpuProcess: 44 }), point('10:00:01', 2_000, { resourceSampleOnly: 1, cpuProcess: 30 })],
     )
 
-    expect(merged).toHaveLength(2)
-    expect(merged[0]).toMatchObject({ tps: 12, cpuProcess: 44 })
-    expect(merged[1]).toMatchObject({ timestampMs: 2_000, resourceSampleOnly: 1 })
-    expect(Number.isNaN(merged[1].tps)).toBe(true)
-    expect(Number.isNaN(merged[1].p95)).toBe(true)
+    // Assert the whole merged timeline, not a couple of keys: the failure modes this
+    // merge has had (summary fields clobbered by the resource sample, resource-only
+    // rows keeping a real-looking 0/1 for a series that was never measured, extra
+    // rows) are all invisible to a partial toMatchObject.
+    expect(merged).toEqual([
+      {
+        time: '10:00:00',
+        timestampMs: 1_000,
+        vusers: 1,
+        tps: 12,
+        avgMs: 100,
+        errorPct: 0,
+        p50: 80,
+        p90: 100,
+        p95: 120,
+        p99: 150,
+        cpuProcess: 44,
+      },
+      {
+        time: '10:00:01',
+        timestampMs: 2_000,
+        vusers: 1,
+        tps: Number.NaN,
+        avgMs: Number.NaN,
+        errorPct: Number.NaN,
+        p50: Number.NaN,
+        p90: Number.NaN,
+        p95: Number.NaN,
+        p99: Number.NaN,
+        cpuProcess: 30,
+        resourceSampleOnly: 1,
+      },
+    ])
   })
 
   it('aligns baseline curves by nearest timestamp instead of sample index', () => {

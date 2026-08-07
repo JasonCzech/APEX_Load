@@ -1258,12 +1258,12 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 	if err != nil {
 		return err
 	}
-	cataloged := make(map[string]struct{}, len(archiveRecords))
+	cataloged := make(map[string]*RunArchiveRecord, len(archiveRecords))
 	for _, record := range archiveRecords {
 		if err := enqueueArchiveCleanupTx(tx, id, record); err != nil {
 			return err
 		}
-		cataloged[record.TestID] = struct{}{}
+		cataloged[record.TestID] = record
 	}
 	archiveFinalizationJobs, err := listProjectArchiveFinalizationJobsTx(tx, id)
 	if err != nil {
@@ -1273,7 +1273,14 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		if job == nil {
 			continue
 		}
-		if _, ok := cataloged[job.TestID]; ok {
+		if published, ok := cataloged[job.TestID]; ok {
+			// Same intersection as deleteTestGraphTx: a refresh already pointed
+			// the intent at a new object while the catalog still names the old
+			// one. Queue the divergent object too instead of dropping it with
+			// the intent row.
+			if err := enqueuePendingArchiveObjectCleanupTx(tx, id, published, job); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := enqueueArchiveCleanupTx(tx, id, &job.ArchiveRecord); err != nil {

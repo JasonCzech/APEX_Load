@@ -69,7 +69,6 @@ type CredentialProbeState = 'idle' | 'loading' | 'ready' | 'unavailable'
 export interface SecretBindingReviewHandle {
   commit: () => Promise<boolean>
   discardSourceSession: () => Promise<void>
-  preserveEditsForNextReviewGeneration: () => void
 }
 
 function requirementScope(requirement: SecretBindingRequirement): string {
@@ -274,7 +273,6 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const [error, setError] = useState('')
   const resetReviewIdentityRef = useRef(reviewIdentity)
   const credentialScopeIdentityRef = useRef(credentialScopeIdentity)
-  const preserveEditsForNextReviewGenerationRef = useRef(false)
   const settledSourceSessionRef = useRef('')
   const notifiedSourceSessionRef = useRef('')
   // Only names whose create-only provider mutation was confirmed belong here.
@@ -293,7 +291,6 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       // edits when the credential scope itself is unchanged.
       const preserveEdits = credentialScopeIdentityRef.current === credentialScopeIdentity
       resetReviewIdentityRef.current = reviewIdentity
-      preserveEditsForNextReviewGenerationRef.current = false
       if (!preserveEdits) {
         setNames(initialGroupValues(groups))
         setDestinationChoices(initialDestinationChoices(groups))
@@ -332,9 +329,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   }, [projectId, sourceSecretSessionId])
 
   useEffect(() => () => {
-    // Write-only values never leave this card. Identity changes clear the ref
-    // above unless an explicitly marked same-scope parameterization transition
-    // is preserving the edit; unmount always drops the final retained object.
+    // Write-only values never leave this card. Credential-scope changes clear
+    // the ref above; unmount always drops the final retained object.
     valuesRef.current = {}
     committedValueNamesRef.current.clear()
     collisionResolvedNamesRef.current.clear()
@@ -823,9 +819,6 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   useImperativeHandle(ref, () => ({
     commit,
     discardSourceSession,
-    preserveEditsForNextReviewGeneration: () => {
-      preserveEditsForNextReviewGenerationRef.current = true
-    },
   }))
 
   if (requirements.length === 0) return null

@@ -968,17 +968,22 @@ func (tr *TestRunner) refreshScriptsForHARead(force ...bool) {
 	if tr == nil || tr.leadership == nil {
 		return
 	}
-	tr.haScriptRefreshMu.Lock()
-	defer tr.haScriptRefreshMu.Unlock()
-	forceRefresh := len(force) > 0 && force[0]
-	if !forceRefresh && !tr.haScriptRefreshAt.IsZero() && time.Since(tr.haScriptRefreshAt) < haTestRefreshInterval {
-		return
+	// A forced refresh drops the staleness window, so a sequential caller always
+	// issues its own ListScripts scan and observes a mutation another replica
+	// committed before it arrived. It is not a promise of a caller-fresh
+	// snapshot: the shared coalescer still collapses a concurrent burst onto one
+	// scan rather than running the full library scan per caller, and a forced
+	// caller that parks on an in-flight scan accepts that scan's result even
+	// though it queried before the caller arrived. Read-after-write paths that
+	// need a strictly newer snapshot use GetScriptDurable, which queries the
+	// store directly.
+	window := haTestRefreshInterval
+	if len(force) > 0 && force[0] {
+		window = 0
 	}
-	if err := tr.reloadStoredScripts(); err != nil {
+	if err := tr.haScriptRefresh.refresh(window, tr.reloadStoredScripts); err != nil {
 		slog.Warn("failed to refresh scripts for HA read", "error", err)
-		return
 	}
-	tr.haScriptRefreshAt = time.Now()
 }
 
 // GetScriptDurable refreshes from shared storage when available. Approval

@@ -88,14 +88,22 @@ type CapacityAvailabilitySnapshot struct {
 }
 
 type capacityWorkloadProfile struct {
-	Class                        string
-	BrowserVUsers                int
+	Class         string
+	BrowserVUsers int
+	// MaxBrowserVUsersPerGenerator is the operator-facing browser density
+	// envelope. It is derived from the diagnostic-canary acceptance contract,
+	// not from the device-tier model, so the advisory never recommends a
+	// density that browserDensityReleaseGateBlocks would refuse.
 	MaxBrowserVUsersPerGenerator int
-	BrowserMemoryMBPerVUser      float64
-	BrowserCPUCoresPerVUser      float64
-	BrowserNetworkMbpsPerVUser   float64
-	ProtocolDensities            []ProtocolDensityEnvelope
-	Warnings                     []string
+	// BrowserDeviceTierCeiling is the internal device-tier resource ceiling.
+	// It only bounds the published envelope downwards; the tier numbers
+	// otherwise feed the CPU/memory/network footprint math below.
+	BrowserDeviceTierCeiling   int
+	BrowserMemoryMBPerVUser    float64
+	BrowserCPUCoresPerVUser    float64
+	BrowserNetworkMbpsPerVUser float64
+	ProtocolDensities          []ProtocolDensityEnvelope
+	Warnings                   []string
 }
 
 type browserDensityGovernance struct {
@@ -180,6 +188,13 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 		workloadProfile.Class = "mixed"
 	}
 	warnings = append(warnings, workloadProfile.Warnings...)
+	browserGovernance := buildBrowserDensityGovernance(workloadProfile, availability, runtimeSettings)
+	if workloadProfile.BrowserVUsers > 0 && browserGovernance.Tier == browserDensityTierBoundedRealBrowserLoad && workloadProfile.BrowserDeviceTierCeiling > 0 {
+		// Attached benchmark evidence plus an explicit override moves the run to
+		// the bounded real-browser-load tier, which is the only tier allowed to
+		// claim the device-tier engineering ceiling.
+		workloadProfile.MaxBrowserVUsersPerGenerator = workloadProfile.BrowserDeviceTierCeiling
+	}
 	perVUser, totalEstimate := estimateCapacityFootprint(complexityScore, workloadProfile, totalVUsers)
 
 	vuserRecommendation := estimateRequiredGenerators(float64(totalVUsers), float64(usableVUsers))
@@ -191,7 +206,14 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 		protocolRecommendation := estimateRequiredGenerators(float64(density.VUsers), float64(usableProtocolVUsers))
 		vuserRecommendation = maxInt(vuserRecommendation, protocolRecommendation)
 	}
-	if workloadProfile.MaxBrowserVUsersPerGenerator > 0 {
+	// Size browser demand from the density the advisory publishes, never from the
+	// device-tier ceiling: anything above the diagnostic canary envelope is
+	// refused by the release gate. When that gate is already blocking it is the
+	// governing signal and it already names the remedy, so skip the sizing
+	// contribution instead of raising a second, redundant capacity shortfall for
+	// the same overdensity (the gate only blocks when browser VUsers already
+	// exceed available generators * the canary cap).
+	if workloadProfile.MaxBrowserVUsersPerGenerator > 0 && browserGovernance.ReleaseGate != browserDensityReleaseGateRequired {
 		browserDensityRecommendation := estimateRequiredGenerators(float64(workloadProfile.BrowserVUsers), float64(workloadProfile.MaxBrowserVUsersPerGenerator))
 		vuserRecommendation = maxInt(vuserRecommendation, browserDensityRecommendation)
 	}
@@ -231,7 +253,6 @@ func estimateCapacityAdvisoryWithAvailability(settings SystemSettings, availabil
 	if resourceBaseline {
 		warnings = append(warnings, "Baseline windows increase total test timeline but do not increase peak generator demand.")
 	}
-	browserGovernance := buildBrowserDensityGovernance(workloadProfile, availability, runtimeSettings)
 	warnings = append(warnings, browserGovernance.Warnings...)
 
 	return &CapacityAdvisory{
@@ -640,9 +661,10 @@ func classifyCapacityWorkload(groups []TestGroup, runtimeSettings *RuntimeSettin
 		profile.Class = "mixed"
 	}
 	profile.Warnings = append(profile.Warnings, "Browser VUsers launch real browser runtimes; capacity guidance uses diagnostic canary density rather than HTTP goroutine density.")
-	if profile.MaxBrowserVUsersPerGenerator == 0 {
+	if profile.BrowserDeviceTierCeiling == 0 {
 		profile = mergeBrowserCapacityProfile(profile, browserCapacityProfileForTier("unknown"))
 	}
+	profile.MaxBrowserVUsersPerGenerator = publishedBrowserDensityPerGenerator(profile.BrowserDeviceTierCeiling)
 	return profile
 }
 
@@ -749,22 +771,43 @@ func browserDeviceProfileForCapacity(group TestGroup, runtimeSettings *RuntimeSe
 	return strings.TrimSpace(group.script.Config.Browser.DeviceProfile)
 }
 
+// browserCapacityProfileForTier returns the per-device-tier resource footprint
+// of a real browser VUser. BrowserDeviceTierCeiling is an internal engineering
+// ceiling only: the published density envelope comes from
+// publishedBrowserDensityPerGenerator, which is anchored on the diagnostic
+// canary acceptance contract.
 func browserCapacityProfileForTier(tier string) capacityWorkloadProfile {
 	switch strings.ToLower(strings.TrimSpace(tier)) {
 	case "low":
-		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 40, BrowserMemoryMBPerVUser: 180, BrowserCPUCoresPerVUser: 0.055, BrowserNetworkMbpsPerVUser: 0.25}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 40, BrowserMemoryMBPerVUser: 180, BrowserCPUCoresPerVUser: 0.055, BrowserNetworkMbpsPerVUser: 0.25}
 	case "mid":
-		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 32, BrowserMemoryMBPerVUser: 220, BrowserCPUCoresPerVUser: 0.07, BrowserNetworkMbpsPerVUser: 0.35}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 32, BrowserMemoryMBPerVUser: 220, BrowserCPUCoresPerVUser: 0.07, BrowserNetworkMbpsPerVUser: 0.35}
 	case "high":
-		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 25, BrowserMemoryMBPerVUser: 260, BrowserCPUCoresPerVUser: 0.085, BrowserNetworkMbpsPerVUser: 0.45}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 25, BrowserMemoryMBPerVUser: 260, BrowserCPUCoresPerVUser: 0.085, BrowserNetworkMbpsPerVUser: 0.45}
 	default:
-		return capacityWorkloadProfile{MaxBrowserVUsersPerGenerator: 20, BrowserMemoryMBPerVUser: 280, BrowserCPUCoresPerVUser: 0.09, BrowserNetworkMbpsPerVUser: 0.5}
+		return capacityWorkloadProfile{BrowserDeviceTierCeiling: 20, BrowserMemoryMBPerVUser: 280, BrowserCPUCoresPerVUser: 0.09, BrowserNetworkMbpsPerVUser: 0.5}
 	}
 }
 
+// publishedBrowserDensityPerGenerator resolves the browser density the advisory
+// publishes and sizes generators from. The release gate in
+// buildBrowserDensityGovernance blocks any run above the diagnostic canary
+// envelope, so sizing must use the same cap; the device-tier ceiling only binds
+// when it is even tighter.
+func publishedBrowserDensityPerGenerator(deviceTierCeiling int) int {
+	maxCanary := browserDiagnosticCanaryEnvelope().MaximumClaimedVUsersPerGenerator
+	if maxCanary <= 0 {
+		maxCanary = 5
+	}
+	if deviceTierCeiling > 0 && deviceTierCeiling < maxCanary {
+		return deviceTierCeiling
+	}
+	return maxCanary
+}
+
 func mergeBrowserCapacityProfile(left capacityWorkloadProfile, right capacityWorkloadProfile) capacityWorkloadProfile {
-	if right.MaxBrowserVUsersPerGenerator > 0 && (left.MaxBrowserVUsersPerGenerator == 0 || right.MaxBrowserVUsersPerGenerator < left.MaxBrowserVUsersPerGenerator) {
-		left.MaxBrowserVUsersPerGenerator = right.MaxBrowserVUsersPerGenerator
+	if right.BrowserDeviceTierCeiling > 0 && (left.BrowserDeviceTierCeiling == 0 || right.BrowserDeviceTierCeiling < left.BrowserDeviceTierCeiling) {
+		left.BrowserDeviceTierCeiling = right.BrowserDeviceTierCeiling
 	}
 	if right.BrowserMemoryMBPerVUser > left.BrowserMemoryMBPerVUser {
 		left.BrowserMemoryMBPerVUser = right.BrowserMemoryMBPerVUser

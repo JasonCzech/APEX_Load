@@ -498,7 +498,6 @@ export default function ScriptImportReview({
           disabled={importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleParameterizationApplyingChange}
           onApplied={(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt) => {
-            bindingReviewRef.current?.preserveEditsForNextReviewGeneration()
             onParameterizationApplied(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt)
           }}
         />

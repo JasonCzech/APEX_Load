@@ -154,10 +154,13 @@ Protocols implement the compiled-in `pkg/protocol.Protocol` interface and are re
 - HTTP/1.1 and HTTP/2
 - SOAP and WSDL import
 - Java-over-HTTP bounded codec support
+- Java Vuser (`java_vuser`): governed JVM sidecar runner; disabled unless an operator sets `APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true` on the generator
+- Bruno (`bruno`): governed Node sidecar runner for imported Bruno collections; distributed execution disabled unless `APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED` is set and a governed egress broker is configured
 - WebSocket
 - gRPC
-- JMS Solace and IBM MQ
+- JMS Solace, IBM MQ, and Azure Service Bus (real Service Bus adapter opt-in via `-tags jms_servicebus_real`)
 - Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`)
+- Azure Event Hubs (`eventhubs`): producer-first with observer consumption; real AMQP adapter opt-in via `-tags eventhubs_real`
 - database and network protocol import/runtime paths where supported
 - browser replay and browser canary diagnostics
 

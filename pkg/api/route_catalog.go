@@ -324,6 +324,53 @@ var routeCatalogAuthRules = func() []apiRouteAuthRule {
 	return append(rules, legacyRouteCatalogAuthRules...)
 }()
 
+type routeTemplateBucketKey struct {
+	method       string
+	segmentCount int
+}
+
+type compiledRouteAuthTemplate struct {
+	segments    []string
+	requirement accessRequirement
+}
+
+type compiledRouteAuthCatalog struct {
+	exact     map[string]accessRequirement
+	templates map[routeTemplateBucketKey][]compiledRouteAuthTemplate
+}
+
+var indexedRouteCatalogAuthRules = compileRouteAuthCatalog(routeCatalogAuthRules)
+
+func compileRouteAuthCatalog(rules []apiRouteAuthRule) compiledRouteAuthCatalog {
+	compiled := compiledRouteAuthCatalog{
+		exact:     make(map[string]accessRequirement, len(rules)),
+		templates: make(map[routeTemplateBucketKey][]compiledRouteAuthTemplate),
+	}
+	for _, rule := range rules {
+		// Preserve the catalog's historical first-rule-wins behavior. Duplicate
+		// rules are rejected by TestRouteCatalogHasNoDuplicateRules, but keeping
+		// lookup deterministic makes this helper safe in isolation as well.
+		exactKey := routeAuthLookupKey(rule.Method, rule.Path)
+		if _, exists := compiled.exact[exactKey]; !exists {
+			compiled.exact[exactKey] = rule.Requirement
+		}
+		if !strings.Contains(rule.Path, "{") {
+			continue
+		}
+		segments := splitRoutePath(rule.Path)
+		key := routeTemplateBucketKey{method: rule.Method, segmentCount: len(segments)}
+		compiled.templates[key] = append(compiled.templates[key], compiledRouteAuthTemplate{
+			segments:    segments,
+			requirement: rule.Requirement,
+		})
+	}
+	return compiled
+}
+
+func routeAuthLookupKey(method, path string) string {
+	return method + "\x00" + path
+}
+
 func routeAuth(method string, path string, requirement accessRequirement) apiRouteAuthRule {
 	requirement = withRouteServiceAccountScope(method, path, requirement)
 	return apiRouteAuthRule{Method: method, Path: path, Requirement: requirement}
@@ -396,20 +443,20 @@ func projectAdminAccess(lookup projectScopedLookup) accessRequirement {
 }
 
 func accessRequirementFromRouteCatalog(method string, path string) (accessRequirement, bool) {
-	// Exact-literal rules take precedence so a concrete path (e.g.
-	// "/api/v1/scripts/replay") always wins over a template rule that could
-	// also match it (e.g. "/api/v1/scripts/{id}").
-	for _, rule := range routeCatalogAuthRules {
-		if rule.Method == method && rule.Path == path {
-			return rule.Requirement, true
-		}
+	return accessRequirementFromCompiledRouteCatalog(indexedRouteCatalogAuthRules, method, path)
+}
+
+func accessRequirementFromCompiledRouteCatalog(catalog compiledRouteAuthCatalog, method string, path string) (accessRequirement, bool) {
+	// Exact rules take precedence so a concrete path (e.g. "/scripts/replay")
+	// wins over a template that also matches it (e.g. "/scripts/{id}").
+	if requirement, ok := catalog.exact[routeAuthLookupKey(method, path)]; ok {
+		return requirement, true
 	}
-	// Then segment-wise template rules: a "{name}" segment matches exactly one
-	// non-empty path segment. This lets parameterized routes be declared
-	// declaratively instead of via hand-coded prefix/suffix checks.
-	for _, rule := range routeCatalogAuthRules {
-		if rule.Method == method && routePathTemplateMatches(rule.Path, path) {
-			return rule.Requirement, true
+	pathSegments := splitRoutePath(path)
+	key := routeTemplateBucketKey{method: method, segmentCount: len(pathSegments)}
+	for _, candidate := range catalog.templates[key] {
+		if compiledRoutePathTemplateMatches(candidate.segments, pathSegments) {
+			return candidate.requirement, true
 		}
 	}
 	return accessRequirement{}, false
@@ -423,19 +470,25 @@ func routePathTemplateMatches(template string, path string) bool {
 	if !strings.Contains(template, "{") {
 		return false
 	}
-	tSeg := strings.Split(strings.Trim(template, "/"), "/")
-	pSeg := strings.Split(strings.Trim(path, "/"), "/")
-	if len(tSeg) != len(pSeg) {
+	return compiledRoutePathTemplateMatches(splitRoutePath(template), splitRoutePath(path))
+}
+
+func splitRoutePath(path string) []string {
+	return strings.Split(strings.Trim(path, "/"), "/")
+}
+
+func compiledRoutePathTemplateMatches(templateSegments, pathSegments []string) bool {
+	if len(templateSegments) != len(pathSegments) {
 		return false
 	}
-	for i := range tSeg {
-		if strings.HasPrefix(tSeg[i], "{") && strings.HasSuffix(tSeg[i], "}") {
-			if pSeg[i] == "" {
+	for index, segment := range templateSegments {
+		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+			if pathSegments[index] == "" {
 				return false
 			}
 			continue
 		}
-		if tSeg[i] != pSeg[i] {
+		if segment != pathSegments[index] {
 			return false
 		}
 	}

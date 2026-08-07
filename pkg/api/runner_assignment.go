@@ -3,6 +3,8 @@ package api
 import (
 	"fmt"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // resolvePoolAssignmentLocked expands a pool-scoped assignment into the pool's
@@ -31,37 +33,21 @@ func (tr *TestRunner) resolvePoolAssignmentLocked(assignment *GeneratorAssignmen
 }
 
 // poolMemberTargets returns the deduplicated member targets of a fleet pool,
-// drawing from both explicit pool members and generator metadata bound to the pool.
+// using the shared runtime-membership definition in fleet_pool_membership.go.
 func (tr *TestRunner) poolMemberTargets(poolID string) []string {
 	if tr.fleetStore == nil {
 		return nil
 	}
-	seen := map[string]struct{}{}
-	targets := make([]string, 0)
-	add := func(target string) {
-		target = strings.TrimSpace(target)
-		if target == "" {
-			return
-		}
-		if _, ok := seen[target]; ok {
-			return
-		}
-		seen[target] = struct{}{}
-		targets = append(targets, target)
-	}
+	pool := &storage.FleetPool{ID: poolID}
 	if members, err := tr.fleetStore.ListFleetPoolMembers(poolID); err == nil {
-		for _, m := range members {
-			if m != nil {
-				add(m.Target)
-			}
-		}
+		pool.Members = members
 	}
-	if metadata, err := tr.fleetStore.ListGeneratorMetadata(0, 0); err == nil {
-		for _, m := range metadata {
-			if m != nil && m.FleetPoolID != nil && strings.TrimSpace(*m.FleetPoolID) == poolID {
-				add(m.Target)
-			}
-		}
+	// A metadata read failure degrades to members-only rather than failing
+	// placement outright, matching the previous best-effort behavior.
+	metadata, _ := tr.fleetStore.ListGeneratorMetadata(0, 0)
+	targets := fleetPoolTargets(pool, metadata)
+	if targets == nil {
+		return []string{}
 	}
 	return targets
 }

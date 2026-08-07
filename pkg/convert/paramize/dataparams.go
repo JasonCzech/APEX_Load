@@ -110,7 +110,10 @@ func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBu
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
 		}
-		search, buildReplace := delimitedPairReplacement(action.Target, queryStart+1+match[2], queryStart+1+match[1], key)
+		search, buildReplace, ok := delimitedPairReplacement(action.Target, queryStart+1+match[2], queryStart+1+match[1], key)
+		if !ok {
+			continue
+		}
 		collector.add(key, value, "query parameter", section, index, action,
 			"target", search, buildReplace)
 	}
@@ -172,16 +175,26 @@ func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBud
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
 		}
-		search, buildReplace := delimitedPairReplacement(action.Body, match[2], match[1], key)
+		search, buildReplace, ok := delimitedPairReplacement(action.Body, match[2], match[1], key)
+		if !ok {
+			continue
+		}
 		collector.add(key, value, "form field", section, index, action,
 			"body", search, buildReplace)
 	}
 	return nil
 }
 
-func delimitedPairReplacement(value string, pairStart, pairEnd int, key string) (string, func(string) string) {
+// delimitedPairReplacement anchors the literal on the separators around the pair
+// so a short key is never rewritten out of the tail of a longer one (id inside
+// user_id). Whitespace and line breaks separate pairs in queryPairPattern too,
+// so they anchor like '?', '&' and ';'. A pair that starts the field has no
+// separator to anchor on: substring replacement cannot express "only at offset
+// 0", so it reports ok=false when its literal also occurs as the tail of a
+// longer key rather than silently rebinding that parameter.
+func delimitedPairReplacement(value string, pairStart, pairEnd int, key string) (string, func(string) string, bool) {
 	searchStart := pairStart
-	if searchStart > 0 && (value[searchStart-1] == '?' || value[searchStart-1] == '&' || value[searchStart-1] == ';') {
+	if searchStart > 0 && isPairSeparatorByte(value[searchStart-1]) {
 		searchStart--
 	}
 	searchEnd := pairEnd
@@ -191,9 +204,46 @@ func delimitedPairReplacement(value string, pairStart, pairEnd int, key string) 
 	prefix := value[searchStart:pairStart]
 	suffix := value[pairEnd:searchEnd]
 	search := value[searchStart:searchEnd]
+	if prefix == "" && occursInsideLongerKey(value, search) {
+		return "", nil, false
+	}
 	return search, func(template string) string {
 		return prefix + key + "=" + template + suffix
+	}, true
+}
+
+// isPairSeparatorByte mirrors the leading alternation of queryPairPattern
+// (`(?m)(?:^|[?&;\s])`); `\s` is RE2's ASCII class.
+func isPairSeparatorByte(b byte) bool {
+	switch b {
+	case '?', '&', ';', ' ', '\t', '\n', '\f', '\r':
+		return true
 	}
+	return false
+}
+
+// occursInsideLongerKey reports whether search also appears preceded by a key
+// byte, i.e. as the tail of a longer parameter name (`id=1&` inside
+// `user_id=1&`), which the single-pass replacer cannot tell apart.
+func occursInsideLongerKey(value, search string) bool {
+	for offset := 1; offset+len(search) <= len(value); {
+		at := strings.Index(value[offset:], search)
+		if at < 0 {
+			return false
+		}
+		index := offset + at
+		if isPairKeyByte(value[index-1]) {
+			return true
+		}
+		offset = index + 1
+	}
+	return false
+}
+
+// isPairKeyByte mirrors the key class of queryPairPattern.
+func isPairKeyByte(b byte) bool {
+	return b >= 'A' && b <= 'Z' || b >= 'a' && b <= 'z' || b >= '0' && b <= '9' ||
+		b == '_' || b == '.' || b == '-' || b == '[' || b == ']'
 }
 
 // collectFillParams treats browser fill values as parameterizable when the

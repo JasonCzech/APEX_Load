@@ -116,6 +116,8 @@ Capacity advice now publishes protocol-specific density envelopes in `capacity_a
 | Browser canaries | 1-5 (2 recommended) | Acceptance contract | Real browser runtime canaries, not HTTP-scale VUsers; raise the cap only with release-attached evidence for the exact image and hardware. |
 | Unknown | 4,000 | Conservative | Applied with a warning until the protocol has an explicit envelope. |
 
+The browser row is the one envelope that is a governance contract rather than a resource model: `capacity_advisory.max_browser_vusers_per_generator` is derived from the same diagnostic-canary cap that the `browser_density_release_gate` enforces, so the advisory never sizes a fleet at a density the gate would refuse. The internal device-tier model (low/mid/high) still sets the per-browser-VUser CPU, memory, and network footprint used for the CPU/memory/network recommendations, and its higher per-tier ceiling becomes claimable only on the bounded real-browser-load tier, i.e. after benchmark evidence is attached and `APEXLOAD_BROWSER_DENSITY_OVERRIDE=true` is set.
+
 The advisor applies the configured headroom percentage to protocol envelopes before calculating required generators. For mixed workloads, the advisory includes one envelope per protocol and the generator recommendation is the maximum of CPU, memory, network, global VUser density, and protocol-specific density.
 
 `GET /api/v1/scripts/web-api/support-matrix` republishes these envelopes for evaluator-facing Web/API parity evidence alongside protocol diagnostics and sample-project references. Capacity planning remains anchored here so execution support claims and scheduler/fleet advice do not drift.

@@ -205,6 +205,22 @@
   font-size: 13px;
 }
 
+/* Read-out of the active Domain > Project > Application scope. Every catalog on
+   the settings page is filtered by it, so it has to be visible without being
+   mistaken for a control. */
+.settings-scope-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.settings-scope-breadcrumb-label {
+  font-weight: 600;
+  margin-right: 2px;
+}
+
 .page-section {
   display: flex;
   flex-direction: column;

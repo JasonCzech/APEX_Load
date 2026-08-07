@@ -2,12 +2,24 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { JsonRequestBody } from './generated/openapi'
 import type {
+  BrowserConfig,
+  BrowserGeolocation,
+  BrowserHTTPCredentials,
+  BrowserProxyConfig,
+  EventHubsConfig,
   HTTPConfig,
+  JMSConfig,
+  JMSTLSConfig,
+  RunLogicConfig,
   ScriptActionDefinition,
   ScriptAssertionDefinition,
   ScriptAuthConfig,
+  ScriptConfig,
   ScriptControlFlow,
   ScriptDefinition,
+  ScriptImportMetadata,
+  ScriptMetadata,
+  ScriptRuntimePolicy,
 } from './scripts'
 
 type CreateScriptBody = JsonRequestBody<'handleCreateScript'>
@@ -16,11 +28,27 @@ type GeneratedAction = NonNullable<GeneratedScript['actions']>[number]
 type GeneratedAssertion = NonNullable<GeneratedAction['assertions']>[number]
 type GeneratedControl = NonNullable<GeneratedAction['control']>
 type GeneratedActionAuth = NonNullable<GeneratedAction['auth']>
-type GeneratedHTTP = NonNullable<NonNullable<GeneratedScript['config']>['http']>
+type GeneratedConfig = NonNullable<GeneratedScript['config']>
+type GeneratedHTTP = NonNullable<GeneratedConfig['http']>
 type GeneratedHTTPTLS = NonNullable<GeneratedHTTP['tls']>
 type GeneratedHTTPAuth = NonNullable<GeneratedHTTP['auth']>
 type HandwrittenHTTPTLS = NonNullable<HTTPConfig['tls']>
 type HandwrittenHTTPAuth = NonNullable<HTTPConfig['auth']>
+type GeneratedBrowser = NonNullable<GeneratedConfig['browser']>
+type GeneratedBrowserGeolocation = NonNullable<GeneratedBrowser['geolocation']>
+type GeneratedBrowserCredentials = NonNullable<GeneratedBrowser['http_credentials']>
+type GeneratedBrowserProxy = NonNullable<GeneratedBrowser['proxy']>
+type GeneratedBrowserViewport = NonNullable<GeneratedBrowser['viewport']>
+type GeneratedBrowserReviewPolicy = NonNullable<GeneratedBrowser['review_policy']>
+type HandwrittenBrowserViewport = NonNullable<BrowserConfig['viewport']>
+type HandwrittenBrowserReviewPolicy = NonNullable<BrowserConfig['review_policy']>
+type GeneratedJMS = NonNullable<GeneratedConfig['jms']>
+type GeneratedJMSTLS = NonNullable<GeneratedJMS['tls']>
+type GeneratedEventHubs = NonNullable<GeneratedConfig['eventhubs']>
+type GeneratedRunLogic = NonNullable<GeneratedConfig['run_logic']>
+type GeneratedMetadata = NonNullable<GeneratedScript['metadata']>
+type GeneratedRuntimePolicy = NonNullable<GeneratedMetadata['runtime_policy']>
+type GeneratedImportMetadata = NonNullable<GeneratedMetadata['import']>
 
 describe('ScriptDefinition runtime contract', () => {
   it('keeps handwritten editor keys aligned with the generated create-script contract', () => {
@@ -32,6 +60,27 @@ describe('ScriptDefinition runtime contract', () => {
     expectTypeOf<keyof HTTPConfig>().toEqualTypeOf<keyof GeneratedHTTP>()
     expectTypeOf<keyof HandwrittenHTTPTLS>().toEqualTypeOf<keyof GeneratedHTTPTLS>()
     expectTypeOf<keyof HandwrittenHTTPAuth>().toEqualTypeOf<keyof GeneratedHTTPAuth>()
+  })
+
+  // Value literals only prove the keys that exist today still round-trip; they
+  // cannot notice a *new* pkg/dsl field. Key-equality on every block the editor
+  // mirrors is what makes a future Go addition fail this suite instead of
+  // silently becoming raw-JSON-only in the runtime settings editor.
+  it('keeps the protocol config blocks the editor mirrors aligned key-for-key', () => {
+    expectTypeOf<keyof ScriptConfig>().toEqualTypeOf<keyof GeneratedConfig>()
+    expectTypeOf<keyof RunLogicConfig>().toEqualTypeOf<keyof GeneratedRunLogic>()
+    expectTypeOf<keyof BrowserConfig>().toEqualTypeOf<keyof GeneratedBrowser>()
+    expectTypeOf<keyof BrowserGeolocation>().toEqualTypeOf<keyof GeneratedBrowserGeolocation>()
+    expectTypeOf<keyof BrowserHTTPCredentials>().toEqualTypeOf<keyof GeneratedBrowserCredentials>()
+    expectTypeOf<keyof BrowserProxyConfig>().toEqualTypeOf<keyof GeneratedBrowserProxy>()
+    expectTypeOf<keyof HandwrittenBrowserViewport>().toEqualTypeOf<keyof GeneratedBrowserViewport>()
+    expectTypeOf<keyof HandwrittenBrowserReviewPolicy>().toEqualTypeOf<keyof GeneratedBrowserReviewPolicy>()
+    expectTypeOf<keyof JMSConfig>().toEqualTypeOf<keyof GeneratedJMS>()
+    expectTypeOf<keyof JMSTLSConfig>().toEqualTypeOf<keyof GeneratedJMSTLS>()
+    expectTypeOf<keyof EventHubsConfig>().toEqualTypeOf<keyof GeneratedEventHubs>()
+    expectTypeOf<keyof ScriptMetadata>().toEqualTypeOf<keyof GeneratedMetadata>()
+    expectTypeOf<keyof ScriptRuntimePolicy>().toEqualTypeOf<keyof GeneratedRuntimePolicy>()
+    expectTypeOf<keyof ScriptImportMetadata>().toEqualTypeOf<keyof GeneratedImportMetadata>()
   })
 
   it('models controller-injected execution and protocol settings without lossy casts', () => {

@@ -43,11 +43,7 @@ func TestBrowserProtocolCacheDisabledReloadsCacheableAssets(t *testing.T) {
 		"browser_headless":      true,
 		"browser_cache_enabled": false,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -98,11 +94,7 @@ func TestBrowserProtocolDownloadResourcesNoneBlocksStaticAssets(t *testing.T) {
 		"browser_headless":           true,
 		"browser_download_resources": "none",
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -176,11 +168,7 @@ func TestBrowserProtocolCheckNewerVersionsRevalidatesCachedAssets(t *testing.T) 
 		"browser_cache_enabled":        true,
 		"browser_check_newer_versions": true,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 
@@ -226,11 +214,7 @@ func TestBrowserProtocolNetworkSimulationAddsLatency(t *testing.T) {
 		"web_network_simulation_mode":       "custom",
 		"web_network_simulation_latency_ms": 250,
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 

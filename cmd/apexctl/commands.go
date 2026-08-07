@@ -241,6 +241,11 @@ func waitCmd() {
 }
 
 // printCtlUsage is referenced by the help text for the new subcommands.
+//
+// The exit-code block is part of apexctl's public contract: automation must be
+// able to tell a load-test verdict (exit 1) from a controller/transport failure
+// (exit 3) without scraping stderr. ctlUsageExitCodes keeps the documented
+// numbers pinned to the exitCode* constants.
 func ctlUsage() string {
 	return strings.TrimSpace(`
 Status Flags (apexctl status):
@@ -257,5 +262,23 @@ Wait Flags (apexctl wait):
   --test    Test ID to wait on                                  [required]
   --timeout Max time to wait for terminal state                 [default: test duration + 30m]
   --format  Output format (text, json)                          [default: text]
-  --junit   Write a JUnit XML report to this path`)
+  --junit   Write a JUnit XML report to this path
+
+` + ctlUsageExitCodes())
+}
+
+// ctlUsageExitCodes renders the status/wait exit-code contract from the
+// exitCode* constants so the help text cannot drift away from the real codes.
+func ctlUsageExitCodes() string {
+	return strings.TrimSpace(fmt.Sprintf(`
+Exit Codes (apexctl status, apexctl wait):
+  %d  Success - the test reached a terminal state with no failed status and no SLA breach
+  %d  Test verdict failure - terminal status FAILED/ABORTED, or an evaluated SLA was breached
+  %d  Usage or configuration error - bad flags, or the --junit report could not be written
+  %d  Controller or transport failure - the controller was unreachable or returned an error,
+     the status could not be read, or wait timed out before a terminal state`,
+		exitCodeSuccess,
+		exitCodeTestFailure,
+		exitCodeUsageOrConfiguration,
+		exitCodeControllerOrTransport))
 }

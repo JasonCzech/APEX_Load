@@ -34,7 +34,7 @@ type repositoryCategoryRequest struct {
 	SortOrder   int    `json:"sort_order,omitempty"`
 }
 
-func (s *Server) handleListDomains(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleListDomains(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"domains": []*storage.Domain{}, "count": 0})
 		return
@@ -43,6 +43,23 @@ func (s *Server) handleListDomains(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	visibleDomains, _, unrestricted, err := s.visibleScopeForRequest(r, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !unrestricted {
+		filtered := make([]*storage.Domain, 0, len(domains))
+		for _, domain := range domains {
+			if domain == nil {
+				continue
+			}
+			if _, ok := visibleDomains[normalizeDomainID(domain.ID)]; ok {
+				filtered = append(filtered, domain)
+			}
+		}
+		domains = filtered
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"domains": domains, "count": len(domains)})
 }
@@ -179,6 +196,31 @@ func (s *Server) handleDeleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	// Refuse rather than orphan: a fleet pool left pointing at a deleted domain
+	// would fail closed on its next scale, and the administrator would discover
+	// it at the worst possible moment instead of here.
+	if targets := s.domainTargetStore(); targets != nil {
+		pools, err := targets.ListFleetPoolsForDomain(id)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not check the domain's fleet pools")
+			return
+		}
+		if len(pools) > 0 {
+			names := make([]string, 0, len(pools))
+			for _, pool := range pools {
+				names = append(names, pool.Name)
+			}
+			writeError(w, http.StatusConflict,
+				"this domain still has fleet pools scoped to it ("+strings.Join(names, ", ")+"); move or delete them first")
+			return
+		}
+		// No pools remain, so the constraint row is safe to remove with the
+		// domain it belongs to.
+		if err := targets.DeleteDomainDeploymentTarget(id); err != nil {
+			writeError(w, http.StatusInternalServerError, "could not clear the domain's deployment target")
+			return
+		}
+	}
 	if err := s.store.DeleteDomain(id); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

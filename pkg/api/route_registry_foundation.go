@@ -53,6 +53,8 @@ var modularAPIRouteCatalogs = []apiRouteCatalog{
 	capacityAPIRouteCatalog,
 	fleetObservabilityAPIRouteCatalog,
 	fleetAdministrationAPIRouteCatalog,
+	clusterAdministrationAPIRouteCatalog,
+	domainDeploymentTargetAPIRouteCatalog,
 	runArchiveAPIRouteCatalog,
 	archiveRetentionAPIRouteCatalog,
 	powerBIAPIRouteCatalog,

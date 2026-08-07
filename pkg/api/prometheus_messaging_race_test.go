@@ -36,13 +36,28 @@ func TestPrometheusMessagingSnapshotIsRaceFree(t *testing.T) {
 		}
 	}()
 
+	const expected = `apexload_messaging_consumer_lag_ms{test_id="t1",protocol="kafka",target="orders"} 5`
+	scrapes := 0
+	invalidOutput := ""
+
+scrapeLoop:
 	for {
+		var b strings.Builder
+		writeMessagingMetrics(&b, tr.liveMetricsSnapshot())
+		scrapes++
+		if !strings.Contains(b.String(), expected) && invalidOutput == "" {
+			invalidOutput = b.String()
+		}
 		select {
 		case <-done:
-			return
+			break scrapeLoop
 		default:
-			var b strings.Builder
-			writeMessagingMetrics(&b, tr.liveMetricsSnapshot())
 		}
+	}
+	if scrapes == 0 {
+		t.Fatal("concurrent scrape loop did not execute")
+	}
+	if invalidOutput != "" {
+		t.Fatalf("concurrent scrape omitted the stable messaging series:\n%s", invalidOutput)
 	}
 }

@@ -1,0 +1,165 @@
+# Exposes the controller API + dashboard through the AWS Load Balancer
+# Controller (install it separately; EKS does not ship an ingress controller).
+# For a self-managed NGINX instead, set ingressClassName: nginx and swap the
+# annotations below for the nginx.ingress.kubernetes.io/* equivalents.
+#
+# The dashboard streams live metrics over WebSockets (/api/v1/ws and
+# /api/v1/tests/{id}/stream). An ALB's DEFAULT IDLE TIMEOUT IS 60 SECONDS, which
+# severs those streams mid-test; idle_timeout.timeout_seconds below is what
+# prevents it. nginx.ingress.kubernetes.io/proxy-read-timeout does NOT work here
+# — the ALB controller ignores annotations from other ingress classes silently,
+# so the stream would simply drop with no error anywhere to explain it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apexload-controller
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: ingress
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal # CHANGE-ME to internet-facing only with auth in front
+    # ip mode targets pods directly, which is required for the
+    # generation-fenced active EndpointSlice the HA overlay relies on: with
+    # instance mode the ALB targets node ports and bypasses that fencing.
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /api/v1/system/health
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
+spec:
+  ingressClassName: alb
+  # TLS: request a certificate in ACM, then uncomment both annotations above
+  # (add certificate-arn and listen-ports) and this block. Production
+  # deployments should not serve the dashboard over HTTP.
+  #
+  #   alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:REGION:ACCOUNT:certificate/ID
+  #   alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+  #   alb.ingress.kubernetes.io/ssl-redirect: '443'
+  #
+  # tls:
+  #   - hosts:
+  #       - apexload.example.com
+  #     secretName: apexload-tls
+  rules:
+    - host: apexload.example.com # CHANGE-ME: your DNS name
+      http:
+        paths:
+          # Controller-native CI mutations must reach the admitted execution
+          # leader in HA. OIDC exchange and other read/shared-state traffic use
+          # the ordinary all-replica Service below so authentication remains
+          # available during leader failover.
+          - path: /api/v1/ci
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Keep the full execution lifecycle on the admitted controller. The
+          # EKS HA overlay uses the same generation-fenced EndpointSlice as the
+          # on-prem and Helm deployments.
+          - path: /api/v1/tests
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/scenarios
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/schedules/health
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/execution-plans
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/capacity/timeslots
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/system/execution-readiness
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Replay and debugger sessions are process-local. Keep creation,
+          # polling, control, and correlation diagnosis on the same admitted
+          # controller for the full session lifecycle.
+          - path: /api/v1/scripts
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/replay
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/script-debug
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/browser-replay
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Recorder sessions and the replay verification they launch are
+          # process-local as well, so keep their full lifecycle on the active
+          # controller alongside browser-replay status and progress.
+          - path: /api/v1/recorder
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/browser-recorder
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Replay/debug progress is broadcast from the owning controller's
+          # process-local WebSocket hub. Keep the global stream on that same
+          # active endpoint. Per-test streams are covered by /api/v1/tests.
+          - path: /api/v1/ws
+            pathType: Exact
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller
+                port:
+                  name: http

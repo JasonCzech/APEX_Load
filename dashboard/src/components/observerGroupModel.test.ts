@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  clampVUsersForRole,
   LOAD_GROUP_MAX_VUSERS,
   maxVUsersForRole,
+  OBSERVER_MAX_VUSERS,
   validateAggregateVUserDemand,
   validateGroupExecutionEnvelope,
 } from './observerGroupModel'
@@ -34,5 +36,23 @@ describe('observerGroupModel', () => {
     expect(validateAggregateVUserDemand([
       { vusers: 5, stages: [{ target_vusers: 10 }] },
     ], 'Scenario')).toBe('Scenario: group 1 VUsers must match its peak stage target of 10.')
+  })
+
+  // clampVUsersForRole is the silent half of the VUser envelope: it rewrites the
+  // operator's number instead of reporting an error, so its ceilings, floor and
+  // non-finite handling need to be pinned directly rather than inferred from the
+  // validators above.
+  it('clamps VUser input to the role ceiling and the requested floor', () => {
+    expect(clampVUsersForRole(LOAD_GROUP_MAX_VUSERS + 1, 'load')).toBe(LOAD_GROUP_MAX_VUSERS)
+    expect(clampVUsersForRole(LOAD_GROUP_MAX_VUSERS, 'load')).toBe(LOAD_GROUP_MAX_VUSERS)
+    expect(clampVUsersForRole(OBSERVER_MAX_VUSERS + 1, 'observer')).toBe(OBSERVER_MAX_VUSERS)
+    // An unset role is a load group, not an observer canary.
+    expect(clampVUsersForRole(5_000, undefined)).toBe(5_000)
+    expect(clampVUsersForRole(-1, 'load')).toBe(0)
+    expect(clampVUsersForRole(-1, 'load', 1)).toBe(1)
+    expect(clampVUsersForRole(12.9, 'load')).toBe(12)
+    expect(clampVUsersForRole(Number.NaN, 'load')).toBe(0)
+    expect(clampVUsersForRole(Number.NaN, 'load', 1)).toBe(1)
+    expect(clampVUsersForRole(Number.POSITIVE_INFINITY, 'observer')).toBe(0)
   })
 })

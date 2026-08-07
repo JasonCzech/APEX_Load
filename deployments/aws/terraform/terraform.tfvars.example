@@ -1,0 +1,36 @@
+# Copy to terraform.tfvars and adjust. Every value here has a working default;
+# the ones below are the ones most deployments actually change.
+
+name_prefix = "apexload"
+aws_region  = "us-east-1"
+environment = "production"
+
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+vpc_cidr           = "10.60.0.0/16"
+
+kubernetes_version = "1.30"
+
+controller_node_instance_type = "m6i.large"
+controller_node_count         = 2
+
+# Generator sizing. These four values are cross-checked against the KEDA
+# maxReplicaCount in deployments/k8s/eks/generator-keda-scaledobject.yaml, so a
+# node group that could never schedule the fleet fails at `terraform plan`
+# rather than leaving pods Pending mid-test.
+generator_node_instance_type     = "m6i.xlarge"
+generator_node_min_count         = 2
+generator_node_max_count         = 20
+generator_keda_max_replicas      = 50
+generator_pod_cpu_millicores     = 1000
+generator_pod_memory_mib         = 2048
+generator_node_reserved_fraction = 0.25
+
+postgres_instance_class        = "db.m6g.large"
+postgres_version               = "16"
+postgres_allocated_storage_gb  = 100
+postgres_backup_retention_days = 14
+
+redis_node_type = "cache.m6g.large"
+
+# 0 keeps run evidence indefinitely.
+archive_retention_days = 0

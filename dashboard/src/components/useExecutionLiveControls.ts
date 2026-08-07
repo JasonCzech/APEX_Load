@@ -139,11 +139,13 @@ export function useExecutionLiveControls(
 
     try {
       const rampDuration = vuserRampEnabled ? vuserRampDuration.trim() : ''
-      await Promise.all(activeGroups.map((group) => (
-        rampDuration
-          ? api.scaleVUsers(testId, group.name, 0, { action: 'pause', ramp_duration: rampDuration })
-          : api.scaleVUsers(testId, group.name, 0, { action: 'pause' })
-      )))
+      // Same option-assembly shape as onScaleVUsers: ramp_duration is omitted entirely
+      // (rather than sent as undefined) when gradual ramping is off.
+      const options = {
+        action: 'pause' as const,
+        ...(rampDuration ? { ramp_duration: rampDuration } : {}),
+      }
+      await Promise.all(activeGroups.map((group) => api.scaleVUsers(testId, group.name, 0, options)))
       setVuserTargets((prev) => {
         const next = { ...prev }
         activeGroups.forEach((group) => {

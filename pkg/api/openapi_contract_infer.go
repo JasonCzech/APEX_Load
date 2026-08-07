@@ -217,6 +217,21 @@ var explicitRouteContractTypes = map[string]struct {
 	"POST /api/v1/auth/ci/github/exchange": {
 		requestType: "githubCIExchangeRequest",
 	},
+	// Cluster registry and host allocation. The request types are named so the
+	// published contract documents the credential fields as write-only inputs
+	// rather than an opaque object.
+	"POST /api/v1/system/clusters": {
+		requestType:   "ClusterConnectionRequest",
+		responseTypes: map[int]string{201: "ClusterConnectionResponse"},
+	},
+	"PUT /api/v1/system/clusters/{id}": {
+		requestType:   "ClusterConnectionRequest",
+		responseTypes: map[int]string{200: "ClusterConnectionResponse"},
+	},
+	"PUT /api/v1/fleet/pools/{id}/allocation": {
+		requestType:   "FleetPoolAllocationRequest",
+		responseTypes: map[int]string{200: "FleetPoolAllocationResponse"},
+	},
 	"POST /api/v1/ci/runs/{id}/abort": {
 		requestType:     "ciAbortRequest",
 		requestOptional: true,

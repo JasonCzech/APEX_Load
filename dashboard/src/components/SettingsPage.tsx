@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 import { type DashboardThemePreference } from '../hooks/useDashboardTheme'
 import { useApplicationApi } from '../hooks/api/useApplicationApi'
-import { useProjectApi } from '../hooks/api/useProjectApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
@@ -32,6 +31,7 @@ import {
   type ProjectSettingsSubsectionId,
   type SettingsSectionId,
 } from './settingsSectionLayout'
+import DomainDeploymentTargetCard from './DomainDeploymentTargetCard'
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard, { type ProjectPoolQuotasDraftController } from './ProjectPoolQuotasCard'
@@ -334,7 +334,6 @@ export default function SettingsPage({
   const desktopSurface = isDesktopSurface()
   const api = useApi()
   const applicationApi = useApplicationApi()
-  const projectApi = useProjectApi()
   const repositoryApi = useRepositoryApi()
   const { runGuarded } = useNavigationGuardRunner()
   const {
@@ -353,6 +352,8 @@ export default function SettingsPage({
     createAndSelectApplication,
   } = useApplication()
   const {
+    projects: scopedProjects,
+    projectsError,
     activeProject,
     createAndSelectProject,
     updateProject: updateProjectInContext,
@@ -905,6 +906,21 @@ export default function SettingsPage({
     return counts
   }, [projects])
   const selectedDomainProjectCount = selectedDomain ? projectCountByDomain.get(selectedDomain.id) || 0 : 0
+  // Read-out of the workspace scope every catalog on this page is filtered by.
+  // It reflects the global Domain > Project > Application selection rather than
+  // offering a second, competing set of pickers.
+  // activeDomain leads, not the page-local selection: App derives the scoped
+  // ProjectContext from activeDomain, so that is what the catalogs below are
+  // actually filtered by. Reading the local selection first would let the
+  // breadcrumb claim a domain the data does not belong to.
+  const scopeBreadcrumb = useMemo(
+    () => [
+      activeDomain?.name || selectedDomain?.name || '',
+      activeProject?.name || '',
+      activeApplication?.name || '',
+    ].filter(Boolean),
+    [activeApplication?.name, activeDomain?.name, activeProject?.name, selectedDomain?.name],
+  )
   const domainDraftValidationError = selectedDomain && !domainDraftName.trim() ? 'Domain name is required.' : ''
   const domainHasUnsavedChanges = Boolean(
     selectedDomain
@@ -1084,58 +1100,50 @@ export default function SettingsPage({
     }
   }, [activeApplication?.id, applicationApi, releases])
 
+  // Settings reads the project catalog from ProjectContext rather than fetching
+  // its own. App re-provides that context already filtered to the active domain,
+  // so the catalog here follows the domain picker instead of listing every
+  // project in the installation.
   useEffect(() => {
-    let cancelled = false
-    const loadProjects = async () => {
-      try {
-        const response = await projectApi.listProjects()
-        if (cancelled) {
-          return
-        }
+    const nextProjects = reconcileSettingsProjectSnapshots(
+      scopedProjects || [],
+      committedProjectsRef.current,
+    )
+    const requestedProjectId = consumeProjectSecretsSettingsProjectId()
+    const requestedProject = requestedProjectId
+      ? nextProjects.find(project => project.id === requestedProjectId) || null
+      : null
+    const requestedProjectMissing = Boolean(requestedProjectId && !requestedProject)
+    // A Configure secrets deep link is a governed project-scoped action. If
+    // its target disappeared (or access was revoked), do not silently switch
+    // the write-only form to a different project.
+    const nextSelected = requestedProjectMissing
+      ? null
+      : requestedProject
+        || nextProjects.find(project => project.id === activeProject?.id)
+        || nextProjects[0]
+        || null
+    setProjects(nextProjects)
+    setSelectedProjectId(nextSelected?.id || '')
+    setProjectDraftName(nextSelected?.name || '')
+    setProjectDraftRules(toDraftRedactionRules(nextSelected?.settings?.redaction_rules))
+    setProjectDraftMaxConcurrentTests(nextSelected?.settings?.max_concurrent_tests !== undefined ? String(nextSelected.settings.max_concurrent_tests) : '')
+    setProjectDraftMaxVUsers(nextSelected?.settings?.max_vusers !== undefined ? String(nextSelected.settings.max_vusers) : '')
+    setProjectDraftMaxVUsersPerTest(nextSelected?.settings?.max_vusers_per_test !== undefined ? String(nextSelected.settings.max_vusers_per_test) : '')
+    setProjectDraftMaxTestDurationMinutes(nextSelected?.settings?.max_test_duration_minutes !== undefined ? String(nextSelected.settings.max_test_duration_minutes) : '')
+    loadProjectGitHubDraft(nextSelected?.settings?.github)
+    setMissingRequestedProjectId(requestedProjectMissing ? requestedProjectId : '')
+    setProjectActionError(requestedProjectMissing
+      ? 'The project requested for secret configuration is no longer available or you no longer have access. Choose an available project explicitly before entering a credential.'
+      : '')
+  }, [activeProject?.id, loadProjectGitHubDraft, scopedProjects])
 
-        const nextProjects = reconcileSettingsProjectSnapshots(
-          response.projects || [],
-          committedProjectsRef.current,
-        )
-        const requestedProjectId = consumeProjectSecretsSettingsProjectId()
-        const requestedProject = requestedProjectId
-          ? nextProjects.find(project => project.id === requestedProjectId) || null
-          : null
-        const requestedProjectMissing = Boolean(requestedProjectId && !requestedProject)
-        // A Configure secrets deep link is a governed project-scoped action. If
-        // its target disappeared (or access was revoked), do not silently switch
-        // the write-only form to a different project.
-        const nextSelected = requestedProjectMissing
-          ? null
-          : requestedProject
-            || nextProjects.find(project => project.id === activeProject?.id)
-            || nextProjects[0]
-            || null
-        setProjects(nextProjects)
-        setSelectedProjectId(nextSelected?.id || '')
-        setProjectDraftName(nextSelected?.name || '')
-        setProjectDraftRules(toDraftRedactionRules(nextSelected?.settings?.redaction_rules))
-        setProjectDraftMaxConcurrentTests(nextSelected?.settings?.max_concurrent_tests !== undefined ? String(nextSelected.settings.max_concurrent_tests) : '')
-        setProjectDraftMaxVUsers(nextSelected?.settings?.max_vusers !== undefined ? String(nextSelected.settings.max_vusers) : '')
-        setProjectDraftMaxVUsersPerTest(nextSelected?.settings?.max_vusers_per_test !== undefined ? String(nextSelected.settings.max_vusers_per_test) : '')
-        setProjectDraftMaxTestDurationMinutes(nextSelected?.settings?.max_test_duration_minutes !== undefined ? String(nextSelected.settings.max_test_duration_minutes) : '')
-        loadProjectGitHubDraft(nextSelected?.settings?.github)
-        setMissingRequestedProjectId(requestedProjectMissing ? requestedProjectId : '')
-        setProjectActionError(requestedProjectMissing
-          ? 'The project requested for secret configuration is no longer available or you no longer have access. Choose an available project explicitly before entering a credential.'
-          : '')
-      } catch (error: unknown) {
-        if (!cancelled) {
-          setProjectActionError(getErrorMessage(error, 'Unable to load projects'))
-        }
-      }
+  // The provider owns loading errors now that Settings no longer fetches.
+  useEffect(() => {
+    if (projectsError) {
+      setProjectActionError(projectsError)
     }
-
-    loadProjects()
-    return () => {
-      cancelled = true
-    }
-  }, [activeProject?.id, loadProjectGitHubDraft, projectApi])
+  }, [projectsError])
 
   useEffect(() => {
     if (domains.length === 0) {
@@ -2920,6 +2928,17 @@ export default function SettingsPage({
         <div>
           <h2>Settings</h2>
           <p className="page-subtitle">Configuration, thresholds, and integrations</p>
+          {scopeBreadcrumb.length > 0 && (
+            <p className="page-subtitle settings-scope-breadcrumb" data-testid="settings-scope-breadcrumb">
+              <span className="settings-scope-breadcrumb-label">Scope:</span>
+              {scopeBreadcrumb.map((name, index) => (
+                <span key={`${name}-${index}`}>
+                  {index > 0 && <span aria-hidden="true"> › </span>}
+                  {name}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         {!canManageSystem && (
           <p className="settings-error">Current session can view settings but cannot save global configuration changes.</p>
@@ -3324,6 +3343,7 @@ export default function SettingsPage({
                       placeholder="10.0.0.0/8, 192.0.2.10/32"
                     />
                   </div>
+                  {renderFieldIssues('auth.trusted_proxy_cidrs')}
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label">Trusted Proxy Secret Environment Variable</span>
@@ -4739,6 +4759,15 @@ export default function SettingsPage({
                 </button>
               </div>
             </div>
+
+            {selectedDomain && (
+              <DomainDeploymentTargetCard
+                key={selectedDomain.id}
+                domainId={selectedDomain.id}
+                domainName={selectedDomain.name}
+                canManage={capabilityAllowed('manage_deployment_targets', false)}
+              />
+            )}
 
             <div className="setting-row">
               <div className="setting-info">

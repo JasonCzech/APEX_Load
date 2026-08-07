@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react'
 
 import { ApplicationRepository, Domain, RepositoryCategory, Release } from '../../types'
 import { request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 type DeleteEntityResponse = {
   deleted: string
@@ -17,70 +18,70 @@ function query(params: Record<string, string | undefined>) {
 }
 
 export function useRepositoryApi() {
-  const listDomains = useCallback(() => request<{ domains: Domain[]; count: number }>('/domains'), [])
+  const listDomains = useCallback((options?: ApiCallOptions) => request<{ domains: Domain[]; count: number }>('/domains', withCallOptions(undefined, options)), [])
 
   const createDomain = useCallback(
-    (data: { name: string; description?: string }) =>
-      request<{ domain: Domain; application_repository: ApplicationRepository; default_category: RepositoryCategory }>('/domains', {
+    (data: { name: string; description?: string }, options?: ApiCallOptions) =>
+      request<{ domain: Domain; application_repository: ApplicationRepository; default_category: RepositoryCategory }>('/domains', withCallOptions({
         method: 'POST',
         body: JSON.stringify(data),
-      }),
+      }, options)),
     [],
   )
 
   const updateDomain = useCallback(
-    (id: string, data: { name: string; description?: string }) =>
-      request<Domain>(`/domains/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: { name: string; description?: string }, options?: ApiCallOptions) =>
+      request<Domain>(`/domains/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
-  const deleteDomain = useCallback((id: string) => request<DeleteEntityResponse>(`/domains/${id}`, { method: 'DELETE' }), [])
+  const deleteDomain = useCallback((id: string, options?: ApiCallOptions) => request<DeleteEntityResponse>(`/domains/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
 
   const getApplicationRepository = useCallback(
-    (domainId: string) => request<ApplicationRepository>(`/domains/${domainId}/application-repository`),
+    (domainId: string, options?: ApiCallOptions) => request<ApplicationRepository>(`/domains/${domainId}/application-repository`, withCallOptions(undefined, options)),
     [],
   )
 
   const updateApplicationRepository = useCallback(
-    (domainId: string, data: { name: string; description?: string }) =>
-      request<ApplicationRepository>(`/domains/${domainId}/application-repository`, { method: 'PUT', body: JSON.stringify(data) }),
+    (domainId: string, data: { name: string; description?: string }, options?: ApiCallOptions) =>
+      request<ApplicationRepository>(`/domains/${domainId}/application-repository`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const listRepositoryCategories = useCallback(
-    (domainId: string) => request<{ categories: RepositoryCategory[]; count: number }>(`/domains/${domainId}/application-repository/categories`),
+    (domainId: string, options?: ApiCallOptions) => request<{ categories: RepositoryCategory[]; count: number }>(`/domains/${domainId}/application-repository/categories`, withCallOptions(undefined, options)),
     [],
   )
 
   const createRepositoryCategory = useCallback(
-    (domainId: string, data: { name: string; description?: string; sort_order?: number }) =>
-      request<RepositoryCategory>(`/domains/${domainId}/application-repository/categories`, { method: 'POST', body: JSON.stringify(data) }),
+    (domainId: string, data: { name: string; description?: string; sort_order?: number }, options?: ApiCallOptions) =>
+      request<RepositoryCategory>(`/domains/${domainId}/application-repository/categories`, withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
   const updateRepositoryCategory = useCallback(
-    (id: string, data: { name: string; description?: string; sort_order?: number }) =>
-      request<RepositoryCategory>(`/application-repository/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    (id: string, data: { name: string; description?: string; sort_order?: number }, options?: ApiCallOptions) =>
+      request<RepositoryCategory>(`/application-repository/categories/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(data) }, options)),
     [],
   )
 
-  const deleteRepositoryCategory = useCallback((id: string) => request<DeleteEntityResponse>(`/application-repository/categories/${id}`, { method: 'DELETE' }), [])
+  const deleteRepositoryCategory = useCallback((id: string, options?: ApiCallOptions) => request<DeleteEntityResponse>(`/application-repository/categories/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
 
   const listProjectReleases = useCallback(
-    (projectId: string, includeArchived = false) =>
-      request<{ releases: Release[]; count: number }>(`/projects/${projectId}/releases${query({ include_archived: includeArchived ? 'true' : undefined })}`),
+    (projectId: string, includeArchived = false, options?: ApiCallOptions) =>
+      request<{ releases: Release[]; count: number }>(`/projects/${projectId}/releases${query({ include_archived: includeArchived ? 'true' : undefined })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const createProjectRelease = useCallback(
-    (projectId: string, data: { name: string; application_id?: string }) =>
-      request<Release>(`/projects/${projectId}/releases`, { method: 'POST', body: JSON.stringify(data) }),
+    (projectId: string, data: { name: string; application_id?: string }, options?: ApiCallOptions) =>
+      request<Release>(`/projects/${projectId}/releases`, withCallOptions({ method: 'POST', body: JSON.stringify(data) }, options)),
     [],
   )
 
-  const archiveRelease = useCallback((id: string) => request<Release>(`/releases/${id}/archive`, { method: 'POST' }), [])
+  const archiveRelease = useCallback((id: string, options?: ApiCallOptions) => request<Release>(`/releases/${id}/archive`, withCallOptions({ method: 'POST' }, options)), [])
 
-  const deleteRelease = useCallback((id: string) => request<DeleteEntityResponse>(`/releases/${id}`, { method: 'DELETE' }), [])
+  const deleteRelease = useCallback((id: string, options?: ApiCallOptions) => request<DeleteEntityResponse>(`/releases/${id}`, withCallOptions({ method: 'DELETE' }, options)), [])
 
   return useMemo(
     () => ({

@@ -44,8 +44,8 @@ npm run build
 
 4. Check browser console for fetch/network errors
 
-#### Scripts/Scenarios not loading in tree
-**Symptom:** FolderTree shows empty even though scripts exist in database
+#### Scripts or scenarios are missing from the dashboard
+**Symptom:** The Script Library or scenario list is empty even though records exist in the database
 
 **Solutions:**
 1. Check browser DevTools → Network tab:

@@ -301,16 +301,16 @@ func TestClientRejectsOversizedCredentialFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.readToken(); err == nil || !strings.Contains(err.Error(), "file exceeds") {
-		t.Fatalf("readToken oversized error = %v", err)
+	if _, err := client.cfg.TokenSource.Token(context.Background()); err == nil || !strings.Contains(err.Error(), "file exceeds") {
+		t.Fatalf("token source oversized error = %v", err)
 	}
 
 	caFile := dir + "/ca.crt"
 	if err := os.WriteFile(caFile, bytes.Repeat([]byte("c"), int(maxServiceAccountCABytes+1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := buildInClusterHTTPClient(caFile); err == nil || !strings.Contains(err.Error(), "file exceeds") {
-		t.Fatalf("buildInClusterHTTPClient oversized error = %v", err)
+	if _, err := buildHTTPClient(Config{CAFile: caFile}); err == nil || !strings.Contains(err.Error(), "file exceeds") {
+		t.Fatalf("buildHTTPClient oversized CA error = %v", err)
 	}
 }
 

@@ -429,6 +429,31 @@ func collectExecutionPlanSchedules(rows *sql.Rows) ([]*ExecutionPlanSchedule, er
 	return schedules, rows.Err()
 }
 
+// DeleteTerminalExecutionPlanScheduleOccurrencesBefore is the execution-plan
+// counterpart to scenario occurrence retention. It deliberately shares the
+// same hard batch cap so a retention tick cannot monopolize the store.
+func (s *SQLiteStore) DeleteTerminalExecutionPlanScheduleOccurrencesBefore(cutoff time.Time, limit int) (int64, error) {
+	limit = boundedScheduleOccurrenceDeleteLimit(limit)
+	if limit == 0 || cutoff.IsZero() {
+		return 0, nil
+	}
+	result, err := s.db.Exec(`DELETE FROM execution_plan_schedule_occurrences
+		WHERE id IN (
+			SELECT occurrence.id
+			FROM execution_plan_schedule_occurrences occurrence
+			JOIN execution_plan_schedules schedule ON schedule.id = occurrence.schedule_id
+			WHERE occurrence.planned_at < ?
+			  AND LOWER(TRIM(COALESCE(occurrence.status, ''))) IN ('materialized', 'failed', 'blocked', 'skipped')
+			  AND (schedule.next_run_at IS NULL OR schedule.next_run_at > occurrence.planned_at)
+			ORDER BY occurrence.planned_at ASC, occurrence.id ASC
+			LIMIT ?
+		)`, cutoff.UTC(), limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const executionPlanScheduleOccurrenceColumns = `id, schedule_id, plan_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1),
 	COALESCE(revision, 1), COALESCE(transition_token, ''), planned_at, materialized_at, status,
 	COALESCE(reason_code, ''), COALESCE(run_id, ''), COALESCE(approval_id, ''), COALESCE(conflict_summary, ''),

@@ -582,6 +582,24 @@ func (tr *TestRunner) refreshScenariosForHARead(force ...bool) {
 	tr.haScenarioRefreshAt = time.Now()
 }
 
+// refreshScenarioScheduleContentForHARead keeps a polled schedule read coherent
+// across replicas without the unthrottled full-library reload a forced refresh
+// performs on every poll: the scheduler content version probe short-circuits
+// when no replica has touched the script/scenario/schedule tables. Stores
+// without the probe keep the conservative forced refresh.
+func (tr *TestRunner) refreshScenarioScheduleContentForHARead() {
+	if tr == nil || tr.leadership == nil {
+		return
+	}
+	if _, versioned := tr.scriptStore.(schedulerContentVersionPersistence); !versioned {
+		tr.refreshScenariosForHARead(true)
+		return
+	}
+	if err := tr.refreshSchedulerContentForHASweep(); err != nil {
+		slog.Warn("failed to refresh scheduler content for HA schedule read", "error", err)
+	}
+}
+
 func (tr *TestRunner) replaceScenarioDataPools(id string, bindings []storage.ScenarioDataPoolBinding, expectedUpdatedAt, updatedAt time.Time) bool {
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -600,11 +618,11 @@ func (tr *TestRunner) ListScenarios() []*StoredScenario {
 	tr.refreshScenariosForHARead()
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
-	out := make([]*StoredScenario, 0, len(tr.scenarios))
+	selected := make([]*StoredScenario, 0, len(tr.scenarios))
 	for _, scenario := range tr.scenarios {
-		out = append(out, tr.enrichScenarioSummaryLocked(scenario))
+		selected = append(selected, scenario)
 	}
-	return out
+	return tr.enrichScenarioSummariesLocked(selected)
 }
 
 func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario {
@@ -612,15 +630,16 @@ func (tr *TestRunner) ListScenariosFiltered(projectID string) []*StoredScenario 
 	projectID = normalizeProjectID(projectID)
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
-	out := make([]*StoredScenario, 0, len(tr.scenarios))
+	// Filter before enrichment: enrichment never changes ProjectID, so building
+	// a full summary for scenarios that are about to be discarded is pure waste.
+	selected := make([]*StoredScenario, 0, len(tr.scenarios))
 	for _, scenario := range tr.scenarios {
-		enriched := tr.enrichScenarioSummaryLocked(scenario)
-		if enriched.ProjectID != projectID {
+		if scenario == nil || scenario.ProjectID != projectID {
 			continue
 		}
-		out = append(out, enriched)
+		selected = append(selected, scenario)
 	}
-	return out
+	return tr.enrichScenarioSummariesLocked(selected)
 }
 
 func (tr *TestRunner) DeleteScenario(id string) bool {
@@ -1081,7 +1100,9 @@ func (tr *TestRunner) DeleteScenarioScheduleOccurrence(scenarioID string, schedu
 func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHealth {
 	// Health is a schedule entry point, so it must not reuse a recently cached
 	// empty snapshot after another controller replica commits schedule changes.
-	tr.refreshScenariosForHARead(true)
+	// The dashboard polls it every 5s, so the version probe supplies that
+	// cross-replica freshness without re-materializing the whole library.
+	tr.refreshScenarioScheduleContentForHARead()
 	tr.mu.RLock()
 	health := ScenarioScheduleHealth{StatusCounts: map[string]int{}}
 	for _, schedule := range tr.listAllScenarioSchedulesLocked() {
@@ -1141,42 +1162,124 @@ type scenarioScheduleOccurrenceStatusCounter interface {
 	CountScenarioScheduleOccurrencesByStatus() (map[string]int, error)
 }
 
+// scenarioRunSummary is the per-scenario rollup of the runner's test map that
+// decorates a scenario listing. It is accumulated in a single pass over
+// tr.tests so a listing costs O(tests) instead of O(scenarios x tests).
+type scenarioRunSummary struct {
+	resultCount      int
+	releaseIDs       map[string]struct{}
+	lastRunTestID    string
+	lastRunStartedAt *time.Time
+	lastRunEndedAt   *time.Time
+}
+
+// absorb folds one test into the rollup. Ties on startedAt keep the
+// first-observed test, matching the previous per-scenario loop (tr.tests is a
+// map, so that ordering was already unspecified).
+func (summary *scenarioRunSummary) absorb(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	if test.Status == "COMPLETE" || test.Status == "FAILED" || test.Status == "ABORTED" {
+		summary.resultCount++
+	}
+	if test.ReleaseID != "" {
+		if summary.releaseIDs == nil {
+			summary.releaseIDs = map[string]struct{}{}
+		}
+		summary.releaseIDs[test.ReleaseID] = struct{}{}
+	}
+	startedAt := test.CreatedAt
+	if test.StartedAt != nil && !test.StartedAt.IsZero() {
+		startedAt = *test.StartedAt
+	}
+	if summary.lastRunStartedAt == nil || startedAt.After(*summary.lastRunStartedAt) {
+		t := startedAt
+		summary.lastRunStartedAt = &t
+		summary.lastRunTestID = test.ID
+		summary.lastRunEndedAt = cloneTimePtr(test.EndedAt)
+	}
+}
+
 func (tr *TestRunner) enrichScenarioSummaryLocked(scenario *StoredScenario) *StoredScenario {
 	if scenario == nil {
 		return nil
 	}
-	copy := cloneStoredScenarioForReadLocked(scenario)
-	releaseSet := map[string]ReleaseRef{}
-	var lastRunTestID string
-	var lastRunStartedAt *time.Time
-	var lastRunEndedAt *time.Time
-	resultCount := 0
+	summary := scenarioRunSummary{}
 	for _, test := range tr.tests {
-		if test.ScenarioID != scenario.ID {
+		if test == nil || test.ScenarioID != scenario.ID {
 			continue
 		}
-		if test.Status == "COMPLETE" || test.Status == "FAILED" || test.Status == "ABORTED" {
-			resultCount++
+		summary.absorb(test)
+	}
+	return tr.applyScenarioRunSummaryLocked(scenario, &summary, nil)
+}
+
+// enrichScenarioSummariesLocked is the listing form of
+// enrichScenarioSummaryLocked. It walks tr.tests once for the whole batch and
+// resolves each distinct release once, instead of re-scanning every test (and
+// re-reading the same release rows) for every scenario.
+func (tr *TestRunner) enrichScenarioSummariesLocked(scenarios []*StoredScenario) []*StoredScenario {
+	summaries := make(map[string]*scenarioRunSummary, len(scenarios))
+	for _, scenario := range scenarios {
+		if scenario == nil {
+			continue
 		}
-		if test.ReleaseID != "" {
-			releaseSet[test.ReleaseID] = tr.releaseRefLocked(test.ReleaseID)
-		}
-		startedAt := test.CreatedAt
-		if test.StartedAt != nil && !test.StartedAt.IsZero() {
-			startedAt = *test.StartedAt
-		}
-		if lastRunStartedAt == nil || startedAt.After(*lastRunStartedAt) {
-			t := startedAt
-			lastRunStartedAt = &t
-			lastRunTestID = test.ID
-			lastRunEndedAt = cloneTimePtr(test.EndedAt)
+		if _, exists := summaries[scenario.ID]; !exists {
+			summaries[scenario.ID] = &scenarioRunSummary{}
 		}
 	}
-	copy.ResultCount = resultCount
+	if len(summaries) > 0 {
+		for _, test := range tr.tests {
+			if test == nil {
+				continue
+			}
+			if summary, ok := summaries[test.ScenarioID]; ok {
+				summary.absorb(test)
+			}
+		}
+	}
+	releaseCache := make(map[string]ReleaseRef)
+	out := make([]*StoredScenario, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		if scenario == nil {
+			out = append(out, nil)
+			continue
+		}
+		out = append(out, tr.applyScenarioRunSummaryLocked(scenario, summaries[scenario.ID], releaseCache))
+	}
+	return out
+}
+
+// applyScenarioRunSummaryLocked projects a rollup onto a read-safe clone. The
+// optional releaseCache lets a batch resolve each release ref exactly once;
+// pass nil for a single-scenario read.
+func (tr *TestRunner) applyScenarioRunSummaryLocked(scenario *StoredScenario, summary *scenarioRunSummary, releaseCache map[string]ReleaseRef) *StoredScenario {
+	if scenario == nil {
+		return nil
+	}
+	copy := cloneStoredScenarioForReadLocked(scenario)
+	if summary == nil {
+		summary = &scenarioRunSummary{}
+	}
+	releaseSet := make(map[string]ReleaseRef, len(summary.releaseIDs))
+	for releaseID := range summary.releaseIDs {
+		ref, cached := releaseCache[releaseID]
+		if !cached {
+			ref = tr.releaseRefLocked(releaseID)
+			if releaseCache != nil {
+				releaseCache[releaseID] = ref
+			}
+		}
+		releaseSet[releaseID] = ref
+	}
+	copy.ResultCount = summary.resultCount
 	copy.AssociatedReleases = releaseRefsFromSet(releaseSet)
-	copy.LastRunTestID = lastRunTestID
-	copy.LastRunAt = lastRunStartedAt
-	copy.LastRunEndedAt = lastRunEndedAt
+	copy.LastRunTestID = summary.lastRunTestID
+	// Clone the timestamps so two clones built from one rollup never share a
+	// mutable pointer, preserving cloneStoredScenarioForReadLocked's contract.
+	copy.LastRunAt = cloneTimePtr(summary.lastRunStartedAt)
+	copy.LastRunEndedAt = cloneTimePtr(summary.lastRunEndedAt)
 	return copy
 }
 

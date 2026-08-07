@@ -1,0 +1,81 @@
+// @vitest-environment jsdom
+
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+
+import type { ScriptDefinition } from '../types/scripts'
+import { DraftJSONReview } from './ScriptImportReviewView'
+
+;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+describe('DraftJSONReview', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  const baseline: ScriptDefinition = {
+    name: 'Baseline',
+    version: '1.0.0',
+    protocol: 'http',
+    config: { base_url: 'https://example.test' },
+    actions: [],
+  }
+  const current: ScriptDefinition = {
+    name: 'Current',
+    version: '1.0.0',
+    protocol: 'http',
+    config: { base_url: 'https://example.test' },
+    actions: [],
+  }
+
+  async function renderReview(jsonTextLength = 100) {
+    await act(async () => {
+      root.render(<DraftJSONReview reviewBaselineScript={baseline} script={current} jsonTextLength={jsonTextLength} />)
+    })
+  }
+
+  async function expandReview() {
+    const details = container.querySelector('details') as HTMLDetailsElement
+    await act(async () => {
+      details.open = true
+      details.dispatchEvent(new Event('toggle'))
+    })
+  }
+
+  it('does not render either JSON preview while collapsed', async () => {
+    await renderReview()
+
+    expect(container.querySelectorAll('pre')).toHaveLength(0)
+    expect(container.textContent).not.toContain('Baseline')
+    expect(container.textContent).not.toContain('Current')
+  })
+
+  it('renders both JSON previews only after expansion', async () => {
+    await renderReview()
+    await expandReview()
+
+    const previews = Array.from(container.querySelectorAll('pre')).map(element => element.textContent)
+    expect(previews).toHaveLength(2)
+    expect(previews[0]).toContain('Baseline')
+    expect(previews[1]).toContain('Current')
+  })
+
+  it('keeps oversized scripts out of the DOM after expansion', async () => {
+    await renderReview(250_001)
+    await expandReview()
+
+    expect(container.querySelectorAll('pre')).toHaveLength(0)
+    expect(container.textContent).toContain('Script too large to preview inline.')
+  })
+})

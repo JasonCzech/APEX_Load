@@ -49,14 +49,25 @@ export function reservationStartISO(preflight?: LaunchPreflightResponse | null) 
   return ceilDateToReservationIncrement(sourceDate).toISOString()
 }
 
+function formatTimeslotInstant(date: Date, timeZone?: string) {
+  try {
+    return date.toLocaleString(undefined, timeZone ? { timeZone } : undefined)
+  } catch {
+    return date.toLocaleString()
+  }
+}
+
 export function formatTimeslotLabel(slot: CapacityTimeslot) {
   const start = new Date(slot.start_at)
   const end = new Date(slot.end_at)
+  // Render the window in the reservation's own IANA zone and name that zone, so
+  // the label never shows a browser-local time beside a foreign zone.
   const window = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
     ? `${slot.start_at} → ${slot.end_at}`
-    : `${start.toLocaleString()} → ${end.toLocaleString()}`
+    : `${formatTimeslotInstant(start, slot.timezone)} → ${formatTimeslotInstant(end, slot.timezone)}`
+  const zone = slot.timezone ? ` ${slot.timezone}` : ''
   const gen = slot.requested_capacity?.generators ? ` · ${slot.requested_capacity.generators} gen` : ''
-  return `${window}${gen}`
+  return `${window}${zone}${gen}`
 }
 
 export function formatReservationWindow(preflight?: LaunchPreflightResponse | null) {

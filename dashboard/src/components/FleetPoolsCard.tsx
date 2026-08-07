@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
+import { useClustersApi } from '../hooks/api/useClustersApi'
+import { useDeploymentTargetsApi } from '../hooks/api/useDeploymentTargetsApi'
 import { useFleetApi } from '../hooks/api/useFleetApi'
+import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { ApiError } from '../hooks/apiClient'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { FleetGeneratorMetadata, FleetPool, FleetProvisioningRequest, ProvisionerInfo } from '../types'
 import ConfirmDestructiveModal from './ConfirmDestructiveModal'
+import type { ClusterConnection } from '../types/cluster'
+import type { DeploymentProvider, DomainDeploymentTarget } from '../types/deploymentTarget'
+import { clustersForProvider, providerLabel } from './deploymentTargetModel'
 import { listAllFleetPools, listAllGeneratorMetadata, runtimePoolMemberCount } from './fleetCatalogModel'
 import './parityPanels.css'
 
@@ -62,6 +68,8 @@ type PoolDraft = {
   id?: string
   name: string
   cloud_provider: string
+  domain_id: string
+  cluster_id: string
   region: string
   min_size: number
   max_size: number
@@ -71,7 +79,17 @@ type PoolDraft = {
 }
 
 function emptyDraft(): PoolDraft {
-  const draft = { name: '', cloud_provider: 'kubernetes', region: '', min_size: 0, max_size: 0, desired_size: 0, status: 'active' }
+  const draft = {
+    name: '',
+    cloud_provider: 'kubernetes',
+    domain_id: '',
+    cluster_id: '',
+    region: '',
+    min_size: 0,
+    max_size: 0,
+    desired_size: 0,
+    status: 'active',
+  }
   return { ...draft, baseline: JSON.stringify(draft) }
 }
 
@@ -80,6 +98,8 @@ function poolDraftSnapshot(draft: Omit<PoolDraft, 'baseline'>): string {
     id: draft.id,
     name: draft.name,
     cloud_provider: draft.cloud_provider,
+    domain_id: draft.domain_id,
+    cluster_id: draft.cluster_id,
     region: draft.region,
     min_size: draft.min_size,
     max_size: draft.max_size,
@@ -131,6 +151,9 @@ function snapshotCaughtUp(
 
 export default function FleetPoolsCard({ canManage = false }: Props) {
   const api = useFleetApi()
+  const clustersApi = useClustersApi()
+  const deploymentTargetsApi = useDeploymentTargetsApi()
+  const repositoryApi = useRepositoryApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [pools, setPools] = useState<FleetPool[]>([])
   const [generatorMetadata, setGeneratorMetadata] = useState<FleetGeneratorMetadata[]>([])
@@ -142,6 +165,9 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
   const [provisionResult, setProvisionResult] = useState<FleetProvisioningRequest | null>(null)
   const [provisionRequests, setProvisionRequests] = useState<FleetProvisioningRequest[]>([])
   const [provisioner, setProvisioner] = useState<ProvisionerInfo | null>(null)
+  const [clusters, setClusters] = useState<ClusterConnection[]>([])
+  const [deploymentTargets, setDeploymentTargets] = useState<DomainDeploymentTarget[]>([])
+  const [domains, setDomains] = useState<{ id: string; name: string }[]>([])
   const [busy, setBusy] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const loadRequestRef = useRef(0)
@@ -290,6 +316,69 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     void load()
   }, [load])
 
+  // Cluster connections and domain targets change rarely and only by
+  // administrator action, so they are loaded once rather than joining the
+  // pool polling loop. A failure here is non-fatal: the selects simply fall
+  // back to being unconstrained, and the server still enforces the rule.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const [clusterList, targetList, domainList] = await Promise.all([
+          clustersApi.listClusters(),
+          deploymentTargetsApi.listDeploymentTargets(),
+          repositoryApi.listDomains(),
+        ])
+        if (cancelled) return
+        setClusters(clusterList.clusters ?? [])
+        setDeploymentTargets(targetList.targets ?? [])
+        setDomains((domainList.domains ?? []).map(domain => ({ id: domain.id, name: domain.name })))
+      } catch {
+        if (!cancelled) {
+          setClusters([])
+          setDeploymentTargets([])
+          setDomains([])
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [clustersApi, deploymentTargetsApi, repositoryApi])
+
+  // The constraint that applies to the pool being edited, if any.
+  const draftTarget = useMemo(() => {
+    const domainId = (draft?.domain_id ?? '').trim()
+    if (domainId === '') return null
+    return deploymentTargets.find(target => target.domain_id === domainId && target.configured) ?? null
+  }, [draft?.domain_id, deploymentTargets])
+
+  const draftProvider = (draftTarget?.provider ?? null) as DeploymentProvider | null
+
+  // Only clusters the domain permits may be bound, so an invalid choice is
+  // impossible to make rather than merely rejected after Save.
+  const eligibleClusters = useMemo(
+    () => clustersForProvider(clusters, draftProvider),
+    [clusters, draftProvider],
+  )
+
+  // Every domain, not only the constrained ones. Listing just the domains that
+  // have a target would (a) force an admin to configure a constraint before a
+  // pool could be scoped at all, and (b) render a pool whose domain target was
+  // later cleared as "Unscoped" while it is in fact still scoped.
+  //
+  // The pool's own domain is always included even if the domain list could not
+  // be loaded, so the select can never misrepresent the stored binding.
+  const domainOptions = useMemo(() => {
+    const byId = new Map(domains.map(domain => [domain.id, domain.name]))
+    for (const target of deploymentTargets) {
+      if (!byId.has(target.domain_id)) byId.set(target.domain_id, target.domain_name || target.domain_id)
+    }
+    const current = (draft?.domain_id ?? '').trim()
+    if (current !== '' && !byId.has(current)) byId.set(current, current)
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [domains, deploymentTargets, draft?.domain_id])
+
   const hasActiveProvisionRequest = useMemo(
     () => provisionRequests.some(request => canCancelProvisionRequest(request.status)),
     [provisionRequests],
@@ -309,6 +398,8 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
     const body: Partial<FleetPool> = {
       name: draft.name.trim(),
       cloud_provider: draft.cloud_provider.trim(),
+      domain_id: draft.domain_id.trim(),
+      cluster_id: draft.cluster_id.trim(),
       region: draft.region.trim() || undefined,
       min_size: draft.min_size,
       max_size: draft.max_size,
@@ -505,7 +596,7 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                     className="btn btn-ghost btn-sm"
                     disabled={busy}
                     onClick={() => {
-                      const next = { id: pool.id, name: pool.name, cloud_provider: pool.cloud_provider, region: pool.region || '', min_size: pool.min_size ?? 0, max_size: pool.max_size ?? 0, desired_size: pool.desired_size ?? 0, status: pool.status }
+                      const next = { id: pool.id, name: pool.name, cloud_provider: pool.cloud_provider, domain_id: pool.domain_id || '', cluster_id: pool.cluster_id || '', region: pool.region || '', min_size: pool.min_size ?? 0, max_size: pool.max_size ?? 0, desired_size: pool.desired_size ?? 0, status: pool.status }
                       setDraft({ ...next, baseline: poolDraftSnapshot(next) })
                     }}
                   >
@@ -589,12 +680,71 @@ export default function FleetPoolsCard({ canManage = false }: Props) {
                 </label>
                 <label className="pp-field">
                   <span>Cloud provider</span>
-                  <select value={draft.cloud_provider} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, cloud_provider: e.target.value } : d))}>
-                    <option value="kubernetes">kubernetes</option>
-                    <option value="aws">aws</option>
-                    <option value="azure">azure</option>
-                    <option value="gcp">gcp</option>
-                    <option value="static">static</option>
+                  {draftProvider ? (
+                    // Derived, not chosen: once a domain constrains the pool the
+                    // provider follows from the domain's deployment target, so
+                    // the field stops being decorative free text.
+                    <input value={providerLabel(draftProvider)} disabled readOnly data-testid="pool-derived-provider" />
+                  ) : (
+                    <select value={draft.cloud_provider} disabled={busy} onChange={e => setDraft(d => (d ? { ...d, cloud_provider: e.target.value } : d))}>
+                      <option value="kubernetes">kubernetes</option>
+                      <option value="aws">aws</option>
+                      <option value="azure">azure</option>
+                      <option value="gcp">gcp</option>
+                      <option value="static">static</option>
+                    </select>
+                  )}
+                </label>
+              </div>
+              <div className="pp-field-row">
+                <label className="pp-field">
+                  <span>Domain</span>
+                  <select
+                    value={draft.domain_id}
+                    disabled={busy}
+                    data-testid="pool-domain"
+                    onChange={e =>
+                      setDraft(d => {
+                        if (!d) return d
+                        const domainId = e.target.value
+                        const target = deploymentTargets.find(
+                          candidate => candidate.domain_id === domainId && candidate.configured,
+                        )
+                        return {
+                          ...d,
+                          domain_id: domainId,
+                          // Adopt the domain's default cluster, and drop a
+                          // binding the new domain would refuse anyway.
+                          cluster_id: target ? (target.default_cluster_id ?? '') : d.cluster_id,
+                          cloud_provider: target?.provider ?? d.cloud_provider,
+                        }
+                      })
+                    }
+                  >
+                    <option value="">Unscoped (no domain constraint)</option>
+                    {domainOptions.map(option => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="pp-field">
+                  <span>Cluster connection</span>
+                  <select
+                    value={draft.cluster_id}
+                    disabled={busy}
+                    data-testid="pool-cluster"
+                    onChange={e => setDraft(d => (d ? { ...d, cluster_id: e.target.value } : d))}
+                  >
+                    <option value="">
+                      {draftProvider ? 'Select a cluster…' : 'Controller default (env-configured)'}
+                    </option>
+                    {eligibleClusters.map(cluster => (
+                      <option key={cluster.id} value={cluster.id}>
+                        {cluster.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>

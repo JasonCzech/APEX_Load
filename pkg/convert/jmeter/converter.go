@@ -1307,28 +1307,13 @@ func simpleJMeterCondition(raw string) (dsl.Condition, bool) {
 // must not hang a VUser.
 const jmeterWhileLoopSafetyCap = 100
 
-// jmeterSamplerScopedHeaders collects HeaderManager entries nested beneath one
-// sampler. In JMeter a HeaderManager placed inside a sampler's hashTree applies
-// to that sampler only, unlike a thread-group-level manager which applies to
-// every sampler beneath it. Nested controllers are not descended into: their
-// samplers are converted separately and would inherit the wrong scope.
-func jmeterSamplerScopedHeaders(sampler *treeNode) dsl.HeaderList {
-	if sampler == nil {
-		return nil
-	}
-	var headers dsl.HeaderList
-	for _, child := range sampler.Children {
-		if child == nil || child.Element == nil {
-			continue
-		}
-		if child.Element.Name != "HeaderManager" {
-			continue
-		}
-		headers = append(headers, parseHeaders(child.Element)...)
-	}
-	return headers
-}
-
+// jmeterSamplerScope collects the HeaderManager, timer and ResponseAssertion
+// entries nested beneath one sampler. In JMeter such an element placed inside a
+// sampler's hashTree applies to that sampler only, unlike a thread-group-level
+// element which applies to every sampler beneath it. Nested controllers are not
+// descended into: their samplers are converted separately and would inherit the
+// wrong scope. Disabled children are skipped so an element JMeter would never
+// run cannot alter the imported request.
 func jmeterSamplerScope(sampler *treeNode, diagnostics *diag.Collector) (dsl.HeaderList, int, int, []dsl.Assertion) {
 	if sampler == nil {
 		return nil, 0, 0, nil

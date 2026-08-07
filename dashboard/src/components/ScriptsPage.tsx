@@ -26,6 +26,10 @@ import {
   formatSourceSecretSessionFailure,
   sourceSecretSessionIsExpired,
 } from './sourceSecretSession'
+import {
+  beginScriptSecretStatusRequest,
+  isLatestScriptSecretStatusRequest,
+} from './scriptSecretStatusRequest'
 import { requiredScriptSecrets } from './scriptSecretReferenceModel'
 import { loadGitHubScriptStatuses } from './scriptGitHubStatusModel'
 
@@ -52,16 +56,6 @@ type ScriptSecretStatusPlan = {
   projectId?: string
   required: string[]
   signature: string
-}
-
-export function beginScriptSecretStatusRequest(tokens: Map<string, number>, scriptId: string): number {
-  const token = (tokens.get(scriptId) || 0) + 1
-  tokens.set(scriptId, token)
-  return token
-}
-
-export function isLatestScriptSecretStatusRequest(tokens: ReadonlyMap<string, number>, scriptId: string, token: number): boolean {
-  return tokens.get(scriptId) === token
 }
 
 function buildScriptSecretStatusPlans(

@@ -354,6 +354,34 @@ export interface SettingsValidationIssue {
   message: string
 }
 
+// Mirrors trustedProxyGateConfigured() in pkg/api/auth_resolution.go, including
+// its trim-per-CIDR semantics.
+export function trustedProxyGateConfigured(auth: DashboardSystemSettings['auth']): boolean {
+  return (auth.trusted_proxy_cidrs ?? []).some(cidr => cidr.trim() !== '')
+    || Boolean(auth.trusted_proxy_secret_env_var?.trim())
+}
+
+// Posture the controller actually booted/serves with, latched from every server
+// settings payload (see normalizeDashboardSystemSettings).
+//
+// The trusted-proxy-gate requirement is production-only on the server: it is a
+// hard boot failure under APEXLOAD_ENV=production (pkg/api/server.go
+// enforceAuthPosture) and only a slog.Warn plus "legacy behavior" pass-through
+// otherwise (enforceTrustedProxyGate, pkg/api/auth_resolution.go). A controller
+// that is serving settings while its *saved* auth is trusted_headers with no
+// gate therefore proves it is not running in production. Grandfathering that
+// saved posture keeps the page-global save block (canSave in SettingsPage is
+// gated on the whole issue list) from stranding such an install on unrelated
+// settings, whose only escape would be configuring a proxy gate that then
+// rejects every request not matching it — a self-inflicted lockout.
+let serverAuthPostureUngatedTrustedHeaders = false
+
+export function noteServerAuthPosture(auth?: DashboardSystemSettings['auth']): void {
+  serverAuthPostureUngatedTrustedHeaders = !!auth
+    && normalizeDashboardAuthMode(auth.mode) === 'trusted_headers'
+    && !trustedProxyGateConfigured(auth)
+}
+
 export type TelemetryBudgetKey =
   | 'max_telemetry_sample_age_ms'
   | 'max_telemetry_generator_lag_ms'
@@ -633,6 +661,15 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
     if (!settings.auth.roles_header.trim() && !settings.auth.project_roles_header.trim()) {
       push('general', 'authentication', 'auth.roles_header', 'Trusted header auth requires a roles header or project roles header.')
     }
+    // Mirrors trustedProxyGateConfigured/enforceAuthPosture in pkg/api: without a
+    // trust boundary the controller refuses to boot under APEXLOAD_ENV=production,
+    // so block the save rather than let the restart brick the platform. The rule
+    // is production-only server-side, so an install whose saved posture is already
+    // ungated trusted_headers (proof it is not production, see
+    // noteServerAuthPosture) keeps saving unrelated settings.
+    if (!trustedProxyGateConfigured(settings.auth) && !serverAuthPostureUngatedTrustedHeaders) {
+      push('general', 'authentication', 'auth.trusted_proxy_cidrs', 'Trusted header auth requires a trusted proxy CIDR allowlist or a trusted proxy secret environment variable; without one the controller refuses to start in production. Use the source address the controller sees for the gateway — once a gate is set, requests from any other source are rejected.')
+    }
     const authURLFields: Array<[string, string | undefined]> = [
       ['Login URL', settings.auth.login_url],
       ['Logout URL', settings.auth.logout_url],
@@ -746,6 +783,9 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
 }
 
 export function normalizeDashboardSystemSettings(settings: DashboardSystemSettings): DashboardSystemSettings {
+  // Only server payloads (initial load and save responses) reach this function,
+  // so it is the one place that sees the persisted auth posture.
+  noteServerAuthPosture(settings.auth)
   return {
     revision: typeof settings.revision === 'string' ? settings.revision : '',
     general: {

@@ -233,13 +233,13 @@ type PacingRuntimeConfig struct {
 }
 
 type TokenBucket struct {
-	tokens          chan struct{}
-	interval        time.Duration
-	done            chan struct{}
-	mu              sync.Mutex
-	paused          bool
-	resumeNotBefore time.Time
-	stopOnce        sync.Once
+	tokens   chan struct{}
+	interval time.Duration
+	done     chan struct{}
+	reset    chan struct{}
+	mu       sync.Mutex
+	paused   bool
+	stopOnce sync.Once
 }
 
 // maxTokenBucketCapacity bounds the buffered token channel so a pathologically
@@ -263,6 +263,7 @@ func NewTokenBucket(tps float64) *TokenBucket {
 		tokens:   make(chan struct{}, capacity),
 		interval: interval,
 		done:     make(chan struct{}),
+		reset:    make(chan struct{}, 1),
 	}
 	go tb.fill()
 	return tb
@@ -307,6 +308,7 @@ func (tb *TokenBucket) SetPaused(paused bool) {
 		return
 	}
 	tb.mu.Lock()
+	changed := tb.paused != paused
 	tb.paused = paused
 	if paused {
 		for {
@@ -314,45 +316,102 @@ func (tb *TokenBucket) SetPaused(paused bool) {
 			case <-tb.tokens:
 			default:
 				tb.mu.Unlock()
+				if changed {
+					tb.signalTimerReset()
+				}
 				return
 			}
 		}
 	}
-	tb.resumeNotBefore = time.Now().Add(tb.interval)
 	tb.mu.Unlock()
+	if changed {
+		tb.signalTimerReset()
+	}
+}
+
+func (tb *TokenBucket) signalTimerReset() {
+	select {
+	case tb.reset <- struct{}{}:
+	default:
+	}
 }
 
 func (tb *TokenBucket) fill() {
-	ticker := time.NewTicker(tb.interval)
-	defer ticker.Stop()
+	timer := time.NewTimer(tb.interval)
+	defer timer.Stop()
+	timerC := timer.C
 	last := time.Now()
+	// pausedProgress carries the portion of the in-flight fill interval that had
+	// already elapsed when a pause began. Paused wall time still earns nothing,
+	// but resuming charges only the remainder instead of restarting the interval
+	// from scratch — otherwise every resume costs a full pacing interval of dead
+	// time before the first credit, which is a visible stall at low tps.
+	var pausedProgress time.Duration
+	// fillPaused mirrors the pause state this goroutine has already applied to
+	// the timer. Reset signals are coalesced through a buffered-by-1 channel, so
+	// a pause that is immediately undone — the generator service rolls back a
+	// failed pause by resuming the same engines microseconds later — can reach
+	// this loop as a single signal, or as two signals that both observe the
+	// settled running state. Stopping and restarting the timer for a signal that
+	// carries no net transition would discard the in-flight interval progress
+	// this bookkeeping exists to preserve, costing a full pacing interval of
+	// throughput per rolled-back pause.
+	fillPaused := false
 	for {
 		select {
 		case <-tb.done:
 			return
-		case now := <-ticker.C:
+		case <-tb.reset:
+			tb.mu.Lock()
+			paused := tb.paused
+			tb.mu.Unlock()
+			if paused == fillPaused {
+				continue
+			}
+			fillPaused = paused
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			now := time.Now()
+			if paused {
+				pausedProgress = now.Sub(last)
+				if pausedProgress < 0 {
+					pausedProgress = 0
+				}
+				if pausedProgress > tb.interval {
+					pausedProgress = tb.interval
+				}
+				last = now
+				timerC = nil
+				continue
+			}
+			remaining := tb.interval - pausedProgress
+			if remaining <= 0 {
+				remaining = time.Nanosecond
+			}
+			// Backdate last by the preserved progress so the credit accounting in
+			// addTokensForElapsed still sees exactly one whole interval elapse.
+			last = now.Add(-pausedProgress)
+			pausedProgress = 0
+			timer.Reset(remaining)
+			timerC = timer.C
+		case now := <-timerC:
 			elapsed := now.Sub(last)
 			last = now
-			tb.addTokensForElapsedAt(elapsed, now)
+			tb.addTokensForElapsed(elapsed)
+			timer.Reset(tb.interval)
 		}
 	}
 }
 
 func (tb *TokenBucket) addTokensForElapsed(elapsed time.Duration) {
-	tb.addTokensForElapsedAt(elapsed, time.Time{})
-}
-
-func (tb *TokenBucket) addTokensForElapsedAt(elapsed time.Duration, now time.Time) {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
 	if tb.paused {
 		return
-	}
-	if !now.IsZero() && !tb.resumeNotBefore.IsZero() {
-		if now.Before(tb.resumeNotBefore) {
-			return
-		}
-		tb.resumeNotBefore = time.Time{}
 	}
 	due := tokenBucketTokensForElapsed(elapsed, tb.interval)
 	for i := 0; i < due; i++ {

@@ -10907,6 +10907,102 @@ export interface operations {
       };
     };
   };
+  "handleCreateClusterConnection": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "api_server_url"?: string;
+          "auth_mode"?: string;
+          "aws_access_key_id"?: string;
+          "aws_cluster_name"?: string;
+          "aws_credential_mode"?: string;
+          "aws_external_id"?: (string) | null;
+          "aws_region"?: string;
+          "aws_role_arn"?: string;
+          "aws_secret_access_key"?: (string) | null;
+          "aws_sts_endpoint"?: string;
+          "azure_authority"?: string;
+          "azure_client_id"?: string;
+          "azure_scope"?: string;
+          "azure_tenant_id"?: string;
+          "ca_certificate_pem"?: string;
+          "client_secret"?: (string) | null;
+          "client_secret_env_var"?: (string) | null;
+          "description"?: string;
+          "generator_container"?: string;
+          "generator_selector"?: string;
+          "generator_stateful_set"?: string;
+          "kind"?: string;
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "namespace"?: string;
+          "static_token"?: (string) | null;
+          "status"?: string;
+          "tls_mode"?: string;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "api_server_url"?: string;
+            "auth_description"?: string;
+            "auth_mode": string;
+            "aws_access_key_id"?: string;
+            "aws_cluster_name"?: string;
+            "aws_credential_mode"?: string;
+            "aws_region"?: string;
+            "aws_role_arn"?: string;
+            "aws_sts_endpoint"?: string;
+            "azure_client_id"?: string;
+            "azure_tenant_id"?: string;
+            "ca_certificate_pem"?: string;
+            "client_secret_env_var"?: string;
+            "created_at": string;
+            "credential_source": string;
+            "description"?: string;
+            "generator_container"?: string;
+            "generator_selector"?: string;
+            "generator_stateful_set"?: string;
+            "has_aws_external_id": boolean;
+            "has_client_secret": boolean;
+            "id": string;
+            "kind": string;
+            "labels"?: Record<string, string>;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "namespace": string;
+            "status": string;
+            "tls_mode": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateCorrelationRuleset": {
     parameters?: never;
     requestBody: {
@@ -11386,10 +11482,28 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "allocation"?: ({
+            "cpu_limit"?: string;
+            "cpu_request"?: string;
+            "memory_limit"?: string;
+            "memory_request"?: string;
+            "node_pool"?: string;
+            "node_pool_label"?: string;
+            "node_selector"?: Record<string, string>;
+            "tolerations"?: Array<{
+              "effect"?: string;
+              "key"?: string;
+              "operator"?: string;
+              "value"?: string;
+            }>;
+            "zone"?: string;
+          }) | null;
           "cloud_provider"?: string;
+          "cluster_id"?: string;
           "created_at"?: string;
           "description"?: string;
           "desired_size"?: number;
+          "domain_id"?: string;
           "id"?: string;
           "max_size"?: number;
           "members"?: Array<({
@@ -11426,6 +11540,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -19304,6 +19423,42 @@ export interface operations {
       };
     };
   };
+  "handleDeleteClusterConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDeleteCorrelationRuleset": {
     parameters: {
       "path": {
@@ -19474,7 +19629,61 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteDomainDeploymentTarget": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "configured": boolean;
+            "created_at"?: string;
+            "default_cluster_id"?: string;
+            "default_cluster_name"?: string;
+            "domain_id": string;
+            "domain_name"?: string;
+            "provider"?: string;
+            "scoped_pool_count": number;
+            "updated_at"?: string;
+            "updated_by_subject"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -23497,6 +23706,78 @@ export interface operations {
       };
     };
   };
+  "handleFleetPoolAllocationPreflight": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "cluster_id"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "allocation"?: ({
+              "cpu_limit"?: string;
+              "cpu_request"?: string;
+              "memory_limit"?: string;
+              "memory_request"?: string;
+              "node_pool"?: string;
+              "node_pool_label"?: string;
+              "node_selector"?: Record<string, string>;
+              "tolerations"?: Array<{
+                "effect"?: string;
+                "key"?: string;
+                "operator"?: string;
+                "value"?: string;
+              }>;
+              "zone"?: string;
+            }) | null;
+            "applied": boolean;
+            "cluster_id"?: string;
+            "container"?: string;
+            "pool_id": string;
+            "preflight"?: ({
+              "allowed": boolean;
+              "cpu_millis_delta": number;
+              "memory_bytes_delta": number;
+              "pods_delta": number;
+              "quota_enforced": boolean;
+              "reasons"?: Array<string>;
+              "warnings"?: Array<string>;
+            }) | null;
+            "warnings"?: Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleFocusBrowserRecording": {
     parameters: {
       "path": {
@@ -25342,6 +25623,135 @@ export interface operations {
       };
     };
   };
+  "handleGetClusterCapacity": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "cluster_id": string;
+            "generator_workload"?: ({
+              "container"?: string;
+              "container_names"?: Array<string>;
+              "current_limits"?: Record<string, string>;
+              "current_requests"?: Record<string, string>;
+              "name": string;
+              "node_selector"?: Record<string, string>;
+              "ready_replicas": number;
+              "replicas": number;
+              "update_strategy"?: string;
+              "warnings"?: Array<string>;
+            }) | null;
+            "namespace": string;
+            "node_capacity": {
+              "available": boolean;
+              "label_values"?: Record<string, Array<string>>;
+              "node_pools"?: Array<{
+                "allocatable_cpu_millis": number;
+                "allocatable_memory_bytes": number;
+                "label"?: string;
+                "name": string;
+                "node_count": number;
+                "schedulable_nodes": number;
+                "taints"?: Array<string>;
+                "zone"?: string;
+              }>;
+              "unavailable_reason"?: string;
+            };
+            "quotas": Array<{
+              "hard"?: Record<string, string>;
+              "name": string;
+              "used"?: Record<string, string>;
+            }>;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetClusterConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "api_server_url"?: string;
+            "auth_description"?: string;
+            "auth_mode": string;
+            "aws_access_key_id"?: string;
+            "aws_cluster_name"?: string;
+            "aws_credential_mode"?: string;
+            "aws_region"?: string;
+            "aws_role_arn"?: string;
+            "aws_sts_endpoint"?: string;
+            "azure_client_id"?: string;
+            "azure_tenant_id"?: string;
+            "ca_certificate_pem"?: string;
+            "client_secret_env_var"?: string;
+            "created_at": string;
+            "credential_source": string;
+            "description"?: string;
+            "generator_container"?: string;
+            "generator_selector"?: string;
+            "generator_stateful_set"?: string;
+            "has_aws_external_id": boolean;
+            "has_client_secret": boolean;
+            "id": string;
+            "kind": string;
+            "labels"?: Record<string, string>;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "namespace": string;
+            "status": string;
+            "tls_mode": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetCollectorMetrics": {
     parameters: {
       "path": {
@@ -25579,6 +25989,55 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetDomainDeploymentTarget": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "configured": boolean;
+            "created_at"?: string;
+            "default_cluster_id"?: string;
+            "default_cluster_name"?: string;
+            "domain_id": string;
+            "domain_name"?: string;
+            "provider"?: string;
+            "scoped_pool_count": number;
+            "updated_at"?: string;
+            "updated_by_subject"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -25903,10 +26362,28 @@ export interface operations {
       "200": {
         content: {
           "application/json": ({
+            "allocation"?: ({
+              "cpu_limit"?: string;
+              "cpu_request"?: string;
+              "memory_limit"?: string;
+              "memory_request"?: string;
+              "node_pool"?: string;
+              "node_pool_label"?: string;
+              "node_selector"?: Record<string, string>;
+              "tolerations"?: Array<{
+                "effect"?: string;
+                "key"?: string;
+                "operator"?: string;
+                "value"?: string;
+              }>;
+              "zone"?: string;
+            }) | null;
             "cloud_provider": string;
+            "cluster_id"?: string;
             "created_at": string;
             "description"?: string;
             "desired_size"?: number;
+            "domain_id"?: string;
             "id": string;
             "max_size"?: number;
             "members"?: Array<({
@@ -40269,6 +40746,35 @@ export interface operations {
       };
     };
   };
+  "handleListClusterConnections": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleListCorrelationRules": {
     parameters?: never;
     requestBody?: never;
@@ -40517,6 +41023,50 @@ export interface operations {
         };
       };
       "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListDomainDeploymentTargets": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "selectable_providers": Array<string>;
+            "targets": Array<{
+              "configured": boolean;
+              "created_at"?: string;
+              "default_cluster_id"?: string;
+              "default_cluster_name"?: string;
+              "domain_id": string;
+              "domain_name"?: string;
+              "provider"?: string;
+              "scoped_pool_count": number;
+              "updated_at"?: string;
+              "updated_by_subject"?: string;
+            }>;
+            "total": number;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -42798,6 +43348,11 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -69842,6 +70397,51 @@ export interface operations {
       };
     };
   };
+  "handleTestClusterConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "checked_at": string;
+            "probes": Array<{
+              "message"?: string;
+              "ok": boolean;
+              "optional"?: boolean;
+              "probe": string;
+              "status_code"?: number;
+            }>;
+            "server_version"?: string;
+            "status": string;
+            "summary": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestPowerBIConnection": {
     parameters?: never;
     requestBody?: never;
@@ -73146,6 +73746,111 @@ export interface operations {
       };
     };
   };
+  "handleUpdateClusterConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "api_server_url"?: string;
+          "auth_mode"?: string;
+          "aws_access_key_id"?: string;
+          "aws_cluster_name"?: string;
+          "aws_credential_mode"?: string;
+          "aws_external_id"?: (string) | null;
+          "aws_region"?: string;
+          "aws_role_arn"?: string;
+          "aws_secret_access_key"?: (string) | null;
+          "aws_sts_endpoint"?: string;
+          "azure_authority"?: string;
+          "azure_client_id"?: string;
+          "azure_scope"?: string;
+          "azure_tenant_id"?: string;
+          "ca_certificate_pem"?: string;
+          "client_secret"?: (string) | null;
+          "client_secret_env_var"?: (string) | null;
+          "description"?: string;
+          "generator_container"?: string;
+          "generator_selector"?: string;
+          "generator_stateful_set"?: string;
+          "kind"?: string;
+          "labels"?: Record<string, string>;
+          "name"?: string;
+          "namespace"?: string;
+          "static_token"?: (string) | null;
+          "status"?: string;
+          "tls_mode"?: string;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "api_server_url"?: string;
+            "auth_description"?: string;
+            "auth_mode": string;
+            "aws_access_key_id"?: string;
+            "aws_cluster_name"?: string;
+            "aws_credential_mode"?: string;
+            "aws_region"?: string;
+            "aws_role_arn"?: string;
+            "aws_sts_endpoint"?: string;
+            "azure_client_id"?: string;
+            "azure_tenant_id"?: string;
+            "ca_certificate_pem"?: string;
+            "client_secret_env_var"?: string;
+            "created_at": string;
+            "credential_source": string;
+            "description"?: string;
+            "generator_container"?: string;
+            "generator_selector"?: string;
+            "generator_stateful_set"?: string;
+            "has_aws_external_id": boolean;
+            "has_client_secret": boolean;
+            "id": string;
+            "kind": string;
+            "labels"?: Record<string, string>;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "namespace": string;
+            "status": string;
+            "tls_mode": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUpdateCorrelationRuleset": {
     parameters: {
       "path": {
@@ -73438,6 +74143,83 @@ export interface operations {
       };
     };
   };
+  "handleUpdateDomainDeploymentTarget": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "default_cluster_id"?: string;
+          "provider"?: string;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "configured": boolean;
+            "created_at"?: string;
+            "default_cluster_id"?: string;
+            "default_cluster_name"?: string;
+            "domain_id": string;
+            "domain_name"?: string;
+            "provider"?: string;
+            "scoped_pool_count": number;
+            "updated_at"?: string;
+            "updated_by_subject"?: string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleUpdateExecutionPlan": {
     parameters: {
       "path": {
@@ -73656,10 +74438,28 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "allocation"?: ({
+            "cpu_limit"?: string;
+            "cpu_request"?: string;
+            "memory_limit"?: string;
+            "memory_request"?: string;
+            "node_pool"?: string;
+            "node_pool_label"?: string;
+            "node_selector"?: Record<string, string>;
+            "tolerations"?: Array<{
+              "effect"?: string;
+              "key"?: string;
+              "operator"?: string;
+              "value"?: string;
+            }>;
+            "zone"?: string;
+          }) | null;
           "cloud_provider"?: string;
+          "cluster_id"?: (string) | null;
           "created_at"?: string;
           "description"?: string;
           "desired_size"?: number;
+          "domain_id"?: (string) | null;
           "id"?: string;
           "max_size"?: number;
           "members"?: Array<({
@@ -73716,6 +74516,106 @@ export interface operations {
         };
       };
       "501": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateFleetPoolAllocation": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "cluster_id"?: string;
+          "cpu_limit"?: string;
+          "cpu_request"?: string;
+          "memory_limit"?: string;
+          "memory_request"?: string;
+          "node_pool"?: string;
+          "node_pool_label"?: string;
+          "node_selector"?: Record<string, string>;
+          "tolerations"?: Array<{
+            "effect"?: string;
+            "key"?: string;
+            "operator"?: string;
+            "value"?: string;
+          }>;
+          "updated_at"?: string;
+          "zone"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "allocation"?: ({
+              "cpu_limit"?: string;
+              "cpu_request"?: string;
+              "memory_limit"?: string;
+              "memory_request"?: string;
+              "node_pool"?: string;
+              "node_pool_label"?: string;
+              "node_selector"?: Record<string, string>;
+              "tolerations"?: Array<{
+                "effect"?: string;
+                "key"?: string;
+                "operator"?: string;
+                "value"?: string;
+              }>;
+              "zone"?: string;
+            }) | null;
+            "applied": boolean;
+            "cluster_id"?: string;
+            "container"?: string;
+            "pool_id": string;
+            "preflight"?: ({
+              "allowed": boolean;
+              "cpu_millis_delta": number;
+              "memory_bytes_delta": number;
+              "pods_delta": number;
+              "quota_enforced": boolean;
+              "reasons"?: Array<string>;
+              "warnings"?: Array<string>;
+            }) | null;
+            "warnings"?: Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -82432,6 +83332,12 @@ export interface paths {
     "put": operations["handleUpdateFleetPool"];
     "delete": operations["handleDeleteFleetPool"];
   };
+  "/api/v1/fleet/pools/{id}/allocation": {
+    "put": operations["handleUpdateFleetPoolAllocation"];
+  };
+  "/api/v1/fleet/pools/{id}/allocation/preflight": {
+    "get": operations["handleFleetPoolAllocationPreflight"];
+  };
   "/api/v1/fleet/provision-requests": {
     "get": operations["handleListProvisioningRequests"];
     "post": operations["handleCreateProvisioningRequest"];
@@ -83145,6 +84051,21 @@ export interface paths {
   "/api/v1/system/browser-benchmarks": {
     "get": operations["handleGetBrowserBenchmarkEvidence"];
   };
+  "/api/v1/system/clusters": {
+    "get": operations["handleListClusterConnections"];
+    "post": operations["handleCreateClusterConnection"];
+  };
+  "/api/v1/system/clusters/{id}": {
+    "get": operations["handleGetClusterConnection"];
+    "put": operations["handleUpdateClusterConnection"];
+    "delete": operations["handleDeleteClusterConnection"];
+  };
+  "/api/v1/system/clusters/{id}/capacity": {
+    "get": operations["handleGetClusterCapacity"];
+  };
+  "/api/v1/system/clusters/{id}/test": {
+    "post": operations["handleTestClusterConnection"];
+  };
   "/api/v1/system/deployment-lease": {
     "get": operations["handleGetDeploymentLease"];
   };
@@ -83156,6 +84077,14 @@ export interface paths {
   };
   "/api/v1/system/deployment-lease/renew": {
     "post": operations["handleRenewDeploymentLease"];
+  };
+  "/api/v1/system/deployment-targets": {
+    "get": operations["handleListDomainDeploymentTargets"];
+  };
+  "/api/v1/system/deployment-targets/{id}": {
+    "get": operations["handleGetDomainDeploymentTarget"];
+    "put": operations["handleUpdateDomainDeploymentTarget"];
+    "delete": operations["handleDeleteDomainDeploymentTarget"];
   };
   "/api/v1/system/entitlements": {
     "get": operations["handleGetEntitlements"];

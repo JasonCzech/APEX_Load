@@ -62,6 +62,25 @@ func enqueueArchiveVersionCleanupTx(tx *storeTx, projectID string, record *RunAr
 	return nil
 }
 
+// enqueuePendingArchiveObjectCleanupTx covers the deletion case where a test has
+// BOTH a catalogued publication and a still-pending finalization intent. The two
+// rows normally describe the same object, but during a refresh the intent is
+// advanced to the new version before run_archives is, so a delete in that window
+// would otherwise queue only the old object and drop the new one's pointer with
+// the intent row. Enqueuing the divergent intent as a version-cleanup job keeps
+// object storage reachable from the outbox; identical pointers are skipped so a
+// normal delete still produces exactly one cleanup job.
+func enqueuePendingArchiveObjectCleanupTx(tx *storeTx, projectID string, published *RunArchiveRecord, pending *ArchiveFinalizationJob) error {
+	if tx == nil || pending == nil {
+		return nil
+	}
+	pointer := archivePublicationPointer(&pending.ArchiveRecord)
+	if pointer == "" || pointer == archivePublicationPointer(published) {
+		return nil
+	}
+	return enqueueArchiveVersionCleanupTx(tx, projectID, &pending.ArchiveRecord)
+}
+
 func archiveVersionCleanupID(record *RunArchiveRecord) string {
 	if record == nil {
 		return ""
@@ -252,6 +271,18 @@ func (s *SQLiteStore) SaveArchiveCleanupJob(job *ArchiveCleanupJob) error {
 	if err := enqueueArchiveCleanupTx(tx, job.ProjectID, &job.ArchiveRecord); err != nil {
 		return err
 	}
+	// Same intersection deleteTestGraphTx covers: a refresh in flight has already
+	// advanced the pending intent to a NEW object while the catalog still names
+	// the previous one. The DELETE below drops that intent row, and object
+	// deletion is version-scoped, so the divergent object has to be queued here
+	// or its bytes stay in object storage with nothing referencing them.
+	pending, pendingErr := getArchiveFinalizationJobTx(tx, job.TestID)
+	if pendingErr != nil && !errors.Is(pendingErr, sql.ErrNoRows) {
+		return pendingErr
+	}
+	if err := enqueuePendingArchiveObjectCleanupTx(tx, job.ProjectID, &job.ArchiveRecord, pending); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM archive_finalization_jobs WHERE test_id = ?`, job.TestID); err != nil {
 		return err
 	}
@@ -305,6 +336,17 @@ func (s *SQLiteStore) SaveArchiveCleanupJobIfArchiveUnchanged(job *ArchiveCleanu
 		return false, nil
 	}
 	if err := enqueueArchiveCleanupTx(tx, job.ProjectID, &job.ArchiveRecord); err != nil {
+		return false, err
+	}
+	// The CAS above proves the catalog still names the caller's publication; it
+	// says nothing about the pending intent, which a mid-flight refresh may have
+	// already advanced to a different object. Queue that object before the DELETE
+	// drops the only row still pointing at it.
+	pending, pendingErr := getArchiveFinalizationJobTx(tx, job.TestID)
+	if pendingErr != nil && !errors.Is(pendingErr, sql.ErrNoRows) {
+		return false, pendingErr
+	}
+	if err := enqueuePendingArchiveObjectCleanupTx(tx, job.ProjectID, &job.ArchiveRecord, pending); err != nil {
 		return false, err
 	}
 	if _, err := tx.Exec(`DELETE FROM archive_finalization_jobs WHERE test_id = ?`, job.TestID); err != nil {

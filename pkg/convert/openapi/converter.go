@@ -1900,13 +1900,29 @@ func openAPIEffectiveRedirects(maximum *int) requestimport.Redirects {
 	return requestimport.Redirects{Mode: requestimport.RedirectLimited, Max: *maximum}
 }
 
+// openAPIUnsafeSharedProjectionCodes lists the review reason codes that must
+// disable shared credential projection for an OpenAPI action, because the draft
+// body the adapter produced is not the faithful wire payload the shared
+// projector expects (a blocked zero-value draft, or a scrubbed rendering of an
+// example that could not be marshalled).
+//
+// The set is pinned in both directions: TestOpenAPIUnsafeSharedProjectionCodesMatchExpectation
+// compares it against an independently declared list, so entries cannot be added
+// or dropped unnoticed, and TestOpenAPIUnsafeSharedProjectionCodesAreReachable
+// requires a converter fixture per code, so the set cannot silently accumulate
+// dead entries. Authored XML and structured examples are deliberately absent —
+// the shared projector owns those wire formats (credentialpolicy.ProjectXML and
+// Preserve-mode JSON pointer locators), so gating them here would only make
+// faithful imports non-executable.
+var openAPIUnsafeSharedProjectionCodes = map[string]struct{}{
+	"sensitive_non_string_schema": {},
+	"malformed_authored_example":  {},
+}
+
 func openAPISharedCredentialProjectionSafe(action dsl.Action) bool {
 	if review, ok := action.Metadata["import_review"].(map[string]any); ok {
 		for _, code := range stringSlice(review["reason_codes"]) {
-			switch code {
-			case "sensitive_non_string_example", "sensitive_non_string_schema",
-				"unsafe_xml_credential_projection", "unsafe_structured_credential_projection",
-				"malformed_authored_example":
+			if _, unsafe := openAPIUnsafeSharedProjectionCodes[code]; unsafe {
 				return false
 			}
 		}
@@ -2786,13 +2802,12 @@ func renderGovernedExample(value any, contentType string) (string, []string) {
 		return strings.Join(parts, "&"), nil
 	}
 	if strings.Contains(lowerContentType, "json") {
-		projected, unsafe := projectJSONExampleCredentials(value, nil)
-		encoded, err := json.MarshalIndent(projected, "", "  ")
+		// Typed credential examples are deliberately retained as authored. The
+		// shared credential projector records runtime locators without coercing
+		// JSON numbers, booleans, objects, or arrays into lossy placeholders.
+		encoded, err := json.MarshalIndent(value, "", "  ")
 		if err != nil {
 			return scrub.Value(renderExample(value, contentType), scrub.Policy{}), []string{"malformed_authored_example"}
-		}
-		if unsafe {
-			return string(encoded), []string{"sensitive_non_string_example"}
 		}
 		return string(encoded), nil
 	}
@@ -2944,40 +2959,6 @@ func multipartContentTypeWithBoundary(contentType, boundary string) string {
 		mediaType = "multipart/form-data"
 	}
 	return mediaType + "; boundary=" + boundary
-}
-
-func projectJSONExampleCredentials(value any, path []string) (any, bool) {
-	switch typed := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(typed))
-		unsafe := false
-		for key, child := range typed {
-			childPath := append(append([]string(nil), path...), key)
-			if credential.SensitiveName(key) {
-				// Authored examples are executable source data. Preserve their
-				// exact JSON type and value; the shared projector records the
-				// review finding without converting a number, boolean, object,
-				// or array to a placeholder the operator must reconstruct.
-				out[key] = child
-				continue
-			}
-			projected, childUnsafe := projectJSONExampleCredentials(child, childPath)
-			out[key] = projected
-			unsafe = unsafe || childUnsafe
-		}
-		return out, unsafe
-	case []any:
-		out := make([]any, len(typed))
-		unsafe := false
-		for index, child := range typed {
-			projected, childUnsafe := projectJSONExampleCredentials(child, path)
-			out[index] = projected
-			unsafe = unsafe || childUnsafe
-		}
-		return out, unsafe
-	default:
-		return value, false
-	}
 }
 
 func sensitiveNonStringSchemaCodes(root schema, res resolver, location string) []string {

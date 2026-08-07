@@ -17,6 +17,7 @@ import (
 func TestRestartControlsExamplesGrantOnlyScopedRBAC(t *testing.T) {
 	for _, path := range []string{
 		"aks/restart-controls.example.yaml",
+		"eks/restart-controls.example.yaml",
 		"local/restart-controls.example.yaml",
 		"onprem/restart-controls.example.yaml",
 	} {
@@ -38,6 +39,7 @@ func TestRestartControlsExamplesGrantOnlyScopedRBAC(t *testing.T) {
 			}
 			want := map[string][]string{
 				"/pods":             {"delete", "get", "list"},
+				"/resourcequotas":   {"get", "list"},
 				"apps/deployments":  {"get", "patch"},
 				"apps/statefulsets": {"get", "patch"},
 			}
@@ -59,6 +61,7 @@ func TestRestartControlsExamplesGrantOnlyScopedRBAC(t *testing.T) {
 func TestRestartControlsExamplesStayOptIn(t *testing.T) {
 	for _, path := range []string{
 		"aks/kustomization.yaml",
+		"eks/kustomization.yaml",
 		"local/kustomization.yaml",
 		"onprem/kustomization.yaml",
 	} {
@@ -68,6 +71,13 @@ func TestRestartControlsExamplesStayOptIn(t *testing.T) {
 		}
 		if strings.Contains(string(raw), "restart-controls.example.yaml") {
 			t.Fatalf("%s includes restart-controls.example.yaml; it must remain opt-in", path)
+		}
+		// cluster-access.example.yaml binds RBAC to a group that a REMOTE
+		// controller's IAM principal maps into. Including it by default would
+		// grant pod-delete and workload-patch authority to any principal an
+		// EKS access entry places in that group, on every fresh install.
+		if strings.Contains(string(raw), "cluster-access.example.yaml") {
+			t.Fatalf("%s includes cluster-access.example.yaml; remote-controller RBAC must remain opt-in", path)
 		}
 	}
 }

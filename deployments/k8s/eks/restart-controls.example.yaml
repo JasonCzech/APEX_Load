@@ -1,0 +1,67 @@
+# OPT-IN restart controls — not included in kustomization.yaml.
+#
+# Default APEX Load manifests intentionally keep controller pod API access off.
+# AKS workload identity is orthogonal to this feature; the restart client uses
+# the in-cluster Kubernetes service-account token path. To enable it, add this
+# file to an overlay and patch the controller pod template token mount plus env:
+#
+# patches:
+#   - target:
+#       kind: Deployment
+#       name: apexload-controller
+#     patch: |-
+#       - op: replace
+#         path: /spec/template/spec/automountServiceAccountToken
+#         value: true
+#       - op: add
+#         path: /spec/template/spec/containers/0/env/-
+#         value: { name: APEXLOAD_K8S_RESTART_ENABLED, value: "true" }
+#       - op: add
+#         path: /spec/template/spec/containers/0/env/-
+#         value: { name: APEXLOAD_K8S_NAMESPACE, valueFrom: { fieldRef: { fieldPath: metadata.namespace } } }
+#
+# Optional env overrides:
+#   APEXLOAD_K8S_CONTROLLER_DEPLOYMENT=apexload-controller
+#   APEXLOAD_K8S_GENERATOR_STATEFULSET=apexload-generator
+#   APEXLOAD_K8S_GENERATOR_SELECTOR=app.kubernetes.io/name=apexload-generator
+#   APEXLOAD_K8S_RESTART_ALLOW_FORCE=true
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexload-restart-controls
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: restart-controls
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "patch"]
+  # Required for host-resource allocation: the quota preflight refuses a scale
+  # or allocation change that the namespace ResourceQuota would reject.
+  - apiGroups: [""]
+    resources: ["resourcequotas"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-restart-controls
+  namespace: apexload
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: restart-controls
+subjects:
+  - kind: ServiceAccount
+    name: apexload-controller
+    namespace: apexload
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-restart-controls

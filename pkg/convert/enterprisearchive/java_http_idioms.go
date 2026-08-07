@@ -35,6 +35,11 @@ var (
 	javaURLSendRe             = regexp.MustCompile(`(?is)([A-Za-z_][A-Za-z0-9_]*)\.(?:getResponseCode|getInputStream)\s*\(`)
 )
 
+// javaHTTPParsedActions is the entry point of the retired executable HTTP lane.
+// It is still production resident and still compiled in, but it has no
+// production caller: the lane orchestration that drove it is quarantined in
+// java_native_lanes_test.go, which is also where the guard lives that keeps
+// production from calling it again.
 func javaHTTPParsedActions(program javaProgram) []*ParsedAction {
 	javaHTTPBuilder := newJavaHTTPBuilderState()
 	apache := newJavaApacheHTTPState()

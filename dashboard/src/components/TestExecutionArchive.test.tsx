@@ -1520,7 +1520,29 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).not.toContain('Error Patterns')
   })
 
-  async function renderArchiveView(view: Parameters<typeof TestExecutionArchive>[0]['view']) {
+  it('reuses archive-derived data when unrelated props rerender', async () => {
+    let regionReads = 0
+    const instrumentedReport = { ...archiveReport }
+    Object.defineProperty(instrumentedReport, 'by_region', {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        regionReads += 1
+        return archiveReport.by_region
+      },
+    })
+
+    await renderArchiveView('report-overview', instrumentedReport)
+    expect(regionReads).toBe(1)
+
+    await renderArchiveView('report-completeness', instrumentedReport)
+    expect(regionReads).toBe(1)
+  })
+
+  async function renderArchiveView(
+    view: Parameters<typeof TestExecutionArchive>[0]['view'],
+    report: RunArchiveReport = archiveReport,
+  ) {
     await act(async () => {
       root.render(
         <TestExecutionArchive
@@ -1529,14 +1551,14 @@ describe('TestExecutionArchive', () => {
           test={test}
           archiveError=""
           archiveLoading={false}
-          archiveReport={archiveReport}
+          archiveReport={report}
           archiveAnalysis={archiveAnalysis}
           archiveAnalysisLoading={false}
           archiveAnalysisError=""
           onDownloadBrowserDiagnostics={vi.fn()}
           onDownloadArchiveArtifact={vi.fn()}
-          archiveActionEntries={Object.entries(archiveReport.by_action)}
-          archiveSOAPOperationEntries={Object.entries(archiveReport.by_soap_operation || {})}
+          archiveActionEntries={Object.entries(report.by_action)}
+          archiveSOAPOperationEntries={Object.entries(report.by_soap_operation || {})}
           selectedArchiveAction=""
           onSelectedArchiveActionChange={vi.fn()}
           selectedArchiveSOAPOperation=""

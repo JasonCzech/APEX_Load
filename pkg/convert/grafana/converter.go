@@ -7,8 +7,10 @@ package grafana
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -240,7 +242,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	totalQueries := 0
 	for _, fp := range flat {
 		stats.PanelsSeen++
-		panel, ok := convertPanel(fp, policy, col, assumptions, usedBy, unsupportedTypes, &totalQueries, strings.TrimSpace(req.ProjectID) != "")
+		panel, ok := convertPanel(fp, policy, col, assumptions, usedBy, unsupportedTypes, strings.TrimSpace(req.ProjectID) != "")
 		if !ok {
 			continue
 		}
@@ -257,11 +259,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			stats.Heatmaps++
 		}
 		stats.Targets += len(panel.Targets)
+		// Only imported queries are charged to the budget. A panel that was excluded
+		// contributes no query to the dashboard, so counting its targets would reject
+		// the whole import over queries it never runs — and would disagree with the
+		// same limit as enforced over persisted panels in pkg/storage.
+		totalQueries += len(panel.Targets)
 	}
 
 	if totalQueries > MaxQueriesTotal {
 		col.Add(diag.Blocker, "dashboard", "targets",
-			fmt.Sprintf("dashboard declares %d queries across its panels, exceeding the import limit of %d", totalQueries, MaxQueriesTotal))
+			fmt.Sprintf("dashboard imports %d queries across its panels, exceeding the import limit of %d", totalQueries, MaxQueriesTotal))
 	}
 
 	// Attach used-by provenance and roll up variable stats.
@@ -390,7 +397,6 @@ func convertPanel(
 	assumptions map[string]struct{},
 	usedBy map[string]map[string]struct{},
 	unsupportedTypes map[string]struct{},
-	totalQueries *int,
 	requireRunScope bool,
 ) (Panel, bool) {
 	p := fp.panel
@@ -433,8 +439,11 @@ func convertPanel(
 	}
 
 	unit := resolvePanelUnit(p, loc, title, col, assumptions)
-	thresholds := resolvePanelThresholds(p, loc, title, col)
-	warnDroppedPanelConstructs(p, loc, title, col)
+
+	// Variable provenance is collected per panel and merged into the dashboard-wide
+	// map only once the panel survives every exclusion gate below, so a binding never
+	// lists — or is made required by — a query that is not part of the import.
+	panelUsedBy := map[string]map[string]struct{}{}
 
 	targets := []Target{}
 	targetInputs := p.Targets
@@ -448,12 +457,11 @@ func convertPanel(
 			col.Add(diag.Info, "target", targetLocation(loc, ti, rt.RefID), "hidden target skipped")
 			continue
 		}
-		target, ok := convertTarget(rt, loc, ti, title, policy, col, assumptions, usedBy, requireRunScope)
+		target, ok := convertTarget(rt, loc, ti, title, policy, col, assumptions, panelUsedBy, requireRunScope)
 		if !ok {
 			continue
 		}
 		targets = append(targets, target)
-		*totalQueries++
 	}
 
 	if len(targets) == 0 {
@@ -461,11 +469,30 @@ func convertPanel(
 		return Panel{}, false
 	}
 	if kind == PanelKindSingleValue && len(targets) != 1 {
+		if isLegacySingleStat(panelType) {
+			// Legacy singlestat panels used to be skipped as an unsupported type, so a
+			// malformed one must stay a per-panel exclusion. Escalating it to a Blocker
+			// would reject the whole dashboard, including its unrelated panels.
+			col.Add(diag.Warning, "panel", panelLocation(loc, title),
+				fmt.Sprintf("legacy singlestat panel has %d visible Prometheus targets; APEX renders one deterministic value per tile, so the panel was excluded", len(targets)))
+			return Panel{}, false
+		}
 		col.Add(diag.Blocker, "panel", panelLocation(loc, title), "stat/gauge panels must contain exactly one visible Prometheus target; APEX renders one deterministic value per tile")
 		return Panel{}, false
 	}
 
-	return Panel{
+	// Resolved and reported only once the panel is known to survive the exclusion gates
+	// above: the threshold diagnostics describe what the rendered tile does with its
+	// threshold lines, so they must not be reported for a panel that is then dropped.
+	thresholds := resolvePanelThresholds(p, loc, title, col)
+
+	// Emitted only once the panel is known to survive the exclusion gates above: these
+	// messages assert a completed import ("one panel is imported", "the tile renders
+	// ..."), so they must not be reported for a panel that is then dropped.
+	noteLegacySingleStat(p, panelType, loc, title, thresholds, col)
+	warnDroppedPanelConstructs(p, loc, title, col)
+
+	panel := Panel{
 		PanelID:       p.ID,
 		Title:         convertutil.FirstNonEmpty(title, fmt.Sprintf("Panel %d", p.ID)),
 		Kind:          kind,
@@ -475,11 +502,20 @@ func convertPanel(
 		RowTitle:      fp.rowTitle,
 		DatasourceUID: datasourceUIDForStorage(panelDS),
 		Thresholds:    thresholds,
-	}, true
+	}
+	mergeUsedBy(usedBy, panelUsedBy)
+	return panel, true
 }
 
 func resolvePanelThresholds(p rawPanel, loc, title string, col *diag.Collector) []PanelThreshold {
 	raw := p.FieldConfig.Defaults.Thresholds
+	if len(raw.Steps) == 0 {
+		// A legacy singlestat keeps its thresholds in the root-level "thresholds" and
+		// "colors" fields instead of fieldConfig. Translating them keeps the panel's
+		// warning/critical levels — and the run verdict they drive — instead of
+		// dropping them with no diagnostic.
+		raw = legacySingleStatThresholds(p, loc, title, col)
+	}
 	if len(raw.Steps) == 0 {
 		return nil
 	}
@@ -522,6 +558,153 @@ func resolvePanelThresholds(p rawPanel, loc, title string, col *diag.Collector) 
 	return out
 }
 
+// legacySingleStatThresholds translates the pre-fieldConfig singlestat threshold
+// configuration — a comma-separated "thresholds" list of levels plus a "colors" array
+// holding one more entry than there are levels — into the same step model fieldConfig
+// produces, so it flows through the shared severity/size checks below. It returns an
+// empty configuration (after a diagnostic) when the panel is not a legacy singlestat
+// or the configuration cannot be translated; it never drops one silently.
+func legacySingleStatThresholds(p rawPanel, loc, title string, col *diag.Collector) rawThresholds {
+	if !isLegacySingleStat(strings.ToLower(strings.TrimSpace(p.Type))) {
+		return rawThresholds{}
+	}
+	values, present, ok := parseLegacyThresholdValues(p.LegacyThresholds)
+	if !present {
+		return rawThresholds{}
+	}
+	if !ok || len(values) == 0 {
+		col.Add(diag.Warning, "panel thresholds", panelLocation(loc, title),
+			"legacy singlestat thresholds could not be read and were not imported; the panel renders without threshold lines and does not affect the run verdict")
+		return rawThresholds{}
+	}
+	colors := decodeStringValues(p.LegacyColors)
+	if len(colors) != len(values)+1 {
+		col.Add(diag.Warning, "panel thresholds", panelLocation(loc, title),
+			fmt.Sprintf("legacy singlestat declares %d threshold level(s) and %d color(s); the levels are imported but their severities could not be derived, so they render neutral and do not affect the run verdict", len(values), len(colors)))
+		colors = nil
+	}
+	out := rawThresholds{Mode: "absolute", Steps: make([]rawThresholdStep, 0, len(values)+1)}
+	if len(colors) > 0 {
+		out.Steps = append(out.Steps, rawThresholdStep{Color: normalizeLegacyThresholdColor(colors[0])})
+	}
+	for i := range values {
+		value := values[i]
+		color := ""
+		if len(colors) > i+1 {
+			color = normalizeLegacyThresholdColor(colors[i+1])
+		}
+		out.Steps = append(out.Steps, rawThresholdStep{Color: color, Value: &value})
+	}
+	return out
+}
+
+// parseLegacyThresholdValues decodes the singlestat "thresholds" field, which is a
+// comma-separated string ("70,90") in every Grafana version that wrote singlestat and
+// an array of numbers in a few converted exports. present reports whether the field
+// was set at all; ok reports whether every entry parsed as a finite number.
+func parseLegacyThresholdValues(raw json.RawMessage) (values []float64, present bool, ok bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return nil, false, true
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		if strings.TrimSpace(asString) == "" {
+			return nil, false, true
+		}
+		for _, field := range strings.Split(asString, ",") {
+			field = strings.TrimSpace(field)
+			if field == "" {
+				continue
+			}
+			parsed, err := strconv.ParseFloat(field, 64)
+			if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+				return nil, true, false
+			}
+			values = append(values, parsed)
+		}
+		return values, true, true
+	}
+	var asNumbers []float64
+	if err := json.Unmarshal(raw, &asNumbers); err == nil {
+		for _, parsed := range asNumbers {
+			if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+				return nil, true, false
+			}
+			values = append(values, parsed)
+		}
+		return values, true, true
+	}
+	return nil, true, false
+}
+
+// normalizeLegacyThresholdColor maps the rgb()/rgba()/#hex colors a singlestat panel
+// carries onto the closest Grafana palette name, so a legacy threshold resolves to the
+// same SLA severity as its modern fieldConfig equivalent. Palette names and colors that
+// cannot be classified are returned unchanged, so they still raise the honest "no SLA
+// severity mapping" warning rather than being silently forced into a severity.
+func normalizeLegacyThresholdColor(color string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(color))
+	if trimmed == "" || thresholdSeverity(trimmed) != "unknown" {
+		return trimmed
+	}
+	r, g, b, ok := parseColorChannels(trimmed)
+	if !ok {
+		return trimmed
+	}
+	switch {
+	case r >= 150 && g < 100 && b < 100:
+		return "red"
+	case r >= 150 && g >= 100 && b < 120:
+		return "orange"
+	case g >= 120 && r < 150 && b < 150:
+		return "green"
+	case b >= 120 && r < 150 && g < 180:
+		return "blue"
+	}
+	return trimmed
+}
+
+// parseColorChannels extracts the RGB channels of a "#rgb", "#rrggbb", "rgb(...)" or
+// "rgba(...)" color. It reports false for anything else, including palette names.
+func parseColorChannels(color string) (int, int, int, bool) {
+	if strings.HasPrefix(color, "#") {
+		hex := color[1:]
+		if len(hex) == 3 {
+			hex = string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]})
+		}
+		if len(hex) != 6 {
+			return 0, 0, 0, false
+		}
+		channels := make([]int, 3)
+		for i := range channels {
+			parsed, err := strconv.ParseUint(hex[i*2:i*2+2], 16, 8)
+			if err != nil {
+				return 0, 0, 0, false
+			}
+			channels[i] = int(parsed)
+		}
+		return channels[0], channels[1], channels[2], true
+	}
+	open := strings.IndexByte(color, '(')
+	if (!strings.HasPrefix(color, "rgb(") && !strings.HasPrefix(color, "rgba(")) || open < 0 || !strings.HasSuffix(color, ")") {
+		return 0, 0, 0, false
+	}
+	fields := strings.Split(color[open+1:len(color)-1], ",")
+	if len(fields) < 3 {
+		return 0, 0, 0, false
+	}
+	channels := make([]int, 3)
+	for i := range channels {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(fields[i]), 64)
+		if err != nil || math.IsNaN(parsed) || parsed < 0 || parsed > 255 {
+			return 0, 0, 0, false
+		}
+		channels[i] = int(parsed)
+	}
+	return channels[0], channels[1], channels[2], true
+}
+
 func thresholdSeverity(color string) string {
 	color = strings.ToLower(strings.TrimSpace(color))
 	switch color {
@@ -552,11 +735,49 @@ func warnDroppedPanelConstructs(p rawPanel, loc, title string, col *diag.Collect
 	if len(p.Links) > 0 || len(p.FieldConfig.Defaults.Links) > 0 {
 		col.Add(diag.Info, "panel links", location, "panel and data links are not reproduced")
 	}
-	if len(p.FieldConfig.Defaults.Mappings) > 0 {
+	// A legacy singlestat keeps its value mappings in the root "valueMaps"/"rangeMaps"
+	// fields, so they need the same report as their fieldConfig equivalent.
+	if len(p.FieldConfig.Defaults.Mappings) > 0 || rawListLen(p.LegacyValueMaps) > 0 || rawListLen(p.LegacyRangeMaps) > 0 {
 		col.Add(diag.Info, "value mappings", location, "value mappings are not reproduced; raw numeric values are rendered")
 	}
 	if len(p.Transformations) > 0 {
 		col.Add(diag.Warning, "transformations", location, "Grafana transformations are not reproduced; datasource results are rendered directly")
+	}
+}
+
+// noteLegacySingleStat records the singlestat -> single-value-tile mapping and any
+// reduction that mapping does not reproduce. It must be called only after the panel
+// has cleared every exclusion gate, because its diagnostics assert that a tile exists.
+func noteLegacySingleStat(p rawPanel, panelType, loc, title string, thresholds []PanelThreshold, col *diag.Collector) {
+	if !isLegacySingleStat(panelType) {
+		return
+	}
+	location := panelLocation(loc, title)
+	col.Add(diag.Info, "panel", location, "legacy singlestat panel imported as an APEX single-value tile")
+	// Legacy root-level thresholds/colors become real threshold steps, which drive the
+	// tile severity and the run verdict, so the translation is reported rather than
+	// applied invisibly.
+	if len(thresholds) > 0 && len(p.FieldConfig.Defaults.Thresholds.Steps) == 0 {
+		col.Add(diag.Info, "panel thresholds", location,
+			"legacy singlestat thresholds and colors were translated into APEX threshold steps")
+	}
+	// APEX always renders the newest sample. Any other legacy reduction would be
+	// a different number on the tile, so say so instead of dropping it silently.
+	switch valueName := strings.ToLower(strings.TrimSpace(p.ValueName)); valueName {
+	case "current", "last", "last_non_null":
+	case "":
+		// Grafana's singlestat panel defaults valueName to "avg", so an omitted
+		// value is an average, not the newest sample.
+		col.Add(diag.Warning, "panel", location,
+			`singlestat omits valueName, which Grafana defaults to "avg"; that reduction is not reproduced and the tile renders the newest sample`)
+	case "last_time":
+		// last_time is the timestamp of the last non-null point, not a reduction of
+		// the series values, so the tile shows a different quantity entirely.
+		col.Add(diag.Warning, "panel", location,
+			`singlestat valueName "last_time" renders the timestamp of the last non-null point; the tile renders that point's value instead`)
+	default:
+		col.Add(diag.Warning, "panel", location,
+			fmt.Sprintf("singlestat valueName %q is not reproduced; the tile renders the newest sample", p.ValueName))
 	}
 }
 
@@ -695,7 +916,10 @@ func panelKind(panelType string) (string, bool) {
 	switch panelType {
 	case "timeseries", "graph":
 		return PanelKindLine, true
-	case "stat", "gauge", "singlestat":
+	// "singlestat" and its Grafana 7+ plugin id are the pre-fieldConfig ancestors of
+	// "stat"; dashboards anywhere in the accepted schema range (>= MinSchemaVersion)
+	// routinely still carry them, so they map onto the single-value tile.
+	case "stat", "gauge", "singlestat", "grafana-singlestat-panel":
 		return PanelKindSingleValue, true
 	case "table":
 		return PanelKindTable, true
@@ -706,8 +930,19 @@ func panelKind(panelType string) (string, bool) {
 	}
 }
 
+// isLegacySingleStat reports whether a panel type is the pre-fieldConfig singlestat
+// panel, whose unit and reduction live in root-level fields rather than fieldConfig.
+func isLegacySingleStat(panelType string) bool {
+	return panelType == "singlestat" || panelType == "grafana-singlestat-panel"
+}
+
 func resolvePanelUnit(p rawPanel, loc, title string, col *diag.Collector, assumptions map[string]struct{}) string {
 	unitID := strings.TrimSpace(p.FieldConfig.Defaults.Unit)
+	if unitID == "" && isLegacySingleStat(strings.ToLower(strings.TrimSpace(p.Type))) {
+		// Legacy singlestat panels have no fieldConfig; their unit is the root
+		// "format" field. Reading it keeps the tile from silently losing its unit.
+		unitID = strings.TrimSpace(p.Format)
+	}
 	if len(unitID) > MaxUnitIDBytes {
 		col.Add(diag.Blocker, "panel unit", panelLocation(loc, title), fmt.Sprintf("unit id exceeds the limit of %d bytes", MaxUnitIDBytes))
 		return ""
@@ -1139,6 +1374,16 @@ func datasourceUIDForStorage(ds datasourceRef) string {
 		return ""
 	}
 	return strings.TrimSpace(ds.UID)
+}
+
+// mergeUsedBy folds a panel's variable provenance into the dashboard-wide map. It is
+// called only for panels that are actually imported.
+func mergeUsedBy(dst, src map[string]map[string]struct{}) {
+	for name, locations := range src {
+		for loc := range locations {
+			trackUsedBy(dst, name, loc)
+		}
+	}
 }
 
 func trackUsedBy(usedBy map[string]map[string]struct{}, name, loc string) {

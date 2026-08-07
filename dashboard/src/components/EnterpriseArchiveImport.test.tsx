@@ -2084,6 +2084,166 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).not.toContain('Review artifact saved as authoring session')
   })
 
+  it('keeps a converted-script save marked in flight when an unrelated queued archive is removed', async () => {
+    const onImported = vi.fn()
+    const draft = {
+      name: 'Alpha Draft',
+      version: '1.0.0',
+      protocol: 'http',
+      actions: [{ name: 'A', type: 'request', method: 'GET', target: '/a' }],
+    }
+    // A parameterization suggestion left for review keeps the batch conversion
+    // from auto-saving, so the lane is saved through the review panel instead.
+    apiMock.importEnterpriseArchive.mockResolvedValue(executableEnterpriseResult(draft, {
+      parameterization: {
+        suggestions: [{
+          id: 'review-alpha',
+          kind: 'data_param',
+          var_name: 'ALPHA',
+          replacement: '{{var.ALPHA}}',
+          confidence: 0.8,
+          rule_id: 'test',
+          rationale: 'Review the generated parameter.',
+          auto_apply: false,
+          high_risk: false,
+          pre_applied: false,
+        }],
+        summary: {
+          total: 1,
+          by_kind: { data_param: 1 },
+          auto_apply_count: 0,
+          review_count: 1,
+          high_risk_count: 0,
+          pre_applied_count: 0,
+        },
+      },
+    }))
+    let resolveCreate: ((script: Record<string, unknown>) => void) | undefined
+    apiMock.createScript.mockImplementationOnce(() => new Promise(resolve => {
+      resolveCreate = resolve as (script: Record<string, unknown>) => void
+    }))
+
+    await act(async () => root.render(<EnterpriseArchiveImport onImported={onImported} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+          new File(['beta'], 'beta.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert 2 Loadrunner Script Archives')!)
+    await flushPromises()
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+
+    await act(async () => {
+      findButton(container, 'Save to Script Library')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(findButton(container, 'Saving...')).toBeDefined()
+
+    const removeUnrelated = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement
+    await act(async () => {
+      removeUnrelated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // The POST for alpha is still running, so the save action must stay locked
+    // instead of reverting to a clickable "Save to Script Library".
+    const savingButton = findButton(container, 'Saving...')
+    expect(savingButton?.disabled).toBe(true)
+    savingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveCreate?.({
+        id: 'saved-script',
+        name: draft.name,
+        protocol: 'http',
+        version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+        script: draft,
+      })
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Saved Alpha Draft to the script library')
+  })
+
+  it('skips only the removed archive when a queued row is removed mid-conversion', async () => {
+    const firstFile = new File(['alpha'], 'alpha.zip', { type: 'application/zip' })
+    const removedFile = new File(['beta'], 'beta.zip', { type: 'application/zip' })
+    const lastFile = new File(['gamma'], 'gamma.zip', { type: 'application/zip' })
+    let resolveFirstImport: (() => void) | undefined
+    apiMock.importEnterpriseArchive.mockImplementation((file: File) => {
+      const conversion = {
+        script: {
+          name: file.name.replace(/\.zip$/i, ''),
+          protocol: 'http',
+          actions: [{ name: 'Homepage' }],
+        },
+        warnings: [],
+        unsupported_elements: [],
+        assumptions: [],
+        review_sections: [],
+        repair_suggestions: [],
+        summary: { project_file: file.name, unsupported_function_count: 0 },
+        stats: { total_functions: 1, converted_actions: 1, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      }
+      if (file === firstFile) {
+        return new Promise(resolve => {
+          resolveFirstImport = () => resolve(conversion)
+        })
+      }
+      return Promise.resolve(conversion)
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [firstFile, removedFile, lastFile],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    await act(async () => {
+      findButton(container, 'Convert 3 Loadrunner Script Archives')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(1)
+
+    const removeBeta = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement
+    await act(async () => {
+      removeBeta.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    // Removing one queued row must not look like the batch ended: the run is
+    // still in flight, so the queue actions stay locked.
+    const queueActions = Array.from(container.querySelectorAll<HTMLButtonElement>('.lr-import-action-buttons button'))
+    expect(queueActions[0]?.disabled).toBe(true)
+    expect(queueActions[1]?.disabled).toBe(true)
+    expect(container.textContent).toContain('Converting and saving')
+
+    await act(async () => {
+      resolveFirstImport?.()
+    })
+    await flushPromises()
+    await flushPromises()
+
+    // gamma is queued behind the removed row and must still be converted.
+    expect(apiMock.importEnterpriseArchive.mock.calls.map(call => (call[0] as File).name)).toEqual(['alpha.zip', 'gamma.zip'])
+    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Converted and saved 2 scripts to the library; 1 archive skipped')
+  })
+
   it('keeps a fidelity-blocked combined Java Vuser draft in review instead of offering approval', async () => {
     const blockedJavaDraft = {
       name: 'Blocked Combined Java Vuser',
@@ -5225,6 +5385,63 @@ describe('EnterpriseArchiveImport', () => {
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
+  })
+
+  it('never reaches the batch save loop with a browser import', async () => {
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce(executableEnterpriseResult({
+      name: 'Imported TruClient Web',
+      version: '1.0',
+      protocol: 'browser',
+      config: {
+        base_url: 'https://shop.example.test',
+        browser: { engine: 'chromium', headless: true },
+      },
+      actions: [{ name: 'Open Store', type: 'browser_navigate', url: '/store' }],
+      metadata: {
+        import: {
+          source: 'trueclient_web',
+          source_script_name: 'default.xml',
+          preserved: {},
+        },
+      },
+    }))
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    if (!fileInput) {
+      return
+    }
+    const file = new File(['zip-content'], 'truclient.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [file],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+
+    const convertButton = findButton(container, 'Convert Loadrunner Script Archive')
+    expect(convertButton).toBeDefined()
+    if (!convertButton) {
+      return
+    }
+    await clickButton(convertButton)
+    await flushPromises()
+
+    // The browser-replay gate holds the archive in review, so the conversion
+    // batch's save loop is never entered for a browser-protocol script. Any
+    // browser-only handling inside that loop would be dead code.
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Run draft browser replay before saving this browser script.')
+    expect(container.textContent).toContain('Draft Browser Replay Validation')
   })
 
   it('starts draft browser replay validation for converted browser imports before save', async () => {

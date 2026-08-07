@@ -382,7 +382,7 @@ func TestGroupSettingsViewsRefreshMissingAndStaleHAState(t *testing.T) {
 		t.Fatalf("leader parameter update: %v", err)
 	}
 
-	follower.haTestRefreshAt = time.Time{}
+	follower.haTestRefresh.expire()
 	refreshedParameters, err := follower.GetTestGroupParametersView(test.ID, "Buyers")
 	if err != nil || refreshedParameters.Parameters[1].Selection != "sequential" {
 		t.Fatalf("parameter view retained stale HA state: view=%#v err=%v", refreshedParameters, err)

@@ -583,7 +583,6 @@ func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*Te
 		stopTeardownRetries:   make(map[string]stopTeardownRetryIntent),
 		privateCISnapshots:    make(map[string]int),
 		snapshotWrites:        make(map[string]*runSnapshotWriteState),
-		capacityBindingReadCh: make(chan struct{}),
 	}
 	for id, test := range tr.tests {
 		if managedTestBuildAdmissionRelevant(test) {

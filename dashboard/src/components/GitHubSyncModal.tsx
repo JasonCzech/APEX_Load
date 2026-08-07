@@ -524,7 +524,6 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                   disabled={loading || importDraftExpiry?.expired === true}
                   onApplyingChange={setParameterizationApplying}
                   onApplied={(parameterizedScript, _diffs, _selectedIds, nextImportDraftExpiresAt) => {
-                    secretBindingReviewRef.current?.preserveEditsForNextReviewGeneration()
                     advanceImportDraftGeneration()
                     setImportDraft(parameterizedScript)
                     importDraftRef.current = parameterizedScript

@@ -17,6 +17,9 @@ func parseTestActionPauseMs(node *treeNode) int {
 		return 0
 	}
 	for _, child := range node.Children {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
 		switch child.Element.Name {
 		case "ConstantTimer", "UniformRandomTimer", "GaussianRandomTimer", "PoissonRandomTimer":
 			if delay := parseTimerMs(child.Element, child.Element.Name); delay > 0 {

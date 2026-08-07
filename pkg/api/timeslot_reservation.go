@@ -649,8 +649,9 @@ type testCapacityBindingListPersistence interface {
 // reciprocal-binding fidelity as single-test reads. Leaders deliberately skip
 // the follower's full-map refresh, and followers can be inside its throttle
 // window, so both use this lightweight bulk projection before serialization.
-// Concurrent callers share a completed refresh, while a later sequential read
-// performs a new query and can immediately observe a cross-replica mutation.
+// It shares the coalescer every other HA read-refresh path uses: concurrent
+// callers collapse onto one query, while a later sequential read performs a new
+// query and can immediately observe a cross-replica mutation.
 func (tr *TestRunner) refreshCapacityBindingsForHAListRead() {
 	if tr == nil || tr.leadership == nil || tr.testStore == nil {
 		return
@@ -659,34 +660,13 @@ func (tr *TestRunner) refreshCapacityBindingsForHAListRead() {
 	if !ok {
 		return
 	}
-	requestedAt := time.Now()
-	for {
-		tr.capacityBindingReadMu.Lock()
-		if !tr.capacityBindingReadAt.IsZero() && !tr.capacityBindingReadAt.Before(requestedAt) {
-			tr.capacityBindingReadMu.Unlock()
-			return
-		}
-		if tr.capacityBindingReadCh != nil {
-			completed := tr.capacityBindingReadCh
-			tr.capacityBindingReadMu.Unlock()
-			<-completed
-			continue
-		}
-		completed := make(chan struct{})
-		tr.capacityBindingReadCh = completed
-		tr.capacityBindingReadMu.Unlock()
-
-		err := tr.reconcileCapacityBindingsForHAListRead(reader)
-
-		tr.capacityBindingReadMu.Lock()
-		tr.capacityBindingReadAt = time.Now()
-		tr.capacityBindingReadCh = nil
-		close(completed)
-		tr.capacityBindingReadMu.Unlock()
-		if err != nil {
-			slog.Warn("failed to refresh capacity bindings for HA test list", "error", err)
-		}
-		return
+	// No staleness window: a list read must be able to observe a binding change
+	// committed by another replica immediately, so coalescing alone is what
+	// bounds the query rate.
+	if err := tr.capacityBindingRefresh.refresh(0, func() error {
+		return tr.reconcileCapacityBindingsForHAListRead(reader)
+	}); err != nil {
+		slog.Warn("failed to refresh capacity bindings for HA test list", "error", err)
 	}
 }
 

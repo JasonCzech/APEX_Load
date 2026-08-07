@@ -15,6 +15,7 @@ import type {
   ScheduleOccurrenceResolutionRequest,
 } from '../../types/executionPlans'
 import { request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
@@ -29,122 +30,115 @@ function buildQuery(params: Record<string, string | number | undefined>) {
 
 export function useExecutionPlansApi() {
   const listExecutionPlans = useCallback(
-    (params?: { project_id?: string; limit?: number; offset?: number }) =>
-      request<ExecutionPlanListResponse>(`/execution-plans${buildQuery({ ...params })}`),
+    (params?: { project_id?: string; limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<ExecutionPlanListResponse>(`/execution-plans${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getExecutionPlan = useCallback(
-    (id: string) => request<ExecutionPlan>(`/execution-plans/${id}`),
+    (id: string, options?: ApiCallOptions) => request<ExecutionPlan>(`/execution-plans/${id}`, withCallOptions(undefined, options)),
     [],
   )
 
   const createExecutionPlan = useCallback(
-    (body: Partial<ExecutionPlan>) =>
-      request<ExecutionPlan>('/execution-plans', { method: 'POST', body: JSON.stringify(body) }),
+    (body: Partial<ExecutionPlan>, options?: ApiCallOptions) =>
+      request<ExecutionPlan>('/execution-plans', withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const updateExecutionPlan = useCallback(
-    (id: string, body: Partial<ExecutionPlan>) =>
-      request<ExecutionPlan>(`/execution-plans/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    (id: string, body: Partial<ExecutionPlan>, options?: ApiCallOptions) =>
+      request<ExecutionPlan>(`/execution-plans/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const deleteExecutionPlan = useCallback(
-    (id: string) => request<{ deleted: string }>(`/execution-plans/${id}`, { method: 'DELETE' }),
+    (id: string, options?: ApiCallOptions) => request<{ deleted: string }>(`/execution-plans/${id}`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
   const runExecutionPlan = useCallback(
-    (id: string) => request<ExecutionPlanRunResponse>(`/execution-plans/${id}/runs`, { method: 'POST' }),
+    (id: string, options?: ApiCallOptions) => request<ExecutionPlanRunResponse>(`/execution-plans/${id}/runs`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const listExecutionPlanRuns = useCallback(
-    (id: string, params?: { limit?: number; offset?: number }) =>
-      request<ExecutionPlanRunListResponse>(`/execution-plans/${id}/runs${buildQuery({ ...params })}`),
+    (id: string, params?: { limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<ExecutionPlanRunListResponse>(`/execution-plans/${id}/runs${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getExecutionPlanRun = useCallback(
-    (id: string, runId: string) =>
-      request<ExecutionPlanRun>(`/execution-plans/${id}/runs/${runId}`),
+    (id: string, runId: string, options?: ApiCallOptions) =>
+      request<ExecutionPlanRun>(`/execution-plans/${id}/runs/${runId}`, withCallOptions(undefined, options)),
     [],
   )
 
   // Recurring plan schedules (cron-materialized plan runs).
   const listExecutionPlanSchedules = useCallback(
-    (planId: string) =>
-      request<ExecutionPlanScheduleListResponse>(`/execution-plans/${planId}/schedules`),
+    (planId: string, options?: ApiCallOptions) =>
+      request<ExecutionPlanScheduleListResponse>(`/execution-plans/${planId}/schedules`, withCallOptions(undefined, options)),
     [],
   )
 
   const createExecutionPlanSchedule = useCallback(
-    (planId: string, body: ExecutionPlanScheduleRequest) =>
-      request<ExecutionPlanSchedule>(`/execution-plans/${planId}/schedules`, {
+    (planId: string, body: ExecutionPlanScheduleRequest, options?: ApiCallOptions) =>
+      request<ExecutionPlanSchedule>(`/execution-plans/${planId}/schedules`, withCallOptions({
         method: 'POST',
         body: JSON.stringify(body),
-      }),
+      }, options)),
     [],
   )
 
   const updateExecutionPlanSchedule = useCallback(
-    (planId: string, scheduleId: string, body: ExecutionPlanScheduleRequest) =>
-      request<ExecutionPlanSchedule>(`/execution-plans/${planId}/schedules/${scheduleId}`, {
+    (planId: string, scheduleId: string, body: ExecutionPlanScheduleRequest, options?: ApiCallOptions) =>
+      request<ExecutionPlanSchedule>(`/execution-plans/${planId}/schedules/${scheduleId}`, withCallOptions({
         method: 'PUT',
         body: JSON.stringify(body),
-      }),
+      }, options)),
     [],
   )
 
   const deleteExecutionPlanSchedule = useCallback(
-    (planId: string, scheduleId: string) =>
-      request<{ deleted: string }>(`/execution-plans/${planId}/schedules/${scheduleId}`, {
+    (planId: string, scheduleId: string, options?: ApiCallOptions) =>
+      request<{ deleted: string }>(`/execution-plans/${planId}/schedules/${scheduleId}`, withCallOptions({
         method: 'DELETE',
-      }),
+      }, options)),
     [],
   )
 
   const listExecutionPlanScheduleOccurrences = useCallback(
-    (planId: string, scheduleId: string) =>
+    (planId: string, scheduleId: string, options?: ApiCallOptions) =>
       request<ExecutionPlanScheduleOccurrenceListResponse>(
-        `/execution-plans/${planId}/schedules/${scheduleId}/occurrences`,
-      ),
+        `/execution-plans/${planId}/schedules/${scheduleId}/occurrences`, withCallOptions(undefined, options)),
     [],
   )
 
 	const resolveExecutionPlanScheduleOccurrence = useCallback(
-		(planId: string, scheduleId: string, occurrenceId: string, body: ScheduleOccurrenceResolutionRequest) =>
+		(planId: string, scheduleId: string, occurrenceId: string, body: ScheduleOccurrenceResolutionRequest, options?: ApiCallOptions) =>
 			request<{ occurrence: import('../../types').ExecutionPlanScheduleOccurrence; schedule: ExecutionPlanSchedule }>(
-				`/execution-plans/${planId}/schedules/${scheduleId}/occurrences/${occurrenceId}/resolve`,
-				{ method: 'POST', body: JSON.stringify(body) },
-			),
+				`/execution-plans/${planId}/schedules/${scheduleId}/occurrences/${occurrenceId}/resolve`, withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
 		[],
 	)
 
   // Governance approvals (quota-gated plan runs).
   const listExecutionPlanApprovals = useCallback(
-    (planId: string) =>
-      request<ExecutionPlanApprovalListResponse>(`/execution-plans/${planId}/approvals`),
+    (planId: string, options?: ApiCallOptions) =>
+      request<ExecutionPlanApprovalListResponse>(`/execution-plans/${planId}/approvals`, withCallOptions(undefined, options)),
     [],
   )
 
   const approveExecutionPlanApproval = useCallback(
-    (planId: string, approvalId: string, reason?: string) =>
+    (planId: string, approvalId: string, reason?: string, options?: ApiCallOptions) =>
       request<ExecutionPlanApproval>(
-        `/execution-plans/${planId}/approvals/${approvalId}/approve`,
-        { method: 'POST', body: JSON.stringify({ reason: reason || '' }) },
-      ),
+        `/execution-plans/${planId}/approvals/${approvalId}/approve`, withCallOptions({ method: 'POST', body: JSON.stringify({ reason: reason || '' }) }, options)),
     [],
   )
 
   const rejectExecutionPlanApproval = useCallback(
-    (planId: string, approvalId: string, reason?: string) =>
+    (planId: string, approvalId: string, reason?: string, options?: ApiCallOptions) =>
       request<ExecutionPlanApproval>(
-        `/execution-plans/${planId}/approvals/${approvalId}/reject`,
-        { method: 'POST', body: JSON.stringify({ reason: reason || '' }) },
-      ),
+        `/execution-plans/${planId}/approvals/${approvalId}/reject`, withCallOptions({ method: 'POST', body: JSON.stringify({ reason: reason || '' }) }, options)),
     [],
   )
 

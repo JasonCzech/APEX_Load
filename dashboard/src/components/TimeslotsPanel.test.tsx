@@ -85,6 +85,57 @@ describe('TimeslotsPanel', () => {
     expect(zonedLocalToISO('2026-03-08T02:30', 'America/New_York')).toBe('')
     expect(zonedLocalToISO('2026-11-01T01:30', 'America/New_York')).toBe('2026-11-01T05:30:00.000Z')
   })
+  // Pick a zone whose wall-clock differs from the runner's local zone so the
+  // assertions below stay meaningful wherever the suite runs.
+  function foreignZone(instant: string): string {
+    const local = new Date(instant).toLocaleString()
+    return ['Asia/Tokyo', 'America/Los_Angeles']
+      .find(candidate => new Date(instant).toLocaleString(undefined, { timeZone: candidate }) !== local) as string
+  }
+
+  it('renders the reservation window in the slot timezone, not the browser zone', async () => {
+    const startAt = '2026-07-01T13:00:00Z'
+    const endAt = '2026-07-01T17:00:00Z'
+    const zone = foreignZone(startAt)
+    const inZone = (value: string) => new Date(value).toLocaleString(undefined, { timeZone: zone })
+    capacityApiMock.listTimeslots.mockResolvedValue({
+      timeslots: [slot({ timezone: zone, start_at: startAt, end_at: endAt })],
+      count: 1,
+    })
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    const title = container.querySelector('.pp-row-title')?.textContent || ''
+    expect(title).toContain(inZone(startAt))
+    expect(title).toContain(inZone(endAt))
+    expect(title).not.toContain(new Date(startAt).toLocaleString())
+    expect(container.querySelector('.pp-row-meta')?.textContent).toContain(zone)
+  })
+
+  it('confirms deletion against the reservation window in its own timezone', async () => {
+    const startAt = '2026-07-01T13:00:00Z'
+    const endAt = '2026-07-01T17:00:00Z'
+    const zone = foreignZone(startAt)
+    const inZone = (value: string) => new Date(value).toLocaleString(undefined, { timeZone: zone })
+    capacityApiMock.listTimeslots.mockResolvedValue({
+      timeslots: [slot({ approval_state: 'approved', timezone: zone, start_at: startAt, end_at: endAt })],
+      count: 1,
+    })
+    await act(async () => {
+      root.render(<TimeslotsPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Delete')?.click()
+    })
+    const description = container.querySelector('[role="dialog"]')?.textContent || ''
+    expect(description).toContain(inZone(startAt))
+    expect(description).toContain(inZone(endAt))
+    expect(description).toContain(zone)
+    expect(description).not.toContain(new Date(startAt).toLocaleString())
+  })
+
   it('prompts to select a project when none is active and does not fetch', async () => {
     await act(async () => {
       root.render(<TimeslotsPanel canManage />)

@@ -8,6 +8,12 @@ ARG BUILD_TIME=
 
 WORKDIR /src
 COPY dashboard/package.json dashboard/package-lock.json ./dashboard/
+COPY dashboard/scripts/check-node-version.mjs ./dashboard/scripts/check-node-version.mjs
+# check-node-version.mjs resolves the pin from ../../.nvmrc, i.e. /src/.nvmrc.
+# It must be copied alongside the script: without it the preinstall gate below
+# throws ENOENT and the image build fails before npm ci ever runs.
+COPY .nvmrc ./.nvmrc
+RUN npm --prefix dashboard run check:node
 RUN npm --prefix dashboard ci --ignore-scripts
 RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/package.json').version")" \
 	&& test "${actual}" = "${PLAYWRIGHT_DRIVER_VERSION}" \

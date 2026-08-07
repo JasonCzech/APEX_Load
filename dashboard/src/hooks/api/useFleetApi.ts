@@ -10,6 +10,7 @@ import {
   ProvisionerInfo,
 } from '../../types/fleet'
 import { request } from '../apiClient'
+import { withCallOptions, type ApiCallOptions } from './requestOptions'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams()
@@ -41,96 +42,96 @@ export type GeneratorLifecycleResponse = {
 
 export function useFleetApi() {
   const listFleetPools = useCallback(
-    (params?: { limit?: number; offset?: number }) =>
-      request<FleetPoolListResponse>(`/fleet/pools${buildQuery({ ...params })}`),
+    (params?: { limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<FleetPoolListResponse>(`/fleet/pools${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
-  const getFleetPool = useCallback((id: string) => request<FleetPool>(`/fleet/pools/${id}`), [])
+  const getFleetPool = useCallback((id: string, options?: ApiCallOptions) => request<FleetPool>(`/fleet/pools/${id}`, withCallOptions(undefined, options)), [])
 
   const createFleetPool = useCallback(
-    (body: Partial<FleetPool>) =>
-      request<FleetPool>('/fleet/pools', { method: 'POST', body: JSON.stringify(body) }),
+    (body: Partial<FleetPool>, options?: ApiCallOptions) =>
+      request<FleetPool>('/fleet/pools', withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const updateFleetPool = useCallback(
-    (id: string, body: Partial<FleetPool>) =>
-      request<FleetPool>(`/fleet/pools/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    (id: string, body: Partial<FleetPool>, options?: ApiCallOptions) =>
+      request<FleetPool>(`/fleet/pools/${id}`, withCallOptions({ method: 'PUT', body: JSON.stringify(body) }, options)),
     [],
   )
 
   const deleteFleetPool = useCallback(
-    (id: string) => request<{ deleted: string }>(`/fleet/pools/${id}`, { method: 'DELETE' }),
+    (id: string, options?: ApiCallOptions) => request<{ deleted: string }>(`/fleet/pools/${id}`, withCallOptions({ method: 'DELETE' }, options)),
     [],
   )
 
   const listGeneratorMetadata = useCallback(
-    (params?: { limit?: number; offset?: number }) =>
-      request<FleetGeneratorMetadataListResponse>(`/fleet/generators${buildQuery({ ...params })}`),
+    (params?: { limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<FleetGeneratorMetadataListResponse>(`/fleet/generators${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const patchGeneratorMetadata = useCallback(
-    (generatorId: string, patch: GeneratorMetadataPatch) =>
-      request<FleetGeneratorMetadata>(`/fleet/generators/${generatorId}`, {
+    (generatorId: string, patch: GeneratorMetadataPatch, options?: ApiCallOptions) =>
+      request<FleetGeneratorMetadata>(`/fleet/generators/${generatorId}`, withCallOptions({
         method: 'PATCH',
         body: JSON.stringify(patch),
-      }),
+      }, options)),
     [],
   )
 
   const cordonGenerator = useCallback(
-    (generatorId: string) =>
-      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/cordon`, { method: 'POST' }),
+    (generatorId: string, options?: ApiCallOptions) =>
+      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/cordon`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const uncordonGenerator = useCallback(
-    (generatorId: string) =>
-      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/uncordon`, { method: 'POST' }),
+    (generatorId: string, options?: ApiCallOptions) =>
+      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/uncordon`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const drainGenerator = useCallback(
-    (generatorId: string) =>
-      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/drain`, { method: 'POST' }),
+    (generatorId: string, options?: ApiCallOptions) =>
+      request<GeneratorLifecycleResponse>(`/fleet/generators/${generatorId}/drain`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const createProvisionRequest = useCallback(
-    (body: { fleet_pool_id: string; desired_count: number; reason?: string; project_id?: string }) =>
-      request<FleetProvisioningRequest>('/fleet/provision-requests', {
+    (body: { fleet_pool_id: string; desired_count: number; reason?: string; project_id?: string }, options?: ApiCallOptions) =>
+      request<FleetProvisioningRequest>('/fleet/provision-requests', withCallOptions({
         method: 'POST',
         body: JSON.stringify(body),
-      }),
+      }, options)),
     [],
   )
 
   const listProvisionRequests = useCallback(
-    (params?: { fleet_pool_id?: string; limit?: number; offset?: number }) =>
-      request<FleetProvisioningRequestListResponse>(`/fleet/provision-requests${buildQuery({ ...params })}`),
+    (params?: { fleet_pool_id?: string; limit?: number; offset?: number }, options?: ApiCallOptions) =>
+      request<FleetProvisioningRequestListResponse>(`/fleet/provision-requests${buildQuery({ ...params })}`, withCallOptions(undefined, options)),
     [],
   )
 
   const getProvisionRequest = useCallback(
-    (id: string) => request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}`),
+    (id: string, options?: ApiCallOptions) => request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}`, withCallOptions(undefined, options)),
     [],
   )
 
   const cancelProvisionRequest = useCallback(
-    (id: string) =>
-      request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}/cancel`, { method: 'POST' }),
+    (id: string, options?: ApiCallOptions) =>
+      request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}/cancel`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
   const retryProvisionRequest = useCallback(
-    (id: string) =>
-      request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}/retry`, { method: 'POST' }),
+    (id: string, options?: ApiCallOptions) =>
+      request<FleetProvisioningRequest>(`/fleet/provision-requests/${id}/retry`, withCallOptions({ method: 'POST' }, options)),
     [],
   )
 
-  const getProvisioner = useCallback(() => request<ProvisionerInfo>('/fleet/provisioner'), [])
+  const getProvisioner = useCallback((options?: ApiCallOptions) => request<ProvisionerInfo>('/fleet/provisioner', withCallOptions(undefined, options)), [])
 
   return useMemo(
     () => ({

@@ -406,6 +406,7 @@ jobs:
         working-directory: dashboard
         run: |
           set -euo pipefail
+          npm run check:node
           npm ci --ignore-scripts
           npm run build
 

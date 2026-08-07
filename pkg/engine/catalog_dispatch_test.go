@@ -2,6 +2,11 @@ package engine
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"sort"
+	"strconv"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -49,25 +54,79 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 // TestEngineDispatchTypesAreInCatalog is the reverse direction: every type
 // handleEngineAction dispatches must be declared as an engine action in the
 // catalog, so nothing executable is invisible to validation, schema, and
-// editor tooling. The list mirrors the switch in vuser.go's
-// handleEngineAction plus the iteration-loop control-flow types.
+// editor tooling. Engine leaf types are read from the actual dispatch switch,
+// avoiding a second hand-maintained list that can drift when a case is added.
 func TestEngineDispatchTypesAreInCatalog(t *testing.T) {
-	dispatched := []string{
-		"rendezvous", "cookie_clear", "cache_clear", "http_connections_close", "error_message",
-		"source_message", "source_runtime", "source_transaction", "source_timer",
-		"source_metric", "source_parameter", "source_json", "source_xml",
-		"source_database", "source_secret", "source_external", "source_review",
-		"custom_call",
-		"control_if", "control_loop",
-	}
+	dispatched := engineActionTypesFromHandler(t)
+	// Containers are dispatched by the iteration loop rather than
+	// handleEngineAction. Keep this small architectural exception explicit.
+	dispatched = append(dispatched, "control_if", "control_loop")
+	sort.Strings(dispatched)
+	// OAuth token acquisition runs in the engine so it can publish the token to
+	// VUser variables before later actions, but it deliberately remains scoped
+	// to HTTP scripts because it reuses the active HTTP protocol's governed
+	// client. This is the sole protocol-scoped engine dispatch.
+	protocolScoped := map[string]string{"http_oauth2_token": "http"}
 	for _, actionType := range dispatched {
 		spec, ok := dsl.SpecForActionType(actionType)
 		if !ok {
 			t.Errorf("%s: dispatched by engine but missing from the dsl action catalog", actionType)
 			continue
 		}
-		if !spec.EngineAction() {
-			t.Errorf("%s: dispatched by engine but not declared as an engine action (protocols %v)", actionType, spec.Protocols)
+		if spec.EngineAction() {
+			continue
+		}
+		family, scoped := protocolScoped[actionType]
+		if !scoped || len(spec.Protocols) != 1 || spec.Protocols[0] != family {
+			t.Errorf("%s: dispatched by engine but not declared as an engine action or the expected protocol-scoped dispatch (protocols %v)", actionType, spec.Protocols)
 		}
 	}
+}
+
+func engineActionTypesFromHandler(t *testing.T) []string {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "vuser_source_actions.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse engine action dispatcher: %v", err)
+	}
+
+	types := map[string]struct{}{}
+	foundHandler := false
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != "handleEngineAction" {
+			continue
+		}
+		foundHandler = true
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			clause, ok := node.(*ast.CaseClause)
+			if !ok {
+				return true
+			}
+			for _, expression := range clause.List {
+				literal, ok := expression.(*ast.BasicLit)
+				if !ok || literal.Kind != token.STRING {
+					continue
+				}
+				value, err := strconv.Unquote(literal.Value)
+				if err != nil {
+					t.Fatalf("decode engine action case %q: %v", literal.Value, err)
+				}
+				types[value] = struct{}{}
+			}
+			return true
+		})
+	}
+	if !foundHandler {
+		t.Fatal("handleEngineAction was not found in vuser_source_actions.go")
+	}
+	if len(types) == 0 {
+		t.Fatal("handleEngineAction contains no string action cases")
+	}
+
+	dispatched := make([]string, 0, len(types))
+	for actionType := range types {
+		dispatched = append(dispatched, actionType)
+	}
+	return dispatched
 }

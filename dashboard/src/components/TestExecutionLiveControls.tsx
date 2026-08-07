@@ -301,6 +301,9 @@ export default function TestExecutionLiveControls({
                       dot={false}
                       isAnimationActive={false}
                     />
+                    {/* This band only maps because the X axis is a category axis and the preview
+                        model always emits a point at exactly vuserTransitionSeconds. Any bound that
+                        is not a sampled `second` needs a numeric axis instead. */}
                     <ReferenceArea
                       x1={0}
                       x2={Math.max(0, liveControlPreview.vuserTransitionSeconds)}

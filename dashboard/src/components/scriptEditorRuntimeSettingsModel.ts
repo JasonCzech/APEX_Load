@@ -37,6 +37,7 @@ export const SCRIPT_PROTOCOL_OPTIONS = [
   { value: 'jms-servicebus', label: 'JMS Azure Service Bus' },
   { value: 'jms-ibmmq', label: 'JMS IBM MQ' },
   { value: 'kafka', label: 'Kafka' },
+  { value: 'eventhubs', label: 'Azure Event Hubs' },
 ] as const
 
 export const RUNTIME_SETTINGS_SECTION_IDS = [
@@ -46,6 +47,7 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'runlogic',
   'errors',
   'jms',
+  'eventhubs',
   'websocket',
   'grpc',
   'database',
@@ -79,6 +81,7 @@ export interface RuntimeProtocolCapabilities {
   browser: boolean
   browserEmulation: boolean
   database: boolean
+  eventHubs: boolean
   grpc: boolean
   http: boolean
   httpTransport: boolean
@@ -116,6 +119,7 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
   const soap = normalized === 'soap'
   const database = normalized === 'database'
   const jms = normalized.startsWith('jms')
+  const eventHubs = normalized === 'eventhubs'
   const network = normalized === 'network'
   const httpTransport = http || normalized === 'https' || javaHttp || soap || browser
   return {
@@ -124,6 +128,7 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
     // emulation home stays the browser sub-tab (config.browser).
     browserEmulation: httpTransport && !browser,
     database,
+    eventHubs,
     grpc: normalized === 'grpc',
     http,
     httpTransport,
@@ -141,6 +146,7 @@ export function runtimeSettingsSectionIsAvailable(section: RuntimeSettingsSectio
   const capability = getRuntimeProtocolCapabilities(protocol)
   switch (section) {
     case 'jms': return capability.jms
+    case 'eventhubs': return capability.eventHubs
     case 'websocket': return capability.webSocket
     case 'grpc': return capability.grpc
     case 'database': return capability.database
@@ -606,6 +612,32 @@ export function transitionScriptProtocol(script: ScriptDefinition, protocol: str
     next.config.jms = jmsConfigForProtocol(protocol, next.config.jms || {}) || undefined
     if (next.actions.length === 0) {
       next.actions = [{ ...structuredClone(EMPTY_JMS_ACTION), name: 'Publish_Message' }]
+      selectedFirstAction = true
+    }
+  }
+
+  if (protocol === 'eventhubs') {
+    // Spread first: an imported capture already carries namespace / event_hub /
+    // connection_string and none of them may be dropped by the protocol switch.
+    // auth_type and start_position are deliberately left unset — empty means
+    // auto-detect (SAS when a connection string is present, AAD otherwise) and
+    // "latest", so seeding them would pin a mode the user never chose.
+    next.config.eventhubs = {
+      ...next.config.eventhubs,
+      consumer_group: next.config.eventhubs?.consumer_group || '$Default',
+      timeout_ms: next.config.eventhubs?.timeout_ms ?? 5000,
+      // A non-mock draft cannot validate until a namespace or connection string
+      // exists, so new scripts start in the in-memory shakeout broker.
+      mock: next.config.eventhubs?.mock ?? true,
+    }
+    if (next.actions.length === 0) {
+      next.actions = [{
+        ...structuredClone(EMPTY_ACTION),
+        name: 'Publish_Event',
+        type: 'eventhubs_produce',
+        params: {},
+        metadata: {},
+      }]
       selectedFirstAction = true
     }
   }

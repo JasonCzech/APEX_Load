@@ -129,93 +129,100 @@ type Server struct {
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu                  sync.Mutex
-	collectorMetrics            *collectorMetricStore
-	fleetScaler                 fleetPoolScaler
-	fleetProvisioningMu         sync.Mutex
-	fleetProvisioningActive     map[string]string
-	leadership                  *executionLeadership
-	activeEndpointPublisher     ExecutionEndpointPublisher
-	activeEndpointMu            sync.RWMutex
-	activeEndpointPublished     bool
-	activeEndpointOwnerID       string
-	activeEndpointGeneration    uint64
-	activeEndpointLastAttempt   time.Time
-	mux                         *http.ServeMux
-	backgroundMu                sync.Mutex
-	backgroundStopping          bool
-	backgroundWG                sync.WaitGroup
-	usageCancel                 context.CancelFunc
-	auditRetentionCancel        context.CancelFunc
-	timeslotRetentionCancel     context.CancelFunc
-	archiveCleanupCancel        context.CancelFunc
-	archiveCleanupDone          chan struct{}
-	archiveFinalizationCancel   context.CancelFunc
-	archiveFinalizationWake     chan struct{}
-	archiveFinalizationDone     chan struct{}
-	accessReviewNotifyCancel    context.CancelFunc
-	authAudit                   auditThrottle
-	fanoutCancel                context.CancelFunc
-	fanoutSub                   FanoutSubscription
-	generatorInventoryCancel    context.CancelFunc
-	generatorDiscovery          *generatorDiscovery
-	discoveryCancel             context.CancelFunc
-	k8sRestart                  K8sRestartSettings
-	kubeRestarter               KubeRestarter
-	kubePodsCacheMu             sync.Mutex
-	kubePodsCache               generatorPodInventoryCache
-	restartMu                   sync.Mutex
-	restartInFlight             map[string]struct{}
-	testNotesArchiveMu          sync.Mutex
-	testNotesArchiveLocks       map[string]*sync.Mutex
-	metricsAddr                 string
-	metricsToken                string
-	metricsServerMu             sync.Mutex
-	metricsServer               *http.Server
-	metricsServerStopped        bool
-	metricsBoundAddr            string
-	desktopMode                 bool
-	desktopCapability           string
-	desktopBootstrapMu          sync.Mutex
-	desktopBootstrapNonces      map[string]desktopBrowserBootstrap
-	desktopBrowserCapabilities  map[string]desktopBrowserCapability
-	desktopBrowserDownloads     map[string]desktopBrowserDownloadGrant
-	desktopOIDCStates           map[string]desktopOIDCStateGrant
-	desktopGitHubStates         map[string]desktopGitHubStateGrant
-	bridgeMode                  bool
-	recordingBridge             *BrowserRecordingBridge
-	desktopAppData              string
-	desktopLogPath              string
-	importAssetDir              string
-	brunoImportMu               sync.Mutex
-	brunoImportSessions         map[string]*brunoImportSession
-	brunoArtifactMu             sync.Mutex
-	brunoArtifacts              *importartifact.EncryptedStore
-	importSessions              *importsession.Manager
-	brunoArtifactDir            string
-	brunoArtifactWrapper        keywrap.KeyWrapper
-	brunoSessionCleanupCancel   context.CancelFunc
-	grafanaSessionCleanupCancel context.CancelFunc
-	projectSecretStore          secretstore.Store
-	protectedSourceSessions     *secretstore.ProtectedSourceSessionStore
-	sourceSecretMu              sync.Mutex
-	sourceSecretSessions        map[string]*sourceSecretSession
-	sourceSecretSessionLifetime time.Duration
-	sourceSecretCleanupCancel   context.CancelFunc
-	ciRunCreateMu               sync.Mutex
-	ciRunCreates                map[string]int
-	beforeCIRunMaterialize      func(CreateTestRequest)
-	afterCIRunMaterialize       func(*ManagedTest)
-	bindScope                   string
-	boundAddr                   string
-	boundAddrMu                 sync.RWMutex
-	lifecycleMu                 sync.Mutex
-	startupStarted              bool
-	startupDone                 chan struct{}
-	startupDoneOnce             sync.Once
-	shutdownStarted             bool
-	shutdownDone                chan struct{}
-	shutdownErr                 error
+	selfHealMu                        sync.Mutex
+	collectorMetrics                  *collectorMetricStore
+	fleetScaler                       fleetPoolScaler
+	clusterStore                      storage.ClusterConnectionStore
+	domainTargets                     storage.DomainDeploymentTargetStore
+	clusterClients                    *clusterClientCache
+	clusterScalers                    clusterScalerResolver
+	clusterSecretWrapper              keywrap.KeyWrapper
+	clusterProbes                     *clusterProbeThrottle
+	fleetProvisioningMu               sync.Mutex
+	fleetProvisioningActive           map[string]string
+	leadership                        *executionLeadership
+	activeEndpointPublisher           ExecutionEndpointPublisher
+	activeEndpointMu                  sync.RWMutex
+	activeEndpointPublished           bool
+	activeEndpointOwnerID             string
+	activeEndpointGeneration          uint64
+	activeEndpointLastAttempt         time.Time
+	mux                               *http.ServeMux
+	backgroundMu                      sync.Mutex
+	backgroundStopping                bool
+	backgroundWG                      sync.WaitGroup
+	usageCancel                       context.CancelFunc
+	auditRetentionCancel              context.CancelFunc
+	timeslotRetentionCancel           context.CancelFunc
+	scheduleOccurrenceRetentionCancel context.CancelFunc
+	archiveCleanupCancel              context.CancelFunc
+	archiveCleanupDone                chan struct{}
+	archiveFinalizationCancel         context.CancelFunc
+	archiveFinalizationWake           chan struct{}
+	archiveFinalizationDone           chan struct{}
+	accessReviewNotifyCancel          context.CancelFunc
+	authAudit                         auditThrottle
+	fanoutCancel                      context.CancelFunc
+	fanoutSub                         FanoutSubscription
+	generatorInventoryCancel          context.CancelFunc
+	generatorDiscovery                *generatorDiscovery
+	discoveryCancel                   context.CancelFunc
+	k8sRestart                        K8sRestartSettings
+	kubeRestarter                     KubeRestarter
+	kubePodsCacheMu                   sync.Mutex
+	kubePodsCache                     generatorPodInventoryCache
+	restartMu                         sync.Mutex
+	restartInFlight                   map[string]struct{}
+	testNotesArchiveMu                sync.Mutex
+	testNotesArchiveLocks             map[string]*sync.Mutex
+	metricsAddr                       string
+	metricsToken                      string
+	metricsServerMu                   sync.Mutex
+	metricsServer                     *http.Server
+	metricsServerStopped              bool
+	metricsBoundAddr                  string
+	desktopMode                       bool
+	desktopCapability                 string
+	desktopBootstrapMu                sync.Mutex
+	desktopBootstrapNonces            map[string]desktopBrowserBootstrap
+	desktopBrowserCapabilities        map[string]desktopBrowserCapability
+	desktopBrowserDownloads           map[string]desktopBrowserDownloadGrant
+	desktopOIDCStates                 map[string]desktopOIDCStateGrant
+	desktopGitHubStates               map[string]desktopGitHubStateGrant
+	bridgeMode                        bool
+	recordingBridge                   *BrowserRecordingBridge
+	desktopAppData                    string
+	desktopLogPath                    string
+	importAssetDir                    string
+	brunoImportMu                     sync.Mutex
+	brunoImportSessions               map[string]*brunoImportSession
+	brunoArtifactMu                   sync.Mutex
+	brunoArtifacts                    *importartifact.EncryptedStore
+	importSessions                    *importsession.Manager
+	brunoArtifactDir                  string
+	brunoArtifactWrapper              keywrap.KeyWrapper
+	brunoSessionCleanupCancel         context.CancelFunc
+	grafanaSessionCleanupCancel       context.CancelFunc
+	projectSecretStore                secretstore.Store
+	protectedSourceSessions           *secretstore.ProtectedSourceSessionStore
+	sourceSecretMu                    sync.Mutex
+	sourceSecretSessions              map[string]*sourceSecretSession
+	sourceSecretSessionLifetime       time.Duration
+	sourceSecretCleanupCancel         context.CancelFunc
+	ciRunCreateMu                     sync.Mutex
+	ciRunCreates                      map[string]int
+	beforeCIRunMaterialize            func(CreateTestRequest)
+	afterCIRunMaterialize             func(*ManagedTest)
+	bindScope                         string
+	boundAddr                         string
+	boundAddrMu                       sync.RWMutex
+	lifecycleMu                       sync.Mutex
+	startupStarted                    bool
+	startupDone                       chan struct{}
+	startupDoneOnce                   sync.Once
+	shutdownStarted                   bool
+	shutdownDone                      chan struct{}
+	shutdownErr                       error
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -539,7 +546,34 @@ func NewServer(cfg ServerConfig) *Server {
 
 	// Select the fleet provisioner backend (in-cluster Kubernetes scaler when
 	// enabled + selected, else the unconfigured default → not_configured).
+	// This stays the fallback for pools with no cluster binding, which is every
+	// pool that predates the cluster registry.
 	s.fleetScaler = newFleetPoolScaler(s.kubeRestarter, s.k8sRestart)
+
+	// Administrator-registered cluster connections. The key wrapper is shared
+	// with the encrypted project-secret store; when it is unconfigured, cluster
+	// credentials cannot be sealed and the write handlers fail closed with 503.
+	if candidate, ok := cfg.Store.(storage.ClusterConnectionStore); ok {
+		s.clusterStore = candidate
+	}
+	// Per-domain deployment targets are another optional store capability, so
+	// older Store implementations and test doubles keep compiling.
+	if candidate, ok := cfg.Store.(storage.DomainDeploymentTargetStore); ok {
+		s.domainTargets = candidate
+	}
+	s.clusterSecretWrapper = wrapper
+	s.clusterClients = newClusterClientCache(s.clusterSecretWrapper, s.clusterDialGuard())
+	s.clusterProbes = &clusterProbeThrottle{lastRun: make(map[string]time.Time)}
+	s.clusterScalers = &registryFleetScalerResolver{
+		store:   s.clusterStore,
+		clients: s.clusterClients,
+		// Read the field rather than capturing it: tests and any later
+		// reconfiguration replace s.fleetScaler after construction, and a
+		// captured value would silently keep using the stale scaler.
+		fallback:      func() fleetPoolScaler { return s.fleetScaler },
+		quotaChecker:  s,
+		domainTargets: s.domainTargets,
+	}
 
 	// Apply a persisted metadata cordon to the live drain state when a generator
 	// (re)connects, so a cordon issued while the generator was offline takes effect.
@@ -1127,6 +1161,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(fleetObservabilityAPIRouteCatalog, standardRouteMiddleware)
 	// Fleet management: pools, generator metadata, and cloud provisioning.
 	s.registerAPIRouteCatalog(fleetAdministrationAPIRouteCatalog, standardRouteMiddleware)
+	// Cluster registry: Kubernetes/AKS connections and pool host allocation.
+	s.registerAPIRouteCatalog(clusterAdministrationAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(domainDeploymentTargetAPIRouteCatalog, standardRouteMiddleware)
 	// WebSocket — no CORS wrapper (handled by upgrade check)
 	s.mux.Handle("GET /api/v1/ws", log(auth(http.HandlerFunc(s.handleWebSocket))))
 	s.mux.Handle("GET /api/v1/tests/{id}/stream", log(auth(http.HandlerFunc(s.handleTestStream))))
@@ -1327,6 +1364,7 @@ func (s *Server) Start() (startErr error) {
 	s.startGeneratorInventoryRefreshCadence()
 	s.startAuditRetentionCadence()
 	s.startTimeslotRetentionCadence()
+	s.startScheduleOccurrenceRetentionCadence()
 	s.startArchiveCleanupRetry()
 	s.startArchiveFinalizationRetry()
 	s.startAccessReviewNotifierCadence()
@@ -1813,6 +1851,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.timeslotRetentionCancel != nil {
 		s.timeslotRetentionCancel()
 		s.timeslotRetentionCancel = nil
+	}
+	if s.scheduleOccurrenceRetentionCancel != nil {
+		s.scheduleOccurrenceRetentionCancel()
+		s.scheduleOccurrenceRetentionCancel = nil
 	}
 	if s.brunoSessionCleanupCancel != nil {
 		s.brunoSessionCleanupCancel()

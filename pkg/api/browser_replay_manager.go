@@ -801,26 +801,25 @@ func (m *BrowserReplayManager) GetForProject(sessionID, projectID string) (*Brow
 
 func (m *BrowserReplayManager) getForProject(sessionID, projectID string) (*BrowserReplaySession, bool) {
 	now := m.retention.clock()
-	var pruneReleases []*replaySessionLeaseSignal
-	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
-	m.mu.Lock()
-	_, pruneReleases = m.pruneExpiredLocked(now)
+	m.mu.RLock()
 	session, ok := m.sessions[sessionID]
 	if !ok {
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return nil, false
 	}
 	session.mu.Lock()
+	m.cancelIdleRunningSessionLocked(session, now)
 	if session.reservation.failureOrExpired(time.Now()) != nil ||
-		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		!replaySessionProjectMatches(session.ProjectID, projectID) ||
+		m.shouldPruneSessionLocked(session, now) {
 		session.mu.Unlock()
-		m.mu.Unlock()
+		m.mu.RUnlock()
 		return nil, false
 	}
 	session.lastActivityAt = now
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	return snapshot, true
 }
 

@@ -2248,13 +2248,11 @@
   cursor: help;
 }
 
+/* The class sits on the focusable tick <text>, so the ring has to render on that node. */
 .chart-y-axis-click-target:focus-visible {
-  outline: none;
-}
-
-.chart-y-axis-click-target:focus-visible .recharts-cartesian-axis-line {
-  stroke: var(--accent);
-  stroke-width: 2;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  fill: var(--accent);
 }
 
 .chart-axis-label-popover {

@@ -1019,6 +1019,42 @@ func (s *SQLiteStore) ListAllScenarioScheduleOccurrences() ([]*ScenarioScheduleO
 	return collectScenarioScheduleOccurrences(rows)
 }
 
+// DeleteTerminalScenarioScheduleOccurrencesBefore prunes one bounded batch of
+// old scheduler history. The parent-schedule check preserves the occurrence
+// currently named by next_run_at even if a malformed or partially reconciled
+// row already carries a terminal-looking status.
+func (s *SQLiteStore) DeleteTerminalScenarioScheduleOccurrencesBefore(cutoff time.Time, limit int) (int64, error) {
+	limit = boundedScheduleOccurrenceDeleteLimit(limit)
+	if limit == 0 || cutoff.IsZero() {
+		return 0, nil
+	}
+	result, err := s.db.Exec(`DELETE FROM scenario_schedule_occurrences
+		WHERE id IN (
+			SELECT occurrence.id
+			FROM scenario_schedule_occurrences occurrence
+			JOIN scenario_schedules schedule ON schedule.id = occurrence.schedule_id
+			WHERE occurrence.planned_at < ?
+			  AND LOWER(TRIM(COALESCE(occurrence.status, ''))) IN ('materialized', 'failed', 'blocked', 'skipped')
+			  AND (schedule.next_run_at IS NULL OR schedule.next_run_at > occurrence.planned_at)
+			ORDER BY occurrence.planned_at ASC, occurrence.id ASC
+			LIMIT ?
+		)`, cutoff.UTC(), limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func boundedScheduleOccurrenceDeleteLimit(limit int) int {
+	if limit <= 0 {
+		return 0
+	}
+	if limit > 1000 {
+		return 1000
+	}
+	return limit
+}
+
 // CountScenarioScheduleOccurrencesByStatus keeps schedule-health reads bounded
 // regardless of retained history size.
 func (s *SQLiteStore) CountScenarioScheduleOccurrencesByStatus() (map[string]int, error) {

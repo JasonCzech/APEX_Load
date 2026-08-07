@@ -169,6 +169,63 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(script.actions).toEqual([])
   })
 
+  it('seeds an Event Hubs draft the backend can validate without pinning an auth mode', () => {
+    const script: ScriptDefinition = {
+      name: 'Protocol draft',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: '' },
+      actions: [],
+    }
+
+    const eventhubs = transitionScriptProtocol(script, 'eventhubs')
+    expect(eventhubs.script.config.eventhubs).toMatchObject({
+      consumer_group: '$Default',
+      timeout_ms: 5000,
+      mock: true,
+    })
+    // Empty auth_type/start_position mean auto-detect and "latest" on the
+    // engine; seeding them would silently pin SAS on an AAD namespace.
+    expect(eventhubs.script.config.eventhubs?.auth_type).toBeUndefined()
+    expect(eventhubs.script.config.eventhubs?.start_position).toBeUndefined()
+    expect(eventhubs.script.actions[0]).toMatchObject({ name: 'Publish_Event', type: 'eventhubs_produce' })
+    expect(eventhubs.selectedFirstAction).toBe(true)
+  })
+
+  it('keeps an imported Event Hubs capture config when the protocol select is re-applied', () => {
+    const script: ScriptDefinition = {
+      name: 'Capture import',
+      version: '1.0.0',
+      protocol: 'eventhubs',
+      config: {
+        base_url: '',
+        eventhubs: {
+          namespace: 'orders.servicebus.windows.net',
+          event_hub: 'orders',
+          auth_type: 'aad',
+          start_position: 'earliest',
+          consumer_group: 'load-tests',
+          timeout_ms: 0,
+          mock: false,
+        },
+      },
+      actions: [{ name: 'Replay_Event', type: 'eventhubs_produce', target: 'orders' }],
+    }
+
+    const eventhubs = transitionScriptProtocol(script, 'eventhubs')
+    expect(eventhubs.script.config.eventhubs).toEqual({
+      namespace: 'orders.servicebus.windows.net',
+      event_hub: 'orders',
+      auth_type: 'aad',
+      start_position: 'earliest',
+      consumer_group: 'load-tests',
+      timeout_ms: 0,
+      mock: false,
+    })
+    expect(eventhubs.script.actions).toHaveLength(1)
+    expect(eventhubs.selectedFirstAction).toBe(false)
+  })
+
   it('round-trips advanced text sections without losing false flags or DFE options', () => {
     const checks = runtimeConfig().web_runtime?.content_checks
     expect(parseContentChecks(formatContentChecks(checks))).toEqual(checks)

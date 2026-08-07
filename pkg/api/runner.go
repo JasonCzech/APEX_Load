@@ -195,13 +195,10 @@ type TestRunner struct {
 	reservedLaunchCreateMu      sync.Mutex
 	contentRevision             uint64
 	contentReloadMu             sync.Mutex
-	haScriptRefreshMu           sync.Mutex
-	haScriptRefreshAt           time.Time
+	haScriptRefresh             haRefreshCoalescer
 	testReloadMu                sync.Mutex
-	haTestRefreshAt             time.Time
-	capacityBindingReadMu       sync.Mutex
-	capacityBindingReadAt       time.Time
-	capacityBindingReadCh       chan struct{}
+	haTestRefresh               haRefreshCoalescer
+	capacityBindingRefresh      haRefreshCoalescer
 	haScenarioRefreshMu         sync.Mutex
 	haScenarioRefreshAt         time.Time
 	schedulerContentMu          sync.Mutex
@@ -346,6 +343,15 @@ type TestRunner struct {
 	capacityAdvisoryGen     uint64
 	capacityAdvisoryHits    uint64
 	capacityAdvisoryMisses  uint64
+
+	// durableStatusWritesInFlight counts persistStoredTestStatus calls that are
+	// currently inside the storage driver. The run-driver panic backstop reads it
+	// to tell a terminal transition blocked on slow durable I/O (which waiting
+	// does recover from) from one blocked on an orphaned lock (which it never
+	// does). It is a process-wide gauge, not a per-run one, so it can only delay
+	// the backstop's re-panic, never suppress it: under a healthy store an
+	// unrelated status write clears in milliseconds.
+	durableStatusWritesInFlight atomic.Int64
 
 	liveInventoryMu sync.RWMutex
 	liveInventory   []GeneratorInventoryEntry

@@ -301,7 +301,6 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     _selectedIds: string[],
     importDraftExpiresAt?: string,
   ) => {
-    credentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advanceReviewGeneration()
     setSaving(false)
     setResult(prev => {

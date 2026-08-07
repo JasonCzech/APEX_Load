@@ -1328,6 +1328,31 @@ type TestCapacityBindingState struct {
 	CapacityWindowEndAt   *time.Time
 }
 
+// TestVUserScaleUpdate is the narrow durable projection a VUser scale
+// reservation owns: the group workload snapshot and the run's total VUsers.
+// Nothing else a scale step mutates is persisted, so the write does not need
+// the full-row upsert's placement re-validation or its unrelated JSON columns.
+type TestVUserScaleUpdate struct {
+	ID          string
+	TotalVUsers int
+	Groups      any // JSON blob, marshalled by the store while the caller still holds its lock
+}
+
+// TestVUserScaleWriter is an optional narrow-write capability. It is kept off
+// the Store interface so compatibility persistence implementations (and test
+// doubles) keep working via the full-row SaveTest path; callers type-assert for
+// it and fall back when it is absent.
+type TestVUserScaleWriter interface {
+	UpdateTestVUserScale(update TestVUserScaleUpdate) (bool, error)
+}
+
+// LeaseFencedTestVUserScaleWriter is the execution-lease fenced form of
+// TestVUserScaleWriter, used when the controller runs with durable execution
+// fencing enabled.
+type LeaseFencedTestVUserScaleWriter interface {
+	UpdateTestVUserScaleIfLeaseHeld(update TestVUserScaleUpdate, leaseName, leaseOwnerID string) (bool, error)
+}
+
 // TestBaselineState is the durable baseline projection returned after an
 // atomic comparison-scope pin/unpin operation.
 type TestBaselineState struct {

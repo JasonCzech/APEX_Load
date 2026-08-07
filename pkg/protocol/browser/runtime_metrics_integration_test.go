@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -38,11 +37,7 @@ func TestBrowserProtocolClientMetrics(t *testing.T) {
 		"browser_client_metrics": true,
 		"browser_device_profile": "pixel_8",
 	}); err != nil {
-		lower := strings.ToLower(err.Error())
-		if strings.Contains(lower, "executable") || strings.Contains(lower, "chrome") {
-			t.Skipf("browser runtime unavailable: %v", err)
-		}
-		t.Fatalf("Init returned error: %v", err)
+		requireBrowserRuntime(t, "", err)
 	}
 	defer b.Teardown(context.Background())
 

@@ -288,6 +288,12 @@ var authAccessMatrix = []AuthAccessResource{
 		Operations: []AuthAccessOperation{
 			{ID: "view_system", Label: "View settings, inventory, and usage accounting", GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}},
 			{ID: "manage_system", Label: "Update system settings, generator drain state, and restart controls", GlobalRoles: []string{RoleSystemAdmin}},
+			// These live under system_configuration rather than
+			// domains_and_application_repository because a deployment target
+			// names infrastructure, and this is the resource the dashboard's
+			// infrastructure gates already read.
+			{ID: "view_deployment_targets", Label: "View per-domain deployment targets", GlobalRoles: []string{RoleSystemAdmin}},
+			{ID: "manage_deployment_targets", Label: "Choose the cloud a domain's fleet pools deploy into", GlobalRoles: []string{RoleSystemAdmin}},
 		},
 	},
 	{
@@ -1676,16 +1682,155 @@ func hasAnyScopedProjectAdmin(user *AuthenticatedUser, store storage.Store) bool
 	return false
 }
 
+// userBindingScopeKey identifies the only binding fields canManageBinding
+// actually reads. Two bindings with the same triple always get the same answer
+// for a given caller, so the answer is safe to memoize per request.
+type userBindingScopeKey struct {
+	role      string
+	scopeType string
+	scopeID   string
+}
+
+// userVisibilityResolver memoizes the request-scoped inputs to user/binding
+// visibility for the duration of one listing.
+//
+// canManageBinding's answer depends only on the authenticated caller (fixed for
+// the request) and the binding's (role, scope_type, scope_id) triple, but
+// resolving a project-scoped binding costs up to three store reads
+// (GetProject + GetRepositoryCategory/GetApplicationRepository) and every
+// entry point first deep-clones the whole system-settings snapshot via
+// GetSystemSettings to probe auth-bypass mode. A scoped admin listing users
+// therefore paid that per binding per user — and paid it twice, once to decide
+// whether the user is visible at all and again to filter the bindings on the
+// way out. Caching turns the fan-out into one settings read plus one store
+// resolution per distinct scope.
+type userVisibilityResolver struct {
+	server  *Server
+	request *http.Request
+
+	bypassKnown bool
+	bypass      bool
+
+	lifecycleKnown bool
+	lifecycle      bool
+
+	unrestrictedKnown bool
+	unrestricted      bool
+
+	bindingDecisions map[userBindingScopeKey]bool
+}
+
+func (s *Server) newUserVisibilityResolver(r *http.Request) *userVisibilityResolver {
+	return &userVisibilityResolver{server: s, request: r}
+}
+
+func (v *userVisibilityResolver) authBypass() bool {
+	if !v.bypassKnown {
+		v.bypass = isAuthBypassMode(normalizeAuthSettings(v.server.runner.GetSystemSettings().Auth).Mode)
+		v.bypassKnown = true
+	}
+	return v.bypass
+}
+
+func (v *userVisibilityResolver) canManageBinding(binding *storage.UserRoleBinding) bool {
+	if v.authBypass() {
+		return true
+	}
+	if binding == nil {
+		return false
+	}
+	key := userBindingScopeKey{role: binding.Role, scopeType: binding.ScopeType, scopeID: binding.ScopeID}
+	if decision, cached := v.bindingDecisions[key]; cached {
+		return decision
+	}
+	decision := canManageBinding(v.request, v.server.store, binding)
+	if v.bindingDecisions == nil {
+		v.bindingDecisions = make(map[userBindingScopeKey]bool)
+	}
+	v.bindingDecisions[key] = decision
+	return decision
+}
+
+func (v *userVisibilityResolver) canManageUserLifecycle() bool {
+	if !v.lifecycleKnown {
+		v.lifecycle = v.authBypass() || currentUserCanManageUserLifecycle(v.request)
+		v.lifecycleKnown = true
+	}
+	return v.lifecycle
+}
+
+func (v *userVisibilityResolver) unrestrictedVisibility() bool {
+	if !v.unrestrictedKnown {
+		v.unrestricted = v.resolveUnrestrictedVisibility()
+		v.unrestrictedKnown = true
+	}
+	return v.unrestricted
+}
+
+func (v *userVisibilityResolver) resolveUnrestrictedVisibility() bool {
+	if v.authBypass() {
+		return true
+	}
+	user, ok := AuthenticatedUserFromContext(v.request.Context())
+	if !ok || user == nil {
+		return false
+	}
+	return user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin)
+}
+
+func (v *userVisibilityResolver) userVisible(user *storage.User) bool {
+	if user == nil {
+		return false
+	}
+	if v.unrestrictedVisibility() {
+		return true
+	}
+	for _, binding := range user.Bindings {
+		if v.canManageBinding(binding) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *userVisibilityResolver) visibleUser(user *storage.User) *storage.User {
+	if user == nil {
+		return nil
+	}
+	clone := *user
+	if v.canManageUserLifecycle() {
+		clone.Bindings = append([]*storage.UserRoleBinding(nil), user.Bindings...)
+		return &clone
+	}
+	clone.Bindings = v.visibleBindings(user.Bindings)
+	return &clone
+}
+
+func (v *userVisibilityResolver) visibleBindings(bindings []*storage.UserRoleBinding) []*storage.UserRoleBinding {
+	visible := make([]*storage.UserRoleBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		if v.canManageBinding(binding) {
+			visible = append(visible, binding)
+		}
+	}
+	return visible
+}
+
 func (s *Server) visibleUsersForRequest(r *http.Request, users []*storage.User) []*storage.User {
+	return s.newUserVisibilityResolver(r).visibleUsers(users)
+}
+
+func (v *userVisibilityResolver) visibleUsers(users []*storage.User) []*storage.User {
 	out := make([]*storage.User, 0, len(users))
 	for _, user := range users {
-		out = append(out, s.visibleUserForRequest(r, user))
+		out = append(out, v.visibleUser(user))
 	}
 	return out
 }
 
 func (s *Server) listVisibleUsersForRequest(r *http.Request, filter storage.UserFilter) ([]*storage.User, int, error) {
-	if s.requestHasUnrestrictedUserVisibility(r) {
+	resolver := s.newUserVisibilityResolver(r)
+	if resolver.unrestrictedVisibility() {
 		users, err := s.store.ListUsers(filter)
 		if err != nil {
 			return nil, 0, err
@@ -1694,7 +1839,7 @@ func (s *Server) listVisibleUsersForRequest(r *http.Request, filter storage.User
 		if err != nil {
 			total = len(users)
 		}
-		return s.visibleUsersForRequest(r, users), total, nil
+		return resolver.visibleUsers(users), total, nil
 	}
 
 	limit := filter.Limit
@@ -1721,14 +1866,14 @@ func (s *Server) listVisibleUsersForRequest(r *http.Request, filter storage.User
 			break
 		}
 		for _, user := range page {
-			if !s.userVisibleToRequest(r, user) {
+			if !resolver.userVisible(user) {
 				continue
 			}
 			total++
 			if total <= offset || len(visible) >= limit {
 				continue
 			}
-			visible = append(visible, s.visibleUserForRequest(r, user))
+			visible = append(visible, resolver.visibleUser(user))
 		}
 		if len(page) < pageFilter.Limit {
 			break
@@ -1739,52 +1884,19 @@ func (s *Server) listVisibleUsersForRequest(r *http.Request, filter storage.User
 }
 
 func (s *Server) requestHasUnrestrictedUserVisibility(r *http.Request) bool {
-	if isAuthBypassMode(normalizeAuthSettings(s.runner.GetSystemSettings().Auth).Mode) {
-		return true
-	}
-	user, ok := AuthenticatedUserFromContext(r.Context())
-	if !ok || user == nil {
-		return false
-	}
-	return user.hasGlobalRole(RoleSystemAdmin, RoleProjectAdmin)
+	return s.newUserVisibilityResolver(r).unrestrictedVisibility()
 }
 
 func (s *Server) userVisibleToRequest(r *http.Request, user *storage.User) bool {
-	if user == nil {
-		return false
-	}
-	if s.requestHasUnrestrictedUserVisibility(r) {
-		return true
-	}
-	for _, binding := range user.Bindings {
-		if s.canManageUserBinding(r, binding) {
-			return true
-		}
-	}
-	return false
+	return s.newUserVisibilityResolver(r).userVisible(user)
 }
 
 func (s *Server) visibleUserForRequest(r *http.Request, user *storage.User) *storage.User {
-	if user == nil {
-		return nil
-	}
-	clone := *user
-	if s.currentRequestCanManageUserLifecycle(r) {
-		clone.Bindings = append([]*storage.UserRoleBinding(nil), user.Bindings...)
-		return &clone
-	}
-	clone.Bindings = s.visibleUserBindingsForRequest(r, user.Bindings)
-	return &clone
+	return s.newUserVisibilityResolver(r).visibleUser(user)
 }
 
 func (s *Server) visibleUserBindingsForRequest(r *http.Request, bindings []*storage.UserRoleBinding) []*storage.UserRoleBinding {
-	visible := make([]*storage.UserRoleBinding, 0, len(bindings))
-	for _, binding := range bindings {
-		if s.canManageUserBinding(r, binding) {
-			visible = append(visible, binding)
-		}
-	}
-	return visible
+	return s.newUserVisibilityResolver(r).visibleBindings(bindings)
 }
 
 func projectIDForBinding(binding *storage.UserRoleBinding) string {

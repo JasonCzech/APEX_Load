@@ -775,6 +775,46 @@ func TestBrowserReplayManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	}
 }
 
+func TestBrowserReplayManagerGetDoesNotSweepUnrelatedSessions(t *testing.T) {
+	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
+	expiredAt := now.Add(-2 * time.Hour)
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	manager.sessions["active"] = &BrowserReplaySession{
+		ID:             "active",
+		Status:         BrowserReplayRunning,
+		lastActivityAt: now.Add(-time.Minute),
+	}
+	manager.sessions["expired"] = &BrowserReplaySession{
+		ID:             "expired",
+		Status:         BrowserReplayCompleted,
+		CompletedAt:    &expiredAt,
+		terminalAt:     &expiredAt,
+		lastActivityAt: expiredAt,
+	}
+
+	if session, ok := manager.Get("active"); !ok || session == nil || session.ID != "active" {
+		t.Fatalf("Get(active) = %#v, %t", session, ok)
+	}
+	if _, exists := manager.sessions["expired"]; !exists {
+		t.Fatal("Get(active) swept an unrelated expired session")
+	}
+	if got := manager.sessions["active"].lastActivityAt; !got.Equal(now) {
+		t.Fatalf("active session last activity = %s, want %s", got, now)
+	}
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("janitor prune removed %d sessions, want 1", removed)
+	}
+	if _, exists := manager.sessions["expired"]; exists {
+		t.Fatal("janitor prune retained expired session")
+	}
+}
+
 func TestBrowserReplayManagerSessionCapPreservesNonTerminalSessionsWhenOverCap(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	cancelled := make(chan string, 1)

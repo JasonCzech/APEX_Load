@@ -725,9 +725,8 @@ func nativeXMLSecretRequirement(
 	nameHash := sha256.Sum256([]byte("bruno-native-xml-name\x00" + sourcePath + "\x00" + hashIdentity))
 	suffix := "_" + strings.ToUpper(hex.EncodeToString(nameHash[:6]))
 	suggested := secretName(sourcePath, "body_xml_"+localName)
-	const maxLogicalSecretNameBytes = 249
-	if len(suggested)+len(suffix) > maxLogicalSecretNameBytes {
-		suggested = strings.TrimRight(suggested[:maxLogicalSecretNameBytes-len(suffix)], "_")
+	if len(suggested)+len(suffix) > credential.MaxLogicalNameBytes {
+		suggested = strings.TrimRight(suggested[:credential.MaxLogicalNameBytes-len(suffix)], "_")
 	}
 	suggested += suffix
 	idHash := sha256.Sum256([]byte("bruno-native-xml\x00" + sourcePath + "\x00" + hashIdentity))

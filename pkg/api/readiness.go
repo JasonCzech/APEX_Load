@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -332,11 +333,21 @@ func (s *Server) platformIntegrationsReadiness() SystemReadinessCheck {
 	backend := currentArchiveBackend()
 	prometheus := normalizePrometheusSettings(s.runner.GetSystemSettings().Prometheus)
 	dashboard := dashboardStaticAssetsReadiness(s.dashboardStaticFS())
+	wrapping := wrappingKeyReadinessDetails()
 	status := readinessStatusReady
 	message := "deployment integration surfaces are configured"
 	if dashboard["status"] != readinessStatusReady {
 		status = readinessStatusDegraded
 		message = "deployment integration surfaces are configured with dashboard asset warnings"
+	}
+	// Two wrapping keys configured at once is not a warning to bury: server
+	// startup only logs it, the wrapper stays nil, and every credential write
+	// then fails with a 503 that does not explain why. Readiness is where an
+	// operator will actually see the cause.
+	if conflict, _ := wrapping["conflict"].(bool); conflict {
+		status = readinessStatusDegraded
+		message = "two wrapping keys are configured; set exactly one of " +
+			keywrap.KeyVaultKeyIDEnvVar + " or " + keywrap.KMSKeyIDEnvVar
 	}
 	return SystemReadinessCheck{
 		Name:    "platform_integrations",
@@ -348,8 +359,22 @@ func (s *Server) platformIntegrationsReadiness() SystemReadinessCheck {
 			"object_archive":            objectArchiveReadinessDetails(backend),
 			"prometheus_scaling_source": prometheusScalingSourceDetails(prometheus),
 			"azure_identity":            azureIdentityReadinessDetails(),
+			"aws_identity":              awsIdentityReadinessDetails(),
+			"wrapping_key":              wrapping,
 			"dashboard_static_assets":   dashboard,
 		},
+	}
+}
+
+// wrappingKeyReadinessDetails reports which envelope-wrapping key is selected.
+// It is a separate axis from secret_resolver: the wrapper protects cluster
+// credentials and project-secret ciphertext, while the secret store is where
+// project secret VALUES live.
+func wrappingKeyReadinessDetails() map[string]any {
+	provider, conflict := keywrap.ConfiguredWrappingProvider()
+	return map[string]any{
+		"provider": provider,
+		"conflict": conflict,
 	}
 }
 
@@ -362,6 +387,8 @@ func secretResolverReadinessDetails() map[string]any {
 	details := map[string]any{
 		"env_secret_prefix_enabled":  true,
 		"azure_key_vault_configured": keyVaultURL != "",
+		"aws_secrets_manager_configured": strings.EqualFold(
+			strings.TrimSpace(os.Getenv("APEXLOAD_AWS_SECRETS_MANAGER_WRITE_ENABLED")), "true"),
 	}
 	if keyVaultURL != "" {
 		details["azure_key_vault_auth"] = mode
@@ -416,6 +443,25 @@ func azureIdentityReadinessDetails() map[string]any {
 		"federated_token_file": tokenFile != "",
 		"tenant_id_configured": strings.TrimSpace(os.Getenv("AZURE_TENANT_ID")) != "",
 		"authority_host_set":   strings.TrimSpace(os.Getenv("AZURE_AUTHORITY_HOST")) != "",
+	}
+}
+
+// awsIdentityReadinessDetails mirrors azureIdentityReadinessDetails: booleans
+// only, never an identifier's value, so /readyz can be read by anyone who can
+// reach it without disclosing which account the controller runs as.
+func awsIdentityReadinessDetails() map[string]any {
+	return map[string]any{
+		// IRSA projects a token file and a role ARN into the pod.
+		"web_identity_token_file": strings.TrimSpace(os.Getenv("AWS_WEB_IDENTITY_TOKEN_FILE")) != "",
+		"role_arn_configured":     strings.TrimSpace(os.Getenv("AWS_ROLE_ARN")) != "",
+		"region_configured": firstNonEmpty(
+			strings.TrimSpace(os.Getenv("AWS_REGION")),
+			strings.TrimSpace(os.Getenv("AWS_DEFAULT_REGION")),
+		) != "",
+		// EKS Pod Identity delivers credentials over the container endpoint.
+		"container_credentials": strings.TrimSpace(os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI")) != "" ||
+			strings.TrimSpace(os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")) != "",
+		"static_keys_in_env": strings.TrimSpace(os.Getenv("AWS_ACCESS_KEY_ID")) != "",
 	}
 }
 

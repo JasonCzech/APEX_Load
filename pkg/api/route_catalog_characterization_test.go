@@ -353,6 +353,23 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/fleet/capacity":                                      "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/fleet/load-zones":                                    "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/fleet/provisioner":                                   "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	// Cluster registry and host allocation (system-admin infra). These carry
+	// control-plane endpoints, Azure directory identifiers, and the ability to
+	// resize live workloads, so system_admin is the only acceptable tier — no
+	// viewer or project role appears on any of them.
+	"POST /api/v1/system/clusters":                           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144",
+	"GET /api/v1/system/clusters":                            "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/clusters/sample-id":                  "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/system/clusters/sample-id":                  "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144",
+	"DELETE /api/v1/system/clusters/sample-id":               "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/deployment-targets":                  "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"GET /api/v1/system/deployment-targets/sample-id":        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/system/deployment-targets/sample-id":        "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=16384",
+	"DELETE /api/v1/system/deployment-targets/sample-id":     "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/system/clusters/sample-id/test":            "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=65536",
+	"GET /api/v1/system/clusters/sample-id/capacity":         "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"PUT /api/v1/fleet/pools/sample-id/allocation":           "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=262144",
+	"GET /api/v1/fleet/pools/sample-id/allocation/preflight": "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	// Fleet management (system-admin infra).
 	"POST /api/v1/fleet/pools":                                                                         "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=1048576",
 	"GET /api/v1/fleet/pools":                                                                          "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",

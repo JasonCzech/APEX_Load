@@ -6,6 +6,7 @@ import "context"
 const (
 	MasterKeyEnvVar     = "APEXLOAD_WRAPPING_MASTER_KEY"
 	KeyVaultKeyIDEnvVar = "APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID"
+	KMSKeyIDEnvVar      = "APEXLOAD_WRAPPING_KMS_KEY_ID"
 )
 
 type WrappedKey struct {

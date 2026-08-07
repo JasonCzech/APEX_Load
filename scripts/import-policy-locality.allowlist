@@ -197,7 +197,6 @@ policy:pkg/convert/openapi/converter.go:openAPISchemaCredentialNames
 policy:pkg/convert/openapi/converter.go:openAPISecretName
 policy:pkg/convert/openapi/converter.go:openAPISharedCredentialProjectionSafe
 policy:pkg/convert/openapi/converter.go:normalizedOAuthScopes
-policy:pkg/convert/openapi/converter.go:projectJSONExampleCredentials
 policy:pkg/convert/openapi/converter.go:schemaCredentialField
 policy:pkg/convert/openapi/converter.go:sensitiveNonStringSchemaCodes
 policy:pkg/convert/openapi/converter.go:sensitiveOpenAPISourceValues

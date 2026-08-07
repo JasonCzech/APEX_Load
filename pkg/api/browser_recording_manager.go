@@ -895,6 +895,7 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 		// discard those edits — e.g. re-exposing a password fill marked secret.
 		if final != nil && !session.curated {
 			session.final = recoverLateBrowserRecordingArtifact(session.final, final)
+			reconcileBrowserRecordingArtifactCountsLocked(session, session.final)
 		}
 		session.mu.Unlock()
 		return
@@ -958,6 +959,11 @@ func reconcileBrowserRecordingArtifactCountsLocked(session *BrowserRecordingSess
 	session.MarkerCount = len(artifact.Markers)
 	session.AnnotationCount = len(artifact.Annotations)
 	session.CapHits = cloneStringInt64Map(artifact.CapHits)
+	// summaryLocked (List responses and every WS broadcast) reads these off the
+	// struct, so they have to be folded in here too — fullSnapshot alone only
+	// fixes the single-session GET.
+	session.HARAvailable = len(artifact.HAR) > 0
+	session.StorageStateReady = len(artifact.StorageState) > 0
 }
 
 func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *recbrowser.Session {

@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
+import { chunkNameForModule } from './scripts/chunk-strategy.mjs'
+
 const require = createRequire(import.meta.url)
 const dashboardPackage = require('./package.json') as { version?: string }
 const vitePackage = require('vite/package.json') as { version?: string }
@@ -42,34 +44,18 @@ export default defineConfig({
     // compressed transfer sizes remain well below this boundary; keep a tight
     // ceiling that still reports meaningful growth beyond their current size.
     chunkSizeWarningLimit: 550,
-    rollupOptions: {
+    // Vite 8 defaults CSS minification to Lightning CSS. Declare it explicitly
+    // so a future Vite default cannot silently change generated dashboard CSS.
+    cssMinify: 'lightningcss',
+    rolldownOptions: {
       output: {
-        manualChunks(id) {
-          // The execution route only needs the tiny, dependency-free HTTP
-          // version formatter. Keep Rolldown from coalescing it with shared
-          // runtime-editor components (and their CodeMirror dependencies).
-          if (id.endsWith('/src/components/httpVersionModel.ts')) {
-            return 'http-version-model'
-          }
-          if (!id.includes('node_modules')) {
-            return undefined
-          }
-          if (id.includes('/three/')) {
-            return 'vendor-three'
-          }
-          if (id.includes('/recharts/')) {
-            return 'vendor-recharts'
-          }
-          if (id.includes('/@codemirror/lang-')) {
-            return 'vendor-codemirror-languages'
-          }
-          if (id.includes('/@lezer/')) {
-            return 'vendor-codemirror-parser'
-          }
-          if (id.includes('/@codemirror/') || id.includes('/@uiw/react-codemirror/') || id.includes('/@uiw/codemirror') || id.includes('/codemirror/')) {
-            return 'vendor-codemirror-core'
-          }
-          return 'vendor'
+        // Rolldown deprecated `output.manualChunks` (and its `advancedChunks`
+        // successor) in favour of `output.codeSplitting`. A single name-function
+        // group is exactly what Rolldown's compatibility shim built from the old
+        // hook, so the emitted chunks are unchanged. The classification itself
+        // lives in scripts/chunk-strategy.mjs so it can be unit tested.
+        codeSplitting: {
+          groups: [{ name: (moduleId) => chunkNameForModule(moduleId) }],
         },
       },
     },

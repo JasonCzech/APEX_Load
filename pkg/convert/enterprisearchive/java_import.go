@@ -152,19 +152,22 @@ type javaImportState struct {
 func ConvertJava(files map[string]string, opts ConvertOptions, detected DetectedProtocol, projectConfig *ProjectConfig) (*ConvertResult, error) {
 	program, parseWarnings := parseJavaProgram(files)
 	program = javaProgramWithProjectVuserClass(program, projectConfig)
+	// One evidence index serves every pass of this import. Its type, field and
+	// hierarchy maps are a pure function of the parsed program, so building it
+	// once removes the repeated per-class source rescans a large archive would
+	// otherwise pay for on every pass.
+	evidenceIndex := newJavaEvidenceIndex(program)
 	mappable := collectJavaCombinedMappableEntries(program)
-	overloadWork := analyzeJavaOverloadResolutionWorkForEntries(program, mappable)
-	profile := JavaProfile{Surfaces: map[javaSurface]bool{}}
+	overloadWork := analyzeJavaOverloadResolutionWorkForEntries(program, mappable, evidenceIndex)
 	var runtimeReachability javaVuserRuntimeReachability
 	if overloadWork.blocker == "" {
-		runtimeReachability = buildJavaVuserRuntimeReachability(program)
-		profile = classifyJavaArchiveWithReachability(program, projectConfig, files, runtimeReachability)
+		runtimeReachability = buildJavaVuserRuntimeReachabilityWithEvidenceIndex(program, evidenceIndex)
 	} else {
 		runtimeReachability = javaVuserRuntimeReachability{
 			byOccurrence:      map[string]int{},
 			byStatement:       map[string][]int{},
 			scopeReachability: map[string]javaRuntimeReachableStatement{},
-			evidenceIndex:     newJavaEvidenceIndex(program),
+			evidenceIndex:     evidenceIndex,
 		}
 		// Fail closed before the expensive passes. The source and mappings are
 		// still preserved in the singleton Java draft, while the explicit
@@ -179,12 +182,18 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 			mappable.entries[index].preflightIncomplete = true
 		}
 	}
-	state := &javaImportState{env: newJavaStringEnv(), profile: profile}
+	// Archive classification only fed the retired executable statement lanes, which
+	// read JavaProfile to gate the JMS idiom mapper. Those lanes have no production
+	// caller any more — their orchestration is quarantined in
+	// java_native_lanes_test.go — and the combined runner draft below never consults
+	// the profile, so the live path skips classification and its executable-evidence
+	// and review-family scans entirely.
+	state := &javaImportState{env: newJavaStringEnv(), profile: JavaProfile{Surfaces: map[javaSurface]bool{}}}
 	externalLifecycle := javaVuserExternalLifecycleMethods(program, projectConfig)
 	// Count exactly the unique statements the mapping pass will disposition so
 	// TotalFunctions reconciles against the recorded support counters instead of
 	// double-counting inlined helper statements or empty leaves.
-	state.statementCount = javaCombinedMappableFunctionCountForEntries(program, mappable.entries) + len(externalLifecycle)
+	state.statementCount = javaCombinedMappableFunctionCountForEntries(program, mappable.entries, evidenceIndex) + len(externalLifecycle)
 	state.emitsTransactions, state.emitsActionTransactions, state.transactionMarkers, state.transactions = javaProgramTransactionStats(runtimeReachability)
 
 	result := convertJavaVuserRunnerDraft(files, opts, detected, program, append([]string(nil), parseWarnings...), state, projectConfig)
@@ -204,7 +213,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 		}
 		result.Warnings = append(result.Warnings, blockers...)
 	}
-	if blockers := javaVuserSourceIntegrityBlockers(program, projectConfig); len(blockers) > 0 {
+	if blockers := javaVuserSourceIntegrityBlockers(program, projectConfig, evidenceIndex); len(blockers) > 0 {
 		if result.ReviewArtifact != nil {
 			if result.ReviewArtifact.Metadata == nil {
 				result.ReviewArtifact.Metadata = map[string]any{}
@@ -248,10 +257,43 @@ func applyJavaVuserSourceSelectionGate(result *ConvertResult, program javaProgra
 	})
 }
 
-func javaVuserSourceIntegrityBlockers(program javaProgram, projectConfig *ProjectConfig) []string {
+// javaSharedEvidenceIndexForPass hands one import-scoped evidence index to a
+// pass instead of rebuilding it. Only the structural maps newJavaEvidenceIndex
+// derives from the parsed program are shared: they are a pure function of that
+// program, so reuse cannot change a disposition, and building them once removes
+// the per-class source rescans that dominate a large archive.
+//
+// Everything a freshly built index starts empty is rebased here. The governed
+// lookup budgets are per-pass limits, and the lazily filled caches decide how
+// much of each budget a pass actually charges: a warm staticMethodCache returns
+// before javaEvidenceStaticImportedMethods charges staticImportLookups, a warm
+// fieldLookupCache collapses a whole hierarchy walk into a single member lookup,
+// and the functional-binding caches skip builds that charge both. Carrying any
+// of them across passes would quietly widen the allowance and could drop the
+// fail-closed blockers those limits exist to raise.
+func javaSharedEvidenceIndexForPass(index *javaEvidenceIndex, program javaProgram) *javaEvidenceIndex {
+	if index == nil {
+		return newJavaEvidenceIndex(program)
+	}
+	index.totalMemberLookups = 0
+	index.staticImportLookups = 0
+	index.staticImportLimitHit = false
+	index.functionalBindingBuilds = 0
+	index.hierarchyFieldTypes = make(map[string]map[string]string, len(program.Classes))
+	index.fieldLookupCache = make(map[string]javaEvidenceFieldLookup)
+	index.bindingCache = make(map[string][]string)
+	index.importScopes = make(map[string]*javaEvidenceImportScope)
+	index.staticMethodCache = make(map[string][]javaResolvedHelperMethod)
+	index.subtypeCache = make(map[string][]int)
+	index.functionalBindings = make(map[string]javaStoredFunctionalBindingTimeline)
+	index.persistentFunctional = make(map[string]javaStoredFunctionalBindingSet)
+	return index
+}
+
+func javaVuserSourceIntegrityBlockers(program javaProgram, projectConfig *ProjectConfig, evidenceIndex *javaEvidenceIndex) []string {
 	blockers := javaVuserInstantiationBlockers(program)
-	blockers = append(blockers, javaVuserInheritanceBlockers(program)...)
-	blockers = append(blockers, javaVuserUnparsedSourceBlockers(program, projectConfig)...)
+	blockers = append(blockers, javaVuserInheritanceBlockers(program, evidenceIndex)...)
+	blockers = append(blockers, javaVuserUnparsedSourceBlockers(program, projectConfig, evidenceIndex)...)
 	if program.vuserSourceSelectionBlocker != "" {
 		blockers = append(blockers, program.vuserSourceSelectionBlocker)
 	}
@@ -266,8 +308,8 @@ func javaVuserSourceIntegrityBlockers(program javaProgram, projectConfig *Projec
 	return uniqueSortedStrings(blockers)
 }
 
-func javaVuserUnparsedSourceBlockers(program javaProgram, projectConfig *ProjectConfig) []string {
-	regions := javaVuserRelevantUnparsedRegions(program, projectConfig)
+func javaVuserUnparsedSourceBlockers(program javaProgram, projectConfig *ProjectConfig, evidenceIndex *javaEvidenceIndex) []string {
+	regions := javaVuserRelevantUnparsedRegionsWithEvidenceIndex(program, projectConfig, evidenceIndex)
 	blockers := make([]string, 0, len(regions))
 	for _, region := range regions {
 		filename := strings.TrimSpace(region.File)
@@ -320,7 +362,12 @@ func javaVuserUnparsedRegionIsGlobalTruncation(region javaStatement) bool {
 // such as vuser_init.java are NOT in the superclass chain, yet ConvertJava binds
 // their init/action/teardown bodies into the draft, so they must count as runner
 // sources for blocker scoping.
-func javaVuserRunnerSourceFiles(program javaProgram, selected javaClass, projectConfig *ProjectConfig) map[string]bool {
+func javaVuserRunnerSourceFiles(
+	program javaProgram,
+	selected javaClass,
+	projectConfig *ProjectConfig,
+	evidenceIndex *javaEvidenceIndex,
+) map[string]bool {
 	sources := map[string]bool{}
 	add := func(file string) {
 		if normalized := javaNormalizedSourcePath(file); normalized != "" {
@@ -328,7 +375,7 @@ func javaVuserRunnerSourceFiles(program javaProgram, selected javaClass, project
 		}
 	}
 
-	index := newJavaEvidenceIndex(program)
+	index := javaSharedEvidenceIndexForPass(evidenceIndex, program)
 
 	// Seed with the selected runner plus every file that supplies a lifecycle
 	// phase: those are executed even though they are unrelated by inheritance.
@@ -468,6 +515,14 @@ func javaSourceMentionsType(text, name string) bool {
 // global (aggregate) truncation always blocks, as does any file the runner names
 // or any file whose type surface cannot be determined.
 func javaVuserRelevantUnparsedRegions(program javaProgram, projectConfig *ProjectConfig) []javaStatement {
+	return javaVuserRelevantUnparsedRegionsWithEvidenceIndex(program, projectConfig, nil)
+}
+
+func javaVuserRelevantUnparsedRegionsWithEvidenceIndex(
+	program javaProgram,
+	projectConfig *ProjectConfig,
+	evidenceIndex *javaEvidenceIndex,
+) []javaStatement {
 	if len(program.Unparsed) == 0 {
 		return nil
 	}
@@ -477,7 +532,7 @@ func javaVuserRelevantUnparsedRegions(program javaProgram, projectConfig *Projec
 		return append([]javaStatement(nil), program.Unparsed...)
 	}
 
-	runnerSources := javaVuserRunnerSourceFiles(program, selected, projectConfig)
+	runnerSources := javaVuserRunnerSourceFiles(program, selected, projectConfig, evidenceIndex)
 	if len(runnerSources) == 0 {
 		// Preserve fail-closed behavior if source ownership cannot be resolved.
 		return append([]javaStatement(nil), program.Unparsed...)
@@ -501,12 +556,12 @@ func javaVuserRelevantUnparsedRegions(program javaProgram, projectConfig *Projec
 	return regions
 }
 
-func javaVuserInheritanceBlockers(program javaProgram) []string {
+func javaVuserInheritanceBlockers(program javaProgram, evidenceIndex *javaEvidenceIndex) []string {
 	selected, ok := javaVuserClass(program)
 	if !ok {
 		return nil
 	}
-	index := newJavaEvidenceIndex(program)
+	index := javaSharedEvidenceIndexForPass(evidenceIndex, program)
 	visited := map[string]bool{}
 	var blockers []string
 	var inspect func(javaClass)
@@ -591,19 +646,9 @@ func javaVuserInstantiationBlockers(program javaProgram) []string {
 	return blockers
 }
 
-// javaLeafStatements enumerates the leaf statements the converter actually visits
-// — recursing into transparent blocks and treating opaque blocks as a single leaf
-// — so conservation can be checked against the real traversal.
-func javaLeafStatements(program javaProgram) []javaStatement {
-	out := make([]javaStatement, 0)
-	for _, phase := range []string{"init", "action", "teardown"} {
-		for _, statement := range javaLifecycleStatements(program, phase) {
-			out = append(out, javaLeafStatementList(statement)...)
-		}
-	}
-	return out
-}
-
+// javaLeafStatementList flattens one statement into the leaves the converter
+// actually visits: transparent blocks recurse into their children, opaque blocks
+// stay a single leaf.
 func javaLeafStatementList(statement javaStatement) []javaStatement {
 	if statement.Kind == "block" && javaTransparentBlockHeader(statement.Header) {
 		out := make([]javaStatement, 0)
@@ -613,220 +658,6 @@ func javaLeafStatementList(statement javaStatement) []javaStatement {
 		return out
 	}
 	return []javaStatement{statement}
-}
-
-// backfillJavaConservation guarantees the no-silent-drop invariant: every leaf
-// statement the converter visits ends with at least one SourceReview disposition.
-// Executable lanes (HTTP/JDBC/SOAP) consume some contributor statements (SQL/bind
-// assignments, prepareStatement bookkeeping) without emitting their own mapping;
-// this records an honest disposition for any such leaf that no lane mapped.
-func backfillJavaConservation(result *ConvertResult, program javaProgram) {
-	if result == nil {
-		return
-	}
-	if result.SourceReview == nil {
-		result.SourceReview = &SourceReview{}
-	}
-	mapped := map[javaStatementKey]bool{}
-	for _, mapping := range result.SourceReview.Mappings {
-		if mapping.SourceFile == "" || mapping.StartLine == 0 {
-			continue
-		}
-		mapped[javaStatementKey{file: mapping.SourceFile, startLine: mapping.StartLine, endLine: mapping.EndLine}] = true
-	}
-	for _, statement := range javaLeafStatements(program) {
-		if javaNormalizeStatementText(statement.Text) == "" {
-			continue
-		}
-		key := javaStatementKey{file: statement.File, startLine: statement.StartLine, endLine: statement.EndLine}
-		if mapped[key] {
-			continue
-		}
-		mapped[key] = true
-		status, mode, notes := classifyJavaResidueStatement(javaNormalizeStatementText(statement.Text))
-		appendSourceReviewMapping(result, SourceReviewMapping{
-			SourceFile:  statement.File,
-			StartLine:   statement.StartLine,
-			EndLine:     statement.EndLine,
-			Function:    "java_statement",
-			TargetKind:  "disposition",
-			Status:      status,
-			SupportMode: string(mode),
-			Notes:       notes,
-		})
-	}
-}
-
-type javaStatementKey struct {
-	file      string
-	startLine int
-	endLine   int
-}
-
-// classifyJavaResidueStatement gives an honest disposition to a leaf statement no
-// lane claimed: no-op for inert lines, an executable-contributor note for
-// SQL/state plumbing the executable lanes consumed, a named review for known
-// no-runtime families, else a generic review.
-func classifyJavaResidueStatement(text string) (status string, mode SourceFunctionSupportMode, notes string) {
-	switch {
-	case isJavaInertStatement(text):
-		return "converted", SourceFunctionSupportNativeNoop, "Java statement has no executable replay effect (no-op disposition)."
-	case javaStatementLooksLikeDatabase(text) || javaSQLAssignRe.MatchString(text) || javaSetBindRe.MatchString(text):
-		return "converted", SourceFunctionSupportExecutable, "Contributor consumed by the executable database lane."
-	case javaNamedReviewReason(text) != "":
-		return "review_only", SourceFunctionSupportReviewOnly, "Preserved for manual review: " + javaNamedReviewReason(text) + "."
-	default:
-		return "review_only", SourceFunctionSupportReviewOnly, "Unmapped Java statement preserved for review."
-	}
-}
-
-func convertJavaStatementLane(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, parseWarnings []string, profile JavaProfile, secondary bool, skipHTTP bool, skipDatabase bool) (*ConvertResult, error) {
-	surface := javaSurfaceJMS
-	if !profile.Surfaces[javaSurfaceJMS] {
-		surface = profile.Primary
-	}
-	result := &ConvertResult{
-		DetectedProtocol: &detected,
-		Warnings:         append(append([]string(nil), detected.Warnings...), parseWarnings...),
-		Script:           newJavaScriptForSurface(opts, profile, surface),
-	}
-	if secondary && result.Script != nil {
-		result.Script.Name = result.Script.Name + "_review"
-	}
-	state := &javaImportState{
-		env:          newJavaStringEnv(),
-		profile:      profile,
-		skipHTTP:     skipHTTP,
-		skipDatabase: skipDatabase,
-	}
-	for _, phase := range []string{"init", "action", "teardown"} {
-		statements := javaLifecycleStatements(program, phase)
-		for _, statement := range statements {
-			state.statementCount++
-			result.Stats.TotalFunctions++
-			if err := convertJavaStatement(result, state, files, phase, statement); err != nil {
-				return nil, err
-			}
-		}
-	}
-	appendJavaUnparsedRegions(result, state, program)
-	attachJavaTruststoreArtifact(result, files)
-
-	if opts.AllowJavaVuserRunner && (state.jmsActions == 0 || state.unrecognizedAction > 0 || state.configReview > 0) {
-		return convertJavaVuserRunnerDraft(files, opts, detected, program, result.Warnings, state, nil), nil
-	}
-
-	if state.jmsActions == 0 || state.unrecognizedAction > 0 || state.configReview > 0 {
-		detected = markDetectedReviewOnly(detected, "")
-		if profile.Surfaces[javaSurfaceJMS] {
-			detected.APEXLoadProtocol = profile.JMSProtocol
-		}
-		detected.RequiredEvidence = appendUnique(detected.RequiredEvidence, "Operator review of unmapped Java statements", "JMS broker configuration verification")
-		result.DetectedProtocol = &detected
-		result.ReviewArtifact = NewReviewArtifact(detected, files, nil, map[string]any{
-			"reason":                         "partial_java_mapping",
-			"jms_actions":                    state.jmsActions,
-			"unrecognized_action_statements": state.unrecognizedAction,
-			"configuration_review_items":     state.configReview,
-			"recognized_lr_actions":          state.recognizedLRActions,
-		})
-		// Distinguish "every statement classified but no executable protocol
-		// target" (a pure lr.* script) from genuinely unmapped statements, so the
-		// warning is honest rather than alarming.
-		if state.unrecognizedAction == 0 && state.configReview == 0 && state.recognizedLRActions > 0 {
-			result.Warnings = append(result.Warnings, "Java Vuser import classified every lr.* statement, but the script has no executable APEX protocol target (no JMS actions); it remains review-only.")
-		} else {
-			result.Warnings = append(result.Warnings, "Java Vuser import produced a partial JMS draft and remains review-only until unmapped statements are resolved.")
-		}
-	} else {
-		detected.ImportMode = ImportModeExecutable
-		detected.APEXLoadProtocol = profile.JMSProtocol
-		detected.CanonicalSourceProtocol = "java_vuser"
-		result.DetectedProtocol = &detected
-	}
-	if len(result.Script.Actions) == 0 {
-		result.Script.Actions = append(result.Script.Actions, javaSourceReviewAction(javaStatement{
-			Text:      "No executable JMS actions were recognized.",
-			StartLine: 1,
-			EndLine:   1,
-		}, "action", "no_jms_actions"))
-		result.Stats.ReviewOnlyFunctions++
-	}
-	return result, nil
-}
-
-func appendJavaUnparsedRegions(result *ConvertResult, state *javaImportState, program javaProgram) {
-	for _, statement := range program.Unparsed {
-		state.statementCount++
-		result.Stats.TotalFunctions++
-		appendJavaReview(result, state, statement, "action", "unparsed_java_region", true)
-	}
-}
-
-func mergeJavaLaneResults(lanes []*ConvertResult, detected DetectedProtocol, files map[string]string, profile JavaProfile) *ConvertResult {
-	if len(lanes) == 1 {
-		lanes[0].Scripts = lanes[0].effectiveScripts()
-		return lanes[0]
-	}
-	merged := &ConvertResult{
-		DetectedProtocol: &DetectedProtocol{
-			CanonicalSourceProtocol: "java_vuser",
-			APEXLoadProtocol:        "multi",
-			ImportMode:              ImportModeExecutable,
-			Confidence:              detected.Confidence,
-			DisplayName:             "Java Vuser Multi-Protocol",
-			SourceType:              detected.SourceType,
-			Signals:                 detected.Signals,
-			Warnings:                detected.Warnings,
-			RequiredEvidence:        detected.RequiredEvidence,
-		},
-		Warnings: append([]string(nil), detected.Warnings...),
-		Scripts:  make([]*dsl.Script, 0, len(lanes)),
-	}
-	for _, lane := range lanes {
-		if lane == nil {
-			continue
-		}
-		merged.Warnings = append(merged.Warnings, lane.Warnings...)
-		merged.Stats.TotalFunctions += lane.Stats.TotalFunctions
-		merged.Stats.ConvertedActions += lane.Stats.ConvertedActions
-		merged.Stats.LogicalActions += lane.Stats.LogicalActions
-		merged.Stats.RawRequestActions += lane.Stats.RawRequestActions
-		merged.Stats.CollapsedRequests += lane.Stats.CollapsedRequests
-		merged.Stats.TransactionMarkers += lane.Stats.TransactionMarkers
-		merged.Stats.ContributorFunctions += lane.Stats.ContributorFunctions
-		merged.Stats.Extractors += lane.Stats.Extractors
-		merged.Stats.ThinkTimes += lane.Stats.ThinkTimes
-		merged.Stats.Transactions += lane.Stats.Transactions
-		merged.Stats.NativeFunctions += lane.Stats.NativeFunctions
-		merged.Stats.ReviewOnlyFunctions += lane.Stats.ReviewOnlyFunctions
-		merged.Stats.ExternalRequiredFunctions += lane.Stats.ExternalRequiredFunctions
-		merged.Stats.CustomCallFunctions += lane.Stats.CustomCallFunctions
-		merged.Stats.Skipped += lane.Stats.Skipped
-		merged.Stats.UnsupportedFuncs = append(merged.Stats.UnsupportedFuncs, lane.Stats.UnsupportedFuncs...)
-		if lane.SourceReview != nil {
-			for _, mapping := range lane.SourceReview.Mappings {
-				appendSourceReviewMapping(merged, mapping)
-			}
-		}
-		if lane.Script != nil {
-			merged.Scripts = append(merged.Scripts, lane.Script)
-		}
-	}
-	if len(merged.Scripts) > 0 {
-		merged.Script = merged.Scripts[0]
-	}
-	if profile.Surfaces[javaSurfaceReview] {
-		reviewDetected := *merged.DetectedProtocol
-		reviewDetected.ImportMode = ImportModeReviewOnly
-		merged.ReviewArtifact = NewReviewArtifact(reviewDetected, files, nil, map[string]any{
-			"reason":          "java_named_review_surfaces",
-			"review_families": profile.ReviewFamilies,
-		})
-	}
-	merged.Warnings = uniqueSortedStrings(merged.Warnings)
-	merged.Stats.UnsupportedFuncs = uniqueSortedStrings(merged.Stats.UnsupportedFuncs)
-	return merged
 }
 
 func convertJavaVuserRunnerDraft(files map[string]string, opts ConvertOptions, detected DetectedProtocol, program javaProgram, warnings []string, state *javaImportState, projectConfig *ProjectConfig) *ConvertResult {
@@ -1423,12 +1254,14 @@ func analyzeJavaOverloadResolutionWork(program javaProgram) javaOverloadWorkAnal
 	return analyzeJavaOverloadResolutionWorkForEntries(
 		program,
 		collectJavaCombinedMappableEntries(program),
+		nil,
 	)
 }
 
 func analyzeJavaOverloadResolutionWorkForEntries(
 	program javaProgram,
 	mappable javaCombinedMappableCollection,
+	evidenceIndex *javaEvidenceIndex,
 ) javaOverloadWorkAnalysis {
 	if mappable.blocker != "" {
 		return javaOverloadWorkAnalysis{
@@ -1436,7 +1269,7 @@ func analyzeJavaOverloadResolutionWorkForEntries(
 			scopeSnapshotBindings: mappable.scopeSnapshotBindings,
 		}
 	}
-	guard := newJavaOverloadWorkGuard(program)
+	guard := newJavaOverloadWorkGuardWithEvidenceIndex(program, evidenceIndex)
 	for _, entry := range mappable.entries {
 		if guard.exceeded {
 			break
@@ -1469,8 +1302,15 @@ func analyzeJavaOverloadResolutionWorkForEntries(
 }
 
 func newJavaOverloadWorkGuard(program javaProgram) *javaOverloadWorkGuard {
+	return newJavaOverloadWorkGuardWithEvidenceIndex(program, nil)
+}
+
+func newJavaOverloadWorkGuardWithEvidenceIndex(
+	program javaProgram,
+	evidenceIndex *javaEvidenceIndex,
+) *javaOverloadWorkGuard {
 	guard := &javaOverloadWorkGuard{
-		evidenceIndex:        newJavaEvidenceIndex(program),
+		evidenceIndex:        javaSharedEvidenceIndexForPass(evidenceIndex, program),
 		buckets:              make(map[javaOverloadWorkBucketKey]int),
 		varargArities:        make(map[javaOverloadWorkOwnerName][]int),
 		varargPrefixCounts:   make(map[javaOverloadWorkOwnerName][]int),
@@ -2483,11 +2323,21 @@ type javaVuserRuntimeReachability struct {
 }
 
 func buildJavaVuserRuntimeReachability(program javaProgram) javaVuserRuntimeReachability {
+	return buildJavaVuserRuntimeReachabilityWithEvidenceIndex(program, nil)
+}
+
+// buildJavaVuserRuntimeReachabilityWithEvidenceIndex lets a live import reuse the
+// evidence index the earlier passes already built instead of rescanning every
+// class source again.
+func buildJavaVuserRuntimeReachabilityWithEvidenceIndex(
+	program javaProgram,
+	sharedIndex *javaEvidenceIndex,
+) javaVuserRuntimeReachability {
 	selected, ok := javaVuserClass(program)
 	if !ok {
 		return javaVuserRuntimeReachability{}
 	}
-	evidenceIndex := newJavaEvidenceIndex(program)
+	evidenceIndex := javaSharedEvidenceIndexForPass(sharedIndex, program)
 	builder := &javaRuntimeReachabilityBuilder{
 		index:          evidenceIndex,
 		constantFields: newJavaConstantFieldResolver(evidenceIndex),
@@ -4784,15 +4634,17 @@ func javaCombinedMappableFunctionCount(program javaProgram) int {
 	return javaCombinedMappableFunctionCountForEntries(
 		program,
 		collectJavaCombinedMappableEntries(program).entries,
+		nil,
 	)
 }
 
 func javaCombinedMappableFunctionCountForEntries(
 	program javaProgram,
 	entries []javaCombinedMappableEntry,
+	evidenceIndex *javaEvidenceIndex,
 ) int {
 	count := 0
-	index := newJavaEvidenceIndex(program)
+	index := javaSharedEvidenceIndexForPass(evidenceIndex, program)
 	for _, entry := range entries {
 		if entry.statement.Kind == "unparsed" || !entry.typesComplete {
 			count++
@@ -4868,8 +4720,10 @@ func appendJavaCombinedSourceMappingsForEntries(
 	if result == nil {
 		return
 	}
-	mappingIndex := newJavaCombinedMappingIndex(program)
-	evidenceIndex := newJavaEvidenceIndex(program)
+	// The reachability pass already indexed this program; reuse its evidence
+	// index for mapping instead of rescanning every class source twice more.
+	evidenceIndex := javaSharedEvidenceIndexForPass(reachability.evidenceIndex, program)
+	mappingIndex := newJavaCombinedMappingIndexWithEvidenceIndex(program, evidenceIndex)
 	targetName := javaVuserClassName(program)
 	for _, entry := range entries {
 		statement := entry.statement
@@ -5107,6 +4961,13 @@ type javaCombinedMappingIndex struct {
 }
 
 func newJavaCombinedMappingIndex(program javaProgram) *javaCombinedMappingIndex {
+	return newJavaCombinedMappingIndexWithEvidenceIndex(program, nil)
+}
+
+func newJavaCombinedMappingIndexWithEvidenceIndex(
+	program javaProgram,
+	sharedIndex *javaEvidenceIndex,
+) *javaCombinedMappingIndex {
 	index := &javaCombinedMappingIndex{
 		lifecycleScopes:    map[string]string{},
 		constructionScopes: map[string]bool{},
@@ -5127,7 +4988,7 @@ func newJavaCombinedMappingIndex(program javaProgram) *javaCombinedMappingIndex 
 	if !ok {
 		return index
 	}
-	evidenceIndex := newJavaEvidenceIndex(program)
+	evidenceIndex := javaSharedEvidenceIndexForPass(sharedIndex, program)
 	for _, class := range evidenceIndex.classHierarchy(selected) {
 		for fieldIndex := range class.Fields {
 			index.constructionScopes[javaRuntimeFieldScopeKey(class, fieldIndex)] = true
@@ -5460,6 +5321,10 @@ func javaVuserMappingStatement(program javaProgram) javaStatement {
 	return javaStatement{File: "Actions.java", StartLine: 1, EndLine: 1, Text: "Java Vuser lifecycle"}
 }
 
+// attachJavaTruststoreArtifact is a retired executable-lane body. It is still
+// production resident and still compiled in, but it has no production caller:
+// its only caller is the quarantined lane orchestration in
+// java_native_lanes_test.go. Changing it changes nothing for any import.
 func attachJavaTruststoreArtifact(result *ConvertResult, files map[string]string) {
 	if result == nil || result.Script == nil {
 		return
@@ -5477,6 +5342,13 @@ func attachJavaTruststoreArtifact(result *ConvertResult, files map[string]string
 	}
 }
 
+// convertJavaStatement is a retired executable-lane body, and so is the whole
+// javaStatementMapperRegistry subgraph it drives (java_idiom_registry.go,
+// including the JMS idiom mapper). It is still production resident and still
+// compiled in, but apart from its own recursion below it has no production
+// caller: the lane orchestration that drove it is quarantined in
+// java_native_lanes_test.go. Fixing a mis-mapped statement here changes nothing
+// for any import — ConvertJava only ever emits the combined runner draft.
 func convertJavaStatement(result *ConvertResult, state *javaImportState, files map[string]string, phase string, statement javaStatement) error {
 	text := javaNormalizeStatementText(statement.Text)
 	if text == "" {

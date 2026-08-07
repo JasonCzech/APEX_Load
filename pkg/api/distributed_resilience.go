@@ -36,6 +36,13 @@ type distributedEvacuationUncertainError struct {
 	testID             string
 	participantClients map[string]generatorClient
 	touchedTargets     []string
+	// unreachableTargets names participants that are already known to be gone
+	// (the stream-loss source). They can never acknowledge an exact-generation
+	// stop, so fail-closed cleanup must not hold the run in STOPPING waiting for
+	// one; their generator-side execution lease expires on its own and force-
+	// stops the assignment. Only populated for loss-tolerant runs, which are the
+	// only ones that hold such a lease.
+	unreachableTargets []string
 	err                error
 }
 
@@ -161,6 +168,14 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 	if remoteLifecycleCtx == nil {
 		remoteLifecycleCtx = executionCtx
+	}
+	// The stream-loss source is presumed gone: the same transport that lost its
+	// metrics stream also carries the cleanup stop. Record it so any fail-closed
+	// exit can terminalize on the surviving participants instead of retrying a
+	// stop the source can never acknowledge.
+	var unreachableTargets []string
+	if allowLostSourceLeaseFence && requireTestExecutionLease {
+		unreachableTargets = []string{target}
 	}
 
 	if !currentTest {
@@ -351,6 +366,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		if errors.As(err, &uncertain) {
 			uncertainTouched := targetSetFromList(uncertain.touchedTargets)
 			uncertain.participantClients = evacuationParticipantClients(runClientsByTarget, dialedClients, uncertainTouched)
+			uncertain.unreachableTargets = unreachableTargets
 			closeUntouchedDialedClients(uncertainTouched)
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 		}
@@ -411,6 +427,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("evacuation became stale before source fence and rollback was uncertain: %w", rollbackErr),
 			}
 			closeUntouchedDialedClients(touchedTargets)
@@ -437,7 +454,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	if source := clientsByTarget[target]; source != nil {
 		if err := b.stopEvacuationClient(testID, executionGeneration, source); err != nil {
 			if allowLostSourceLeaseFence && requireTestExecutionLease {
-				if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, executionGeneration); expiryErr == nil {
+				if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, test, status, controlGeneration, executionGeneration); expiryErr == nil {
 					goto sourceFenced
 				}
 			}
@@ -445,6 +462,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("stop evacuated source %s: %w", target, err),
 			}
 			closeUntouchedDialedClients(touchedTargets)
@@ -452,7 +470,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		}
 	} else {
 		if allowLostSourceLeaseFence && requireTestExecutionLease {
-			if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, executionGeneration); expiryErr == nil {
+			if expiryErr := waitForLostGeneratorEpochFence(executionCtx, tr, test, status, controlGeneration, executionGeneration); expiryErr == nil {
 				goto sourceFenced
 			}
 		}
@@ -460,6 +478,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			testID:             testID,
 			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 			touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+			unreachableTargets: unreachableTargets,
 			err:                fmt.Errorf("evacuated source %s is not connected and cannot be fenced", target),
 		}
 		closeUntouchedDialedClients(touchedTargets)
@@ -479,6 +498,7 @@ sourceFenced:
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("execution leadership changed before replacement commit"),
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
@@ -487,6 +507,7 @@ sourceFenced:
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
 				err:                fmt.Errorf("renew replacement assignment leases: %w", leaseErr),
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
@@ -497,6 +518,7 @@ sourceFenced:
 			testID:             testID,
 			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 			touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+			unreachableTargets: unreachableTargets,
 			err:                fmt.Errorf("commit replacement shards after source fence: %w", err),
 		}
 		closeUntouchedDialedClients(touchedTargets)
@@ -513,6 +535,7 @@ sourceFenced:
 			testID:             testID,
 			participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 			touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+			unreachableTargets: unreachableTargets,
 			err:                fmt.Errorf("generator evacuation became stale after the source stopped"),
 		}
 		closeUntouchedDialedClients(touchedTargets)
@@ -594,15 +617,36 @@ sourceFenced:
 	return impacts, nil
 }
 
+// lostGeneratorEpochFencePollInterval bounds how long the lost-generator fence
+// keeps the evacuation mutex and the topology write gate after the run itself
+// stops being commit-eligible.
+const lostGeneratorEpochFencePollInterval = 25 * time.Millisecond
+
 // waitForLostGeneratorEpochFence waits past the latest controller lease
 // deadline that an already-in-flight assignment claim could have installed on
 // the lost generator. With this test/target renewal suppressed, that one
 // assignment is guaranteed to have stopped before replacement shards start;
 // unrelated assignments retain their own leases and continue normally.
-func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, generation uint64) error {
+//
+// The wait is polled rather than one uninterruptible sleep. It runs while the
+// evacuation mutex and the topology write gate are held, for up to a whole
+// execution-lease TTL, so it must hand them back the moment the evacuation can
+// no longer commit. Every abandonment observed here (an operator stop reserving
+// STOPPING, distributed finalization, leadership loss, a canceled execution
+// context) is one the post-fence commit check already rejects; detecting it
+// while waiting turns a TTL-long stall for whole-run controls into one poll
+// interval, and the caller's fail-closed exit is reached sooner rather than
+// differently.
+func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, test *ManagedTest, status string, controlGeneration uint64, generation uint64) error {
 	current, _, deadline, err := tr.generatorExecutionClaim()
 	if err != nil || current != generation || deadline.IsZero() {
 		return fmt.Errorf("execution epoch deadline is unavailable while fencing lost generator")
+	}
+	// A generator's assignment lease is derived from the controller deadline and
+	// can never outlive one lease TTL. A deadline further out than that is a
+	// corrupt sample, not a longer fence: never hold the evacuation locks past it.
+	if latest := time.Now().Add(defaultExecutionLeaseTTL); deadline.After(latest) {
+		deadline = latest
 	}
 	wait := time.Until(deadline) + 10*time.Millisecond
 	if wait <= 0 {
@@ -610,16 +654,34 @@ func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, generat
 	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
+	poll := time.NewTicker(lostGeneratorEpochFencePollInterval)
+	defer poll.Stop()
+	for fenced := false; !fenced; {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			fenced = true
+		case <-poll.C:
+			if lostGeneratorEpochFenceAbandoned(tr, test, status, controlGeneration) {
+				return fmt.Errorf("generator evacuation was abandoned while fencing lost generator")
+			}
+		}
 	}
 	current, _, _, err = tr.generatorExecutionClaim()
 	if err != nil || current != generation {
 		return fmt.Errorf("execution leadership changed while fencing lost generator")
 	}
 	return nil
+}
+
+// lostGeneratorEpochFenceAbandoned evaluates the evacuation's own post-fence
+// commit predicate while the fence is still waiting, so a run that can no longer
+// commit releases the evacuation and topology locks immediately.
+func lostGeneratorEpochFenceAbandoned(tr *TestRunner, test *ManagedTest, status string, controlGeneration uint64) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return !distributedControlCommitCurrentLocked(tr, test, status, controlGeneration)
 }
 
 // distributedEvacuationTiming separates controller wall time into the
@@ -1045,14 +1107,25 @@ func evacuationParticipantClients(runClients, dialedClients map[string]generator
 	return participants
 }
 
-func (b *distributedExecutionBackend) stopEvacuationParticipants(testID string, executionGeneration uint64, participants map[string]generatorClient) error {
+// stopEvacuationParticipants stops every participant and reports the failures of
+// already-unreachable participants separately. Those generators are still asked
+// to stop, because a source whose metrics stream broke may still answer RPCs,
+// but a failure from one is a reconciliation note rather than a reason to hold
+// the run non-terminal: it is fenced by its own execution-lease expiry.
+func (b *distributedExecutionBackend) stopEvacuationParticipants(testID string, executionGeneration uint64, participants map[string]generatorClient, unreachable map[string]struct{}) (blocking error, unreachableFailures error) {
 	var stopErrs []error
+	var unreachableErrs []error
 	for _, target := range orderedGeneratorTargets(participants, b.configuredTargets()) {
 		if err := b.stopEvacuationClient(testID, executionGeneration, participants[target]); err != nil {
-			stopErrs = append(stopErrs, fmt.Errorf("stop evacuation participant %s: %w", target, err))
+			stopErr := fmt.Errorf("stop evacuation participant %s: %w", target, err)
+			if _, tolerated := unreachable[target]; tolerated {
+				unreachableErrs = append(unreachableErrs, stopErr)
+				continue
+			}
+			stopErrs = append(stopErrs, stopErr)
 		}
 	}
-	return errors.Join(stopErrs...)
+	return errors.Join(stopErrs...), errors.Join(unreachableErrs...)
 }
 
 // failClosedUncertainEvacuation keeps every possibly-live generator attached to
@@ -1072,6 +1145,7 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		return fmt.Errorf("uncertain evacuation state is unavailable")
 	}
 	participants := cloneClientMap(uncertain.participantClients)
+	unreachable := targetSetFromList(uncertain.unreachableTargets)
 	allStreams := cloneMetricsStreamMap(existingStreams)
 	if allStreams == nil && len(openedStreams) > 0 {
 		allStreams = make(map[string]*generatorrpc.MetricsStream, len(openedStreams))
@@ -1120,14 +1194,15 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		tr.broadcastEvent("test_stopping", eventSnapshot)
 	}
 
-	stopErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants)
+	stopErr, unreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable)
 	if cancel != nil {
 		cancel()
 	}
 	if stopErr == nil {
 		if active {
+			noteUnreachableEvacuationParticipants(tr, test, unreachableErr)
 			finalizeErr := b.finalizeFailClosedEvacuation(tr, test)
-			return errors.Join(uncertain, wrapEvacuationPersistenceError(persistErr), finalizeErr)
+			return errors.Join(uncertain, wrapEvacuationPersistenceError(persistErr), unreachableErr, finalizeErr)
 		}
 		b.detachEvacuationResourcesUnderTopologyControl(tr, test, participants, allStreams)
 		return uncertain
@@ -1139,12 +1214,14 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 	if owned {
 		tr.enqueueTerminalRetry("evacuation:"+test.ID, "uncertain evacuation cleanup", func() error {
 			unlock := tr.lockDistributedTopologyControl(test.ID)
-			if err := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants); err != nil {
+			retryErr, retryUnreachableErr := b.stopEvacuationParticipants(test.ID, test.executionGeneration, participants, unreachable)
+			if retryErr != nil {
 				unlock()
-				return err
+				return retryErr
 			}
 			unlock()
 			if active {
+				noteUnreachableEvacuationParticipants(tr, test, retryUnreachableErr)
 				return b.finalizeFailClosedEvacuation(tr, test)
 			}
 			b.detachEvacuationResourcesUnderTopologyControl(tr, test, participants, allStreams)
@@ -1152,6 +1229,24 @@ func (b *distributedExecutionBackend) failClosedUncertainEvacuationWithTopologyR
 		})
 	}
 	return errors.Join(uncertain, wrapEvacuationPersistenceError(persistErr), stopErr)
+}
+
+// noteUnreachableEvacuationParticipants folds the participants that could not
+// acknowledge their stop into the run's failure text before it is committed, so
+// the operator can reconcile the generators the controller gave up on rather
+// than the run silently reporting a clean fail-closed cleanup.
+func noteUnreachableEvacuationParticipants(tr *TestRunner, test *ManagedTest, unreachableErr error) {
+	if unreachableErr == nil {
+		return
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	note := "unreachable generators left to execution-lease expiry: " + unreachableErr.Error()
+	if strings.TrimSpace(test.Error) == "" {
+		test.Error = note
+		return
+	}
+	test.Error = test.Error + "; " + note
 }
 
 func (b *distributedExecutionBackend) finalizeFailClosedEvacuation(tr *TestRunner, test *ManagedTest) error {

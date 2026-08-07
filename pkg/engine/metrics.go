@@ -20,7 +20,7 @@ type MetricsCollector struct {
 	targetsMu         sync.RWMutex
 	current           *liveCounters
 	resCollector      *ResourceCollector
-	emitIdleSnapshots bool
+	emitIdleSnapshots atomic.Bool
 	done              chan struct{}
 	aggregateDone     chan struct{}
 	startOnce         sync.Once
@@ -353,7 +353,7 @@ func (mc *MetricsCollector) Start(interval time.Duration) {
 }
 
 func (mc *MetricsCollector) EnableIdleSnapshots(enabled bool) {
-	mc.emitIdleSnapshots = enabled
+	mc.emitIdleSnapshots.Store(enabled)
 }
 
 func (mc *MetricsCollector) Stop() {
@@ -511,7 +511,7 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 			// idle window — no active VUsers and no baseline — is skipped, so we
 			// don't emit leading/trailing zeros before ramp-up starts or after
 			// ramp-down completes.
-			if len(batch) == 0 && !mc.emitIdleSnapshots && mc.current.activeVUsers.Load() == 0 {
+			if len(batch) == 0 && !mc.emitIdleSnapshots.Load() && mc.current.activeVUsers.Load() == 0 {
 				windowStart = windowEnd
 				continue
 			}

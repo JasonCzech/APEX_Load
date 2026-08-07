@@ -685,6 +685,80 @@ func repairTestRuntimeSnapshotWithExecutor(executor testSaveExecutor, id, projec
 	return affected == 1, err
 }
 
+// UpdateTestVUserScale persists only the workload columns a VUser scale
+// reservation owns. A gradual ramp reserves up to one step per ramp interval,
+// and routing each of those through the full-row upsert re-validated tenant
+// placement, locked the parent release row, and re-serialized every unrelated
+// JSON column of the run. Returns false when no row matched so the caller can
+// fall back to the full-row write rather than silently dropping the reservation.
+func (s *SQLiteStore) UpdateTestVUserScale(update TestVUserScaleUpdate) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := updateTestVUserScaleWithExecutor(tx, update)
+	if err != nil || !updated {
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// UpdateTestVUserScaleIfLeaseHeld is the execution-lease fenced form of
+// UpdateTestVUserScale. A controller that has lost the execution epoch can no
+// longer publish workload changes for a run it used to own.
+func (s *SQLiteStore) UpdateTestVUserScaleIfLeaseHeld(update TestVUserScaleUpdate, leaseName, leaseOwnerID string) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" {
+		return false, errors.New("lease name and owner token are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil || !held {
+		return false, err
+	}
+	updated, err := updateTestVUserScaleWithExecutor(tx, update)
+	if err != nil || !updated {
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func updateTestVUserScaleWithExecutor(executor testSaveExecutor, update TestVUserScaleUpdate) (bool, error) {
+	id := strings.TrimSpace(update.ID)
+	if id == "" {
+		return false, errors.New("test id is required for a VUser scale update")
+	}
+	if update.TotalVUsers < 0 {
+		return false, errors.New("total vusers cannot be negative")
+	}
+	groupsJSON, err := marshalTestField("groups_json", update.Groups)
+	if err != nil {
+		return false, err
+	}
+	result, err := executor.Exec(`
+		UPDATE tests
+		SET total_vusers = ?, groups_json = ?
+		WHERE id = ?
+	`, update.TotalVUsers, groupsJSON, id)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
+}
+
 // EnsureTestRefKey fills only an empty ref_key column and returns the durable
 // winner. It deliberately avoids a full-row upsert: reference-key backfill runs
 // during controller boot, before an HA replica has acquired an execution epoch,
@@ -1484,19 +1558,25 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
+	job, jobErr := getArchiveFinalizationJobTx(tx, id)
+	if jobErr != nil && jobErr != sql.ErrNoRows {
+		return jobErr
+	}
 	if archive != nil {
 		if err := enqueueArchiveCleanupTx(tx, projectID, archive); err != nil {
 			return err
 		}
-	} else {
-		job, jobErr := getArchiveFinalizationJobTx(tx, id)
-		if jobErr != nil && jobErr != sql.ErrNoRows {
-			return jobErr
+		// A refresh/re-finalization in flight has already advanced the pending
+		// intent to a NEW object (UpdateArchiveFinalizationRecordIfToken) while
+		// run_archives still points at the previous one. The DELETE below drops
+		// that intent row, so its object has to be queued as well or the bytes
+		// stay in object storage with nothing left that references them.
+		if err := enqueuePendingArchiveObjectCleanupTx(tx, projectID, archive, job); err != nil {
+			return err
 		}
-		if job != nil {
-			if err := enqueueArchiveCleanupTx(tx, projectID, &job.ArchiveRecord); err != nil {
-				return err
-			}
+	} else if job != nil {
+		if err := enqueueArchiveCleanupTx(tx, projectID, &job.ArchiveRecord); err != nil {
+			return err
 		}
 	}
 
@@ -1528,6 +1608,9 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM powerbi_publishes WHERE test_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM runtime_secret_provisioning_attempts WHERE test_id = ?`, id); err != nil {
 		return err
 	}
 	annotationPrefix := "report:annotations:" + id + ":"

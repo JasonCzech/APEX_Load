@@ -53,7 +53,9 @@ function errorPctFromCounts(errors: number, successes: number) {
 }
 
 function calculateThroughputGap(tps: number, targetTps?: number) {
-  if (!targetTps || targetTps <= 0) return 0
+  // No configured/reported target means there is no gap to report: returning 0 here
+  // would render a fabricated "0.00%" next to a "--" target on every ordinary run.
+  if (!targetTps || targetTps <= 0) return undefined
   return (targetTps - tps) / targetTps * 100
 }
 

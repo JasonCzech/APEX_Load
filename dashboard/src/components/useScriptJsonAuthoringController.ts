@@ -16,7 +16,6 @@ import {
   SCRIPT_JSON_DEFAULT_COMPANION_TAB,
   selectionStateForJsonRequest,
   synchronizeStructuredScriptJson,
-  updateScriptJsonText,
   type ActionEditorSelectionState,
   type AuthorCodeFocus,
   type JsonPaneSelectionRequest,
@@ -67,10 +66,14 @@ export function useScriptJsonDraftController({
   }, [formattedScriptJson, jsonDirty, jsonText, script, setJsonText])
 
   const resolveCurrentScript = useCallback((): ScriptDefinition => {
+    // Same source-of-truth rule as deriveScriptJsonDraftState: a clean JSON pane
+    // is only a projection of the structured script, so save/validate/replay do
+    // not need to re-parse the whole document to learn what they already hold.
+    if (!jsonDirty) return script
     const parsed = parseScriptJsonDraft(jsonText)
     if (!parsed.ok) throw new Error(parsed.message)
     return parsed.script
-  }, [jsonText])
+  }, [jsonDirty, jsonText, script])
 
   const commitJsonDraft = useCallback((nextScript: ScriptDefinition, message?: string) => {
     setScript(nextScript)
@@ -105,17 +108,19 @@ export function useScriptJsonDraftController({
   }, [jsonText, onInvalidDraft, script, setError, setJsonDirty, setJsonText, setSuccess])
 
   const resetJsonDraft = useCallback(() => {
-    setJsonText(formatScriptJson(script))
+    setJsonText(formattedScriptJson)
     setJsonDirty(false)
     setError('')
     setSuccess('Reset script JSON from the structured editor.')
-  }, [script, setError, setJsonDirty, setJsonText, setSuccess])
+  }, [formattedScriptJson, setError, setJsonDirty, setJsonText, setSuccess])
 
   const changeJsonDraft = useCallback((value: string) => {
-    const next = updateScriptJsonText(value, script)
-    setJsonText(next.text)
-    setJsonDirty(next.dirty)
-  }, [script, setJsonDirty, setJsonText])
+    // Same dirty rule as updateScriptJsonText, but compared against the memoized
+    // projection: re-serializing the whole script on every JSON-pane keystroke
+    // is an O(script) cost we already paid once for this script identity.
+    setJsonText(value)
+    setJsonDirty(value !== formattedScriptJson)
+  }, [formattedScriptJson, setJsonDirty, setJsonText])
 
   return {
     ...draftState,
@@ -150,7 +155,21 @@ export function useScriptJsonNavigationController({
   const [activeAutoParameterOccurrenceIndex, setActiveAutoParameterOccurrenceIndex] = useState(0)
   const [jsonLineJumpRequest, setJsonLineJumpRequest] = useState<{ line: number; nonce: number } | null>(null)
 
-  const outlineSummary = useMemo(() => buildScriptOutlineSummary(script), [script])
+  // buildScriptOutlineSummary walks every init/action/teardown step and
+  // JSON-serializes each one to harvest parameter refs, so it must not rerun
+  // for structured edits it cannot observe. The only script fields it reads are
+  // the three phase lists and the auto-transaction mode, so key the memo on
+  // those instead of the whole script identity: renaming the script, retuning
+  // config, or editing parameters/data sources now reuses the built outline.
+  const outlineActions = script.actions
+  const outlineInit = script.init
+  const outlineTeardown = script.teardown
+  const outlineAutoTransactions = script.config.run_logic?.auto_transactions
+  const outlineSummary = useMemo(
+    () => buildScriptOutlineSummary(script),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [outlineActions, outlineInit, outlineTeardown, outlineAutoTransactions],
+  )
   const parameterReferenceCounts = useMemo(() => {
     const counts = new Map<string, number>()
     outlineSummary.actions.forEach(action => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { LaunchConflict, LaunchPreflightResponse } from '../types'
+import type { CapacityTimeslot, LaunchConflict, LaunchPreflightResponse } from '../types'
 import {
   RESERVATION_INCREMENT_MINUTES,
   COMMON_TIMEZONES,
@@ -14,6 +14,7 @@ import {
   formatReservationWindow,
   formatScheduleToken,
   formatScheduleWindow,
+  formatTimeslotLabel,
   formatTimeZoneOffset,
   formatTimeZoneOptionLabel,
   scheduleStatusTone,
@@ -135,6 +136,33 @@ describe('ceilDateToReservationIncrement', () => {
 
   it('uses a 15-minute increment', () => {
     expect(RESERVATION_INCREMENT_MINUTES).toBe(15)
+  })
+})
+
+describe('formatTimeslotLabel', () => {
+  const startAt = '2026-07-01T13:00:00Z'
+  const endAt = '2026-07-01T17:00:00Z'
+  // Pick a zone whose wall-clock differs from the runner's local zone so the
+  // assertions stay meaningful wherever the suite runs.
+  const zone = ['Asia/Tokyo', 'America/Los_Angeles']
+    .find(candidate => new Date(startAt).toLocaleString(undefined, { timeZone: candidate }) !== new Date(startAt).toLocaleString()) as string
+
+  it('renders the window in the reservation timezone and names that zone', () => {
+    const label = formatTimeslotLabel({ start_at: startAt, end_at: endAt, timezone: zone } as CapacityTimeslot)
+    expect(label).toContain(new Date(startAt).toLocaleString(undefined, { timeZone: zone }))
+    expect(label).toContain(new Date(endAt).toLocaleString(undefined, { timeZone: zone }))
+    expect(label).toContain(zone)
+    expect(label).not.toContain(new Date(startAt).toLocaleString())
+  })
+
+  it('falls back to the browser zone when the slot carries none', () => {
+    const label = formatTimeslotLabel({ start_at: startAt, end_at: endAt } as CapacityTimeslot)
+    expect(label).toBe(`${new Date(startAt).toLocaleString()} → ${new Date(endAt).toLocaleString()}`)
+  })
+
+  it('keeps raw values and capacity for an unparseable window', () => {
+    const label = formatTimeslotLabel({ start_at: 'nope', end_at: 'nope', timezone: zone, requested_capacity: { generators: 3 } } as CapacityTimeslot)
+    expect(label).toBe(`nope → nope ${zone} · 3 gen`)
   })
 })
 

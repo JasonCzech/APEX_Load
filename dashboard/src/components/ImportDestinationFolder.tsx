@@ -16,8 +16,8 @@ interface Props {
  * recorder, and archive surfaces already accept.
  *
  * Those surfaces have taken a destination folder for a while, but nothing ever
- * passed one: ScriptsAuthoringShell did not supply it and FolderTree is mounted
- * nowhere, so every import and recording silently saved to the project root
+ * passed one: ScriptsAuthoringShell does not supply a folder selector, so every
+ * import and recording silently saved to the project root
  * regardless of the plumbing. This control is what makes that plumbing do
  * something.
  *

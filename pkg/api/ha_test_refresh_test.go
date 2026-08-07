@@ -174,7 +174,7 @@ func TestHASingleTestReadRejectsStaleCrossProjectRuntimeHandle(t *testing.T) {
 	runner.mu.Unlock()
 	// Keep the full-map follower refresh inside its intended bounded staleness
 	// window. The single-row identity check must still prevent stale serialization.
-	runner.haTestRefreshAt = time.Now()
+	runner.haTestRefresh.markFresh(time.Now())
 	store.resetReadCounts()
 
 	full, ok := runner.GetTest(testID)
@@ -253,7 +253,7 @@ func TestHARunArchiveReadRejectsStaleCrossProjectManifest(t *testing.T) {
 
 	follower := newExecutionLeadership(store, "archive-follower")
 	runner := NewTestRunner(2, NewHub(), store, WithExecutionLeadership(follower))
-	runner.haTestRefreshAt = time.Now()
+	runner.haTestRefresh.markFresh(time.Now())
 	if record, ok := runner.GetRunArchiveContext(context.Background(), testID); ok || record != nil {
 		t.Fatalf("stale cross-project archive was returned: %+v", record)
 	}

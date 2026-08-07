@@ -1880,7 +1880,6 @@ export default function RecordingStudio({
   ) => {
     const result = convertTask.value;
     if (!result) return;
-    convertedCredentialReviewRef.current?.preserveEditsForNextReviewGeneration();
     advanceConvertedReviewGeneration();
     const preparedScript = attachImportCorrelationSuggestions(
       parameterizedScript,
@@ -2062,7 +2061,6 @@ export default function RecordingStudio({
   ) => {
     const result = salesforceTask.value;
     if (!result) return;
-    salesforceCredentialReviewRef.current?.preserveEditsForNextReviewGeneration();
     advanceSalesforceReviewGeneration();
     salesforcePreparedScriptRef.current = null;
     salesforceTask.setValue({

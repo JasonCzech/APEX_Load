@@ -25518,6 +25518,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "503":
           description: Service Unavailable
           content:
@@ -29234,6 +29246,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "413":
           description: Request Entity Too Large
           content:
@@ -29777,7 +29795,44 @@ paths:
             schema:
               type: object
               properties:
+                allocation:
+                  type: object
+                  properties:
+                    cpu_limit:
+                      type: string
+                    cpu_request:
+                      type: string
+                    memory_limit:
+                      type: string
+                    memory_request:
+                      type: string
+                    node_pool:
+                      type: string
+                    node_pool_label:
+                      type: string
+                    node_selector:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    tolerations:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          effect:
+                            type: string
+                          key:
+                            type: string
+                          operator:
+                            type: string
+                          value:
+                            type: string
+                    zone:
+                      type: string
+                  nullable: true
                 cloud_provider:
+                  type: string
+                cluster_id:
                   type: string
                 created_at:
                   type: string
@@ -29787,6 +29842,8 @@ paths:
                 desired_size:
                   type: integer
                   format: int64
+                domain_id:
+                  type: string
                 id:
                   type: string
                 max_size:
@@ -29848,6 +29905,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -29956,7 +30019,44 @@ paths:
               schema:
                 type: object
                 properties:
+                  allocation:
+                    type: object
+                    properties:
+                      cpu_limit:
+                        type: string
+                      cpu_request:
+                        type: string
+                      memory_limit:
+                        type: string
+                      memory_request:
+                        type: string
+                      node_pool:
+                        type: string
+                      node_pool_label:
+                        type: string
+                      node_selector:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tolerations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effect:
+                              type: string
+                            key:
+                              type: string
+                            operator:
+                              type: string
+                            value:
+                              type: string
+                      zone:
+                        type: string
+                    nullable: true
                   cloud_provider:
+                    type: string
+                  cluster_id:
                     type: string
                   created_at:
                     type: string
@@ -29966,6 +30066,8 @@ paths:
                   desired_size:
                     type: integer
                     format: int64
+                  domain_id:
+                    type: string
                   id:
                     type: string
                   max_size:
@@ -30062,8 +30164,46 @@ paths:
             schema:
               type: object
               properties:
+                allocation:
+                  type: object
+                  properties:
+                    cpu_limit:
+                      type: string
+                    cpu_request:
+                      type: string
+                    memory_limit:
+                      type: string
+                    memory_request:
+                      type: string
+                    node_pool:
+                      type: string
+                    node_pool_label:
+                      type: string
+                    node_selector:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    tolerations:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          effect:
+                            type: string
+                          key:
+                            type: string
+                          operator:
+                            type: string
+                          value:
+                            type: string
+                    zone:
+                      type: string
+                  nullable: true
                 cloud_provider:
                   type: string
+                cluster_id:
+                  type: string
+                  nullable: true
                 created_at:
                   type: string
                   format: date-time
@@ -30072,6 +30212,9 @@ paths:
                 desired_size:
                   type: integer
                   format: int64
+                domain_id:
+                  type: string
+                  nullable: true
                 id:
                   type: string
                 max_size:
@@ -30179,6 +30322,327 @@ paths:
       tags:
         - Fleet
       x-handler: handleUpdateFleetPool
+  /api/v1/fleet/pools/{id}/allocation:
+    put:
+      summary: Update Fleet Pool Allocation
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: write'
+      operationId: handleUpdateFleetPoolAllocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cluster_id:
+                  type: string
+                cpu_limit:
+                  type: string
+                cpu_request:
+                  type: string
+                memory_limit:
+                  type: string
+                memory_request:
+                  type: string
+                node_pool:
+                  type: string
+                node_pool_label:
+                  type: string
+                node_selector:
+                  type: object
+                  additionalProperties:
+                    type: string
+                tolerations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      effect:
+                        type: string
+                      key:
+                        type: string
+                      operator:
+                        type: string
+                      value:
+                        type: string
+                updated_at:
+                  type: string
+                  format: date-time
+                zone:
+                  type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allocation:
+                    type: object
+                    properties:
+                      cpu_limit:
+                        type: string
+                      cpu_request:
+                        type: string
+                      memory_limit:
+                        type: string
+                      memory_request:
+                        type: string
+                      node_pool:
+                        type: string
+                      node_pool_label:
+                        type: string
+                      node_selector:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tolerations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effect:
+                              type: string
+                            key:
+                              type: string
+                            operator:
+                              type: string
+                            value:
+                              type: string
+                      zone:
+                        type: string
+                    nullable: true
+                  applied:
+                    type: boolean
+                  cluster_id:
+                    type: string
+                  container:
+                    type: string
+                  pool_id:
+                    type: string
+                  preflight:
+                    type: object
+                    properties:
+                      allowed:
+                        type: boolean
+                      cpu_millis_delta:
+                        type: integer
+                        format: int64
+                      memory_bytes_delta:
+                        type: integer
+                        format: int64
+                      pods_delta:
+                        type: integer
+                        format: int64
+                      quota_enforced:
+                        type: boolean
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - allowed
+                      - cpu_millis_delta
+                      - memory_bytes_delta
+                      - pods_delta
+                      - quota_enforced
+                    nullable: true
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - applied
+                  - pool_id
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Fleet
+      x-handler: handleUpdateFleetPoolAllocation
+  /api/v1/fleet/pools/{id}/allocation/preflight:
+    get:
+      summary: Fleet Pool Allocation Preflight
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: read'
+      operationId: handleFleetPoolAllocationPreflight
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allocation:
+                    type: object
+                    properties:
+                      cpu_limit:
+                        type: string
+                      cpu_request:
+                        type: string
+                      memory_limit:
+                        type: string
+                      memory_request:
+                        type: string
+                      node_pool:
+                        type: string
+                      node_pool_label:
+                        type: string
+                      node_selector:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      tolerations:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            effect:
+                              type: string
+                            key:
+                              type: string
+                            operator:
+                              type: string
+                            value:
+                              type: string
+                      zone:
+                        type: string
+                    nullable: true
+                  applied:
+                    type: boolean
+                  cluster_id:
+                    type: string
+                  container:
+                    type: string
+                  pool_id:
+                    type: string
+                  preflight:
+                    type: object
+                    properties:
+                      allowed:
+                        type: boolean
+                      cpu_millis_delta:
+                        type: integer
+                        format: int64
+                      memory_bytes_delta:
+                        type: integer
+                        format: int64
+                      pods_delta:
+                        type: integer
+                        format: int64
+                      quota_enforced:
+                        type: boolean
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - allowed
+                      - cpu_millis_delta
+                      - memory_bytes_delta
+                      - pods_delta
+                      - quota_enforced
+                    nullable: true
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - applied
+                  - pool_id
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cluster_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Fleet
+      x-handler: handleFleetPoolAllocationPreflight
   /api/v1/fleet/provision-requests:
     get:
       summary: List Provisioning Requests
@@ -155685,6 +156149,835 @@ paths:
       tags:
         - System
       x-handler: handleGetBrowserBenchmarkEvidence
+  /api/v1/system/clusters:
+    get:
+      summary: List Cluster Connections
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleListClusterConnections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      tags:
+        - System
+      x-handler: handleListClusterConnections
+    post:
+      summary: Create Cluster Connection
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleCreateClusterConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_server_url:
+                  type: string
+                auth_mode:
+                  type: string
+                aws_access_key_id:
+                  type: string
+                aws_cluster_name:
+                  type: string
+                aws_credential_mode:
+                  type: string
+                aws_external_id:
+                  type: string
+                  nullable: true
+                aws_region:
+                  type: string
+                aws_role_arn:
+                  type: string
+                aws_secret_access_key:
+                  type: string
+                  nullable: true
+                aws_sts_endpoint:
+                  type: string
+                azure_authority:
+                  type: string
+                azure_client_id:
+                  type: string
+                azure_scope:
+                  type: string
+                azure_tenant_id:
+                  type: string
+                ca_certificate_pem:
+                  type: string
+                client_secret:
+                  type: string
+                  nullable: true
+                client_secret_env_var:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                generator_container:
+                  type: string
+                generator_selector:
+                  type: string
+                generator_stateful_set:
+                  type: string
+                kind:
+                  type: string
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+                name:
+                  type: string
+                namespace:
+                  type: string
+                static_token:
+                  type: string
+                  nullable: true
+                status:
+                  type: string
+                tls_mode:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_server_url:
+                    type: string
+                  auth_description:
+                    type: string
+                  auth_mode:
+                    type: string
+                  aws_access_key_id:
+                    type: string
+                  aws_cluster_name:
+                    type: string
+                  aws_credential_mode:
+                    type: string
+                  aws_region:
+                    type: string
+                  aws_role_arn:
+                    type: string
+                  aws_sts_endpoint:
+                    type: string
+                  azure_client_id:
+                    type: string
+                  azure_tenant_id:
+                    type: string
+                  ca_certificate_pem:
+                    type: string
+                  client_secret_env_var:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  credential_source:
+                    type: string
+                  description:
+                    type: string
+                  generator_container:
+                    type: string
+                  generator_selector:
+                    type: string
+                  generator_stateful_set:
+                    type: string
+                  has_aws_external_id:
+                    type: boolean
+                  has_client_secret:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  labels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  status:
+                    type: string
+                  tls_mode:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - auth_mode
+                  - created_at
+                  - credential_source
+                  - has_aws_external_id
+                  - has_client_secret
+                  - id
+                  - kind
+                  - name
+                  - namespace
+                  - status
+                  - tls_mode
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      tags:
+        - System
+      x-handler: handleCreateClusterConnection
+  /api/v1/system/clusters/{id}:
+    delete:
+      summary: Delete Cluster Connection
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleDeleteClusterConnection
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleDeleteClusterConnection
+    get:
+      summary: Get Cluster Connection
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleGetClusterConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_server_url:
+                    type: string
+                  auth_description:
+                    type: string
+                  auth_mode:
+                    type: string
+                  aws_access_key_id:
+                    type: string
+                  aws_cluster_name:
+                    type: string
+                  aws_credential_mode:
+                    type: string
+                  aws_region:
+                    type: string
+                  aws_role_arn:
+                    type: string
+                  aws_sts_endpoint:
+                    type: string
+                  azure_client_id:
+                    type: string
+                  azure_tenant_id:
+                    type: string
+                  ca_certificate_pem:
+                    type: string
+                  client_secret_env_var:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  credential_source:
+                    type: string
+                  description:
+                    type: string
+                  generator_container:
+                    type: string
+                  generator_selector:
+                    type: string
+                  generator_stateful_set:
+                    type: string
+                  has_aws_external_id:
+                    type: boolean
+                  has_client_secret:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  labels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  status:
+                    type: string
+                  tls_mode:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - auth_mode
+                  - created_at
+                  - credential_source
+                  - has_aws_external_id
+                  - has_client_secret
+                  - id
+                  - kind
+                  - name
+                  - namespace
+                  - status
+                  - tls_mode
+                  - updated_at
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleGetClusterConnection
+    put:
+      summary: Update Cluster Connection
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleUpdateClusterConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_server_url:
+                  type: string
+                auth_mode:
+                  type: string
+                aws_access_key_id:
+                  type: string
+                aws_cluster_name:
+                  type: string
+                aws_credential_mode:
+                  type: string
+                aws_external_id:
+                  type: string
+                  nullable: true
+                aws_region:
+                  type: string
+                aws_role_arn:
+                  type: string
+                aws_secret_access_key:
+                  type: string
+                  nullable: true
+                aws_sts_endpoint:
+                  type: string
+                azure_authority:
+                  type: string
+                azure_client_id:
+                  type: string
+                azure_scope:
+                  type: string
+                azure_tenant_id:
+                  type: string
+                ca_certificate_pem:
+                  type: string
+                client_secret:
+                  type: string
+                  nullable: true
+                client_secret_env_var:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                generator_container:
+                  type: string
+                generator_selector:
+                  type: string
+                generator_stateful_set:
+                  type: string
+                kind:
+                  type: string
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+                name:
+                  type: string
+                namespace:
+                  type: string
+                static_token:
+                  type: string
+                  nullable: true
+                status:
+                  type: string
+                tls_mode:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_server_url:
+                    type: string
+                  auth_description:
+                    type: string
+                  auth_mode:
+                    type: string
+                  aws_access_key_id:
+                    type: string
+                  aws_cluster_name:
+                    type: string
+                  aws_credential_mode:
+                    type: string
+                  aws_region:
+                    type: string
+                  aws_role_arn:
+                    type: string
+                  aws_sts_endpoint:
+                    type: string
+                  azure_client_id:
+                    type: string
+                  azure_tenant_id:
+                    type: string
+                  ca_certificate_pem:
+                    type: string
+                  client_secret_env_var:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  credential_source:
+                    type: string
+                  description:
+                    type: string
+                  generator_container:
+                    type: string
+                  generator_selector:
+                    type: string
+                  generator_stateful_set:
+                    type: string
+                  has_aws_external_id:
+                    type: boolean
+                  has_client_secret:
+                    type: boolean
+                  id:
+                    type: string
+                  kind:
+                    type: string
+                  labels:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                  status:
+                    type: string
+                  tls_mode:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - auth_mode
+                  - created_at
+                  - credential_source
+                  - has_aws_external_id
+                  - has_client_secret
+                  - id
+                  - kind
+                  - name
+                  - namespace
+                  - status
+                  - tls_mode
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleUpdateClusterConnection
+  /api/v1/system/clusters/{id}/capacity:
+    get:
+      summary: Get Cluster Capacity
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleGetClusterCapacity
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cluster_id:
+                    type: string
+                  generator_workload:
+                    type: object
+                    properties:
+                      container:
+                        type: string
+                      container_names:
+                        type: array
+                        items:
+                          type: string
+                      current_limits:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      current_requests:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      name:
+                        type: string
+                      node_selector:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      ready_replicas:
+                        type: integer
+                        format: int64
+                      replicas:
+                        type: integer
+                        format: int64
+                      update_strategy:
+                        type: string
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - name
+                      - ready_replicas
+                      - replicas
+                    nullable: true
+                  namespace:
+                    type: string
+                  node_capacity:
+                    type: object
+                    properties:
+                      available:
+                        type: boolean
+                      label_values:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items:
+                            type: string
+                      node_pools:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            allocatable_cpu_millis:
+                              type: integer
+                              format: int64
+                            allocatable_memory_bytes:
+                              type: integer
+                              format: int64
+                            label:
+                              type: string
+                            name:
+                              type: string
+                            node_count:
+                              type: integer
+                              format: int64
+                            schedulable_nodes:
+                              type: integer
+                              format: int64
+                            taints:
+                              type: array
+                              items:
+                                type: string
+                            zone:
+                              type: string
+                          required:
+                            - allocatable_cpu_millis
+                            - allocatable_memory_bytes
+                            - name
+                            - node_count
+                            - schedulable_nodes
+                      unavailable_reason:
+                        type: string
+                    required:
+                      - available
+                  quotas:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        hard:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        name:
+                          type: string
+                        used:
+                          type: object
+                          additionalProperties:
+                            type: string
+                      required:
+                        - name
+                required:
+                  - cluster_id
+                  - namespace
+                  - node_capacity
+                  - quotas
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleGetClusterCapacity
+  /api/v1/system/clusters/{id}/test:
+    post:
+      summary: Test Cluster Connection
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleTestClusterConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checked_at:
+                    type: string
+                    format: date-time
+                  probes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        ok:
+                          type: boolean
+                        optional:
+                          type: boolean
+                        probe:
+                          type: string
+                        status_code:
+                          type: integer
+                          format: int64
+                      required:
+                        - ok
+                        - probe
+                  server_version:
+                    type: string
+                  status:
+                    type: string
+                  summary:
+                    type: string
+                required:
+                  - checked_at
+                  - probes
+                  - status
+                  - summary
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleTestClusterConnection
   /api/v1/system/deployment-lease:
     get:
       summary: Get Deployment Lease
@@ -156162,6 +157455,344 @@ paths:
       tags:
         - System
       x-handler: handleRenewDeploymentLease
+  /api/v1/system/deployment-targets:
+    get:
+      summary: List Domain Deployment Targets
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleListDomainDeploymentTargets
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  selectable_providers:
+                    type: array
+                    items:
+                      type: string
+                  targets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        configured:
+                          type: boolean
+                        created_at:
+                          type: string
+                          format: date-time
+                        default_cluster_id:
+                          type: string
+                        default_cluster_name:
+                          type: string
+                        domain_id:
+                          type: string
+                        domain_name:
+                          type: string
+                        provider:
+                          type: string
+                        scoped_pool_count:
+                          type: integer
+                          format: int64
+                        updated_at:
+                          type: string
+                          format: date-time
+                        updated_by_subject:
+                          type: string
+                      required:
+                        - configured
+                        - domain_id
+                        - scoped_pool_count
+                  total:
+                    type: integer
+                    format: int64
+                required:
+                  - selectable_providers
+                  - targets
+                  - total
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      tags:
+        - System
+      x-handler: handleListDomainDeploymentTargets
+  /api/v1/system/deployment-targets/{id}:
+    delete:
+      summary: Delete Domain Deployment Target
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleDeleteDomainDeploymentTarget
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  created_at:
+                    type: string
+                    format: date-time
+                  default_cluster_id:
+                    type: string
+                  default_cluster_name:
+                    type: string
+                  domain_id:
+                    type: string
+                  domain_name:
+                    type: string
+                  provider:
+                    type: string
+                  scoped_pool_count:
+                    type: integer
+                    format: int64
+                  updated_at:
+                    type: string
+                    format: date-time
+                  updated_by_subject:
+                    type: string
+                required:
+                  - configured
+                  - domain_id
+                  - scoped_pool_count
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleDeleteDomainDeploymentTarget
+    get:
+      summary: Get Domain Deployment Target
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      operationId: handleGetDomainDeploymentTarget
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  created_at:
+                    type: string
+                    format: date-time
+                  default_cluster_id:
+                    type: string
+                  default_cluster_name:
+                    type: string
+                  domain_id:
+                    type: string
+                  domain_name:
+                    type: string
+                  provider:
+                    type: string
+                  scoped_pool_count:
+                    type: integer
+                    format: int64
+                  updated_at:
+                    type: string
+                    format: date-time
+                  updated_by_subject:
+                    type: string
+                required:
+                  - configured
+                  - domain_id
+                  - scoped_pool_count
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: system:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleGetDomainDeploymentTarget
+    put:
+      summary: Update Domain Deployment Target
+      description: '**Access Control:** Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      operationId: handleUpdateDomainDeploymentTarget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                default_cluster_id:
+                  type: string
+                provider:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  created_at:
+                    type: string
+                    format: date-time
+                  default_cluster_id:
+                    type: string
+                  default_cluster_name:
+                    type: string
+                  domain_id:
+                    type: string
+                  domain_name:
+                    type: string
+                  provider:
+                    type: string
+                  scoped_pool_count:
+                    type: integer
+                    format: int64
+                  updated_at:
+                    type: string
+                    format: date-time
+                  updated_by_subject:
+                    type: string
+                required:
+                  - configured
+                  - domain_id
+                  - scoped_pool_count
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: SystemAdmin; service-account scope: settings:manage'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - System
+      x-handler: handleUpdateDomainDeploymentTarget
   /api/v1/system/entitlements:
     get:
       summary: Get Entitlements

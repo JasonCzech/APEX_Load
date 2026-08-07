@@ -1,20 +1,62 @@
 # Whole-Application Review — 2026-08-02
 
-**Branch:** main @ dc05008ab (clean tree, == origin/main) · **Scope achieved: COMPLETE — all 38 planned areas** (~572k of ~620k first-party LOC, plus six whole-tree cross-cutting sweeps) — the ENTIRE Go backend and ops surface, the ENTIRE dashboard frontend, and every cross-cutting sweep (concurrency, storage-dialect parity, generated-artifact/API-contract, test-quality, docs-accuracy, dependency-upgrade regressions): the pkg/api control plane (fully partitioned), the recording/replay pipeline, all importer families, pkg/engine, pkg/storage, pkg/distributed, the transform + data-protection libraries, the full pkg/protocol tree, CLI/controller/deployments/mcp, and all nine dashboard areas. Remaining: 5 cross-cutting sweeps (concurrency, generated-freshness, test-quality, docs-accuracy, dependency-upgrade regressions; storage-dialect parity was substantially covered inside AREA-21). The run was descoped mid-flight due to session token limits; findings below cover only the listed areas.
+**Branch:** main @ dc05008ab (clean tree, == origin/main) · **Scope achieved: COMPLETE — all 38 planned areas** (~572k of ~620k first-party LOC, plus six whole-tree cross-cutting sweeps) — the ENTIRE Go backend and ops surface, the ENTIRE dashboard frontend, and every cross-cutting sweep (concurrency, storage-dialect parity, generated-artifact/API-contract, test-quality, docs-accuracy, dependency-upgrade regressions): the pkg/api control plane (fully partitioned), the recording/replay pipeline, all importer families, pkg/engine, pkg/storage, pkg/distributed, the transform + data-protection libraries, the full pkg/protocol tree, CLI/controller/deployments/mcp, and all nine dashboard areas. Nothing in the planned area map is outstanding (storage-dialect parity, CC-2, was folded into AREA-21 where `rewriteSQL` and the Postgres FK derivation were audited directly).
 **Method:** 38 area finders over a git-archive snapshot of HEAD; 428 raw findings → 423 after dedup → **412 confirmed** (323 defects + 89 opportunities) / 11 refuted. **Two verification protocols were used and are labelled per finding.** Backend areas (AREA-01..23) ran a token-constrained lean pass: 1 independent adversarial verifier per claimed-Critical/High finding and per suspected regression, batched single-vote verification for Medium/Low and opportunities. The dashboard areas (AREA-24..32) ran the full protocol: semantic dedup, **2 independent verifiers plus a tiebreaker** on every High and regression suspect, a completeness critic, and 5 targeted gap probes (GAPFE-1..5) whose findings were verified the same way. Prior-findings ledger (316 entries from the July reviews) tags rediscoveries instead of double-reporting them.
 
 ## Remediation status
 
-<!-- REMEDIATION: rewritten after the fix phase completes -->
-> **⚠ This report describes commit `dc05008ab`. The repository has since moved on.**
->
-> As of 2026-08-04 the working tree is at `ef1c67fff` — **6 commits ahead** of the reviewed snapshot, with a further **88 files modified (+7,596/−1,676) and 9 new untracked files** uncommitted. Several of those files map directly onto findings below (`pkg/api/test_history_cache.go`, `dashboard/src/types/executionPlans.ts`, `scenarioFormModel.ts` + a new test, `jsonViewerModel.ts`, `dashboardAggregateHistory.ts`, `timeslotTimezoneModel.ts`, `authoring_ai_guardrails_test.go`), so remediation is demonstrably **already underway outside this review**.
->
-> **Consequence: an unknown share of the findings below are already fixed.** No finding from AREA-01..32, GAPFE-1..5, CC-1, CC-3 or CC-4 has been re-verified against current code (CC-5 and CC-6 were run against current state and are live). Treat those entries as "true at dc05008ab", not as a live defect list, and re-check before acting. A re-verification pass over the open findings at current HEAD is the natural next step and has not been run.
->
-> **Exception — CC-5 (docs-accuracy) and CC-6 (dependency-upgrade regressions) were run against CURRENT state** (`ef1c67fff` plus the uncommitted working tree), so its findings are live rather than historical. That sweep also establishes something worth reading before trusting older assumptions about this project: the documentation overstatement reported in earlier reviews **has been corrected**. All four headline performance figures now carry explicit "design target, not benchmarked" qualifiers at every site; `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md` hard-codes `attainment_status: not_evaluated` and ships a schema validator that *rejects* "met"; `sap_gui` is honestly described as authorable-but-not-executable with a dedicated runner spec; the assisted-authoring engine is qualified as deterministic-local in at least six independent places; and PostgreSQL is consistently labelled optional and unproven at scale.
+**312 of 323 defects fixed (97%). 11 remain, listed below.** Re-verified against `6dd6c476a` plus the working tree; every verdict here comes from an adversarial reviewer that read the code, not from the agent that made the change.
 
-_No fix phase was run by this review — every change in the working tree is the maintainer's own work. This review modified nothing but this file._
+| | Count |
+|---|---:|
+| Defects confirmed by the review | 323 |
+| Fixed by the maintainer before re-verification | 287 |
+| Closed by the two remediation waves | 25 |
+| **Still open** | **11** |
+
+Verification at this state: `go build` clean, `go vet` clean, **`go test ./...` 0 failures**, `gofmt` clean across all 36 changed Go files; dashboard `tsc` clean and **vitest 3259/3259** (up from 3130 — remediation added ~129 tests). No test was deleted, skipped or weakened to make anything pass; that was checked explicitly at every item and enforced by refusing fixes that required it.
+
+### The 11 still open
+
+Each is already partly fixed. Ordered by severity.
+
+- **#2** (High) `pkg/api/distributed_resilience.go`  
+  Half the named residual is genuinely fixed, half is untouched. WHAT IS FIXED (verified): waitForLostGeneratorEpochFence (pkg/api/distributed_resilience.go:640-675) no longer does one uninterruptible select on a ~lease-TTL timer. It now clamps a corrupt/far-fu
+- **#9** (High) `pkg/convert/jmeter/converter.go`  
+  The substantive half of the reviewer's remaining spec is genuinely closed and I verified it by mutation, not by claim. The two behavioural guards are present (parseSamplerExtractors skips disabled post-processors; parseTestActionPauseMs skips disabled TestActi
+- **#11** (High) `pkg/engine/redaction.go`  
+  No code change at all — `git diff --numstat` over the assigned set shows only pkg/protocol/http/extract.go (38/18) and extract_test.go (92/0); pkg/engine/redaction.go, pkg/protocol/http/cookie_jar.go and pkg/protocol/http/http.go are byte-identical to HEAD. Ev
+- **#21** (High) `dashboard/src/components/NewTestPage.tsx`  
+  The wave-2 change is real, correctly scoped and genuinely test-proven, but it closes only the sub-case where the scenario/run-default layer already defines error_handling. saveGroupOverride now seeds the section per-field from effectiveRootRuntime under the gr
+- **#26** (High) `pkg/api/persistence.go`  
+  A real, correct, well-tested change landed, but it is NOT the change the reviewer's spec demanded. What landed: compactTerminalManagedTestLocked now nils the cardinality-unbounded collections on the one metrics point a terminalized run keeps resident (persiste
+- **#35** (Medium) `pkg/api/testexecution.go`  
+  Suggestion (a) — the narrow VUser-scale storage op — genuinely landed and I could not break it; suggestions (b) and (c) did not. Verified real: reserveVUserScaleLockedWithEvidence and rollbackVUserScaleReservation now call tr.persistManagedTestVUserScale (test
+- **#69** (Medium) `pkg/convert/bruno/inspect.go`  
+  The change is correct and genuinely removes ONE of the two cost terms named in WHAT_REMAINS, but the other term is untouched. WHAT IS GENUINELY FIXED (verified empirically, not just read): the '~15-20 yaml.Unmarshal calls per request file from repeated classi
+- **#156** (Medium) `dashboard/src/types/scripts.ts`  
+  The two things wave 2 could do inside its owned files are done, done correctly, and genuinely test-guarded — but the residual the reviewer wrote is broader than that, and its named remainder still reproduces verbatim. DELIVERED AND VERIFIED CORRECT: (a) trans
+- **#164** (Medium) `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`  
+  The core residual IS closed on the default path, and the claims check out: browserCapacityProfileForTier() now returns the 40/32/25/20 numbers in the internal BrowserDeviceTierCeiling field (capacity_planning.go:780-789), mergeBrowserCapacityProfile merges the
+- **#297** (Low) `docs/COMPETITIVE_COMPARISON.md`  
+  Decline is procedurally correct and the doc-side edit is real and accurate, but WHAT_REMAINS (the code half) is untouched, exactly as the reviewer described. Verified: `git diff --stat -- pkg/api/protocol_bundle_support.go pkg/api/protocol_bundle_support_test.
+- **#317** (Low) `dashboard/src/components/ScriptImportReview.tsx`  
+  The three residuals the reviewer enumerated are genuinely fixed and empirically verified: importSummary is useMemo'd on [importMetadata] (EnterpriseArchiveImport.tsx:1135), generatedDataSources/summarizeInlineData is useMemo'd on [importedScript] (:1303-1316),
+
+### #11 needs a product decision, not more engineering
+
+Finding #11 (the runtime secret matcher redacting short/common values and destroying run evidence) **cannot be closed as written**, because an earlier remediation pass — commit `4f5622235` — added tests that pin the disputed behaviour as required:
+
+- `pkg/protocol/http/cookie_test.go` `TestBoundedCookieJarRuntimeSnapshotProtectsShortApplicationDefinedCookies` asserts the runtime snapshot **must** equal `["en", "sensitive-session-token", "true"]` — i.e. it requires `locale=en` and `cookieconsent=true` to be collected as secrets. That is finding #11's literal failure scenario, encoded as the expected outcome.
+- `pkg/engine/redaction_test.go` `TestRuntimeSecretRedactionDoesNotAmplifyShortMatches` registers a one-byte secret `"a"` and asserts it is fully redacted, which is definitionally incompatible with the minimum-length floor #11 asks for.
+
+A remediation agent implemented the proposed filter and found it passed every other test in the package; only those two assertions failed. It declined to rewrite them, which was correct — the conflict is a real product question, not a coding problem:
+
+> Should a short, common cookie value (`en`, `true`) be redacted everywhere it appears — protecting a possible secret at the cost of destroying response bodies, error messages, URLs and correlation evidence for the rest of the run — or should redaction require a minimum length / sensitive name, accepting that a genuinely short secret could survive in evidence?
+
+Whichever way that is decided, one of those two tests has to change to match. Until then #11 stays open by design rather than by omission.
+
+_Method: all 323 defects re-verified individually (79 agents), then two remediation waves (21 and 14 file-disjoint groups) each followed by adversarial review. Wave 1 closed 19 of 36; its reviewers rejected 11 of 30 attempted fixes as incomplete. Wave 2 closed 6 of the remaining 17. The pattern of diminishing returns, and the fact that the remainder needs design decisions rather than more passes, is why remediation stopped here._
 
 ## Coverage — what this review did and did not examine
 

@@ -111,7 +111,12 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	if !started {
 		endTime := time.Now()
+		// Released with defer, not manually: artifacts.finalize and the commit
+		// below can panic, and the run-driver panic backstop terminalizes through
+		// completeTestRun, which needs this very fence. A manual unlock is skipped
+		// during unwinding and would deadlock the backstop against an orphaned gate.
 		unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+		defer unlockArchiveCommit()
 		archiveRecord, finalStatus, finalError := artifacts.finalize(test, "ABORTED", endTime, "test cancelled before execution started")
 		tr.mu.Lock()
 		if test.Status == "ABORTED" {
@@ -126,7 +131,6 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			compactTerminalManagedTestLocked(test)
 		}
 		tr.mu.Unlock()
-		unlockArchiveCommit()
 		return
 	}
 
@@ -160,12 +164,17 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	tr.mu.RUnlock()
 	finalStatus, finalError := localExecutionFinalState(testStatus, testError, err)
 
+	// Released with defer, not manually: artifacts.finalize is the archive writer
+	// the run-driver panic backstop exists for, and that backstop terminalizes
+	// through completeTestRun, which needs this very fence. A manual unlock is
+	// skipped during unwinding, so a panic here would leave the gate locked
+	// forever and deadlock the backstop behind it.
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
+	defer unlockArchiveCommit()
 	archiveRecord, finalStatus, finalError := artifacts.finalize(test, finalStatus, endTime, finalError)
 	if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, endTime, finalError, archiveRecord); err != nil {
 		slog.Error("local terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
 	}
-	unlockArchiveCommit()
 
 	var totalTransactions, totalErrors int64
 	var resultDuration time.Duration

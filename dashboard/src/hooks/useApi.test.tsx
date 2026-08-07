@@ -1,41 +1,122 @@
 // @vitest-environment jsdom
 
 import { act } from 'react'
-import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { createRoot, Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('./apiClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./apiClient')>()
+  return {
+    ...actual,
+    apiFetch: vi.fn(),
+    apiFetchFromOrigin: vi.fn(),
+    request: vi.fn().mockResolvedValue({}),
+    requestFromOrigin: vi.fn().mockResolvedValue({}),
+  }
+})
 
 import { ApiProvider, useApi } from './useApi'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-describe('ApiProvider', () => {
-  const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = []
+// One representative export per domain hook spread into the context, so a hook
+// dropped from (or shadowed out of) the provider fails here.
+const REPRESENTATIVE_SERVICES = [
+  'listTests',
+  'listApplications',
+  'listProjects',
+  'listDomains',
+  'listScripts',
+  'getAuthEffectiveAccess',
+  'startRecording',
+  'getBrowserRecorderBridgeStatus',
+  'listRemotes',
+  'listTimeslots',
+  'listFleetPools',
+  'listExecutionPlans',
+  'listCollectors',
+  'listObjectRepositories',
+  'listCorrelationRulesets',
+  'getEntitlements',
+] as const
 
-  afterEach(async () => {
-    while (mounted.length > 0) {
-      const entry = mounted.pop()
-      if (!entry) continue
-      await act(async () => entry.root.unmount())
-      entry.container.remove()
-    }
+describe('ApiProvider', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
   })
 
-  it('shares the composed API surface through context', async () => {
-    const container = document.createElement('div')
-    document.body.appendChild(container)
-    const root = createRoot(container)
-    mounted.push({ root, container })
-
-    function Harness() {
-      const first = useApi()
-      const second = useApi()
-      return <span>{first === second && typeof first.getTest === 'function' ? 'ready' : 'missing'}</span>
-    }
-
+  afterEach(async () => {
     await act(async () => {
-      root.render(<ApiProvider><Harness /></ApiProvider>)
+      root.unmount()
+    })
+    container.remove()
+  })
+
+  it('exposes every domain hook on one flat context value', async () => {
+    let services: Record<string, unknown> | undefined
+    function Consumer() {
+      services = useApi() as unknown as Record<string, unknown>
+      return null
+    }
+    await act(async () => {
+      root.render(
+        <ApiProvider>
+          <Consumer />
+        </ApiProvider>,
+      )
     })
 
-    expect(container.textContent).toBe('ready')
+    expect(services).toBeDefined()
+    REPRESENTATIVE_SERVICES.forEach(name => {
+      expect(typeof services?.[name]).toBe('function')
+    })
+  })
+
+  it('keeps the context value stable across re-renders', async () => {
+    const seen: unknown[] = []
+    function Consumer() {
+      seen.push(useApi())
+      return null
+    }
+    const tree = () => (
+      <ApiProvider>
+        <Consumer />
+      </ApiProvider>
+    )
+    await act(async () => {
+      root.render(tree())
+    })
+    await act(async () => {
+      root.render(tree())
+    })
+    expect(seen.length).toBeGreaterThan(1)
+    expect(seen[seen.length - 1]).toBe(seen[0])
+  })
+
+  it('fails loudly when used outside the provider', async () => {
+    function Consumer() {
+      useApi()
+      return null
+    }
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    // React re-throws through the DOM, and jsdom prints the whole stack unless
+    // the error event is handled. The throw is the assertion here, not noise.
+    const swallow = (event: ErrorEvent) => event.preventDefault()
+    window.addEventListener('error', swallow)
+    try {
+      await expect(
+        act(async () => {
+          root.render(<Consumer />)
+        }),
+      ).rejects.toThrow('useApi must be used within ApiProvider')
+    } finally {
+      window.removeEventListener('error', swallow)
+      errors.mockRestore()
+    }
   })
 })

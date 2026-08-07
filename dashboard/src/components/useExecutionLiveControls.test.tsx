@@ -214,6 +214,36 @@ describe('useExecutionLiveControls', () => {
     expect(showControlFeedback).toHaveBeenCalledWith('Pausing all VUsers over 2m')
   })
 
+  it('sends one ramp-free pause payload to every active group when gradual ramping is off', async () => {
+    apiMock.scaleVUsers.mockResolvedValue(undefined)
+    const base = buildRunningTest()
+
+    await act(async () => {
+      root.render(<LiveControlsHarness test={{
+        ...base,
+        total_vusers: 20,
+        groups: [base.groups[0], { ...base.groups[0], name: 'Search', vusers: 8 }],
+      }} />)
+    })
+
+    await click('pause-all')
+
+    expect(apiMock.scaleVUsers).toHaveBeenCalledTimes(2)
+    expect(apiMock.scaleVUsers.mock.calls.map(call => call[1])).toEqual(['Checkout', 'Search'])
+    apiMock.scaleVUsers.mock.calls.forEach(call => {
+      expect(call[2]).toBe(0)
+      // The stale ramp duration ('1m', still in the input) must not leak into the
+      // command while the gradual-ramp toggle is off -- the api layer serializes
+      // ramp_duration straight onto the PATCH body, so a leak here would ramp the
+      // pause instead of applying it immediately. Key presence is deliberately not
+      // asserted: JSON.stringify drops an undefined ramp_duration, so omitted and
+      // explicitly-undefined produce the same request.
+      expect(call[3]?.action).toBe('pause')
+      expect(call[3]?.ramp_duration).toBeUndefined()
+    })
+    expect(showControlFeedback).toHaveBeenCalledWith('Paused all VUsers')
+  })
+
   it('keeps the projected model pointed at an active backend VUser ramp target', async () => {
     await act(async () => {
       root.render(<LiveControlsHarness test={{

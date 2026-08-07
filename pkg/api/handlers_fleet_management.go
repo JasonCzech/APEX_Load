@@ -43,12 +43,23 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "fleet pool name is required")
 		return
 	}
-	if req.CloudProvider == "" {
-		writeError(w, http.StatusBadRequest, "cloud_provider is required")
-		return
-	}
 	if err := validateFleetPoolSizing(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// The domain check runs before the cloud_provider requirement because a
+	// domain-scoped pool DERIVES its provider (and may inherit the domain's
+	// default cluster) rather than having to restate it.
+	if status, err := s.validatePoolAgainstDomainTarget(&req); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	if status, err := s.validatePoolColocation(&req); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	if req.CloudProvider == "" {
+		writeError(w, http.StatusBadRequest, "cloud_provider is required")
 		return
 	}
 	req.ID = uuid.New().String()
@@ -56,6 +67,10 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 		req.Status = "active"
 	}
 	prepareFleetPoolMembers(req.ID, req.Members)
+	if conflict := s.checkGeneratorPoolExclusivity(req.ID, memberGeneratorIDs(req.Members)); conflict != nil {
+		writeError(w, http.StatusConflict, conflict.Error())
+		return
+	}
 	creator, supported := s.store.(interface {
 		CreateFleetPoolWithMembers(pool *storage.FleetPool, members []*storage.FleetPoolMember) error
 	})
@@ -64,7 +79,7 @@ func (s *Server) handleCreateFleetPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := creator.CreateFleetPoolWithMembers(&req, req.Members); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFleetMembershipError(w, err, http.StatusBadRequest)
 		return
 	}
 	s.recordAuditEvent(r, "fleet.pool.create", "success", "fleet_pool", req.ID, "", map[string]any{
@@ -110,6 +125,17 @@ func (s *Server) handleGetFleetPool(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pool)
 }
 
+// fleetPoolUpdateRequest overlays presence-aware binding fields on the pool
+// shape. The embedded struct supplies every replace-on-omit field; the two
+// pointers shadow their embedded counterparts during JSON decoding (the
+// shallowest field wins), so an omitted binding and an explicitly cleared one
+// are distinguishable — which is what makes unscoping possible at all.
+type fleetPoolUpdateRequest struct {
+	storage.FleetPool
+	DomainID  *string `json:"domain_id,omitempty"`
+	ClusterID *string `json:"cluster_id,omitempty"`
+}
+
 func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 	if !s.requireExecutionLeader(w) {
 		return
@@ -122,7 +148,7 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req storage.FleetPool
+	var req fleetPoolUpdateRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
@@ -141,11 +167,36 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 		existing.Status = req.Status
 	}
 	existing.Tags = req.Tags
+	// Presence-aware, following the ClientSecretEnvVar convention: an OMITTED
+	// binding is kept, and an explicit empty string clears it.
+	//
+	// Plain replace-on-omit would silently unbind a pool on any partial update,
+	// widening its blast radius. But treating empty as "keep" leaves a pool
+	// permanently scoped once set, and the dashboard's "Unscoped" option then
+	// reports success while changing nothing — a silent failure.
+	if req.DomainID != nil {
+		existing.DomainID = strings.TrimSpace(*req.DomainID)
+	}
+	if req.ClusterID != nil {
+		existing.ClusterID = strings.TrimSpace(*req.ClusterID)
+	}
 	if err := validateFleetPoolSizing(existing); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if status, err := s.validatePoolAgainstDomainTarget(existing); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
+	if status, err := s.validatePoolColocation(existing); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
 	prepareFleetPoolMembers(existing.ID, req.Members)
+	if conflict := s.checkGeneratorPoolExclusivity(existing.ID, memberGeneratorIDs(req.Members)); conflict != nil {
+		writeError(w, http.StatusConflict, conflict.Error())
+		return
+	}
 	updater, supported := s.store.(interface {
 		UpdateFleetPoolIfUnchanged(pool *storage.FleetPool, members []*storage.FleetPoolMember, replaceMembers bool, expectedUpdatedAt time.Time) (bool, error)
 	})
@@ -155,7 +206,7 @@ func (s *Server) handleUpdateFleetPool(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := updater.UpdateFleetPoolIfUnchanged(existing, req.Members, req.Members != nil, existing.UpdatedAt)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFleetMembershipError(w, err, http.StatusBadRequest)
 		return
 	}
 	if !updated {
@@ -234,36 +285,19 @@ func validateFleetPoolSizing(pool *storage.FleetPool) error {
 	return nil
 }
 
-// runtimeFleetPoolTargetCount mirrors runner_assignment.go: explicit members and
-// metadata-bound targets form one deduplicated runtime membership set. Provisioning
-// may scale only targets operators have associated ahead of time; scaling a
-// StatefulSet does not itself create a durable pool binding.
+// runtimeFleetPoolTargetCount sizes a pool's runtime membership using the shared
+// definition in fleet_pool_membership.go. Provisioning may scale only targets
+// operators have associated ahead of time; scaling a StatefulSet does not itself
+// create a durable pool binding.
 func runtimeFleetPoolTargetCount(store storage.Store, pool *storage.FleetPool) (int, error) {
 	if store == nil || pool == nil {
 		return 0, nil
-	}
-	targets := make(map[string]struct{})
-	add := func(target string) {
-		target = strings.TrimSpace(target)
-		if target != "" {
-			targets[target] = struct{}{}
-		}
-	}
-	for _, member := range pool.Members {
-		if member != nil {
-			add(member.Target)
-		}
 	}
 	metadata, err := store.ListGeneratorMetadata(0, 0)
 	if err != nil {
 		return 0, err
 	}
-	for _, generator := range metadata {
-		if generator != nil && generator.FleetPoolID != nil && strings.TrimSpace(*generator.FleetPoolID) == pool.ID {
-			add(generator.Target)
-		}
-	}
-	return len(targets), nil
+	return len(fleetPoolTargets(pool, metadata)), nil
 }
 
 func validateProvisioningRuntimeTargets(store storage.Store, pool *storage.FleetPool, desiredCount int) error {
@@ -384,6 +418,12 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 				writeError(w, http.StatusInternalServerError, "failed to load fleet pool")
 				return
 			}
+			// One generator, one pool: reassigning requires removing it from the
+			// pool that holds it, so a generator can never span two domains.
+			if conflict := s.checkGeneratorPoolExclusivity(poolID, []string{generatorID}); conflict != nil {
+				writeError(w, http.StatusConflict, conflict.Error())
+				return
+			}
 			metadataPatch.FleetPoolID = &poolID
 		}
 	}
@@ -433,7 +473,7 @@ func (s *Server) handlePatchGeneratorMetadata(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusNotFound, "fleet pool not found")
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeFleetMembershipError(w, err, http.StatusBadRequest)
 		return
 	}
 	s.recordAuditEvent(r, "generator.metadata.patch", "success", "generator", generatorID, "", map[string]any{
@@ -724,7 +764,16 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 	_, req.RequestedBySubject, _ = s.resolveAuditActor(r)
 	now := time.Now()
 
-	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+	// Resolve the pool's cluster before deciding whether a provisioner is
+	// available: a pool bound to a registered cluster scales there, while an
+	// unbound pool keeps the controller's env-configured scaler.
+	poolScaler, scalerErr := s.scalerForPool(r.Context(), pool)
+	if scalerErr != nil {
+		writeError(w, http.StatusConflict, scalerErr.Error())
+		return
+	}
+
+	if poolScaler != nil && poolScaler.CanProvision() {
 		if err := validateProvisioningRuntimeTargets(s.store, pool, effectiveDesiredCount); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -745,7 +794,7 @@ func (s *Server) handleCreateProvisioningRequest(w http.ResponseWriter, r *http.
 		s.saveProvisioningEvent(req.ID, "provisioning", fmt.Sprintf("scaling pool %q toward %d generators", pool.Name, req.DesiredCount), now)
 
 		scaleCtx, cancelScale := s.runner.executionOperationContext(r.Context())
-		workload, scaledTo, perr := s.fleetScaler.ScalePool(scaleCtx, pool, effectiveDesiredCount)
+		workload, scaledTo, perr := poolScaler.ScalePool(scaleCtx, pool, effectiveDesiredCount)
 		cancelScale()
 		if s.runner == nil || !s.runner.isExecutionLeader() {
 			writeError(w, http.StatusConflict, "execution leadership changed while provisioning; result left for the active leader to reconcile")
@@ -1015,11 +1064,17 @@ func (s *Server) executeProvisioningScale(ctx context.Context, req *storage.Prov
 	if err != nil {
 		return "failed", "", 0, err.Error()
 	}
-	if s.fleetScaler != nil && s.fleetScaler.CanProvision() {
+	// The retry path resolves the pool's cluster the same way the create path
+	// does, so a retried request cannot scale a different cluster.
+	poolScaler, scalerErr := s.scalerForPool(ctx, pool)
+	if scalerErr != nil {
+		return "failed", "", 0, scalerErr.Error()
+	}
+	if poolScaler != nil && poolScaler.CanProvision() {
 		if err := validateProvisioningRuntimeTargets(s.store, pool, effectiveDesiredCount); err != nil {
 			return "failed", "", 0, err.Error()
 		}
-		workload, scaledTo, err := s.fleetScaler.ScalePool(ctx, pool, effectiveDesiredCount)
+		workload, scaledTo, err := poolScaler.ScalePool(ctx, pool, effectiveDesiredCount)
 		if err != nil {
 			return "failed", workload, scaledTo, "provisioning failed: " + err.Error()
 		}

@@ -25,6 +25,12 @@ func (m javaIdiomMapperFunc) Map(ctx *javaMapperContext) (bool, error) {
 	return m.fn(ctx)
 }
 
+// javaStatementMapperRegistry and every mapper below it belong to the retired
+// executable statement lane: their only consumer is convertJavaStatement
+// (java_import.go), which itself has no production caller because the lane
+// orchestration is quarantined in java_native_lanes_test.go. This code is still
+// compiled into every binary, but changing a mapping here — the JMS idioms
+// included — changes nothing for any import.
 var javaStatementMapperRegistry = []JavaIdiomMapper{
 	javaIdiomMapperFunc{name: "java_http_owned_by_http_lane", fn: mapJavaHTTPOwnedStatement},
 	javaIdiomMapperFunc{name: "java_database_owned_by_database_lane", fn: mapJavaDatabaseOwnedStatement},

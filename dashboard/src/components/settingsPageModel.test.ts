@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   capacityDraftIssues,
   DEFAULT_SETTINGS,
   describeSettingsSaveError,
+  noteServerAuthPosture,
   normalizeDashboardSystemSettings,
+  trustedProxyGateConfigured,
   reservationPoolIssues,
   reservationUsageSummary,
   settingsIssuesBySection,
@@ -18,6 +20,12 @@ import {
 } from './settingsPageModel'
 
 describe('settingsPageModel', () => {
+  // The saved auth posture is module state latched from server payloads, so
+  // reset it between cases instead of depending on declaration order.
+  beforeEach(() => {
+    noteServerAuthPosture(DEFAULT_SETTINGS.auth)
+  })
+
   it('splitListDraft trims comma-separated values and drops blanks', () => {
     expect(splitListDraft('a, b ,,  ,d')).toEqual(['a', 'b', 'd'])
     expect(splitListDraft('   ')).toEqual([])
@@ -289,6 +297,83 @@ describe('settingsPageModel', () => {
     expect(settingsIssuesForField(issues, 'capacity_planning.reservations')).toEqual([
       'Always-active global reservations (3) exceed configured available generators (2).',
     ])
+  })
+
+  it('validateSettingsDetailed requires a trusted-proxy gate for trusted_headers auth', () => {
+    const trustedHeaders = {
+      ...DEFAULT_SETTINGS,
+      auth: {
+        ...DEFAULT_SETTINGS.auth,
+        mode: 'trusted_headers' as const,
+        user_header: 'X-Forwarded-User',
+        roles_header: 'X-Forwarded-Roles',
+      },
+    }
+    // Mirrors enforceAuthPosture in pkg/api/server.go: neither gate configured
+    // means the controller refuses to start under APEXLOAD_ENV=production.
+    const ungated = validateSettingsDetailed(trustedHeaders)
+    expect(settingsIssuesForField(ungated, 'auth.trusted_proxy_cidrs')[0]).toContain('trusted proxy CIDR allowlist')
+
+    const blankCIDRs = validateSettingsDetailed({
+      ...trustedHeaders,
+      auth: { ...trustedHeaders.auth, trusted_proxy_cidrs: ['  '] },
+    })
+    expect(settingsIssuesForField(blankCIDRs, 'auth.trusted_proxy_cidrs').length).toBe(1)
+
+    const withCIDR = validateSettingsDetailed({
+      ...trustedHeaders,
+      auth: { ...trustedHeaders.auth, trusted_proxy_cidrs: ['10.0.0.0/8'] },
+    })
+    expect(settingsIssuesForField(withCIDR, 'auth.trusted_proxy_cidrs')).toEqual([])
+
+    const withSecret = validateSettingsDetailed({
+      ...trustedHeaders,
+      auth: { ...trustedHeaders.auth, trusted_proxy_secret_env_var: 'APEXLOAD_TRUSTED_PROXY_SECRET' },
+    })
+    expect(settingsIssuesForField(withSecret, 'auth.trusted_proxy_cidrs')).toEqual([])
+
+    // Other modes must stay unaffected.
+    expect(settingsIssuesForField(validateSettingsDetailed(DEFAULT_SETTINGS), 'auth.trusted_proxy_cidrs')).toEqual([])
+  })
+
+  it('grandfathers a saved ungated trusted_headers posture so unrelated settings stay saveable', () => {
+    const trustedHeaders = {
+      ...DEFAULT_SETTINGS,
+      auth: {
+        ...DEFAULT_SETTINGS.auth,
+        mode: 'trusted_headers' as const,
+        user_header: 'X-Forwarded-User',
+        roles_header: 'X-Forwarded-Roles',
+      },
+    }
+    // Switching to trusted_headers without a gate is still refused: the saved
+    // posture is dev, so the controller may well be running in production.
+    expect(settingsIssuesForField(validateSettingsDetailed(trustedHeaders), 'auth.trusted_proxy_cidrs').length).toBe(1)
+
+    // A controller that serves an ungated trusted_headers posture proves it is
+    // not in production (enforceAuthPosture would have refused to boot), so the
+    // page-global save block must not strand it on unrelated settings.
+    normalizeDashboardSystemSettings(trustedHeaders)
+    expect(settingsIssuesForField(validateSettingsDetailed(trustedHeaders), 'auth.trusted_proxy_cidrs')).toEqual([])
+
+    // Clearing a gate that the server does have stays blocked.
+    normalizeDashboardSystemSettings({
+      ...trustedHeaders,
+      auth: { ...trustedHeaders.auth, trusted_proxy_cidrs: ['10.0.0.0/8'] },
+    })
+    expect(settingsIssuesForField(validateSettingsDetailed(trustedHeaders), 'auth.trusted_proxy_cidrs').length).toBe(1)
+
+    // So does introducing trusted_headers from any non-trusted-headers posture.
+    normalizeDashboardSystemSettings(DEFAULT_SETTINGS)
+    expect(settingsIssuesForField(validateSettingsDetailed(trustedHeaders), 'auth.trusted_proxy_cidrs').length).toBe(1)
+  })
+
+  it('trustedProxyGateConfigured mirrors the Go helper trim semantics', () => {
+    expect(trustedProxyGateConfigured(DEFAULT_SETTINGS.auth)).toBe(false)
+    expect(trustedProxyGateConfigured({ ...DEFAULT_SETTINGS.auth, trusted_proxy_cidrs: ['  ', ''] })).toBe(false)
+    expect(trustedProxyGateConfigured({ ...DEFAULT_SETTINGS.auth, trusted_proxy_cidrs: ['  ', ' 10.0.0.0/8 '] })).toBe(true)
+    expect(trustedProxyGateConfigured({ ...DEFAULT_SETTINGS.auth, trusted_proxy_secret_env_var: '   ' })).toBe(false)
+    expect(trustedProxyGateConfigured({ ...DEFAULT_SETTINGS.auth, trusted_proxy_secret_env_var: 'APEXLOAD_TRUSTED_PROXY_SECRET' })).toBe(true)
   })
 
   it('reservationPoolIssues flags unknown pools and skips when the pool list is unavailable', () => {

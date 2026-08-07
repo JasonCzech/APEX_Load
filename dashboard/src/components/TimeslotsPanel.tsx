@@ -28,10 +28,17 @@ function approvalPill(state: string): string {
   }
 }
 
-function fmt(value?: string): string {
+// Reservation windows are rendered in the slot's own IANA zone so the printed
+// wall-clock agrees with the zone name shown next to it.
+function fmt(value?: string, timezone?: string): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+  if (Number.isNaN(date.getTime())) return value
+  try {
+    return date.toLocaleString(undefined, timezone ? { timeZone: timezone } : undefined)
+  } catch {
+    return date.toLocaleString()
+  }
 }
 
 type Draft = {
@@ -374,7 +381,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
             <div className="pp-row" key={slot.id}>
               <div className="pp-row-main">
                 <div className="pp-row-title">
-                  {fmt(slot.start_at)} → {fmt(slot.end_at)}
+                  {fmt(slot.start_at, slot.timezone)} → {fmt(slot.end_at, slot.timezone)}
                   <span className={approvalPill(slot.approval_state)}>{slot.approval_state}</span>
                   {slot.bound_test_id ? <span className="pp-pill pp-pill-info">bound</span> : null}
                 </div>
@@ -529,7 +536,7 @@ export default function TimeslotsPanel({ projectId, canManage = false }: Props) 
       {deleteTarget && (
         <ConfirmDestructiveModal
           title="Delete capacity reservation"
-          description={`This permanently deletes the reservation for ${fmt(deleteTarget.start_at)} → ${fmt(deleteTarget.end_at)}.`}
+          description={`This permanently deletes the reservation for ${fmt(deleteTarget.start_at, deleteTarget.timezone)} → ${fmt(deleteTarget.end_at, deleteTarget.timezone)}${deleteTarget.timezone ? ` (${deleteTarget.timezone})` : ''}.`}
           target={deleteTarget.id}
           targetLabel="Reservation id"
           confirmLabel="Delete reservation"

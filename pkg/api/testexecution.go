@@ -16,8 +16,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime/debug"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -3772,7 +3774,11 @@ func (tr *TestRunner) reserveVUserScaleLockedWithEvidence(id, groupName string, 
 	} else {
 		test.CapacityAdvisory = nil
 	}
-	if err := tr.saveManagedTestRecord(test); err != nil {
+	// Only the group workload snapshot and the run total change here, so publish
+	// the narrow durable projection: a gradual ramp reserves once per step and
+	// the full-row upsert would re-encode every compiled script under tr.mu each
+	// time. CapacityAdvisory is process-local and is not persisted either way.
+	if err := tr.persistManagedTestVUserScale(test); err != nil {
 		delete(test.scaleAdjustmentPrevious, groupName)
 		test.Groups[groupIndex] = reservation.oldGroup
 		test.TotalVUsers = reservation.oldTotal
@@ -3803,7 +3809,7 @@ func (tr *TestRunner) rollbackVUserScaleReservation(reservation *vuserScaleReser
 	test.Groups[reservation.groupIndex] = reservation.oldGroup
 	test.TotalVUsers = capacityVUsersForGroups(test.Groups)
 	tr.refreshCapacityAdvisoryLocked(test)
-	if err := tr.saveManagedTestRecord(test); err != nil {
+	if err := tr.persistManagedTestVUserScale(test); err != nil {
 		test.Groups[reservation.groupIndex] = currentGroup
 		test.TotalVUsers = currentTotal
 		test.CapacityAdvisory = currentAdvisory
@@ -4545,6 +4551,16 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 }
 
 func (tr *TestRunner) runTest(test *ManagedTest) {
+	// The run driver owns its own goroutine, so an unrecovered panic anywhere in
+	// the local execution path (engine build, archive writer, metrics broadcast,
+	// backend dispatch) terminates the controller process and takes every other
+	// in-flight run on this replica with it. Contain the blast radius to the run
+	// that raised it and terminalize that run as FAILED.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			tr.recoverRunTestPanic(test, recovered, debug.Stack())
+		}
+	}()
 	// Defense in depth: a non-leader must never drive a generator fleet.
 	if !tr.isExecutionLeader() {
 		return
@@ -4573,7 +4589,23 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(spanAttributes...),
 	)
+	// Defers unwind LIFO, so this one runs BEFORE the recover above. Two things
+	// follow, and both are load-bearing:
+	//   1. It must not take tr.mu while a panic is in flight. The panic may have
+	//      unwound out of a tr.mu critical section, and annotateTestLifecycleSpan's
+	//      RLock would then block forever - stranding the panic here, before the
+	//      backstop below ever runs.
+	//   2. The run is not FAILED yet at this point (the backstop terminalizes it
+	//      afterwards), so reading the live status would export a green span for a
+	//      run that crashed. Record the crash outcome directly instead.
+	dispatched := false
 	defer func() {
+		if !dispatched {
+			span.SetAttributes(attribute.String("apexload.test.outcome", "panicked"))
+			span.SetStatus(codes.Error, "test execution driver panicked")
+			span.End()
+			return
+		}
 		tr.annotateTestLifecycleSpan(span, test.ID, nil)
 		span.End()
 	}()
@@ -4583,6 +4615,199 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	}
 	tr.mu.Unlock()
 	backend.Run(tr, test)
+	dispatched = true
+}
+
+// runTestPanicRecoveryLockTimeout bounds each stage of the run-driver panic
+// backstop: first how long it waits for tr.mu to become acquirable, then how
+// long the terminal transition itself may take. A panic that unwound out of a
+// tr.mu critical section orphans that mutex, and a panic that unwound out of an
+// archive-commit fence orphans that gate; no amount of waiting recovers either,
+// and blocking forever would strand the run, its capacity reservation, and every
+// later taker of the same fence. Re-panicking (so the supervisor restarts the
+// process) is strictly better than a controller silently wedged behind a lock
+// nothing will ever release.
+//
+// The bound is elapsed time, which on its own cannot tell an orphaned gate from
+// a database that is merely slow: the terminal path's durable writes take no
+// context and so have no deadline of their own, and a managed-store failover can
+// stall one for far longer than this timeout. Restarting for that case would be
+// wrong - the store is still unreachable after the restart, so the process would
+// only crash-loop. Both stages therefore run through awaitPanicRecoveryStage,
+// which extends the deadline while a durable status write is genuinely in
+// flight and re-panics when the wait expires with nothing progressing. The
+// acquirability stage needs that just as much as the terminal one: every
+// terminal transition here holds tr.mu across its durable write, so a stalled
+// store leaves the mutex held by a healthy run rather than orphaned by a panic.
+var runTestPanicRecoveryLockTimeout = 30 * time.Second
+
+// runTestPanicRecoveryDurableWriteExtensions caps how many times a durable
+// status write in flight may extend a backstop wait, so the fail-fast bound
+// survives the extension: each stage waits at most
+// (1+runTestPanicRecoveryDurableWriteExtensions) * runTestPanicRecoveryLockTimeout.
+// The cap matters because the in-flight gauge is process-wide - on a busy
+// controller some unrelated write can be in flight at almost every expiry, and
+// without a cap that could postpone an orphaned gate's re-panic indefinitely.
+// The default spans several minutes, which covers a managed-database failover
+// while still guaranteeing the run is never stranded forever.
+var runTestPanicRecoveryDurableWriteExtensions = 8
+
+// recoverRunTestPanic terminalizes the run whose driver goroutine panicked.
+//
+// failTestBeforeRun owns the pre-RUNNING window and no-ops for any other status;
+// completeTestRun owns a run that already reached RUNNING and no-ops once some
+// other path committed a terminal status. Invoking both in that order covers
+// every state the panic could have been raised from without either one
+// resurrecting a terminal decision that already won.
+//
+// Terminalization is best effort, not a guarantee. A panic that orphaned a lock
+// the terminal path needs makes it unreachable; that case re-panics so the
+// supervisor restarts the process and startup reconciliation finishes the run.
+//
+// A secondary panic raised while terminalizing is caught inside the helper
+// goroutine - a bare goroutine has no caller to recover it, and a crash from
+// there is unattributable - but catching it is not the end of the handling. That
+// panic most likely unwound out of failTestBeforeRun's or completeTestRun's
+// tr.mu critical section, which no recover can unlock, so returning normally
+// would leave the process alive with tr.mu write-locked forever: every status
+// transition, every listing, and the /api/v1/system/health probe would block
+// permanently. The helper therefore records the secondary panic and the driver
+// re-panics on it, which is the same fail-fast the orphaned-lock case takes.
+// Startup reconciliation finishes the run after the restart; there is no
+// in-process reconciliation that could do it while tr.mu is orphaned.
+func (tr *TestRunner) recoverRunTestPanic(test *ManagedTest, recovered any, stack []byte) {
+	testID := ""
+	if test != nil {
+		testID = test.ID
+	}
+	slog.Error("test execution driver panicked; failing the run instead of the controller",
+		"test_id", testID, "panic", fmt.Sprintf("%v", recovered), "stack", string(stack))
+	if tr == nil || test == nil {
+		return
+	}
+	message := fmt.Sprintf("test execution panicked: %v", recovered)
+
+	// The panic may have unwound out of a tr.mu critical section. Every terminal
+	// transition below needs that mutex, so prove from another goroutine that it
+	// is still acquirable before committing to them.
+	acquirable := make(chan struct{})
+	terminalized := make(chan struct{})
+	var secondaryPanicked atomic.Bool
+	go func() {
+		defer close(terminalized)
+		// Terminalization walks the same shared state the primary panic may have
+		// corrupted and fans out to broadcast, promotion, and execution-plan
+		// advancement. A secondary panic here has no caller to recover it, so
+		// without this it would escape a bare goroutine and kill the controller
+		// with no attribution to the run that caused it.
+		//
+		// Containment alone is not enough. Defers unwind LIFO, so this one runs
+		// before close(terminalized) above: record the failure first, so the
+		// driver sees it as soon as the wait below completes and can re-panic.
+		// Swallowing it outright would leave the process alive holding whichever
+		// lock the secondary panic unwound out of - a silent, permanent wedge that
+		// is worse than the crash this backstop replaced.
+		defer func() {
+			if secondary := recover(); secondary != nil {
+				secondaryPanicked.Store(true)
+				slog.Error("terminalizing a panicked run panicked; re-panicking so the controller restarts",
+					"test_id", testID, "panic", fmt.Sprintf("%v", secondary), "stack", string(debug.Stack()))
+			}
+		}()
+		tr.mu.Lock()
+		tr.mu.Unlock()
+		close(acquirable)
+		tr.terminalizePanickedRun(test, message)
+	}()
+	// Waiting for tr.mu is bounded for the orphaned-mutex case, but the wait must
+	// not mistake a held mutex for an orphaned one. Every terminal transition in
+	// this package calls persistStoredTestStatus with tr.mu write-locked, so
+	// during a store failover an unrelated run finishing normally pins the mutex
+	// for the whole stall. Re-panicking there would kill the replica - and every
+	// other run on it - only to restart into the same unreachable store, so this
+	// stage honours the in-flight gauge exactly as the terminal stage does.
+	if !tr.awaitPanicRecoveryStage(testID, "runner lock acquisition", acquirable) {
+		slog.Error("runner lock was not acquirable after a run-driver panic; re-panicking so the controller restarts",
+			"test_id", testID)
+		panic(recovered)
+	}
+	// Do not let the driver goroutine exit before the run is terminal: an
+	// abandoned INITIALIZING/RUNNING row would otherwise stay live forever.
+	// tr.mu being acquirable does not prove the same of every other lock the
+	// terminal path takes (the per-test archive-commit fence above all), so
+	// this wait is bounded too: parking here forever would strand the run, its
+	// capacity reservation, and every later taker of that fence.
+	if !tr.awaitPanicRecoveryStage(testID, "terminalization", terminalized) {
+		slog.Error("terminalizing a panicked run did not finish in time; re-panicking so the controller restarts",
+			"test_id", testID)
+		panic(recovered)
+	}
+	if secondaryPanicked.Load() {
+		// The terminal transition died part-way through. It most likely left
+		// tr.mu locked, and nothing in this process can unlock it, so fail fast
+		// and let startup reconciliation finish the run.
+		panic(recovered)
+	}
+}
+
+// awaitPanicRecoveryStage waits for one stage of the run-driver panic backstop
+// to signal completion and reports whether it did.
+//
+// Each stage is bounded so an orphaned lock or gate cannot strand the run
+// forever, but a flat deadline would also fire on a database that is only slow:
+// the terminal path's durable writes take no context, so a store failover can
+// hold one open for minutes - both while the writer holds tr.mu, which stalls
+// the acquirability stage, and while the backstop's own transition runs, which
+// stalls the terminalization stage. Re-panicking for either would restart the
+// replica into the same unreachable store and crash-loop. So the deadline is
+// extended when it expires while a durable status write is still inside the
+// storage driver - blocked I/O that can still complete - and a wait that expires
+// with nothing in flight is treated as an unrecoverable lock or gate.
+//
+// The extension is capped (see runTestPanicRecoveryDurableWriteExtensions), so
+// this is a longer bound, not an unbounded wait: a store that never returns
+// still ends in a re-panic rather than a stranded run. The in-flight gauge is
+// also process-wide rather than scoped to this run, so an unrelated status write
+// racing the deadline can buy an extra interval; under a healthy store it clears
+// in milliseconds and the next expiry re-panics.
+func (tr *TestRunner) awaitPanicRecoveryStage(testID string, stage string, done <-chan struct{}) bool {
+	deadline := time.After(runTestPanicRecoveryLockTimeout)
+	for extensions := 0; ; extensions++ {
+		select {
+		case <-done:
+			return true
+		case <-deadline:
+			if tr.durableStatusWritesInFlight.Load() <= 0 || extensions >= runTestPanicRecoveryDurableWriteExtensions {
+				return false
+			}
+			slog.Warn("recovering a panicked run is still waiting on a durable status write; extending the wait instead of restarting the controller",
+				"test_id", testID, "stage", stage)
+			deadline = time.After(runTestPanicRecoveryLockTimeout)
+		}
+	}
+}
+
+func (tr *TestRunner) terminalizePanickedRun(test *ManagedTest, message string) {
+	tr.mu.Lock()
+	current := tr.tests[test.ID] == test
+	cancel := test.cancel
+	tr.mu.Unlock()
+	if !current {
+		// A reload, delete, or replacement already displaced this handle. It no
+		// longer owns any durable row, so it must not publish terminal state.
+		return
+	}
+	if cancel != nil {
+		// The driver died mid-flight; stop whatever engine/VUser goroutines it
+		// left behind before recording the terminal status.
+		cancel()
+	}
+	if err := tr.failTestBeforeRun(test, message); err != nil {
+		slog.Error("could not fail a panicked run at its pre-run boundary", "test_id", test.ID, "error", err)
+	}
+	if err := tr.completeTestRun(test, "FAILED", time.Now(), message, nil); err != nil {
+		slog.Error("could not terminalize a panicked run", "test_id", test.ID, "error", err)
+	}
 }
 
 func testExecutionSpanDescriptor(backend testExecutionBackend) (name, scope string) {
@@ -4663,10 +4888,42 @@ func (tr *TestRunner) runScenarioScheduledTestWithTerm(test *ManagedTest, leaseT
 }
 
 func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.ResultSink) (*engine.MultiGroupEngine, error) {
-	if err := validateManagedTestWorkloadBounds(test); err != nil {
-		return nil, err
+	// Everything this function reads off the test is guarded by tr.mu. A stop,
+	// or a controller shutdown running stopActiveTests, calls
+	// compactTerminalManagedTestLocked, which nils groupSpecs and every group's
+	// script, data sources, redaction rules, and runtime secrets.
+	//
+	// runTest releases tr.mu before calling backend.Run, so reading these
+	// unlocked raced with that trim. Losing the race meant building an engine
+	// from a half-released runtime — no groups, or secrets resolved from a map
+	// being nilled underneath — during shutdown, which is the worst possible
+	// time to diagnose it.
+	//
+	// validateManagedTestWorkloadBounds is inside the critical section too: it
+	// ranges over test.Groups by value, so it copies the very fields the trim
+	// clears. It takes no locks itself, so calling it here cannot deadlock.
+	tr.mu.Lock()
+	boundsErr := validateManagedTestWorkloadBounds(test)
+	alreadyTerminal := isTerminalTestStatus(test.Status)
+	status := test.Status
+	specs := test.groupSpecs
+	runtimeSecrets := make([]map[string]string, len(test.Groups))
+	for index := range test.Groups {
+		runtimeSecrets[index] = test.Groups[index].runtimeSecretValues
 	}
-	groups := testexec.CloneGroupSpecsWithResultSink(test.groupSpecs, resultSink)
+	tr.mu.Unlock()
+
+	if boundsErr != nil {
+		return nil, boundsErr
+	}
+	if alreadyTerminal {
+		// The runtime this engine needs has already been released, so there is
+		// nothing left to build. Fail with a clear reason instead of silently
+		// starting a run with no groups.
+		return nil, fmt.Errorf("test reached terminal status %s before its engine could be built", status)
+	}
+
+	groups := testexec.CloneGroupSpecsWithResultSink(specs, resultSink)
 	if err := validateEngineGroupBounds(groups); err != nil {
 		return nil, err
 	}
@@ -4682,8 +4939,8 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 			resolver = engine.CacheSecretResolverForRun(tr.secretResolverForProject(projectID))
 			projectResolvers[projectID] = resolver
 		}
-		if index < len(test.Groups) {
-			resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
+		if index < len(runtimeSecrets) {
+			resolver = overlayRuntimeSecretResolver(runtimeSecrets[index], resolver)
 		}
 		groups[index].SecretResolver = resolver
 	}

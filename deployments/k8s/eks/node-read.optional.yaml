@@ -1,0 +1,54 @@
+# OPTIONAL: cluster-scoped node read for host-resource allocation.
+#
+# APEX Load works without this. Applying it enables three things in the
+# dashboard's Fleet → Host Resource Allocation card:
+#
+#   * Node pool and zone suggestions (discovered from node labels) instead of
+#     free-text entry.
+#   * Pod-fit verification — refusing an allocation that no eligible node could
+#     schedule, rather than letting a pod sit Pending with no useful event.
+#   * The node-capacity read-out on GET /api/v1/system/clusters/{id}/capacity.
+#
+# Without it, the connection test reports the `nodes` probe as a capability gap
+# (not a failure), the capacity response returns
+# `node_capacity: {available: false, unavailable_reason: "rbac_forbidden"}`,
+# and the allocation preflight downgrades pod-fit from a block to a warning.
+# Namespace ResourceQuota enforcement is unaffected — that is namespaced and
+# lives in restart-controls.example.yaml.
+#
+# This grants the controller read access to node objects across the WHOLE
+# cluster, which is why it is opt-in rather than part of the standard install.
+# Node objects carry labels, taints, capacity, and addresses for every node,
+# including nodes belonging to other tenants of the cluster.
+#
+# For a registered REMOTE cluster (generic Kubernetes or AKS), apply the
+# equivalent of both this file and restart-controls.example.yaml in that
+# cluster, bound to the identity the connection authenticates as — the IAM
+# service principal or the ServiceAccount whose token you registered.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apexload-node-read
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: node-read
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apexload-node-read
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: node-read
+subjects:
+  - kind: ServiceAccount
+    name: apexload-controller
+    namespace: apexload
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apexload-node-read

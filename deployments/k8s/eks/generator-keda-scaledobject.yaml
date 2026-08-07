@@ -1,0 +1,81 @@
+# KEDA autoscaling for the generator fleet. AKS ships KEDA as a managed
+# add-on (`--enable-keda`, or workload_autoscaler_profile.keda_enabled in the
+# Terraform config) — no separate install required.
+#
+# serverAddress assumes a self-hosted Prometheus (kube-prometheus-stack) in
+# the `monitoring` namespace scraping the controller's /metrics endpoint —
+# the same setup that works on-prem. To use Amazon Managed Service for
+# Prometheus instead, point serverAddress at the workspace query endpoint and
+# add a TriggerAuthentication with podIdentity.provider=aws.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: apexload-generator
+  labels:
+    app.kubernetes.io/name: apexload-generator
+    app.kubernetes.io/component: generator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: apexload-generator
+  minReplicaCount: 2
+  maxReplicaCount: 50
+  pollingInterval: 15
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+          selectPolicy: Max
+        scaleDown:
+          stabilizationWindowSeconds: 600
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 300
+          selectPolicy: Min
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_queued_vusers
+        query: sum(apexload_scaling_vusers{state="queued"})
+        threshold: "5000"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_active_vusers
+        query: sum(apexload_scaling_vusers{state="active"})
+        threshold: "5000"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_queued_browser_vusers
+        query: sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})
+        threshold: "20"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_active_browser_vusers
+        query: sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})
+        threshold: "20"
+        activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_saturated_generators
+        query: sum(apexload_generator_capacity_state_count{state="saturated"})
+        threshold: "1"
+        activationThreshold: "1"

@@ -6,6 +6,7 @@ import {
   buildGroupEditDraft,
   buildGroupRuntimeTableValues,
   buildRunDefaultCards,
+  buildRunDefaultEditDraft,
   buildRunLoadProfilePreview,
   buildRuntimeSettingsForRun,
   formatGroupPlacement,
@@ -186,6 +187,123 @@ describe('newTestRunModel', () => {
     expect(cards.find(card => card.key === 'iterations')?.value).toBe('6')
     expect(cards.find(card => card.key === 'auto_transactions')?.value).toBe('per_iteration')
     expect(cards.find(card => card.key === 'log_level')?.value).toBe('extended')
+  })
+
+  it('reports inherited error handling as a script default instead of Stop / No snapshot', () => {
+    const scenario = scenarioFixture()
+    delete scenario.runtime_settings?.error_handling
+    const group = scenario.scripts[0]
+    const runDefaults = { runtime_settings: {} }
+
+    // Nothing in the run/scenario/group chain pins error handling, so the run
+    // inherits whatever the script's own config.error_handling says.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults).errorHandling).toBe('Script default')
+    expect(buildGroupEditDraft(group, scenario, runDefaults).continue_on_error).toBe('')
+    expect(buildGroupEditDraft(group, scenario, runDefaults).snapshot_on_error).toBe('')
+
+    // A half-set section still pins both halves: the backend replaces
+    // script.Config.ErrorHandling wholesale, so the omitted key executes as false.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
+      runtime_settings: { error_handling: { snapshot_on_error: true } },
+    }).errorHandling).toBe('Stop / Snapshot')
+
+    // A retry-only section names neither boolean but is still a section, so the
+    // same wholesale replacement executes Stop / No snapshot. Reporting it as an
+    // inherited script default would claim an inheritance the run never performs.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
+      runtime_settings: { error_handling: { max_retries: 3 } },
+    }).errorHandling).toBe('Stop / No snapshot')
+    const retryOnlyGroup = { ...group, runtime_settings: { error_handling: { retry_delay_ms: 250 } } }
+    expect(buildGroupRuntimeTableValues(retryOnlyGroup, scenario, runDefaults).errorHandling).toBe('Stop / No snapshot')
+    const retryOnlyScenario = { ...scenario, runtime_settings: { ...scenario.runtime_settings, error_handling: { max_retries: 2 } } }
+    expect(buildGroupRuntimeTableValues(group, retryOnlyScenario, runDefaults).errorHandling).toBe('Stop / No snapshot')
+
+    // An empty section pins nothing (buildRuntimeSettingsForRun drops it), and a
+    // run-default that clears one boolean leaves the scenario's retries in place.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
+      runtime_settings: { error_handling: {} },
+    }).errorHandling).toBe('Script default')
+    expect(buildGroupRuntimeTableValues(group, retryOnlyScenario, {
+      runtime_settings: { continue_on_error: null },
+    }).errorHandling).toBe('Stop / No snapshot')
+
+    // Explicitly pinned values still read as pinned.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
+      runtime_settings: { error_handling: { continue_on_error: false, snapshot_on_error: false } },
+    }).errorHandling).toBe('Stop / No snapshot')
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
+      runtime_settings: { error_handling: { continue_on_error: true, snapshot_on_error: true } },
+    }).errorHandling).toBe('Continue / Snapshot')
+  })
+
+  it('resolves group error handling section-wise, never merging halves across levels', () => {
+    // The backend swaps the root error_handling section for the group's outright
+    // (mergeRuntimeSettings) and then assigns it to script.Config.ErrorHandling whole
+    // (applyRuntimeOverrides), so a lower level never supplies the half the winning
+    // section omits. The scenario here keeps BOTH root booleans set to true, which is
+    // exactly what a per-field resolution would leak into the label.
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      error_handling: { continue_on_error: true, snapshot_on_error: true },
+    }
+    const group = scenario.scripts[0]
+    const runDefaults = { runtime_settings: {} }
+
+    // Sanity: with no group-level section the root section is what runs.
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults).errorHandling).toBe('Continue / Snapshot')
+
+    // A retry-only run override replaces the whole root section, so both booleans
+    // execute false even though the root sets both true.
+    const retryOnlyOverride: GroupRunOverride = { runtime_settings: { error_handling: { max_retries: 3 } } }
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, retryOnlyOverride).errorHandling).toBe('Stop / No snapshot')
+    const retryOnlyDraft = buildGroupEditDraft(group, scenario, runDefaults, retryOnlyOverride)
+    expect(retryOnlyDraft.continue_on_error).toBe('false')
+    expect(retryOnlyDraft.snapshot_on_error).toBe('false')
+    expect(buildGroupsForRunPayload(scenario, { [groupOverrideKey(group)]: retryOnlyOverride })?.[0].runtime_settings)
+      .toEqual({ error_handling: { max_retries: 3 } })
+
+    // Same rule for a stored group section that names only the other half.
+    const snapshotOnlyGroup = { ...group, runtime_settings: { error_handling: { snapshot_on_error: true } } }
+    expect(buildGroupRuntimeTableValues(snapshotOnlyGroup, scenario, runDefaults).errorHandling).toBe('Stop / Snapshot')
+    expect(buildGroupEditDraft(snapshotOnlyGroup, scenario, runDefaults).continue_on_error).toBe('false')
+
+    // A run-override section wins over the stored group section as a whole, too.
+    expect(buildGroupRuntimeTableValues(snapshotOnlyGroup, scenario, runDefaults, {
+      runtime_settings: { error_handling: { continue_on_error: true } },
+    }).errorHandling).toBe('Continue / No snapshot')
+  })
+
+  it('reports a retry-only run-default section as the booleans the run will execute', () => {
+    // buildRunDefaultCards renders on the same page as the group table; a section that
+    // names neither boolean still pins both to false, so 'Script default' would promise
+    // an inheritance the run never performs.
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = { error_handling: { max_retries: 2, retry_delay_ms: 250 } }
+    const overrides = { runtime_settings: {} }
+
+    const cards = buildRunDefaultCards(scenario, overrides)
+    expect(cards.find(card => card.key === 'continue_on_error')).toMatchObject({
+      value: 'Disabled',
+      scenarioValue: 'Disabled',
+      isDefault: false,
+    })
+    expect(cards.find(card => card.key === 'snapshot_on_error')).toMatchObject({
+      value: 'Disabled',
+      scenarioValue: 'Disabled',
+      isDefault: false,
+    })
+    expect(buildRunDefaultEditDraft('continue_on_error', scenario, overrides).value).toBe('false')
+    expect(buildGroupRuntimeTableValues(scenario.scripts[0], scenario, overrides).errorHandling).toBe('Stop / No snapshot')
+
+    // With no section anywhere the run really does inherit the script's own config.
+    const noSection = { ...scenario, runtime_settings: { iterations: 3 } }
+    const inheritedCards = buildRunDefaultCards(noSection, overrides)
+    expect(inheritedCards.find(card => card.key === 'continue_on_error')).toMatchObject({
+      value: 'Script default',
+      scenarioValue: 'Script default',
+      isDefault: true,
+    })
+    expect(buildRunDefaultEditDraft('snapshot_on_error', noSection, overrides).value).toBe('')
   })
 
   it('builds effective groups and create payloads from group overrides', () => {

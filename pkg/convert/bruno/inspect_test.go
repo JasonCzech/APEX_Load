@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/credential"
 )
 
 func TestInspectStandaloneOpenCollectionRequest(t *testing.T) {
@@ -983,6 +985,41 @@ func TestInspectRejectsEmptyScopedSelection(t *testing.T) {
 	}
 }
 
+func TestInspectClassifiesStructuredFilesWithoutRedundantParses(t *testing.T) {
+	files := map[string][]byte{
+		"memoized/opencollection.yml": []byte("info: {name: Memoized, type: collection}\n"),
+		"memoized/folder.yml":         []byte("info: {name: Memoized folder, type: folder}\n"),
+	}
+	for _, name := range []string{"alpha", "beta", "gamma", "delta"} {
+		files["memoized/"+name+".yml"] = []byte("info: {name: memo-" + name + ", uid: memo-" + name + `, type: http}
+http:
+  method: GET
+  url: https://example.test/memo/` + name + "\n")
+	}
+	// classifyFileRole is consulted from more than a dozen call sites per import,
+	// so an unmemoized parse costs roughly 17 parses per request file (68 for this
+	// fixture). One parse per distinct file content is the ceiling.
+	budget := len(files)
+
+	brunoRequestContentCache.mu.Lock()
+	before := brunoRequestContentCache.misses
+	brunoRequestContentCache.mu.Unlock()
+
+	if _, err := Inspect(Input{
+		Files:   files,
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	brunoRequestContentCache.mu.Lock()
+	parses := brunoRequestContentCache.misses - before
+	brunoRequestContentCache.mu.Unlock()
+	if parses > budget {
+		t.Fatalf("role classification parsed structured content %d time(s) for %d files, want at most %d", parses, len(files), budget)
+	}
+}
+
 func TestSecretNameAlwaysProducesPortableBoundedReference(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -996,7 +1033,7 @@ func TestSecretNameAlwaysProducesPortableBoundedReference(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got := secretName(test.filename, test.key)
-			if got == "" || len(got) > 249 {
+			if got == "" || len(got) > credential.MaxLogicalNameBytes {
 				t.Fatalf("secretName() = %q (%d bytes)", got, len(got))
 			}
 			for _, r := range got {

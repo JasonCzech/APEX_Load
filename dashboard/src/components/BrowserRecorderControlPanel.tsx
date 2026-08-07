@@ -769,7 +769,6 @@ export default function BrowserRecorderControlPanel({
     }
     const scripts = importResultScripts(preview)
     if (!scripts[scriptIndex]) return
-    previewCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advancePreviewReviewGeneration()
     previewPreparedScriptsRef.current = null
     const selected = previewParameterizationSelectionsRef.current.get(scriptIndex) ?? new Set<string>()
@@ -1316,7 +1315,6 @@ export default function BrowserRecorderControlPanel({
       showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
       return
     }
-    salesforceCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advanceSalesforceReviewGeneration()
     salesforcePreparedScriptsRef.current = null
     setSalesforceDraft({

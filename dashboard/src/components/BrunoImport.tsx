@@ -749,7 +749,6 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const applyParameterization = (parameterizedScript: ScriptDefinition, _diffs: unknown[], selectedIds: string[]) => {
     const importSessionId = inspection?.import_session_id
     if (!importSessionId) return
-    credentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advanceSourceGeneration()
     setParameterizationSelectedIds(previous => mergeProtectedParameterizationSelectionIds(previous, selectedIds))
     setInspection(current => current?.import_session_id === importSessionId

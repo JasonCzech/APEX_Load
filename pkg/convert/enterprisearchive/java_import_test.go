@@ -1537,3 +1537,196 @@ public class Actions {
 		}
 	}
 }
+
+// The live import must pay for one evidence index, not one per pass. The passes
+// are checked by handing them an index built from a DIFFERENT program: a pass
+// that still rebuilds its own index from its program argument cannot see the
+// extra class, so its disposition gives the reuse away.
+func TestJavaImportPassesConsumeTheSharedEvidenceIndex(t *testing.T) {
+	runner := javaClass{
+		Name:       "Actions",
+		File:       "Actions.java",
+		Kind:       "class",
+		Public:     true,
+		SuperClass: "Base",
+		Source:     "public int action() { return 0; }",
+	}
+	program := javaProgram{Classes: []javaClass{runner}}
+	withBase := javaProgram{Classes: []javaClass{
+		runner,
+		{Name: "Base", File: "Base.java", Kind: "class", Public: true},
+	}}
+
+	if blockers := javaVuserInheritanceBlockers(program, nil); len(blockers) != 1 ||
+		!strings.Contains(blockers[0], "unresolved superclass") {
+		t.Fatalf("inheritance blockers without a shared index = %#v, want the unresolved-superclass blocker", blockers)
+	}
+	shared := newJavaEvidenceIndex(withBase)
+	if blockers := javaVuserInheritanceBlockers(program, shared); len(blockers) != 0 {
+		t.Fatalf("inheritance blockers with a shared index = %#v, want the shared index to resolve Base", blockers)
+	}
+	if sources := javaVuserRunnerSourceFiles(program, runner, nil, shared); !sources["base.java"] {
+		t.Fatalf("runner sources with a shared index = %#v, want Base.java from the shared index", sources)
+	}
+	if reachability := buildJavaVuserRuntimeReachabilityWithEvidenceIndex(program, shared); reachability.evidenceIndex != shared {
+		t.Fatalf("reachability evidence index = %p, want the shared index %p", reachability.evidenceIndex, shared)
+	}
+}
+
+// Sharing one index must not shrink the governed per-pass lookup budgets: each
+// pass starts from the same allowance a freshly built index would give it.
+func TestJavaSharedEvidenceIndexRebasesPerPassBudgets(t *testing.T) {
+	program := javaProgram{Classes: []javaClass{
+		{Name: "Actions", File: "Actions.java", Kind: "class", Public: true, Source: "public int action() { return 0; }"},
+	}}
+	index := newJavaEvidenceIndex(program)
+	index.totalMemberLookups = maxJavaTotalMemberLookups
+	index.staticImportLookups = maxJavaStaticImportOwnerLookups
+	index.staticImportLimitHit = true
+
+	shared := javaSharedEvidenceIndexForPass(index, program)
+	if shared != index {
+		t.Fatalf("shared index = %p, want the caller's index %p", shared, index)
+	}
+	if shared.totalMemberLookups != 0 || shared.staticImportLookups != 0 || shared.staticImportLimitHit {
+		t.Fatalf(
+			"rebased budgets = (%d, %d, %t), want a fresh allowance",
+			shared.totalMemberLookups,
+			shared.staticImportLookups,
+			shared.staticImportLimitHit,
+		)
+	}
+	if rebuilt := javaSharedEvidenceIndexForPass(nil, program); rebuilt == nil {
+		t.Fatal("javaSharedEvidenceIndexForPass(nil) = nil, want a freshly built index")
+	}
+}
+
+// Static-import owner lookups are charged only on a cache miss, so a shared
+// index must hand the next pass a cold staticMethodCache. Otherwise the second
+// pass charges nothing, the governed limit can no longer be reached, and the
+// fail-closed "static-import helper analysis exceeded" blocker silently stops
+// being raised for archives a freshly built index would have stopped.
+func TestJavaSharedEvidenceIndexRechargesStaticImportLookups(t *testing.T) {
+	owner := javaClass{
+		Name:   "Actions",
+		File:   "Actions.java",
+		Kind:   "class",
+		Public: true,
+		Source: "public int action() { return 0; }",
+		Imports: []string{
+			"static com.example.Helpers.*",
+			"static com.example.MoreHelpers.*",
+			"static com.example.ExactHelpers.helper",
+		},
+	}
+	program := javaProgram{Classes: []javaClass{owner}}
+
+	index := newJavaEvidenceIndex(program)
+	javaEvidenceStaticImportedMethods(index, owner, "helper")
+	firstPass := index.staticImportLookups
+	if firstPass == 0 {
+		t.Fatal("first pass static-import lookups = 0, want the imported owners to be charged")
+	}
+
+	shared := javaSharedEvidenceIndexForPass(index, program)
+	javaEvidenceStaticImportedMethods(shared, owner, "helper")
+	if shared.staticImportLookups != firstPass {
+		t.Fatalf(
+			"second pass static-import lookups = %d, want %d (the charge a freshly built index makes)",
+			shared.staticImportLookups,
+			firstPass,
+		)
+	}
+}
+
+// The member-lookup budget is charged per hierarchy level walked, but a warm
+// fieldLookupCache answers in one. A shared index must therefore start each pass
+// with a cold field cache so the receiver and total member budgets are consumed
+// at the same rate a freshly built index consumes them.
+func TestJavaSharedEvidenceIndexRechargesMemberLookups(t *testing.T) {
+	base := javaClass{
+		Name:   "Base",
+		File:   "Base.java",
+		Kind:   "class",
+		Public: true,
+		Fields: []javaStatement{{Text: "private Connection conn;"}},
+	}
+	runner := javaClass{
+		Name:       "Actions",
+		File:       "Actions.java",
+		Kind:       "class",
+		Public:     true,
+		SuperClass: "Base",
+		Source:     "public int action() { return 0; }",
+	}
+	program := javaProgram{Classes: []javaClass{runner, base}}
+
+	index := newJavaEvidenceIndex(program)
+	work := 0
+	if _, found, exceeded := index.fieldTypeInHierarchy(runner, "conn", &work); !found || exceeded {
+		t.Fatalf("first pass field lookup = (found %t, exceeded %t), want the inherited field", found, exceeded)
+	}
+	firstPass := index.totalMemberLookups
+	if firstPass < 2 {
+		t.Fatalf("first pass member lookups = %d, want the walk through Base to be charged", firstPass)
+	}
+
+	shared := javaSharedEvidenceIndexForPass(index, program)
+	work = 0
+	if _, found, exceeded := shared.fieldTypeInHierarchy(runner, "conn", &work); !found || exceeded {
+		t.Fatalf("second pass field lookup = (found %t, exceeded %t), want the inherited field", found, exceeded)
+	}
+	if shared.totalMemberLookups != firstPass {
+		t.Fatalf(
+			"second pass member lookups = %d, want %d (the charge a freshly built index makes)",
+			shared.totalMemberLookups,
+			firstPass,
+		)
+	}
+}
+
+// A live import threads one index through every pass, so any state a pass leaves
+// behind must be cleared before the next pass starts: only the structural maps a
+// fresh index builds from the program may survive.
+func TestJavaSharedEvidenceIndexClearsWarmPassCaches(t *testing.T) {
+	files := map[string]string{
+		"Actions.java": "import static com.example.Helpers.*;\n" +
+			"public class Actions {\n" +
+			"    private java.sql.Connection conn;\n" +
+			"    public int init() { return 0; }\n" +
+			"    public int action() { lr.start_transaction(\"t\"); lr.end_transaction(\"t\", lr.AUTO); return 0; }\n" +
+			"}\n",
+	}
+	program, _ := parseJavaProgram(files)
+	index := newJavaEvidenceIndex(program)
+	buildJavaVuserRuntimeReachabilityWithEvidenceIndex(program, index)
+
+	shared := javaSharedEvidenceIndexForPass(index, program)
+	warm := map[string]int{
+		"fieldLookupCache":     len(shared.fieldLookupCache),
+		"staticMethodCache":    len(shared.staticMethodCache),
+		"bindingCache":         len(shared.bindingCache),
+		"importScopes":         len(shared.importScopes),
+		"subtypeCache":         len(shared.subtypeCache),
+		"hierarchyFieldTypes":  len(shared.hierarchyFieldTypes),
+		"functionalBindings":   len(shared.functionalBindings),
+		"persistentFunctional": len(shared.persistentFunctional),
+	}
+	for name, size := range warm {
+		if size != 0 {
+			t.Errorf("%s after rebase = %d entries, want the cold cache a fresh index starts with", name, size)
+		}
+	}
+	if shared.functionalBindingBuilds != 0 {
+		t.Errorf("functional timeline builds after rebase = %d, want 0", shared.functionalBindingBuilds)
+	}
+	// The structural maps are pure program data and must still be shared, or the
+	// pass would pay for the rescan this reuse exists to remove.
+	if len(shared.qualified) == 0 || len(shared.classIndices) == 0 {
+		t.Fatalf(
+			"structural maps after rebase = (%d qualified, %d class indices), want the shared index to survive",
+			len(shared.qualified),
+			len(shared.classIndices),
+		)
+	}
+}
