@@ -502,13 +502,36 @@ sourceFenced:
 				err:                fmt.Errorf("execution leadership changed before replacement commit"),
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
-		if leaseErr := b.renewGeneratorTestExecutionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); leaseErr != nil {
+		// Re-assert the process-scoped epoch before the assignment lease. The lost-
+		// source fence above waits past the deadline these replacements were dialled
+		// under, so this is the point where a missing epoch renewal becomes visible.
+		// Naming it here keeps the failure diagnosable instead of surfacing as a
+		// FailedPrecondition from the assignment claim, which validates against the
+		// same epoch.
+		if epochErr := b.claimGeneratorProcessExecutionEpochClients(executionCtx, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); epochErr != nil {
 			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
 				testID:             testID,
 				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
 				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
 				unreachableTargets: unreachableTargets,
-				err:                fmt.Errorf("renew replacement assignment leases: %w", leaseErr),
+				err:                fmt.Errorf("re-establish replacement process execution epoch after the source fence: %w", epochErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		if leaseErr := b.renewGeneratorTestExecutionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, currentDeadline); leaseErr != nil {
+			renewErr := fmt.Errorf("renew replacement assignment leases: %w", leaseErr)
+			if generatorExecutionEpochSessionExpired(leaseErr) {
+				// The epoch re-claim above succeeded, so the generator already expired
+				// this generation and force-stopped the staged assignment during the
+				// fence. That means nothing renewed the replacement's process epoch
+				// while it was staged, which is a keeper fault, not a lease race.
+				renewErr = fmt.Errorf("renew replacement assignment leases: staged replacement lost its execution generation session during the source fence; its process-scoped epoch was not renewed while staged: %w", leaseErr)
+			}
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                renewErr,
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
 	}
@@ -637,6 +660,20 @@ const lostGeneratorEpochFencePollInterval = 25 * time.Millisecond
 // while waiting turns a TTL-long stall for whole-run controls into one poll
 // interval, and the caller's fail-closed exit is reached sooner rather than
 // differently.
+//
+// INVARIANT: this fence deliberately outlives the controller lease deadline
+// sampled when the staged replacements were dialled, so their process-scoped
+// execution epoch (Service.executionExpiresAt, installed by
+// claimGeneratorExecutionEpoch in connectEvacuationCandidates) has necessarily
+// lapsed by the time it returns unless something renewed it underneath. That
+// renewal must keep running for the whole wait: a lapsed process epoch does not
+// merely reject the next claim, it force-stops and deletes the staged
+// assignment, which no post-fence re-claim can undo. maintainStagedGenerator-
+// TestExecutionLeases owns that renewal for the staged set; the caller re-claims
+// once more after this returns so a gap surfaces as a named error rather than an
+// opaque FailedPrecondition on the assignment lease. Early abandonment exits
+// above are safe against that invariant: they return an error, so the caller
+// fails closed rather than committing on a staged set whose epoch may have gone.
 func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, test *ManagedTest, status string, controlGeneration uint64, generation uint64) error {
 	current, _, deadline, err := tr.generatorExecutionClaim()
 	if err != nil || current != generation || deadline.IsZero() {

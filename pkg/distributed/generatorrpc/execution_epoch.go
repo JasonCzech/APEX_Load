@@ -30,6 +30,15 @@ const (
 	maxTestExecutionLeaseFences            = 4096
 )
 
+// ExecutionGenerationSessionExpiredMessage is the FailedPrecondition detail a
+// generator returns once its process-scoped execution epoch has lapsed. Every
+// generation-fenced mutation, including assignment-scoped lease renewal, is
+// rejected with it. Controllers match it to separate "nobody renewed the
+// process epoch on this generator" from an ordinary generation mismatch: the
+// two need different operator action, and the assignment-lease call site cannot
+// tell them apart from the gRPC code alone.
+const ExecutionGenerationSessionExpiredMessage = "execution generation session has expired"
+
 // testExecutionLease is a volatile, assignment-scoped safety fence. The
 // durable process epoch remains the controller-term high-water; this narrower
 // lease lets one lost test expire without stopping unrelated assignments that
