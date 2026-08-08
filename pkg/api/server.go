@@ -131,9 +131,11 @@ type Server struct {
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
 	selfHealMu sync.Mutex
-	// healthSnapshot is the last health payload built from live runner state. The
-	// liveness probe answers from it while a durable write is in flight rather
-	// than queueing behind the runner lock that write holds; see
+	// healthSnapshot is the last health payload built from live runner state, with
+	// the time it was published. The liveness probe answers from it while a durable
+	// write is in flight rather than queueing behind the runner lock that write
+	// holds, but only until the copy is older than
+	// healthCheckDurableWriteBypassBudget; see
 	// healthCheckSnapshotWithoutRunnerLock.
 	healthSnapshot                    atomic.Pointer[healthCheckSnapshot]
 	collectorMetrics                  *collectorMetricStore

@@ -38,9 +38,18 @@ export type RuntimeJavaVuserSettings = Pick<
  * override is overlaid back onto the group's stored runtime_settings when the create payload is
  * built (mergeRuntimeSettingsForRun), so an absent key can only mean "unchanged" — it can never
  * mean "cleared". An explicit null tells that overlay to REMOVE the stored section, which is how
- * the group dialog's inherit options ("Script timing", "Script think time", "Script default")
- * stop the group pinning a section at all. The overlay strips the tombstone, so no null ever
- * reaches the API.
+ * the group dialog's inherit options ("Script timing", "Script think time", "Script default",
+ * and the browser block's "Standard") stop the group pinning a section at all. The overlay
+ * strips the tombstone, so no null ever reaches the API.
+ *
+ * The set of sections that can carry a tombstone is newTestRunModel.CLEARABLE_RUNTIME_SECTIONS,
+ * and that one list is what both the clear path and the read path consume — widening one
+ * without the other is what silently discarded the browser clear. `browser` and
+ * `browser_config` are two wire shapes of one logical section and both carry the tombstone at
+ * runtime, but they are NOT typed nullable here: dozens of read-only display sites consume them
+ * and would each need null handling for a value only the run-editor patch can hold. The model
+ * writes those two through stampClearedRuntimeSections and reads them back through
+ * mergeRuntimeSettingsForRun, which are the only places that see the null.
  */
 export interface RuntimeSettingsOverride {
   iterations?: number

@@ -4656,8 +4656,11 @@ var runTestPanicRecoveryLockTimeout = 30 * time.Second
 // after three failures, so a health handler that queued behind the very mutex
 // this wait is tolerating would have the pod restarted at ~43s no matter how
 // long the extension ran. handleHealthCheck therefore answers from a cached
-// snapshot while a durable write is in flight instead of blocking on tr.mu;
-// keep the two in step if either side changes.
+// snapshot while a durable write is in flight instead of blocking on tr.mu. That
+// bypass is bounded by the same budget as this wait
+// (healthCheckDurableWriteBypassBudget derives (1+extensions)*timeout from these
+// two variables), so both sides stop tolerating a stalled store at the same
+// point and a write that never returns still gets the replica restarted.
 var runTestPanicRecoveryDurableWriteExtensions = 8
 
 // recoverRunTestPanic terminalizes the run whose driver goroutine panicked.

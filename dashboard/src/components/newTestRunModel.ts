@@ -111,6 +111,45 @@ export function hasOwnKey(object: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(object, key)
 }
 
+/**
+ * Every runtime section the New Test run editors can CLEAR back to "inherit" — the single
+ * source of truth for the tri-state (unset / pinned / cleared).
+ *
+ * Both halves of the tri-state consume this list, so a section cannot be clearable in the UI
+ * and un-clearable in the model by construction:
+ *   * the WRITE path (stampClearedRuntimeSections) turns a removed section into the null
+ *     tombstone mergeRuntimeSettingsForRun deletes on, because the run override is overlaid
+ *     back onto the group's STORED runtime_settings and an absent key can only mean
+ *     "unedited";
+ *   * the READ path (effectiveGroupRuntimeSettings) refuses to read a tombstoned section back
+ *     off the stored group, so the dialog and the table show what the run will execute.
+ * `browser` and `browser_config` are the two wire shapes of ONE logical section; the dialog's
+ * four browser fields write whichever shape the level already carries.
+ */
+export const CLEARABLE_RUNTIME_SECTIONS = ['pacing', 'think_time', 'error_handling', 'browser', 'browser_config'] as const
+
+export type ClearableRuntimeSection = (typeof CLEARABLE_RUNTIME_SECTIONS)[number]
+
+// Compile-time guard: a clearable section must name a real RuntimeSettingsOverride field, so a
+// renamed or removed section breaks the build instead of silently never being cleared.
+const clearableRuntimeSectionKeyCheck: ReadonlyArray<keyof RuntimeSettingsOverride> = CLEARABLE_RUNTIME_SECTIONS
+void clearableRuntimeSectionKeyCheck
+
+/**
+ * Stamp the null tombstone for every clearable section the edit removed from `patch` while the
+ * stored group still carries it. Callers must run this AFTER every section edit has been
+ * applied, and must pass the group's STORED runtime settings (never the merged draft) — the
+ * merge that produced `patch` already consumed any earlier tombstone, so a second save would
+ * otherwise forget the clear and restore the stored section.
+ */
+export function stampClearedRuntimeSections(patch: RuntimeSettingsOverride, stored?: RuntimeSettingsOverride): RuntimeSettingsOverride {
+  const target = patch as Record<string, unknown>
+  for (const section of CLEARABLE_RUNTIME_SECTIONS) {
+    if (!target[section] && hasOwnKey(stored || {}, section)) target[section] = null
+  }
+  return patch
+}
+
 export function groupOverrideKey(group: ScenarioScriptGroup) {
   return `${group.order}:${group.script_id}`
 }
@@ -118,15 +157,6 @@ export function groupOverrideKey(group: ScenarioScriptGroup) {
 export function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
   if (!settings) return false
   return Object.values(settings).some(value => value !== undefined && value !== null && value !== '')
-}
-
-/**
- * True when a run-only patch carries a null TOMBSTONE for `key`, i.e. it removes the stored
- * section rather than leaving it untouched. See RuntimeSettingsOverride.error_handling.
- */
-export function runtimeSettingsSectionCleared(settings: RuntimeSettingsOverride | undefined, key: keyof RuntimeSettingsOverride) {
-  if (!settings) return false
-  return hasOwnKey(settings, key) && (settings as Record<string, unknown>)[key] === null
 }
 
 /**
@@ -216,14 +246,15 @@ function formatRuntimeText(value: string | undefined | null, fallback: string) {
 //     and dsl.ErrorHandlingConfig stores plain bools, so every key the winning section
 //     omits executes as false rather than as the script's own value.
 // Two consequences this file has to honour everywhere it reports error handling:
-//   1. ANY section in the chain — even a retry-only one that names neither boolean —
-//      pins BOTH halves, driving the unnamed half to false. 'Script default' is
-//      therefore keyed off section presence (sectionPinned), not off the two booleans:
-//      only when nothing in the override -> group -> scenario/run-default chain supplies
-//      a section does the run inherit the script's own config.error_handling, which this
-//      page never loads.
-//   2. The chain is resolved SECTION-wise, not field-wise. The first non-empty section
-//      wins entirely; lower levels contribute nothing, not even a half the winner omits.
+//   1. ANY section a level transmits — a retry-only one that names neither boolean, or the
+//      literally EMPTY `{}` the API returns for an all-false section, since every field is
+//      omitempty behind a pointer — pins BOTH halves, driving the unnamed half to false.
+//      'Script default' is therefore keyed off section PRESENCE (errorHandlingSectionIsPinned),
+//      never off the two booleans and never off whether the section has content: only when
+//      nothing in the group-overlay -> scenario/run-default chain transmits a section does the
+//      run inherit the script's own config.error_handling, which this page never loads.
+//   2. The chain is resolved SECTION-wise, not field-wise. The first level that transmits a
+//      section wins entirely; lower levels contribute nothing, not even a half the winner omits.
 function formatRuntimeErrorHandlingTableValue(continueOnError?: boolean, snapshotOnError?: boolean, sectionPinned = false) {
   if (!sectionPinned && continueOnError === undefined && snapshotOnError === undefined) return 'Script default'
   const continueLabel = continueOnError ? 'Continue' : 'Stop'
@@ -231,10 +262,43 @@ function formatRuntimeErrorHandlingTableValue(continueOnError?: boolean, snapsho
   return `${continueLabel} / ${snapshotLabel}`
 }
 
-/** True when an error_handling section carries any value, retry fields included. */
+/**
+ * True when a LEVEL transmits an error_handling section at all — presence, not content.
+ *
+ * Every dsl.ErrorHandlingConfig field is `omitempty` and RuntimeSettingsOverride.ErrorHandling
+ * is a pointer, so a section whose only content is continue_on_error:false and/or
+ * snapshot_on_error:false round-trips through the API as a NON-NIL `{}`. The backend still
+ * applies it whole (mergeRuntimeSettings then `script.Config.ErrorHandling = *overrides
+ * .ErrorHandling`), wiping the script's own values, so `{}` is a pinned section and reading it
+ * as "no section" is the misreport this predicate exists to prevent. `null` is the run-only
+ * tombstone and means the level transmits nothing.
+ *
+ * Use errorHandlingSectionHasValues instead for a section SYNTHESISED locally, where `{}`
+ * really does mean "nothing was set" because it never reaches the wire.
+ */
 export function errorHandlingSectionIsPinned(errorHandling?: RuntimeSettingsOverride['error_handling']) {
+  return errorHandling !== undefined && errorHandling !== null
+}
+
+/** True when a locally synthesised error_handling section carries any value, retries included. */
+export function errorHandlingSectionHasValues(errorHandling?: RuntimeSettingsOverride['error_handling']) {
   if (!errorHandling) return false
   return Object.values(errorHandling).some(value => value !== undefined && value !== null && value !== '')
+}
+
+/**
+ * True when a section would still be transmitted after both booleans are removed, i.e. the
+ * group dialog's inherit option CANNOT release it. The dialog edits only continue_on_error and
+ * snapshot_on_error, so retry fields it cannot reach keep the section — and the section is
+ * applied whole, so both booleans keep executing as false. Callers must not offer an inherit
+ * option that promises a script/scenario default this leaves unreachable.
+ */
+export function errorHandlingSurvivesBooleanClear(errorHandling?: RuntimeSettingsOverride['error_handling']) {
+  if (!errorHandlingSectionIsPinned(errorHandling)) return false
+  const residual = { ...errorHandling }
+  delete residual.continue_on_error
+  delete residual.snapshot_on_error
+  return errorHandlingSectionHasValues(residual)
 }
 
 type ResolvedErrorHandling = {
@@ -260,11 +324,21 @@ function resolveErrorHandlingSectionValues(section?: RuntimeSettingsOverride['er
   }
 }
 
-// Mirrors buildRuntimeSettingsForRun: the flat continue_on_error/snapshot_on_error
-// run-default overrides are folded into the scenario's error_handling section, so
-// clearing one of them does not by itself remove a section the scenario supplies.
-function runDefaultErrorHandlingSection(runtimeOverrides: RunRuntimeOverrideDraft, scenarioRuntime?: RuntimeSettingsOverride) {
-  const merged = { ...(scenarioRuntime?.error_handling || {}) }
+// Mirrors buildRuntimeSettingsForRun exactly — that function builds the run-level section this
+// page actually submits, so any divergence here reports a section the run will not send. The
+// flat continue_on_error/snapshot_on_error run-default overrides are folded into the scenario's
+// error_handling section, so clearing one of them does not by itself remove a section the
+// scenario supplies. Returns undefined when the run level transmits NO section: unlike a
+// section read back off the API, this one is synthesised here, so an empty result means
+// "nothing set" rather than the pinned `{}` the wire uses for an all-false section.
+function runDefaultErrorHandlingSection(
+  runtimeOverrides: RunRuntimeOverrideDraft,
+  scenarioRuntime?: RuntimeSettingsOverride,
+): RuntimeSettingsOverride['error_handling'] {
+  const scenarioSection = scenarioRuntime?.error_handling
+  const touchesErrorHandling = hasOwnKey(runtimeOverrides, 'continue_on_error') || hasOwnKey(runtimeOverrides, 'snapshot_on_error')
+  if (!touchesErrorHandling) return scenarioSection
+  const merged = { ...(scenarioSection || {}) }
   if (hasOwnKey(runtimeOverrides, 'continue_on_error')) {
     if (runtimeOverrides.continue_on_error == null) delete merged.continue_on_error
     else merged.continue_on_error = runtimeOverrides.continue_on_error
@@ -273,27 +347,22 @@ function runDefaultErrorHandlingSection(runtimeOverrides: RunRuntimeOverrideDraf
     if (runtimeOverrides.snapshot_on_error == null) delete merged.snapshot_on_error
     else merged.snapshot_on_error = runtimeOverrides.snapshot_on_error
   }
-  return merged
+  return errorHandlingSectionHasValues(merged) ? merged : undefined
 }
 
 /**
- * Section-wise resolution of the group chain, matching mergeRuntimeSettings: the first
- * non-empty section in run-override -> stored-group -> run-default/scenario order is the
- * one the backend transmits, and it is applied whole. Resolving the two booleans
- * independently across levels would report a half the run discards.
+ * Section-wise resolution, matching mergeRuntimeSettings: when the group transmits a section it
+ * is the one that runs and it is applied whole, so lower levels contribute nothing — not even a
+ * half the winner omits. Resolving the two booleans independently across levels would report a
+ * half the run discards. `effective` is the submitted overlay, so a run-only tombstone has
+ * already removed the stored section by the time it gets here.
  */
 function resolveGroupErrorHandling(
-  overrideRuntime: RuntimeSettingsOverride | undefined,
-  groupRuntime: RuntimeSettingsOverride | undefined,
+  effective: RuntimeSettingsOverride | undefined,
   runDefaults: ResolvedErrorHandling,
 ): ResolvedErrorHandling {
-  // A null tombstone in the run override removes the group's stored section, so the group
-  // transmits no section at all and the run falls through to the run-level/scenario section.
-  const chain = runtimeSettingsSectionCleared(overrideRuntime, 'error_handling')
-    ? []
-    : [overrideRuntime?.error_handling, groupRuntime?.error_handling]
-  const section = chain.find(errorHandlingSectionIsPinned)
-  if (!section) {
+  const section = effective?.error_handling
+  if (!errorHandlingSectionIsPinned(section)) {
     return {
       continue_on_error: runDefaults.continue_on_error,
       snapshot_on_error: runDefaults.snapshot_on_error,
@@ -370,7 +439,7 @@ function runtimeBrowser(settings?: RuntimeSettingsOverride): RuntimeSettingsOver
       orientation: settings.browser_config.orientation,
     }
   }
-  return settings?.browser
+  return settings?.browser ?? undefined
 }
 
 export function setRuntimeIterations(settings: RuntimeSettingsOverride, value: number | undefined) {
@@ -482,21 +551,23 @@ export function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenar
   const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
   const groupRuntime = group.runtime_settings
   const overrideRuntime = groupOverride?.runtime_settings
+  // Every CLEARABLE section is resolved off the SAME overlay buildGroupsForRunPayload submits,
+  // rather than through a per-section chain: mergeRuntimeSettingsForRun assigns the run
+  // override's values and DELETES on its null tombstones, so a cleared section cannot be read
+  // back off the stored group — in either browser wire shape — and a newly clearable section
+  // needs no new case here. What the overlay does not carry falls through to the run-level
+  // defaults, exactly as mergeRuntimeSettings does on the backend.
+  const effective = mergeRuntimeSettingsForRun(groupRuntime, overrideRuntime)
   return {
     iterations: effectiveGroupIterations(group, scenario, runDefaultOverrides, groupOverride),
-    // A null tombstone in the run override removes the group's stored section, so the group's own
-    // value must NOT be read back — the run falls through to the run-level default. Resolving
-    // these with `??` alone would show the value the run is about to discard.
-    pacing: runtimeSettingsSectionCleared(overrideRuntime, 'pacing')
-      ? runDefaults.pacing
-      : overrideRuntime?.pacing ?? groupRuntime?.pacing ?? runDefaults.pacing,
-    think_time: runtimeSettingsSectionCleared(overrideRuntime, 'think_time')
-      ? runDefaults.think_time
-      : overrideRuntime?.think_time ?? groupRuntime?.think_time ?? runDefaults.think_time,
-    browser: runtimeBrowser(overrideRuntime) ?? runtimeBrowser(groupRuntime) ?? runDefaults.browser,
+    pacing: effective?.pacing ?? runDefaults.pacing,
+    think_time: effective?.think_time ?? runDefaults.think_time,
+    browser: runtimeBrowser(effective) ?? runDefaults.browser,
+    // Not clearable by any run editor (their controls have no inherit option), so these keep
+    // the plain override -> group -> run-default precedence.
     log_level: runtimeLogLevel(overrideRuntime) ?? runtimeLogLevel(groupRuntime) ?? runDefaults.log_level,
     auto_transactions: runtimeAutoTransactions(overrideRuntime) ?? runtimeAutoTransactions(groupRuntime) ?? runDefaults.auto_transactions,
-    ...resolveGroupErrorHandling(overrideRuntime, groupRuntime, runDefaults),
+    ...resolveGroupErrorHandling(effective, runDefaults),
   }
 }
 
@@ -536,7 +607,7 @@ export function buildRuntimeSettingsForRun(scenario: StoredScenario, overrides: 
       if (runtimeOverrides.snapshot_on_error == null) delete errorHandling.snapshot_on_error
       else errorHandling.snapshot_on_error = runtimeOverrides.snapshot_on_error
     }
-    if (Object.values(errorHandling).some(value => value !== undefined && value !== '')) payload.error_handling = errorHandling
+    if (errorHandlingSectionHasValues(errorHandling)) payload.error_handling = errorHandling
     else delete payload.error_handling
   }
 

@@ -471,7 +471,13 @@ func (tr *TestRunner) backfillTestRefKeysLocked() {
 		proposedRefKey := refkey.Run(tr.envCode, createdAt, sequence)
 		durableRefKey := proposedRefKey
 		if store, ok := tr.testStore.(testRefKeyPersistence); ok {
-			durableRefKey, err = store.EnsureTestRefKey(test.ID, proposedRefKey)
+			// This backfill runs with tr.mu held, so the store call is published to
+			// the panic backstop's in-flight gauge; see trackDurableWrite.
+			err = tr.trackDurableWrite(func() error {
+				var writeErr error
+				durableRefKey, writeErr = store.EnsureTestRefKey(test.ID, proposedRefKey)
+				return writeErr
+			})
 			test.RefKey = durableRefKey
 		} else {
 			test.RefKey = proposedRefKey

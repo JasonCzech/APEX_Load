@@ -49,6 +49,7 @@ import {
   cloneRuntimeSettingsForRun,
   emptyGroupEditDraft,
   errorHandlingSectionIsPinned,
+  errorHandlingSurvivesBooleanClear,
   formatGroupPlacement,
   generatorCanRunGroup,
   getEffectiveResourceBaseline,
@@ -66,6 +67,7 @@ import {
   setRuntimeIterations,
   setRuntimeLogLevel,
   stagedGroupPeakVUsers,
+  stampClearedRuntimeSections,
   type GroupEditDraft,
   type GroupRunOverride,
   type RunDefaultEditDraft,
@@ -430,7 +432,12 @@ function normalizeDraftText(value?: string) {
 }
 
 function thinkTimeFromEdit(mean: string, ignore: boolean, baseline?: RuntimeSettingsOverride['think_time']): RuntimeSettingsOverride['think_time'] | undefined {
-  if (!mean.trim() && !ignore && !baseline?.type) return undefined
+  // No mode selected means the editor sits on its inherit option ('Script think time' /
+  // 'Script default'), so there is no think-time section to build. A mean left behind in the
+  // draft must not reconstitute one — that is how the inherit option used to save a FIXED pin
+  // instead of clearing the section. 'Ignore think time' is its own explicit pin, so it still
+  // produces a section.
+  if (!ignore && !canonicalThinkTimeType(baseline?.type)) return undefined
   const type = baseline?.type || 'fixed'
   return thinkTimeConfigForType({
     ...(baseline || { type: 'fixed', mean_ms: 0 }),
@@ -986,12 +993,26 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   // Clearing a GROUP's error_handling stops the group pinning a section; it does not reach the
   // script's own config while the run level still pins one, because mergeRuntimeSettings then
   // hands the run-level section down instead. Name the level the run would actually inherit from
-  // rather than promising a script default the group cannot reach.
-  const groupErrorHandlingInheritLabel = useMemo(() => {
-    if (!scenario) return 'Script default'
+  // rather than promising a script default the group cannot reach — and when the group's own
+  // section carries retry fields this dialog cannot edit, the section survives the clear and
+  // keeps executing both booleans as false, so the inherit option cannot be honoured at all.
+  // Offering it there is the silent discard this control exists to avoid, so it is disabled and
+  // says why instead.
+  const groupErrorHandlingInherit = useMemo(() => {
+    if (!scenario) return { label: 'Script default', disabled: false }
+    const groupRuntime = mergeRuntimeSettingsForRun(
+      editingGroup?.runtime_settings,
+      editingGroupKey ? groupRunOverrides[editingGroupKey]?.runtime_settings : undefined,
+    )
+    if (errorHandlingSurvivesBooleanClear(groupRuntime?.error_handling)) {
+      return { label: 'Pinned by group retry policy', disabled: true }
+    }
     const rootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings
-    return errorHandlingSectionIsPinned(rootRuntime?.error_handling) ? 'Scenario default' : 'Script default'
-  }, [runDefaultOverrides, scenario])
+    return {
+      label: errorHandlingSectionIsPinned(rootRuntime?.error_handling) ? 'Scenario default' : 'Script default',
+      disabled: false,
+    }
+  }, [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario])
   const hasGroupEditChanges = useMemo(
     () => Object.values(groupEditChanges).some(Boolean),
     [groupEditChanges],
@@ -1846,7 +1867,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               const type = event.target.value
               setDefaultEditDraft(prev => ({
                 ...prev,
-                value: type === 'recorded' ? '' : prev.value,
+                // Same reconstitution hazard as the group dialog: 'Script default' has to drop
+                // the mean, or thinkTimeFromEdit rebuilds a fixed think time from it and the
+                // run-default override pins instead of clearing.
+                value: type && type !== 'recorded' ? prev.value : '',
                 thinkIgnore: type ? prev.thinkIgnore : false,
                 thinkTimeConfig: type
                   ? thinkTimeConfigForType({
@@ -1864,7 +1888,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <option value="uniform">Uniform</option>
             </select>
           </label>
-          {thinkTimeUsesMean(thinkType) && (
+          {Boolean(thinkType) && thinkTimeUsesMean(thinkType) && (
             <label>
               <span>Think time mean (ms)</span>
               <input className="settings-input" type="number" min="0" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({
@@ -2034,32 +2058,32 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       // saved is not the value shown: a group section that omits continue_on_error renders
       // Disabled but would be written back as the root's Enabled.
       const groupErrorHandling = runtimeSettings.error_handling
-      const errorHandling = errorHandlingSectionIsPinned(groupErrorHandling)
+      // Both halves on the inherit option means "this group transmits no section". Re-seeding it
+      // from the run level would pin a section the user just asked to release and — because the
+      // winning section is applied whole — drive the run level's own halves to false, which is
+      // the discard this dialog is meant to avoid. Only the group's OWN residual fields (the
+      // retry policy, which this dialog cannot edit) survive; when nothing survives the section
+      // is dropped and tombstoned below.
+      const clearingErrorHandling = groupEditDraft.continue_on_error === '' && groupEditDraft.snapshot_on_error === ''
+      const errorHandling = clearingErrorHandling || errorHandlingSectionIsPinned(groupErrorHandling)
         ? { ...groupErrorHandling }
         : { ...(effectiveRootRuntime.error_handling || {}) }
-      if (groupEditChanges.continue_on_error) {
-        if (groupEditDraft.continue_on_error === '') delete errorHandling.continue_on_error
-        else errorHandling.continue_on_error = groupEditDraft.continue_on_error === 'true'
-      }
-      if (groupEditChanges.snapshot_on_error) {
-        if (groupEditDraft.snapshot_on_error === '') delete errorHandling.snapshot_on_error
-        else errorHandling.snapshot_on_error = groupEditDraft.snapshot_on_error === 'true'
+      if (clearingErrorHandling) {
+        delete errorHandling.continue_on_error
+        delete errorHandling.snapshot_on_error
+      } else {
+        if (groupEditChanges.continue_on_error) {
+          if (groupEditDraft.continue_on_error === '') delete errorHandling.continue_on_error
+          else errorHandling.continue_on_error = groupEditDraft.continue_on_error === 'true'
+        }
+        if (groupEditChanges.snapshot_on_error) {
+          if (groupEditDraft.snapshot_on_error === '') delete errorHandling.snapshot_on_error
+          else errorHandling.snapshot_on_error = groupEditDraft.snapshot_on_error === 'true'
+        }
       }
       if (Object.keys(errorHandling).length > 0) runtimeSettings.error_handling = errorHandling
       else delete runtimeSettings.error_handling
       runtimeChanged = true
-    }
-    // buildGroupsForRunPayload overlays this override back onto the group's STORED
-    // runtime_settings, and an overlay can only assign — an absent key means "unedited", so it
-    // can never remove the stored section. Every section this dialog can clear (each of these
-    // three offers an inherit option) therefore has to be written as an explicit null tombstone
-    // that mergeRuntimeSettingsForRun deletes on. Re-stating it here also keeps it across a
-    // second save: the merge above already applied the earlier tombstone, so the key is missing
-    // again and would otherwise be silently forgotten, restoring the stored section.
-    for (const section of ['pacing', 'think_time', 'error_handling'] as const) {
-      if (!runtimeSettings[section] && hasOwnKey(editingGroup.runtime_settings || {}, section)) {
-        runtimeSettings[section] = null
-      }
     }
     if (groupEditChanges.browser) {
       if (!runtimeSettings.browser_config && effectiveRootRuntime.browser_config) {
@@ -2073,6 +2097,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       })
       runtimeChanged = true
     }
+    // buildGroupsForRunPayload overlays this override back onto the group's STORED
+    // runtime_settings, and an overlay can only assign — an absent key means "unedited", so it
+    // can never remove the stored section. Every section this dialog can clear therefore has to
+    // be written as an explicit null tombstone that mergeRuntimeSettingsForRun deletes on, and
+    // the list of them lives in CLEARABLE_RUNTIME_SECTIONS so a newly clearable section cannot
+    // be missed here. This must run AFTER every section edit above (the browser block included,
+    // which is where the four browser fields delete their section). Re-stating it on every save
+    // also keeps the clear across a second save: the merge above already applied the earlier
+    // tombstone, so the key is missing again and would otherwise be silently forgotten,
+    // restoring the stored section.
+    stampClearedRuntimeSections(runtimeSettings, editingGroup.runtime_settings)
     if ((runtimeChanged || existingOverride?.runtime_settings) && hasRuntimeSettingsInstructions(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
     } else if (runtimeChanged) {
@@ -3529,7 +3564,12 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         const type = event.target.value
                         setGroupEditDraft(prev => ({
                           ...prev,
-                          thinkTimeMs: type === 'recorded' ? '' : prev.thinkTimeMs,
+                          // 'Script think time' means the group transmits no think_time section.
+                          // A mean left behind in the draft would be reconstituted by
+                          // thinkTimeFromEdit as a fixed override (its bail-out needs an EMPTY
+                          // mean), pinning a fixed think time instead of clearing the section —
+                          // so the inherit option drops the mean the same way 'recorded' does.
+                          thinkTimeMs: type && type !== 'recorded' ? prev.thinkTimeMs : '',
                           thinkIgnore: type ? prev.thinkIgnore : false,
                           thinkTimeConfig: type
                             ? thinkTimeConfigForType({
@@ -3547,7 +3587,9 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         <option value="uniform">Uniform</option>
                       </select>
                     </label>
-                    {thinkTimeUsesMean(groupEditDraft.thinkTimeConfig?.type) && (
+                    {/* No mode selected is the inherit option, which carries no mean: showing the
+                        field there invites a value thinkTimeFromEdit now deliberately ignores. */}
+                    {Boolean(canonicalThinkTimeType(groupEditDraft.thinkTimeConfig?.type)) && thinkTimeUsesMean(groupEditDraft.thinkTimeConfig?.type) && (
                       <label className={changedFieldClass(groupEditChanges.think_time)}>
                         <span>Think time mean (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
                         <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeMs} onChange={event => setGroupEditDraft(prev => ({
@@ -3606,7 +3648,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
                       <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, continue_on_error: event.target.value }))}>
-                        <option value="">{groupErrorHandlingInheritLabel}</option>
+                        <option value="" disabled={groupErrorHandlingInherit.disabled}>{groupErrorHandlingInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>
@@ -3614,7 +3656,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <label className={changedFieldClass(groupEditChanges.snapshot_on_error)}>
                       <span>Snapshot on error <ChangedBadge changed={groupEditChanges.snapshot_on_error} /></span>
                       <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, snapshot_on_error: event.target.value }))}>
-                        <option value="">{groupErrorHandlingInheritLabel}</option>
+                        <option value="" disabled={groupErrorHandlingInherit.disabled}>{groupErrorHandlingInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
                       </select>

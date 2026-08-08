@@ -315,9 +315,15 @@ func (tr *TestRunner) applyDurableBaselineStatesLocked(states []storage.TestBase
 	}
 }
 
+// persistBaselineChanges is called with tr.mu write-locked (see
+// PinComparisonBaseline/UnpinComparisonBaseline), so its store call must be
+// published to the panic backstop's in-flight gauge like every other lock-held
+// durable write; see trackDurableWrite.
 func (tr *TestRunner) persistBaselineChanges(changes map[string]*time.Time) error {
 	if store, ok := tr.testStore.(baselinePersistence); ok {
-		return store.UpdateTestBaselines(changes)
+		return tr.trackDurableWrite(func() error {
+			return store.UpdateTestBaselines(changes)
+		})
 	}
 	// Compatibility for focused test doubles; production stores implement the
 	// column-specific transactional method above.
@@ -346,7 +352,12 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 	}
 	pinnedAt := time.Now().UTC()
 	if store, ok := tr.testStore.(scopedBaselinePersistence); ok {
-		states, err := store.SetTestComparisonBaseline(test.ID, &pinnedAt)
+		var states []storage.TestBaselineState
+		err := tr.trackDurableWrite(func() error {
+			var writeErr error
+			states, writeErr = store.SetTestComparisonBaseline(test.ID, &pinnedAt)
+			return writeErr
+		})
 		if err != nil {
 			return nil, fmt.Errorf("persist comparison baseline: %w", err)
 		}
@@ -405,7 +416,12 @@ func (tr *TestRunner) UnpinComparisonBaseline(id string) (*ManagedTest, error) {
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
 	if store, ok := tr.testStore.(scopedBaselinePersistence); ok {
-		states, err := store.SetTestComparisonBaseline(test.ID, nil)
+		var states []storage.TestBaselineState
+		err := tr.trackDurableWrite(func() error {
+			var writeErr error
+			states, writeErr = store.SetTestComparisonBaseline(test.ID, nil)
+			return writeErr
+		})
 		if err != nil {
 			return nil, fmt.Errorf("persist comparison baseline removal: %w", err)
 		}
@@ -1184,7 +1200,11 @@ func (tr *TestRunner) MoveTestDurable(id string, folderID *string) (bool, error)
 		return false, nil
 	}
 	if tr.testStore != nil {
-		if err := tr.testStore.MoveTest(id, folderID); err != nil {
+		// tr.mu is held across this store call, so publish it to the panic
+		// backstop's in-flight gauge (see trackDurableWrite).
+		if err := tr.trackDurableWrite(func() error {
+			return tr.testStore.MoveTest(id, folderID)
+		}); err != nil {
 			return false, err
 		}
 	}

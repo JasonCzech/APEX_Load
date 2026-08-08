@@ -9,6 +9,9 @@ import {
   buildRunDefaultEditDraft,
   buildRunLoadProfilePreview,
   buildRuntimeSettingsForRun,
+  CLEARABLE_RUNTIME_SECTIONS,
+  errorHandlingSectionIsPinned,
+  errorHandlingSurvivesBooleanClear,
   formatGroupPlacement,
   generatorCanRunGroup,
   generatorDisabledReason,
@@ -18,9 +21,11 @@ import {
   groupPlacementSummary,
   selectedGeneratorCapacity,
   stagedGroupPeakVUsers,
+  stampClearedRuntimeSections,
+  type ClearableRuntimeSection,
   type GroupRunOverride,
 } from './newTestRunModel'
-import { type StoredScenario, type SystemInventoryGenerator } from '../types'
+import { type RuntimeSettingsOverride, type StoredScenario, type SystemInventoryGenerator } from '../types'
 
 function scenarioFixture(): StoredScenario {
   return {
@@ -219,14 +224,41 @@ describe('newTestRunModel', () => {
     const retryOnlyScenario = { ...scenario, runtime_settings: { ...scenario.runtime_settings, error_handling: { max_retries: 2 } } }
     expect(buildGroupRuntimeTableValues(group, retryOnlyScenario, runDefaults).errorHandling).toBe('Stop / No snapshot')
 
-    // An empty section pins nothing (buildRuntimeSettingsForRun drops it), and a
-    // run-default that clears one boolean leaves the scenario's retries in place.
-    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
-      runtime_settings: { error_handling: {} },
-    }).errorHandling).toBe('Script default')
+    // An EMPTY section still pins. Every dsl.ErrorHandlingConfig field is omitempty and the
+    // override is a pointer, so a section whose only content is continue_on_error:false /
+    // snapshot_on_error:false comes back from the API as a non-nil `{}` — and the backend applies
+    // it whole all the same. It is also what the group override carries verbatim onto the wire:
+    // the create payload below is the proof, so reporting 'Script default' here would promise an
+    // inheritance the run never performs. (This assertion previously expected 'Script default'
+    // on the strength of a comment about buildRuntimeSettingsForRun, which builds the RUN-level
+    // section and never sees a group override.)
+    const emptySectionOverride: GroupRunOverride = { runtime_settings: { error_handling: {} } }
+    expect(buildGroupsForRunPayload(scenario, { [groupOverrideKey(group)]: emptySectionOverride })?.[0].runtime_settings)
+      .toEqual({ error_handling: {} })
+    expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, emptySectionOverride).errorHandling).toBe('Stop / No snapshot')
+    expect(buildGroupEditDraft(group, scenario, runDefaults, emptySectionOverride).continue_on_error).toBe('false')
+    // Same shape read back off the API on the STORED group — the most common section there is.
+    const allFalseGroup = { ...group, runtime_settings: { error_handling: {} } }
+    expect(buildGroupRuntimeTableValues(allFalseGroup, scenario, runDefaults).errorHandling).toBe('Stop / No snapshot')
+    expect(buildGroupEditDraft(allFalseGroup, scenario, runDefaults).continue_on_error).toBe('false')
+    expect(buildGroupEditDraft(allFalseGroup, scenario, runDefaults).snapshot_on_error).toBe('false')
+    // ...and on the scenario root, which the group inherits when it pins nothing itself.
+    const allFalseScenario = { ...scenario, runtime_settings: { ...scenario.runtime_settings, error_handling: {} } }
+    expect(buildGroupRuntimeTableValues(group, allFalseScenario, runDefaults).errorHandling).toBe('Stop / No snapshot')
+
+    // A run-default that clears one boolean leaves the scenario's retries in place.
     expect(buildGroupRuntimeTableValues(group, retryOnlyScenario, {
       runtime_settings: { continue_on_error: null },
     }).errorHandling).toBe('Stop / No snapshot')
+    // But clearing the only boolean the scenario set really does release the run-level section:
+    // the synthesised run-default section is not a wire value, so an empty result means "unset".
+    const continueOnlyScenario = { ...scenario, runtime_settings: { error_handling: { continue_on_error: true } } }
+    expect(buildGroupRuntimeTableValues(group, continueOnlyScenario, {
+      runtime_settings: { continue_on_error: null },
+    }).errorHandling).toBe('Script default')
+    expect(buildRuntimeSettingsForRun(continueOnlyScenario, {
+      runtime_settings: { continue_on_error: null },
+    })?.error_handling).toBeUndefined()
 
     // Explicitly pinned values still read as pinned.
     expect(buildGroupRuntimeTableValues(group, scenario, runDefaults, {
@@ -334,6 +366,85 @@ describe('newTestRunModel', () => {
     const clearedThinkTime: GroupRunOverride = { runtime_settings: { think_time: null } }
     expect(buildGroupRuntimeTableValues(group, scenario, { runtime_settings: {} }, clearedThinkTime).thinkTime)
       .toBe('Script think time')
+  })
+
+  it('clears and reads back every section in CLEARABLE_RUNTIME_SECTIONS through the shared helpers', () => {
+    // The tri-state has exactly one list, one writer and one reader:
+    //   * CLEARABLE_RUNTIME_SECTIONS is the list the group dialog's inherit options map to;
+    //   * stampClearedRuntimeSections turns a removed section into the null tombstone;
+    //   * effectiveGroupRuntimeSettings reads sections off the SAME overlay the payload builder
+    //     submits, so a cleared section can never be read back off the stored group.
+    // This test is driven BY the constant, so a section added to it that either helper does not
+    // honour fails here instead of silently re-applying the stored section at run time.
+    const sectionFixtures: Record<ClearableRuntimeSection, Record<string, unknown>> = {
+      pacing: { type: 'fixed_delay', delay_ms: 500 },
+      think_time: { type: 'gaussian', mean_ms: 900, std_ms: 100 },
+      error_handling: { continue_on_error: true, snapshot_on_error: true },
+      browser: { device_profile: 'iPhone 14 Pro', headless: true },
+      browser_config: { device_profile: 'pixel_8', headless: false },
+    }
+    const clearedTableValue: Record<ClearableRuntimeSection, [string, string]> = {
+      pacing: ['pacing', 'Script timing'],
+      think_time: ['thinkTime', 'Script think time'],
+      error_handling: ['errorHandling', 'Script default'],
+      browser: ['browser', 'Standard'],
+      browser_config: ['browser', 'Standard'],
+    }
+
+    for (const section of CLEARABLE_RUNTIME_SECTIONS) {
+      // Fails when a new clearable section is declared without being exercised below.
+      expect(sectionFixtures[section]).toBeTruthy()
+      expect(clearedTableValue[section]).toBeTruthy()
+
+      const scenario = scenarioFixture()
+      delete scenario.runtime_settings?.error_handling
+      const group = scenario.scripts[0]
+      group.runtime_settings = { [section]: sectionFixtures[section], log_level: 'debug' } as RuntimeSettingsOverride
+      const key = groupOverrideKey(group)
+      const runDefaults = { runtime_settings: {} }
+      const [tableField, clearedLabel] = clearedTableValue[section]
+
+      // Sanity: with no clear the stored section is what the run executes and what the page
+      // reports, so the assertions below are not vacuous.
+      const storedTable = buildGroupRuntimeTableValues(group, scenario, runDefaults) as Record<string, string>
+      expect(storedTable[tableField]).not.toBe(clearedLabel)
+      expect(buildGroupsForRunPayload(scenario, { [key]: { vusers: 4 } })?.[0].runtime_settings)
+        .toEqual({ [section]: sectionFixtures[section], log_level: 'debug' })
+
+      // WRITE: the dialog's edit removed the section from the patch, so the shared writer has to
+      // turn that absence into an explicit tombstone.
+      const patch = stampClearedRuntimeSections({ log_level: 'debug' }, group.runtime_settings)
+      expect((patch as Record<string, unknown>)[section]).toBeNull()
+      // ...which the payload overlay honours by removing the stored section, not re-applying it.
+      const cleared: GroupRunOverride = { runtime_settings: patch }
+      expect(groupOverrideCount({ [key]: cleared })).toBe(1)
+      expect(buildGroupsForRunPayload(scenario, { [key]: cleared })?.[0].runtime_settings)
+        .toEqual({ log_level: 'debug' })
+
+      // READ: the table and the re-opened dialog must show the clear, never the stored section.
+      const clearedTable = buildGroupRuntimeTableValues(group, scenario, runDefaults, cleared) as Record<string, string>
+      expect(clearedTable[tableField]).toBe(clearedLabel)
+      // The stored scenario group is untouched by the run-only clear.
+      expect(group.runtime_settings).toEqual({ [section]: sectionFixtures[section], log_level: 'debug' })
+    }
+  })
+
+  it('treats an all-false error handling section as pinned and an unclearable one as blocked', () => {
+    // `{}` is what the API returns for a section whose only content is continue_on_error:false
+    // and/or snapshot_on_error:false — presence, not content, decides whether a level transmits.
+    expect(errorHandlingSectionIsPinned(undefined)).toBe(false)
+    expect(errorHandlingSectionIsPinned(null)).toBe(false)
+    expect(errorHandlingSectionIsPinned({})).toBe(true)
+    expect(errorHandlingSectionIsPinned({ continue_on_error: false })).toBe(true)
+
+    // The group dialog can only edit the two booleans, so a section with anything else in it
+    // survives the clear and keeps executing both booleans as false.
+    expect(errorHandlingSurvivesBooleanClear(undefined)).toBe(false)
+    expect(errorHandlingSurvivesBooleanClear({})).toBe(false)
+    expect(errorHandlingSurvivesBooleanClear({ continue_on_error: true, snapshot_on_error: true })).toBe(false)
+    expect(errorHandlingSurvivesBooleanClear({ max_retries: 3 })).toBe(true)
+    expect(errorHandlingSurvivesBooleanClear({ continue_on_error: true, retry_delay_ms: 1000 })).toBe(true)
+    expect(errorHandlingSurvivesBooleanClear({ retry_backoff: 'fixed' })).toBe(true)
   })
 
   it('reports a retry-only run-default section as the booleans the run will execute', () => {

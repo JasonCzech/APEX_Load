@@ -662,46 +662,78 @@ func (b *distributedExecutionBackend) claimGeneratorProcessExecutionEpochClients
 	return errors.Join(failures...)
 }
 
+// anyErrorInTree reports whether match holds for any single error in err's tree,
+// walking %w wrapping and errors.Join branches in the same order errors.As does
+// but without stopping at the first candidate.
+//
+// errors.As is the wrong primitive for these classifiers. It stops at the first
+// error assignable to the target type, and the callers below then have to look
+// *past* the type — at a rejection's free-text message, or at a status code and
+// message — so a non-matching error of the very same shape masks a matching one
+// behind it. Generators report "fenced by a higher generation", "a different
+// controller holds the lease" and "this generation's session lapsed" with the
+// identical boxed type (see claimGeneratorExecutionEpoch and
+// executionEpochClaimReject), and the fan-out helpers in this file join their
+// per-target failures in worker completion order, so which one errors.As reached
+// first was a coin flip on identical fleet state.
+func anyErrorInTree(err error, match func(error) bool) bool {
+	for err != nil {
+		if match(err) {
+			return true
+		}
+		switch unwrappable := err.(type) {
+		case interface{ Unwrap() error }:
+			err = unwrappable.Unwrap()
+		case interface{ Unwrap() []error }:
+			for _, branch := range unwrappable.Unwrap() {
+				if anyErrorInTree(branch, match) {
+					return true
+				}
+			}
+			return false
+		default:
+			return false
+		}
+	}
+	return false
+}
+
 // generatorProcessExecutionEpochExpired reports whether any error in the tree is
 // a process-scoped epoch claim the generator rejected because its session for
 // that same generation had already lapsed. planClaimLocked never revives a
 // lapsed generation in place, so this is the shape a "nobody renewed this
 // generator's process epoch" fault takes on the claim path — the assignment path
 // reports the identical generator state as generatorExecutionEpochSessionExpired
-// instead. errors.As walks both %w wrapping and errors.Join trees, so this
-// survives the per-target fan-out wrappers in
-// claimGeneratorProcessExecutionEpochClients.
+// instead. The tree is walked exhaustively, so this survives both the per-target
+// fan-out wrappers in claimGeneratorProcessExecutionEpochClients and a joined
+// sibling rejection of a different kind that happens to sort ahead of it.
 func generatorProcessExecutionEpochExpired(err error) bool {
-	if err == nil {
-		return false
-	}
-	var rejection *generatorExecutionEpochRejection
-	if !errors.As(err, &rejection) {
-		return false
-	}
-	return rejection.message == generatorrpc.ExecutionGenerationExpiredMessage
+	return anyErrorInTree(err, func(candidate error) bool {
+		rejection, ok := candidate.(*generatorExecutionEpochRejection)
+		return ok && rejection.message == generatorrpc.ExecutionGenerationExpiredMessage
+	})
 }
 
 // generatorExecutionEpochSessionExpired reports whether any error in the tree is
 // a generator rejection caused by a lapsed process-scoped execution epoch, as
-// opposed to a generation mismatch or a fenced assignment. errors.As walks both
-// %w wrapping and errors.Join trees, so this survives the per-target fan-out
-// wrappers in renewGeneratorTestExecutionClients.
+// opposed to a generation mismatch or a fenced assignment. The tree is walked
+// exhaustively, so this survives both the per-target fan-out wrappers in
+// renewGeneratorTestExecutionClients and a joined sibling status of a different
+// kind that happens to sort ahead of it.
 //
 // This is the *mutation* shape of a lapsed epoch. A caller that re-claims the
 // process epoch first will see generatorProcessExecutionEpochExpired for the
 // same underlying state, because a claim is rejected before any mutation is
 // attempted.
 func generatorExecutionEpochSessionExpired(err error) bool {
-	if err == nil {
-		return false
-	}
-	var grpcErr interface{ GRPCStatus() *grpcStatus.Status }
-	if !errors.As(err, &grpcErr) {
-		return false
-	}
-	state := grpcErr.GRPCStatus()
-	return state.Code() == codes.FailedPrecondition && state.Message() == generatorrpc.ExecutionGenerationSessionExpiredMessage
+	return anyErrorInTree(err, func(candidate error) bool {
+		grpcErr, ok := candidate.(interface{ GRPCStatus() *grpcStatus.Status })
+		if !ok {
+			return false
+		}
+		state := grpcErr.GRPCStatus()
+		return state.Code() == codes.FailedPrecondition && state.Message() == generatorrpc.ExecutionGenerationSessionExpiredMessage
+	})
 }
 
 func (b *distributedExecutionBackend) handoffStagedGeneratorTestExecutionLeaseKeeper(ctx context.Context, tr *TestRunner, test *ManagedTest, generation uint64, stopStaged context.CancelFunc) {

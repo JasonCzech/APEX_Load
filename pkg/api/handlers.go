@@ -1169,12 +1169,35 @@ func (s *Server) handleSystemVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.versionResponse())
 }
 
-// healthCheckSnapshot is the runner-derived part of the health payload. It is
-// republished on every probe that reads live state, so the copy served during a
-// durable-write stall is at most one probe interval old.
+// healthCheckSnapshot is the runner-derived part of the health payload, stamped
+// with the moment it was built from live runner state. Every probe that reads
+// live state republishes it, so under a healthy controller the copy is at most
+// one probe interval old; during a durable-write stall it is not republished and
+// ages with the stall, which is what healthCheckDurableWriteBypassBudget bounds.
 type healthCheckSnapshot struct {
 	availability CapacityAvailabilitySnapshot
 	testCount    int
+	publishedAt  time.Time
+}
+
+// healthCheckDurableWriteBypassBudget bounds how long the liveness probe may keep
+// answering from a cached snapshot instead of live runner state.
+//
+// It is derived from the run-driver panic backstop's budget deliberately. The
+// bypass exists so the kubelet cannot restart the replica before the backstop has
+// finished riding out a stalled store, so it must last exactly as long as the
+// backstop can wait and no longer. The backstop caps its own tolerance because
+// the in-flight gauge is process-wide (runTestPanicRecoveryDurableWriteExtensions
+// and the reasoning above it); an uncapped bypass has the mirror-image failure. A
+// durable write that never returns - a black-holed connection with no statement
+// timeout, which the runner's context-free writes cannot interrupt - pins the
+// gauge above zero forever and never releases tr.mu, so every start, stop, list
+// and scale is wedged while the probe answers 200 for the life of the process and
+// nothing ever restarts it. Past this budget the handler goes back to the live
+// read: it blocks, the probe fails, and the container is restarted onto a fresh
+// connection, which is what happened before the bypass existed.
+func healthCheckDurableWriteBypassBudget() time.Duration {
+	return time.Duration(1+runTestPanicRecoveryDurableWriteExtensions) * runTestPanicRecoveryLockTimeout
 }
 
 // healthCheckSnapshotWithoutRunnerLock returns the last published snapshot when
@@ -1196,6 +1219,14 @@ type healthCheckSnapshot struct {
 // hangs the probe and still gets the replica restarted. Until the first probe
 // has published a snapshot there is nothing to serve and the handler blocks as
 // before; a controller reaches that point long before it can stall a write.
+//
+// It is also bounded. A stalled write recovers, but a black-holed one never
+// returns: the gauge stays above zero for the life of the process, tr.mu is never
+// released, and an unbounded bypass would answer 200 for a permanently wedged
+// controller so the kubelet never restarts it. Once the served copy is older than
+// healthCheckDurableWriteBypassBudget - the same budget the panic backstop bounds
+// its own use of this gauge with - the handler goes back to the live read and the
+// replica is restarted as it was before the bypass existed.
 func (s *Server) healthCheckSnapshotWithoutRunnerLock() (healthCheckSnapshot, bool) {
 	if s == nil || s.runner == nil {
 		return healthCheckSnapshot{}, false
@@ -1205,6 +1236,10 @@ func (s *Server) healthCheckSnapshotWithoutRunnerLock() (healthCheckSnapshot, bo
 	}
 	cached := s.healthSnapshot.Load()
 	if cached == nil {
+		return healthCheckSnapshot{}, false
+	}
+	budget := healthCheckDurableWriteBypassBudget()
+	if budget <= 0 || time.Since(cached.publishedAt) > budget {
 		return healthCheckSnapshot{}, false
 	}
 	return *cached, true
@@ -1217,6 +1252,9 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		snapshot = healthCheckSnapshot{
 			availability: resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now()),
 			testCount:    s.runner.TestCount(),
+			// Stamped after the live reads returned, so the age the bypass bounds is
+			// the age of the data being served.
+			publishedAt: time.Now(),
 		}
 		s.healthSnapshot.Store(&snapshot)
 	}

@@ -445,3 +445,57 @@ func TestNewTokenBucket_LargeTPS(t *testing.T) {
 		tb.Stop()
 	}
 }
+
+// TestNewTokenBucket_SmallTPS covers the opposite end of the conversion from
+// TestNewTokenBucket_LargeTPS: a tps small enough that float64(time.Second)/tps
+// exceeds MaxInt64 (anything below ~1.0842e-10). Go leaves an out-of-range
+// float-to-int conversion implementation defined — arm64's FCVTZSD saturates to
+// MaxInt64, amd64's CVTTSD2SQ returns the integer-indefinite value MinInt64 — so
+// truncating first and clamping non-positive results afterwards mistakes the
+// amd64 overflow for the large-tps truncation case and hands back 1ns. That
+// inverts the configured rate from "one iteration per thousands of years" into
+// "one credit per nanosecond", failing the closed-model rate limiter wide open
+// on amd64 generators while arm64 behaves. Range-checking before the conversion
+// makes both architectures agree.
+func TestNewTokenBucket_SmallTPS(t *testing.T) {
+	saturated := time.Duration(math.MaxInt64)
+	for _, tc := range []struct {
+		tps  float64
+		want time.Duration
+	}{
+		// Overflowing quotients: the interval must saturate, never invert.
+		{tps: 1e-11, want: saturated},
+		{tps: 1e-300, want: saturated},
+		{tps: math.SmallestNonzeroFloat64, want: saturated},
+		{tps: 1.0842021724855044e-10, want: saturated},
+		// Just inside the representable range: exact, not saturated or clamped.
+		{tps: 1e-9, want: time.Duration(1e18)},
+		{tps: 1, want: time.Second},
+		{tps: 1000, want: time.Millisecond},
+	} {
+		if got := tokenBucketFillInterval(tc.tps); got != tc.want {
+			t.Errorf("tokenBucketFillInterval(%g) = %v (%d ns), want %v (%d ns)",
+				tc.tps, got, int64(got), tc.want, int64(tc.want))
+		}
+	}
+
+	// End to end through the constructor: a bucket configured for one iteration
+	// per ~3170 years must not hand out credit during the test.
+	const tinyTPS = 1e-11
+	tb := NewTokenBucket(tinyTPS)
+	if tb == nil {
+		t.Fatalf("tps=%g: NewTokenBucket returned nil", tinyTPS)
+	}
+	defer tb.Stop()
+	if tb.interval < 24*time.Hour {
+		t.Fatalf("tps=%g: fill interval %v collapsed; the rate limiter is failing open", tinyTPS, tb.interval)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	if tb.WaitContext(ctx) {
+		t.Fatalf("tps=%g: bucket issued a credit within 150ms; interval=%v", tinyTPS, tb.interval)
+	}
+	if got := len(tb.tokens); got != 0 {
+		t.Fatalf("tps=%g: bucket buffered %d credits; interval=%v", tinyTPS, got, tb.interval)
+	}
+}

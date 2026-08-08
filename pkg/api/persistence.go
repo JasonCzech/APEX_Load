@@ -1674,13 +1674,21 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 // driver for the duration of write, so the run-driver panic backstop can tell a
 // stalled-but-progressing store from a lock nothing will release.
 //
-// Every durable write the runner issues while tr.mu is held must go through
-// this. Counting only the terminal status write was not enough: stopTest's
-// pre-start abort, failClosedUncertainVUserScale's retried record write and
-// every VUser-scale reservation issued by a gradual ramp all pin tr.mu across a
-// store call too, and while any of them stalled the backstop saw a zero gauge,
-// classified a perfectly healthy mutex as orphaned, and re-panicked the
-// controller into the crash-loop the extension exists to prevent.
+// Every durable test-store write the runner issues while tr.mu is held must go
+// through this. Counting only the terminal status write was not enough:
+// stopTest's pre-start abort, failClosedUncertainVUserScale's retried record
+// write and every VUser-scale reservation issued by a gradual ramp all pin tr.mu
+// across a store call too, and while any of them stalled the backstop saw a zero
+// gauge, classified a perfectly healthy mutex as orphaned, and re-panicked the
+// controller into the crash-loop the extension exists to prevent. The
+// operator-triggered writes have exactly the same shape and were the same hole:
+// a comparison-baseline pin/unpin, a folder move and a delete each hold tr.mu
+// across their store call, so a routine operator click during a store failover
+// zeroed the gauge for both readers of it (the backstop and the liveness probe).
+//
+// The set is enforced by TestEveryTestStoreWriteIsCountedOrDocumented, not by
+// this prose: a new tr.testStore write call site must be wrapped here or listed
+// there with the reason it cannot be holding tr.mu.
 //
 // The gauge is process-wide, so a write that is not blocking the backstop can
 // still buy it one interval; that only ever delays a re-panic, and the
@@ -2065,6 +2073,10 @@ func (tr *TestRunner) AttributeTestExecutionPlanApproval(id string, approval *st
 	}
 }
 
+// deleteStoredTest removes the durable test row. DeleteTestDurable calls it with
+// tr.mu write-locked, so the store call is published to the panic backstop's
+// in-flight gauge like every other lock-held test-row write; see
+// trackDurableWrite.
 func (tr *TestRunner) deleteStoredTest(id string) (storage.LeaseFencedDeleteResult, error) {
 	if tr.testStore == nil {
 		return storage.LeaseFencedDeleteDeleted, nil
@@ -2078,8 +2090,12 @@ func (tr *TestRunner) deleteStoredTest(id string) (storage.LeaseFencedDeleteResu
 		if !ok {
 			return storage.LeaseFencedDeleteFenced, fmt.Errorf("test persistence does not support execution-lease-fenced deletion")
 		}
-		result, err := store.DeleteTestIfLeaseHeld(id, executionLeaseName, leaseOwnerID)
-		if err != nil {
+		var result storage.LeaseFencedDeleteResult
+		if err := tr.trackDurableWrite(func() error {
+			var err error
+			result, err = store.DeleteTestIfLeaseHeld(id, executionLeaseName, leaseOwnerID)
+			return err
+		}); err != nil {
 			return result, err
 		}
 		if result == storage.LeaseFencedDeleteFenced {
@@ -2087,7 +2103,9 @@ func (tr *TestRunner) deleteStoredTest(id string) (storage.LeaseFencedDeleteResu
 		}
 		return result, nil
 	}
-	if err := tr.testStore.DeleteTest(id); err != nil {
+	if err := tr.trackDurableWrite(func() error {
+		return tr.testStore.DeleteTest(id)
+	}); err != nil {
 		return storage.LeaseFencedDeleteFenced, err
 	}
 	return storage.LeaseFencedDeleteDeleted, nil

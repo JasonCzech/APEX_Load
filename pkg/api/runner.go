@@ -349,12 +349,21 @@ type TestRunner struct {
 	// to tell a transition blocked on slow durable I/O (which waiting does
 	// recover from) from one blocked on an orphaned lock (which it never does).
 	//
-	// Every durable write the runner issues while holding tr.mu is counted, not
-	// only the status write: stopTest, failClosedUncertainVUserScale and every
-	// VUser-scale reservation hold tr.mu across a store call too (see
-	// trackDurableWrite), and a gauge blind to those would classify a
-	// healthy-but-stalled mutex as orphaned and re-panic the controller into
-	// exactly the crash-loop the backstop's extension exists to prevent.
+	// Every durable test-store write the runner issues while holding tr.mu is
+	// counted, not only the status write: stopTest, failClosedUncertainVUserScale
+	// and every VUser-scale reservation hold tr.mu across a store call, and so do
+	// the operator-triggered paths (comparison-baseline pin/unpin, folder move,
+	// delete). A gauge blind to any of those classifies a healthy-but-stalled
+	// mutex as orphaned and re-panics the controller into exactly the crash-loop
+	// the backstop's extension exists to prevent. The enumeration is enforced by
+	// TestEveryTestStoreWriteIsCountedOrDocumented rather than by this comment:
+	// every tr.testStore write call site must go through trackDurableWrite or be
+	// listed there with the reason it runs off-lock.
+	//
+	// The gauge covers the test store only. A durable write to another store
+	// (archives, scripts, scenarios, settings) issued while tr.mu is held is not
+	// counted and would still be misclassified; the startup reference-key backfill
+	// is the known example, and it runs before any run driver exists.
 	//
 	// It is a process-wide gauge, not a per-run one, so it can only delay the
 	// backstop's re-panic, never suppress it: under a healthy store a write

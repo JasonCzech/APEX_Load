@@ -246,22 +246,48 @@ type TokenBucket struct {
 // large pacing.tps cannot trigger an enormous channel allocation.
 const maxTokenBucketCapacity = 1_000_000
 
+// tokenBucketFillInterval converts a pacing tps into the wall time between two
+// credits, defending both ends of the float64->time.Duration conversion.
+//
+// Small tps (the overflow end): float64(time.Second)/tps exceeds MaxInt64 once
+// tps drops below ~1.0842e-10, and Go leaves an out-of-range float-to-int
+// conversion implementation defined. arm64 emits FCVTZSD, which saturates to
+// MaxInt64; amd64 emits a bare CVTTSD2SQ, which yields the x86
+// integer-indefinite value MinInt64 — a *negative* duration. Truncating first
+// and clamping afterwards would therefore read that negative interval as the
+// large-tps case below and hand back 1ns, inverting "one iteration per few
+// hundred years" into "one credit per nanosecond" and failing the rate limiter
+// wide open on amd64 generators only. Range-check in float64 before converting,
+// exactly as openWorkloadArrivalDeadline does for the open-model path.
+//
+// Large tps (the truncation end): the quotient rounds down to 0, and the clamp
+// is load bearing. addTokensForElapsed returns 0 for every elapsed value once
+// interval <= 0, so an unclamped bucket would never issue a single credit and
+// every VUser gated on WaitContext (vuser.go, the "tps" pacing branch) would
+// block forever instead of the run failing loudly. fill() drives a time.Timer,
+// which tolerates a non-positive duration by firing immediately — only
+// time.NewTicker panics on one — so the hazard there is silent token
+// starvation, not a crashed fill goroutine.
+//
+// Callers must reject non-positive, NaN and Inf tps before calling; those are
+// configuration errors rather than intervals.
+func tokenBucketFillInterval(tps float64) time.Duration {
+	nanos := float64(time.Second) / tps
+	if nanos >= float64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64)
+	}
+	interval := time.Duration(nanos)
+	if interval <= 0 {
+		interval = time.Nanosecond
+	}
+	return interval
+}
+
 func NewTokenBucket(tps float64) *TokenBucket {
 	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return nil
 	}
-	// For very large tps the fill interval truncates to 0. The clamp is load
-	// bearing: tokenBucketTokensForElapsed returns 0 for every elapsed value once
-	// interval <= 0, so an unclamped bucket would never issue a single credit and
-	// every VUser gated on WaitContext (vuser.go, the "tps" pacing branch) would
-	// block forever instead of the run failing loudly. fill() drives a
-	// time.Timer, which tolerates a non-positive duration by firing immediately
-	// — only time.NewTicker panics on one — so the hazard here is silent token
-	// starvation, not a crashed fill goroutine.
-	interval := time.Duration(float64(time.Second) / tps)
-	if interval <= 0 {
-		interval = time.Nanosecond
-	}
+	interval := tokenBucketFillInterval(tps)
 	capacity := int(math.Min(tps*2, maxTokenBucketCapacity)) + 1
 	tb := &TokenBucket{
 		tokens:   make(chan struct{}, capacity),
